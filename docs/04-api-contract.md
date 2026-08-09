@@ -8,7 +8,8 @@
 - Version prefix: `/api/v1`
 - Internal UUIDs are not required for human workflows; ticket number is stable and human-facing.
 - JPA entities are never serialized.
-- Every response carries `X-Request-Id`.
+- Every response carries `X-Request-Id` and `X-Correlation-Id`.
+- Clients may supply either identifier when it matches the bounded identifier policy; the server generates a replacement when it is absent or invalid.
 - Every write response includes current ticket version or ETag where applicable.
 - External write APIs require `Idempotency-Key`.
 - External update APIs require `If-Match` or an explicit expected version.
@@ -34,6 +35,8 @@ Same use case may be called by more than one surface, but DTO, projection, authe
 ```http
 POST /api/v1/requests
 Content-Type: application/json
+X-Request-Id: request-123
+X-Correlation-Id: support-session-456
 ```
 
 ```json

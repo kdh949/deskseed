@@ -1,12 +1,19 @@
 # Backend
 
-The generated archive contains a checksum-verifying `gradlew` bootstrap script rather than the binary Gradle Wrapper JAR. It downloads the official Gradle 9.7.0 binary distribution, verifies its published SHA-256 checksum, and executes Gradle.
+This Spring Boot backend uses Kotlin, Java 21, PostgreSQL, Flyway, and Spring Modulith. The committed Gradle Wrapper pins Gradle 9.7.0 and verifies the distribution checksum before use.
 
-After the first successful local build, normalize this to the official wrapper and commit the generated JAR/scripts:
+## Prerequisites
+
+- Java 21
+- Docker Engine for the PostgreSQL Testcontainers integration tests
+
+## Commands
 
 ```bash
-./gradlew wrapper --gradle-version 9.7.0 --distribution-type bin 
-./gradlew wrapper
+./gradlew test
+./gradlew bootRun
 ```
 
-The application uses Java 21, Kotlin, Spring Boot, Spring MVC, Spring Data JPA, Flyway, PostgreSQL, and Spring Modulith.
+For local application development, start PostgreSQL from the repository root with `docker compose up -d db`. The backend reads database credentials and CORS origins from environment variables; use `.env.example` as the local-development template and do not commit real secrets.
+
+The `production` profile requires separate runtime (`DATABASE_RUNTIME_*`) and migration (`DATABASE_MIGRATION_*`) database credentials. Set `DATABASE_MIGRATION_URL` only when migrations use a different JDBC endpoint.

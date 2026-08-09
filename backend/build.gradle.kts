@@ -24,6 +24,7 @@ repositories {
 }
 
 extra["springModulithVersion"] = "2.1.0"
+extra["testcontainersVersion"] = "2.0.5"
 
 dependencyManagement {
     imports {
@@ -50,8 +51,9 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-security-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
-    testImplementation("org.testcontainers:junit-jupiter")
-    testImplementation("org.testcontainers:postgresql")
+    testImplementation(platform("org.testcontainers:testcontainers-bom:${property("testcontainersVersion")}"))
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation("org.testcontainers:testcontainers-postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

@@ -20,24 +20,37 @@ class RequestIdFilter : OncePerRequestFilter() {
     ) {
         val requestId = request
             .getHeader(REQUEST_ID_HEADER)
-            ?.takeIf { REQUEST_ID_PATTERN.matches(it) }
+            ?.takeIf(::isValidIdentifier)
+            ?: UUID.randomUUID().toString()
+        val correlationId = request
+            .getHeader(CORRELATION_ID_HEADER)
+            ?.takeIf(::isValidIdentifier)
             ?: UUID.randomUUID().toString()
 
         request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId)
+        request.setAttribute(CORRELATION_ID_ATTRIBUTE, correlationId)
         response.setHeader(REQUEST_ID_HEADER, requestId)
+        response.setHeader(CORRELATION_ID_HEADER, correlationId)
         MDC.put(REQUEST_ID_MDC_KEY, requestId)
+        MDC.put(CORRELATION_ID_MDC_KEY, correlationId)
 
         try {
             filterChain.doFilter(request, response)
         } finally {
             MDC.remove(REQUEST_ID_MDC_KEY)
+            MDC.remove(CORRELATION_ID_MDC_KEY)
         }
     }
 
     companion object {
         const val REQUEST_ID_HEADER = "X-Request-Id"
+        const val CORRELATION_ID_HEADER = "X-Correlation-Id"
         const val REQUEST_ID_ATTRIBUTE = "deskseed.requestId"
+        const val CORRELATION_ID_ATTRIBUTE = "deskseed.correlationId"
         const val REQUEST_ID_MDC_KEY = "requestId"
-        private val REQUEST_ID_PATTERN = Regex("[A-Za-z0-9._:-]{1,100}")
+        const val CORRELATION_ID_MDC_KEY = "correlationId"
+        private val IDENTIFIER_PATTERN = Regex("[A-Za-z0-9._:-]{1,100}")
+
+        fun isValidIdentifier(value: String): Boolean = IDENTIFIER_PATTERN.matches(value)
     }
 }

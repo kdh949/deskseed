@@ -28,6 +28,15 @@ internal class TicketAuditEntity(
     @Column(name = "source", nullable = false, length = 40)
     val source: String,
 
+    @Column(name = "request_id", nullable = false, length = 100)
+    val requestId: String,
+
+    @Column(name = "correlation_id", nullable = false, length = 100)
+    val correlationId: String,
+
+    @Column(name = "command_id", nullable = false, length = 100)
+    val commandId: String,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant,
 )

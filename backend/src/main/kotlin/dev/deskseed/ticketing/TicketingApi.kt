@@ -1,5 +1,7 @@
 package dev.deskseed.ticketing
 
+import dev.deskseed.foundation.ActorRef
+import dev.deskseed.foundation.CommandContext
 import java.time.Instant
 import java.util.UUID
 
@@ -49,6 +51,8 @@ data class SubmitPublicRequestCommand(
     val requesterId: UUID,
     val subject: String,
     val message: String,
+    val actor: ActorRef,
+    val context: CommandContext,
 )
 
 data class SubmittedTicket(

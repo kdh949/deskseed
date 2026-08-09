@@ -1,6 +1,9 @@
 package dev.deskseed.portal.internal
 
 import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.foundation.ActorRef
+import dev.deskseed.foundation.ActorType
+import dev.deskseed.foundation.CommandContext
 import dev.deskseed.portal.RequestNotFoundException
 import dev.deskseed.settings.CustomerAccessPolicy
 import dev.deskseed.ticketing.PublicTicketView
@@ -29,6 +32,11 @@ internal class PublicRequestApplicationService(
                 requesterId = customer.id,
                 subject = command.subject,
                 message = command.message,
+                actor = ActorRef(
+                    actorType = ActorType.CUSTOMER,
+                    actorId = customer.id,
+                ),
+                context = command.context,
             ),
         )
         val rawAccessToken = accessTokenStore.issue(ticket.ticketId)
@@ -59,6 +67,7 @@ internal data class SubmitAnonymousRequest(
     val email: String,
     val subject: String,
     val message: String,
+    val context: CommandContext,
 )
 
 internal data class AnonymousRequestSubmitted(

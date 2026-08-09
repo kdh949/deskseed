@@ -13,6 +13,9 @@ paths:
       operationId: submitAnonymousRequest
       summary: Submit an anonymous web request
       tags: [Customer Requests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
         content:
@@ -28,8 +31,9 @@ paths:
                 type: string
               description: Relative customer request URL.
             X-Request-Id:
-              schema:
-                type: string
+              $ref: '#/components/headers/RequestId'
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
           content:
             application/json:
               schema:
@@ -38,6 +42,11 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '403':
           description: Anonymous submission is disabled by system settings.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
           content:
             application/problem+json:
               schema:
@@ -62,27 +71,68 @@ paths:
           schema:
             type: string
             minLength: 32
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
           description: Public request and public comments only.
           headers:
             X-Request-Id:
-              schema:
-                type: string
+              $ref: '#/components/headers/RequestId'
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicRequest'
         '404':
           description: The ticket/token pair is invalid. The response intentionally does not reveal which value was wrong.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
 components:
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Optional bounded request identifier. The server generates a replacement when absent or invalid.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._:-]{1,100}$'
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Optional bounded correlation identifier. The server generates a replacement when absent or invalid.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._:-]{1,100}$'
+  headers:
+    RequestId:
+      description: Server-accepted request identifier.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._:-]{1,100}$'
+    CorrelationId:
+      description: Server-accepted correlation identifier.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._:-]{1,100}$'
   responses:
     BadRequest:
       description: Request validation failed.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
       content:
         application/problem+json:
           schema:

@@ -1,5 +1,7 @@
 package dev.deskseed.portal.internal
 
+import dev.deskseed.foundation.CommandContext
+import dev.deskseed.foundation.RequestSource
 import dev.deskseed.portal.RequestNotFoundException
 import dev.deskseed.settings.AnonymousSubmissionDisabledException
 import org.assertj.core.api.Assertions.assertThat
@@ -8,16 +10,24 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.dao.DataAccessException
+import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
-import org.testcontainers.containers.PostgreSQLContainer
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import org.testcontainers.postgresql.PostgreSQLContainer
+import org.testcontainers.utility.DockerImageName
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 
 @SpringBootTest
+@AutoConfigureMockMvc
 @Testcontainers
 class PublicRequestIntegrationTest {
     @Autowired
@@ -28,6 +38,50 @@ class PublicRequestIntegrationTest {
 
     @Autowired
     private lateinit var tokenCodec: RequestAccessTokenCodec
+
+    @Autowired
+    private lateinit var mockMvc: MockMvc
+
+    @Test
+    fun `http submission persists trusted customer actor and accepted command context`() {
+        val spoofedActorId = UUID.randomUUID().toString()
+
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .header("X-Request-Id", "request-http-123")
+                .header("X-Correlation-Id", "correlation-http-456")
+                .header("X-Actor-Id", spoofedActorId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "name": "김고객",
+                      "email": "http-context-${UUID.randomUUID()}@example.com",
+                      "subject": "결제 오류",
+                      "message": "결제 버튼을 누르면 오류가 납니다."
+                    }
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(header().string("X-Request-Id", "request-http-123"))
+            .andExpect(header().string("X-Correlation-Id", "correlation-http-456"))
+
+        val auditContext = jdbcTemplate.queryForMap(
+            """
+            select actor_type, actor_id::text, source, request_id, correlation_id, command_id
+            from ticket_audits
+            where request_id = 'request-http-123'
+            """.trimIndent(),
+        )
+
+        assertThat(auditContext["actor_type"]).isEqualTo("CUSTOMER")
+        assertThat(auditContext["actor_id"]).isNotEqualTo(spoofedActorId)
+        assertThat(auditContext["source"]).isEqualTo("CUSTOMER_PORTAL")
+        assertThat(auditContext["request_id"]).isEqualTo("request-http-123")
+        assertThat(auditContext["correlation_id"]).isEqualTo("correlation-http-456")
+        assertThat(auditContext["command_id"].toString()).matches("[A-Za-z0-9._:-]{1,100}")
+    }
 
     @Test
     fun `anonymous request creates first public comment and customer projection excludes internal comments`() {
@@ -119,6 +173,19 @@ class PublicRequestIntegrationTest {
         )
 
         assertThat(eventTypes).containsExactly("TICKET_CREATED", "COMMENT_CREATED")
+        val auditContext = jdbcTemplate.queryForMap(
+            """
+            select actor_type, source, request_id, correlation_id, command_id
+            from ticket_audits
+            where id = ?
+            """.trimIndent(),
+            auditId,
+        )
+        assertThat(auditContext["actor_type"]).isEqualTo("CUSTOMER")
+        assertThat(auditContext["source"]).isEqualTo("CUSTOMER_PORTAL")
+        assertThat(auditContext["request_id"].toString()).matches("[A-Za-z0-9._:-]{1,100}")
+        assertThat(auditContext["correlation_id"].toString()).matches("[A-Za-z0-9._:-]{1,100}")
+        assertThat(auditContext["command_id"].toString()).matches("[A-Za-z0-9._:-]{1,100}")
         assertThatThrownBy {
             jdbcTemplate.update(
                 "update ticket_audits set source = 'MUTATED' where id = ?",
@@ -149,6 +216,12 @@ class PublicRequestIntegrationTest {
             email = "customer-$suffix-${UUID.randomUUID()}@example.com",
             subject = "결제 오류",
             message = "결제 버튼을 누르면 오류가 납니다.",
+            context = CommandContext(
+                source = RequestSource.CUSTOMER_PORTAL,
+                requestId = "request-$suffix",
+                correlationId = "correlation-$suffix",
+                commandId = UUID.randomUUID().toString(),
+            ),
         ),
     )
 
@@ -162,6 +235,6 @@ class PublicRequestIntegrationTest {
         @Container
         @ServiceConnection
         @JvmStatic
-        val postgres = PostgreSQLContainer<Nothing>("postgres:17-alpine")
+        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

@@ -1,5 +1,7 @@
 package dev.deskseed.ticketing.internal
 
+import dev.deskseed.foundation.ActorType
+import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.PublicCommentView
 import dev.deskseed.ticketing.PublicTicketView
@@ -27,6 +29,16 @@ internal class JpaTicketingFacade(
 ) : TicketingFacade {
     @Transactional
     override fun submitPublicRequest(command: SubmitPublicRequestCommand): SubmittedTicket {
+        require(command.actor.actorType == ActorType.CUSTOMER) {
+            "Public requests must be attributed to a customer actor"
+        }
+        require(command.actor.actorId == command.requesterId) {
+            "Public request actor must match the requester"
+        }
+        require(command.context.source == RequestSource.CUSTOMER_PORTAL) {
+            "Public requests must originate from the customer portal"
+        }
+
         val now = Instant.now(clock)
         val ticket = Ticket.submitFromWeb(
             ticketNumber = ticketNumberGenerator.next(),
@@ -69,9 +81,12 @@ internal class JpaTicketingFacade(
                 id = auditId,
                 ticketId = ticket.id,
                 ticketVersion = 0,
-                actorType = "CUSTOMER",
-                actorId = command.requesterId,
-                source = "WEB_FORM",
+                actorType = command.actor.actorType.name,
+                actorId = command.actor.actorId,
+                source = command.context.source.name,
+                requestId = command.context.requestId,
+                correlationId = command.context.correlationId,
+                commandId = command.context.commandId,
                 createdAt = now,
             ),
         )

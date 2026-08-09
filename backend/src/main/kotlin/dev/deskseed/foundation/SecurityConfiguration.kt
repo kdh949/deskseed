@@ -48,8 +48,13 @@ class SecurityConfiguration(
                 "Accept",
                 "X-Request-Access-Token",
                 RequestIdFilter.REQUEST_ID_HEADER,
+                RequestIdFilter.CORRELATION_ID_HEADER,
             )
-            exposedHeaders = listOf("Location", RequestIdFilter.REQUEST_ID_HEADER)
+            exposedHeaders = listOf(
+                "Location",
+                RequestIdFilter.REQUEST_ID_HEADER,
+                RequestIdFilter.CORRELATION_ID_HEADER,
+            )
             allowCredentials = false
             maxAge = 3600
         }

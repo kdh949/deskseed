@@ -1,7 +1,10 @@
 package dev.deskseed.portal.internal
 
+import dev.deskseed.foundation.CommandContexts
+import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.CommentAuthorType
 import dev.deskseed.ticketing.TicketStatus
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
@@ -26,6 +29,7 @@ internal class PublicRequestController(
     @PostMapping
     fun submit(
         @Valid @RequestBody body: SubmitRequestBody,
+        request: HttpServletRequest,
     ): ResponseEntity<SubmittedRequestResponse> {
         val result = applicationService.submit(
             SubmitAnonymousRequest(
@@ -33,6 +37,7 @@ internal class PublicRequestController(
                 email = body.email,
                 subject = body.subject,
                 message = body.message,
+                context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
             ),
         )
 
