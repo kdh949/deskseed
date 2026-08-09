@@ -502,3 +502,377 @@ The first strong portfolio release requires:
 ```
 
 Integration v1 is a following release and requires all `INT-*`, `IDEM-*`, `EXT-*`, `WH-*`, `EXP-*`, and `SDK-*` gates relevant to implemented scope.
+
+## 14. Frontend and Zendesk-inspired workflow gates
+
+### UI-001 — Agent shell and responsive density
+
+- 1280, 1440, and 1920 deterministic visual snapshots.
+- global navigation, work navigation, ticket tabs, properties, conversation/composer, context panel follow docs 28~31 and 51.
+- at 1280, panels collapse without hiding critical status/ownership controls.
+- no Zendesk logo, screenshot, copied illustration, or wordmark is packaged.
+
+### UI-002 — Keyboard and focus
+
+- all primary ticket actions are keyboard reachable.
+- tab/menu/dialog/drawer semantics use accessible patterns.
+- focus is restored after modal/drawer close.
+- sticky composer/banner does not obscure focused content.
+- automated accessibility checks have no critical/serious issue, plus manual keyboard scenario.
+
+### UI-003 — Public/internal composer safety
+
+- visibility is visible in text, not color alone.
+- PUBLIC and INTERNAL drafts are separate.
+- switching ticket tabs/modes preserves drafts.
+- internal-note mode has a distinct accessible announcement.
+- failed/conflicted submit preserves draft and does not duplicate comment.
+
+### UI-004 — Workspace states
+
+For queue, ticket, customer, admin and audit screens:
+
+- loading, empty, validation, denied, not-found, server-error, stale/conflict states exist where applicable.
+- errors include a safe request ID and recovery action.
+- skeleton layout approximates final structure without recording access events.
+
+### UI-005 — Visual change control
+
+- screenshot fixtures use fixed Clock/data/fonts/animation.
+- intentional changes are reviewed against task-level acceptance, not merely pixel approval.
+- Garden major upgrade includes license, accessibility and snapshot review.
+
+## 15. SLA/OLA gates
+
+### SLA-001 — Business time calculator
+
+- weekly interval, exception, holiday, timezone and DST fixtures pass.
+- overlapping/invalid schedule intervals are rejected.
+- server default timezone cannot change result.
+
+### SLA-002 — First reply semantics
+
+- first PUBLIC customer comment starts target.
+- INTERNAL note does not achieve target.
+- qualifying PUBLIC staff reply achieves once.
+- automated acknowledgement only counts when policy explicitly says so.
+
+### SLA-003 — Next-reply cycles
+
+- consecutive customer PUBLIC comments produce the documented reply cycle.
+- INTERNAL comments do not open or achieve a customer reply target.
+- repeated/replayed events do not duplicate cycles.
+- reopen behavior follows the metric glossary and policy version.
+
+### SLA-004 — Pause/status interval rebuild
+
+- status and assignment intervals rebuild from canonical ticket audits.
+- rebuild is idempotent and reconciles the current open interval.
+- pause/resume uses business-time boundaries and recorded schedule version.
+- out-of-order projection recovery converges to the same result.
+
+### SLA-005 — Policy snapshot and recalculation
+
+- target stores policy, policy version, schedule version, target minutes and calculation version.
+- editing policy does not rewrite historical targets.
+- explicit recalculation is versioned, idempotent and audited.
+- policy matching order is deterministic.
+
+### SLA-006 — Breach scanner recovery
+
+- multiple workers do not double-transition a target.
+- outage catch-up marks overdue targets exactly once.
+- read logic can identify overdue target before scanner materialization.
+- bounded batch/checkpoint/lease state is observable.
+
+### SLA-007 — Parent SLA and child OLA separation
+
+- child creation does not implicitly pause parent customer SLA.
+- child OLA is scoped to child/group rules and can be calculated independently.
+- solving child cannot achieve or solve a parent SLA target.
+- parent solve warning does not delete unfinished child OLA history.
+
+### SLA-008 — Reporting reconciliation
+
+- dashboard achieved/breached/excluded numerator and denominator match `docs/16-metric-glossary-draft.md`.
+- no-policy and excluded tickets are not silently counted as achieved.
+- selected timezone and business schedule version are visible.
+- drill-down reconciles to target instances for the same scope.
+
+## 16. Trigger and automation gates
+
+### AUT-001 — Typed condition truth table
+
+Every allowed operator/field combination has positive, negative, null, changed-from/to tests. Unsupported combinations are rejected before activation.
+
+### AUT-002 — Ordered evolving state
+
+- triggers execute in explicit position order.
+- later trigger sees earlier resulting state.
+- action evaluation uses one documented working state.
+- provenance identifies rule/version/root causation.
+
+### AUT-003 — No-op suppression and provenance
+
+- actions that would not change state are suppressed.
+- a trigger-originated mutation uses the normal Ticket command and one structured audit.
+- audit identifies rule, immutable version, source, correlation and causation.
+- repeated delivery cannot create duplicate comments or field events.
+
+### AUT-004 — Invariant and authorization failure
+
+- rule actions cannot bypass assignment, visibility, field or state invariants.
+- unsupported or unauthorized action fails explicitly and does not leave a partial mutation.
+- rule failure is observable and auditable without leaking secrets.
+- activation rejects references to unavailable fields/actions.
+
+### AUT-005 — Webhook post-commit boundary
+
+- trigger creates durable outbound intent and commits without outbound HTTP.
+- delivery failure/retry cannot rollback or re-run the original ticket command.
+- correlation survives n8n/Workato callback.
+- secret values are never interpolated into ticket text or ordinary logs.
+
+### AUT-006 — Safety and loop prevention
+
+- max depth/action/time budget is enforced.
+- repeated rule-version/state fingerprint stops a loop.
+- block/failure is visible and audited.
+- arbitrary SQL/SpEL/JavaScript/Kotlin/Python is impossible through the definition API.
+
+### AUT-007 — Dry run
+
+- simulation has zero ticket, audit, webhook, notification, analytics or external side effect.
+- preview explains matched conditions, proposed actions and rejected actions.
+- preview uses a declared ticket snapshot/version.
+- dry-run access is authorized and audited as an admin/security action where configured.
+
+### AUT-008 — Version lifecycle
+
+- activation freezes an immutable version.
+- reorder, deactivate, activate and rollback are audited.
+- rollback reactivates or copies a known version rather than mutating history.
+- concurrent admin edits cannot silently overwrite each other.
+
+### AUT-009 — Scheduled automation recovery
+
+- candidate query is bounded and indexed.
+- execution key prevents repeat in the same rule/ticket/window.
+- crash between claim, action and checkpoint converges safely.
+- multiple workers, downtime catch-up and disabled-rule races are covered.
+
+## 17. Analytics and export gates
+
+### ANA-001 — Canonical reconciliation
+
+Ticket, update, interval, SLA, automation and integration facts reconcile to deterministic source fixtures with documented calculation version.
+
+### ANA-002 — Historical backlog
+
+- changing current ticket status does not rewrite prior snapshot.
+- snapshot job is idempotent, backfillable and checkpointed.
+- delayed/missing snapshot is observable.
+- reprocessing the same instant/version does not double count.
+
+### ANA-003 — Time and reopen semantics
+
+- created/solved/reopened grouping follows the selected reporting timezone.
+- first reply, resolution and reopen definitions match docs 16 and 46.
+- business-minute measures use the recorded schedule version.
+- p50/p90/p95 calculation has known fixture output and sample count.
+
+### ANA-004 — SLA reconciliation
+
+- SLA achieved/breached/excluded counts reconcile to `SlaTargetInstance` fixtures.
+- target metric and policy version are filterable.
+- no-policy tickets are separated from failed tickets.
+- ticket drill-down returns the same target population as the tile.
+
+### ANA-005 — Permission-safe drill-down
+
+- aggregate uses only authorized scope or explicitly labels a broader pre-authorized scope.
+- drill-down never reveals inaccessible ticket ID, customer, comment or audit data.
+- protected access/security datasets use separate permissions.
+- permission changes are honored on every drill-down/export request.
+
+### ANA-006 — Accessible dashboard
+
+- every chart has equivalent table or textual summary.
+- no-data, loading, stale, error and no-permission states are distinct.
+- keyboard and screen-reader labels communicate series, value and filters.
+- color is not the only encoding of status or comparison.
+
+### ANA-007 — Export
+
+- field allowlist and actor permission snapshot are enforced.
+- artifact is encrypted/private, expiring and audited.
+- large export is asynchronous, bounded and cancellable.
+- snapshot/incremental duplicate, cursor and tombstone semantics are tested.
+
+### ANA-008 — Query, checkpoint and rebuild evidence
+
+- primary dashboard query plans are captured at fixture scale.
+- projection checkpoint/rebuild resumes after failure and reconciles to canonical data.
+- rebuild is versioned and can run without corrupting the active projection.
+- operational command path remains within documented performance budget during projection work.
+
+## 18. Attachment, content, and channel gates
+
+### FILE-001 — Upload limits and streaming bounds
+
+- size, count, extension and MIME-family limits are enforced server-side.
+- upload streams to quarantine/object storage without buffering unbounded bytes in memory.
+- decompression/archive policy prevents zip-bomb or nested-archive abuse.
+- rejected uploads leave no publicly accessible object.
+
+### FILE-002 — Rich-text XSS sanitization
+
+- the canonical format and renderer pass a maintained XSS payload corpus.
+- scripts, event handlers, unsafe protocols and unapproved attributes are removed.
+- client rendering is no less strict than server persistence.
+- deterministic plain-text/search representation is generated.
+
+### FILE-003 — Public/internal attachment isolation
+
+- customer cannot fetch an INTERNAL attachment by guessed ID, copied URL or API path.
+- authorization is rechecked when issuing a short-lived URL or streaming bytes.
+- attachment visibility follows its linked comment.
+- webhook/export excludes internal attachment content unless explicitly authorized.
+
+### FILE-004 — Unsafe-file quarantine
+
+- unscanned, scan-failed, infected or policy-blocked objects cannot inline or download.
+- quarantine and scan states are visible to authorized staff.
+- scan retries and object cleanup are idempotent.
+- content type/disposition prevent active-content execution.
+
+### FILE-005 — Privileged redaction
+
+- redaction requires dedicated permission and reason.
+- redaction is a distinct command, not ordinary comment edit/delete.
+- customer, staff, search and export projections honor redaction.
+- protected original-content handling follows explicit retention/key policy and is audited.
+
+### FILE-006 — File access, deletion and retention audit
+
+- upload, link, view, download, quarantine, delete and failure transitions are recorded as required.
+- ordinary audit metadata never contains file bytes or full sensitive body.
+- object lifecycle and DB metadata converge after retry/failure.
+- backup/restore and retention tests include object storage.
+
+### CHN-001 — Authenticated inbound provider boundary
+
+- provider ingress is authenticated by signature, mTLS, private network or documented equivalent.
+- replay window, body-size and rate limits are enforced.
+- provider credentials and raw payloads are not written to ordinary logs.
+- unauthenticated input cannot create a ticket/comment.
+
+### CHN-002 — Inbound deduplication
+
+- the same provider/message identifier creates exactly one canonical comment.
+- concurrent duplicate deliveries converge to one result.
+- deduplication survives process crash and retry.
+- duplicate handling is observable without duplicate customer notification.
+
+### CHN-003 — Thread-safe ticket association
+
+- signed reply token/reference maps to the correct ticket without enumeration.
+- ambiguous, expired or invalid association follows quarantine/reject policy.
+- sender identity and participant authorization are checked separately from threading.
+- an inbound reply cannot attach to an inaccessible/internal ticket by guessed subject/reference.
+
+### CHN-004 — Email HTML and remote-content safety
+
+- HTML uses the same or stricter sanitization policy as rich text.
+- tracking pixels/remote content follow explicit policy.
+- header/body/attachment limits are enforced.
+- quote trimming is presentation-only and does not silently destroy canonical evidence.
+
+### CHN-005 — Internal-note delivery isolation
+
+- INTERNAL comment never creates customer email/webhook/channel delivery.
+- notification template cannot read internal-only fields without explicit staff-only destination.
+- changing composer mode cannot carry internal draft into public send.
+- regression tests cover macros, triggers and retries.
+
+### CHN-006 — Outbound post-commit intent
+
+- public comment and TicketAudit commit with an outbound message intent, not a provider HTTP call.
+- provider outage cannot rollback or duplicate the comment.
+- recipient/template/version snapshots are retained for delivery investigation.
+- delivery worker is idempotent.
+
+### CHN-007 — Retry and resend idempotency
+
+- timeout/5xx retry cannot duplicate a provider message where idempotency is available.
+- manual resend is audited and does not create a second comment.
+- bounce/permanent failure is terminal according to policy.
+- attempt history and next retry are visible.
+
+### CHN-008 — Recipient and header injection controls
+
+- To/CC/BCC are derived from authorized ticket participants and explicit policy.
+- CR/LF/header injection and malformed addresses are rejected.
+- internal recipients are never exposed to customer recipients.
+- unverified contact cannot be selected silently.
+
+### CHN-009 — Delivery observability and audit
+
+- queued, sending, sent, failed and bounced states are queryable.
+- agent sees failure near the affected public comment and operations queue.
+- sensitive payload is not duplicated in operational logs.
+- correlation links ticket comment, notification intent and provider attempt.
+
+### CHN-010 — Real-time contract before chat
+
+- message ordering, session identity, reconnect, transcript finalization and delivery acknowledgement are specified before chat implementation.
+- polling comments is not presented as equivalent to a real-time channel.
+- out-of-order/duplicate message tests exist.
+- session closure preserves canonical transcript and audit.
+
+### CHN-011 — Channel permission and identity mapping
+
+- channel-specific identity maps to Customer/participant explicitly.
+- supported reply channel is authorized and visible to the agent.
+- channel switch cannot send to an unverified or unintended identity.
+- permissions are rechecked at send time.
+
+### CHN-012 — Backpressure and scale evidence
+
+- load test establishes connection/message/worker limits before WebSocket or broker architecture changes.
+- bounded queues, overload response and retry policy are documented.
+- operational metrics expose lag, disconnect and delivery failure.
+- WebFlux/Kafka/Redis introduction requires measured evidence and ADR.
+
+## 19. Self-hosted operations gates
+
+### OPS-001 — Fresh install and upgrade
+
+- documented Compose install starts from empty volumes.
+- supported previous release upgrades through Flyway without manual data edits.
+- failed migration has backup/forward-fix recovery instructions.
+
+### OPS-002 — Backup and restore
+
+- PostgreSQL and enabled object storage are backed up consistently.
+- restore drill produces a working login, ticket, audit, attachment/reference sample.
+- restore point, duration and data-loss window are recorded.
+
+### OPS-003 — Secrets and bootstrap
+
+- no default production password/secret.
+- first admin bootstrap is one-time and auditable.
+- session/API/webhook/mail/object-storage secrets can be rotated.
+- `.env.example` contains no real secret.
+
+### OPS-004 — Health and observability
+
+- liveness/readiness distinguish process, DB, migration and required dependency states.
+- logs carry request/correlation IDs but no protected content.
+- metrics/alerts cover error rate, audit-write failure, outbox backlog, job lag and disk/storage risk.
+
+### OPS-005 — Retention and maintenance
+
+- retention jobs are dry-runnable, bounded, idempotent and audited.
+- legal hold/exclusion works where enabled.
+- operator can see pending migrations, failed jobs, dead letters and backup age.

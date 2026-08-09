@@ -1,0 +1,96 @@
+version: "0.5"
+surfaces:
+  customer:
+    source: api/core-api-outline-v1.yaml
+    actor: [anonymous, customer]
+    phase: core_mvp_and_p1
+    endpoints:
+      - method: POST
+        path: "/api/v1/requests"
+        command: CreateAnonymousRequest
+        audit: TICKET_CREATED
+      - method: GET
+        path: "/api/v1/requests/{ticketNumber}"
+        query: CustomerRequestProjection
+        audit: optional_customer_access
+      - method: POST
+        path: "/api/v1/requests/{ticketNumber}/comments"
+        phase: p1
+        command: AddCustomerPublicComment
+      - method: GET
+        path: "/api/v1/customer/requests"
+        phase: p1
+        query: CustomerRequestList
+  agent:
+    source: api/core-api-outline-v1.yaml
+    actor: [agent, admin]
+    phase: core_mvp
+    endpoints:
+      - method: GET
+        path: "/api/v1/agent/views/{viewKey}/tickets"
+        query: TicketViewPage
+      - method: POST
+        path: "/api/v1/agent/tickets"
+        command: CreateAgentTicket
+      - method: GET
+        path: "/api/v1/agent/tickets/{ticketNumber}"
+        query: AgentTicketProjection
+        audit: TICKET_VIEWED
+      - method: PATCH
+        path: "/api/v1/agent/tickets/{ticketNumber}"
+        command: UpdateTicket
+        audit: structured_ticket_audit
+      - method: POST
+        path: "/api/v1/agent/tickets/{ticketNumber}/transfer"
+        command: TransferTicket
+      - method: POST
+        path: "/api/v1/agent/tickets/{ticketNumber}/children"
+        command: CreateChildTicket
+      - method: GET
+        path: "/api/v1/agent/search"
+        query: AgentSearch
+        audit: SEARCH_EXECUTED
+  audit:
+    source: api/core-api-outline-v1.yaml
+    actor: [security_auditor, authorized_admin]
+    phase: portfolio_gate
+    endpoints:
+      - method: GET
+        path: "/api/v1/audit/activities"
+        query: UnifiedAuditExplorer
+        audit: AUDIT_LOG_VIEWED
+      - method: POST
+        path: "/api/v1/audit/activities/{id}/reveal"
+        command: RevealProtectedAuditData
+        audit: AUDIT_SENSITIVE_CONTENT_REVEALED
+      - method: POST
+        path: "/api/v1/audit/exports"
+        command: RequestAuditExport
+        audit: AUDIT_EXPORT_REQUESTED
+  platform:
+    actor: [integration_client]
+    phase: integration_v1
+    source: api/platform-api-outline-v1.yaml
+  automation:
+    actor: [admin]
+    phase: p4
+    endpoints:
+      - method: GET
+        path: "/api/v1/admin/triggers"
+        query: TriggerList
+      - method: POST
+        path: "/api/v1/admin/triggers"
+        command: CreateTriggerDraft
+      - method: POST
+        path: "/api/v1/admin/triggers/{id}/simulate"
+        command: SimulateTrigger
+  analytics:
+    actor: [agent, admin]
+    phase: p5
+    endpoints:
+      - method: GET
+        path: "/api/v1/analytics/overview"
+        query: AnalyticsOverview
+      - method: POST
+        path: "/api/v1/exports"
+        command: RequestSnapshotExport

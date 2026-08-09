@@ -1,0 +1,227 @@
+# Authorization and Permission Matrix
+
+## 1. 원칙
+
+화면 숨김은 권한이 아니다. 모든 resource 접근은 server-side policy로 검사하고, UI는 permission explanation을 받아 사용자가 왜 보거나 못 보는지 설명한다.
+
+권한 결정 입력:
+
+```text
+actor type and status
+role/grants/scopes
+resource group/assignee/requester
+active group memberships
+ticket relation
+field/comment visibility
+integration resource constraints
+requested operation
+```
+
+## 2. Actors
+
+- `CUSTOMER_ANONYMOUS`
+- `CUSTOMER_ACCOUNT`
+- `STAFF_AGENT`
+- `STAFF_ADMIN`
+- `STAFF_SECURITY_AUDITOR`
+- `INTEGRATION_CLIENT`
+- `TRIGGER`
+- `AUTOMATION`
+- `SYSTEM`
+
+## 3. Core role matrix
+
+Legend: `A` allowed, `C` conditional, `D` denied.
+
+| Operation | Customer anon | Customer acct | Agent | Admin | Security Auditor | Integration client |
+|---|---:|---:|---:|---:|---:|---:|
+| create web request | C | A | D | D | D | D |
+| read own public request | token C | own A | D | D | D | D |
+| add own public reply | later C | own A | D | D | D | D |
+| list staff ticket queue | D | D | C | A | D by default | scope C |
+| read staff ticket | D | D | C | A | D by default | scope+constraint C |
+| create staff ticket | D | D | C | A | D | scope C |
+| add PUBLIC comment | D | own only | C | A | D | explicit scope C |
+| add INTERNAL comment | D | D | C | A | D | scope C |
+| update fields | D | limited later | C | A | D | scope+field C |
+| transfer | D | D | C | A | D | explicit scope C |
+| create child | D | D | C | A | D | explicit scope C |
+| manage staff/groups | D | D | D | A | D | D |
+| read Audit Explorer | D | D | D | explicit grant C | A | D |
+| reveal protected audit content | D | D | D | explicit C | separate grant C | D |
+| manage integration client | D | D | D | A | D | D |
+
+## 4. Agent ticket scope
+
+MVP policy:
+
+- active Agent can read/write tickets in active groups they belong to;
+- assigned Agent retains access while active and membership valid;
+- relationship grant permits child assignee/group to read parent;
+- Admin can read/write all operational tickets;
+- Agent cannot read arbitrary tickets outside scope by guessing ID.
+
+Future configurable scope:
+
+```text
+ALL_TICKETS
+OWN_GROUPS
+ASSIGNED_ONLY
+EXPLICIT_GROUP_MATRIX
+```
+
+## 5. Group access matrix
+
+Post-MVP admin policy:
+
+| Grant | Meaning |
+|---|---|
+| `NONE` | no ticket metadata/content |
+| `READ` | read staff projection and comments; no mutation |
+| `READ_WRITE` | run commands allowed by other grants |
+
+`READ_WRITE` does not automatically grant:
+
+- staff/admin settings
+- protected customer PII
+- Audit Explorer
+- public reply if channel policy forbids
+- export
+- redaction
+
+## 6. Parent/child relation authorization
+
+For child ticket C with parent P:
+
+- C assignee and C group `READ` members can read P staff projection.
+- They cannot mutate P unless group policy independently grants it.
+- P assignee can read C because P owns the collaboration relationship.
+- Customer cannot infer relation existence.
+- Relation deletion is admin/authorized workflow action and audited.
+
+## 7. Comment visibility
+
+| Projection | PUBLIC | INTERNAL |
+|---|---:|---:|
+| customer anonymous/account | yes, own request only | never |
+| staff ticket reader | yes | yes |
+| integration read | scope/field policy | separate scope, default deny or explicit |
+| webhook/export | event subscription and field policy | default redacted/metadata-only unless explicit |
+| analytics | body excluded by default | body excluded by default |
+
+Never filter internal comments only in the browser.
+
+## 8. Customer PII permissions
+
+Separate grants:
+
+```text
+customer:basic:read
+customer:contact:read
+customer:history:read
+customer:export
+customer:anonymize
+```
+
+Queue rows should use minimal requester label without full-profile access event. Opening full profile requires contact/history permission and emits audit.
+
+## 9. Audit permissions
+
+```text
+audit:activity:read
+audit:ticket-change:read
+audit:access:read
+audit:admin-security:read
+audit:integration:read
+audit:comment-content:reveal
+audit:search-query:reveal
+audit:export
+```
+
+Protected reveal requires:
+
+- specific permission
+- reason
+- optional reauthentication/MFA per operator policy
+- no-store response
+- self-audit event
+
+## 10. Integration scopes
+
+Baseline vocabulary:
+
+```text
+tickets:read
+tickets:create
+tickets:update
+tickets:comment:internal
+tickets:comment:public
+external-references:read
+external-references:write
+customers:basic:read
+customers:contact:read
+exports:read
+webhooks:manage
+```
+
+Effective permission:
+
+```text
+scope ∩ resource constraint ∩ field policy ∩ resource state
+```
+
+Constraints:
+
+- allowed group IDs
+- allowed external system keys/object types
+- allowed fields
+- allowed comment visibility
+- allowed ticket kinds
+- optional network/IP policy
+
+## 11. Admin capabilities
+
+Admin role is not automatically Security Auditor in stricter deployments. Initial self-hosted MVP may allow Admin to explicitly receive audit read grants, but decision and audit must be visible.
+
+High-risk actions:
+
+- role/grant change
+- API key issuance
+- webhook secret rotation
+- retention change
+- protected audit reveal
+- export
+- content redaction/anonymization
+
+These require reauthentication/MFA when implemented and always create admin security audit.
+
+## 12. Permission explanation
+
+Agent UI can receive safe denial reason codes:
+
+```text
+NOT_GROUP_MEMBER
+READ_ONLY_GROUP
+TICKET_OUT_OF_SCOPE
+COMMENT_VISIBILITY_NOT_ALLOWED
+FIELD_NOT_WRITABLE
+AUDIT_PERMISSION_REQUIRED
+CUSTOMER_IDENTITY_NOT_VERIFIED
+```
+
+Do not leak existence of inaccessible ticket/customer to untrusted actors; use generic not-found where needed.
+
+## 13. Tests
+
+For every endpoint/query/command:
+
+- positive role test
+- wrong role
+- disabled actor
+- direct ID guess
+- inactive membership
+- relation grant positive/negative
+- field-level restriction
+- customer internal leak regression
+- integration scope + constraint intersection
+- audit success/denial semantics

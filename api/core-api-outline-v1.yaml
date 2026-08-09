@@ -1,0 +1,1899 @@
+openapi: 3.1.0
+info:
+  title: Deskseed Core API Outline
+  version: 0.5.0-outline
+  description: Customer, staff, admin, and audit API contract outline. Operations become committed only after the freeze process
+    in docs/39-api-contract-freeze-plan.md.
+servers:
+- url: http://localhost:8080
+  description: Local development
+tags:
+- name: Customer Requests
+- name: Customer Portal
+- name: Staff Session
+- name: Agent Views
+- name: Agent Tickets
+- name: Agent Search
+- name: Admin
+- name: Audit
+paths:
+  /api/v1/requests:
+    post:
+      summary: Submit an anonymous customer request
+      operationId: createAnonymousRequest
+      tags:
+      - Customer Requests
+      x-deskseed-phase: M1
+      x-deskseed-requirements:
+      - REQ-TKT-001
+      - REQ-TKT-002
+      - REQ-TKT-006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnonymousRequest'
+      responses:
+        '201':
+          description: Request created
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateAnonymousRequestResult'
+        '400': &id001
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409': *id001
+        '429': *id001
+        '500': *id001
+  /api/v1/requests/{ticketNumber}:
+    get:
+      summary: Read a customer-safe request projection
+      operationId: getAnonymousRequest
+      tags:
+      - Customer Requests
+      x-deskseed-phase: M1
+      x-deskseed-requirements:
+      - REQ-TKT-003
+      - REQ-TKT-008
+      parameters:
+      - &id002
+        name: ticketNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - &id003
+        name: X-Request-Access-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+      responses:
+        '200':
+          description: Public request detail
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerRequestDetail'
+        '404': *id001
+        '410': *id001
+        '429': *id001
+  /api/v1/requests/{ticketNumber}/comments:
+    post:
+      summary: Add a public customer follow-up
+      operationId: addCustomerRequestComment
+      tags:
+      - Customer Requests
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-003
+      - REQ-TKT-005
+      - REQ-TKT-008
+      parameters:
+      - *id002
+      - *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCustomerComment'
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicComment'
+        '400': *id001
+        '404': *id001
+        '409': *id001
+        '429': *id001
+  /api/v1/customer/requests:
+    get:
+      summary: List requests for a verified customer account
+      operationId: listCustomerRequests
+      tags:
+      - Customer Portal
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-TKT-005
+      security:
+      - customerSession: []
+      parameters:
+      - name: status
+        in: query
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+      responses:
+        '200':
+          description: Request page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerRequestPage'
+        '401': *id001
+  /api/v1/agent/session:
+    post:
+      summary: Create a staff session
+      operationId: createStaffSession
+      tags:
+      - Staff Session
+      x-deskseed-phase: M2
+      x-deskseed-requirements:
+      - REQ-TKT-007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffLogin'
+      responses:
+        '204':
+          description: Session created
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        '400': *id001
+        '401': *id001
+        '429': *id001
+    delete:
+      summary: Destroy the current staff session
+      operationId: deleteStaffSession
+      tags:
+      - Staff Session
+      x-deskseed-phase: M2
+      x-deskseed-requirements:
+      - REQ-TKT-007
+      security:
+      - staffSession: []
+      responses:
+        '204':
+          description: Session destroyed
+        '401': *id001
+  /api/v1/agent/me:
+    get:
+      summary: Read current staff identity and capabilities
+      operationId: getCurrentStaff
+      tags:
+      - Staff Session
+      x-deskseed-phase: M2
+      x-deskseed-requirements:
+      - REQ-TKT-007
+      security:
+      - staffSession: []
+      responses:
+        '200':
+          description: Current staff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentStaff'
+        '401': *id001
+  /api/v1/agent/views:
+    get:
+      summary: List accessible saved views
+      operationId: listAgentViews
+      tags:
+      - Agent Views
+      x-deskseed-phase: M2
+      x-deskseed-requirements:
+      - REQ-UI-002
+      security:
+      - staffSession: []
+      responses:
+        '200':
+          description: Views
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SavedView'
+        '401': *id001
+        '403': *id001
+  /api/v1/agent/views/{viewKey}/tickets:
+    get:
+      summary: List tickets in a saved view
+      operationId: listTicketsInView
+      tags:
+      - Agent Views
+      x-deskseed-phase: M2
+      x-deskseed-requirements:
+      - REQ-UI-002
+      - REQ-TKT-010
+      security:
+      - staffSession: []
+      parameters:
+      - name: viewKey
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: sort
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Ticket page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketSummaryPage'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '404': *id001
+  /api/v1/agent/tickets:
+    post:
+      summary: Create a staff-originated ticket
+      operationId: createAgentTicket
+      tags:
+      - Agent Tickets
+      x-deskseed-phase: M3
+      x-deskseed-requirements:
+      - REQ-TKT-009
+      - REQ-TKT-006
+      security:
+      - staffSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentTicket'
+      responses:
+        '201':
+          description: Ticket created
+          headers:
+            Location:
+              schema:
+                type: string
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketCommandResult'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '409': *id001
+  /api/v1/agent/tickets/{ticketNumber}:
+    get:
+      summary: Read an agent ticket projection
+      operationId: getAgentTicket
+      tags:
+      - Agent Tickets
+      x-deskseed-phase: M2
+      x-deskseed-requirements:
+      - REQ-TKT-007
+      - REQ-AUD-003
+      - REQ-UI-003
+      security:
+      - staffSession: []
+      parameters:
+      - *id002
+      - &id005
+        name: X-Interaction-Id
+        in: header
+        required: true
+        description: Semantic user interaction identifier; background revalidation reuses the same value.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Agent ticket detail
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTicketDetail'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '503': *id001
+  /api/v1/agent/tickets/{ticketNumber}/commands:
+    post:
+      summary: Apply one atomic ticket update command
+      operationId: updateAgentTicket
+      tags:
+      - Agent Tickets
+      x-deskseed-phase: M3
+      x-deskseed-requirements:
+      - REQ-TKT-010
+      - REQ-TKT-013
+      - REQ-TKT-014
+      - REQ-AUD-001
+      security:
+      - staffSession: []
+      parameters:
+      - *id002
+      - &id004
+        name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Ticket ETag returned by the latest read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketCommand'
+      responses:
+        '200':
+          description: Command applied
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketCommandResult'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '412': *id001
+  /api/v1/agent/tickets/{ticketNumber}/transfer:
+    post:
+      summary: Transfer ticket ownership to a group or agent
+      operationId: transferAgentTicket
+      tags:
+      - Agent Tickets
+      x-deskseed-phase: M4
+      x-deskseed-requirements:
+      - REQ-TKT-011
+      - REQ-TKT-012
+      security:
+      - staffSession: []
+      parameters:
+      - *id002
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferTicketCommand'
+      responses:
+        '200':
+          description: Transfer applied
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketCommandResult'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '412': *id001
+  /api/v1/agent/tickets/{ticketNumber}/children:
+    post:
+      summary: Create an internal child ticket
+      operationId: createChildTicket
+      tags:
+      - Agent Tickets
+      x-deskseed-phase: M5
+      x-deskseed-requirements:
+      - REQ-CHILD-001
+      - REQ-CHILD-002
+      - REQ-CHILD-003
+      security:
+      - staffSession: []
+      parameters:
+      - *id002
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChildTicketCommand'
+      responses:
+        '201':
+          description: Child created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateChildTicketResult'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '412': *id001
+  /api/v1/agent/tickets/{ticketNumber}/audits:
+    get:
+      summary: Read ticket-local change history
+      operationId: listTicketAudits
+      tags:
+      - Agent Tickets
+      x-deskseed-phase: M3
+      x-deskseed-requirements:
+      - REQ-AUD-001
+      security:
+      - staffSession: []
+      parameters:
+      - *id002
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: Audit page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketAuditPage'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+  /api/v1/agent/search:
+    get:
+      summary: Search accessible tickets and customers
+      operationId: searchAgentWorkspace
+      tags:
+      - Agent Search
+      x-deskseed-phase: R1
+      x-deskseed-requirements:
+      - REQ-AUD-004
+      - REQ-SRCH-001
+      security:
+      - staffSession: []
+      parameters:
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 500
+      - name: scope
+        in: query
+        schema:
+          type: string
+          enum:
+          - TICKETS
+          - CUSTOMERS
+          default: TICKETS
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+      - *id005
+      responses:
+        '200':
+          description: Search result page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultPage'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '503': *id001
+  /api/v1/admin/staff:
+    get:
+      summary: List staff accounts
+      operationId: listStaffAccounts
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PROD-002
+      security:
+      - staffSession: []
+      responses:
+        '200':
+          description: Staff list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StaffAccount'
+        '401': *id001
+        '403': *id001
+    post:
+      summary: Create a staff account
+      operationId: createStaffAccount
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PROD-002
+      security:
+      - staffSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStaffAccount'
+      responses:
+        '201':
+          description: Staff created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffAccount'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '409': *id001
+  /api/v1/admin/groups:
+    get:
+      summary: List groups
+      operationId: listGroups
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      responses:
+        '200':
+          description: Group list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+        '401': *id001
+        '403': *id001
+    post:
+      summary: Create a group
+      operationId: createGroup
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroup'
+      responses:
+        '201':
+          description: Group created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '409': *id001
+  /api/v1/admin/settings/{key}:
+    get:
+      summary: Read an allowed admin setting
+      operationId: getAdminSetting
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSetting'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+    patch:
+      summary: Change an allowed admin setting
+      operationId: updateAdminSetting
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminSetting'
+      responses:
+        '200':
+          description: Setting updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSetting'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': *id001
+        '412': *id001
+  /api/v1/audit/activities:
+    get:
+      summary: Query the unified audit explorer projection
+      operationId: listAuditActivities
+      tags:
+      - Audit
+      x-deskseed-phase: R2
+      x-deskseed-requirements:
+      - REQ-AUD-002
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: ledger
+        in: query
+        schema:
+          type: string
+      - name: action
+        in: query
+        schema:
+          type: string
+      - name: actorId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: ticketNumber
+        in: query
+        schema:
+          type: integer
+          format: int64
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - *id005
+      responses:
+        '200':
+          description: Audit activity page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditActivityPage'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '503': *id001
+  /api/v1/audit/activities/{activityId}/reveal:
+    post:
+      summary: Reveal protected audit content with a reason
+      operationId: revealAuditActivityContent
+      tags:
+      - Audit
+      x-deskseed-phase: R2
+      x-deskseed-requirements:
+      - REQ-AUD-005
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - name: activityId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProtectedRevealRequest'
+      responses:
+        '200':
+          description: Protected content
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectedRevealResult'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '503': *id001
+  /api/v1/audit/exports:
+    post:
+      summary: Request an asynchronous audit export
+      operationId: createAuditExport
+      tags:
+      - Audit
+      x-deskseed-phase: R2
+      x-deskseed-requirements:
+      - REQ-AUD-006
+      - REQ-EXP-001
+      security:
+      - staffSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAuditExport'
+      responses:
+        '202':
+          description: Export accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJob'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '429': *id001
+components:
+  securitySchemes:
+    staffSession:
+      type: apiKey
+      in: cookie
+      name: DESKSEED_SESSION
+    customerSession:
+      type: apiKey
+      in: cookie
+      name: DESKSEED_CUSTOMER_SESSION
+  schemas:
+    Problem:
+      type: object
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        requestId:
+          type: string
+        code:
+          type: string
+        fieldErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+        currentVersion:
+          type: integer
+          format: int64
+        conflictingFields:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+    FieldError:
+      type: object
+      required:
+      - field
+      - message
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+        code:
+          type: string
+    CreateAnonymousRequest:
+      type: object
+      required:
+      - name
+      - email
+      - subject
+      - message
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        message:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        privacyConsent:
+          type: boolean
+    CreateAnonymousRequestResult:
+      type: object
+      required:
+      - ticketNumber
+      - accessToken
+      - createdAt
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        accessToken:
+          type: string
+          description: Returned only at creation; server stores a hash.
+        createdAt:
+          type: string
+          format: date-time
+    AddCustomerComment:
+      type: object
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+    PublicComment:
+      type: object
+      required:
+      - id
+      - authorDisplayName
+      - body
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorDisplayName:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicAttachment'
+    PublicAttachment:
+      type: object
+      required:
+      - id
+      - fileName
+      - sizeBytes
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        downloadUrl:
+          type: string
+          format: uri
+    CustomerRequestDetail:
+      type: object
+      required:
+      - ticketNumber
+      - subject
+      - status
+      - createdAt
+      - updatedAt
+      - comments
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicComment'
+    CustomerRequestPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerRequestDetail'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+    StaffLogin:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    CurrentStaff:
+      type: object
+      required:
+      - id
+      - displayName
+      - roles
+      - capabilities
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+    SavedView:
+      type: object
+      required:
+      - key
+      - name
+      - scope
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        scope:
+          type: string
+          enum:
+          - PERSONAL
+          - SHARED
+          - SYSTEM
+        categoryPath:
+          type: array
+          items:
+            type: string
+        ticketCount:
+          type:
+          - integer
+          - 'null'
+    TicketStatus:
+      type: string
+      enum:
+      - NEW
+      - OPEN
+      - PENDING
+      - SOLVED
+    TicketPriority:
+      type: string
+      enum:
+      - LOW
+      - NORMAL
+      - HIGH
+      - URGENT
+    TicketVisibility:
+      type: string
+      enum:
+      - PUBLIC
+      - INTERNAL
+    ActorSummary:
+      type: object
+      required:
+      - type
+      - displayName
+      properties:
+        id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        type:
+          type: string
+          enum:
+          - CUSTOMER
+          - STAFF
+          - INTEGRATION_CLIENT
+          - TRIGGER
+          - AUTOMATION
+          - SYSTEM
+        displayName:
+          type: string
+    TicketSummary:
+      type: object
+      required:
+      - ticketNumber
+      - subject
+      - status
+      - priority
+      - requester
+      - updatedAt
+      - version
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        priority:
+          $ref: '#/components/schemas/TicketPriority'
+        requester:
+          $ref: '#/components/schemas/ActorSummary'
+        group:
+          $ref: '#/components/schemas/GroupRef'
+        assignee:
+          $ref: '#/components/schemas/StaffRef'
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        isChild:
+          type: boolean
+        openChildCount:
+          type: integer
+        sla:
+          $ref: '#/components/schemas/SlaBadge'
+    TicketSummaryPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketSummary'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+        totalApproximate:
+          type:
+          - integer
+          - 'null'
+          format: int64
+    StaffRef:
+      type:
+      - object
+      - 'null'
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+    GroupRef:
+      type:
+      - object
+      - 'null'
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    SlaBadge:
+      type:
+      - object
+      - 'null'
+      properties:
+        metric:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - AT_RISK
+          - ACHIEVED
+          - BREACHED
+        dueAt:
+          type: string
+          format: date-time
+    AgentComment:
+      type: object
+      required:
+      - id
+      - visibility
+      - actor
+      - body
+      - createdAt
+      - source
+      properties:
+        id:
+          type: string
+          format: uuid
+        visibility:
+          $ref: '#/components/schemas/TicketVisibility'
+        actor:
+          $ref: '#/components/schemas/ActorSummary'
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+        redactionState:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicAttachment'
+    AgentTicketDetail:
+      type: object
+      required:
+      - ticket
+      - comments
+      - capabilities
+      - context
+      properties:
+        ticket:
+          $ref: '#/components/schemas/TicketSummary'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentComment'
+        capabilities:
+          type: array
+          items:
+            type: string
+        context:
+          $ref: '#/components/schemas/TicketContext'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommandWarning'
+    TicketContext:
+      type: object
+      properties:
+        customer:
+          type: object
+          additionalProperties: true
+        parent:
+          $ref: '#/components/schemas/TicketSummary'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketSummary'
+        externalReferences:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    CommentDraft:
+      type: object
+      required:
+      - visibility
+      - body
+      properties:
+        visibility:
+          $ref: '#/components/schemas/TicketVisibility'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+    TicketPatch:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        priority:
+          $ref: '#/components/schemas/TicketPriority'
+        groupId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        assigneeId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+    UpdateTicketCommand:
+      type: object
+      required:
+      - expectedVersion
+      - changedFields
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+        changedFields:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - subject
+            - status
+            - priority
+            - group
+            - assignee
+        patch:
+          $ref: '#/components/schemas/TicketPatch'
+        comment:
+          $ref: '#/components/schemas/CommentDraft'
+        clientCommandId:
+          type: string
+          format: uuid
+    TransferTicketCommand:
+      type: object
+      required:
+      - expectedVersion
+      - groupId
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+        groupId:
+          type: string
+          format: uuid
+        assigneeId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        reason:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+        clientCommandId:
+          type: string
+          format: uuid
+    CreateChildTicketCommand:
+      type: object
+      required:
+      - expectedVersion
+      - subject
+      - body
+      - groupId
+      - priority
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        groupId:
+          type: string
+          format: uuid
+        assigneeId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        priority:
+          $ref: '#/components/schemas/TicketPriority'
+        clientCommandId:
+          type: string
+          format: uuid
+    CommandWarning:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        relatedTicketNumbers:
+          type: array
+          items:
+            type: integer
+            format: int64
+    TicketCommandResult:
+      type: object
+      required:
+      - ticketNumber
+      - version
+      - auditId
+      - warnings
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        version:
+          type: integer
+          format: int64
+        auditId:
+          type: string
+          format: uuid
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommandWarning'
+        ticket:
+          $ref: '#/components/schemas/TicketSummary'
+    CreateAgentTicket:
+      type: object
+      required:
+      - requester
+      - subject
+      - firstComment
+      - priority
+      properties:
+        requester:
+          type: object
+          required:
+          - name
+          - email
+          properties:
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        firstComment:
+          $ref: '#/components/schemas/CommentDraft'
+        priority:
+          $ref: '#/components/schemas/TicketPriority'
+        groupId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        assigneeId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+    CreateChildTicketResult:
+      type: object
+      required:
+      - parentTicketNumber
+      - childTicketNumber
+      - auditId
+      properties:
+        parentTicketNumber:
+          type: integer
+          format: int64
+        childTicketNumber:
+          type: integer
+          format: int64
+        auditId:
+          type: string
+          format: uuid
+    TicketAuditEvent:
+      type: object
+      required:
+      - sequence
+      - type
+      properties:
+        sequence:
+          type: integer
+        type:
+          type: string
+        field:
+          type:
+          - string
+          - 'null'
+        before: {}
+        after: {}
+        metadata:
+          type: object
+          additionalProperties: true
+    TicketAudit:
+      type: object
+      required:
+      - id
+      - ticketNumber
+      - actor
+      - source
+      - createdAt
+      - events
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticketNumber:
+          type: integer
+          format: int64
+        actor:
+          $ref: '#/components/schemas/ActorSummary'
+        source:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAuditEvent'
+    TicketAuditPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAudit'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+    SearchResult:
+      type: object
+      required:
+      - type
+      - id
+      - title
+      properties:
+        type:
+          type: string
+          enum:
+          - TICKET
+          - CUSTOMER
+        id:
+          type: string
+        title:
+          type: string
+        snippet:
+          type: string
+        ticketNumber:
+          type:
+          - integer
+          - 'null'
+          format: int64
+    SearchResultPage:
+      type: object
+      required:
+      - searchInteractionId
+      - items
+      properties:
+        searchInteractionId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+        resultCountApproximate:
+          type:
+          - integer
+          - 'null'
+    StaffAccount:
+      type: object
+      required:
+      - id
+      - email
+      - displayName
+      - roles
+      - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum:
+            - ADMIN
+            - AGENT
+            - SECURITY_AUDITOR
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - DISABLED
+    CreateStaffAccount:
+      type: object
+      required:
+      - email
+      - displayName
+      - roles
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+        groupIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    Group:
+      type: object
+      required:
+      - id
+      - name
+      - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - DISABLED
+        memberCount:
+          type: integer
+    CreateGroup:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    AdminSetting:
+      type: object
+      required:
+      - key
+      - valueType
+      - version
+      - secret
+      properties:
+        key:
+          type: string
+        valueType:
+          type: string
+        value: {}
+        secret:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        effectiveAt:
+          type: string
+          format: date-time
+    UpdateAdminSetting:
+      type: object
+      required:
+      - value
+      - reason
+      properties:
+        value: {}
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    AuditActivity:
+      type: object
+      required:
+      - id
+      - ledger
+      - action
+      - actor
+      - occurredAt
+      - outcome
+      properties:
+        id:
+          type: string
+          format: uuid
+        ledger:
+          type: string
+          enum:
+          - TICKET_CHANGE
+          - ACCESS_SEARCH
+          - ADMIN_SECURITY
+          - INTEGRATION_DELIVERY
+        action:
+          type: string
+        actor:
+          $ref: '#/components/schemas/ActorSummary'
+        occurredAt:
+          type: string
+          format: date-time
+        ticketNumber:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        resourceType:
+          type:
+          - string
+          - 'null'
+        resourceId:
+          type:
+          - string
+          - 'null'
+        fieldChanges:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAuditEvent'
+        outcome:
+          type: string
+        requestId:
+          type:
+          - string
+          - 'null'
+        correlationId:
+          type:
+          - string
+          - 'null'
+        protectedContentAvailable:
+          type: boolean
+    AuditActivityPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditActivity'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+    ProtectedRevealRequest:
+      type: object
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        contentTypes:
+          type: array
+          items:
+            type: string
+    ProtectedRevealResult:
+      type: object
+      required:
+      - activityId
+      - revealedAt
+      - content
+      properties:
+        activityId:
+          type: string
+          format: uuid
+        revealedAt:
+          type: string
+          format: date-time
+        content:
+          type: object
+          additionalProperties: true
+    CreateAuditExport:
+      type: object
+      required:
+      - format
+      - filters
+      - fields
+      - reason
+      properties:
+        format:
+          type: string
+          enum:
+          - CSV
+          - JSONL
+        filters:
+          type: object
+          additionalProperties: true
+        fields:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    ExportJob:
+      type: object
+      required:
+      - id
+      - status
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - EXPIRED
+        createdAt:
+          type: string
+          format: date-time
+        downloadUrl:
+          type:
+          - string
+          - 'null'
+          format: uri
+        expiresAt:
+          type:
+          - string
+          - 'null'
+          format: date-time

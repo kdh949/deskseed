@@ -34,6 +34,17 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-028 | app ticket sidebar is first extension location | provisional | real extension use case |
 | D-029 | embed SDK begins read/create, not full editor | provisional | external admin workflow evidence |
 
+| D-030 | Garden components with independent Deskseed branding | accepted | Garden/license or product identity changes |
+| D-031 | resizable three-panel Agent Workspace | accepted | measured workflow/usability failure |
+| D-032 | separate server/URL/draft/layout frontend state | accepted | state complexity evidence |
+| D-033 | views/tags/custom fields/macros/search after core commands | accepted | no revisit planned |
+| D-034 | SLA policy snapshots and rebuildable intervals | accepted | metric model evidence changes |
+| D-035 | typed ordered automation, no arbitrary code | accepted | isolated script runtime/security model approved |
+| D-036 | PostgreSQL read projections before external stores | accepted | measured functional/latency limits |
+| D-037 | private object storage attachment pipeline | accepted for P8 | attachment requirements change |
+| D-038 | email as Ticket/Comment channel adapter | accepted for P8 | channel model evidence changes |
+| D-039 | Docker Compose first supported self-hosted topology | accepted | Kubernetes demand and ops owner exist |
+
 ## How to use this register
 
 Before a Codex task:

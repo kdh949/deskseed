@@ -1,0 +1,134 @@
+# 요구사항 추적 매트릭스 (Requirement Traceability Matrix)
+
+## 1. 목적
+
+이 문서는 대화에서 확정된 제품 요구사항이 설계 문서, 구현 단계, 검증 기준 중 어디에 반영되어 있는지 추적한다. 기능을 추가하거나 범위를 바꿀 때 이 표를 먼저 수정한다.
+
+상태 정의:
+
+- `IMPLEMENTATION_READY`: 현재 문서만으로 첫 구현을 시작할 수 있다.
+- `BLUEPRINT_READY`: 장기 구조와 경계는 정해졌지만, 구현 직전에 정책값이나 API 계약을 동결해야 한다.
+- `PROVISIONAL`: 운영·법률·보안 정책의 최종 결정이 필요하다.
+- `DEFERRED`: 의도적으로 뒤 단계에 배치했다.
+
+## 2. 제품·배포·기술 요구사항
+
+| ID | 요구사항 | 상태 | 구현 단계 | 기준 문서 | 완료 증거 |
+|---|---|---:|---|---|---|
+| REQ-PROD-001 | 한 설치 인스턴스가 한 조직을 위한 self-hosted 서비스여야 한다 | IMPLEMENTATION_READY | M0 | 00, 03, 36 | Docker Compose 설치와 신규 인스턴스 부팅 |
+| REQ-PROD-002 | Zendesk와 유사한 고객지원 행동 모델을 갖는다 | IMPLEMENTATION_READY | 전 단계 | 00, 01, 02, 30 | E2E 업무 시나리오 |
+| REQ-TECH-001 | Kotlin/Spring/PostgreSQL 기반으로 시작한다 | IMPLEMENTATION_READY | M0 | 03, 22, 27 | 빌드·테스트 통과 |
+| REQ-TECH-002 | 모듈러 모놀리스로 시작하고 필요 시 이벤트·Kafka로 진화한다 | IMPLEMENTATION_READY | M0→P9 | 03, 34, 38 | Modulith 검증, 도입 ADR |
+| REQ-TECH-003 | React/TypeScript/Vite 프론트엔드를 사용한다 | IMPLEMENTATION_READY | M0 | 22, 28, 29 | 프론트 빌드·E2E |
+| REQ-PORT-001 | 먼저 작동하는 포트폴리오를 만들고 이후 성능·Kafka까지 깊게 확장한다 | IMPLEMENTATION_READY | 전체 | 05, 11, 27, 41 | 릴리스별 증거 문서 |
+
+## 3. 고객 문의와 티켓 처리
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
+| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 37 | 생성·조회 토큰 테스트 |
+| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37 | 내부 메모 비노출 E2E |
+| REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | BLUEPRINT_READY | P1 | 01, 37 | 설정별 계약 테스트 |
+| REQ-TKT-005 | 나중에 고객 계정 로그인과 기존 익명 티켓 연결이 가능해야 한다 | BLUEPRINT_READY | P1 | 02, 37 | 이메일 검증·계정 연결 테스트 |
+| REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
+| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | visibility 회귀 테스트 |
+| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002 |
+| REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39 | Agent create E2E |
+| REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트 |
+| REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34 | TKT-003 |
+| REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34 | Transfer E2E |
+| REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit |
+| REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34 | TKT-006 |
+| REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31 | 브라우저 E2E·시각 회귀 |
+
+## 4. 부모·자식 티켓 협업
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-CHILD-001 | 부모 티켓에서 내부 자식 티켓을 생성한다 | IMPLEMENTATION_READY | M5 | 01, 02, 30, 34 | TKT-004 |
+| REQ-CHILD-002 | 자식 티켓은 고객에게 완전히 숨겨진다 | IMPLEMENTATION_READY | M5 | 01, 33, 37 | 고객 API 비노출 |
+| REQ-CHILD-003 | 부모 소유권은 최초 상담사·그룹에 유지된다 | IMPLEMENTATION_READY | M5 | 02, 34 | ownership invariant |
+| REQ-CHILD-004 | 자식 담당자는 부모 대화 전체를 읽을 수 있다 | IMPLEMENTATION_READY | M5 | 30, 33 | parent read authorization |
+| REQ-CHILD-005 | 그룹별 NONE/READ/READ_WRITE 권한으로 확장한다 | BLUEPRINT_READY | P2 | 33, 38 | 정책 행렬 테스트 |
+| REQ-CHILD-006 | 미해결 자식이 있어도 부모 해결을 허용하되 경고한다 | IMPLEMENTATION_READY | M5 | 01, 30, 34 | TKT-005 |
+| REQ-CHILD-007 | 자식 해결은 부모 상태를 자동 변경하지 않는다 | IMPLEMENTATION_READY | M5 | 02, 34 | transition 회귀 테스트 |
+
+## 5. 변경·접근·보안 감사
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-AUD-001 | 누가 언제 어떤 티켓 내용을 어떻게 수정했는지 기록한다 | IMPLEMENTATION_READY | M3 | 19, 32, 34 | CHG-001~005 |
+| REQ-AUD-002 | 티켓별 열람 없이 전역 화면에서 변경 전후를 조회한다 | IMPLEMENTATION_READY | R2 | 19, 30, 39 | Audit Explorer E2E |
+| REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | ACC-001/002 |
+| REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34 | ACC-003/004 |
+| REQ-AUD-005 | 검색어 원문은 정책에 따라 마스킹·지문·암호화한다 | PROVISIONAL | R1 | 19, 23 | 원문 비노출·reveal 감사 |
+| REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | AUD-003/004 |
+| REQ-AUD-007 | Ticket change audit은 변경과 같은 트랜잭션에 기록한다 | IMPLEMENTATION_READY | M3 | 03, 19, 32 | CHG-001 |
+| REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ACC-002 |
+| REQ-AUD-009 | 감사 보존 기간·원문 공개 정책을 관리자 설정으로 관리한다 | PROVISIONAL | R2/P2 | 23, 36 | retention job·권한 테스트 |
+
+## 6. 외부 전산·API·SDK
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-INT-001 | 쇼핑몰·운영·어드민 전산이 사용할 Platform API를 제공한다 | BLUEPRINT_READY | I2 | 18, 20, 39 | OpenAPI contract test |
+| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1 | 18, 33 | INT-AUTH-001~004 |
+| REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20 | IDEM-001~004 |
+| REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | CONC-001 |
+| REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 32 | EXT-001~004 |
+| REQ-INT-006 | 외부 시스템에 signed webhook을 보낸다 | BLUEPRINT_READY | I5 | 18, 20, 38 | WH-001~005 |
+| REQ-INT-007 | n8n/Workato에서 webhook으로 자동화할 수 있다 | BLUEPRINT_READY | I5/I7 | 18, 38 | 예제 workflow smoke test |
+| REQ-INT-008 | TypeScript·Python·JVM SDK를 생성한다 | BLUEPRINT_READY | I6 | 20, 39 | SDK-001~003 |
+| REQ-INT-009 | Agent App SDK와 Embed SDK로 내부 전산에 UI를 연결한다 | BLUEPRINT_READY | P7 | 18, 28, 38 | sandbox/embed security test |
+| REQ-INT-010 | 증분 export와 snapshot export를 제공한다 | BLUEPRINT_READY | I7/P5 | 18, 20, 38 | EXP-001/002 |
+
+## 7. SLA·통계·자동화·검색·추출
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-SLA-001 | SLA 정책과 만족·위반 여부를 계산한다 | BLUEPRINT_READY | P3 | 12, 16, 44 | SLA-001~008 |
+| REQ-ANL-001 | Zendesk Explore 유사 통계와 대시보드를 제공한다 | BLUEPRINT_READY | P5 | 12, 16, 30, 46 | ANA-001~008 |
+| REQ-AUT-001 | 티켓 이벤트 조건 기반 trigger를 제공한다 | BLUEPRINT_READY | P4 | 12, 34, 45 | AUT-001~008 |
+| REQ-AUT-002 | 시간 경과 기반 automation을 제공한다 | BLUEPRINT_READY | P4 | 12, 45 | AUT-009 |
+| REQ-EXP-001 | 티켓 상세·변경 이력·필터 결과를 추출한다 | BLUEPRINT_READY | P5 | 18, 20, 30, 46 | ANA-007, EXP-001/002 |
+| REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | BLUEPRINT_READY | P6/P9 | 03, 11, 47 | SRCH verification suite |
+| REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35 | PERF-001~004 |
+
+
+## 8. 티켓 구성·파일·채널·확장 기능
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-CFG-001 | 태그와 조건 기반 saved view를 제공한다 | BLUEPRINT_READY | P2/P6 | 38, 47 | view query/permission/audit 테스트 |
+| REQ-CFG-002 | typed custom field와 form을 제공한다 | BLUEPRINT_READY | P6 | 38, 47 | type validation/migration/projection 테스트 |
+| REQ-CFG-003 | 상담사가 macro를 preview한 뒤 하나의 command로 적용한다 | BLUEPRINT_READY | P6 | 38, 45, 47 | preview/no-side-effect/one-audit 테스트 |
+| REQ-FILE-001 | private object storage 기반 첨부파일을 제공한다 | BLUEPRINT_READY | P8 | 38, 48 | upload/scan/download/access 테스트 |
+| REQ-FILE-002 | rich text와 redaction은 안전한 canonical format과 별도 권한을 사용한다 | BLUEPRINT_READY | P8 | 48 | XSS/redaction/audit 테스트 |
+| REQ-CHAN-001 | 이메일 수신·발신을 Ticket/Comment channel adapter로 제공한다 | BLUEPRINT_READY | P8 | 38, 49 | threading/dedup/outbox/bounce 테스트 |
+| REQ-CHAN-002 | 채팅·메시징은 나중에 같은 conversation model 위에 추가한다 | DEFERRED | P8+ | 38, 49 | session/transcript/channel adapter 테스트 |
+| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | BLUEPRINT_READY | P8 | 45, 49 | retry/idempotency/delivery status 테스트 |
+| REQ-AI-001 | AI 요약·답변 제안은 검색·권한·감사·평가 기반이 준비된 뒤 선택적으로 추가한다 | DEFERRED | P10 | 38, 49 | 데이터 경계/평가/사람 승인 테스트 |
+
+## 9. 프론트엔드 경험
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | 시각 회귀·업무 E2E |
+| REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | 필터·정렬·cursor E2E |
+| REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | 1280/1440/1920 snapshot |
+| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | panel 권한·리사이즈 테스트 |
+| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | axe + keyboard E2E |
+| REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | 브랜드·라이선스 검토 |
+
+## 10. 추적 규칙
+
+1. 새 요구사항은 `REQ-*` ID를 부여한다.
+2. 모든 PR은 관련 요구사항 ID와 검증 게이트 ID를 적는다.
+3. 요구사항이 `BLUEPRINT_READY`에서 `IMPLEMENTATION_READY`로 이동하려면 다음이 있어야 한다.
+   - 상태·권한·실패 의미가 확정된 PRD
+   - DB migration 초안
+   - OpenAPI 또는 UI contract
+   - 최소 테스트 시나리오
+   - 운영·보안 영향 기록
+4. 구현되지 않은 기능을 README에서 완성 기능처럼 표현하지 않는다.

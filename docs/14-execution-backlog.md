@@ -241,55 +241,115 @@ Gates: SDK-001 through SDK-003
 
 # Phase 3 — Product depth
 
+Every product-depth capability first uses `tasks/13` to freeze one vertical slice. Detailed specifications are `docs/44~49` and `docs/47`.
+
 ## DS-300 — Customer verified account
 
 - email verification/magic link
-- account linking
-- customer reply
-- recovery/revoke
+- account linking/recovery
+- customer request list and public reply
+- token revoke/rotation
+
+Source: `docs/37-customer-portal-and-identity-blueprint.md`.
+
+## DS-310 — Views, tags, and PostgreSQL search
+
+- tag definition/value and audit
+- shared/personal/system saved views
+- categorized View navigation
+- permission-aware stable queue query
+- search execution/result-open audit
+- query-plan evidence
+
+Source/task: `docs/47`, `tasks/15`.
 
 ## DS-320 — Fine-grained authorization
 
-- group access matrix
+- group access matrix `NONE/READ/READ_WRITE`
 - agent scope
-- relation-based access
+- relation-based parent visibility
 - integration field constraints
-- denied-access audit
+- denied-access audit and permission explanation
 
-## DS-340 — SLA
+## DS-330 — Custom fields, forms, and macros
 
-- calendar
-- policy version
-- target instances
-- intervals
-- first/next reply
+- typed versioned field definitions
+- form field/order/condition definitions
+- value validation/projection/search dimensions
+- macro preview and one-command apply
+
+Source/task: `docs/47`, `tasks/15`.
+
+## DS-340 — First Reply SLA, then SLA/OLA breadth
+
+- BusinessSchedule/calendar
+- policy/schedule version
+- target snapshot and interval facts
+- first reply badge/view/admin/reporting
+- then next reply/requester wait/resolution/child OLA
+
+Source/task: `docs/44`, `tasks/16`.
+Gates: `SLA-*`.
 
 ## DS-360 — Trigger and automation
 
-- ordered evaluator
+- versioned ordered evaluator
 - normal command/audit pipeline
-- dry run/version
-- loop prevention
-- scheduled cursor/lease
+- dry run/activation/history
+- depth/fingerprint loop prevention
+- webhook durable action
+- scheduled automation cursor/lease/idempotency
 
-## DS-380 — Explore-like analytics
+Source/task: `docs/45`, `tasks/17`.
+Gates: `AUT-*`, `WH-*`.
 
-- ticket/update/access/SLA/automation facts
+## DS-380 — Explore-like analytics and export
+
+- ticket/update/interval/SLA/automation facts
 - backlog snapshots
-- curated dashboards
-- metric glossary
+- metric version governance
+- operations dashboard and permission-safe drill-down
+- snapshot/incremental/content export
+
+Source/task: `docs/46`, `tasks/18`.
+Gates: `ANA-*`, `EXP-*`.
+
+## DS-390 — Attachments, content, notification, and email
+
+- private object-storage attachment pipeline
+- malware scan and authorized download
+- notification outbox
+- inbound email dedup/threading
+- delivery/bounce/admin health
+- rich text/redaction after plain text/files stabilize
+
+Source/task: `docs/48`, `docs/49`, `tasks/19`.
+Gates: `FILE-*`, `MAIL-*`.
 
 ## DS-400 — App and Embed SDK
 
 - sandboxed ticket-sidebar app
 - manifest/scope/origin
-- host bridge/server proxy
+- host bridge/server-side named connection
 - short-lived embed token
-- internal admin create/list/detail panel
+- external admin create/list/detail panel
 
 ## DS-420 — Measured scale evolution
 
-- PostgreSQL search first
+- PostgreSQL search/projections first
 - durable Modulith publication
+- outbox recovery dashboards
 - selected Kafka externalization
-- Elasticsearch/analytics store only after evidence
+- Elasticsearch/analytics store only after measured evidence and rebuild path
+
+# Phase 0A — Documentation-to-code bootstrap
+
+Use `tasks/00-bootstrap-documentation-and-repository.md` followed by `tasks/06~12`. Each task must reference requirement IDs from `docs/26-requirement-traceability.md`.
+
+# Phase 4 — Capability contract freeze
+
+Before implementing a `BLUEPRINT_READY` capability, use `tasks/13` and its specific brief (`tasks/15~19`) to promote one vertical slice to `IMPLEMENTATION_READY` under `docs/39-api-contract-freeze-plan.md`.
+
+# Phase 5 — Stable release hardening
+
+Use `tasks/14-release-hardening.md`, `docs/35`, `docs/36`, `docs/40`, `docs/51`, and `checklists/release.md`.

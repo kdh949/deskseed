@@ -97,3 +97,44 @@
 - migration/rollback/compatibility
 - performance evidence
 - human owner가 설명할 핵심 trade-off
+## v0.5 required reading for every product feature
+
+- `docs/26-requirement-traceability.md`
+- `docs/27-implementation-handbook.md`
+- `docs/32-database-schema-and-index-blueprint.md`
+- `docs/33-authorization-permission-matrix.md`
+- `docs/34-state-machines-command-event-catalog.md`
+- `docs/39-api-contract-freeze-plan.md`
+
+Frontend changes must also read `docs/28~31`, `docs/40`, and `docs/51`.
+
+Post-MVP changes must read the matching detailed specification under `docs/44~49`, `docs/52`, and `docs/50-codex-implementation-runbook.md`.
+
+## Frontend non-negotiable rules
+
+- Use Deskseed branding. Never add Zendesk logo, wordmark, or copied screenshot/assets.
+- Garden components/icons may be used under their license; preserve required notices.
+- Match the documented workspace information architecture, not a pixel-for-pixel proprietary clone.
+- Every screen implements loading, empty, error, denied, and stale/conflict states as applicable.
+- No color-only state. Keyboard and focus behavior are release gates.
+- Do not invent API endpoints from UI code. Update/freeze the OpenAPI contract first.
+
+## Requirement traceability
+
+Every implementation PR must list at least one `REQ-*` ID and one verification gate. Update `docs/26-requirement-traceability.md` when status changes.
+
+## Contract and delivery rules
+
+- Core Customer/Agent/Admin/Audit HTTP work must update `api/core-api-outline-v1.yaml` before or with implementation.
+- Platform API work must update `api/platform-api-outline-v1.yaml`.
+- A `BLUEPRINT_READY` requirement cannot be coded until its first vertical slice satisfies `docs/39-api-contract-freeze-plan.md`.
+- One Codex task should implement one vertical slice and use a task brief plus `CODEX_TASK_TEMPLATE.md`.
+- Every completion report states what was not implemented and which validations were not run.
+
+## Zendesk-inspired UI rules
+
+- Match task flow and information architecture, not proprietary pixels.
+- The desktop ticket workspace follows the documented properties/conversation/context structure.
+- PUBLIC and INTERNAL composer drafts are separate and preserved across tab switches.
+- Ticket prefetch/background revalidation must not emit semantic `TICKET_VIEWED`.
+- Never use Zendesk logos, wordmarks, screenshots, illustrations, or copied CSS/assets in the shipped application.

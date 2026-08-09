@@ -20,6 +20,16 @@
 - Resource constraints:
 - Interaction/request/correlation semantics:
 
+## Product and UX contract
+
+- Requirement IDs:
+- Screen IDs / route IDs:
+- OpenAPI operationIds:
+- Zendesk parity pattern from docs/51:
+- loading/empty/error/denied/conflict states:
+- keyboard/focus/accessibility requirements:
+- visual regression fixtures and widths:
+
 ## In scope
 
 - vertical use case
@@ -76,6 +86,13 @@ List exact gate IDs and commands. Use PostgreSQL-backed tests where behavior dep
 - migration/rollback:
 - backfill:
 - existing client/UI impact:
+
+## Human explanation
+
+- why this domain/transaction boundary:
+- why this permission and audit behavior:
+- why this is the simplest sufficient technology:
+- what measured evidence would change the design:
 
 ## Completion report
 

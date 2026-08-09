@@ -1,0 +1,50 @@
+version: "0.5"
+routes:
+  - path: "/requests/new"
+    actor: anonymous
+    phase: m1
+    screen: customer_request_form
+  - path: "/requests/:ticketNumber"
+    actor: anonymous_or_customer
+    phase: m1
+    screen: customer_request_detail
+  - path: "/agent/views/:viewKey"
+    actor: agent
+    phase: m2
+    screen: agent_views
+  - path: "/agent/tickets/:ticketNumber"
+    actor: agent
+    phase: m2
+    screen: ticket_workspace
+  - path: "/admin/people/staff"
+    actor: admin
+    phase: m6
+    screen: staff_admin
+  - path: "/admin/groups"
+    actor: admin
+    phase: m6
+    screen: groups_admin
+  - path: "/audit/activity"
+    actor: security_auditor
+    phase: r2
+    screen: audit_explorer
+  - path: "/integrations/clients"
+    actor: admin
+    phase: i1
+    screen: integration_clients
+  - path: "/integrations/webhooks"
+    actor: admin
+    phase: i5
+    screen: webhooks
+  - path: "/analytics/overview"
+    actor: agent_or_admin
+    phase: p5
+    screen: analytics_overview
+  - path: "/admin/business-rules/sla"
+    actor: admin
+    phase: p3
+    screen: sla_admin
+  - path: "/admin/business-rules/triggers"
+    actor: admin
+    phase: p4
+    screen: trigger_admin

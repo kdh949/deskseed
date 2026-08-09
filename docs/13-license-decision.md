@@ -49,3 +49,8 @@
 - source headers 필요 여부
 - dependency/license scanner
 - contribution terms and DCO/CLA
+
+
+## Third-party UI dependency notices
+
+The product license decision is separate from dependency licenses. If Deskseed uses Zendesk Garden React components or SVG icons, retain the Apache-2.0 license and required notices for those dependencies. Do not treat the component license as permission to use Zendesk trademarks, logos, or proprietary trade dress.
