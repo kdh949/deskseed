@@ -18,7 +18,9 @@ export class ApiError extends Error {
   }
 }
 
-async function readProblem(response: Response): Promise<ProblemDetails | undefined> {
+async function readProblem(
+  response: Response,
+): Promise<ProblemDetails | undefined> {
   const contentType = response.headers.get('content-type') ?? ''
   if (!contentType.includes('json')) return undefined
   try {
@@ -32,13 +34,17 @@ async function assertOk(response: Response): Promise<void> {
   if (response.ok) return
   const problem = await readProblem(response)
   throw new ApiError(
-    problem?.detail ?? problem?.title ?? `요청이 실패했습니다. (${response.status})`,
+    problem?.detail ??
+      problem?.title ??
+      `요청이 실패했습니다. (${response.status})`,
     response.status,
     problem,
   )
 }
 
-export async function submitRequest(input: SubmitRequestInput): Promise<SubmittedRequest> {
+export async function submitRequest(
+  input: SubmitRequestInput,
+): Promise<SubmittedRequest> {
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -52,9 +58,12 @@ export async function getPublicRequest(
   ticketNumber: number,
   accessToken: string,
 ): Promise<PublicRequest> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/requests/${ticketNumber}`, {
-    headers: { 'X-Request-Access-Token': accessToken },
-  })
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/requests/${ticketNumber}`,
+    {
+      headers: { 'X-Request-Access-Token': accessToken },
+    },
+  )
   await assertOk(response)
   return (await response.json()) as PublicRequest
 }

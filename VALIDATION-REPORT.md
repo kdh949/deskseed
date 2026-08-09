@@ -1,6 +1,6 @@
 # Validation Report — Deskseed Documentation Seed v0.5
 
-Generated: 2026-08-09T22:50:03.273826+00:00
+Generated deterministically by `python3 scripts/validate_documentation.py --write`.
 
 ## Result
 
@@ -25,14 +25,14 @@ Generated: 2026-08-09T22:50:03.273826+00:00
 - Canonical Docs: 53
 - Core Api Requirement Links: 29
 - Decision Definitions: 39
-- Json Files: 6
-- Markdown Files: 122
+- Json Files: 8
+- Markdown Files: 123
 - Openapi Operations: 34
 - Openapi Paths: 28
 - Requirement Definitions: 69
 - Task Briefs: 20
 - Verification Gate Definitions: 112
-- Yaml Files: 17
+- Yaml Files: 15
 
 ## Errors
 

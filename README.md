@@ -64,6 +64,12 @@ docker compose up --build
 - Backend API: `http://localhost:8080`
 - Health: `http://localhost:8080/actuator/health`
 
+기동과 health 응답만 재현하려면 다음을 사용합니다. 이 명령은 검증 후 컨테이너와 named volume을 정리합니다.
+
+```bash
+bash scripts/compose-smoke.sh
+```
+
 ### 로컬 개발
 
 PostgreSQL만 실행:
@@ -83,9 +89,21 @@ Frontend:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
+
+## 검증
+
+```bash
+make docs-check
+make backend-test
+make frontend-check
+make compose-smoke
+```
+
+`make docs-check`는 `python3 scripts/validate_documentation.py --write`로 문서와 계약을 검사하고,
+생성된 보고서가 최신 상태인지 확인합니다.
 
 ## 구현된 API
 
@@ -119,3 +137,4 @@ M1 조회 키는 학습과 세로 기능 검증을 위한 **opaque bearer token*
 ## 라이선스
 
 아직 라이선스를 의도적으로 선택하지 않았습니다. 공개 저장소로 배포하기 전에 [`docs/13-license-decision.md`](docs/13-license-decision.md)를 검토하고 `LICENSE`를 추가해야 합니다.
+프런트에 포함되는 Garden과 직접 의존성의 고지는 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)에 남깁니다.

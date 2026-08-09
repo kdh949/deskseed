@@ -5,14 +5,22 @@ export function HomePage() {
     <section className="hero-grid">
       <div className="hero-copy">
         <p className="eyebrow">SELF-HOSTED SUPPORT</p>
-        <h1>문의는 빠르게 접수하고,<br />처리 과정은 신뢰할 수 있게.</h1>
+        <h1>
+          문의는 빠르게 접수하고,
+          <br />
+          처리 과정은 신뢰할 수 있게.
+        </h1>
         <p className="lead">
-          고객 문의의 첫 본문부터 모든 변경 이력까지 하나의 티켓 흐름으로 관리하는
-          오픈소스 지향 고객지원 시스템입니다.
+          고객 문의의 첫 본문부터 모든 변경 이력까지 하나의 티켓 흐름으로
+          관리하는 오픈소스 지향 고객지원 시스템입니다.
         </p>
         <div className="button-row">
-          <Link className="button primary" to="/requests/new">새 문의 접수</Link>
-          <Link className="button secondary" to="/lookup">접수한 문의 조회</Link>
+          <Link className="button primary" to="/requests/new">
+            새 문의 접수
+          </Link>
+          <Link className="button secondary" to="/lookup">
+            접수한 문의 조회
+          </Link>
         </div>
       </div>
       <aside className="principle-card" aria-label="현재 구현 원칙">

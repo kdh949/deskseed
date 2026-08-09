@@ -1,10 +1,5 @@
 export type TicketStatus =
-  | 'NEW'
-  | 'OPEN'
-  | 'PENDING'
-  | 'ON_HOLD'
-  | 'SOLVED'
-  | 'CLOSED'
+  'NEW' | 'OPEN' | 'PENDING' | 'ON_HOLD' | 'SOLVED' | 'CLOSED'
 
 export type CommentAuthorType = 'CUSTOMER' | 'AGENT' | 'SYSTEM' | 'AUTOMATION'
 

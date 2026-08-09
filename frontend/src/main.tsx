@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import App from './App'
+import { DeskseedThemeProvider } from './shared/ui/DeskseedThemeProvider'
 import './styles.css'
 
 const queryClient = new QueryClient({
@@ -19,10 +20,12 @@ if (!root) throw new Error('Root element was not found')
 
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <DeskseedThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </DeskseedThemeProvider>
   </StrictMode>,
 )

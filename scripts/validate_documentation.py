@@ -12,7 +12,6 @@ import json
 import re
 import sys
 from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import unquote, urlparse
@@ -73,14 +72,19 @@ DECISION_DEF_RE = re.compile(r"^\|\s*(D-[0-9]{3})\s*\|", re.MULTILINE)
 GATE_DEF_RE = re.compile(r"^###\s+([A-Z][A-Z0-9-]*-[0-9]{3})\b", re.MULTILINE)
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"}
+GENERATED_DIRECTORY_NAMES = {".git", ".gradle", ".gradle-user-home", "build", "dist", "node_modules"}
 
 
 def rel(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
+def is_generated(path: Path) -> bool:
+    return any(part in GENERATED_DIRECTORY_NAMES for part in path.relative_to(ROOT).parts)
+
+
 def all_files(pattern: str) -> list[Path]:
-    return sorted(ROOT.glob(pattern))
+    return sorted(path for path in ROOT.glob(pattern) if path.is_file() and not is_generated(path))
 
 
 def walk(value: Any) -> Iterable[Any]:
@@ -320,7 +324,11 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
     if statuses != expected_statuses:
         errors.append(f"Requirement status vocabulary mismatch: {sorted(statuses)}")
 
-    image_assets = [path for path in ROOT.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS]
+    image_assets = [
+        path
+        for path in ROOT.rglob("*")
+        if path.is_file() and not is_generated(path) and path.suffix.lower() in IMAGE_EXTENSIONS
+    ]
     counts["bundled_image_assets"] = len(image_assets)
     if image_assets:
         errors.append("Documentation seed must not bundle copied Zendesk visual assets: " + ", ".join(rel(p) for p in image_assets))
@@ -352,7 +360,7 @@ def write_report(errors: list[str], warnings: list[str], counts: dict[str, int])
     lines = [
         "# Validation Report — Deskseed Documentation Seed v0.5",
         "",
-        f"Generated: {datetime.now(timezone.utc).isoformat()}",
+        "Generated deterministically by `python3 scripts/validate_documentation.py --write`.",
         "",
         "## Result",
         "",

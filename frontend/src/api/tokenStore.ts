@@ -1,4 +1,5 @@
-const keyFor = (ticketNumber: number) => `deskseed.request-token.${ticketNumber}`
+const keyFor = (ticketNumber: number) =>
+  `deskseed.request-token.${ticketNumber}`
 
 export function saveRequestToken(ticketNumber: number, token: string): void {
   window.localStorage.setItem(keyFor(ticketNumber), token)
