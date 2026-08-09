@@ -1,0 +1,35 @@
+name: Feature
+about: Propose a user-visible capability
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user
+      description: Who is blocked, and what outcome are they trying to achieve?
+    validations:
+      required: true
+  - type: textarea
+    id: rule
+    attributes:
+      label: Domain rule or invariant
+      description: Which business rule changes or is introduced?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance scenarios
+      description: Include happy path, authorization, failure, audit, and concurrency behavior.
+    validations:
+      required: true
+  - type: checkboxes
+    id: artifacts
+    attributes:
+      label: Required artifact updates
+      options:
+        - label: PRD/domain documentation
+        - label: ADR, when a durable decision changes
+        - label: OpenAPI contract
+        - label: Flyway migration
+        - label: Domain and integration tests
+        - label: Security/privacy review

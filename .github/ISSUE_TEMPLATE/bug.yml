@@ -1,0 +1,34 @@
+name: Bug
+about: Report incorrect or unsafe behavior
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected domain behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk area
+      options:
+        - Customer data leakage
+        - Authorization
+        - Audit/history integrity
+        - Data loss or concurrency
+        - Availability/performance
+        - Other
+    validations:
+      required: true

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deskseed:schema:audit-activity-event:v1",
+  "title": "Deskseed Audit Activity Projection v1",
+  "description": "Normalized read projection. Canonical ledgers remain the source of truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activityId",
+    "ledgerType",
+    "action",
+    "occurredAt",
+    "actor",
+    "source",
+    "outcome",
+    "requestId"
+  ],
+  "properties": {
+    "activityId": { "type": "string", "format": "uuid" },
+    "canonicalRecordId": { "type": ["string", "null"], "format": "uuid" },
+    "ledgerType": {
+      "type": "string",
+      "enum": ["TICKET_CHANGE", "ACCESS", "ADMIN_SECURITY", "INTEGRATION_DELIVERY"]
+    },
+    "action": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "displayName"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["CUSTOMER", "STAFF", "INTEGRATION_CLIENT", "TRIGGER", "AUTOMATION", "SYSTEM"]
+        },
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "integrationClientId": { "type": ["string", "null"], "format": "uuid" },
+        "delegatedStaffId": { "type": ["string", "null"], "format": "uuid" }
+      }
+    },
+    "source": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "outcome": {
+      "type": "string",
+      "enum": ["SUCCESS", "DENIED", "FAILED", "PARTIAL"]
+    },
+    "summary": { "type": ["string", "null"], "maxLength": 1000 },
+    "ticketId": { "type": ["string", "null"], "format": "uuid" },
+    "ticketNumber": { "type": ["integer", "null"], "minimum": 1 },
+    "customerId": { "type": ["string", "null"], "format": "uuid" },
+    "field": { "type": ["string", "null"], "maxLength": 100 },
+    "before": {},
+    "after": {},
+    "interactionId": { "type": ["string", "null"], "format": "uuid" },
+    "originSearchEventId": { "type": ["string", "null"], "format": "uuid" },
+    "queryRedacted": { "type": ["string", "null"], "maxLength": 1000 },
+    "queryFingerprint": { "type": ["string", "null"], "maxLength": 200 },
+    "resultCount": { "type": ["integer", "null"], "minimum": 0 },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "correlationId": { "type": ["string", "null"], "format": "uuid" },
+    "ipAddress": { "type": ["string", "null"], "maxLength": 64 },
+    "client": { "type": ["string", "null"], "maxLength": 300 },
+    "httpStatus": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+    "protectedContentAvailable": { "type": "boolean", "default": false }
+  }
+}

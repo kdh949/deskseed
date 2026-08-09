@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:deskseed:schema:integration-event-envelope:v1",
+  "title": "Deskseed integration event envelope v1 (planned)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "version",
+    "occurredAt",
+    "subject",
+    "correlationId",
+    "data"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$",
+      "examples": [
+        "ticket.updated"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "examples": [
+        1
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subject": {
+      "type": "string",
+      "examples": [
+        "ticket:018f7c2c-7348-7a32-a971-4c9a845b3350"
+      ]
+    },
+    "sequence": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Optional ordering value within one subject. Consumers must not assume global ordering."
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

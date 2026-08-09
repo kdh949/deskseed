@@ -1,0 +1,157 @@
+openapi: 3.1.0
+info:
+  title: Deskseed MVP Target API
+  version: 0.6.0-draft
+  description: |
+    Design target for M2-M6. This file is Specified, not Implemented.
+    Operation shapes may change through ADRs and milestone implementation.
+paths:
+  /api/v1/auth/staff/sessions:
+    post:
+      summary: Authenticate an agent or administrator
+      responses:
+        '204': { description: Session created }
+  /api/v1/agent/tickets:
+    get:
+      summary: List the agent-visible ticket queue
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: groupId, in: query, schema: { type: string, format: uuid } }
+        - { name: assigneeId, in: query, schema: { type: string, format: uuid } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Stable cursor page }
+    post:
+      summary: Create a ticket without a preceding customer submission
+      responses:
+        '201': { description: Ticket created }
+  /api/v1/agent/tickets/{ticketNumber}:
+    get:
+      summary: Read the staff ticket projection, conversation, links, permissions, and version
+      parameters:
+        - $ref: '#/components/parameters/TicketNumber'
+      responses:
+        '200': { description: Staff ticket projection }
+    patch:
+      summary: Atomically apply an explicit ticket change set and create one audit
+      parameters:
+        - $ref: '#/components/parameters/TicketNumber'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicket'
+      responses:
+        '200': { description: Updated ticket, audit, and non-blocking warnings }
+        '409':
+          description: Same-field optimistic conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/FieldConflict'
+  /api/v1/agent/tickets/{ticketNumber}/comments:
+    post:
+      summary: Add one public reply or internal note
+      parameters:
+        - $ref: '#/components/parameters/TicketNumber'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visibility, body]
+              properties:
+                visibility: { type: string, enum: [PUBLIC, INTERNAL] }
+                body: { type: string, minLength: 1, maxLength: 10000 }
+      responses:
+        '201': { description: Comment appended }
+  /api/v1/agent/tickets/{ticketNumber}/transfer:
+    post:
+      summary: Move ownership of the existing ticket
+      parameters:
+        - $ref: '#/components/parameters/TicketNumber'
+      responses:
+        '200': { description: Ticket transferred }
+  /api/v1/agent/tickets/{ticketNumber}/children:
+    post:
+      summary: Create an internal child ticket without moving parent ownership
+      parameters:
+        - $ref: '#/components/parameters/TicketNumber'
+      responses:
+        '201': { description: Child ticket created }
+    get:
+      summary: List internal child tickets
+      parameters:
+        - $ref: '#/components/parameters/TicketNumber'
+      responses:
+        '200': { description: Linked children }
+  /api/v1/agent/tickets/{ticketNumber}/audits:
+    get:
+      summary: Read immutable grouped change history
+      parameters:
+        - $ref: '#/components/parameters/TicketNumber'
+      responses:
+        '200': { description: Audit timeline }
+  /api/v1/admin/staff:
+    get:
+      summary: List staff accounts
+      responses:
+        '200': { description: Staff list }
+    post:
+      summary: Create a staff account
+      responses:
+        '201': { description: Staff created }
+  /api/v1/admin/groups:
+    get:
+      summary: List groups and membership summaries
+      responses:
+        '200': { description: Group list }
+    post:
+      summary: Create a group
+      responses:
+        '201': { description: Group created }
+  /api/v1/admin/settings/customer-access:
+    put:
+      summary: Change anonymous/optional/required customer registration policy
+      responses:
+        '200': { description: Setting changed and audited }
+components:
+  parameters:
+    TicketNumber:
+      name: ticketNumber
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+  schemas:
+    UpdateTicket:
+      type: object
+      required: [expectedVersion, changes]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        changes:
+          type: object
+          minProperties: 1
+          properties:
+            status: { type: string, enum: [NEW, OPEN, PENDING, ON_HOLD, SOLVED] }
+            priority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+            groupId: { type: [string, 'null'], format: uuid }
+            assigneeId: { type: [string, 'null'], format: uuid }
+            comment:
+              type: object
+              required: [visibility, body]
+              properties:
+                visibility: { type: string, enum: [PUBLIC, INTERNAL] }
+                body: { type: string }
+    FieldConflict:
+      type: object
+      required: [type, title, status, currentVersion, conflictingFields]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer, const: 409 }
+        currentVersion: { type: integer, format: int64 }
+        conflictingFields:
+          type: array
+          items: { type: string }

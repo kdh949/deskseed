@@ -1,0 +1,182 @@
+# Data Retention and Privacy Policy Baseline
+
+Status: product proposal, not legal advice
+
+## 1. Goal
+
+보안 감사에 충분한 기록을 남기되, “감사니까 모든 내용을 무기한 평문 저장”하는 제품이 되지 않도록 한다. 데이터 종류별 목적, 민감도, 권한, 보존기간, 삭제·암호화 정책을 분리한다.
+
+## 2. Data classes
+
+| Class | Examples | Sensitivity |
+|---|---|---|
+| Support content | public/internal comment, subject, attachment | high, customer and business data |
+| Ticket change metadata | status/group/assignee before-after | medium-high |
+| Access metadata | actor, ticket/customer, time, IP, client | high behavioral data |
+| Search query | raw text, filters | potentially very high |
+| Security events | login, denial, credential lifecycle | high |
+| Integration secrets | API/webhook secret | critical |
+| Delivery metadata | endpoint, status, latency, failure | medium-high |
+| Export artifact | selected ticket/audit data | very high |
+| Operational logs | errors, metrics, traces | variable; should be minimized |
+
+## 3. Proposed launch defaults
+
+These are concrete defaults for development and first controlled deployment. Operators must review them.
+
+| Category | Default proposal | Storage behavior |
+|---|---:|---|
+| Ticket and comments | operator support-record policy | primary records; not audit substitute |
+| Ticket change audit | ticket retention + 5 years, or indefinite when configured | append-only |
+| Admin/security audit | 365 days | append-only |
+| Access audit metadata | 180 days | append-only, partition-ready |
+| Raw search query ciphertext | 30 days | encrypted, key versioned |
+| Redacted query/fingerprint | 180 days | access event metadata |
+| Audit export artifact | 7 days | encrypted object, short-lived URL |
+| Audit export metadata | 365 days | security audit |
+| Webhook attempts | 90 days | delivery troubleshooting |
+| Webhook business event metadata | 365 days | event/delivery correlation |
+| Idempotency record | 7 days minimum | longer than retry contract |
+| Application logs | 14–30 days | no content/secrets |
+| Metrics/traces | deployment-specific | sampled and minimized |
+
+## 4. Search query protection
+
+### 4.1 Representations
+
+```text
+queryRedacted      for routine audit UI
+queryFingerprint   keyed HMAC for correlation
+queryCiphertext    optional protected raw value
+```
+
+### 4.2 Encryption
+
+- authenticated encryption
+- key outside database
+- key version stored with event
+- associated data includes event ID and purpose
+- decryption only in a narrow service path
+- plaintext lifetime in memory minimized
+- plaintext never written to logs, exceptions, cache, or analytics projection
+
+### 4.3 Reveal controls
+
+- `audit:search-query:reveal`
+- reason required
+- recent authentication/MFA when configured
+- response `Cache-Control: no-store`
+- reveal event self-audited
+- bulk reveal disabled initially
+
+## 5. Comment and attachment content
+
+TicketAudit does not duplicate full comment body by default. It stores comment ID, visibility, actor, length/hash. Audit Explorer fetches immutable content through a separate authorized path.
+
+Attachments require later controls:
+
+- object storage encryption
+- content type/size validation
+- malware scan
+- download access event
+- short-lived signed URL
+- no attachment body in application log or audit event
+
+## 6. Secrets
+
+Never store or expose in audit/logs:
+
+- password
+- API key secret
+- OAuth access/refresh token
+- session cookie
+- Authorization header
+- webhook signing secret
+- encryption key
+- provider credential
+
+Credential audit records contain only:
+
+```text
+credential ID/public key ID
+client/integration name
+actor
+created/rotated/revoked time
+expiry
+scope/resource constraint summary
+last-used metadata
+```
+
+## 7. IP addresses and user agents
+
+These help security investigation but are personal/behavioral data.
+
+- store only where purpose is defined
+- normalize and validate
+- avoid unbounded user-agent text
+- provide retention setting
+- exports may mask IP for lower-privilege viewers
+- proxy trust configuration must define which forwarded IP header is accepted
+
+## 8. Deletion and retention execution
+
+Retention job:
+
+1. loads an immutable policy version
+2. computes eligible partition/range
+3. excludes legal hold if implemented
+4. records planned count/range
+5. deletes or drops eligible data using dedicated privilege
+6. verifies result
+7. emits `RETENTION_JOB_EXECUTED`
+
+The normal application role cannot call arbitrary audit delete APIs.
+
+## 9. Backup and replicas
+
+Documentation must state:
+
+- backup schedule and encryption
+- backup retention
+- replica/archive copies
+- restore test cadence
+- how primary deletion propagates or expires from backup
+- limits on immediate erasure claims
+
+Deleting a primary row does not mean all backups instantly forget it.
+
+## 10. Tamper evidence and external archive
+
+Local DB controls provide append-only behavior against the application role. Stronger assurance requires:
+
+- daily canonical digest/checkpoint
+- signature key outside DB
+- independent object storage/SIEM copy
+- verification and alerting
+- documented restore/reconciliation
+
+External archive payload should be minimized; do not export raw search query/comment content by default.
+
+## 11. Privacy and access review checklist
+
+Before adding a field to audit/event/export:
+
+1. What investigation or product purpose requires it?
+2. Can a reference, hash, category, or redacted value satisfy the purpose?
+3. Who may read it?
+4. How long is it needed?
+5. Is it copied to logs, backups, analytics, webhook, or SDK?
+6. How is it deleted or expired?
+7. What happens if an operator asks for export?
+8. Does revealing it create another audit event?
+
+## 12. Production decisions still required
+
+- applicable jurisdiction and internal policy
+- exact support/audit retention
+- encryption key/KMS implementation
+- legal hold
+- data subject access/deletion process
+- cross-border storage and webhook destinations
+- auditor approval model
+- incident export handling

@@ -1,0 +1,51 @@
+#!/bin/sh
+# Checksum-verifying Gradle bootstrap used by this generated seed.
+# Replace with the standard Gradle Wrapper (`gradle wrapper`) after the first successful local build.
+set -eu
+
+GRADLE_VERSION="9.7.0"
+GRADLE_SHA256="84fbba45c7f4c64abc77460e1c00f541e9f960e3c7ed2538f1ede19eacd873ae"
+BASE_DIR="${GRADLE_USER_HOME:-${HOME:-/tmp}/.gradle}/deskseed-bootstrap"
+DIST_DIR="$BASE_DIR/gradle-$GRADLE_VERSION"
+ZIP_PATH="$BASE_DIR/gradle-$GRADLE_VERSION-bin.zip"
+DOWNLOAD_URL="https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip"
+
+if [ ! -x "$DIST_DIR/bin/gradle" ]; then
+    mkdir -p "$BASE_DIR"
+    if [ ! -f "$ZIP_PATH" ]; then
+        echo "Downloading Gradle $GRADLE_VERSION..." >&2
+        if command -v curl >/dev/null 2>&1; then
+            curl --fail --location --retry 3 --output "$ZIP_PATH.tmp" "$DOWNLOAD_URL"
+        elif command -v wget >/dev/null 2>&1; then
+            wget -O "$ZIP_PATH.tmp" "$DOWNLOAD_URL"
+        else
+            echo "curl or wget is required to bootstrap Gradle." >&2
+            exit 1
+        fi
+        mv "$ZIP_PATH.tmp" "$ZIP_PATH"
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL_SHA256=$(sha256sum "$ZIP_PATH" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL_SHA256=$(shasum -a 256 "$ZIP_PATH" | awk '{print $1}')
+    else
+        echo "sha256sum or shasum is required to verify Gradle." >&2
+        exit 1
+    fi
+
+    if [ "$ACTUAL_SHA256" != "$GRADLE_SHA256" ]; then
+        echo "Gradle distribution checksum mismatch." >&2
+        rm -f "$ZIP_PATH"
+        exit 1
+    fi
+
+    command -v unzip >/dev/null 2>&1 || {
+        echo "unzip is required to bootstrap Gradle." >&2
+        exit 1
+    }
+    rm -rf "$DIST_DIR"
+    unzip -q "$ZIP_PATH" -d "$BASE_DIR"
+fi
+
+exec "$DIST_DIR/bin/gradle" "$@"

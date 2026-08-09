@@ -1,0 +1,25 @@
+# Environment
+.env
+*.local
+
+# IntelliJ / Kotlin
+.idea/
+*.iml
+.kotlin/
+.gradle/
+**/build/
+
+# Node
+**/node_modules/
+**/dist/
+**/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local data
+.postgres-data/

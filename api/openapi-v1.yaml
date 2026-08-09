@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: Deskseed Customer Requests API
+  version: 0.1.0
+  description: |
+    Implemented M1 contract. A Request is the customer-safe projection of an internal Ticket.
+    Internal comments, staff identity details, assignments, audits, and child tickets are never returned here.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/requests:
+    post:
+      operationId: submitAnonymousRequest
+      summary: Submit an anonymous web request
+      tags: [Customer Requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitRequest'
+      responses:
+        '201':
+          description: Request created. The access token is returned once and cannot be recovered by the server.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Relative customer request URL.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmittedRequest'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Anonymous submission is disabled by system settings.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/requests/{ticketNumber}:
+    get:
+      operationId: getPublicRequest
+      summary: Read one customer-safe request projection
+      tags: [Customer Requests]
+      parameters:
+        - name: ticketNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1000
+        - name: X-Request-Access-Token
+          in: header
+          required: true
+          description: Opaque token issued once by the submit endpoint.
+          schema:
+            type: string
+            minLength: 32
+      responses:
+        '200':
+          description: Public request and public comments only.
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicRequest'
+        '404':
+          description: The ticket/token pair is invalid. The response intentionally does not reveal which value was wrong.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  responses:
+    BadRequest:
+      description: Request validation failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblem'
+  schemas:
+    SubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email, subject, message]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        message:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    SubmittedRequest:
+      type: object
+      additionalProperties: false
+      required: [ticketNumber, accessToken, createdAt]
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        accessToken:
+          type: string
+          description: Returned once. Store it safely on the client.
+        createdAt:
+          type: string
+          format: date-time
+    PublicRequest:
+      type: object
+      additionalProperties: false
+      required: [ticketNumber, subject, status, createdAt, updatedAt, comments]
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        status:
+          $ref: '#/components/schemas/PublicTicketStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicComment'
+    PublicComment:
+      type: object
+      additionalProperties: false
+      required: [id, authorType, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorType:
+          type: string
+          enum: [CUSTOMER, AGENT, SYSTEM, AUTOMATION]
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    PublicTicketStatus:
+      type: string
+      enum: [NEW, OPEN, PENDING, ON_HOLD, SOLVED, CLOSED]
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        requestId:
+          type: string
+    ValidationProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: string
