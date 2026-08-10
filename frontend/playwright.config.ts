@@ -10,7 +10,7 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? 'github' : 'list',
   outputDir: 'test-results',
-  snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
+  snapshotPathTemplate: '{testDir}/__screenshots__/{platform}/{arg}{ext}',
   expect: {
     toHaveScreenshot: {
       animations: 'disabled',
