@@ -59,7 +59,7 @@ internal class PublicRequestController(
     @GetMapping("/{ticketNumber}")
     fun view(
         @PathVariable @Positive ticketNumber: Long,
-        @RequestHeader("X-Request-Access-Token") @Size(min = 32, max = 256) accessToken: String,
+        @RequestHeader("X-Request-Access-Token") accessToken: String,
     ): ResponseEntity<PublicRequestResponse> {
         val ticket = applicationService.view(ticketNumber, accessToken)
         return ResponseEntity.ok()

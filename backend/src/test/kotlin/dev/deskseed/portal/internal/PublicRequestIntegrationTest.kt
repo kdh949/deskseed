@@ -221,24 +221,18 @@ class PublicRequestIntegrationTest {
             .contentAsString
 
         val wrongToken = problem(submitted.ticketNumber, "x".repeat(43))
+        val malformedToken = problem(submitted.ticketNumber, "too-short")
         val nonexistentTicket = problem(submitted.ticketNumber + 10_000, submitted.accessToken)
 
         assertThat(problemFields(wrongToken)).isEqualTo(problemFields(nonexistentTicket))
+        assertThat(problemFields(malformedToken)).isEqualTo(problemFields(nonexistentTicket))
     }
 
     @Test
-    fun `invalid ticket number and malformed token are validation errors without lookup details`() {
+    fun `invalid ticket number is a validation error without lookup details`() {
         mockMvc.perform(
             get("/api/v1/requests/{ticketNumber}", -1)
                 .header("X-Request-Access-Token", "x".repeat(43)),
-        )
-            .andExpect(status().isBadRequest)
-            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-            .andExpect(jsonPath("$.type").value("/problems/validation"))
-
-        mockMvc.perform(
-            get("/api/v1/requests/{ticketNumber}", 1234)
-                .header("X-Request-Access-Token", "too-short"),
         )
             .andExpect(status().isBadRequest)
             .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
