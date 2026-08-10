@@ -51,6 +51,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '503':
+          description: Request persistence failed and the transaction was rolled back.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /api/v1/requests/{ticketNumber}:
     get:
       operationId: getPublicRequest
@@ -99,6 +105,12 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '429':
           description: Too many requests.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Request storage is unavailable.
           content:
             application/problem+json:
               schema:
@@ -246,7 +258,12 @@ components:
         - $ref: '#/components/schemas/Problem'
         - type: object
           properties:
-            errors:
-              type: object
-              additionalProperties:
-                type: string
+            fieldErrors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+                  code: { type: string }

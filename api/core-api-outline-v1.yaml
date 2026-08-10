@@ -64,6 +64,7 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '409': *id001
         '429': *id001
+        '503': *id001
         '500': *id001
   /api/v1/requests/{ticketNumber}:
     get:
@@ -113,6 +114,7 @@ paths:
         '400': *id001
         '404': *id001
         '429': *id001
+        '503': *id001
   /api/v1/requests/{ticketNumber}/comments:
     post:
       summary: Add a public customer follow-up

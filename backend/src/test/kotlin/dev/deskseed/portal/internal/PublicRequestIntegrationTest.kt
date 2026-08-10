@@ -212,6 +212,65 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
+    fun `missing token header and malformed ticket number return RFC 9457 validation problems`() {
+        mockMvc.perform(get("/api/v1/requests/{ticketNumber}", 1234))
+            .andExpect(status().isBadRequest)
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
+            .andExpect(jsonPath("$.status").value(400))
+
+        mockMvc.perform(
+            get("/api/v1/requests/not-a-number")
+                .header("X-Request-Access-Token", "not-the-issued-token"),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
+            .andExpect(jsonPath("$.status").value(400))
+    }
+
+    @Test
+    fun `database write failure returns a safe RFC 9457 service problem without partial data`() {
+        val marker = UUID.randomUUID().toString()
+        val email = "http-failure-$marker@example.com"
+        val subject = "http-failure-$marker"
+        val table = "ticket_audits"
+        val functionName = "test_fail_http_audit_insert"
+        val triggerName = "${functionName}_trigger"
+        installFailingInsertTrigger(table, functionName, triggerName)
+        try {
+            mockMvc.perform(
+                post("/api/v1/requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(requestJson(email, "민감한 장애 주입 메시지", subject)),
+            )
+                .andExpect(status().isServiceUnavailable)
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value("/problems/request-write-unavailable"))
+                .andExpect(jsonPath("$.status").value(503))
+                .andExpect(jsonPath("$.detail").value("The request could not be stored safely."))
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists $triggerName on $table")
+            jdbcTemplate.execute("drop function if exists $functionName()")
+        }
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from tickets where subject = ?",
+                Long::class.java,
+                subject,
+            ),
+        ).isZero()
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from customers where email_normalized = ?",
+                Long::class.java,
+                email,
+            ),
+        ).isZero()
+    }
+
+    @Test
     fun `request lookup requires both the matching number and opaque token`() {
         val submitted = submitUniqueRequest("lookup")
 
@@ -420,12 +479,12 @@ class PublicRequestIntegrationTest {
         ticketNumber,
     )!!
 
-    private fun requestJson(email: String, message: String): String =
+    private fun requestJson(email: String, message: String, subject: String = "결제 오류"): String =
         """
         {
           "name": "김고객",
           "email": "$email",
-          "subject": "결제 오류",
+          "subject": "$subject",
           "message": "$message",
           "privacyConsent": true
         }

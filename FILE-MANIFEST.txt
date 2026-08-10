@@ -5,11 +5,11 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 f9c44a73507552c305e587c53781d2fc536234124d6618270ce6e9aa13701537        6702  README.md
 88174106b57ff9a6acc40207bd3fe97c802b25280aa8061e0980ac73ea304139        4015  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-f593d8defdd36f2ce54f56d2d1c3cdd754f241f1e66795b49ef16c866ae7aa1b       62562  api/core-api-outline-v1.yaml
+1bec4c4d2aa790af095cab41f43725e21a752f3d0fe76358d1a9579a87610a16       62606  api/core-api-outline-v1.yaml
 72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
-0526951abb981630371321b095fcb7cb4e1d40cc71dced733fc4d531c9b45589        7592  api/openapi-v1.yaml
+ed85052628af5b39d648a77b29ebf99ba0139bef2da1589cc91584c81e5d07d5        8215  api/openapi-v1.yaml
 cd5a5ff69a16ae96d5e07b36238928cd3551aecfe516bad640ee2913d302b84c       10857  api/platform-api-outline-v1.yaml
 634dc97ff7782fc750ed8803f350fec736fc507aab67fd8d94095623c836dd2f        1171  api/ui-route-catalog-v0.6.yaml
 9c020a4c12585495dc9f530e9805567afa79a8eef346d6fe757c661fdaa8d740         430  checklists/feature-readiness.md
