@@ -73,7 +73,17 @@ DECISION_DEF_RE = re.compile(r"^\|\s*(D-[0-9]{3})\s*\|", re.MULTILINE)
 GATE_DEF_RE = re.compile(r"^###\s+([A-Z][A-Z0-9-]*-[0-9]{3})\b", re.MULTILINE)
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"}
-GENERATED_DIRECTORY_NAMES = {".git", ".gradle", ".gradle-user-home", "build", "dist", "node_modules"}
+GENERATED_DIRECTORY_NAMES = {
+    ".git",
+    ".gradle",
+    ".gradle-user-home",
+    "build",
+    "dist",
+    "node_modules",
+    "playwright-report",
+    "test-results",
+}
+E2E_VISUAL_BASELINE_DIRECTORY = ROOT / "frontend/e2e/__screenshots__"
 
 
 def rel(path: Path) -> str:
@@ -325,11 +335,24 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
     if statuses != expected_statuses:
         errors.append(f"Requirement status vocabulary mismatch: {sorted(statuses)}")
 
+    e2e_visual_baselines = (
+        [
+            path
+            for path in E2E_VISUAL_BASELINE_DIRECTORY.rglob("*")
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+        ]
+        if E2E_VISUAL_BASELINE_DIRECTORY.exists()
+        else []
+    )
     image_assets = [
         path
         for path in ROOT.rglob("*")
-        if path.is_file() and not is_generated(path) and path.suffix.lower() in IMAGE_EXTENSIONS
+        if path.is_file()
+        and not is_generated(path)
+        and not path.is_relative_to(E2E_VISUAL_BASELINE_DIRECTORY)
+        and path.suffix.lower() in IMAGE_EXTENSIONS
     ]
+    counts["e2e_visual_baselines"] = len(e2e_visual_baselines)
     counts["bundled_image_assets"] = len(image_assets)
     if image_assets:
         errors.append("Documentation seed must not bundle copied Zendesk visual assets: " + ", ".join(rel(p) for p in image_assets))
