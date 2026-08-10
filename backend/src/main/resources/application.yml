@@ -25,6 +25,14 @@ spring:
 
 server:
   shutdown: graceful
+  servlet:
+    session:
+      timeout: ${DESKSEED_AUTH_SESSION_IDLE:60m}
+      cookie:
+        name: DESKSEED_SESSION
+        http-only: true
+        secure: false
+        same-site: lax
   error:
     include-message: never
     include-stacktrace: never
@@ -49,3 +57,14 @@ deskseed:
   portal:
     request-access-token:
       ttl: ${DESKSEED_REQUEST_ACCESS_TOKEN_TTL:30d}
+  staff-auth:
+    password-cost: ${DESKSEED_AUTH_PASSWORD_COST:12}
+    session-idle: ${DESKSEED_AUTH_SESSION_IDLE:60m}
+    session-absolute: ${DESKSEED_AUTH_SESSION_ABSOLUTE:12h}
+    login-failure-limit: ${DESKSEED_AUTH_LOGIN_FAILURE_LIMIT:10}
+    login-failure-window: ${DESKSEED_AUTH_LOGIN_FAILURE_WINDOW:15m}
+    bootstrap:
+      enabled: ${DESKSEED_BOOTSTRAP_ADMIN_ENABLED:true}
+      email: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:}
+      display-name: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:}
+      password-file: ${DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE:}

@@ -11,6 +11,12 @@ spring:
     user: ${DATABASE_MIGRATION_USERNAME}
     password: ${DATABASE_MIGRATION_PASSWORD}
 
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+
 deskseed:
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS}

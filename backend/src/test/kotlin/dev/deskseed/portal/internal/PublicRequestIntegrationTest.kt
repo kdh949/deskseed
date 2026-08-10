@@ -175,10 +175,31 @@ class PublicRequestIntegrationTest {
         val submitted = submitUniqueRequest("http-public-projection")
         val ticketId = ticketId(submitted.ticketNumber)
         val childSubject = "절대 노출하면 안 되는 하위 티켓"
+        val groupId = UUID.randomUUID()
+        val assigneeId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into support_groups (id, name, status, created_at, updated_at, version)
+            values (?, ?, 'ACTIVE', now(), now(), 0)
+            """.trimIndent(),
+            groupId,
+            "projection-${UUID.randomUUID()}",
+        )
+        jdbcTemplate.update(
+            """
+            insert into staff_accounts
+                (id, email_normalized, email_display, display_name, role, status,
+                 password_hash, created_at, updated_at, version)
+            values (?, ?, ?, 'Projection Agent', 'AGENT', 'ACTIVE', 'test-only-hash', now(), now(), 0)
+            """.trimIndent(),
+            assigneeId,
+            "projection-${UUID.randomUUID()}@example.com",
+            "projection@example.com",
+        )
         jdbcTemplate.update(
             "update tickets set group_id = ?, assignee_id = ? where id = ?",
-            UUID.randomUUID(),
-            UUID.randomUUID(),
+            groupId,
+            assigneeId,
             ticketId,
         )
         jdbcTemplate.update(
