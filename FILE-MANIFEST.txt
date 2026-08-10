@@ -2,7 +2,7 @@ eefc53d5785a737c0a188604c727d9724363866e2b49d7ab1ff2c88efd0a8403        7842  AG
 f7fe907f10c54f6ca5adf94f81a5557a5a04e1bbe8c62827fd5c6549b0a071fe        2329  CHANGELOG-v0.6.md
 b75b745d628fc422bba128c48b7833fd6f79f94dfa5d47210248a1875f4560a4        2426  CODEX_TASK_TEMPLATE.md
 e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IMPLEMENTATION-START-HERE.md
-f9c44a73507552c305e587c53781d2fc536234124d6618270ce6e9aa13701537        6702  README.md
+a27671690601a3961b238a874ba1a570880ea4a96051c89499f1c73f6c68f0c9        8892  README.md
 88174106b57ff9a6acc40207bd3fe97c802b25280aa8061e0980ac73ea304139        4015  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
 4a5f298c4616c6221e47a9dd5fef8dd26dee4e1ec1fd162e1e3a23f0dce1180e       73989  api/core-api-outline-v1.yaml
@@ -35,7 +35,7 @@ c9135bdbd123cfb7c118ef14fd6dccfb82bb9e9cb7a7630b99e68e36ece1498d        6279  do
 7c07f7114c8dc8994560e2042c70fa6c1a9ddee315c35863472ac9927dde2086        7343  docs/12-sla-analytics-automation-blueprint.md
 9b278279434e7cff57dbfd0ac97fde8dc7aeb29149296059cebaaa8d504b7f96        1874  docs/13-license-decision.md
 58e15742f455d37fb27fa5f090111d5b26207a72f596f13c5a9ee1d0c5108da5        8705  docs/14-execution-backlog.md
-c7ca5108ecdf090cac0aff194598f4790d1f609376a2d8c6f00b5f7debb1e051        4981  docs/15-seed-status.md
+d025ba8b14b91a67a87a97d5af72fd35058ec973c153a6a281f65f74ef9e2a98        5557  docs/15-seed-status.md
 19b7616dda936661aeb93a98081aac77f3cedf9c5457c027f9aa4c89a759621e        7275  docs/16-metric-glossary-draft.md
 1a234089ea1f791f0bb56e91215e11619cea6520ecd3259069625bb872a72760        7154  docs/17-open-source-study-guide.md
 4855c94088a28419f10be938bbfcc3ce4296a71a13b8cf0e70ee7f9f7d917743       15313  docs/18-integration-platform.md
@@ -46,7 +46,7 @@ d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  do
 51287483d2ff1021d56614168cdaa47a88195e28cf18d7e6811f687a6f77b1da        6554  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 4cf4e0236b234de4f297c8402311e49a06b93795376216fcfb8f2f737d14158b        5444  docs/25-implementation-decision-register.md
-7a0f1f40eae93d8d726ca892b0d87be39e74e4a5139308b30289cced8ca1a952       14480  docs/26-requirement-traceability.md
+ec7a7ba6bac5f85c7631dbfbe67ff6e31bc34a91f13b78118392280ffdb995ec       14522  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  docs/28-frontend-product-and-information-architecture.md
 6310ae177cb98cd4822dee8827280e1291d293d4fa5e86cc86464b5091ebfa7a        6914  docs/29-zendesk-inspired-design-system.md
@@ -126,7 +126,7 @@ a0220c67361e437ec49244f3c1a0f23805a566085e2c3e105d4e7ce717c88105        1339  ta
 c846e13acf57751a6e35c688a574fbae9ebf11c86884372c3162969d68312603         961  tasks/04-external-reference.md
 aef8b9427865be78e457cfc7b6956607e404dc30778c393c7e352cecf2dc9593        1122  tasks/05-outbound-webhooks-and-sdk.md
 ba84d6a9e8af2c4852f99e9ad2377e87131f52ed02909575b3b0fa04043e74c1        6185  tasks/06-core-mvp-customer-request.md
-f8a8457e1bf2a1bfa6c60aa092fc46c4d3b0b9787083cd8011908e04a87d1b0d        3413  tasks/07-staff-auth-and-groups.md
+bbbb57174f0bf038f0c8a5aa3d22fd71f2b4054541d1b8bbd1b0d1debbaa5113        4031  tasks/07-staff-auth-and-groups.md
 2a7fe96e8884df324b14226245e15271e5ce8f9104cda0cc94c1d23535efe9d1         567  tasks/08-agent-views-and-workspace.md
 244cdfe2b4d3c0f66867cf4a2cf028907a59e416c819c07c8927181ee12dff92         385  tasks/09-ticket-update-audit-concurrency.md
 93e27a547b23ad256a16968709b751a07393fd060924c6afef1f5206817ebcb8         402  tasks/10-transfer-and-child-tickets.md

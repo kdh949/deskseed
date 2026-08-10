@@ -4,7 +4,7 @@
 
 설치형(self-hosted) 고객지원 티켓 시스템을 Kotlin/Spring과 React로 만드는 포트폴리오용 코드베이스 시드입니다. 제품 행동은 Zendesk를 참고하되, 구현은 도메인 규칙부터 다시 설계합니다.
 
-현재 저장소는 **M0 기반 구성 + M1 고객 웹 문의 세로 기능**과 v0.6 문서·계약 시드를 담고 있습니다. v0.6의 `IMPLEMENTATION_READY` 표기는 해당 기능의 계약이 구현을 시작하기에 충분하다는 뜻이며, 코드 구현 완료를 뜻하지는 않습니다.
+현재 저장소는 **M0 기반 구성 + M1 고객 웹 문의 + M2 직원 인증·조직 관리 세로 기능**과 v0.6 문서·계약 시드를 담고 있습니다. v0.6의 `IMPLEMENTATION_READY` 표기는 해당 기능의 계약이 구현을 시작하기에 충분하다는 뜻이며, 코드 구현 완료를 뜻하지는 않습니다.
 
 ```text
 익명 고객이 이름/이메일/제목/문의 내용을 입력
@@ -16,7 +16,7 @@
   → Ticket/Audit/AuditEvent가 같은 트랜잭션에서 기록
 ```
 
-상담사 워크스페이스, 공개 답변, 내부 메모, 이관, 자식 티켓, 관리자 화면은 `docs/05-roadmap.md`의 M2~M6에 명세되어 있으며 아직 구현 완료로 간주하지 않습니다.
+티켓 작업용 상담사 워크스페이스, 공개 답변, 내부 메모, 이관, 자식 티켓과 후속 관리자 설정은 `docs/05-roadmap.md`의 M2~M6에 명세되어 있으며 아직 구현 완료로 간주하지 않습니다.
 
 ## 핵심 결정
 
@@ -94,6 +94,25 @@ npm ci
 npm run dev
 ```
 
+### 최초 ADMIN bootstrap
+
+최초 관리자 비밀번호는 환경 변수나 저장소 파일에 넣지 않고, 저장소 밖의 접근 제한된 파일을 Compose secret으로 마운트해 전달합니다. 비어 있는 DB에서 한 번만 동작하며 직원 계정이 하나라도 있으면 기존 계정을 변경하지 않습니다.
+
+```bash
+install -m 600 /dev/null /absolute/path/outside-repository/deskseed-first-admin.secret
+# 위 파일에 12~128자의 초기 비밀번호를 입력합니다.
+
+# .env에는 비밀번호 값이 아니라 아래의 비밀 파일 경로만 둡니다.
+DESKSEED_BOOTSTRAP_ADMIN_ENABLED=true
+DESKSEED_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME=최초 관리자
+DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE=/absolute/path/outside-repository/deskseed-first-admin.secret
+
+docker compose up --build
+```
+
+첫 로그인 성공 후 `DESKSEED_BOOTSTRAP_ADMIN_ENABLED=false`로 되돌리고 비밀번호 파일을 안전하게 삭제합니다. 부분 설정, 잘못된 이메일, 일반 파일이 아닌 경로, 12자 미만 또는 128자 초과 비밀번호는 기동을 실패시킵니다. 비밀번호 원문은 API 응답·감사·애플리케이션 로그에 기록되지 않습니다.
+
 ## 검증
 
 ```bash
@@ -111,6 +130,13 @@ make compose-smoke
 ```http
 POST /api/v1/requests
 GET  /api/v1/requests/{ticketNumber}
+GET  /api/v1/agent/csrf
+POST /api/v1/agent/session
+DELETE /api/v1/agent/session
+GET  /api/v1/agent/me
+GET/POST/DELETE  /api/v1/admin/staff[/{staffId}]
+GET/POST/PATCH/DELETE /api/v1/admin/groups[/{groupId}]
+GET/POST/DELETE /api/v1/admin/groups/{groupId}/members[/{staffId}]
 ```
 
 조회 API에는 생성 응답에서 받은 키가 필요합니다.
@@ -121,9 +147,13 @@ X-Request-Access-Token: <opaque-token>
 
 명세는 [`api/openapi-v1.yaml`](api/openapi-v1.yaml)에 있습니다. 서버가 실행 중이면 `./scripts/demo-request.sh`로 첫 세로 기능을 확인할 수 있습니다.
 
+직원 변경 API는 ADMIN 세션과 CSRF 토큰을 모두 요구합니다. 관리자 UI는 `http://localhost:5173/admin/staff`와 `/admin/groups`, 직원 로그인은 `/agent/login`입니다.
+
 ## 보안상 중요한 현재 한계
 
 M1 조회 키는 학습과 세로 기능 검증을 위한 **opaque bearer token**입니다. 원문은 한 번만 반환되고 DB에는 SHA-256 해시만 저장하지만, 이메일 소유권 검증·만료·재발급·폐기 UI·rate limit·CAPTCHA는 아직 없습니다. 실제 공개 배포 전에는 `docs/05-roadmap.md`의 P1을 먼저 완료해야 합니다.
+
+직원 인증은 현재 단일 설치 인스턴스의 email/password 세션만 지원합니다. 비밀번호 재설정 메일, MFA, SSO/OIDC와 운영용 secret/KMS provisioning은 아직 제공하지 않습니다. 인터넷 공개 전에는 HTTPS reverse proxy, production profile의 `Secure` cookie, 좁은 CORS origin, 외부 secret 관리와 상위 계층 rate limit을 운영자가 구성해야 합니다.
 
 ## 저장소 상태 표기
 

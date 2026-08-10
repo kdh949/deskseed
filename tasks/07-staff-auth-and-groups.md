@@ -56,3 +56,10 @@ An operator can bootstrap the first ADMIN without committing a credential, staff
 - Backend Spring/Testcontainers integration tests, architecture verification, and full Gradle test/build.
 - Frontend component tests, Playwright route-guard/admin workflow, axe/keyboard checks, typecheck/lint/build.
 - Full-stack login/admin/direct URL scenario through the same-origin reverse proxy.
+
+## Implementation evidence
+
+- Flyway `V5__staff_authentication_and_groups.sql` and PostgreSQL migration verification.
+- `StaffAuthIntegrationTest`, `FirstAdminBootstrapIntegrationTest`, and `AdminOrganizationIntegrationTest` cover the authentication, authorization, organization invariant, and transactional audit boundaries.
+- `staff-auth-admin.spec.ts` covers generic login failure, CSRF-protected ADMIN UI changes, logout, API 403, and direct `/admin/...` route denial.
+- Customer authentication, SSO/OAuth/MFA, password-reset delivery, multi-role grants, and group-level NONE/READ/READ_WRITE remain out of scope.

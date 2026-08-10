@@ -28,10 +28,10 @@
 |---|---|---:|---|---|---|
 | REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | expiry/replay/enumeration/session 테스트 |
 | REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | explicit token/claim 테스트 |
-| REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session은 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 30, 33, 35 ADR, 52 | 정상/실패/disabled/expiry/logout/CSRF 테스트 |
-| REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | bootstrap/lockout/generic error/secret scan |
+| REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session은 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 30, 33, 35 ADR, 52 | `StaffAuthIntegrationTest`, `staff-auth-admin.spec.ts` |
+| REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
 | REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | queue/search/direct URL authorization |
-| REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR | method/API/route guard와 403 테스트 |
+| REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR | `AdminOrganizationIntegrationTest`, direct URL E2E |
 
 ## 3. 고객 문의와 티켓 처리
 
