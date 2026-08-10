@@ -2,6 +2,7 @@ package dev.deskseed.ticketing.internal.domain
 
 import dev.deskseed.ticketing.CommentAuthorType
 import dev.deskseed.ticketing.CommentVisibility
+import dev.deskseed.ticketing.internal.TicketEntity
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -23,5 +24,6 @@ class TicketTest {
         assertThat(ticket.firstComment.visibility).isEqualTo(CommentVisibility.PUBLIC)
         assertThat(ticket.firstComment.authorType).isEqualTo(CommentAuthorType.CUSTOMER)
         assertThat(Ticket::class.memberProperties.map { it.name }).doesNotContain("description")
+        assertThat(TicketEntity::class.memberProperties.map { it.name }).doesNotContain("description")
     }
 }
