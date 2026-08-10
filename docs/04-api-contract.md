@@ -60,7 +60,8 @@ Atomic result:
 {
   "ticketNumber": 1042,
   "status": "NEW",
-  "accessToken": "returned-only-once"
+  "accessToken": "returned-only-once",
+  "createdAt": "2026-08-10T03:00:00Z"
 }
 ```
 

@@ -23,7 +23,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Adr Files: 34
 - Bundled Image Assets: 0
 - Canonical Docs: 55
-- Core Api Requirement Links: 33
+- Core Api Requirement Links: 34
 - Decision Definitions: 46
 - Json Files: 8
 - Markdown Files: 137
