@@ -37,6 +37,7 @@ export interface ProblemDetails {
   detail?: string
   instance?: string
   requestId?: string
+  code?: string
   fieldErrors?: FieldError[]
 }
 
@@ -44,4 +45,52 @@ export interface FieldError {
   field: string
   message: string
   code?: string
+}
+
+export type StaffRole = 'ADMIN' | 'AGENT'
+export type StaffStatus = 'ACTIVE' | 'DISABLED'
+export type OrganizationStatus = 'ACTIVE' | 'DISABLED'
+
+export interface CurrentStaff {
+  id: string
+  email: string
+  displayName: string
+  role: StaffRole
+  capabilities: string[]
+}
+
+export interface GroupReference {
+  id: string
+  name: string
+}
+
+export interface StaffAccount {
+  id: string
+  email: string
+  displayName: string
+  role: StaffRole
+  status: StaffStatus
+  memberships: GroupReference[]
+  lastLoginAt: string | null
+}
+
+export interface SupportGroup {
+  id: string
+  name: string
+  status: OrganizationStatus
+  memberCount: number
+}
+
+export interface GroupMembership {
+  groupId: string
+  staffId: string
+  staffDisplayName: string
+  role: StaffRole
+}
+
+export interface CreateStaffInput {
+  email: string
+  displayName: string
+  role: StaffRole
+  password: string
 }

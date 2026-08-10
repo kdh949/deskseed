@@ -1,18 +1,38 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskseedThemeProvider } from '../../shared/ui/DeskseedThemeProvider'
+import { StaffSessionProvider } from '../staff-auth/StaffSessionContext'
 import { AgentShell } from './AgentShell'
 
 describe('AgentShell', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
   it('keeps the empty workspace within the desktop layout and exposes keyboard focusable navigation', async () => {
     const user = userEvent.setup()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: 'agent-id',
+            email: 'agent@example.com',
+            displayName: '상담사',
+            role: 'AGENT',
+            capabilities: ['AGENT_WORKSPACE'],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
 
     render(
       <DeskseedThemeProvider>
         <MemoryRouter>
-          <AgentShell />
+          <StaffSessionProvider>
+            <AgentShell />
+          </StaffSessionProvider>
         </MemoryRouter>
       </DeskseedThemeProvider>,
     )
@@ -27,5 +47,8 @@ describe('AgentShell', () => {
     ).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('link', { name: '홈' })).toHaveFocus()
+    expect(
+      screen.queryByRole('link', { name: '관리자 설정' }),
+    ).not.toBeInTheDocument()
   })
 })

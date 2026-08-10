@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router'
 import { DeskseedButton } from '../../shared/ui/DeskseedButton'
+import { useStaffSession } from '../staff-auth/StaffSessionContext'
 
 const navigationItems = [
   { label: '홈', symbol: 'H', to: '/agent/home' },
@@ -7,6 +8,7 @@ const navigationItems = [
 ]
 
 export function AgentShell() {
+  const session = useStaffSession()
   return (
     <div className="agent-shell">
       <nav className="agent-global-nav" aria-label="상담사 전역 탐색">
@@ -29,6 +31,16 @@ export function AgentShell() {
               <span className="agent-nav-tooltip">{item.label}</span>
             </NavLink>
           ))}
+          {session.staff?.role === 'ADMIN' ? (
+            <NavLink
+              className="agent-nav-link"
+              to="/admin/staff"
+              aria-label="관리자 설정"
+            >
+              <span aria-hidden="true">A</span>
+              <span className="agent-nav-tooltip">관리자 설정</span>
+            </NavLink>
+          ) : null}
         </div>
       </nav>
 
@@ -36,9 +48,20 @@ export function AgentShell() {
         <p className="agent-work-nav-eyebrow">DESKSEED</p>
         <h1>상담사 작업 공간</h1>
         <p>Views와 티켓 업무 흐름은 다음 세로 슬라이스에서 연결됩니다.</p>
+        <div className="agent-user-card">
+          <strong>{session.staff?.displayName}</strong>
+          <span>{session.staff?.role}</span>
+          <button
+            className="text-button"
+            type="button"
+            onClick={session.signOut}
+          >
+            로그아웃
+          </button>
+        </div>
       </aside>
 
-      <section className="agent-content-column">
+      <div className="agent-content-column">
         <header className="agent-topbar">
           <div>
             <p className="agent-topbar-eyebrow">AGENT HOME</p>
@@ -67,7 +90,7 @@ export function AgentShell() {
             </p>
           </section>
         </main>
-      </section>
+      </div>
     </div>
   )
 }
