@@ -71,6 +71,32 @@ test('agent direct admin URL is guarded, admin API returns 403, and logout clear
           })
         : route.fulfill(problem(401))
     }
+    if (path === '/api/v1/agent/views') {
+      return route.fulfill({
+        status: 200,
+        json: [
+          {
+            key: 'my-open',
+            name: '내 open',
+            scope: 'SYSTEM',
+            categoryPath: ['Views'],
+            ticketCount: 0,
+            readScope: 'ALL_TICKETS',
+          },
+        ],
+      })
+    }
+    if (path === '/api/v1/agent/views/my-open/tickets') {
+      return route.fulfill({
+        status: 200,
+        json: {
+          items: [],
+          nextCursor: null,
+          totalApproximate: null,
+          sort: 'updatedAt:desc,ticketNumber:desc',
+        },
+      })
+    }
     if (path.startsWith('/api/v1/admin/')) {
       adminApiCalls += 1
       return route.fulfill(problem(403))
@@ -90,10 +116,8 @@ test('agent direct admin URL is guarded, admin API returns 403, and logout clear
   await expect(loginError).not.toContainText('Sensitive server-only')
 
   await page.getByRole('button', { name: '로그인' }).click()
-  await expect(page).toHaveURL(/\/agent\/home$/)
-  await expect(
-    page.getByRole('main', { name: '상담사 작업 공간' }),
-  ).toBeVisible()
+  await expect(page).toHaveURL(/\/agent\/views\/my-open$/)
+  await expect(page.getByRole('main', { name: '내 open' })).toBeVisible()
   await expect(page.getByRole('link', { name: '관리자 설정' })).toHaveCount(0)
   await expectNoAxeViolations(page)
   expect(adminApiCalls).toBe(0)

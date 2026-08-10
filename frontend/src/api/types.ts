@@ -108,7 +108,13 @@ export interface SavedAgentView {
 
 export interface ActorSummary {
   id: string | null
-  type: 'CUSTOMER' | 'STAFF' | 'INTEGRATION_CLIENT' | 'TRIGGER' | 'AUTOMATION' | 'SYSTEM'
+  type:
+    | 'CUSTOMER'
+    | 'STAFF'
+    | 'INTEGRATION_CLIENT'
+    | 'TRIGGER'
+    | 'AUTOMATION'
+    | 'SYSTEM'
   displayName: string
 }
 

@@ -4,6 +4,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { DeskseedThemeProvider } from './shared/ui/DeskseedThemeProvider'
 
+function TestApp() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return (
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  )
+}
+
 function sessionFetch(role: 'ADMIN' | 'AGENT') {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
@@ -28,6 +39,32 @@ function sessionFetch(role: 'ADMIN' | 'AGENT') {
         headers: { 'Content-Type': 'application/json' },
       })
     }
+    if (url.endsWith('/api/v1/agent/views')) {
+      return new Response(
+        JSON.stringify([
+          {
+            key: 'my-open',
+            name: '내 open',
+            scope: 'SYSTEM',
+            categoryPath: ['Views'],
+            ticketCount: 0,
+            readScope: 'ALL_TICKETS',
+          },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    if (url.includes('/api/v1/agent/views/my-open/tickets')) {
+      return new Response(
+        JSON.stringify({
+          items: [],
+          nextCursor: null,
+          totalApproximate: null,
+          sort: 'updatedAt:desc,ticketNumber:desc',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
     throw new Error(`Unexpected request: ${url}`)
   })
 }
@@ -40,14 +77,12 @@ describe('App', () => {
     render(
       <DeskseedThemeProvider>
         <MemoryRouter initialEntries={['/agent/home']}>
-          <App />
+          <TestApp />
         </MemoryRouter>
       </DeskseedThemeProvider>,
     )
 
-    expect(
-      await screen.findByRole('main', { name: '상담사 작업 공간' }),
-    ).toBeVisible()
+    expect(await screen.findByRole('main', { name: '내 open' })).toBeVisible()
     expect(
       screen.queryByRole('navigation', { name: '주요 메뉴' }),
     ).not.toBeInTheDocument()
@@ -58,7 +93,7 @@ describe('App', () => {
     render(
       <DeskseedThemeProvider>
         <MemoryRouter initialEntries={['/admin/staff']}>
-          <App />
+          <TestApp />
         </MemoryRouter>
       </DeskseedThemeProvider>,
     )
@@ -79,7 +114,7 @@ describe('App', () => {
     render(
       <DeskseedThemeProvider>
         <MemoryRouter initialEntries={['/admin/staff']}>
-          <App />
+          <TestApp />
         </MemoryRouter>
       </DeskseedThemeProvider>,
     )
@@ -118,7 +153,7 @@ describe('App', () => {
     render(
       <DeskseedThemeProvider>
         <MemoryRouter initialEntries={['/admin/staff']}>
-          <App />
+          <TestApp />
         </MemoryRouter>
       </DeskseedThemeProvider>,
     )
@@ -131,3 +166,4 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 })
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

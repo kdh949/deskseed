@@ -1,6 +1,8 @@
 import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { AgentShell } from './features/agent-shell/AgentShell'
+import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
+import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { AdminShell } from './features/admin/AdminShell'
 import {
   AdminRoute,
@@ -23,7 +25,33 @@ export const appRoutes: RouteObject[] = [
       {
         element: <StaffRoute />,
         children: [
-          { path: '/agent/*', element: <AgentShell /> },
+          {
+            path: '/agent',
+            element: <AgentShell />,
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+              {
+                path: 'home',
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+              {
+                path: 'views',
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+              { path: 'views/:viewKey', element: <AgentViewsPage /> },
+              {
+                path: 'tickets/:ticketNumber',
+                element: <AgentTicketWorkspacePage />,
+              },
+              {
+                path: '*',
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+            ],
+          },
           {
             element: <AdminRoute />,
             children: [

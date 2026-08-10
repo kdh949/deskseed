@@ -87,8 +87,7 @@ function isTicketNumber(value: unknown): value is number {
 
 function isTicketPriority(value: unknown): value is TicketPriority {
   return (
-    typeof value === 'string' &&
-    TICKET_PRIORITIES.has(value as TicketPriority)
+    typeof value === 'string' && TICKET_PRIORITIES.has(value as TicketPriority)
   )
 }
 
