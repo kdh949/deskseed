@@ -46,10 +46,29 @@ paths:
               subject: 결제가 되지 않아요
               message: 결제 버튼을 누르면 오류가 발생합니다.
               privacyConsent: true
+      x-deskseed-generic-problem: &id001
+        description: RFC 9457 Problem Details
+        content:
+          application/problem+json:
+            schema:
+              $ref: '#/components/schemas/Problem'
+      x-deskseed-no-store-problem: &anonymousRequestProblem
+        <<: *id001
+        headers:
+          Cache-Control:
+            description: Always `no-store` because this capability-protected surface can contain customer data.
+            schema:
+              type: string
+              enum: [no-store]
       responses:
         '201':
           description: Request created
           headers:
+            Cache-Control:
+              description: Always `no-store` because the response contains a one-time access token.
+              schema:
+                type: string
+                enum: [no-store]
             Location:
               description: Customer-safe request URL; the access token is not embedded.
               schema:
@@ -73,16 +92,11 @@ paths:
                 status: NEW
                 accessToken: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU
                 createdAt: '2026-08-10T00:00:00Z'
-        '400': &id001
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '409': *id001
-        '429': *id001
-        '503': *id001
-        '500': *id001
+        '400': *anonymousRequestProblem
+        '409': *anonymousRequestProblem
+        '429': *anonymousRequestProblem
+        '503': *anonymousRequestProblem
+        '500': *anonymousRequestProblem
   /api/v1/requests/{ticketNumber}:
     get:
       summary: Read a customer-safe request projection
@@ -142,9 +156,15 @@ paths:
                   authorDisplayName: 고객
                   body: 결제 버튼을 누르면 오류가 발생합니다.
                   createdAt: '2026-08-10T00:00:00Z'
-        '400': *id001
+        '400': *anonymousRequestProblem
         '404':
           description: The ticket/token pair is absent, expired, revoked, or invalid.
+          headers:
+            Cache-Control:
+              description: Always `no-store` because this capability-protected surface can contain customer data.
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/problem+json:
               schema:
@@ -156,8 +176,8 @@ paths:
                 detail: The ticket number and access token do not identify a visible request.
                 instance: /api/v1/requests/1001
                 requestId: 9f3c4bbc-e78c-4a12-8673-7e39821e591f
-        '429': *id001
-        '503': *id001
+        '429': *anonymousRequestProblem
+        '503': *anonymousRequestProblem
   /api/v1/requests/{ticketNumber}/comments:
     post:
       summary: Add a public customer follow-up
@@ -185,10 +205,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicComment'
-        '400': *id001
-        '404': *id001
-        '409': *id001
-        '429': *id001
+        '400': *anonymousRequestProblem
+        '404': *anonymousRequestProblem
+        '409': *anonymousRequestProblem
+        '429': *anonymousRequestProblem
   /api/v1/customer/requests:
     get:
       summary: List requests for a verified customer account

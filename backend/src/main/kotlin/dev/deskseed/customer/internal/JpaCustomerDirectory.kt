@@ -20,16 +20,12 @@ internal class JpaCustomerDirectory(
         val normalizedEmail = displayEmail.lowercase(Locale.ROOT)
         val now = Instant.now(clock)
 
-        val customer = repository.findByEmailNormalized(normalizedEmail)?.also {
-            it.refreshUnverifiedProfile(cleanName, displayEmail, now)
-        } ?: repository.save(
-            CustomerEntity(
-                name = cleanName,
-                emailNormalized = normalizedEmail,
-                emailDisplay = displayEmail,
-                createdAt = now,
-                updatedAt = now,
-            ),
+        val customer = repository.upsertUnverified(
+            id = java.util.UUID.randomUUID(),
+            name = cleanName,
+            emailNormalized = normalizedEmail,
+            emailDisplay = displayEmail,
+            now = now,
         )
 
         return CustomerRef(

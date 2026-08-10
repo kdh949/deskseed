@@ -32,6 +32,10 @@ import java.sql.Timestamp
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -111,6 +115,7 @@ class PublicRequestIntegrationTest {
                 .content(requestJson("rejected-${UUID.randomUUID()}@example.com", rejectedBody)),
         )
             .andExpect(status().isBadRequest)
+            .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.type").value("/problems/validation"))
     }
@@ -236,6 +241,7 @@ class PublicRequestIntegrationTest {
                 .header("X-Request-Access-Token", token),
         )
             .andExpect(status().isNotFound)
+            .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.type").value("/problems/request-not-found"))
             .andExpect(jsonPath("$.title").value("Request not found"))
@@ -297,10 +303,11 @@ class PublicRequestIntegrationTest {
                     .content(requestJson(email, "민감한 장애 주입 메시지", subject)),
             )
                 .andExpect(status().isServiceUnavailable)
+                .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("/problems/request-write-unavailable"))
+                .andExpect(jsonPath("$.type").value("/problems/request-storage-unavailable"))
                 .andExpect(jsonPath("$.status").value(503))
-                .andExpect(jsonPath("$.detail").value("The request could not be stored safely."))
+                .andExpect(jsonPath("$.detail").value("The request could not be processed safely."))
         } finally {
             jdbcTemplate.execute("drop trigger if exists $triggerName on $table")
             jdbcTemplate.execute("drop function if exists $functionName()")
@@ -439,6 +446,161 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
+    fun `anonymous reuse never overwrites a verified customer profile`() {
+        val email = "verified-${UUID.randomUUID()}@example.com"
+        val first = service.submit(
+            SubmitAnonymousRequest(
+                name = "초기 이름",
+                email = email,
+                subject = "첫 문의",
+                message = "첫 문의 내용",
+                context = commandContext("verified-first"),
+            ),
+        )
+        val customerId = jdbcTemplate.queryForObject(
+            "select requester_id from tickets where ticket_number = ?",
+            UUID::class.java,
+            first.ticketNumber,
+        )!!
+        jdbcTemplate.update(
+            """
+            update customers
+            set name = ?, email_display = ?, verified_at = now(), updated_at = now()
+            where id = ?
+            """.trimIndent(),
+            "검증된 이름",
+            "Verified.Display@example.com",
+            customerId,
+        )
+
+        service.submit(
+            SubmitAnonymousRequest(
+                name = "덮어쓰면 안 되는 이름",
+                email = email.uppercase(),
+                subject = "두 번째 문의",
+                message = "두 번째 문의 내용",
+                context = commandContext("verified-second"),
+            ),
+        )
+
+        val customer = jdbcTemplate.queryForMap(
+            "select name, email_display from customers where id = ?",
+            customerId,
+        )
+        assertThat(customer["name"]).isEqualTo("검증된 이름")
+        assertThat(customer["email_display"]).isEqualTo("Verified.Display@example.com")
+    }
+
+    @Test
+    fun `concurrent first submissions for one normalized email reuse one customer and both succeed`() {
+        val marker = UUID.randomUUID().toString()
+        val email = "Concurrent-$marker@Example.com"
+        val functionName = "test_delay_customer_insert"
+        val triggerName = "${functionName}_trigger"
+        val barrier = CyclicBarrier(2)
+        val executor = Executors.newFixedThreadPool(2)
+        installCustomerInsertDelayTrigger(functionName, triggerName)
+
+        try {
+            val responses = executor.invokeAll(
+                (1..2).map { requestNumber ->
+                    Callable {
+                        barrier.await(10, TimeUnit.SECONDS)
+                        mockMvc.perform(
+                            post("/api/v1/requests")
+                                .header("X-Request-Id", "concurrent-$marker-$requestNumber")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                    requestJson(
+                                        email = email,
+                                        message = "동시 문의 $requestNumber",
+                                        subject = "동시 생성 $requestNumber",
+                                    ),
+                                ),
+                        )
+                            .andExpect(status().isCreated)
+                            .andExpect(header().string("Cache-Control", "no-store"))
+                            .andReturn()
+                            .response
+                            .contentAsString
+                    }
+                },
+            ).map { it.get(15, TimeUnit.SECONDS) }
+
+            assertThat(responses).allMatch { it.contains("\"accessToken\":") }
+        } finally {
+            executor.shutdownNow()
+            jdbcTemplate.execute("drop trigger if exists $triggerName on customers")
+            jdbcTemplate.execute("drop function if exists $functionName()")
+        }
+
+        val customerId = jdbcTemplate.queryForObject(
+            "select id from customers where email_normalized = ?",
+            UUID::class.java,
+            email.lowercase(),
+        )!!
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from customers where email_normalized = ?",
+                Long::class.java,
+                email.lowercase(),
+            ),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from tickets where requester_id = ?",
+                Long::class.java,
+                customerId,
+            ),
+        ).isEqualTo(2)
+    }
+
+    @Test
+    fun `database read failure returns a neutral no-store storage problem`() {
+        val submitted = submitUniqueRequest("read-storage-failure")
+
+        jdbcTemplate.execute(
+            "alter table request_access_tokens rename column token_hash to token_hash_unavailable",
+        )
+        try {
+            mockMvc.perform(
+                get("/api/v1/requests/{ticketNumber}", submitted.ticketNumber)
+                    .header("X-Request-Access-Token", submitted.accessToken),
+            )
+                .andExpect(status().isServiceUnavailable)
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value("/problems/request-storage-unavailable"))
+                .andExpect(jsonPath("$.detail").value("The request could not be processed safely."))
+        } finally {
+            jdbcTemplate.execute(
+                "alter table request_access_tokens rename column token_hash_unavailable to token_hash",
+            )
+        }
+    }
+
+    @Test
+    fun `anonymous submission disabled problem is never cacheable`() {
+        jdbcTemplate.update(
+            "update system_settings set customer_access_mode = 'REGISTRATION_REQUIRED', updated_at = now() where id = 1",
+        )
+        try {
+            mockMvc.perform(
+                post("/api/v1/requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(requestJson("disabled-${UUID.randomUUID()}@example.com", "문의 내용")),
+            )
+                .andExpect(status().isForbidden)
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+        } finally {
+            jdbcTemplate.update(
+                "update system_settings set customer_access_mode = 'ANONYMOUS_ALLOWED', updated_at = now() where id = 1",
+            )
+        }
+    }
+
+    @Test
     fun `one submission creates one audit with ordered creation events`() {
         val submitted = submitUniqueRequest("audit")
         val ticketId = ticketId(submitted.ticketNumber)
@@ -554,13 +716,15 @@ class PublicRequestIntegrationTest {
             email = "customer-$suffix-${UUID.randomUUID()}@example.com",
             subject = "결제 오류",
             message = "결제 버튼을 누르면 오류가 납니다.",
-            context = CommandContext(
-                source = RequestSource.CUSTOMER_PORTAL,
-                requestId = "request-$suffix",
-                correlationId = "correlation-$suffix",
-                commandId = UUID.randomUUID().toString(),
-            ),
+            context = commandContext(suffix),
         ),
+    )
+
+    private fun commandContext(suffix: String): CommandContext = CommandContext(
+        source = RequestSource.CUSTOMER_PORTAL,
+        requestId = "request-$suffix",
+        correlationId = "correlation-$suffix",
+        commandId = UUID.randomUUID().toString(),
     )
 
     private fun ticketId(ticketNumber: Long): UUID = jdbcTemplate.queryForObject(
@@ -685,6 +849,29 @@ class PublicRequestIntegrationTest {
             """
             create trigger $triggerName
             before insert on $table
+            for each row execute function $functionName()
+            """.trimIndent(),
+        )
+    }
+
+    private fun installCustomerInsertDelayTrigger(functionName: String, triggerName: String) {
+        jdbcTemplate.execute(
+            """
+            create function $functionName()
+            returns trigger
+            language plpgsql
+            as ${'$'}${'$'}
+            begin
+                perform pg_sleep(0.5);
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create trigger $triggerName
+            before insert on customers
             for each row execute function $functionName()
             """.trimIndent(),
         )
