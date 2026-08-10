@@ -27,6 +27,7 @@ paths:
       x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
+      security: []
       x-deskseed-phase: M1
       x-deskseed-requirements:
       - REQ-TKT-001
@@ -39,11 +40,18 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateAnonymousRequest'
+            example:
+              name: 홍길동
+              email: customer@example.com
+              subject: 결제가 되지 않아요
+              message: 결제 버튼을 누르면 오류가 발생합니다.
+              privacyConsent: true
       responses:
         '201':
           description: Request created
           headers:
             Location:
+              description: Customer-safe request URL; the access token is not embedded.
               schema:
                 type: string
             X-Request-Id:
@@ -56,6 +64,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateAnonymousRequestResult'
+              example:
+                ticketNumber: 1001
+                status: NEW
+                accessToken: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU
+                createdAt: '2026-08-10T00:00:00Z'
         '400': &id001
           description: RFC 9457 Problem Details
           content:
@@ -73,6 +86,7 @@ paths:
       x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
+      security: []
       x-deskseed-phase: M1
       x-deskseed-requirements:
       - REQ-TKT-003
@@ -90,6 +104,7 @@ paths:
         name: X-Request-Access-Token
         in: header
         required: true
+        description: Opaque ticket-scoped token returned only by request creation.
         schema:
           type: string
           minLength: 32
@@ -99,6 +114,7 @@ paths:
           description: Public request detail
           headers:
             Cache-Control:
+              description: Always `no-store` because the response contains customer content.
               schema:
                 type: string
             X-Request-Id:
@@ -111,8 +127,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerRequestDetail'
+              example:
+                ticketNumber: 1001
+                subject: 결제가 되지 않아요
+                status: NEW
+                createdAt: '2026-08-10T00:00:00Z'
+                updatedAt: '2026-08-10T00:00:00Z'
+                comments:
+                - id: 9cc38543-3937-4aa1-a34e-ef45f7b606f8
+                  authorDisplayName: 고객
+                  body: 결제 버튼을 누르면 오류가 발생합니다.
+                  createdAt: '2026-08-10T00:00:00Z'
         '400': *id001
-        '404': *id001
+        '404':
+          description: The ticket/token pair is absent, expired, revoked, or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: /problems/request-not-found
+                title: Request not found
+                status: 404
+                detail: The ticket number and access token do not identify a visible request.
+                instance: /api/v1/requests/1001
+                requestId: 9f3c4bbc-e78c-4a12-8673-7e39821e591f
         '429': *id001
         '503': *id001
   /api/v1/requests/{ticketNumber}/comments:
