@@ -10,6 +10,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.core.env.Environment
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean
+import org.springframework.core.io.ClassPathResource
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.MvcResult
@@ -96,6 +98,16 @@ class StaffAuthIntegrationTest {
                 adminId,
             ),
         ).isEqualTo(1)
+    }
+
+    @Test
+    fun `production profile requires secure session cookies`() {
+        val production = YamlPropertiesFactoryBean().apply {
+            setResources(ClassPathResource("application-production.yml"))
+        }.getObject()
+
+        assertThat(production?.getProperty("server.servlet.session.cookie.secure"))
+            .isEqualTo("true")
     }
 
     @Test

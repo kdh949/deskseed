@@ -6,6 +6,7 @@ import dev.deskseed.organization.OrganizationNotFoundException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.ConstraintViolationException
 import org.springframework.dao.DataAccessException
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.http.ResponseEntity
@@ -55,6 +56,16 @@ internal class AdminOrganizationExceptionHandler {
         "/problems/validation",
         "Organization request validation failed",
         "One or more request fields are invalid.",
+    )
+
+    @ExceptionHandler(DataIntegrityViolationException::class)
+    fun uniquenessConflict(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request,
+        HttpStatus.CONFLICT,
+        "/problems/admin-organization-conflict",
+        "Organization change conflicted",
+        "The requested organization change conflicts with an existing resource.",
+        "RESOURCE_CONFLICT",
     )
 
     @ExceptionHandler(DataAccessException::class)
