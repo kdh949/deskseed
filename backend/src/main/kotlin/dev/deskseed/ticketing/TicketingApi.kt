@@ -90,6 +90,14 @@ interface TicketingFacade {
     fun findPublicTicket(ticketId: UUID, ticketNumber: Long): PublicTicketView?
 }
 
+interface TicketAssignmentUsage {
+    fun hasTicketsAssignedToStaff(staffId: UUID): Boolean
+
+    fun hasTicketsInGroup(groupId: UUID): Boolean
+
+    fun hasTicketsAssignedToMember(groupId: UUID, staffId: UUID): Boolean
+}
+
 data class TicketSubmitted(
     val ticketId: UUID,
     val ticketNumber: Long,

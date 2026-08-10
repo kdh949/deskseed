@@ -6,6 +6,12 @@ import java.util.UUID
 
 internal interface TicketRepository : JpaRepository<TicketEntity, UUID> {
     fun findByTicketNumber(ticketNumber: Long): TicketEntity?
+
+    fun existsByAssigneeId(assigneeId: UUID): Boolean
+
+    fun existsByGroupId(groupId: UUID): Boolean
+
+    fun existsByGroupIdAndAssigneeId(groupId: UUID, assigneeId: UUID): Boolean
 }
 
 internal interface TicketCommentRepository : JpaRepository<TicketCommentEntity, UUID>

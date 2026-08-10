@@ -22,11 +22,10 @@ internal class StaffSecurityProblemWriter(
     ) {
         response.status = status
         response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
-        response.characterEncoding = Charsets.UTF_8.name()
         response.setHeader("Cache-Control", "no-store")
         extraHeaders.forEach(response::setHeader)
         objectMapper.writeValue(
-            response.writer,
+            response.outputStream,
             mapOf(
                 "type" to type,
                 "title" to title,
