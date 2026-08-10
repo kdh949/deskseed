@@ -1,0 +1,149 @@
+package dev.deskseed.staffaccess.internal
+
+import dev.deskseed.audit.AccessAuditOutcome
+import dev.deskseed.audit.AccessAuditWriter
+import dev.deskseed.audit.TicketViewAccessAudit
+import dev.deskseed.foundation.ActorType
+import dev.deskseed.foundation.RequestSource
+import dev.deskseed.ticketing.DefaultStaffView
+import dev.deskseed.ticketing.StaffTicketDetail
+import dev.deskseed.ticketing.StaffTicketListFilter
+import dev.deskseed.ticketing.StaffTicketReadScope
+import dev.deskseed.ticketing.StaffTicketReadStore
+import dev.deskseed.ticketing.StaffTicketSummary
+import org.springframework.dao.DataAccessException
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.util.UUID
+
+internal enum class AgentReadIntent {
+    NAVIGATION,
+    BACKGROUND,
+}
+
+internal data class AgentReadRequestContext(
+    val requestId: String,
+    val correlationId: String,
+    val ipAddress: String?,
+    val userAgent: String?,
+)
+
+internal data class AgentViewDefinition(
+    val key: String,
+    val name: String,
+    val category: String,
+    val scope: String,
+    val readScope: StaffTicketReadScope,
+)
+
+internal data class AgentTicketPage(
+    val items: List<StaffTicketSummary>,
+    val nextCursor: String?,
+)
+
+@Service
+internal class AgentTicketReadApplicationService(
+    private val ticketStore: StaffTicketReadStore,
+    private val accessAuditWriter: AccessAuditWriter,
+    private val cursorCodec: AgentTicketCursorCodec,
+    private val clock: Clock,
+) {
+    val readScope: StaffTicketReadScope = StaffTicketReadScope.ALL_TICKETS
+
+    fun listViews(principal: StaffPrincipal): List<AgentViewDefinition> {
+        requireActiveStaffRead(principal)
+        return DefaultStaffView.entries.map { view ->
+            AgentViewDefinition(
+                key = view.key,
+                name = view.displayName,
+                category = view.category,
+                scope = if (view == DefaultStaffView.PENDING) "SHARED" else "SYSTEM",
+                readScope = readScope,
+            )
+        }
+    }
+
+    @Transactional(readOnly = true)
+    fun listTickets(
+        principal: StaffPrincipal,
+        view: DefaultStaffView,
+        filters: StaffTicketListFilter,
+        cursor: String?,
+        limit: Int,
+    ): AgentTicketPage {
+        requireActiveStaffRead(principal)
+        require(limit in 1..100) { "limit must be between 1 and 100" }
+        validateAssignee(filters.assignee)
+        val decodedCursor = cursor?.let { cursorCodec.decode(view, filters, it) }
+        val rows = ticketStore.list(
+            view = view,
+            actorId = principal.id,
+            filters = filters,
+            cursor = decodedCursor,
+            limit = limit + 1,
+            recentlySolvedAfter = Instant.now(clock).minus(Duration.ofDays(30)),
+        )
+        val items = rows.take(limit)
+        val nextCursor = if (rows.size > limit) {
+            items.last().let { cursorCodec.encode(view, filters, dev.deskseed.ticketing.StaffTicketCursor(it.updatedAt, it.ticketNumber)) }
+        } else {
+            null
+        }
+        return AgentTicketPage(items, nextCursor)
+    }
+
+    @Transactional
+    fun readTicket(
+        principal: StaffPrincipal,
+        ticketNumber: Long,
+        interactionId: UUID,
+        intent: AgentReadIntent,
+        context: AgentReadRequestContext,
+    ): StaffTicketDetail {
+        requireActiveStaffRead(principal)
+        val detail = ticketStore.findDetail(ticketNumber) ?: throw AgentTicketNotFoundException()
+        if (intent == AgentReadIntent.NAVIGATION) {
+            try {
+                accessAuditWriter.appendTicketViewed(
+                    TicketViewAccessAudit(
+                        actorType = ActorType.STAFF,
+                        actorId = principal.id,
+                        actorDisplaySnapshot = principal.displayName,
+                        source = RequestSource.AGENT_UI,
+                        ticketId = detail.ticket.id,
+                        ticketNumber = detail.ticket.ticketNumber,
+                        interactionId = interactionId,
+                        requestId = context.requestId,
+                        correlationId = context.correlationId,
+                        ipAddress = context.ipAddress,
+                        userAgent = context.userAgent,
+                        outcome = AccessAuditOutcome.SUCCEEDED,
+                        httpStatus = 200,
+                        occurredAt = Instant.now(clock),
+                    ),
+                )
+            } catch (exception: DataAccessException) {
+                throw AccessAuditUnavailableException(exception)
+            }
+        }
+        return detail
+    }
+
+    private fun requireActiveStaffRead(principal: StaffPrincipal) {
+        check(readScope == StaffTicketReadScope.ALL_TICKETS) { "Unsupported ticket read policy" }
+        require(principal.id != UUID(0, 0)) { "Active staff principal is required" }
+    }
+
+    private fun validateAssignee(assignee: String?) {
+        if (assignee == null || assignee == "me" || assignee == "unassigned") return
+        runCatching { UUID.fromString(assignee) }
+            .getOrElse { throw IllegalArgumentException("assigneeId must be a UUID, me, or unassigned") }
+    }
+}
+
+internal class AgentTicketNotFoundException : RuntimeException()
+
+internal class AccessAuditUnavailableException(cause: Throwable) : RuntimeException(cause)
