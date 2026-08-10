@@ -54,6 +54,10 @@ paths:
               description: Customer-safe request URL; the access token is not embedded.
               schema:
                 type: string
+            Cache-Control:
+              description: Always `no-store` because the response contains the one-time access token.
+              schema:
+                type: string
             X-Request-Id:
               schema:
                 type: string

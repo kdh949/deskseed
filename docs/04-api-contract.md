@@ -65,6 +65,10 @@ Atomic result:
 }
 ```
 
+The creation response uses `Cache-Control: no-store` because it contains the
+one-time access token. Clients must not put the token in a URL, persistent
+browser storage, ordinary logs, or analytics.
+
 ### View request
 
 ```http

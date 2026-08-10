@@ -30,6 +30,10 @@ paths:
               schema:
                 type: string
               description: Relative customer request URL.
+            Cache-Control:
+              schema:
+                type: string
+              description: Always `no-store` because the response contains the one-time access token.
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:

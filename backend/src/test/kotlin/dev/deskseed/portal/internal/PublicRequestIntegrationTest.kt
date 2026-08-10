@@ -72,6 +72,7 @@ class PublicRequestIntegrationTest {
                 ),
         )
             .andExpect(status().isCreated)
+            .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(header().string("X-Request-Id", "request-http-123"))
             .andExpect(header().string("X-Correlation-Id", "correlation-http-456"))
             .andExpect(jsonPath("$.status").value("NEW"))

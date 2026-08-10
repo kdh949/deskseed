@@ -1,4 +1,4 @@
-# Codex Brief 06 — Anonymous Customer Request Backend Vertical Slice
+# Codex Brief 06 — Anonymous Customer Request Vertical Slice
 
 ## Goal
 
@@ -63,3 +63,38 @@
 - Customer input limits are name 100, email 254, subject 200, message 20,000.
 - Public status is limited to NEW, OPEN, PENDING, SOLVED; internal hold/closed values map to a customer-safe value.
 - Flyway migrations are forward-only; rollback is application rollback plus database restore/forward fix.
+
+## Frontend Stack A PR 2/2
+
+### Product and UX contract
+
+- Decisions: D-030, D-032; Screens: PUB-001, PUB-002.
+- Requirements: REQ-TKT-001~003, REQ-TKT-008, REQ-UI-005, REQ-UI-006.
+- Verification gates: TKT-002, ACC-007, UI-002, UI-004, UI-005.
+- Routes: `/requests/new`, `/requests/lookup`, `/requests/{ticketNumber}`.
+- The create result moves to detail through an in-memory tab-scoped grant. The access token is never placed in a URL, local/session storage, ordinary log, or analytics payload.
+- Refresh/direct navigation has no retained grant and asks for ticket number/access token again.
+- PUB-001 implements initial, client/server validation, submitting, rate-limit, success, and server-failure states while preserving entered fields on failure.
+- PUB-002 implements loading, empty conversation, ready, generic non-enumerating access denial, and server-failure states. Conflict/stale states are not applicable to this read-only anonymous slice.
+
+### Frontend data boundary
+
+- The API client consumes only the frozen create/detail schemas and RFC 9457 `Problem` with `fieldErrors` and request ID.
+- Public detail components accept only ticket number, subject, customer-safe status, timestamps, and `PublicComment` values with `authorDisplayName`.
+- INTERNAL comments, child relations, group/assignee, staff-only fields, and audit metadata have no frontend model or render path.
+- The create response is `Cache-Control: no-store`; public detail already uses `no-store`.
+
+### Frontend acceptance scenarios
+
+- Valid keyboard-only form submission creates a request once, focuses the success heading, and continues to the real public detail without exposing the token in the URL.
+- Client and server validation associate field messages with inputs and focus an error summary.
+- A delayed create response cannot be duplicated by repeated submit activation.
+- 429 and 5xx/network failures preserve all input; 429 shows retry guidance and 5xx shows the safe request ID.
+- Invalid, expired, revoked, mismatched, and nonexistent ticket/grant pairs use one generic denied screen.
+- A fixture containing an INTERNAL comment and an INTERNAL_CHILD ticket proves both values are absent from the API response and DOM.
+- Playwright covers Chromium, keyboard-only navigation, axe, and deterministic customer snapshots at 1280x800, 1440x900, and 390x844.
+
+### Frontend out of scope
+
+- Customer login, request list, additional reply, rich text, attachments, CAPTCHA, and analytics.
+- Token rotation/revocation UI and rate-limit implementation; this slice renders the frozen backend responses only.
