@@ -47,6 +47,13 @@ enum class CommentAuthorType {
     AUTOMATION,
 }
 
+enum class CustomerRequestStatus {
+    NEW,
+    OPEN,
+    PENDING,
+    SOLVED,
+}
+
 data class SubmitPublicRequestCommand(
     val requesterId: UUID,
     val subject: String,
@@ -58,21 +65,21 @@ data class SubmitPublicRequestCommand(
 data class SubmittedTicket(
     val ticketId: UUID,
     val ticketNumber: Long,
+    val status: CustomerRequestStatus,
     val createdAt: Instant,
 )
 
 data class PublicCommentView(
     val id: UUID,
-    val authorType: CommentAuthorType,
+    val authorDisplayName: String,
     val body: String,
     val createdAt: Instant,
 )
 
 data class PublicTicketView(
-    val ticketId: UUID,
     val ticketNumber: Long,
     val subject: String,
-    val status: TicketStatus,
+    val status: CustomerRequestStatus,
     val createdAt: Instant,
     val updatedAt: Instant,
     val comments: List<PublicCommentView>,
@@ -80,7 +87,7 @@ data class PublicTicketView(
 
 interface TicketingFacade {
     fun submitPublicRequest(command: SubmitPublicRequestCommand): SubmittedTicket
-    fun findPublicTicket(ticketId: UUID): PublicTicketView?
+    fun findPublicTicket(ticketId: UUID, ticketNumber: Long): PublicTicketView?
 }
 
 data class TicketSubmitted(

@@ -5,11 +5,11 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 f9c44a73507552c305e587c53781d2fc536234124d6618270ce6e9aa13701537        6702  README.md
 88174106b57ff9a6acc40207bd3fe97c802b25280aa8061e0980ac73ea304139        4015  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-fba37ceb79ef9bfef4f1b7afc66af2516d79045fafd5e234b22f071828de64ce       61900  api/core-api-outline-v1.yaml
+2992e84751224218b7195ea12c69ad01bbe3960c160d14a375b4183ea170bc75       65621  api/core-api-outline-v1.yaml
 72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
-aba7ae8e32c0da9593672eace3d6fd8a0d801a47db277dc5f383ade5d43326a7        7351  api/openapi-v1.yaml
+b53216642351bfa8f0c1b5ee19e6acb608fa091b2177c5baf8a4eff4d447d0e8        9259  api/openapi-v1.yaml
 cd5a5ff69a16ae96d5e07b36238928cd3551aecfe516bad640ee2913d302b84c       10857  api/platform-api-outline-v1.yaml
 634dc97ff7782fc750ed8803f350fec736fc507aab67fd8d94095623c836dd2f        1171  api/ui-route-catalog-v0.6.yaml
 9c020a4c12585495dc9f530e9805567afa79a8eef346d6fe757c661fdaa8d740         430  checklists/feature-readiness.md
@@ -24,7 +24,7 @@ af5aaa483c84267581fc1587232e313d820287df15b4feb22180de265e52d9f5        1828  de
 3a81f378cbfb5e849c210ea3ca0e386adeecb6fad50e49f69d5c1f66498fd412       13841  docs/01-prd-mvp.md
 ba430b06973ad7da7b666d047bef90d04c52ae9fb3841882fda5a834a4c20e8a       12816  docs/02-domain-model.md
 d379acd4bc5c8038f38bc9661d23fd2113dfa9c06210720ec4b0d9647c4dbbfc       11690  docs/03-architecture.md
-153f9e1b5793bb341c739c7cfe8a3a7f700cf46a2b045f2c10e16fe08b7a6ac1       10577  docs/04-api-contract.md
+c786e097b8c99ad85544f5ed2747e121dbf5b561de4fe2f0e56ab0467b708357       11125  docs/04-api-contract.md
 56bdcbd74d88ba06575ee5fa9bca85cf973c8144a4866132e560d4f3774452cb        7611  docs/05-roadmap.md
 855bb0ae89cb5539d2fccf3b0c8f10733c483715bee33903b0dc371fd785d653        3721  docs/06-intentional-non-goals.md
 aee528097d1df22b9148a0ea3897ec2862d84f79ec553ff6109724e07e76a295        7251  docs/07-codebase-rules.md
@@ -114,8 +114,9 @@ f06d81ef474faa2da4179575e15349ad3e7fd10c6c8408d7763b5c8d7bb23327         243  do
 ddb445dda6b94dc5f42a8d44a38b886daa7c6e235b8ce1f63eaea7a20eb70d90        1016  scripts/demo-request.sh
 c16d522f6854b2f51ea3acbefd7d6b808eaecbd6757f37bc5adfa7d89f732682          35  scripts/requirements-docs.txt
 0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a          14  scripts/requirements.txt
-6692006e0d741ad08637d233c99508b61c2d69acccbf9f1bbcaa6486e0ab503b       19416  scripts/validate_documentation.py
-9cf6ad978baf8cdcb96310dc4db7c83de7a6f4d8a169f9de51fd0a6041730315        7586  scripts/verify_seed.py
+266219b3fc1b0b0672bbe582f1a30c04d997c46f8bbe00d2e8a36974f088cf0c        1549  scripts/run-customer-request-e2e.sh
+f8a6c91e3a5252e04a542fee43de79608c151155cdfcd3401716506763697819       19981  scripts/validate_documentation.py
+d337270b000da9602956653c37190cab863c7b95c21ec2a1b91c4c142bceb298        7660  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
 6b43d795b99c525d4ac87a5ff23896fe0fccd2ca434173698a26374b3fbdd59e        3331  tasks/00-bootstrap.md
 e692414f7b1cfd5f26c61882ec6942039ba344093a131ef4a83dd05e46fd4c9e        1222  tasks/01-access-audit-foundation.md
@@ -123,7 +124,7 @@ e692414f7b1cfd5f26c61882ec6942039ba344093a131ef4a83dd05e46fd4c9e        1222  ta
 a0220c67361e437ec49244f3c1a0f23805a566085e2c3e105d4e7ce717c88105        1339  tasks/03-platform-api-foundation.md
 c846e13acf57751a6e35c688a574fbae9ebf11c86884372c3162969d68312603         961  tasks/04-external-reference.md
 aef8b9427865be78e457cfc7b6956607e404dc30778c393c7e352cecf2dc9593        1122  tasks/05-outbound-webhooks-and-sdk.md
-d221ebd596d7bf2d622f820e82cc736426ae4cf6f422bdb53f6c0296896553a4         429  tasks/06-core-mvp-customer-request.md
+ba84d6a9e8af2c4852f99e9ad2377e87131f52ed02909575b3b0fa04043e74c1        6185  tasks/06-core-mvp-customer-request.md
 d1d08fa4516c691b4fb4cbcf442cc3084f35e086d371a18255a29a930d5db8ef         352  tasks/07-staff-auth-and-groups.md
 2a7fe96e8884df324b14226245e15271e5ce8f9104cda0cc94c1d23535efe9d1         567  tasks/08-agent-views-and-workspace.md
 244cdfe2b4d3c0f66867cf4a2cf028907a59e416c819c07c8927181ee12dff92         385  tasks/09-ticket-update-audit-concurrency.md

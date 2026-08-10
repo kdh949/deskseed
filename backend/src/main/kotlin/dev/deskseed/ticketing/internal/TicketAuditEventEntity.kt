@@ -4,6 +4,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import java.time.Instant
 import java.util.UUID
 
 @Entity
@@ -32,4 +33,7 @@ internal class TicketAuditEventEntity(
 
     @Column(name = "metadata_json", nullable = false, columnDefinition = "text")
     val metadataJson: String = "{}",
+
+    @Column(name = "occurred_at", nullable = false, updatable = false)
+    val occurredAt: Instant,
 )

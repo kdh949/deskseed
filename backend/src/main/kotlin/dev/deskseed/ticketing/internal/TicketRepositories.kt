@@ -1,20 +1,19 @@
 package dev.deskseed.ticketing.internal
 
-import dev.deskseed.ticketing.CommentVisibility
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.repository.Repository
 import java.util.UUID
 
 internal interface TicketRepository : JpaRepository<TicketEntity, UUID> {
     fun findByTicketNumber(ticketNumber: Long): TicketEntity?
 }
 
-internal interface TicketCommentRepository : JpaRepository<TicketCommentEntity, UUID> {
-    fun findAllByTicketIdAndVisibilityOrderByCreatedAtAscIdAsc(
-        ticketId: UUID,
-        visibility: CommentVisibility,
-    ): List<TicketCommentEntity>
+internal interface TicketCommentRepository : JpaRepository<TicketCommentEntity, UUID>
+
+internal interface TicketAuditRepository : Repository<TicketAuditEntity, UUID> {
+    fun saveAndFlush(entity: TicketAuditEntity): TicketAuditEntity
 }
 
-internal interface TicketAuditRepository : JpaRepository<TicketAuditEntity, UUID>
-
-internal interface TicketAuditEventRepository : JpaRepository<TicketAuditEventEntity, UUID>
+internal interface TicketAuditEventRepository : Repository<TicketAuditEventEntity, UUID> {
+    fun saveAllAndFlush(entities: Iterable<TicketAuditEventEntity>): List<TicketAuditEventEntity>
+}

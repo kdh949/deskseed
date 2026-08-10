@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Deskseed Customer Requests API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Implemented M1 contract. A Request is the customer-safe projection of an internal Ticket.
     Internal comments, staff identity details, assignments, audits, and child tickets are never returned here.
@@ -26,10 +26,16 @@ paths:
         '201':
           description: Request created. The access token is returned once and cannot be recovered by the server.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             Location:
               schema:
                 type: string
               description: Relative customer request URL.
+            Cache-Control:
+              schema:
+                type: string
+              description: Always `no-store` because the response contains the one-time access token.
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:
@@ -43,10 +49,21 @@ paths:
         '403':
           description: Anonymous submission is disabled by system settings.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:
               $ref: '#/components/headers/CorrelationId'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Request storage is unavailable and the transaction was rolled back when applicable.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/problem+json:
               schema:
@@ -63,7 +80,7 @@ paths:
           schema:
             type: integer
             format: int64
-            minimum: 1000
+            minimum: 1
         - name: X-Request-Access-Token
           in: header
           required: true
@@ -71,12 +88,15 @@ paths:
           schema:
             type: string
             minLength: 32
+            maxLength: 256
         - $ref: '#/components/parameters/RequestId'
         - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
           description: Public request and public comments only.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:
@@ -88,10 +108,30 @@ paths:
         '404':
           description: The ticket/token pair is invalid. The response intentionally does not reveal which value was wrong.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:
               $ref: '#/components/headers/CorrelationId'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: Too many requests.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Request storage is unavailable.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/problem+json:
               schema:
@@ -115,6 +155,11 @@ components:
         type: string
         pattern: '^[A-Za-z0-9._:-]{1,100}$'
   headers:
+    NoStore:
+      description: Always `no-store` because this anonymous request surface is capability protected.
+      schema:
+        type: string
+        enum: [no-store]
     RequestId:
       description: Server-accepted request identifier.
       schema:
@@ -129,6 +174,8 @@ components:
     BadRequest:
       description: Request validation failed.
       headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
         X-Request-Id:
           $ref: '#/components/headers/RequestId'
         X-Correlation-Id:
@@ -150,7 +197,7 @@ components:
         email:
           type: string
           format: email
-          maxLength: 320
+          maxLength: 254
         subject:
           type: string
           minLength: 1
@@ -158,15 +205,17 @@ components:
         message:
           type: string
           minLength: 1
-          maxLength: 10000
+          maxLength: 20000
     SubmittedRequest:
       type: object
       additionalProperties: false
-      required: [ticketNumber, accessToken, createdAt]
+      required: [ticketNumber, status, accessToken, createdAt]
       properties:
         ticketNumber:
           type: integer
           format: int64
+        status:
+          $ref: '#/components/schemas/PublicTicketStatus'
         accessToken:
           type: string
           description: Returned once. Store it safely on the client.
@@ -198,14 +247,13 @@ components:
     PublicComment:
       type: object
       additionalProperties: false
-      required: [id, authorType, body, createdAt]
+      required: [id, authorDisplayName, body, createdAt]
       properties:
         id:
           type: string
           format: uuid
-        authorType:
+        authorDisplayName:
           type: string
-          enum: [CUSTOMER, AGENT, SYSTEM, AUTOMATION]
         body:
           type: string
         createdAt:
@@ -213,7 +261,7 @@ components:
           format: date-time
     PublicTicketStatus:
       type: string
-      enum: [NEW, OPEN, PENDING, ON_HOLD, SOLVED, CLOSED]
+      enum: [NEW, OPEN, PENDING, SOLVED]
     Problem:
       type: object
       additionalProperties: true
@@ -238,7 +286,12 @@ components:
         - $ref: '#/components/schemas/Problem'
         - type: object
           properties:
-            errors:
-              type: object
-              additionalProperties:
-                type: string
+            fieldErrors:
+              type: array
+              items:
+                type: object
+                required: [field, message]
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+                  code: { type: string }

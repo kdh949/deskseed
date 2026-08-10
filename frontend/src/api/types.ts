@@ -1,7 +1,4 @@
-export type TicketStatus =
-  'NEW' | 'OPEN' | 'PENDING' | 'ON_HOLD' | 'SOLVED' | 'CLOSED'
-
-export type CommentAuthorType = 'CUSTOMER' | 'AGENT' | 'SYSTEM' | 'AUTOMATION'
+export type TicketStatus = 'NEW' | 'OPEN' | 'PENDING' | 'SOLVED'
 
 export interface SubmitRequestInput {
   name: string
@@ -12,13 +9,14 @@ export interface SubmitRequestInput {
 
 export interface SubmittedRequest {
   ticketNumber: number
+  status: TicketStatus
   accessToken: string
   createdAt: string
 }
 
 export interface PublicComment {
   id: string
-  authorType: CommentAuthorType
+  authorDisplayName: string
   body: string
   createdAt: string
 }
@@ -37,6 +35,13 @@ export interface ProblemDetails {
   title?: string
   status?: number
   detail?: string
+  instance?: string
   requestId?: string
-  errors?: Record<string, string>
+  fieldErrors?: FieldError[]
+}
+
+export interface FieldError {
+  field: string
+  message: string
+  code?: string
 }
