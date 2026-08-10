@@ -30,7 +30,7 @@
 | REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | explicit token/claim 테스트 |
 | REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session은 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 30, 33, 35 ADR, 52 | `StaffAuthIntegrationTest`, `staff-auth-admin.spec.ts` |
 | REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
-| REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | queue/search/direct URL authorization |
+| REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | `AgentTicketReadIntegrationTest`의 cross-group queue/direct URL 및 inactive/customer 거부; 검색은 후속 |
 | REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR | `AdminOrganizationIntegrationTest`, direct URL E2E |
 
 ## 3. 고객 문의와 티켓 처리
@@ -43,7 +43,7 @@
 | REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | 설정별 계약 테스트 |
 | REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | single-use·claim·격리 테스트 |
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
-| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | visibility 회귀 테스트 |
+| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`의 PUBLIC/INTERNAL projection 회귀 |
 | REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002 |
 | REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39 | Agent create E2E |
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트 |
@@ -71,7 +71,7 @@
 |---|---|---:|---|---|---|
 | REQ-AUD-001 | 누가 언제 어떤 티켓 내용을 어떻게 수정했는지 기록한다 | IMPLEMENTATION_READY | M3 | 19, 32, 34 | CHG-001~005 |
 | REQ-AUD-002 | 티켓별 열람 없이 전역 화면에서 변경 전후를 조회한다 | IMPLEMENTATION_READY | R2 | 19, 30, 39 | Audit Explorer E2E |
-| REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | ACC-001/002 |
+| REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | `AgentTicketReadIntegrationTest`: navigation 1건, 동일 interaction refetch 0건, background 0건, audit 실패 fail-closed |
 | REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34 | ACC-003/004 |
 | REQ-AUD-005 | 검색어 원문을 암호화 저장하고 마스킹본·HMAC 지문도 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53 | 암호화·reveal·로그 비노출 |
 | REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | AUD-003/004 |
@@ -128,11 +128,11 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | 시각 회귀·업무 E2E |
-| REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | 필터·정렬·cursor E2E |
-| REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | 1280/1440/1920 snapshot |
-| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | panel 권한·리사이즈 테스트 |
-| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | axe + keyboard E2E |
+| REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | `agent-views-workspace.spec.ts` 업무 E2E 및 Deskseed 브랜드 시각 기준 이미지 |
+| REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | `AgentViewsPage.test.tsx`, cursor backend 통합 테스트, keyboard row-open E2E |
+| REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | `agent-ticket-workspace-{1280,1440,1920}.png` 및 패널 resize/collapse E2E |
+| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/related seam과 사용자별 panel preference 구현; 앱·실제 child/external projection은 후속 |
+| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `agent-views-workspace.spec.ts`: axe 0, Tab row-open, keyboard separator |
 | REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | 브랜드·라이선스 검토 |
 
 ## 10. 추적 규칙

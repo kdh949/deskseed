@@ -88,3 +88,11 @@
 ## Human explanation
 
 The current Ticket row remains the current-state source of truth, while access audit records the separate fact that a human intentionally opened the detail. PostgreSQL JDBC projections keep the read path explicit and bounded; an external search store or event-sourced read model is not justified by current evidence.
+
+## Completion evidence
+
+- Contract: the three Agent read operations are frozen in `api/core-api-outline-v1.yaml`.
+- Backend: cross-group `ALL_TICKETS` list/detail, five default Views, stable cursor/filter binding, strict append-only access audit and query-count/plan integration tests.
+- Frontend: Deskseed global/work navigation, dense ticket table, URL filters, read-only properties/conversation/context Workspace, user-specific collapse/width preferences and complete loading/empty/error/denied states.
+- Visual/accessibility: Views and Workspace baselines at 1280, 1440 and 1920; keyboard row open and separators; axe reports no violations in the fixture flow.
+- Non-goals retained: search/search audit, mutation/composer/transfer/child creation, custom View builder, context apps, real child/external-reference projections and latency percentiles.
