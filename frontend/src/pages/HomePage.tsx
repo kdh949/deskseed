@@ -18,21 +18,21 @@ export function HomePage() {
           <Link className="button primary" to="/requests/new">
             새 문의 접수
           </Link>
-          <Link className="button secondary" to="/lookup">
+          <Link className="button secondary" to="/requests/lookup">
             접수한 문의 조회
           </Link>
         </div>
       </div>
       <aside className="principle-card" aria-label="현재 구현 원칙">
-        <span className="card-kicker">M1 vertical slice</span>
-        <h2>한 번의 요청, 하나의 원자적 기록</h2>
+        <span className="card-kicker">안전한 문의 접수</span>
+        <h2>접수부터 조회까지, 필요한 정보만</h2>
         <ol>
-          <li>고객 프로필 생성 또는 재사용</li>
-          <li>티켓과 첫 공개 코멘트 생성</li>
-          <li>변경 audit과 event 기록</li>
-          <li>공개 대화 전용 조회 키 발급</li>
+          <li>로그인 없이 문의 접수</li>
+          <li>조회 키는 한 번만 발급</li>
+          <li>고객에게 공개된 대화만 표시</li>
+          <li>접수 번호와 조회 키로 안전하게 확인</li>
         </ol>
-        <p>내부 메모와 직원 정보는 고객 API 경계 밖에 남습니다.</p>
+        <p>내부 메모와 담당자 정보는 고객 화면에 표시하지 않습니다.</p>
       </aside>
     </section>
   )

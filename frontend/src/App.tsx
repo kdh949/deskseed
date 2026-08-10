@@ -19,8 +19,12 @@ export default function App() {
       >
         <Route path="/" element={<HomePage />} />
         <Route path="/requests/new" element={<NewRequestPage />} />
+        <Route path="/requests/lookup" element={<LookupPage />} />
         <Route path="/requests/:ticketNumber" element={<RequestDetailPage />} />
-        <Route path="/lookup" element={<LookupPage />} />
+        <Route
+          path="/lookup"
+          element={<Navigate to="/requests/lookup" replace />}
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
