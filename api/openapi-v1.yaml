@@ -26,6 +26,8 @@ paths:
         '201':
           description: Request created. The access token is returned once and cannot be recovered by the server.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             Location:
               schema:
                 type: string
@@ -43,6 +45,8 @@ paths:
         '403':
           description: Anonymous submission is disabled by system settings.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:
@@ -52,7 +56,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
-          description: Request persistence failed and the transaction was rolled back.
+          description: Request storage is unavailable and the transaction was rolled back when applicable.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/problem+json:
               schema:
@@ -69,7 +76,7 @@ paths:
           schema:
             type: integer
             format: int64
-            minimum: 1000
+            minimum: 1
         - name: X-Request-Access-Token
           in: header
           required: true
@@ -84,6 +91,8 @@ paths:
         '200':
           description: Public request and public comments only.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:
@@ -95,6 +104,8 @@ paths:
         '404':
           description: The ticket/token pair is invalid. The response intentionally does not reveal which value was wrong.
           headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
             X-Correlation-Id:
@@ -105,12 +116,18 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '429':
           description: Too many requests.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '503':
           description: Request storage is unavailable.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
           content:
             application/problem+json:
               schema:
@@ -134,6 +151,11 @@ components:
         type: string
         pattern: '^[A-Za-z0-9._:-]{1,100}$'
   headers:
+    NoStore:
+      description: Always `no-store` because this anonymous request surface is capability protected.
+      schema:
+        type: string
+        enum: [no-store]
     RequestId:
       description: Server-accepted request identifier.
       schema:
@@ -148,6 +170,8 @@ components:
     BadRequest:
       description: Request validation failed.
       headers:
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
         X-Request-Id:
           $ref: '#/components/headers/RequestId'
         X-Correlation-Id:

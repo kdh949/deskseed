@@ -56,6 +56,11 @@ Atomic result:
 - one TicketAudit with ordered creation/comment events
 - opaque request access token issued and only its hash stored
 
+Every response on `/api/v1/requests/**`, including RFC 9457 problems, carries
+`Cache-Control: no-store`. This prevents a shared cache from replaying a denied
+capability request to a later request with a valid token. The creation response is also
+never cacheable because it contains the one-time access token.
+
 ```json
 {
   "ticketNumber": 1042,

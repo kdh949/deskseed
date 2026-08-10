@@ -19,7 +19,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
 
-@RestControllerAdvice
+@RestControllerAdvice(assignableTypes = [PublicRequestController::class])
 internal class PublicRequestExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(
@@ -85,8 +85,8 @@ internal class PublicRequestExceptionHandler {
         problem(
             status = HttpStatus.SERVICE_UNAVAILABLE,
             title = "Request storage unavailable",
-            detail = "The request could not be stored safely.",
-            type = "/problems/request-write-unavailable",
+            detail = "The request could not be processed safely.",
+            type = "/problems/request-storage-unavailable",
             request = request,
         ),
     )

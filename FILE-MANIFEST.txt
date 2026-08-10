@@ -5,11 +5,11 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 f9c44a73507552c305e587c53781d2fc536234124d6618270ce6e9aa13701537        6702  README.md
 88174106b57ff9a6acc40207bd3fe97c802b25280aa8061e0980ac73ea304139        4015  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-2068fb16f8a35deddc0db21f6ff180d670b804806df1ce78c8288c11d7c9de86       64428  api/core-api-outline-v1.yaml
+eda22f2a27082118932ac1f68302d12b06f68a01536ae8577df6eaeb5f217bc1       65441  api/core-api-outline-v1.yaml
 72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
-ed85052628af5b39d648a77b29ebf99ba0139bef2da1589cc91584c81e5d07d5        8215  api/openapi-v1.yaml
+8de21787c5ad411bae1a5a94b8aa8e1b72349bbdcd9ba56be8176919385778e9        9079  api/openapi-v1.yaml
 cd5a5ff69a16ae96d5e07b36238928cd3551aecfe516bad640ee2913d302b84c       10857  api/platform-api-outline-v1.yaml
 634dc97ff7782fc750ed8803f350fec736fc507aab67fd8d94095623c836dd2f        1171  api/ui-route-catalog-v0.6.yaml
 9c020a4c12585495dc9f530e9805567afa79a8eef346d6fe757c661fdaa8d740         430  checklists/feature-readiness.md
@@ -24,7 +24,7 @@ af5aaa483c84267581fc1587232e313d820287df15b4feb22180de265e52d9f5        1828  de
 3a81f378cbfb5e849c210ea3ca0e386adeecb6fad50e49f69d5c1f66498fd412       13841  docs/01-prd-mvp.md
 ba430b06973ad7da7b666d047bef90d04c52ae9fb3841882fda5a834a4c20e8a       12816  docs/02-domain-model.md
 d379acd4bc5c8038f38bc9661d23fd2113dfa9c06210720ec4b0d9647c4dbbfc       11690  docs/03-architecture.md
-a53faa6f1eb05350caf5790f633e05ed02a84b4e23b839e0157c48b220f2badf       10616  docs/04-api-contract.md
+19c8777f01621e283cb4d2e958e22e77660ccc43889c73568ebf787b92f7f7e4       10926  docs/04-api-contract.md
 56bdcbd74d88ba06575ee5fa9bca85cf973c8144a4866132e560d4f3774452cb        7611  docs/05-roadmap.md
 855bb0ae89cb5539d2fccf3b0c8f10733c483715bee33903b0dc371fd785d653        3721  docs/06-intentional-non-goals.md
 aee528097d1df22b9148a0ea3897ec2862d84f79ec553ff6109724e07e76a295        7251  docs/07-codebase-rules.md

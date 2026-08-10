@@ -46,6 +46,7 @@ internal class PublicRequestController(
 
         return ResponseEntity
             .created(URI.create("/api/v1/requests/${result.ticketNumber}"))
+            .cacheControl(CacheControl.noStore())
             .body(
                 SubmittedRequestResponse(
                     ticketNumber = result.ticketNumber,

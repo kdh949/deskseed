@@ -30,12 +30,4 @@ internal class CustomerEntity(
 
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant,
-) {
-    fun refreshUnverifiedProfile(newName: String, newEmailDisplay: String, now: Instant) {
-        if (verifiedAt == null) {
-            name = newName
-            emailDisplay = newEmailDisplay
-            updatedAt = now
-        }
-    }
-}
+)
