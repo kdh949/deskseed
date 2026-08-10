@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
@@ -8,6 +9,7 @@ const TOKEN_MAX_LENGTH = 256
 export function LookupPage() {
   const navigate = useNavigate()
   const requestAccess = useRequestAccess()
+  const queryClient = useQueryClient()
   const [ticketNumber, setTicketNumber] = useState('')
   const [token, setToken] = useState('')
   const number = Number(ticketNumber)
@@ -21,6 +23,7 @@ export function LookupPage() {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!isValid) return
+    queryClient.removeQueries({ queryKey: ['public-request', number] })
     requestAccess.setAccessToken(number, cleanToken)
     navigate(`/requests/${number}`)
   }

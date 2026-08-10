@@ -35,7 +35,7 @@ function renderPage({ withToken = false }: { withToken?: boolean } = {}) {
       <Route path="/requests/:ticketNumber" element={<RequestDetailPage />} />
     </Routes>
   )
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <RequestAccessProvider>
         <MemoryRouter initialEntries={['/requests/1042']}>
@@ -44,6 +44,7 @@ function renderPage({ withToken = false }: { withToken?: boolean } = {}) {
       </RequestAccessProvider>
     </QueryClientProvider>,
   )
+  return { ...view, queryClient }
 }
 
 function response(body: unknown, status = 200) {
@@ -159,7 +160,7 @@ describe('RequestDetailPage', () => {
         }),
       ),
     )
-    renderPage({ withToken: true })
+    const { queryClient } = renderPage({ withToken: true })
 
     expect(
       await screen.findByRole('heading', { name: '결제 오류' }),
@@ -175,6 +176,17 @@ describe('RequestDetailPage', () => {
     ]) {
       expect(screen.queryByText(privateText)).not.toBeInTheDocument()
     }
+    const cachedPublicData = JSON.stringify(
+      queryClient
+        .getQueryCache()
+        .findAll({ queryKey: ['public-request', 1042] })
+        .map((query) => query.state.data),
+    )
+    expect(cachedPublicData).not.toContain('내부 메모 비밀')
+    expect(cachedPublicData).not.toContain('하위 티켓 비밀')
+    expect(cachedPublicData).not.toContain('보안 그룹')
+    expect(cachedPublicData).not.toContain('담당 상담사')
+    expect(cachedPublicData).not.toContain('감사 비밀')
   })
 
   it('shows an explicit empty conversation state', async () => {

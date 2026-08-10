@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
@@ -16,15 +17,20 @@ function LocationProbe() {
 }
 
 function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return render(
-    <RequestAccessProvider>
-      <MemoryRouter initialEntries={['/requests/lookup']}>
-        <Routes>
-          <Route path="/requests/lookup" element={<LookupPage />} />
-          <Route path="/requests/:ticketNumber" element={<LocationProbe />} />
-        </Routes>
-      </MemoryRouter>
-    </RequestAccessProvider>,
+    <QueryClientProvider client={queryClient}>
+      <RequestAccessProvider>
+        <MemoryRouter initialEntries={['/requests/lookup']}>
+          <Routes>
+            <Route path="/requests/lookup" element={<LookupPage />} />
+            <Route path="/requests/:ticketNumber" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </RequestAccessProvider>
+    </QueryClientProvider>,
   )
 }
 

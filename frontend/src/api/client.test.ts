@@ -110,4 +110,110 @@ describe('customer request API client', () => {
       'requests/1042?access=',
     )
   })
+
+  it('rejects malformed creation and detail success bodies as controlled API errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ticketNumber: 1042 }), {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ticketNumber: 1042, comments: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+    )
+
+    const createError = await submitRequest(submitInput).catch(
+      (cause: unknown) => cause,
+    )
+    const detailError = await getPublicRequest(
+      1042,
+      'opaque-secret-token',
+    ).catch((cause: unknown) => cause)
+
+    for (const error of [createError, detailError]) {
+      expect(error).toBeInstanceOf(ApiError)
+      expect(error).toMatchObject({
+        message: '서버 응답을 안전하게 처리할 수 없습니다.',
+      })
+    }
+  })
+
+  it('handles malformed problem field errors without masking the HTTP failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ fieldErrors: {} }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/problem+json' },
+        }),
+      ),
+    )
+
+    const error = await submitRequest(submitInput).catch(
+      (cause: unknown) => cause,
+    )
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 400, fieldErrors: {} })
+  })
+
+  it('allowlists the public DTO instead of retaining unknown response fields', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            subject: '결제 오류',
+            status: 'NEW',
+            createdAt: '2026-08-10T00:00:00Z',
+            updatedAt: '2026-08-10T00:00:00Z',
+            comments: [
+              {
+                id: 'comment-1',
+                authorDisplayName: '김고객',
+                body: '공개 문의',
+                createdAt: '2026-08-10T00:00:00Z',
+                staffMetadata: 'comment-private-marker',
+              },
+            ],
+            internalComments: 'internal-private-marker',
+            group: 'group-private-marker',
+            assignee: 'assignee-private-marker',
+            audit: 'audit-private-marker',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+
+    const request = await getPublicRequest(1042, 'opaque-secret-token')
+    const serialized = JSON.stringify(request)
+    const [firstComment] = request.comments
+
+    expect(Object.keys(request).sort()).toEqual([
+      'comments',
+      'createdAt',
+      'status',
+      'subject',
+      'ticketNumber',
+      'updatedAt',
+    ])
+    expect(firstComment).toBeDefined()
+    expect(Object.keys(firstComment!).sort()).toEqual([
+      'authorDisplayName',
+      'body',
+      'createdAt',
+      'id',
+    ])
+    expect(serialized).not.toContain('private-marker')
+  })
 })

@@ -3,41 +3,52 @@ import {
   type PropsWithChildren,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 
 interface RequestAccessValue {
   getAccessToken(ticketNumber: number): string | undefined
-  setAccessToken(ticketNumber: number, token: string): void
+  getGrantRevision(ticketNumber: number): number | undefined
+  setAccessToken(ticketNumber: number, token: string): number
   clearAccessToken(ticketNumber: number): void
+}
+
+interface RequestAccessGrant {
+  token: string
+  revision: number
 }
 
 const RequestAccessContext = createContext<RequestAccessValue | null>(null)
 
 export function RequestAccessProvider({ children }: PropsWithChildren) {
-  const [tokens, setTokens] = useState<ReadonlyMap<number, string>>(
+  const [grants, setGrants] = useState<ReadonlyMap<number, RequestAccessGrant>>(
     () => new Map(),
   )
+  const nextRevision = useRef(0)
 
   const value = useMemo<RequestAccessValue>(
     () => ({
-      getAccessToken: (ticketNumber) => tokens.get(ticketNumber),
+      getAccessToken: (ticketNumber) => grants.get(ticketNumber)?.token,
+      getGrantRevision: (ticketNumber) => grants.get(ticketNumber)?.revision,
       setAccessToken: (ticketNumber, token) => {
-        setTokens((current) => {
+        const revision = ++nextRevision.current
+        setGrants((current) => {
           const next = new Map(current)
-          next.set(ticketNumber, token)
+          next.set(ticketNumber, { token, revision })
           return next
         })
+        return revision
       },
       clearAccessToken: (ticketNumber) => {
-        setTokens((current) => {
+        setGrants((current) => {
           const next = new Map(current)
           next.delete(ticketNumber)
           return next
         })
       },
     }),
-    [tokens],
+    [grants],
   )
 
   return (

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getPublicRequest } from '../api/client'
@@ -21,22 +21,26 @@ export function RequestDetailPage() {
   const validTicketNumber =
     Number.isSafeInteger(ticketNumber) && ticketNumber > 0
   const requestAccess = useRequestAccess()
-  const initialToken = useMemo(
+  const queryClient = useQueryClient()
+  const initialGrant = useMemo(
     () =>
       validTicketNumber
-        ? (requestAccess.getAccessToken(ticketNumber) ?? '')
-        : '',
+        ? {
+            token: requestAccess.getAccessToken(ticketNumber) ?? '',
+            revision: requestAccess.getGrantRevision(ticketNumber) ?? 0,
+          }
+        : { token: '', revision: 0 },
     [requestAccess, ticketNumber, validTicketNumber],
   )
-  const [token, setToken] = useState(initialToken)
-  const [tokenDraft, setTokenDraft] = useState(initialToken)
-  const [accessAttempt, setAccessAttempt] = useState(initialToken ? 1 : 0)
+  const [token, setToken] = useState(initialGrant.token)
+  const [tokenDraft, setTokenDraft] = useState(initialGrant.token)
+  const [grantRevision, setGrantRevision] = useState(initialGrant.revision)
   const tokenIsValid =
     tokenDraft.trim().length >= TOKEN_MIN_LENGTH &&
     tokenDraft.trim().length <= TOKEN_MAX_LENGTH
 
   const query = useQuery({
-    queryKey: ['public-request', ticketNumber, accessAttempt],
+    queryKey: ['public-request', ticketNumber, grantRevision],
     queryFn: () => getPublicRequest(ticketNumber, token),
     enabled: validTicketNumber && token.length > 0,
     retry: false,
@@ -50,15 +54,18 @@ export function RequestDetailPage() {
       cleanToken.length > TOKEN_MAX_LENGTH
     )
       return
-    requestAccess.setAccessToken(ticketNumber, cleanToken)
+    queryClient.removeQueries({ queryKey: ['public-request', ticketNumber] })
+    const revision = requestAccess.setAccessToken(ticketNumber, cleanToken)
     setToken(cleanToken)
-    setAccessAttempt((current) => current + 1)
+    setGrantRevision(revision)
   }
 
   const resetToken = () => {
+    queryClient.removeQueries({ queryKey: ['public-request', ticketNumber] })
     requestAccess.clearAccessToken(ticketNumber)
     setToken('')
     setTokenDraft('')
+    setGrantRevision(0)
   }
 
   if (!validTicketNumber) {
