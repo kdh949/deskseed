@@ -20,6 +20,8 @@ spring:
     enabled: true
   jackson:
     time-zone: UTC
+    deserialization:
+      fail-on-unknown-properties: true
 
 server:
   shutdown: graceful

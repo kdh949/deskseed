@@ -115,6 +115,21 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
+    fun `http contract rejects unknown request fields`() {
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    requestJson("unknown-${UUID.randomUUID()}@example.com", "문의 내용")
+                        .replace("\n}", ",\n  \"unexpected\": \"value\"\n}"),
+                ),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/malformed-json"))
+    }
+
+    @Test
     fun `anonymous request creates first public comment and customer projection excludes internal comments`() {
         val submitted = submitUniqueRequest("projection")
         val ticketId = ticketId(submitted.ticketNumber)
@@ -205,10 +220,29 @@ class PublicRequestIntegrationTest {
             .response
             .contentAsString
 
-        val wrongToken = problem(submitted.ticketNumber, "not-the-issued-token")
+        val wrongToken = problem(submitted.ticketNumber, "x".repeat(43))
         val nonexistentTicket = problem(submitted.ticketNumber + 10_000, submitted.accessToken)
 
         assertThat(problemFields(wrongToken)).isEqualTo(problemFields(nonexistentTicket))
+    }
+
+    @Test
+    fun `invalid ticket number and malformed token are validation errors without lookup details`() {
+        mockMvc.perform(
+            get("/api/v1/requests/{ticketNumber}", -1)
+                .header("X-Request-Access-Token", "x".repeat(43)),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
+
+        mockMvc.perform(
+            get("/api/v1/requests/{ticketNumber}", 1234)
+                .header("X-Request-Access-Token", "too-short"),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
     }
 
     @Test
@@ -345,6 +379,44 @@ class PublicRequestIntegrationTest {
         assertThatThrownBy { service.view(revoked.ticketNumber, revoked.accessToken) }
             .isInstanceOf(RequestNotFoundException::class.java)
         assertThatThrownBy { service.view(expired.ticketNumber, "invalid-token") }
+            .isInstanceOf(RequestNotFoundException::class.java)
+    }
+
+    @Test
+    fun `same unverified email reuses and refreshes customer without sharing ticket grants`() {
+        val email = "Reuse-${UUID.randomUUID()}@Example.com"
+        fun submit(name: String, subject: String) = service.submit(
+            SubmitAnonymousRequest(
+                name = name,
+                email = email,
+                subject = subject,
+                message = "문의 내용",
+                context = CommandContext(
+                    source = RequestSource.CUSTOMER_PORTAL,
+                    requestId = "request-${UUID.randomUUID()}",
+                    correlationId = "correlation-${UUID.randomUUID()}",
+                    commandId = UUID.randomUUID().toString(),
+                ),
+            ),
+        )
+        val first = submit("첫 이름", "첫 문의")
+        val second = submit("갱신 이름", "두 번째 문의")
+
+        val customer = jdbcTemplate.queryForMap(
+            "select id, name from customers where email_normalized = ?",
+            email.lowercase(),
+        )
+        assertThat(customer["name"]).isEqualTo("갱신 이름")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from tickets where requester_id = ?",
+                Long::class.java,
+                customer["id"],
+            ),
+        ).isEqualTo(2)
+        assertThatThrownBy { service.view(first.ticketNumber, second.accessToken) }
+            .isInstanceOf(RequestNotFoundException::class.java)
+        assertThatThrownBy { service.view(second.ticketNumber, first.accessToken) }
             .isInstanceOf(RequestNotFoundException::class.java)
     }
 

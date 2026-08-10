@@ -7,7 +7,9 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
+import org.springframework.validation.annotation.Validated
 import org.springframework.http.ResponseEntity
 import org.springframework.http.CacheControl
 import org.springframework.web.bind.annotation.GetMapping
@@ -23,6 +25,7 @@ import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/requests")
+@Validated
 internal class PublicRequestController(
     private val applicationService: PublicRequestApplicationService,
 ) {
@@ -55,8 +58,8 @@ internal class PublicRequestController(
 
     @GetMapping("/{ticketNumber}")
     fun view(
-        @PathVariable ticketNumber: Long,
-        @RequestHeader("X-Request-Access-Token") accessToken: String,
+        @PathVariable @Positive ticketNumber: Long,
+        @RequestHeader("X-Request-Access-Token") @Size(min = 32, max = 256) accessToken: String,
     ): ResponseEntity<PublicRequestResponse> {
         val ticket = applicationService.view(ticketNumber, accessToken)
         return ResponseEntity.ok()

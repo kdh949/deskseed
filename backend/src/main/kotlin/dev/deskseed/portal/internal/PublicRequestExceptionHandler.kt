@@ -4,6 +4,7 @@ import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.portal.RequestNotFoundException
 import dev.deskseed.settings.AnonymousSubmissionDisabledException
 import jakarta.servlet.http.HttpServletRequest
+import jakarta.validation.ConstraintViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.http.ResponseEntity
@@ -15,6 +16,7 @@ import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
 
 @RestControllerAdvice
@@ -58,7 +60,12 @@ internal class PublicRequestExceptionHandler {
         ),
     )
 
-    @ExceptionHandler(MissingRequestHeaderException::class, MethodArgumentTypeMismatchException::class)
+    @ExceptionHandler(
+        MissingRequestHeaderException::class,
+        MethodArgumentTypeMismatchException::class,
+        HandlerMethodValidationException::class,
+        ConstraintViolationException::class,
+    )
     fun handleRequestShape(
         request: HttpServletRequest,
     ): ResponseEntity<ProblemDetail> = respond(
