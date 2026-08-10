@@ -1,0 +1,136 @@
+openapi: 3.1.0
+info:
+  title: Deskseed Customer Identity API v1
+  version: 1.0.0-contract
+  description: >-
+    Implementation-ready email magic-link, secure customer session, and explicit
+    anonymous-request claim contract. Matching email alone never claims a request.
+  x-deskseed-status: implementation-ready
+servers:
+  - url: http://localhost:8080
+security: []
+tags:
+  - name: Customer Identity
+paths:
+  /api/v1/customer/auth/magic-link-requests:
+    post:
+      tags: [Customer Identity]
+      operationId: requestCustomerMagicLink
+      summary: Request a single-use email magic link
+      x-deskseed-requirements: [REQ-AUTH-001]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MagicLinkRequest' }
+      responses:
+        '202':
+          description: Generic accepted response regardless of account existence
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericAccepted' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/v1/customer/auth/magic-link-sessions:
+    post:
+      tags: [Customer Identity]
+      operationId: consumeCustomerMagicLink
+      summary: Atomically consume a single-use token and create a customer session
+      x-deskseed-requirements: [REQ-AUTH-001]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MagicLinkConsume' }
+      responses:
+        '204':
+          description: Session created
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+  /api/v1/customer/session:
+    delete:
+      tags: [Customer Identity]
+      operationId: deleteCustomerSession
+      summary: Invalidate the current customer session
+      security: [{ customerSession: [] }]
+      responses:
+        '204': { description: Session invalidated }
+  /api/v1/customer/requests/{ticketNumber}/claim:
+    post:
+      tags: [Customer Identity]
+      operationId: claimAnonymousCustomerRequest
+      summary: Claim one anonymous request using a request-specific proof
+      x-deskseed-requirements: [REQ-AUTH-002, REQ-TKT-005]
+      security: [{ customerSession: [] }]
+      parameters:
+        - name: ticketNumber
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClaimRequest' }
+      responses:
+        '204': { description: Request linked to the signed-in customer }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    customerSession:
+      type: apiKey
+      in: cookie
+      name: DESKSEED_CUSTOMER_SESSION
+  responses:
+    Problem:
+      description: RFC 9457 Problem Details
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    MagicLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        returnPath: { type: string, maxLength: 500, pattern: '^/' }
+    MagicLinkConsume:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 1000 }
+    ClaimRequest:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - required: [requestAccessToken]
+        - required: [claimToken]
+      properties:
+        requestAccessToken: { type: string, minLength: 32, maxLength: 1000 }
+        claimToken: { type: string, minLength: 32, maxLength: 1000 }
+    GenericAccepted:
+      type: object
+      additionalProperties: false
+      required: [accepted]
+      properties:
+        accepted: { type: boolean, const: true }
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        requestId: { type: string }

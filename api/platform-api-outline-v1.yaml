@@ -1,23 +1,29 @@
 openapi: 3.1.0
 info:
-  title: Deskseed Platform API
-  version: 0.1.0-outline
-  description: >-
-    Contract outline for external machine integrations. This file defines initial
-    operations and governance but must be completed before implementation/release.
-  x-deskseed-status: outline-not-implementation-ready
+  title: Deskseed Platform API v1
+  version: 1.0.0-contract
+  description: Implementation-ready private-network machine API for ticket create/read/update and INTERNAL comments. Network
+    placement is defense in depth and never replaces scoped API-key authentication, resource constraints, rate limiting, idempotency,
+    concurrency control, and audit.
+  x-deskseed-status: implementation-ready
+  x-deskseed-network-boundary: private-only
 servers:
-  - url: https://deskseed.example.com/api/v1/platform
+- url: https://deskseed.internal.example/api/v1/platform
 security:
-  - bearerApiKey: []
+- bearerApiKey: []
+tags:
+- name: Platform Tickets
 paths:
   /tickets:
     post:
-      operationId: createTicket
-      summary: Create a customer request or internal work item
+      tags:
+      - Platform Tickets
+      operationId: platformCreateTicket
+      summary: Create a customer request or an internal work item
+      x-deskseed-required-scope: tickets:create
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/RequestId'
       requestBody:
         required: true
         content:
@@ -35,7 +41,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Ticket'
+                $ref: '#/components/schemas/PlatformTicket'
         '400':
           $ref: '#/components/responses/Problem'
         '401':
@@ -48,12 +54,15 @@ paths:
           $ref: '#/components/responses/RateLimited'
   /tickets/{ticketNumber}:
     parameters:
-      - $ref: '#/components/parameters/TicketNumber'
+    - $ref: '#/components/parameters/TicketNumber'
     get:
-      operationId: getTicket
-      summary: Get a ticket using the integration projection
+      tags:
+      - Platform Tickets
+      operationId: platformGetTicket
+      summary: Read the integration-safe ticket projection
+      x-deskseed-required-scope: tickets:read
       parameters:
-        - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/RequestId'
       responses:
         '200':
           description: Ticket
@@ -65,7 +74,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Ticket'
+                $ref: '#/components/schemas/PlatformTicket'
         '401':
           $ref: '#/components/responses/Problem'
         '403':
@@ -75,12 +84,15 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
     patch:
-      operationId: updateTicket
-      summary: Update allowed ticket fields
+      tags:
+      - Platform Tickets
+      operationId: platformUpdateTicket
+      summary: Update the allowlisted ticket fields
+      x-deskseed-required-scope: tickets:update
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/IfMatch'
-        - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/RequestId'
       requestBody:
         required: true
         content:
@@ -98,109 +110,64 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Ticket'
+                $ref: '#/components/schemas/PlatformTicket'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/Problem'
         '412':
           $ref: '#/components/responses/Problem'
         '429':
           $ref: '#/components/responses/RateLimited'
-  /tickets/{ticketNumber}/comments:
+  /tickets/{ticketNumber}/internal-comments:
     parameters:
-      - $ref: '#/components/parameters/TicketNumber'
+    - $ref: '#/components/parameters/TicketNumber'
     post:
-      operationId: createTicketComment
-      summary: Add a public or internal comment according to scope
+      tags:
+      - Platform Tickets
+      operationId: platformAddInternalComment
+      summary: Add an INTERNAL comment; PUBLIC visibility is not part of Platform API v1
+      x-deskseed-required-scope: tickets:comment:internal
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/RequestId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/RequestId'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateCommentRequest'
+              $ref: '#/components/schemas/AddInternalCommentRequest'
       responses:
         '201':
-          description: Comment created
+          description: Internal comment created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Comment'
+                $ref: '#/components/schemas/InternalComment'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
         '403':
+          $ref: '#/components/responses/Problem'
+        '404':
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/Problem'
         '429':
           $ref: '#/components/responses/RateLimited'
-  /tickets/{ticketNumber}/external-references:
-    parameters:
-      - $ref: '#/components/parameters/TicketNumber'
-    get:
-      operationId: listExternalReferences
-      responses:
-        '200':
-          description: External references
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ExternalReference'
-    post:
-      operationId: createExternalReference
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateExternalReferenceRequest'
-      responses:
-        '201':
-          description: Reference created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExternalReference'
-        '409':
-          $ref: '#/components/responses/Problem'
-  /ticket-events:
-    get:
-      operationId: listTicketEvents
-      summary: Consume committed ticket integration events incrementally
-      parameters:
-        - name: cursor
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 500
-            default: 100
-      responses:
-        '200':
-          description: Event page
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EventPage'
 components:
   securitySchemes:
     bearerApiKey:
       type: http
       scheme: bearer
-      bearerFormat: Deskseed API key
+      bearerFormat: Deskseed scoped API key
   parameters:
     TicketNumber:
       name: ticketNumber
@@ -224,36 +191,38 @@ components:
       required: true
       schema:
         type: string
+        minLength: 3
+        maxLength: 100
     RequestId:
       name: X-Request-Id
       in: header
       required: false
       schema:
         type: string
-        maxLength: 200
+        maxLength: 100
   headers:
     ETag:
-      description: Ticket version ETag
       schema:
         type: string
     RequestId:
-      description: Accepted server request identifier
       schema:
         type: string
+    RetryAfter:
+      schema:
+        type: integer
+        minimum: 1
   responses:
     Problem:
-      description: Problem Details response
+      description: RFC 9457 Problem Details
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     RateLimited:
-      description: Rate limit exceeded
+      description: Client rate limit exceeded
       headers:
         Retry-After:
-          schema:
-            type: integer
-            minimum: 1
+          $ref: '#/components/headers/RetryAfter'
       content:
         application/problem+json:
           schema:
@@ -262,37 +231,58 @@ components:
     CreateTicketRequest:
       type: object
       additionalProperties: false
-      required: [kind, subject, initialComment]
+      required:
+      - kind
+      - subject
+      - message
       properties:
         kind:
           type: string
-          enum: [CUSTOMER_REQUEST, INTERNAL_WORK_ITEM]
-        requester:
-          $ref: '#/components/schemas/RequesterInput'
+          enum:
+          - CUSTOMER_REQUEST
+          - INTERNAL_WORK_ITEM
         subject:
           type: string
           minLength: 1
           maxLength: 300
-        initialComment:
-          $ref: '#/components/schemas/CreateCommentRequest'
-        groupId:
-          type: [string, 'null']
-          format: uuid
-        assigneeId:
-          type: [string, 'null']
-          format: uuid
+        message:
+          type: string
+          minLength: 1
+          maxLength: 50000
+          description: Creates the first PUBLIC comment for CUSTOMER_REQUEST and the first INTERNAL comment for INTERNAL_WORK_ITEM.
+        requester:
+          $ref: '#/components/schemas/RequesterInput'
         priority:
           type: string
-          enum: [LOW, NORMAL, HIGH, URGENT]
-        externalReferences:
-          type: array
-          maxItems: 20
-          items:
-            $ref: '#/components/schemas/CreateExternalReferenceRequest'
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
+          default: NORMAL
+        groupId:
+          type: string
+          format: uuid
+        assigneeId:
+          type: string
+          format: uuid
+        externalOperationId:
+          type: string
+          maxLength: 200
+      allOf:
+      - if:
+          properties:
+            kind:
+              const: CUSTOMER_REQUEST
+        then:
+          required:
+          - requester
     RequesterInput:
       type: object
       additionalProperties: false
-      required: [name, email]
+      required:
+      - name
+      - email
       properties:
         name:
           type: string
@@ -309,64 +299,58 @@ components:
       properties:
         status:
           type: string
-          enum: [NEW, OPEN, PENDING, ON_HOLD, SOLVED]
+          enum:
+          - NEW
+          - OPEN
+          - PENDING
+          - HOLD
+          - SOLVED
         priority:
           type: string
-          enum: [LOW, NORMAL, HIGH, URGENT]
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
         groupId:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           format: uuid
         assigneeId:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           format: uuid
-    CreateCommentRequest:
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 300
+    AddInternalCommentRequest:
       type: object
       additionalProperties: false
-      required: [visibility, body]
+      required:
+      - body
       properties:
-        visibility:
-          type: string
-          enum: [PUBLIC, INTERNAL]
         body:
           type: string
           minLength: 1
-          maxLength: 100000
-    CreateExternalReferenceRequest:
+          maxLength: 50000
+    PlatformTicket:
       type: object
       additionalProperties: false
-      required: [systemKey, objectType, externalId]
-      properties:
-        systemKey:
-          type: string
-          minLength: 1
-          maxLength: 100
-        objectType:
-          type: string
-          enum: [ORDER, PAYMENT, REFUND, USER, STORE, OPS_CASE, CUSTOM]
-        externalId:
-          type: string
-          minLength: 1
-          maxLength: 300
-        displayLabel:
-          type: [string, 'null']
-          maxLength: 300
-        deepLinkUrl:
-          type: [string, 'null']
-          format: uri
-          maxLength: 2000
-        metadataSnapshot:
-          type: [object, 'null']
-          additionalProperties:
-            type: [string, number, integer, boolean, 'null']
-    Ticket:
-      type: object
-      required: [ticketNumber, kind, subject, status, priority, version, createdAt, updatedAt]
+      required:
+      - ticketNumber
+      - subject
+      - status
+      - priority
+      - version
+      - createdAt
+      - updatedAt
       properties:
         ticketNumber:
           type: integer
           format: int64
-        kind:
-          type: string
         subject:
           type: string
         status:
@@ -374,62 +358,56 @@ components:
         priority:
           type: string
         groupId:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           format: uuid
         assigneeId:
-          type: [string, 'null']
+          type:
+          - string
+          - 'null'
           format: uuid
         version:
           type: integer
           format: int64
+          minimum: 0
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-    Comment:
+    InternalComment:
       type: object
-      required: [id, visibility, body, createdAt]
+      additionalProperties: false
+      required:
+      - id
+      - ticketNumber
+      - visibility
+      - body
+      - createdAt
       properties:
         id:
           type: string
           format: uuid
+        ticketNumber:
+          type: integer
+          format: int64
         visibility:
           type: string
-          enum: [PUBLIC, INTERNAL]
+          const: INTERNAL
         body:
           type: string
         createdAt:
           type: string
           format: date-time
-    ExternalReference:
-      allOf:
-        - $ref: '#/components/schemas/CreateExternalReferenceRequest'
-        - type: object
-          required: [id, createdAt]
-          properties:
-            id:
-              type: string
-              format: uuid
-            createdAt:
-              type: string
-              format: date-time
-    EventPage:
-      type: object
-      required: [items, hasMore]
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-        nextCursor:
-          type: [string, 'null']
-        hasMore:
-          type: boolean
     Problem:
       type: object
-      required: [type, title, status, requestId]
+      additionalProperties: true
+      required:
+      - type
+      - title
+      - status
       properties:
         type:
           type: string
@@ -438,11 +416,9 @@ components:
           type: string
         status:
           type: integer
+          minimum: 400
+          maximum: 599
         detail:
           type: string
-        instance:
-          type: string
-          format: uri-reference
         requestId:
           type: string
-      additionalProperties: true

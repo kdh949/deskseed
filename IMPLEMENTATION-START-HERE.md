@@ -1,4 +1,4 @@
-# IMPLEMENTATION START HERE — v0.5
+# IMPLEMENTATION START HERE — v0.6
 
 ## 1. 현재 문서가 보장하는 범위
 
@@ -90,3 +90,15 @@ Accepted ADR / Decision register
 ```
 
 코드가 승인된 결정을 바꾸면 먼저 ADR과 계약을 수정한다.
+## Accepted extension train after the core portfolio gate
+
+```text
+Task 20 Mailpit outbound-email foundation
+Task 21 Customer magic-link + My Requests
+Task 22 Private Platform API v1
+Task 23 Encrypted raw search-query storage/reveal
+Task 24 Business schedule admin
+Task 25 First Reply SLA
+```
+
+Read `docs/53-accepted-decisions-2026-08-10.md` before these tasks.

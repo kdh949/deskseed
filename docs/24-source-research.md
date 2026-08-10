@@ -207,3 +207,15 @@ Pin versions in the repository and re-check compatibility when bootstrapping.
 - This research supports behavior and architecture, not legal compliance claims.
 - Open-source code licenses must be checked at the file/repository revision used. Do not copy AGPL code into a differently licensed project without a deliberate decision.
 - Vendor behavior is inspiration, not a requirement to reproduce every detail.
+## 2026-08-10 decision verification
+
+- Spring Security One-Time Token Login: framework supports the two-step token request/consume flow, custom delivery handler for magic-link email, and recommends JDBC-backed storage for production.
+- Zendesk schedules: business hours, weekdays, holidays, SLA policies, views, triggers, automations, and reporting share schedule semantics; multiple schedule assignment is a later capability.
+- Zendesk Access Logs: read/write access records include query parameters, actor, IP, authorization type, client, and browser URL, supporting exact-search investigation requirements.
+- Mailpit: development SMTP server, web UI, Docker image, and REST API suitable for email integration tests.
+- OWASP Logging guidance: sensitive log content requires minimization and protection; Deskseed therefore stores required original search text as protected ciphertext, not plaintext operational logging.
+
+
+### Access-log retention comparison
+
+Zendesk documents a 90-day window for its agent/admin access log. Deskseed does not copy that duration for recoverable raw search text: because the ciphertext remains highly sensitive, the initial product default is 30 days, administrator-configurable, and explicitly non-legal. The metadata ledger may have a different retention category.

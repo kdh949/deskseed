@@ -1,6 +1,6 @@
 # Codex Implementation Runbook
 
-Status: **Normative delivery process v0.5**
+Status: **Normative delivery process v0.6**
 
 이 문서는 문서 seed를 실제 Kotlin/Spring + React 코드베이스로 옮기는 절차를 정의한다. Codex에게 제품 전체를 한 번에 구현시키지 않고, 검증 가능한 vertical slice를 작은 PR 단위로 반복한다.
 

@@ -238,8 +238,9 @@ Each `SEARCH_EXECUTED` event stores:
 ```text
 queryRedacted
 queryFingerprint
-queryCiphertext?       // policy-controlled
-queryKeyVersion?
+queryCiphertext        // required authenticated ciphertext
+queryNonceOrEnvelope
+queryKeyVersion
 filters
 sort
 resultCount
@@ -263,16 +264,18 @@ Use keyed HMAC over normalized query, not a plain hash. This permits equality/co
 
 #### Encrypted raw query
 
-Optional but proposed default when operator configures an encryption key.
+Required for every `SEARCH_EXECUTED` event.
 
 - authenticated encryption
 - key stored outside DB
 - key version recorded
-- shorter retention than metadata
+- associated data binds event ID and purpose
+- shorter retention than metadata; default 30 days
 - reveal requires privileged permission and reason
 - reveal is audited
+- bulk reveal is disabled initially
 
-If encryption is not configured, do not silently store raw plaintext.
+When access audit is enabled, a missing/invalid raw-query encryption key is a startup/configuration failure. Never fall back to plaintext or silently omit the original query.
 
 ### 6.3 Search-result linkage
 

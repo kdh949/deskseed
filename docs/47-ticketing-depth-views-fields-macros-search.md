@@ -1,6 +1,6 @@
 # Ticketing Breadth: Views, Tags, Custom Fields, Macros, and Search
 
-Status: Staged implementation specification v0.5
+Status: Staged implementation specification v0.6
 
 These capabilities are intentionally after Core MVP. The seams are documented now so they can be added without weakening ticket visibility, audit, or command semantics.
 

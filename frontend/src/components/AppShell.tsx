@@ -7,7 +7,9 @@ export function AppShell({ children }: PropsWithChildren) {
       <header className="site-header">
         <div className="header-inner">
           <Link className="brand" to="/">
-            <span className="brand-mark" aria-hidden="true">D</span>
+            <span className="brand-mark" aria-hidden="true">
+              D
+            </span>
             <span>
               <strong>Deskseed</strong>
               <small>고객지원 포털</small>

@@ -15,7 +15,7 @@
 | Question | Proposed default |
 |---|---|
 | 익명 조회 token 만료 | 개발 30일; 운영 전에 설정화 |
-| 고객 답변 인증 | magic link 또는 검증된 session, MVP 후 |
+| 고객 답변 인증 | **Accepted:** email magic link + verified customer session |
 | 동일 이메일 프로필 병합 | 자동 병합 금지; 검증 후 명시적 연결 |
 | 해결 티켓 고객 답변 | 재오픈 정책을 관리자 설정으로, 기본 재오픈 |
 
@@ -33,11 +33,11 @@
 
 | Question | Proposed default |
 |---|---|
-| 검색어 원문 저장 여부 | 암호화 저장 + 마스킹본 + HMAC fingerprint |
-| 암호화 key | DB 밖 환경/KMS에서 공급; key 없으면 raw 저장 기능 비활성 또는 startup failure 정책 결정 |
+| 검색어 원문 저장 여부 | **Accepted:** required authenticated ciphertext + redacted form + HMAC fingerprint |
+| 암호화 key | **Accepted:** DB 밖에서 공급; access audit가 켜져 있으면 key 누락은 startup/readiness failure |
 | 일반 auditor에게 원문 표시 | 기본 비표시 |
 | 원문 공개 권한 | `audit:search-query:reveal` + reason + self-audit |
-| raw query retention | 30일 proposal; metadata는 180일 proposal |
+| raw query retention | 30일 operational default; metadata는 180일 proposal |
 | search event와 ticket view 연결 | `originSearchEventId` 필수 when opened from results |
 
 검색어가 카드번호·주민번호·비밀번호 같은 민감 데이터를 포함할 수 있으므로 “감사니까 무조건 평문 저장”은 채택하지 않는다.
@@ -56,7 +56,7 @@
 
 | Question | Proposed default |
 |---|---|
-| 첫 machine auth | scoped API key |
+| 첫 machine auth | **Accepted:** private-network scoped API key |
 | key expiry | 생성 시 필수; 최대 365일 proposal |
 | rotation overlap | 24시간 proposal |
 | IP allowlist | optional per client |

@@ -876,3 +876,97 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - retention jobs are dry-runnable, bounded, idempotent and audited.
 - legal hold/exclusion works where enabled.
 - operator can see pending migrations, failed jobs, dead letters and backup age.
+
+
+## 20. Accepted policy extension gates
+
+### AUTH-001 — Enumeration-safe magic-link request
+
+- existing and unknown email addresses receive the same status, shape and comparable timing envelope.
+- rate limiting is applied by normalized destination and requester network identity.
+- response, audit and logs contain no account-existence signal or raw token.
+
+### AUTH-002 — Single-use and expiry
+
+- a generated magic-link token is accepted once before its deadline.
+- replay, expiry, malformed token and concurrent consume attempts do not create a second session.
+- only a token verifier/hash is stored; the URL token is absent from application logs and traces.
+
+### AUTH-003 — Customer session isolation
+
+- successful consume creates an HttpOnly, Secure-in-production, SameSite=Lax session cookie.
+- one customer cannot list, read, comment on or claim another customer’s request.
+- logout invalidates the session and protected endpoints stop working.
+
+### AUTH-004 — Explicit anonymous-request claim
+
+- matching verified email alone never auto-claims or lists an anonymous request.
+- claim requires the original request-access token or a signed, ticket-specific claim grant.
+- successful and denied claim attempts are security-audited without logging the secret.
+
+### PERM-001 — Initial global agent read
+
+- every active Agent can find and read every staff-visible ticket through Views, search, direct URL and parent/child navigation.
+- inactive staff and customers cannot use this policy.
+- global read does not grant Admin, Audit Explorer, export, protected reveal or integration-secret access.
+
+### PERM-002 — Read does not imply cross-group write
+
+- an Agent who can read an unrelated group ticket cannot mutate it unless the separate write policy permits it.
+- the initial write policy accepts the current assignee or an active member of the ticket group.
+- denied mutation creates no partial TicketChangeAudit and returns a stable authorization problem.
+
+### PLAT-001 — Private-network Platform API boundary
+
+- production profile requires a non-empty operator allowlist/trusted-proxy configuration for `/api/v1/platform/**`.
+- public/untrusted source simulation is rejected before business data is returned.
+- network placement never bypasses API-key authentication, scope, constraint, rate-limit or audit checks.
+
+### PLAT-002 — Platform v1 operation allowlist
+
+- v1 permits only ticket create, read, allowed-field update and INTERNAL comment.
+- PUBLIC comment, admin/settings operations, arbitrary customer export and staff impersonation are absent or rejected.
+- OpenAPI breaking-change check protects the frozen v1 surface.
+
+### SEARCH-AUD-001 — Required encrypted original query
+
+- every successful `SEARCH_EXECUTED` event stores redacted query, keyed fingerprint, authenticated ciphertext and key version.
+- no plaintext query column, log, trace, metric, cache, ordinary export or webhook payload exists.
+- missing/invalid active encryption key fails startup/readiness when access audit is enabled.
+
+### SEARCH-AUD-002 — Protected query reveal
+
+- list/detail projection omits plaintext by default.
+- one-event reveal requires dedicated permission, non-empty reason and configured reauthentication policy.
+- response uses `Cache-Control: no-store`; reveal creates a self-audit event.
+- expired ciphertext is reported as unavailable without changing canonical metadata.
+
+### MAIL-001 — Mailpit development delivery
+
+- Compose starts Mailpit with application SMTP connectivity and developer web/API access.
+- integration test sends a magic-link message and verifies recipient, subject and one expected link through the Mailpit API.
+- test isolation clears or uniquely tags captured messages.
+
+### MAIL-002 — Provider-neutral outbound boundary
+
+- ticket/customer modules depend on `OutboundMailPort`, not Mailpit classes or endpoints.
+- network delivery occurs after durable intent commit and is retry/idempotency safe.
+- production provider can be replaced without changing Ticket or Customer aggregate code.
+
+### SCHED-001 — Administrator-editable weekly schedule
+
+- Admin can set IANA timezone, enabled/disabled Monday–Sunday, zero or multiple non-overlapping intervals per day, holidays and exceptional open/closed intervals.
+- invalid/overlapping intervals are rejected with field-level problems.
+- preview returns deterministic business minutes and next-open/next-close boundaries.
+
+### SCHED-002 — Schedule version history
+
+- editing a schedule creates a new immutable version and an admin-security audit event.
+- existing SLA target instances retain their applied schedule version.
+- historical calculations do not silently change after an administrator edit.
+
+### SLA-009 — PENDING pause launch policy
+
+- initial First Reply policy pauses while the ticket is PENDING and resumes on the first later active status.
+- the pause-status set is policy data editable by Admin and versioned.
+- INTERNAL notes neither stop the clock nor count as the first public reply.

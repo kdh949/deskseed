@@ -1,6 +1,6 @@
 # Admin Settings Catalog
 
-Status: **Normative configuration inventory v0.5**
+Status: **Normative configuration inventory v0.6**
 
 관리자 설정을 임의 key/value dumping ground로 만들지 않는다. 각 설정은 type, default, validation, permission, audit, effective time, secret 여부, restart 필요 여부를 가진다.
 
@@ -40,6 +40,8 @@ SettingValue
 | `customer.requestTokenTtlDays` | int | 30 | M1 hardening | yes | legal/security decision |
 | `customer.allowAnonymousFollowUp` | bool | false | P1 | yes | token security required |
 | `customer.emailVerificationRequiredForList` | bool | true | P1 | yes | prevents email-ownership assumption |
+| `customer.authMethod` | enum | `EMAIL_MAGIC_LINK` | P1 | yes | password/OIDC later |
+| `customer.magicLinkTtlMinutes` | int | 15 | P1 | yes | allowed 5–60 |
 | `customer.reopenWindowDays` | int | 14 | P1 | yes | provisional |
 | `customer.displayAgentFullName` | bool | false | M6 | yes | privacy/brand policy |
 
@@ -74,7 +76,8 @@ SettingValue
 
 | Key | Type | Default | Phase | Notes |
 |---|---|---|---|---|
-| `authorization.agentTicketScope` | enum | OWN_GROUPS | P2 | ALL/OWN_GROUPS/ASSIGNED |
+| `authorization.agentTicketReadScope` | enum | ALL_TICKETS | M2 | ALL_TICKETS/OWN_GROUPS/ASSIGNED_ONLY/EXPLICIT_GROUP_MATRIX |
+| `authorization.agentTicketWriteScope` | enum | GROUP_OR_ASSIGNEE | M3 | unresolved product choice; conservative default |
 | `authorization.childParentRead` | bool | true | M5 | relationship permission |
 | `authorization.groupPolicyEnabled` | bool | false | P2 | NONE/READ/READ_WRITE |
 | `authorization.securityAuditorCanReveal` | bool | false | R2 | separate permission preferred |
@@ -88,7 +91,8 @@ SettingValue
 | `audit.semanticViewDedupMinutes` | int | interaction-based | R1 | interaction ID is primary |
 | `audit.search.redactedStorage` | bool | true | R1 | |
 | `audit.search.fingerprintStorage` | bool | true | R1 | keyed HMAC |
-| `audit.search.ciphertextStorage` | bool | false | R1 | provisional/legal |
+| `audit.search.rawStorageMode` | enum | REQUIRED_ENCRYPTED | R1 | missing key fails readiness |
+| `audit.search.activeKeyVersion` | string | required | R1 | secret key material is external |
 | `audit.search.ciphertextRetentionDays` | int | 30 | R1 | provisional |
 | `audit.accessRetentionDays` | int | 180 | R2 | provisional |
 | `audit.adminRetentionDays` | int | 365 | R2 | provisional |
@@ -100,8 +104,8 @@ SettingValue
 | Key | Type | Default | Phase | Notes |
 |---|---|---|---|---|
 | `platformApi.enabled` | bool | false | I1 | explicit activation |
-| `platformApi.networkMode` | enum | PRIVATE_OR_OPERATOR | I1 | provisional |
-| `platformApi.defaultRateLimitPerMinute` | int | operator | I2 | per client override |
+| `platformApi.networkMode` | enum | PRIVATE_ONLY | I1 | accepted v1 boundary |
+| `platformApi.defaultRateLimitPerMinute` | int | 60 | I2 | per client override |
 | `platformApi.idempotencyRetentionDays` | int | 7 | I3 | |
 | `platformApi.requireIpAllowlist` | bool | false | I1 | per client preferred |
 | `externalReference.allowedHosts` | host list | empty | I4 | HTTPS only |
@@ -116,7 +120,9 @@ Secrets such as API key values and webhook HMAC secret are credential objects, n
 
 | Key | Type | Default | Phase | Notes |
 |---|---|---|---|---|
-| `time.defaultZone` | IANA zone | `Asia/Seoul` candidate | P3 | operator selected |
+| `time.defaultZone` | IANA zone | `Asia/Seoul` | P3 | operator selected |
+| `sla.defaultWeeklyHours` | schedule | Mon–Fri 09:00–18:00 | P3 | editable in schedule UI |
+| `sla.firstReplyPauseStatuses` | enum set | PENDING | P3 | versioned policy field |
 | `sla.enabled` | bool | false | P3 | |
 | `sla.atRiskThresholdMinutes` | int | 30 | P3 | display threshold |
 | `sla.breachScanBatchSize` | int | measured | P3 | operational |
@@ -165,7 +171,10 @@ Object-store credentials are secrets outside this registry.
 
 | Key | Type | Default | Phase | Notes |
 |---|---|---|---|---|
-| `notification.emailOutboundEnabled` | bool | false | P8 | outbox required |
+| `notification.emailOutboundEnabled` | bool | true in dev | P1/P8 | outbox required |
+| `notification.devAdapter` | enum | MAILPIT | P1 | development/test only |
+| `notification.mailpitSmtpHost` | host | mailpit | P1 | Compose-internal |
+| `notification.mailpitSmtpPort` | int | 1025 | P1 | Compose-internal |
 | `notification.fromAddress` | email | unset | P8 | |
 | `notification.replyDomain` | domain | unset | P8 | threading/security |
 | `email.inboundEnabled` | bool | false | P8 | provider adapter |

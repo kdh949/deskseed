@@ -1,4 +1,4 @@
-version: "0.5"
+version: "0.6"
 surfaces:
   customer:
     source: api/core-api-outline-v1.yaml
@@ -17,10 +17,22 @@ surfaces:
         path: "/api/v1/requests/{ticketNumber}/comments"
         phase: p1
         command: AddCustomerPublicComment
+      - method: POST
+        path: "/api/v1/customer/auth/magic-link-requests"
+        phase: p1
+        command: RequestCustomerMagicLink
+      - method: POST
+        path: "/api/v1/customer/auth/magic-link-sessions"
+        phase: p1
+        command: ConsumeCustomerMagicLink
       - method: GET
         path: "/api/v1/customer/requests"
         phase: p1
         query: CustomerRequestList
+      - method: POST
+        path: "/api/v1/customer/requests/{ticketNumber}/claim"
+        phase: p1
+        command: ClaimAnonymousRequest
   agent:
     source: api/core-api-outline-v1.yaml
     actor: [agent, admin]
@@ -67,6 +79,26 @@ surfaces:
         path: "/api/v1/audit/exports"
         command: RequestAuditExport
         audit: AUDIT_EXPORT_REQUESTED
+  admin_schedule_sla:
+    source: api/core-api-outline-v1.yaml
+    actor: [admin]
+    phase: p3
+    endpoints:
+      - method: POST
+        path: "/api/v1/admin/business-schedules"
+        command: CreateBusinessSchedule
+      - method: PATCH
+        path: "/api/v1/admin/business-schedules/{scheduleId}"
+        command: VersionBusinessSchedule
+      - method: POST
+        path: "/api/v1/admin/business-schedules/{scheduleId}/preview"
+        command: PreviewBusinessTime
+      - method: POST
+        path: "/api/v1/admin/sla-policies"
+        command: CreateSlaPolicy
+      - method: POST
+        path: "/api/v1/admin/sla-policies/{policyId}/activate"
+        command: ActivateSlaPolicy
   platform:
     actor: [integration_client]
     phase: integration_v1

@@ -14,15 +14,16 @@ concurrency:
 
 jobs:
   seed-contracts:
-    name: Seed contracts
+    name: Documentation contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
-      - run: python -m pip install --disable-pip-version-check PyYAML==6.0.3
-      - run: python scripts/verify_seed.py
+      - run: python -m pip install --disable-pip-version-check -r scripts/requirements-docs.txt
+      - run: python scripts/validate_documentation.py --write
+      - run: git diff --exit-code -- VALIDATION-REPORT.md
 
   backend:
     name: Backend tests
@@ -33,15 +34,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.7.0'
       - name: Test
         working-directory: backend
-        run: gradle --no-daemon test
+        run: ./gradlew --no-daemon test
 
   frontend:
-    name: Frontend typecheck and build
+    name: Frontend quality gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -51,10 +49,27 @@ jobs:
           package-manager-cache: false
       - name: Install
         working-directory: frontend
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+      - name: Format
+        working-directory: frontend
+        run: npm run format:check
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
       - name: Typecheck
         working-directory: frontend
         run: npm run typecheck
+      - name: Test
+        working-directory: frontend
+        run: npm test -- --run
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  compose-smoke:
+    name: Compose health smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start stack and check backend health
+        run: bash scripts/compose-smoke.sh

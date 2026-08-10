@@ -4,6 +4,15 @@
 
 웹 문의 모델을 깨지 않고 이메일을 Ticket/Comment channel adapter로 추가한다. 이메일 수신/발신 실패가 ticket transaction과 뒤엉키지 않게 한다.
 
+## 1.1 Accepted development delivery boundary
+
+- Docker Compose includes Mailpit.
+- application SMTP target in development: `mailpit:1025`; developer UI: `http://localhost:8025`.
+- use a provider-neutral `OutboundMailPort`; no Mailpit type leaks into ticket/customer modules.
+- first outbound templates are customer magic link, request received, and public agent reply.
+- Mailpit REST API is permitted in integration tests.
+- production provider and inbound ingestion remain separate adapter decisions.
+
 ## 2. Channel abstraction
 
 Ticket and Comment have a channel marker, but domain logic does not depend on provider SDK.

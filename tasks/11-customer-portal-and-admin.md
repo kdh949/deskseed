@@ -17,3 +17,6 @@ Implement anonymous mode completely; keep optional/required account modes behind
 - mode changes audited.
 - internal projection regression.
 - admin route authorization.
+## Accepted v0.6 identity
+
+Implement email magic link, DB-backed single-use tokens, explicit anonymous-ticket claim, and My Requests. Do not auto-claim by email match.

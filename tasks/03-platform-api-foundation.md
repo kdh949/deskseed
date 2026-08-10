@@ -44,3 +44,6 @@ D-012, D-016, D-021, D-022, D-023
 ## Gates
 
 INT-AUTH-001 through INT-AUTH-004, IDEM-001 through IDEM-004, CONC-001, ACC-006
+## Accepted v0.6 contract
+
+Private network, 60 rpm/client default, create/read/update ticket, and INTERNAL comment are frozen for v1.

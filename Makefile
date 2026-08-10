@@ -1,4 +1,4 @@
-.PHONY: up down db seed-verify demo backend-test frontend-check check
+.PHONY: up down db seed-verify docs-check compose-smoke demo backend-test frontend-check check
 
 up:
 	docker compose up --build
@@ -12,13 +12,20 @@ db:
 seed-verify:
 	python3 scripts/verify_seed.py
 
+docs-check:
+	python3 scripts/validate_documentation.py --write
+	git diff --exit-code -- VALIDATION-REPORT.md
+
+compose-smoke:
+	bash scripts/compose-smoke.sh
+
 demo:
 	./scripts/demo-request.sh
 
 backend-test:
-	cd backend && ./gradlew test
+	cd backend && GRADLE_USER_HOME=./.gradle-user-home ./gradlew --no-daemon test
 
 frontend-check:
-	cd frontend && npm install --no-audit --no-fund && npm run typecheck && npm run build
+	cd frontend && npm ci --no-audit --no-fund && npm run format:check && npm run lint && npm run typecheck && npm test -- --run && npm run build
 
-check: seed-verify backend-test frontend-check
+check: docs-check backend-test frontend-check

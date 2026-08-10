@@ -34,3 +34,6 @@ REQ-FILE-001, REQ-FILE-002, REQ-CHAN-001, REQ-NOTIF-001.
 ## Exit evidence
 
 Malware/quarantine, unauthorized download, duplicate inbound message, bounce, provider outage, and restore tests pass.
+## Accepted v0.6 development adapter
+
+Use Mailpit for local/CI outbound delivery through a provider-neutral port. Inbound email remains out of the first Mailpit slice.
