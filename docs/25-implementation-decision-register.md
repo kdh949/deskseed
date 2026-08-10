@@ -52,6 +52,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-044 | First Reply SLA uses configurable schedule; seed Mon–Fri 09–18 Asia/Seoul and PENDING pause | accepted | operator policy change |
 | D-045 | exact search query is required authenticated ciphertext with 30-day default retention | accepted | legal/operator retention review |
 | D-046 | Mailpit is the development outbound-mail adapter; production provider later | accepted | production email rollout |
+| D-047 | staff auth uses server sessions, CSRF, PostgreSQL lockout, and password-file bootstrap | accepted | MFA/SSO or horizontally scaled session requirement |
 
 ## How to use this register
 

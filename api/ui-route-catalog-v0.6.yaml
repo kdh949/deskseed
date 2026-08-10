@@ -1,5 +1,9 @@
 version: "0.6"
 routes:
+  - path: "/agent/login"
+    actor: anonymous_staff
+    phase: m2
+    screen: staff_login
   - path: "/requests/new"
     actor: anonymous
     phase: m1
