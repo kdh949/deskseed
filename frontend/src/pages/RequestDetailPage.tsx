@@ -2,12 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { type FormEvent, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getPublicRequest } from '../api/client'
-import {
-  loadRequestToken,
-  removeRequestToken,
-  saveRequestToken,
-} from '../api/tokenStore'
 import { StatusBadge } from '../components/StatusBadge'
+import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('ko-KR', {
@@ -19,12 +15,13 @@ function formatDate(value: string): string {
 export function RequestDetailPage() {
   const params = useParams()
   const ticketNumber = Number(params.ticketNumber)
+  const requestAccess = useRequestAccess()
   const initialToken = useMemo(
     () =>
       Number.isSafeInteger(ticketNumber)
-        ? (loadRequestToken(ticketNumber) ?? '')
+        ? (requestAccess.getAccessToken(ticketNumber) ?? '')
         : '',
-    [ticketNumber],
+    [requestAccess, ticketNumber],
   )
   const [token, setToken] = useState(initialToken)
   const [tokenDraft, setTokenDraft] = useState(initialToken)
@@ -42,7 +39,7 @@ export function RequestDetailPage() {
   const saveToken = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const cleanToken = tokenDraft.trim()
-    saveRequestToken(ticketNumber, cleanToken)
+    requestAccess.setAccessToken(ticketNumber, cleanToken)
     setToken(cleanToken)
   }
 
@@ -108,7 +105,7 @@ export function RequestDetailPage() {
             className="button secondary"
             type="button"
             onClick={() => {
-              removeRequestToken(ticketNumber)
+              requestAccess.clearAccessToken(ticketNumber)
               setToken('')
               setTokenDraft('')
             }}
@@ -152,14 +149,9 @@ export function RequestDetailPage() {
 
       <div className="conversation" aria-label="공개 대화">
         {request.comments.map((comment) => (
-          <article
-            className={`comment comment-${comment.authorType.toLowerCase()}`}
-            key={comment.id}
-          >
+          <article className="comment" key={comment.id}>
             <header>
-              <strong>
-                {comment.authorType === 'CUSTOMER' ? '고객' : '상담팀'}
-              </strong>
+              <strong>{comment.authorDisplayName}</strong>
               <time dateTime={comment.createdAt}>
                 {formatDate(comment.createdAt)}
               </time>

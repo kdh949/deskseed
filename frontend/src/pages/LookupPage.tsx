@@ -1,9 +1,10 @@
 import { type FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { saveRequestToken } from '../api/tokenStore'
+import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
 
 export function LookupPage() {
   const navigate = useNavigate()
+  const requestAccess = useRequestAccess()
   const [ticketNumber, setTicketNumber] = useState('')
   const [token, setToken] = useState('')
 
@@ -11,7 +12,7 @@ export function LookupPage() {
     event.preventDefault()
     const number = Number(ticketNumber)
     if (!Number.isSafeInteger(number) || number <= 0) return
-    saveRequestToken(number, token.trim())
+    requestAccess.setAccessToken(number, token.trim())
     navigate(`/requests/${number}`)
   }
 

@@ -2,8 +2,8 @@ import { useMutation } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError, submitRequest } from '../api/client'
-import { saveRequestToken } from '../api/tokenStore'
 import type { SubmitRequestInput } from '../api/types'
+import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
 
 const EMPTY_FORM: SubmitRequestInput = {
   name: '',
@@ -13,11 +13,12 @@ const EMPTY_FORM: SubmitRequestInput = {
 }
 
 export function NewRequestPage() {
+  const requestAccess = useRequestAccess()
   const [form, setForm] = useState<SubmitRequestInput>(EMPTY_FORM)
   const mutation = useMutation({
     mutationFn: submitRequest,
     onSuccess: (result) =>
-      saveRequestToken(result.ticketNumber, result.accessToken),
+      requestAccess.setAccessToken(result.ticketNumber, result.accessToken),
   })
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
