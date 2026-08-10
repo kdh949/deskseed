@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useLocation } from 'react-router'
+import { Link, Navigate, Outlet, useLocation } from 'react-router'
 import { StaffSessionProvider, useStaffSession } from './StaffSessionContext'
 
 export function StaffSessionLayout() {
@@ -41,7 +41,18 @@ export function StaffRoute() {
 export function AdminRoute() {
   const session = useStaffSession()
   if (session.staff?.role !== 'ADMIN') {
-    return <Navigate to="/agent/home" replace />
+    return (
+      <main className="staff-gate" aria-labelledby="admin-denied-title">
+        <div>
+          <p className="eyebrow">403 · ACCESS DENIED</p>
+          <h1 id="admin-denied-title">관리자 권한이 필요합니다.</h1>
+          <p className="muted">이 계정은 관리자 설정을 열 수 없습니다.</p>
+          <Link className="button primary" to="/agent/home">
+            상담사 작업 공간으로 이동
+          </Link>
+        </div>
+      </main>
+    )
   }
   return <Outlet />
 }

@@ -105,11 +105,15 @@ test('agent direct admin URL is guarded, admin API returns 403, and logout clear
   expect(adminApiCalls).toBe(1)
 
   await page.goto('/admin/groups')
-  await expect(page).toHaveURL(/\/agent\/home$/)
+  await expect(page).toHaveURL(/\/admin\/groups$/)
+  await expect(
+    page.getByRole('heading', { name: '관리자 권한이 필요합니다.' }),
+  ).toBeVisible()
   await expect(
     page.getByRole('heading', { name: '그룹과 멤버십' }),
   ).toHaveCount(0)
   expect(adminApiCalls).toBe(1)
+  await page.getByRole('link', { name: '상담사 작업 공간으로 이동' }).click()
   await page.getByRole('button', { name: '로그아웃' }).click()
   await expect(page).toHaveURL(/\/agent\/login$/)
   expect(logoutObserved).toBe(true)

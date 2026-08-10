@@ -64,7 +64,7 @@ describe('App', () => {
     )
 
     expect(
-      await screen.findByRole('main', { name: '상담사 작업 공간' }),
+      await screen.findByRole('heading', { name: '관리자 권한이 필요합니다.' }),
     ).toBeVisible()
     expect(
       screen.queryByRole('heading', { name: '직원 계정' }),
