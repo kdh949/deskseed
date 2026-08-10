@@ -25,7 +25,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Canonical Docs: 55
 - Core Api Requirement Links: 34
 - Decision Definitions: 46
-- E2E Visual Baselines: 3
+- E2E Visual Baselines: 6
 - Json Files: 8
 - Markdown Files: 137
 - Openapi Operations: 46
