@@ -42,6 +42,8 @@ def parse_yaml_files() -> None:
         print("- note: PyYAML is unavailable; full YAML parsing is skipped")
         return
     for path in sorted(ROOT.rglob("*.y*ml")):
+        if not path.is_file():
+            continue
         try:
             list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
         except Exception as exc:  # noqa: BLE001 - verifier should aggregate failures
@@ -50,7 +52,7 @@ def parse_yaml_files() -> None:
 
 def parse_json_files() -> None:
     for path in sorted(ROOT.rglob("*.json")):
-        if "node_modules" in path.parts:
+        if not path.is_file() or "node_modules" in path.parts:
             continue
         try:
             json.loads(path.read_text(encoding="utf-8"))
