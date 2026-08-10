@@ -169,6 +169,7 @@ class PublicRequestIntegrationTest {
     fun `http customer projection contains only public customer safe fields before serialization`() {
         val submitted = submitUniqueRequest("http-public-projection")
         val ticketId = ticketId(submitted.ticketNumber)
+        val childSubject = "절대 노출하면 안 되는 하위 티켓"
         jdbcTemplate.update(
             "update tickets set group_id = ?, assignee_id = ? where id = ?",
             UUID.randomUUID(),
@@ -186,8 +187,24 @@ class PublicRequestIntegrationTest {
             "절대 노출하면 안 되는 내부 메모",
             Timestamp.from(Instant.parse("2026-08-10T01:00:00Z")),
         )
+        jdbcTemplate.update(
+            """
+            insert into tickets
+                (id, ticket_number, requester_id, kind, subject, status, priority,
+                 group_id, assignee_id, channel, version, created_at, updated_at, solved_at)
+            select ?, nextval('ticket_number_seq'), requester_id, 'INTERNAL_CHILD', ?,
+                   'NEW', 'NORMAL', null, null, 'AGENT', 0, ?, ?, null
+            from tickets
+            where id = ?
+            """.trimIndent(),
+            UUID.randomUUID(),
+            childSubject,
+            Timestamp.from(Instant.parse("2026-08-10T01:01:00Z")),
+            Timestamp.from(Instant.parse("2026-08-10T01:01:00Z")),
+            ticketId,
+        )
 
-        mockMvc.perform(
+        val responseBody = mockMvc.perform(
             get("/api/v1/requests/{ticketNumber}", submitted.ticketNumber)
                 .header("X-Request-Access-Token", submitted.accessToken),
         )
@@ -201,6 +218,12 @@ class PublicRequestIntegrationTest {
             .andExpect(jsonPath("$.assignee").doesNotExist())
             .andExpect(jsonPath("$.children").doesNotExist())
             .andExpect(jsonPath("$.audits").doesNotExist())
+            .andReturn()
+            .response
+            .contentAsString
+
+        assertThat(responseBody).doesNotContain("절대 노출하면 안 되는 내부 메모")
+        assertThat(responseBody).doesNotContain(childSubject)
     }
 
     @Test
