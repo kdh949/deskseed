@@ -1,154 +1,297 @@
-import { useMutation } from '@tanstack/react-query'
-import { type FormEvent, useState } from 'react'
-import { Link } from 'react-router'
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { ApiError, submitRequest } from '../api/client'
-import type { SubmitRequestInput } from '../api/types'
+import type { SubmitRequestInput, SubmittedRequest } from '../api/types'
 import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
+import {
+  EMPTY_REQUEST_FORM,
+  isRequestField,
+  REQUEST_FIELD_LIMITS,
+  type RequestField,
+  type RequestFieldErrors,
+  validateRequestForm,
+} from '../features/customer-requests/requestForm'
+import { RequestSuccess } from '../features/customer-requests/RequestSuccess'
 
-const EMPTY_FORM: SubmitRequestInput = {
-  name: '',
-  email: '',
-  subject: '',
-  message: '',
+type TouchedFields = Partial<Record<RequestField, boolean>>
+
+interface ErrorSummary {
+  title: string
+  detail: string
+  requestId?: string
+}
+
+function toServerFieldErrors(error: ApiError): RequestFieldErrors {
+  return Object.fromEntries(
+    Object.entries(error.fieldErrors).filter(([field]) =>
+      isRequestField(field),
+    ),
+  )
+}
+
+function toErrorSummary(error: unknown): ErrorSummary {
+  if (!(error instanceof ApiError)) {
+    return {
+      title: '문의 접수 오류',
+      detail: '네트워크 연결을 확인한 뒤 다시 시도해 주세요.',
+    }
+  }
+  if (error.status === 400) {
+    return {
+      title: '입력 내용을 확인해 주세요',
+      detail: '표시된 항목을 고친 뒤 다시 접수해 주세요.',
+      requestId: error.requestId,
+    }
+  }
+  if (error.status === 429) {
+    return {
+      title: '잠시 후 다시 시도해 주세요',
+      detail: error.retryAfter
+        ? `${error.retryAfter}초 뒤에 다시 접수해 주세요.`
+        : '요청이 많습니다. 잠시 기다린 뒤 다시 접수해 주세요.',
+      requestId: error.requestId,
+    }
+  }
+  return {
+    title: '문의 접수 오류',
+    detail: '내용은 그대로 보존했습니다. 잠시 후 다시 시도해 주세요.',
+    requestId: error.requestId,
+  }
 }
 
 export function NewRequestPage() {
   const requestAccess = useRequestAccess()
-  const [form, setForm] = useState<SubmitRequestInput>(EMPTY_FORM)
-  const mutation = useMutation({
-    mutationFn: submitRequest,
-    onSuccess: (result) =>
-      requestAccess.setAccessToken(result.ticketNumber, result.accessToken),
-  })
+  const [form, setForm] = useState<SubmitRequestInput>(EMPTY_REQUEST_FORM)
+  const [touched, setTouched] = useState<TouchedFields>({})
+  const [serverErrors, setServerErrors] = useState<RequestFieldErrors>({})
+  const [summary, setSummary] = useState<ErrorSummary | null>(null)
+  const [submitted, setSubmitted] = useState<SubmittedRequest | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const pendingRef = useRef(false)
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const clientErrors = useMemo(() => validateRequestForm(form), [form])
+  const isValid = Object.keys(clientErrors).length === 0
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    mutation.mutate(form)
+  useEffect(() => {
+    if (summary) summaryRef.current?.focus()
+  }, [summary])
+
+  const visibleErrors: RequestFieldErrors = { ...serverErrors }
+  for (const field of Object.keys(touched) as RequestField[]) {
+    if (touched[field] && clientErrors[field]) {
+      visibleErrors[field] = clientErrors[field]
+    }
   }
 
-  if (mutation.data) {
-    const submitted = mutation.data
+  const updateField =
+    (field: RequestField) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setForm((current) => ({ ...current, [field]: event.target.value }))
+      setServerErrors((current) => {
+        const next = { ...current }
+        delete next[field]
+        return next
+      })
+      setSummary(null)
+    }
+
+  const blurField = (field: RequestField) => {
+    setTouched((current) => ({ ...current, [field]: true }))
+    if (clientErrors[field]) {
+      setSummary({
+        title: '입력 내용을 확인해 주세요',
+        detail: '표시된 항목을 고친 뒤 다시 접수해 주세요.',
+      })
+    }
+  }
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (pendingRef.current) return
+    if (!isValid) {
+      setTouched({ name: true, email: true, subject: true, message: true })
+      setSummary({
+        title: '입력 내용을 확인해 주세요',
+        detail: '표시된 항목을 고친 뒤 다시 접수해 주세요.',
+      })
+      return
+    }
+
+    pendingRef.current = true
+    setIsSubmitting(true)
+    setSummary(null)
+    setServerErrors({})
+    try {
+      const result = await submitRequest(form)
+      requestAccess.setAccessToken(result.ticketNumber, result.accessToken)
+      setSubmitted(result)
+    } catch (error) {
+      if (error instanceof ApiError) setServerErrors(toServerFieldErrors(error))
+      setSummary(toErrorSummary(error))
+    } finally {
+      pendingRef.current = false
+      setIsSubmitting(false)
+    }
+  }
+
+  if (submitted) {
     return (
-      <section className="narrow-panel success-panel">
-        <p className="eyebrow">접수가 완료되었습니다</p>
-        <h1>문의 #{submitted.ticketNumber}</h1>
-        <p>
-          이 브라우저에는 조회 키를 저장했습니다. 아래 키는 다른 기기에서 조회할
-          때 필요하며, 서버에서 원문을 다시 복구할 수 없습니다.
-        </p>
-        <div className="token-box">
-          <code>{submitted.accessToken}</code>
-          <button
-            className="button small secondary"
-            type="button"
-            onClick={() => navigator.clipboard.writeText(submitted.accessToken)}
-          >
-            키 복사
-          </button>
-        </div>
-        <div className="button-row">
-          <Link
-            className="button primary"
-            to={`/requests/${submitted.ticketNumber}`}
-          >
-            문의 내용 보기
-          </Link>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => {
-              setForm(EMPTY_FORM)
-              mutation.reset()
-            }}
-          >
-            다른 문의 접수
-          </button>
-        </div>
-      </section>
+      <RequestSuccess
+        submitted={submitted}
+        onReset={() => {
+          setForm(EMPTY_REQUEST_FORM)
+          setTouched({})
+          setServerErrors({})
+          setSummary(null)
+          setSubmitted(null)
+        }}
+      />
     )
   }
 
-  const apiError = mutation.error instanceof ApiError ? mutation.error : null
-
   return (
-    <section className="form-layout">
+    <section className="form-layout" aria-labelledby="new-request-title">
       <div>
         <p className="eyebrow">새 문의</p>
-        <h1>무엇을 도와드릴까요?</h1>
+        <h1 id="new-request-title">무엇을 도와드릴까요?</h1>
         <p className="muted">
-          현재는 로그인 없이 접수할 수 있습니다. 답변 확인을 위한 조회 키가
-          발급됩니다.
+          로그인 없이 접수할 수 있습니다. 답변 확인에 필요한 조회 키는 접수 직후
+          한 번만 표시됩니다.
         </p>
       </div>
-      <form className="support-form" onSubmit={submit}>
-        {apiError && (
-          <div className="error-banner" role="alert">
-            <strong>{apiError.problem?.title ?? '접수하지 못했습니다.'}</strong>
-            <span>{apiError.message}</span>
-            {apiError.problem?.requestId && (
-              <small>요청 ID: {apiError.problem.requestId}</small>
-            )}
+      <form className="support-form" onSubmit={submit} noValidate>
+        {summary && (
+          <div
+            className="error-banner"
+            role="alert"
+            aria-labelledby="request-error-title"
+            ref={summaryRef}
+            tabIndex={-1}
+          >
+            <strong id="request-error-title">{summary.title}</strong>
+            <span>{summary.detail}</span>
+            {summary.requestId && <small>요청 ID: {summary.requestId}</small>}
           </div>
         )}
         <div className="field-grid two-columns">
-          <label>
-            이름
-            <input
-              required
-              maxLength={100}
-              autoComplete="name"
-              value={form.name}
-              onChange={(event) =>
-                setForm({ ...form, name: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            이메일
-            <input
-              required
-              type="email"
-              maxLength={320}
-              autoComplete="email"
-              value={form.email}
-              onChange={(event) =>
-                setForm({ ...form, email: event.target.value })
-              }
-            />
-          </label>
-        </div>
-        <label>
-          제목
-          <input
-            required
-            maxLength={200}
-            value={form.subject}
-            onChange={(event) =>
-              setForm({ ...form, subject: event.target.value })
-            }
+          <RequestFieldControl
+            field="name"
+            label="이름"
+            value={form.name}
+            error={visibleErrors.name}
+            maxLength={REQUEST_FIELD_LIMITS.name}
+            autoComplete="name"
+            onChange={updateField('name')}
+            onBlur={() => blurField('name')}
           />
-        </label>
-        <label>
-          문의 내용
+          <RequestFieldControl
+            field="email"
+            label="이메일"
+            type="email"
+            value={form.email}
+            error={visibleErrors.email}
+            maxLength={REQUEST_FIELD_LIMITS.email}
+            autoComplete="email"
+            onChange={updateField('email')}
+            onBlur={() => blurField('email')}
+          />
+        </div>
+        <RequestFieldControl
+          field="subject"
+          label="제목"
+          value={form.subject}
+          error={visibleErrors.subject}
+          maxLength={REQUEST_FIELD_LIMITS.subject}
+          onChange={updateField('subject')}
+          onBlur={() => blurField('subject')}
+        />
+        <label className="form-field" htmlFor="request-message">
+          <span>
+            문의 내용 <span aria-hidden="true">*</span>
+          </span>
           <textarea
+            id="request-message"
             required
-            maxLength={10_000}
+            maxLength={REQUEST_FIELD_LIMITS.message}
             rows={10}
             value={form.message}
-            onChange={(event) =>
-              setForm({ ...form, message: event.target.value })
-            }
+            aria-invalid={visibleErrors.message ? 'true' : undefined}
+            aria-describedby="request-message-help request-message-error"
+            onChange={updateField('message')}
+            onBlur={() => blurField('message')}
           />
-          <small>{form.message.length.toLocaleString()} / 10,000</small>
+          <small id="request-message-help">
+            {form.message.length.toLocaleString()} / 20,000
+          </small>
+          <span className="field-error" id="request-message-error">
+            {visibleErrors.message}
+          </span>
         </label>
+        <p className="required-note">* 필수 입력 항목</p>
         <button
           className="button primary"
           type="submit"
-          disabled={mutation.isPending}
+          disabled={!isValid || isSubmitting}
+          aria-busy={isSubmitting}
         >
-          {mutation.isPending ? '접수하는 중…' : '문의 접수'}
+          {isSubmitting ? '안전하게 접수하는 중…' : '문의 접수'}
         </button>
       </form>
     </section>
+  )
+}
+
+interface RequestFieldControlProps {
+  field: Exclude<RequestField, 'message'>
+  label: string
+  value: string
+  error?: string
+  maxLength: number
+  type?: string
+  autoComplete?: string
+  onChange(event: ChangeEvent<HTMLInputElement>): void
+  onBlur(): void
+}
+
+function RequestFieldControl({
+  field,
+  label,
+  value,
+  error,
+  maxLength,
+  type = 'text',
+  autoComplete,
+  onChange,
+  onBlur,
+}: RequestFieldControlProps) {
+  const inputId = `request-${field}`
+  const errorId = `${inputId}-error`
+  return (
+    <label className="form-field" htmlFor={inputId}>
+      <span>
+        {label} <span aria-hidden="true">*</span>
+      </span>
+      <input
+        id={inputId}
+        required
+        type={type}
+        maxLength={maxLength}
+        autoComplete={autoComplete}
+        value={value}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={onChange}
+        onBlur={onBlur}
+      />
+      <span className="field-error" id={errorId}>
+        {error}
+      </span>
+    </label>
   )
 }
