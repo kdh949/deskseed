@@ -165,6 +165,46 @@ describe('customer request API client', () => {
     expect(error).toMatchObject({ status: 400, fieldErrors: {} })
   })
 
+  it('turns syntactically malformed success and problem JSON into controlled API errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response('{', {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response('{', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response('{', {
+            status: 400,
+            headers: { 'Content-Type': 'application/problem+json' },
+          }),
+        ),
+    )
+
+    const errors = await Promise.all([
+      submitRequest(submitInput).catch((cause: unknown) => cause),
+      getPublicRequest(1042, 'opaque-secret-token').catch(
+        (cause: unknown) => cause,
+      ),
+      submitRequest(submitInput).catch((cause: unknown) => cause),
+    ])
+
+    expect(errors).toHaveLength(3)
+    for (const error of errors) expect(error).toBeInstanceOf(ApiError)
+    expect(errors[0]).toMatchObject({ status: 201 })
+    expect(errors[1]).toMatchObject({ status: 200 })
+    expect(errors[2]).toMatchObject({ status: 400, fieldErrors: {} })
+  })
+
   it('allowlists the public DTO instead of retaining unknown response fields', async () => {
     vi.stubGlobal(
       'fetch',
