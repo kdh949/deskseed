@@ -23,6 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.Timestamp
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -150,6 +151,50 @@ class PublicRequestIntegrationTest {
 
         assertThat(storedHashCount).isEqualTo(1)
         assertThat(rawTokenCount).isZero()
+    }
+
+    @Test
+    fun `request access grant stores a mandatory thirty day expiry and revocation metadata`() {
+        val submitted = submitUniqueRequest("token-lifecycle")
+        val lifecycle = jdbcTemplate.queryForMap(
+            """
+            select created_at, expires_at, revoked_at
+            from request_access_tokens
+            where ticket_id = ?
+            """.trimIndent(),
+            ticketId(submitted.ticketNumber),
+        )
+
+        val createdAt = (lifecycle["created_at"] as Timestamp).toInstant()
+        val expiresAt = (lifecycle["expires_at"] as Timestamp).toInstant()
+        assertThat(Duration.between(createdAt, expiresAt)).isEqualTo(Duration.ofDays(30))
+        assertThat(lifecycle["revoked_at"]).isNull()
+    }
+
+    @Test
+    fun `expired and revoked grants use the same not found result as invalid credentials`() {
+        val expired = submitUniqueRequest("expired-token")
+        val revoked = submitUniqueRequest("revoked-token")
+        jdbcTemplate.update(
+            """
+            update request_access_tokens
+            set created_at = now() - interval '31 days',
+                expires_at = now() - interval '1 day'
+            where ticket_id = ?
+            """.trimIndent(),
+            ticketId(expired.ticketNumber),
+        )
+        jdbcTemplate.update(
+            "update request_access_tokens set revoked_at = now() where ticket_id = ?",
+            ticketId(revoked.ticketNumber),
+        )
+
+        assertThatThrownBy { service.view(expired.ticketNumber, expired.accessToken) }
+            .isInstanceOf(RequestNotFoundException::class.java)
+        assertThatThrownBy { service.view(revoked.ticketNumber, revoked.accessToken) }
+            .isInstanceOf(RequestNotFoundException::class.java)
+        assertThatThrownBy { service.view(expired.ticketNumber, "invalid-token") }
+            .isInstanceOf(RequestNotFoundException::class.java)
     }
 
     @Test

@@ -13,7 +13,7 @@ internal interface RequestAccessTokenRepository : JpaRepository<RequestAccessTok
         from RequestAccessTokenEntity token
         where token.tokenHash = :tokenHash
           and token.revokedAt is null
-          and (token.expiresAt is null or token.expiresAt > :now)
+          and token.expiresAt > :now
         """,
     )
     fun findActiveByHash(

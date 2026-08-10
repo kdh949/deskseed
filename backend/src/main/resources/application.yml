@@ -44,3 +44,6 @@ logging:
 deskseed:
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  portal:
+    request-access-token:
+      ttl: ${DESKSEED_REQUEST_ACCESS_TOKEN_TTL:30d}

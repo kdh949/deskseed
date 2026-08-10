@@ -22,8 +22,8 @@ internal class RequestAccessTokenEntity(
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant,
 
-    @Column(name = "expires_at")
-    val expiresAt: Instant? = null,
+    @Column(name = "expires_at", nullable = false)
+    val expiresAt: Instant,
 
     @Column(name = "revoked_at")
     var revokedAt: Instant? = null,
