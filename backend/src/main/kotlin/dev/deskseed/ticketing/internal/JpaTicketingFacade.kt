@@ -2,8 +2,7 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
-import dev.deskseed.ticketing.CommentVisibility
-import dev.deskseed.ticketing.PublicCommentView
+import dev.deskseed.ticketing.CustomerRequestStatus
 import dev.deskseed.ticketing.PublicTicketView
 import dev.deskseed.ticketing.SubmitPublicRequestCommand
 import dev.deskseed.ticketing.SubmittedTicket
@@ -23,6 +22,7 @@ internal class JpaTicketingFacade(
     private val commentRepository: TicketCommentRepository,
     private val auditRepository: TicketAuditRepository,
     private val auditEventRepository: TicketAuditEventRepository,
+    private val publicTicketQueryRepository: PublicTicketQueryRepository,
     private val ticketNumberGenerator: TicketNumberGenerator,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
@@ -124,37 +124,14 @@ internal class JpaTicketingFacade(
         return SubmittedTicket(
             ticketId = ticket.id,
             ticketNumber = ticket.ticketNumber,
+            status = CustomerRequestStatus.NEW,
             createdAt = ticket.createdAt,
         )
     }
 
     @Transactional(readOnly = true)
-    override fun findPublicTicket(ticketId: UUID): PublicTicketView? {
-        val ticket = ticketRepository.findById(ticketId).orElse(null) ?: return null
-        val comments = commentRepository
-            .findAllByTicketIdAndVisibilityOrderByCreatedAtAscIdAsc(
-                ticketId = ticket.id,
-                visibility = CommentVisibility.PUBLIC,
-            )
-            .map {
-                PublicCommentView(
-                    id = it.id,
-                    authorType = it.authorType,
-                    body = it.body,
-                    createdAt = it.createdAt,
-                )
-            }
-
-        return PublicTicketView(
-            ticketId = ticket.id,
-            ticketNumber = ticket.ticketNumber,
-            subject = ticket.subject,
-            status = ticket.status,
-            createdAt = ticket.createdAt,
-            updatedAt = ticket.updatedAt,
-            comments = comments,
-        )
-    }
+    override fun findPublicTicket(ticketId: UUID, ticketNumber: Long): PublicTicketView? =
+        publicTicketQueryRepository.find(ticketId, ticketNumber)
 
     private fun jsonString(value: String): String =
         "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""

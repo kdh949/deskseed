@@ -6,6 +6,7 @@ import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.portal.RequestNotFoundException
 import dev.deskseed.settings.CustomerAccessPolicy
+import dev.deskseed.ticketing.CustomerRequestStatus
 import dev.deskseed.ticketing.PublicTicketView
 import dev.deskseed.ticketing.SubmitPublicRequestCommand
 import dev.deskseed.ticketing.TicketingFacade
@@ -43,6 +44,7 @@ internal class PublicRequestApplicationService(
 
         return AnonymousRequestSubmitted(
             ticketNumber = ticket.ticketNumber,
+            status = ticket.status,
             accessToken = rawAccessToken,
             createdAt = ticket.createdAt,
         )
@@ -52,12 +54,8 @@ internal class PublicRequestApplicationService(
     fun view(ticketNumber: Long, rawAccessToken: String): PublicTicketView {
         val ticketId = accessTokenStore.resolveTicketId(rawAccessToken)
             ?: throw RequestNotFoundException()
-        val ticket = ticketingFacade.findPublicTicket(ticketId)
+        val ticket = ticketingFacade.findPublicTicket(ticketId, ticketNumber)
             ?: throw RequestNotFoundException()
-
-        if (ticket.ticketNumber != ticketNumber) {
-            throw RequestNotFoundException()
-        }
         return ticket
     }
 }
@@ -72,6 +70,7 @@ internal data class SubmitAnonymousRequest(
 
 internal data class AnonymousRequestSubmitted(
     val ticketNumber: Long,
+    val status: CustomerRequestStatus,
     val accessToken: String,
     val createdAt: Instant,
 )

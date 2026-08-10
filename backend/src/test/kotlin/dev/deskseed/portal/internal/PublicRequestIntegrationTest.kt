@@ -15,8 +15,11 @@ import org.springframework.dao.DataAccessException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -67,6 +70,8 @@ class PublicRequestIntegrationTest {
             .andExpect(status().isCreated)
             .andExpect(header().string("X-Request-Id", "request-http-123"))
             .andExpect(header().string("X-Correlation-Id", "correlation-http-456"))
+            .andExpect(jsonPath("$.status").value("NEW"))
+            .andExpect(jsonPath("$.createdAt").isString)
 
         val auditContext = jdbcTemplate.queryForMap(
             """
@@ -82,6 +87,27 @@ class PublicRequestIntegrationTest {
         assertThat(auditContext["request_id"]).isEqualTo("request-http-123")
         assertThat(auditContext["correlation_id"]).isEqualTo("correlation-http-456")
         assertThat(auditContext["command_id"].toString()).matches("[A-Za-z0-9._:-]{1,100}")
+    }
+
+    @Test
+    fun `http contract accepts twenty thousand message characters and rejects larger input`() {
+        val acceptedBody = "a".repeat(20_000)
+        val rejectedBody = "a".repeat(20_001)
+
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("accepted-${UUID.randomUUID()}@example.com", acceptedBody)),
+        ).andExpect(status().isCreated)
+
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("rejected-${UUID.randomUUID()}@example.com", rejectedBody)),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
     }
 
     @Test
@@ -117,6 +143,68 @@ class PublicRequestIntegrationTest {
                 Long::class.java,
             ),
         ).isZero()
+    }
+
+    @Test
+    fun `http customer projection contains only public customer safe fields before serialization`() {
+        val submitted = submitUniqueRequest("http-public-projection")
+        val ticketId = ticketId(submitted.ticketNumber)
+        jdbcTemplate.update(
+            "update tickets set group_id = ?, assignee_id = ? where id = ?",
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            ticketId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments
+                (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AGENT', null, 'INTERNAL', ?, ?)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            ticketId,
+            "절대 노출하면 안 되는 내부 메모",
+            Timestamp.from(Instant.parse("2026-08-10T01:00:00Z")),
+        )
+
+        mockMvc.perform(
+            get("/api/v1/requests/{ticketNumber}", submitted.ticketNumber)
+                .header("X-Request-Access-Token", submitted.accessToken),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.comments.length()").value(1))
+            .andExpect(jsonPath("$.comments[0].authorDisplayName").value("고객"))
+            .andExpect(jsonPath("$.comments[0].body").value("결제 버튼을 누르면 오류가 납니다."))
+            .andExpect(jsonPath("$.comments[0].authorType").doesNotExist())
+            .andExpect(jsonPath("$.group").doesNotExist())
+            .andExpect(jsonPath("$.assignee").doesNotExist())
+            .andExpect(jsonPath("$.children").doesNotExist())
+            .andExpect(jsonPath("$.audits").doesNotExist())
+    }
+
+    @Test
+    fun `wrong token and nonexistent ticket return the same RFC 9457 problem`() {
+        val submitted = submitUniqueRequest("http-non-enumeration")
+
+        fun problem(ticketNumber: Long, token: String): String = mockMvc.perform(
+            get("/api/v1/requests/{ticketNumber}", ticketNumber)
+                .header("X-Request-Id", "same-request-id")
+                .header("X-Request-Access-Token", token),
+        )
+            .andExpect(status().isNotFound)
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/request-not-found"))
+            .andExpect(jsonPath("$.title").value("Request not found"))
+            .andExpect(jsonPath("$.status").value(404))
+            .andReturn()
+            .response
+            .contentAsString
+
+        val wrongToken = problem(submitted.ticketNumber, "not-the-issued-token")
+        val nonexistentTicket = problem(submitted.ticketNumber + 10_000, submitted.accessToken)
+
+        assertThat(problemFields(wrongToken)).isEqualTo(problemFields(nonexistentTicket))
     }
 
     @Test
@@ -275,6 +363,24 @@ class PublicRequestIntegrationTest {
         UUID::class.java,
         ticketNumber,
     )!!
+
+    private fun requestJson(email: String, message: String): String =
+        """
+        {
+          "name": "김고객",
+          "email": "$email",
+          "subject": "결제 오류",
+          "message": "$message",
+          "privacyConsent": true
+        }
+        """.trimIndent()
+
+    private fun problemFields(json: String): List<String> = listOf(
+        Regex("\"type\":\"([^\"]+)\"").find(json)!!.groupValues[1],
+        Regex("\"title\":\"([^\"]+)\"").find(json)!!.groupValues[1],
+        Regex("\"status\":([0-9]+)").find(json)!!.groupValues[1],
+        Regex("\"detail\":\"([^\"]+)\"").find(json)!!.groupValues[1],
+    )
 
     companion object {
         @Container
