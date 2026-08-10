@@ -343,11 +343,13 @@ paths:
     get:
       summary: List accessible saved views
       operationId: listAgentViews
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Views
       x-deskseed-phase: M2
       x-deskseed-requirements:
       - REQ-UI-002
+      - REQ-PERM-001
       security:
       - staffSession: []
       responses:
@@ -365,12 +367,14 @@ paths:
     get:
       summary: List tickets in a saved view
       operationId: listTicketsInView
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Views
       x-deskseed-phase: M2
       x-deskseed-requirements:
       - REQ-UI-002
       - REQ-TKT-010
+      - REQ-PERM-001
       security:
       - staffSession: []
       parameters:
@@ -392,8 +396,31 @@ paths:
           default: 50
       - name: sort
         in: query
+        description: Fixed stable ordering. Other values are rejected.
         schema:
           type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
+          default: updatedAt:desc,ticketNumber:desc
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/TicketStatus'
+      - name: priority
+        in: query
+        schema:
+          $ref: '#/components/schemas/TicketPriority'
+      - name: groupId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: assigneeId
+        in: query
+        description: UUID, `me`, or `unassigned`.
+        schema:
+          type: string
+          pattern: '^(me|unassigned|[0-9a-fA-F-]{36})$'
       responses:
         '200':
           description: Ticket page
@@ -445,6 +472,7 @@ paths:
     get:
       summary: Read an agent ticket projection
       operationId: getAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M2
@@ -464,6 +492,15 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: X-Deskseed-Read-Intent
+        in: header
+        required: true
+        description: "NAVIGATION records one semantic view; BACKGROUND never records one."
+        schema:
+          type: string
+          enum:
+          - NAVIGATION
+          - BACKGROUND
       responses:
         '200':
           description: Agent ticket detail
@@ -1902,10 +1939,12 @@ components:
             type: string
     SavedView:
       type: object
+      additionalProperties: false
       required:
       - key
       - name
       - scope
+      - readScope
       properties:
         key:
           type: string
@@ -1925,6 +1964,10 @@ components:
           type:
           - integer
           - 'null'
+        readScope:
+          type: string
+          enum:
+          - ALL_TICKETS
     TicketStatus:
       type: string
       enum:
@@ -2006,8 +2049,10 @@ components:
           $ref: '#/components/schemas/SlaBadge'
     TicketSummaryPage:
       type: object
+      additionalProperties: false
       required:
       - items
+      - sort
       properties:
         items:
           type: array
@@ -2022,6 +2067,9 @@ components:
           - integer
           - 'null'
           format: int64
+        sort:
+          type: string
+          const: updatedAt:desc,ticketNumber:desc
     StaffRef:
       type:
       - object
@@ -2091,11 +2139,13 @@ components:
             $ref: '#/components/schemas/PublicAttachment'
     AgentTicketDetail:
       type: object
+      additionalProperties: false
       required:
       - ticket
       - comments
       - capabilities
       - context
+      - history
       properties:
         ticket:
           $ref: '#/components/schemas/TicketSummary'
@@ -2109,16 +2159,20 @@ components:
             type: string
         context:
           $ref: '#/components/schemas/TicketContext'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketHistoryItem'
         warnings:
           type: array
           items:
             $ref: '#/components/schemas/CommandWarning'
     TicketContext:
       type: object
+      additionalProperties: false
       properties:
         customer:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/TicketCustomer'
         parent:
           $ref: '#/components/schemas/TicketSummary'
         children:
@@ -2130,6 +2184,41 @@ components:
           items:
             type: object
             additionalProperties: true
+    TicketCustomer:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - displayName
+      - email
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+    TicketHistoryItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - eventType
+      - actor
+      - occurredAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+        actor:
+          $ref: '#/components/schemas/ActorSummary'
+        occurredAt:
+          type: string
+          format: date-time
     CommentDraft:
       type: object
       required:
