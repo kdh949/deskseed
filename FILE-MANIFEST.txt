@@ -115,7 +115,7 @@ ddb445dda6b94dc5f42a8d44a38b886daa7c6e235b8ce1f63eaea7a20eb70d90        1016  sc
 c16d522f6854b2f51ea3acbefd7d6b808eaecbd6757f37bc5adfa7d89f732682          35  scripts/requirements-docs.txt
 0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a          14  scripts/requirements.txt
 6692006e0d741ad08637d233c99508b61c2d69acccbf9f1bbcaa6486e0ab503b       19416  scripts/validate_documentation.py
-9cf6ad978baf8cdcb96310dc4db7c83de7a6f4d8a169f9de51fd0a6041730315        7586  scripts/verify_seed.py
+d337270b000da9602956653c37190cab863c7b95c21ec2a1b91c4c142bceb298        7660  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
 6b43d795b99c525d4ac87a5ff23896fe0fccd2ca434173698a26374b3fbdd59e        3331  tasks/00-bootstrap.md
 e692414f7b1cfd5f26c61882ec6942039ba344093a131ef4a83dd05e46fd4c9e        1222  tasks/01-access-audit-foundation.md
