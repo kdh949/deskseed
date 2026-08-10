@@ -4,7 +4,7 @@
 
 설치형(self-hosted) 고객지원 티켓 시스템을 Kotlin/Spring과 React로 만드는 포트폴리오용 코드베이스 시드입니다. 제품 행동은 Zendesk를 참고하되, 구현은 도메인 규칙부터 다시 설계합니다.
 
-현재 저장소는 **M0 기반 구성 + M1 고객 웹 문의 세로 기능**과 v0.5 문서·계약 시드를 담고 있습니다. v0.5의 `IMPLEMENTATION_READY` 표기는 해당 기능의 계약이 구현을 시작하기에 충분하다는 뜻이며, 코드 구현 완료를 뜻하지는 않습니다.
+현재 저장소는 **M0 기반 구성 + M1 고객 웹 문의 세로 기능**과 v0.6 문서·계약 시드를 담고 있습니다. v0.6의 `IMPLEMENTATION_READY` 표기는 해당 기능의 계약이 구현을 시작하기에 충분하다는 뜻이며, 코드 구현 완료를 뜻하지는 않습니다.
 
 ```text
 익명 고객이 이름/이메일/제목/문의 내용을 입력
@@ -40,13 +40,14 @@
 6. [`docs/14-execution-backlog.md`](docs/14-execution-backlog.md), [`docs/15-seed-status.md`](docs/15-seed-status.md), [`docs/21-minimum-verification-gates.md`](docs/21-minimum-verification-gates.md)
 7. [`AGENTS.md`](AGENTS.md)와 관련 task 문서
 
-## v0.5 문서·계약 시드
+## v0.6 문서·계약 시드
 
 - Core Customer/Agent/Admin/Audit API outline: [`api/core-api-outline-v1.yaml`](api/core-api-outline-v1.yaml)
+- Customer identity API outline: [`api/customer-identity-api-v1.yaml`](api/customer-identity-api-v1.yaml)
 - Platform API outline: [`api/platform-api-outline-v1.yaml`](api/platform-api-outline-v1.yaml)
-- UI·API surface catalog: [`api/api-surface-catalog-v0.5.yaml`](api/api-surface-catalog-v0.5.yaml), [`api/ui-route-catalog-v0.5.yaml`](api/ui-route-catalog-v0.5.yaml)
+- UI·API surface catalog: [`api/api-surface-catalog-v0.6.yaml`](api/api-surface-catalog-v0.6.yaml), [`api/ui-route-catalog-v0.6.yaml`](api/ui-route-catalog-v0.6.yaml)
 - 화면·상태·권한·DB·검증 계약: [`docs/28-frontend-product-and-information-architecture.md`](docs/28-frontend-product-and-information-architecture.md)부터 [`docs/43-coverage-assessment-v03-to-v05.md`](docs/43-coverage-assessment-v03-to-v05.md)
-- 후속 기능의 상세 명세: [`docs/44-sla-ola-business-hours-implementation-spec.md`](docs/44-sla-ola-business-hours-implementation-spec.md)부터 [`docs/52-admin-settings-catalog.md`](docs/52-admin-settings-catalog.md)
+- 후속 기능의 상세 명세와 결정 게이트: [`docs/44-sla-ola-business-hours-implementation-spec.md`](docs/44-sla-ola-business-hours-implementation-spec.md)부터 [`docs/54-next-decision-gates.md`](docs/54-next-decision-gates.md)
 
 문서 구조와 machine-readable contract는 `python3 scripts/validate_documentation.py --write`로 검증합니다. 이 검증은 문서·계약 구조만 확인하며 애플리케이션 빌드나 런타임 동작을 보장하지 않습니다.
 

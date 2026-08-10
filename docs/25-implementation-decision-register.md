@@ -29,7 +29,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-023 | external update uses ETag/If-Match | accepted | alternative standard chosen before v1 release |
 | D-024 | webhook is at-least-once and duplicate-safe | accepted | no revisit planned |
 | D-025 | SDK generated from OpenAPI | accepted | no revisit planned |
-| D-026 | raw search query retention proposal 30 days | provisional | operator policy/legal review |
+| D-026 | raw search query retention operational default 30 days | provisional | operator policy/legal review |
 | D-027 | access metadata retention proposal 180 days | provisional | operator policy/storage review |
 | D-028 | app ticket sidebar is first extension location | provisional | real extension use case |
 | D-029 | embed SDK begins read/create, not full editor | provisional | external admin workflow evidence |
@@ -44,6 +44,14 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-037 | private object storage attachment pipeline | accepted for P8 | attachment requirements change |
 | D-038 | email as Ticket/Comment channel adapter | accepted for P8 | channel model evidence changes |
 | D-039 | Docker Compose first supported self-hosted topology | accepted | Kubernetes demand and ops owner exist |
+
+| D-040 | customer authentication starts with DB-backed email magic links | accepted | password/SSO requirement |
+| D-041 | all active agents initially read all staff-visible tickets | accepted | operator requests restrictive mode |
+| D-042 | cross-group write remains group-or-assignee until explicitly decided | provisional | product owner decision |
+| D-043 | Platform API v1 is private-network scoped-key create/read/update/internal-comment | accepted | public/delegated API requirement |
+| D-044 | First Reply SLA uses configurable schedule; seed Mon–Fri 09–18 Asia/Seoul and PENDING pause | accepted | operator policy change |
+| D-045 | exact search query is required authenticated ciphertext with 30-day default retention | accepted | legal/operator retention review |
+| D-046 | Mailpit is the development outbound-mail adapter; production provider later | accepted | production email rollout |
 
 ## How to use this register
 

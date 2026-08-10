@@ -46,6 +46,23 @@ last_login_at
 
 Unique `(provider, provider_subject)`.
 
+### customer_one_time_tokens
+
+```text
+id UUID PK
+username_or_account_key
+token_hash or framework-safe token value storage
+created_at
+expires_at
+consumed_at nullable
+request_ip_hash nullable
+```
+
+- production uses DB-backed storage; in-memory only in unit tests.
+- single successful consume.
+- expiry and replay indexes/cleanup.
+- application logs never contain token.
+
 ### staff_accounts
 
 ```text
@@ -224,7 +241,7 @@ Indexes:
 activity_event_id
 query_redacted
 query_fingerprint
-query_ciphertext nullable
+query_ciphertext required
 key_version nullable
 normalized_filter_json
 result_count

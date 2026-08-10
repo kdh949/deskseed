@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Deskseed Core API Outline
-  version: 0.5.0-outline
-  description: Customer, staff, admin, and audit API contract outline. Operations become committed only after the freeze process
-    in docs/39-api-contract-freeze-plan.md.
+  version: 0.6.0-implementation-ready
+  description: Customer, staff, admin, audit, customer magic-link, and schedule/SLA contract. Blueprint-only operations remain
+    marked by phase and requirement status.
 servers:
 - url: http://localhost:8080
   description: Local development
@@ -16,6 +16,9 @@ tags:
 - name: Agent Search
 - name: Admin
 - name: Audit
+- name: Customer Auth
+- name: Admin Schedule
+- name: Admin SLA
 paths:
   /api/v1/requests:
     post:
@@ -864,6 +867,474 @@ paths:
         '401': *id001
         '403': *id001
         '429': *id001
+  /api/v1/customer/me:
+    get:
+      summary: Read the verified customer account
+      operationId: getCurrentCustomer
+      tags:
+      - Customer Auth
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-AUTH-001
+      security: &id006
+      - customerSession: []
+      responses:
+        '200':
+          description: Current customer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentCustomer'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/customer/requests/{ticketNumber}:
+    parameters:
+    - &id007
+      name: ticketNumber
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    get:
+      summary: Read an authenticated customer-safe request projection
+      operationId: getCustomerRequest
+      tags:
+      - Customer Portal
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-003
+      - REQ-TKT-005
+      security: *id006
+      responses:
+        '200':
+          description: Customer request detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerRequestDetail'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/customer/requests/{ticketNumber}/comments:
+    parameters:
+    - *id007
+    post:
+      summary: Add an authenticated PUBLIC customer follow-up
+      operationId: addAuthenticatedCustomerComment
+      tags:
+      - Customer Portal
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-005
+      security: *id006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCustomerComment'
+      responses:
+        '201':
+          description: Public comment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicComment'
+        '400':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/admin/business-schedules:
+    get:
+      summary: List business schedules and active versions
+      operationId: listBusinessSchedules
+      tags:
+      - Admin Schedule
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-002
+      security: &id008
+      - staffSession: []
+      responses:
+        '200':
+          description: Schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BusinessSchedule'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    post:
+      summary: Create a business schedule and first version
+      operationId: createBusinessSchedule
+      tags:
+      - Admin Schedule
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-002
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessScheduleInput'
+      responses:
+        '201':
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessSchedule'
+        '400':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/admin/business-schedules/{scheduleId}:
+    parameters:
+    - &id009
+      name: scheduleId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: Read a business schedule
+      operationId: getBusinessSchedule
+      tags:
+      - Admin Schedule
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-002
+      security: *id008
+      responses:
+        '200':
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessSchedule'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    patch:
+      summary: Create a new immutable schedule version
+      operationId: versionBusinessSchedule
+      tags:
+      - Admin Schedule
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-002
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessScheduleInput'
+      responses:
+        '200':
+          description: New version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessSchedule'
+        '400':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/admin/business-schedules/{scheduleId}/preview:
+    parameters:
+    - *id009
+    post:
+      summary: Preview business-time calculations
+      operationId: previewBusinessSchedule
+      tags:
+      - Admin Schedule
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-002
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessTimePreviewRequest'
+      responses:
+        '200':
+          description: Preview result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessTimePreviewResult'
+        '400':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/admin/sla-policies:
+    get:
+      summary: List First Reply SLA policies
+      operationId: listSlaPolicies
+      tags:
+      - Admin SLA
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-001
+      - REQ-SLA-003
+      security: *id008
+      responses:
+        '200':
+          description: Policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FirstReplySlaPolicy'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    post:
+      summary: Create a versioned First Reply SLA policy
+      operationId: createSlaPolicy
+      tags:
+      - Admin SLA
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-001
+      - REQ-SLA-003
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirstReplySlaPolicyInput'
+      responses:
+        '201':
+          description: Policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirstReplySlaPolicy'
+        '400':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/admin/sla-policies/{policyId}/activate:
+    parameters:
+    - name: policyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      summary: Activate a First Reply SLA policy version
+      operationId: activateSlaPolicy
+      tags:
+      - Admin SLA
+      x-deskseed-phase: P3
+      x-deskseed-requirements:
+      - REQ-SLA-001
+      - REQ-SLA-003
+      security: *id008
+      responses:
+        '200':
+          description: Activated policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirstReplySlaPolicy'
+        '400':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: RFC 9457 Problem Details
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     staffSession:
@@ -1897,3 +2368,229 @@ components:
           - string
           - 'null'
           format: date-time
+    CurrentCustomer:
+      type: object
+      required:
+      - id
+      - email
+      - verifiedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type:
+          - string
+          - 'null'
+        verifiedAt:
+          type: string
+          format: date-time
+    BusinessInterval:
+      type: object
+      additionalProperties: false
+      required:
+      - start
+      - end
+      properties:
+        start:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+        end:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+    WeekdaySchedule:
+      type: object
+      additionalProperties: false
+      required:
+      - weekday
+      - intervals
+      properties:
+        weekday:
+          type: string
+          enum:
+          - MONDAY
+          - TUESDAY
+          - WEDNESDAY
+          - THURSDAY
+          - FRIDAY
+          - SATURDAY
+          - SUNDAY
+        intervals:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessInterval'
+    ScheduleException:
+      type: object
+      additionalProperties: false
+      required:
+      - date
+      - mode
+      properties:
+        date:
+          type: string
+          format: date
+        mode:
+          type: string
+          enum:
+          - CLOSED
+          - OPEN
+        intervals:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessInterval'
+        label:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+    BusinessScheduleInput:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - timeZone
+      - weekdays
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 100
+        weekdays:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/WeekdaySchedule'
+        exceptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleException'
+    BusinessSchedule:
+      allOf:
+      - $ref: '#/components/schemas/BusinessScheduleInput'
+      - type: object
+        required:
+        - id
+        - version
+        - active
+        - createdAt
+        properties:
+          id:
+            type: string
+            format: uuid
+          version:
+            type: integer
+            minimum: 1
+          active:
+            type: boolean
+          createdAt:
+            type: string
+            format: date-time
+    BusinessTimePreviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - startAt
+      - businessMinutes
+      properties:
+        startAt:
+          type: string
+          format: date-time
+        businessMinutes:
+          type: integer
+          minimum: 0
+          maximum: 525600
+    BusinessTimePreviewResult:
+      type: object
+      required:
+      - dueAt
+      - elapsedBusinessMinutes
+      - nextOpenAt
+      properties:
+        dueAt:
+          type: string
+          format: date-time
+        elapsedBusinessMinutes:
+          type: integer
+          minimum: 0
+        nextOpenAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    PriorityTargets:
+      type: object
+      additionalProperties: false
+      properties:
+        LOW:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        NORMAL:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        HIGH:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        URGENT:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+    FirstReplySlaPolicyInput:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - scheduleId
+      - targets
+      - pauseStatuses
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        scheduleId:
+          type: string
+          format: uuid
+        targets:
+          $ref: '#/components/schemas/PriorityTargets'
+        pauseStatuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketStatus'
+          default:
+          - PENDING
+    FirstReplySlaPolicy:
+      allOf:
+      - $ref: '#/components/schemas/FirstReplySlaPolicyInput'
+      - type: object
+        required:
+        - id
+        - version
+        - active
+        - createdAt
+        properties:
+          id:
+            type: string
+            format: uuid
+          version:
+            type: integer
+            minimum: 1
+          active:
+            type: boolean
+          createdAt:
+            type: string
+            format: date-time

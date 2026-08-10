@@ -39,6 +39,20 @@ Rules:
 - version applied to target is immutable snapshot/reference
 - daylight saving behavior tested with timezone fixtures even if initial locale is Korea
 
+
+## 3.1 Accepted launch defaults and admin controls
+
+Seed one active schedule candidate:
+
+```text
+name: Default Support Hours
+timezone: Asia/Seoul
+Monday–Friday: 09:00–18:00
+Saturday/Sunday: closed
+```
+
+Administrators can edit the timezone, enable or disable every weekday including weekends, add multiple non-overlapping intervals per day, and manage holiday/exception dates. Each save creates a new schedule version. First Reply SLA pauses in `PENDING` by default, but pause statuses are policy data and editable. No SLA policy is active until priority targets are entered and activated.
+
 ## 4. SLA policy
 
 ```text

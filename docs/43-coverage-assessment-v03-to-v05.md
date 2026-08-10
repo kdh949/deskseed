@@ -1,10 +1,10 @@
-# Coverage Assessment: v0.3 → v0.5
+# Coverage Assessment: v0.3 → v0.6
 
 ## Conclusion
 
 v0.3 preserved the product direction and was strong enough to begin selected backend slices, especially audit and integration foundations. It was not sufficient to implement every discussed capability consistently end to end.
 
-v0.5 closes the documentation gaps and removes duplicate competing drafts. Core MVP has implementation-ready contracts; post-MVP capabilities have detailed blueprints and an explicit contract-freeze process.
+v0.6 closes the documentation gaps and removes duplicate competing drafts. Core MVP has implementation-ready contracts; post-MVP capabilities have detailed blueprints and an explicit contract-freeze process.
 
 ## v0.3 strengths
 
@@ -30,9 +30,9 @@ v0.5 closes the documentation gaps and removes duplicate competing drafts. Core 
 10. Codex had no complete small-PR release train and human review loop.
 11. Self-hosted upgrade, backup/restore, accessibility, visual regression, and release gates needed consolidation.
 
-## v0.5 remediation
+## v0.6 remediation
 
-| Gap | v0.5 source |
+| Gap | v0.6 source |
 |---|---|
 | Requirement loss | `docs/26-requirement-traceability.md` |
 | Implementation method | `docs/27`, `docs/50`, `tasks/` |

@@ -1,6 +1,6 @@
 # Zendesk Parity and Visual Acceptance Register
 
-Status: **Normative UX comparison v0.5**
+Status: **Normative UX comparison v0.6**
 
 Deskseed의 목표는 Zendesk로 오인되는 복제품이 아니라, Zendesk 경험자가 즉시 사용할 수 있는 유사한 업무 정보 구조와 상호작용이다.
 

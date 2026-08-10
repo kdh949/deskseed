@@ -22,6 +22,14 @@
 | REQ-TECH-003 | React/TypeScript/Vite 프론트엔드를 사용한다 | IMPLEMENTATION_READY | M0 | 22, 28, 29 | 프론트 빌드·E2E |
 | REQ-PORT-001 | 먼저 작동하는 포트폴리오를 만들고 이후 성능·Kafka까지 깊게 확장한다 | IMPLEMENTATION_READY | 전체 | 05, 11, 27, 41 | 릴리스별 증거 문서 |
 
+## 2.1 인증·초기 상담원 가시성
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | expiry/replay/enumeration/session 테스트 |
+| REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | explicit token/claim 테스트 |
+| REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | queue/search/direct URL authorization |
+
 ## 3. 고객 문의와 티켓 처리
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
@@ -29,8 +37,8 @@
 | REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
 | REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 37 | 생성·조회 토큰 테스트 |
 | REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37 | 내부 메모 비노출 E2E |
-| REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | BLUEPRINT_READY | P1 | 01, 37 | 설정별 계약 테스트 |
-| REQ-TKT-005 | 나중에 고객 계정 로그인과 기존 익명 티켓 연결이 가능해야 한다 | BLUEPRINT_READY | P1 | 02, 37 | 이메일 검증·계정 연결 테스트 |
+| REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | 설정별 계약 테스트 |
+| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | single-use·claim·격리 테스트 |
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
 | REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | visibility 회귀 테스트 |
 | REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002 |
@@ -62,7 +70,7 @@
 | REQ-AUD-002 | 티켓별 열람 없이 전역 화면에서 변경 전후를 조회한다 | IMPLEMENTATION_READY | R2 | 19, 30, 39 | Audit Explorer E2E |
 | REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | ACC-001/002 |
 | REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34 | ACC-003/004 |
-| REQ-AUD-005 | 검색어 원문은 정책에 따라 마스킹·지문·암호화한다 | PROVISIONAL | R1 | 19, 23 | 원문 비노출·reveal 감사 |
+| REQ-AUD-005 | 검색어 원문을 암호화 저장하고 마스킹본·HMAC 지문도 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53 | 암호화·reveal·로그 비노출 |
 | REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | AUD-003/004 |
 | REQ-AUD-007 | Ticket change audit은 변경과 같은 트랜잭션에 기록한다 | IMPLEMENTATION_READY | M3 | 03, 19, 32 | CHG-001 |
 | REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ACC-002 |
@@ -72,7 +80,7 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-INT-001 | 쇼핑몰·운영·어드민 전산이 사용할 Platform API를 제공한다 | BLUEPRINT_READY | I2 | 18, 20, 39 | OpenAPI contract test |
+| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53 | OpenAPI·scope·idempotency test |
 | REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1 | 18, 33 | INT-AUTH-001~004 |
 | REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20 | IDEM-001~004 |
 | REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | CONC-001 |
@@ -87,7 +95,9 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-SLA-001 | SLA 정책과 만족·위반 여부를 계산한다 | BLUEPRINT_READY | P3 | 12, 16, 44 | SLA-001~008 |
+| REQ-SLA-001 | versioned First Reply SLA의 만족·위반 여부를 계산한다 | IMPLEMENTATION_READY | P3 | 12, 16, 44, 53 | SLA-001/002/004/005/006/008 |
+| REQ-SLA-002 | 관리자가 timezone·평일/주말·시간구간·휴일을 수정한다 | IMPLEMENTATION_READY | P3 | 44, 52, 53 | schedule preview/version/audit |
+| REQ-SLA-003 | First Reply SLA는 기본적으로 PENDING 동안 정지한다 | IMPLEMENTATION_READY | P3 | 44, 53 | pause interval rebuild |
 | REQ-ANL-001 | Zendesk Explore 유사 통계와 대시보드를 제공한다 | BLUEPRINT_READY | P5 | 12, 16, 30, 46 | ANA-001~008 |
 | REQ-AUT-001 | 티켓 이벤트 조건 기반 trigger를 제공한다 | BLUEPRINT_READY | P4 | 12, 34, 45 | AUT-001~008 |
 | REQ-AUT-002 | 시간 경과 기반 automation을 제공한다 | BLUEPRINT_READY | P4 | 12, 45 | AUT-009 |
@@ -107,7 +117,8 @@
 | REQ-FILE-002 | rich text와 redaction은 안전한 canonical format과 별도 권한을 사용한다 | BLUEPRINT_READY | P8 | 48 | XSS/redaction/audit 테스트 |
 | REQ-CHAN-001 | 이메일 수신·발신을 Ticket/Comment channel adapter로 제공한다 | BLUEPRINT_READY | P8 | 38, 49 | threading/dedup/outbox/bounce 테스트 |
 | REQ-CHAN-002 | 채팅·메시징은 나중에 같은 conversation model 위에 추가한다 | DEFERRED | P8+ | 38, 49 | session/transcript/channel adapter 테스트 |
-| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | BLUEPRINT_READY | P8 | 45, 49 | retry/idempotency/delivery status 테스트 |
+| REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | Mailpit API delivery test |
+| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | retry/idempotency/delivery status 테스트 |
 | REQ-AI-001 | AI 요약·답변 제안은 검색·권한·감사·평가 기반이 준비된 뒤 선택적으로 추가한다 | DEFERRED | P10 | 38, 49 | 데이터 경계/평가/사람 승인 테스트 |
 
 ## 9. 프론트엔드 경험

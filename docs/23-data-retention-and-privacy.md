@@ -47,10 +47,12 @@ These are concrete defaults for development and first controlled deployment. Ope
 ```text
 queryRedacted      for routine audit UI
 queryFingerprint   keyed HMAC for correlation
-queryCiphertext    optional protected raw value
+queryCiphertext    required protected raw value
 ```
 
 ### 4.2 Encryption
+
+Raw query preservation is required by product policy, but only as ciphertext. There is no plaintext database column.
 
 - authenticated encryption
 - key outside database
@@ -169,6 +171,13 @@ Before adding a field to audit/event/export:
 6. How is it deleted or expired?
 7. What happens if an operator asks for export?
 8. Does revealing it create another audit event?
+
+## 11.1 Required startup and failure behavior
+
+- `audit.access.enabled=true` requires a configured search-query encryption key.
+- key absence, invalid size, or unknown active key version fails startup/readiness.
+- encryption failure fails the protected search request; it does not return results without the canonical audit.
+- decryption failure returns no plaintext and creates a security event.
 
 ## 12. Production decisions still required
 

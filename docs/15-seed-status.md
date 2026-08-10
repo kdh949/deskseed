@@ -1,8 +1,8 @@
-# Documentation and Implementation Status v0.5
+# Documentation and Implementation Status v0.6
 
 ## Purpose
 
-This repository combines the v0.5 documentation seed with an executable M0 backend bootstrap and M1 anonymous customer-request vertical slice. Documentation status and implementation status are deliberately separate: a documented contract is not evidence that its runtime behavior exists.
+This repository combines the v0.6 documentation seed with an executable M0 backend bootstrap and M1 anonymous customer-request vertical slice. Documentation status and implementation status are deliberately separate: a documented contract is not evidence that its runtime behavior exists.
 
 ## Implemented baseline
 
@@ -20,7 +20,7 @@ This repository combines the v0.5 documentation seed with an executable M0 backe
 
 ## Implementation-ready core scope
 
-The following v0.5 contracts are `IMPLEMENTATION_READY`: implementation can begin using the stated API, data, authorization, UI, and verification boundaries, but code may still be absent.
+The following v0.6 contracts are `IMPLEMENTATION_READY`: implementation can begin using the stated API, data, authorization, UI, and verification boundaries, but code may still be absent.
 
 - repository/architecture baseline and anonymous web request/public-only customer detail.
 - staff accounts, groups, Agent Views/workspace, and PUBLIC/INTERNAL conversations.
@@ -57,3 +57,7 @@ Detailed implementation specifications exist for Platform API/webhooks/exports/S
 ## Next implementation action
 
 Continue with the next `IMPLEMENTATION_READY` vertical slice in `docs/14-execution-backlog.md` only after creating a task brief from `CODEX_TASK_TEMPLATE.md`. Each task must cite at least one `REQ-*` ID and its verification gate.
+
+## 2026-08-10 decision overlay
+
+Newly implementation-ready: customer email magic link/My Requests, all-agent global ticket read, private Platform API v1 ticket operations, encrypted raw-search preservation, configurable business schedule, First Reply SLA, and Mailpit outbound email foundation. See docs 53–54.

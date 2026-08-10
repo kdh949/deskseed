@@ -1,4 +1,4 @@
-# Validation Report — Deskseed Documentation Seed v0.5
+# Validation Report — Deskseed Documentation Seed v0.6
 
 Generated deterministically by `python3 scripts/validate_documentation.py --write`.
 
@@ -8,7 +8,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 
 ## Validated
 
-- Canonical docs 00–52, tasks 00–19, and ADRs 0001–0028 are present and unique.
+- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0034 are present and unique.
 - Markdown fenced-code balance and relative Markdown links.
 - JSON/YAML parsing and Draft 2020-12 JSON Schema validity.
 - OpenAPI 3.1 operation IDs and local `$ref` resolution.
@@ -20,19 +20,19 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 
 ## Counts
 
-- Adr Files: 28
+- Adr Files: 34
 - Bundled Image Assets: 0
-- Canonical Docs: 53
-- Core Api Requirement Links: 29
-- Decision Definitions: 39
+- Canonical Docs: 55
+- Core Api Requirement Links: 33
+- Decision Definitions: 46
 - Json Files: 8
-- Markdown Files: 123
-- Openapi Operations: 34
-- Openapi Paths: 28
-- Requirement Definitions: 69
-- Task Briefs: 20
-- Verification Gate Definitions: 112
-- Yaml Files: 15
+- Markdown Files: 137
+- Openapi Operations: 46
+- Openapi Paths: 38
+- Requirement Definitions: 75
+- Task Briefs: 26
+- Verification Gate Definitions: 127
+- Yaml Files: 16
 
 ## Errors
 

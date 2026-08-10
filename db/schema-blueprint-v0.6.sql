@@ -1,4 +1,4 @@
--- Deskseed schema blueprint v0.5
+-- Deskseed schema blueprint v0.6
 -- This is a design aid, not a ready-to-run migration.
 
 -- Core principle: tickets have no description column. The request body is the first PUBLIC comment.

@@ -53,15 +53,16 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 
 ## 4. Agent ticket scope
 
-MVP policy:
+Initial policy:
 
-- active Agent can read/write tickets in active groups they belong to;
-- assigned Agent retains access while active and membership valid;
-- relationship grant permits child assignee/group to read parent;
+- every active Agent can read every staff-visible operational ticket (`ALL_TICKETS` read scope);
+- queue, direct URL, search, and parent/child navigation use the same server-side global read policy;
+- customer, admin, security-audit, and secret projections remain separately protected;
 - Admin can read/write all operational tickets;
-- Agent cannot read arbitrary tickets outside scope by guessing ID.
+- cross-group write is not implied by global read. Until explicitly changed, mutation requires current assignee or active membership in the ticket group;
+- relationship grant remains modeled so restrictive modes can later allow a child group to read its parent.
 
-Future configurable scope:
+Future configurable read scope:
 
 ```text
 ALL_TICKETS
@@ -225,3 +226,13 @@ For every endpoint/query/command:
 - customer internal leak regression
 - integration scope + constraint intersection
 - audit success/denial semantics
+
+
+### Initial launch preset
+
+```text
+agentTicketReadScope  = ALL_TICKETS
+agentTicketWriteScope = GROUP_OR_ASSIGNEE
+```
+
+`ALL_TICKETS` applies only to the staff-visible ticket projection. It does not grant Admin Center, Audit Explorer, raw-query reveal, export, integration-secret, retention, or customer-session permissions. When configurable permission modes ship, Admin can change the read scope without rewriting Ticket ownership data.

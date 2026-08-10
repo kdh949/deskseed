@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Deskseed v0.5 documentation seed.
+"""Validate the Deskseed v0.6 documentation seed.
 
 This checks documentation, schemas, API outlines, IDs, local links and package
 integrity. It deliberately does not claim that the Kotlin/React product builds.
@@ -24,18 +24,19 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_TOP = {
     "README.md",
     "IMPLEMENTATION-START-HERE.md",
-    "CHANGELOG-v0.5.md",
+    "CHANGELOG-v0.6.md",
     "AGENTS.md",
     "CODEX_TASK_TEMPLATE.md",
 }
 REQUIRED_MACHINE = {
     "api/core-api-outline-v1.yaml",
+    "api/customer-identity-api-v1.yaml",
     "api/platform-api-outline-v1.yaml",
-    "api/api-surface-catalog-v0.5.yaml",
-    "api/ui-route-catalog-v0.5.yaml",
+    "api/api-surface-catalog-v0.6.yaml",
+    "api/ui-route-catalog-v0.6.yaml",
     "api/audit-activity-event-v1.schema.json",
     "api/integration-event-envelope-v1.schema.json",
-    "db/schema-blueprint-v0.5.sql",
+    "db/schema-blueprint-v0.6.sql",
 }
 REQUIRED_WIREFRAMES = {
     "design/wireframes/agent-ticket-workspace.md",
@@ -48,19 +49,19 @@ REQUIRED_CHECKLISTS = {
     "checklists/pr-review.md",
     "checklists/release.md",
 }
-EXPECTED_DOC_NUMBERS = set(range(0, 53))
-EXPECTED_TASK_NUMBERS = set(range(0, 20))
-EXPECTED_ADR_NUMBERS = set(range(1, 29))
+EXPECTED_DOC_NUMBERS = set(range(0, 55))
+EXPECTED_TASK_NUMBERS = set(range(0, 26))
+EXPECTED_ADR_NUMBERS = set(range(1, 35))
 # This is an onboarding brief that precedes the canonical 00-19 delivery
 # sequence. It intentionally shares the bootstrap number but is not a release
 # task in the contiguous task register.
 NON_CANONICAL_TASK_BRIEFS = {"00-bootstrap-documentation-and-repository.md"}
-# The repository retains this pre-v0.5 planning draft for historical context.
-# The v0.5 Core outline is the canonical contract validated below.
+# The repository retains this pre-v0.6 planning draft for historical context.
+# The v0.6 Core outline is the canonical contract validated below.
 NON_CANONICAL_OPENAPI_DRAFTS = {"api/mvp-target.yaml"}
 MANIFEST_ROOT_FILES = {
     "AGENTS.md",
-    "CHANGELOG-v0.5.md",
+    "CHANGELOG-v0.6.md",
     "CODEX_TASK_TEMPLATE.md",
     "IMPLEMENTATION-START-HERE.md",
     "README.md",
@@ -181,11 +182,11 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
             if count > 1:
                 errors.append(f"Duplicate {label} number: {number}")
     if set(docs_numbers) != EXPECTED_DOC_NUMBERS:
-        errors.append(f"Canonical docs must be contiguous 00-52; missing={sorted(EXPECTED_DOC_NUMBERS-set(docs_numbers))}, extra={sorted(set(docs_numbers)-EXPECTED_DOC_NUMBERS)}")
+        errors.append(f"Canonical docs must be contiguous 00-54; missing={sorted(EXPECTED_DOC_NUMBERS-set(docs_numbers))}, extra={sorted(set(docs_numbers)-EXPECTED_DOC_NUMBERS)}")
     if set(task_numbers) != EXPECTED_TASK_NUMBERS:
-        errors.append(f"Task briefs must be contiguous 00-19; missing={sorted(EXPECTED_TASK_NUMBERS-set(task_numbers))}, extra={sorted(set(task_numbers)-EXPECTED_TASK_NUMBERS)}")
+        errors.append(f"Task briefs must be contiguous 00-25; missing={sorted(EXPECTED_TASK_NUMBERS-set(task_numbers))}, extra={sorted(set(task_numbers)-EXPECTED_TASK_NUMBERS)}")
     if set(adr_numbers) != EXPECTED_ADR_NUMBERS:
-        errors.append(f"ADRs must be contiguous 0001-0028; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
+        errors.append(f"ADRs must be contiguous 0001-0034; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
     counts.update(canonical_docs=len(docs_numbers), task_briefs=len(task_numbers), adr_files=len(adr_numbers))
 
     md_files = all_files("**/*.md")
@@ -313,7 +314,7 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
             errors.append("Ticket field list contains forbidden description field")
         if "description" not in body or "parent_id" not in body:
             errors.append("Ticket schema does not explicitly document intentional absence of description and parent_id")
-    sql_text = (ROOT / "db/schema-blueprint-v0.5.sql").read_text(encoding="utf-8")
+    sql_text = (ROOT / "db/schema-blueprint-v0.6.sql").read_text(encoding="utf-8")
     if "tickets have no description column" not in sql_text:
         errors.append("SQL blueprint lacks the no-description invariant marker")
     if "first PUBLIC comment" not in all_text and "첫 PUBLIC Comment" not in all_text and "첫 `PUBLIC` comment" not in all_text:
@@ -334,7 +335,7 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
         errors.append("Documentation seed must not bundle copied Zendesk visual assets: " + ", ".join(rel(p) for p in image_assets))
 
     validation_heading = (ROOT / "VALIDATION-REPORT.md").read_text(encoding="utf-8").splitlines()[0] if (ROOT / "VALIDATION-REPORT.md").exists() else ""
-    if validation_heading and "v0.5" not in validation_heading:
+    if validation_heading and "v0.6" not in validation_heading:
         warnings.append("Existing validation report is stale; run with --write")
 
     return errors, warnings, counts
@@ -358,7 +359,7 @@ def write_manifest() -> None:
 def write_report(errors: list[str], warnings: list[str], counts: dict[str, int]) -> None:
     result = "PASS" if not errors else "FAIL"
     lines = [
-        "# Validation Report — Deskseed Documentation Seed v0.5",
+        "# Validation Report — Deskseed Documentation Seed v0.6",
         "",
         "Generated deterministically by `python3 scripts/validate_documentation.py --write`.",
         "",
@@ -368,7 +369,7 @@ def write_report(errors: list[str], warnings: list[str], counts: dict[str, int])
         "",
         "## Validated",
         "",
-        "- Canonical docs 00–52, tasks 00–19, and ADRs 0001–0028 are present and unique.",
+        "- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0034 are present and unique.",
         "- Markdown fenced-code balance and relative Markdown links.",
         "- JSON/YAML parsing and Draft 2020-12 JSON Schema validity.",
         "- OpenAPI 3.1 operation IDs and local `$ref` resolution.",

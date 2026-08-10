@@ -40,20 +40,27 @@ CustomerAccount = authentication identity
 - rate limit.
 - wrong ticket/token pair는 동일한 404.
 
-## 4. Account authentication
+## 4. Account authentication — accepted contract
 
-초기 권장:
+Initial method: **email magic link only**.
 
-- email magic link 또는 password + email verification.
-- production에서 MFA는 admin/staff 우선.
-- external IdP는 later.
+- use Spring Security One-Time Token integration or an equivalent adapter with the same contract;
+- production-style DB-backed token service in development and production;
+- single use, default 15-minute TTL, configurable 5–60 minutes;
+- enumeration-safe request response;
+- delivery through durable outbound email and Mailpit in development;
+- secure customer session cookie and explicit logout;
+- token generation, consumption success/failure, replay, and account link are security-audited;
+- passwords, social login, and external IdP are later capabilities.
+
+The magic-link URL must not leak through application logs or third-party resources. The frontend consumes the token through a dedicated route and immediately establishes a server session.
 
 ## 5. Claim flow
 
 ```text
 sign in/verify email
-→ show claimable anonymous requests matching verified email
-→ additional access token confirmation or secure email link
+→ do not auto-list or auto-claim solely from matching email
+→ require existing request access token or a signed per-request claim link
 → link CustomerAccount to Customer
 → revoke/retain old token according to policy
 → security audit

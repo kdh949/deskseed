@@ -69,7 +69,7 @@ v0.1-anonymous-request
 v0.2-agent-workspace
 v0.3-audit-concurrency
 v0.4-transfer-child
-v0.5-security-audit
+v0.6-security-audit
 v0.6-integration-api
 v0.7-sla-analytics
 v0.8-automation-search

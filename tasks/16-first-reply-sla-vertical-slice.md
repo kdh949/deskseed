@@ -36,3 +36,6 @@ SLA-001, SLA-002, SLA-005, SLA-006, SLA-008 plus:
 - DST/holiday fixture even when default timezone is Asia/Seoul.
 - browser countdown cannot change canonical state.
 - no-policy tickets are distinguishable from achieved tickets.
+## Accepted v0.6 defaults
+
+Seed Asia/Seoul Monday–Friday 09:00–18:00, expose full weekday/weekend/interval/holiday admin editing, and pause First Reply in PENDING by default.

@@ -97,7 +97,7 @@
 - migration/rollback/compatibility
 - performance evidence
 - human owner가 설명할 핵심 trade-off
-## v0.5 required reading for every product feature
+## v0.6 required reading for every product feature
 
 - `docs/26-requirement-traceability.md`
 - `docs/27-implementation-handbook.md`

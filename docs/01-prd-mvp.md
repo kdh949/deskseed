@@ -216,7 +216,7 @@ searchType
 
 초기 기본 제안:
 
-- staff search query는 `FULL_ENCRYPTED`로 90일 저장
+- staff search query는 `FULL_ENCRYPTED`로 30일 저장
 - 일반 admin은 검색어 전문을 볼 수 없음
 - `SECURITY_AUDITOR` 중 별도 capability가 있는 사용자만 복호화 가능
 - 토큰, 비밀번호, secret pattern은 저장 전 마스킹
