@@ -1,4 +1,6 @@
 export type TicketStatus = 'NEW' | 'OPEN' | 'PENDING' | 'SOLVED'
+export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+export type TicketVisibility = 'PUBLIC' | 'INTERNAL'
 
 export interface SubmitRequestInput {
   name: string
@@ -94,3 +96,93 @@ export interface CreateStaffInput {
   role: StaffRole
   password: string
 }
+
+export interface SavedAgentView {
+  key: string
+  name: string
+  scope: 'PERSONAL' | 'SHARED' | 'SYSTEM'
+  categoryPath: string[]
+  ticketCount: number | null
+  readScope: 'ALL_TICKETS'
+}
+
+export interface ActorSummary {
+  id: string | null
+  type: 'CUSTOMER' | 'STAFF' | 'INTEGRATION_CLIENT' | 'TRIGGER' | 'AUTOMATION' | 'SYSTEM'
+  displayName: string
+}
+
+export interface TicketReference {
+  id: string
+  displayName: string
+}
+
+export interface AgentTicketSummary {
+  ticketNumber: number
+  subject: string
+  status: TicketStatus
+  priority: TicketPriority
+  requester: ActorSummary
+  group: GroupReference | null
+  assignee: TicketReference | null
+  updatedAt: string
+  version: number
+  isChild: boolean
+  openChildCount: number
+  sla: null
+}
+
+export interface AgentTicketPage {
+  items: AgentTicketSummary[]
+  nextCursor: string | null
+  totalApproximate: number | null
+  sort: 'updatedAt:desc,ticketNumber:desc'
+}
+
+export interface AgentComment {
+  id: string
+  visibility: TicketVisibility
+  actor: ActorSummary
+  body: string
+  createdAt: string
+  source: string
+  attachments: unknown[]
+}
+
+export interface TicketCustomerContext {
+  id: string
+  displayName: string
+  email: string
+}
+
+export interface TicketHistoryItem {
+  id: string
+  eventType: string
+  actor: ActorSummary
+  occurredAt: string
+}
+
+export interface AgentTicketDetail {
+  ticket: AgentTicketSummary
+  comments: AgentComment[]
+  capabilities: string[]
+  context: {
+    customer: TicketCustomerContext
+    parent: AgentTicketSummary | null
+    children: AgentTicketSummary[]
+    externalReferences: unknown[]
+  }
+  history: TicketHistoryItem[]
+  warnings: unknown[]
+}
+
+export interface AgentTicketFilters {
+  status?: TicketStatus
+  priority?: TicketPriority
+  groupId?: string
+  assigneeId?: string
+  cursor?: string
+  limit?: number
+}
+
+export type AgentReadIntent = 'NAVIGATION' | 'BACKGROUND'

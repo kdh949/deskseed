@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getPublicRequest, submitRequest } from './client'
+import {
+  ApiError,
+  getAgentTicket,
+  getPublicRequest,
+  listAgentViews,
+  listTicketsInView,
+  submitRequest,
+} from './client'
 
 const submitInput = {
   name: '김고객',
@@ -255,5 +262,172 @@ describe('customer request API client', () => {
       'id',
     ])
     expect(serialized).not.toContain('private-marker')
+  })
+})
+
+describe('agent ticket read API client', () => {
+  it('decodes default views and sends stable filters through the queue URL', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              key: 'my-open',
+              name: '내 open',
+              scope: 'SYSTEM',
+              categoryPath: ['내 작업'],
+              ticketCount: null,
+              readScope: 'ALL_TICKETS',
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [],
+            nextCursor: null,
+            totalApproximate: null,
+            sort: 'updatedAt:desc,ticketNumber:desc',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(listAgentViews()).resolves.toMatchObject([
+      { key: 'my-open', readScope: 'ALL_TICKETS' },
+    ])
+    await listTicketsInView('pending', {
+      status: 'PENDING',
+      priority: 'URGENT',
+      groupId: 'group-id',
+      assigneeId: 'me',
+      cursor: 'opaque-cursor',
+      limit: 25,
+    })
+
+    const queueUrl = String(fetchMock.mock.calls[1]?.[0])
+    expect(queueUrl).toContain('/api/v1/agent/views/pending/tickets?')
+    expect(queueUrl).toContain('status=PENDING')
+    expect(queueUrl).toContain('priority=URGENT')
+    expect(queueUrl).toContain('groupId=group-id')
+    expect(queueUrl).toContain('assigneeId=me')
+    expect(queueUrl).toContain('cursor=opaque-cursor')
+    expect(queueUrl).toContain('limit=25')
+  })
+
+  it('sends navigation metadata and allowlists the staff detail projection', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ticket: {
+            ticketNumber: 1042,
+            subject: '결제 오류',
+            status: 'OPEN',
+            priority: 'URGENT',
+            requester: {
+              id: 'customer-id',
+              type: 'CUSTOMER',
+              displayName: '김고객',
+            },
+            group: { id: 'group-id', name: '결제 지원' },
+            assignee: { id: 'staff-id', displayName: '상담사' },
+            updatedAt: '2026-08-10T00:00:00Z',
+            version: 3,
+            isChild: false,
+            openChildCount: 0,
+            sla: null,
+          },
+          comments: [
+            {
+              id: 'comment-1',
+              visibility: 'INTERNAL',
+              actor: {
+                id: 'staff-id',
+                type: 'STAFF',
+                displayName: '상담사',
+              },
+              body: '내부 확인 필요',
+              createdAt: '2026-08-10T00:00:00Z',
+              source: 'AGENT_UI',
+              attachments: [],
+            },
+          ],
+          capabilities: ['READ'],
+          context: {
+            customer: {
+              id: 'customer-id',
+              displayName: '김고객',
+              email: 'customer@example.com',
+            },
+            parent: null,
+            children: [],
+            externalReferences: [],
+          },
+          history: [
+            {
+              id: 'history-id',
+              eventType: 'TICKET_CREATED',
+              actor: {
+                id: 'staff-id',
+                type: 'STAFF',
+                displayName: '상담사',
+              },
+              occurredAt: '2026-08-10T00:00:00Z',
+            },
+          ],
+          warnings: [],
+          serverOnly: 'private-marker',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const detail = await getAgentTicket(
+      1042,
+      '11111111-1111-4111-8111-111111111111',
+      'NAVIGATION',
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/tickets/1042', {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: {
+        'X-Interaction-Id': '11111111-1111-4111-8111-111111111111',
+        'X-Deskseed-Read-Intent': 'NAVIGATION',
+      },
+    })
+    expect(detail.comments[0]?.visibility).toBe('INTERNAL')
+    expect(detail.context.customer.email).toBe('customer@example.com')
+    expect(JSON.stringify(detail)).not.toContain('private-marker')
+  })
+
+  it('rejects malformed agent list and detail success bodies', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([{ key: 'my-open' }]), { status: 200 }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ticket: { ticketNumber: 1042 } }), {
+            status: 200,
+          }),
+        ),
+    )
+
+    await expect(listAgentViews()).rejects.toBeInstanceOf(ApiError)
+    await expect(
+      getAgentTicket(
+        1042,
+        '11111111-1111-4111-8111-111111111111',
+        'NAVIGATION',
+      ),
+    ).rejects.toBeInstanceOf(ApiError)
   })
 })
