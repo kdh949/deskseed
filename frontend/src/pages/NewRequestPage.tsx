@@ -6,9 +6,10 @@ import {
   useRef,
   useState,
 } from 'react'
-import { ApiError, submitRequest } from '../api/client'
-import type { SubmitRequestInput, SubmittedRequest } from '../api/types'
-import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
+import { useBeforeUnload, useBlocker } from 'react-router'
+import { ApiError } from '../api/client'
+import type { SubmitRequestInput } from '../api/types'
+import { useRequestSubmission } from '../features/customer-requests/RequestSubmissionContext'
 import {
   EMPTY_REQUEST_FORM,
   isRequestField,
@@ -50,10 +51,11 @@ function toErrorSummary(error: unknown): ErrorSummary {
     }
   }
   if (error.status === 429) {
+    const retryAfterSeconds = parseRetryAfterSeconds(error.retryAfter)
     return {
       title: '잠시 후 다시 시도해 주세요',
-      detail: error.retryAfter
-        ? `${error.retryAfter}초 뒤에 다시 접수해 주세요.`
+      detail: retryAfterSeconds
+        ? `${retryAfterSeconds}초 뒤에 다시 접수해 주세요.`
         : '요청이 많습니다. 잠시 기다린 뒤 다시 접수해 주세요.',
       requestId: error.requestId,
     }
@@ -65,22 +67,87 @@ function toErrorSummary(error: unknown): ErrorSummary {
   }
 }
 
+function parseRetryAfterSeconds(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const deltaSeconds = Number(value)
+  if (Number.isFinite(deltaSeconds) && deltaSeconds > 0) {
+    return Math.ceil(deltaSeconds)
+  }
+  const retryAt = Date.parse(value)
+  if (!Number.isFinite(retryAt)) return undefined
+  const seconds = Math.ceil((retryAt - Date.now()) / 1_000)
+  return seconds > 0 ? seconds : undefined
+}
+
 export function NewRequestPage() {
-  const requestAccess = useRequestAccess()
+  const requestSubmission = useRequestSubmission()
   const [form, setForm] = useState<SubmitRequestInput>(EMPTY_REQUEST_FORM)
   const [touched, setTouched] = useState<TouchedFields>({})
   const [serverErrors, setServerErrors] = useState<RequestFieldErrors>({})
   const [summary, setSummary] = useState<ErrorSummary | null>(null)
-  const [submitted, setSubmitted] = useState<SubmittedRequest | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const pendingRef = useRef(false)
+  const [shouldFocusSummary, setShouldFocusSummary] = useState(false)
+  const [navigationBlocked, setNavigationBlocked] = useState(false)
+  const submissionHistoryEntryRef = useRef(false)
   const summaryRef = useRef<HTMLDivElement>(null)
   const clientErrors = useMemo(() => validateRequestForm(form), [form])
   const isValid = Object.keys(clientErrors).length === 0
+  const blocker = useBlocker(requestSubmission.isSubmitting)
+
+  useBeforeUnload((event) => {
+    if (!requestSubmission.isSubmitting) return
+    event.preventDefault()
+    event.returnValue = ''
+  })
 
   useEffect(() => {
-    if (summary) summaryRef.current?.focus()
-  }, [summary])
+    if (!summary || !shouldFocusSummary) return
+    summaryRef.current?.focus()
+    setShouldFocusSummary(false)
+  }, [shouldFocusSummary, summary])
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    setNavigationBlocked(true)
+    blocker.reset()
+  }, [blocker])
+
+  useEffect(() => {
+    if (!requestSubmission.isSubmitting) setNavigationBlocked(false)
+  }, [requestSubmission.isSubmitting])
+
+  useEffect(() => {
+    if (!requestSubmission.isSubmitting) {
+      submissionHistoryEntryRef.current = false
+      return
+    }
+    if (submissionHistoryEntryRef.current) return
+
+    window.history.pushState(
+      { ...window.history.state, deskseedSubmissionGuard: true },
+      '',
+      window.location.href,
+    )
+    submissionHistoryEntryRef.current = true
+  }, [requestSubmission.isSubmitting])
+
+  useEffect(() => {
+    if (!requestSubmission.isSubmitting) return
+    let restoringGuardEntry = false
+    const restorePendingSubmission = (event: PopStateEvent) => {
+      if (restoringGuardEntry) {
+        restoringGuardEntry = false
+        return
+      }
+      event.stopImmediatePropagation()
+      setNavigationBlocked(true)
+      restoringGuardEntry = true
+      window.history.go(1)
+    }
+    window.addEventListener('popstate', restorePendingSubmission, true)
+    return () => {
+      window.removeEventListener('popstate', restorePendingSubmission, true)
+    }
+  }, [requestSubmission.isSubmitting])
 
   const visibleErrors: RequestFieldErrors = { ...serverErrors }
   for (const field of Object.keys(touched) as RequestField[]) {
@@ -99,57 +166,47 @@ export function NewRequestPage() {
         return next
       })
       setSummary(null)
+      setShouldFocusSummary(false)
     }
 
   const blurField = (field: RequestField) => {
     setTouched((current) => ({ ...current, [field]: true }))
-    if (clientErrors[field]) {
-      setSummary({
-        title: '입력 내용을 확인해 주세요',
-        detail: '표시된 항목을 고친 뒤 다시 접수해 주세요.',
-      })
-    }
   }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (pendingRef.current) return
     if (!isValid) {
       setTouched({ name: true, email: true, subject: true, message: true })
       setSummary({
         title: '입력 내용을 확인해 주세요',
         detail: '표시된 항목을 고친 뒤 다시 접수해 주세요.',
       })
+      setShouldFocusSummary(true)
       return
     }
 
-    pendingRef.current = true
-    setIsSubmitting(true)
     setSummary(null)
+    setShouldFocusSummary(false)
     setServerErrors({})
     try {
-      const result = await submitRequest(form)
-      requestAccess.setAccessToken(result.ticketNumber, result.accessToken)
-      setSubmitted(result)
+      await requestSubmission.submit(form)
     } catch (error) {
       if (error instanceof ApiError) setServerErrors(toServerFieldErrors(error))
       setSummary(toErrorSummary(error))
-    } finally {
-      pendingRef.current = false
-      setIsSubmitting(false)
+      setShouldFocusSummary(true)
     }
   }
 
-  if (submitted) {
+  if (requestSubmission.submitted) {
     return (
       <RequestSuccess
-        submitted={submitted}
+        submitted={requestSubmission.submitted}
         onReset={() => {
           setForm(EMPTY_REQUEST_FORM)
           setTouched({})
           setServerErrors({})
           setSummary(null)
-          setSubmitted(null)
+          requestSubmission.reset()
         }}
       />
     )
@@ -166,6 +223,16 @@ export function NewRequestPage() {
         </p>
       </div>
       <form className="support-form" onSubmit={submit} noValidate>
+        {requestSubmission.isSubmitting && (
+          <p className="submission-guard" role="status">
+            접수를 완료하는 동안 이 화면을 벗어날 수 없습니다.
+          </p>
+        )}
+        {navigationBlocked && (
+          <p className="submission-guard" role="status">
+            접수 결과를 안전하게 표시한 뒤 이동할 수 있습니다.
+          </p>
+        )}
         {summary && (
           <div
             className="error-banner"
@@ -237,10 +304,12 @@ export function NewRequestPage() {
         <button
           className="button primary"
           type="submit"
-          disabled={!isValid || isSubmitting}
-          aria-busy={isSubmitting}
+          disabled={requestSubmission.isSubmitting}
+          aria-busy={requestSubmission.isSubmitting}
         >
-          {isSubmitting ? '안전하게 접수하는 중…' : '문의 접수'}
+          {requestSubmission.isSubmitting
+            ? '안전하게 접수하는 중…'
+            : '문의 접수'}
         </button>
       </form>
     </section>

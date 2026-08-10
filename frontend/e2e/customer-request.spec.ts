@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 const ACCESS_TOKEN = 'browser-memory-only-token-1234567890'
+const INVALID_ACCESS_TOKEN = 'browser-invalid-token-123456789012345'
 
 const createdRequest = {
   ticketNumber: 1042,
@@ -153,11 +154,16 @@ test('server validation and temporary failure preserve the form and move focus',
   )
 })
 
-test('duplicate form submission results in one request', async ({ page }) => {
+test('duplicate form submission retains the one-time result while navigation is blocked', async ({
+  page,
+}) => {
   let requestCount = 0
+  let releaseResponse: (() => void) | undefined
   await page.route('**/api/v1/requests', async (route) => {
     requestCount += 1
-    await new Promise((resolve) => setTimeout(resolve, 250))
+    await new Promise<void>((resolve) => {
+      releaseResponse = resolve
+    })
     await route.fulfill({ status: 201, json: createdRequest })
   })
   await page.goto('/requests/new')
@@ -170,15 +176,32 @@ test('duplicate form submission results in one request', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: /안전하게 접수하는 중/ }),
   ).toBeDisabled()
+  await expect(
+    page.getByText('접수를 완료하는 동안 이 화면을 벗어날 수 없습니다.'),
+  ).toBeVisible()
+  await page.getByRole('link', { name: '문의 조회' }).click()
+  await expect(page).toHaveURL(new RegExp('/requests/new$'))
+  await expect(
+    page.getByText('접수 결과를 안전하게 표시한 뒤 이동할 수 있습니다.'),
+  ).toBeVisible()
+  await page.evaluate(() => window.history.back())
+  await expect(page).toHaveURL(new RegExp('/requests/new$'))
+
+  releaseResponse?.()
   await expect(page.getByRole('heading', { name: '문의 #1042' })).toBeVisible()
   expect(requestCount).toBe(1)
 })
 
-test('invalid key and missing request share a non-enumerating denied state', async ({
+test('a replacement key never reuses a previous public-request cache entry', async ({
   page,
 }) => {
-  await page.route('**/api/v1/requests/1042', (route) =>
-    route.fulfill({
+  let requestCount = 0
+  await page.route('**/api/v1/requests/1042', (route) => {
+    requestCount += 1
+    if (route.request().headers()['x-request-access-token'] === ACCESS_TOKEN) {
+      return route.fulfill({ status: 200, json: publicRequest })
+    }
+    return route.fulfill({
       status: 404,
       contentType: 'application/problem+json',
       json: {
@@ -186,11 +209,21 @@ test('invalid key and missing request share a non-enumerating denied state', asy
         detail: 'Token hash mismatch',
         requestId: 'secret-request-id',
       },
-    }),
-  )
+    })
+  })
   await page.goto('/requests/lookup')
   await page.getByRole('textbox', { name: /접수 번호/ }).fill('1042')
   await page.getByRole('textbox', { name: /조회 키/ }).fill(ACCESS_TOKEN)
+  await page.getByRole('button', { name: '문의 보기' }).click()
+
+  await expect(
+    page.getByRole('heading', { name: '결제 오류 문의' }),
+  ).toBeVisible()
+  await page.getByRole('link', { name: '문의 조회' }).click()
+  await page.getByRole('textbox', { name: /접수 번호/ }).fill('1042')
+  await page
+    .getByRole('textbox', { name: /조회 키/ })
+    .fill(INVALID_ACCESS_TOKEN)
   await page.getByRole('button', { name: '문의 보기' }).click()
 
   const denied = page.getByRole('alert', {
@@ -200,6 +233,13 @@ test('invalid key and missing request share a non-enumerating denied state', asy
   await expect(denied).not.toContainText('Token hash mismatch')
   await expect(denied).not.toContainText('Request not found')
   await expect(denied).not.toContainText('secret-request-id')
+  await expect(
+    page.getByRole('heading', { name: '결제 오류 문의' }),
+  ).toHaveCount(0)
+  await expect(page.getByText('결제 버튼을 누르면 오류가 납니다.')).toHaveCount(
+    0,
+  )
+  expect(requestCount).toBe(2)
   expect(page.url()).not.toContain(ACCESS_TOKEN)
 })
 

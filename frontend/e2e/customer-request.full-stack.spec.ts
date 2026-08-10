@@ -7,7 +7,7 @@ const fullStackEnabled = process.env.E2E_FULL_STACK === '1'
 const composeProject = process.env.DESKSEED_E2E_COMPOSE_PROJECT ?? ''
 const composeFile = resolve(process.cwd(), '../compose.yaml')
 const internalBody = 'E2E_INTERNAL_COMMENT_DO_NOT_EXPOSE'
-const childSubject = 'E2E_CHILD_TICKET_DO_NOT_EXPOSE'
+const unrelatedInternalTicketSubject = 'E2E_INTERNAL_TICKET_DO_NOT_EXPOSE'
 
 function addPrivateFixtures(ticketNumber: number) {
   if (!composeProject || !Number.isSafeInteger(ticketNumber)) {
@@ -31,7 +31,7 @@ function addPrivateFixtures(ticketNumber: number) {
       (id, ticket_number, requester_id, kind, subject, status, priority,
        group_id, assignee_id, channel, version, created_at, updated_at, solved_at)
     select '${randomUUID()}', nextval('ticket_number_seq'), requester_id,
-      'INTERNAL_CHILD', '${childSubject}', 'NEW', 'NORMAL', null, null,
+      'INTERNAL_CHILD', '${unrelatedInternalTicketSubject}', 'NEW', 'NORMAL', null, null,
       'AGENT', 0, now(), now(), null
     from target;
   `
@@ -60,7 +60,9 @@ function addPrivateFixtures(ticketNumber: number) {
 
 test.skip(!fullStackEnabled, 'Runs only against the isolated Compose stack')
 
-test('real create to detail flow excludes internal comments and child tickets from API and DOM', async ({
+// M1 has no parent-child relation column yet. This fixture proves that another internal ticket
+// cannot leak into the public projection; a true child-relation fixture belongs with that schema.
+test('real create to detail flow excludes internal comments and other tickets from API and DOM', async ({
   page,
 }) => {
   await page.goto('/requests/new')
@@ -114,7 +116,7 @@ test('real create to detail flow excludes internal comments and child tickets fr
   ])
   const serializedPayload = JSON.stringify(payload)
   expect(serializedPayload).not.toContain(internalBody)
-  expect(serializedPayload).not.toContain(childSubject)
+  expect(serializedPayload).not.toContain(unrelatedInternalTicketSubject)
 
   await expect(
     page.getByRole('heading', { name: '실제 스택 공개 문의' }),
@@ -123,7 +125,7 @@ test('real create to detail flow excludes internal comments and child tickets fr
     page.getByText('실제 backend에 저장되는 첫 PUBLIC Comment입니다.'),
   ).toBeVisible()
   await expect(page.getByText(internalBody)).toHaveCount(0)
-  await expect(page.getByText(childSubject)).toHaveCount(0)
+  await expect(page.getByText(unrelatedInternalTicketSubject)).toHaveCount(0)
   expect(page.url()).not.toContain(token)
   const storage = await page.evaluate(() => ({
     local: Object.keys(localStorage),

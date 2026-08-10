@@ -1,21 +1,26 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RequestAccessProvider } from '../features/customer-requests/RequestAccessContext'
+import { RequestSubmissionProvider } from '../features/customer-requests/RequestSubmissionContext'
 import { NewRequestPage } from './NewRequestPage'
 
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false } },
   })
+  const router = createMemoryRouter(
+    [{ path: '/requests/new', element: <NewRequestPage /> }],
+    { initialEntries: ['/requests/new'] },
+  )
   return render(
     <QueryClientProvider client={queryClient}>
       <RequestAccessProvider>
-        <MemoryRouter>
-          <NewRequestPage />
-        </MemoryRouter>
+        <RequestSubmissionProvider>
+          <RouterProvider router={router} />
+        </RequestSubmissionProvider>
       </RequestAccessProvider>
     </QueryClientProvider>,
   )
@@ -36,13 +41,13 @@ afterEach(() => {
 })
 
 describe('NewRequestPage', () => {
-  it('keeps submit disabled until valid and associates client errors with fields', async () => {
+  it('keeps keyboard focus on the next field after blur and focuses the summary on submit', async () => {
     const user = userEvent.setup()
     renderPage()
 
     const submit = screen.getByRole('button', { name: '문의 접수' })
     const email = screen.getByLabelText(/이메일/)
-    expect(submit).toBeDisabled()
+    expect(submit).toBeEnabled()
 
     await user.type(email, 'not-an-email')
     await user.tab()
@@ -51,9 +56,16 @@ describe('NewRequestPage', () => {
     expect(email).toHaveAccessibleDescription(
       '올바른 이메일 주소를 입력해 주세요.',
     )
+    expect(screen.getByLabelText(/제목/)).toHaveFocus()
     expect(
-      screen.getByRole('alert', { name: '입력 내용을 확인해 주세요' }),
-    ).toBeVisible()
+      screen.queryByRole('alert', { name: '입력 내용을 확인해 주세요' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(submit)
+
+    expect(
+      await screen.findByRole('alert', { name: '입력 내용을 확인해 주세요' }),
+    ).toHaveFocus()
   })
 
   it('maps server field errors and moves focus to the preserved error summary', async () => {
@@ -119,7 +131,7 @@ describe('NewRequestPage', () => {
         JSON.stringify({
           ticketNumber: 1042,
           status: 'NEW',
-          accessToken: 'memory-only-token',
+          accessToken: 'memory-only-token-that-is-at-least-32-characters',
           createdAt: '2026-08-10T00:00:00Z',
         }),
         { status: 201, headers: { 'Content-Type': 'application/json' } },
@@ -159,5 +171,32 @@ describe('NewRequestPage', () => {
     expect(screen.getByLabelText(/문의 내용/)).toHaveValue(
       '결제 버튼을 누르면 오류가 납니다.',
     )
+  })
+
+  it('turns an HTTP-date Retry-After value into safe retry guidance', async () => {
+    const user = userEvent.setup()
+    const retryAt = new Date(Date.now() + 60_000).toUTCString()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: 429 }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/problem+json',
+            'Retry-After': retryAt,
+          },
+        }),
+      ),
+    )
+    renderPage()
+    await fillValidForm(user)
+
+    await user.click(screen.getByRole('button', { name: '문의 접수' }))
+
+    const summary = await screen.findByRole('alert', {
+      name: '잠시 후 다시 시도해 주세요',
+    })
+    expect(summary).toHaveTextContent(/\d+초 뒤에 다시 접수해 주세요/)
+    expect(summary).not.toHaveTextContent(retryAt)
   })
 })

@@ -448,7 +448,17 @@ textarea[aria-invalid='true'] {
 .comment p {
   margin: 18px 0 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.75;
+}
+
+.submission-guard {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--brand);
+  background: #eef8f8;
+  color: var(--ink);
+  font-size: 0.9rem;
 }
 .notice-card {
   margin-top: 28px;
