@@ -7,8 +7,11 @@ import dev.deskseed.settings.AnonymousSubmissionDisabledException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.dao.DataAccessException
@@ -33,6 +36,7 @@ import java.util.UUID
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
+@ExtendWith(OutputCaptureExtension::class)
 class PublicRequestIntegrationTest {
     @Autowired
     private lateinit var service: PublicRequestApplicationService
@@ -294,18 +298,19 @@ class PublicRequestIntegrationTest {
             UUID::class.java,
             ticketId,
         )!!
-        val eventTypes = jdbcTemplate.queryForList(
+        val eventRows = jdbcTemplate.queryForList(
             """
-            select event_type
+            select event_order, event_type, occurred_at
             from ticket_audit_events
             where audit_id = ?
             order by event_order
             """.trimIndent(),
-            String::class.java,
             auditId,
         )
 
-        assertThat(eventTypes).containsExactly("TICKET_CREATED", "COMMENT_CREATED")
+        assertThat(eventRows.map { it["event_order"] }).containsExactly(1, 2)
+        assertThat(eventRows.map { it["event_type"] }).containsExactly("TICKET_CREATED", "COMMENT_CREATED")
+        assertThat(eventRows.map { it["occurred_at"] }).doesNotContainNull()
         val auditContext = jdbcTemplate.queryForMap(
             """
             select actor_type, source, request_id, correlation_id, command_id
@@ -325,6 +330,57 @@ class PublicRequestIntegrationTest {
                 auditId,
             )
         }.isInstanceOf(DataAccessException::class.java)
+        assertThatThrownBy {
+            jdbcTemplate.update(
+                "delete from ticket_audit_events where audit_id = ?",
+                auditId,
+            )
+        }.isInstanceOf(DataAccessException::class.java)
+        assertThatThrownBy {
+            jdbcTemplate.update(
+                "delete from ticket_audits where id = ?",
+                auditId,
+            )
+        }.isInstanceOf(DataAccessException::class.java)
+    }
+
+    @Test
+    fun `comment insert failure rolls back customer ticket audit and access grant`() {
+        assertCreationRollsBackWhenInsertFails("ticket_comments", "comment-insert-failure")
+    }
+
+    @Test
+    fun `ticket audit insert failure rolls back customer ticket comment and access grant`() {
+        assertCreationRollsBackWhenInsertFails("ticket_audits", "audit-insert-failure")
+    }
+
+    @Test
+    fun `ticket audit event insert failure rolls back the whole creation command`() {
+        assertCreationRollsBackWhenInsertFails("ticket_audit_events", "audit-event-insert-failure")
+    }
+
+    @Test
+    fun `access grant insert failure rolls back the whole creation command`() {
+        assertCreationRollsBackWhenInsertFails("request_access_tokens", "grant-insert-failure")
+    }
+
+    @Test
+    fun `message and issued token never appear in application logs`(output: CapturedOutput) {
+        val marker = UUID.randomUUID().toString()
+        val secretMessage = "sensitive-message-$marker"
+        val response = mockMvc.perform(
+            post("/api/v1/requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("log-$marker@example.com", secretMessage)),
+        )
+            .andExpect(status().isCreated)
+            .andReturn()
+            .response
+            .contentAsString
+        val rawToken = Regex("\"accessToken\":\"([^\"]+)\"").find(response)!!.groupValues[1]
+
+        assertThat(output.all).doesNotContain(secretMessage)
+        assertThat(output.all).doesNotContain(rawToken)
     }
 
     @Test
@@ -381,6 +437,109 @@ class PublicRequestIntegrationTest {
         Regex("\"status\":([0-9]+)").find(json)!!.groupValues[1],
         Regex("\"detail\":\"([^\"]+)\"").find(json)!!.groupValues[1],
     )
+
+    private fun assertCreationRollsBackWhenInsertFails(table: String, marker: String) {
+        val functionName = "test_fail_${table}_insert"
+        val triggerName = "${functionName}_trigger"
+        val email = "$marker-${UUID.randomUUID()}@example.com"
+        val subject = "atomic-$marker-${UUID.randomUUID()}"
+        installFailingInsertTrigger(table, functionName, triggerName)
+        try {
+            assertThatThrownBy {
+                service.submit(
+                    SubmitAnonymousRequest(
+                        name = "원자성 고객",
+                        email = email,
+                        subject = subject,
+                        message = "원자성 검증 메시지",
+                        context = CommandContext(
+                            source = RequestSource.CUSTOMER_PORTAL,
+                            requestId = "request-$marker",
+                            correlationId = "correlation-$marker",
+                            commandId = UUID.randomUUID().toString(),
+                        ),
+                    ),
+                )
+            }.isInstanceOf(RuntimeException::class.java)
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists $triggerName on $table")
+            jdbcTemplate.execute("drop function if exists $functionName()")
+        }
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from tickets where subject = ?",
+                Long::class.java,
+                subject,
+            ),
+        ).isZero()
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from customers where email_normalized = ?",
+                Long::class.java,
+                email.lowercase(),
+            ),
+        ).isZero()
+        assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from ticket_comments comment
+                join tickets ticket on ticket.id = comment.ticket_id
+                where ticket.subject = ?
+                """.trimIndent(),
+                Long::class.java,
+                subject,
+            ),
+        ).isZero()
+        assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from ticket_audits audit
+                join tickets ticket on ticket.id = audit.ticket_id
+                where ticket.subject = ?
+                """.trimIndent(),
+                Long::class.java,
+                subject,
+            ),
+        ).isZero()
+        assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from request_access_tokens grant_record
+                join tickets ticket on ticket.id = grant_record.ticket_id
+                where ticket.subject = ?
+                """.trimIndent(),
+                Long::class.java,
+                subject,
+            ),
+        ).isZero()
+    }
+
+    private fun installFailingInsertTrigger(table: String, functionName: String, triggerName: String) {
+        require(table in setOf("ticket_comments", "ticket_audits", "ticket_audit_events", "request_access_tokens"))
+        jdbcTemplate.execute(
+            """
+            create function $functionName()
+            returns trigger
+            language plpgsql
+            as ${'$'}${'$'}
+            begin
+                raise exception 'injected insert failure';
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create trigger $triggerName
+            before insert on $table
+            for each row execute function $functionName()
+            """.trimIndent(),
+        )
+    }
 
     companion object {
         @Container

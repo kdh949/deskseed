@@ -91,7 +91,7 @@ internal class JpaTicketingFacade(
             ),
         )
 
-        auditEventRepository.saveAll(
+        auditEventRepository.saveAllAndFlush(
             listOf(
                 TicketAuditEventEntity(
                     id = UUID.randomUUID(),
@@ -99,6 +99,7 @@ internal class JpaTicketingFacade(
                     eventOrder = 1,
                     eventType = "TICKET_CREATED",
                     metadataJson = "{\"channel\":\"WEB\",\"kind\":\"CUSTOMER_REQUEST\"}",
+                    occurredAt = now,
                 ),
                 TicketAuditEventEntity(
                     id = UUID.randomUUID(),
@@ -108,6 +109,7 @@ internal class JpaTicketingFacade(
                     fieldName = "comments",
                     newValueJson = jsonString(ticket.firstComment.id.toString()),
                     metadataJson = "{\"visibility\":\"PUBLIC\",\"authorType\":\"CUSTOMER\"}",
+                    occurredAt = now,
                 ),
             ),
         )
