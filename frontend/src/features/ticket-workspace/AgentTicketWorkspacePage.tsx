@@ -5,6 +5,7 @@ import { ApiError, getAgentTicket } from '../../api/client'
 import type { AgentTicketStatus } from '../../api/types'
 import {
   PropertyPanel,
+  ScreenState,
   SplitPanel,
   TicketTabs,
   type PropertyPanelItem,
@@ -150,24 +151,32 @@ function InvalidTicketRoute() {
 
 function WorkspaceError({ error, retry }: { error: Error; retry: () => void }) {
   const apiError = error instanceof ApiError ? error : null
+  const kind =
+    apiError?.status === 403
+      ? 'denied'
+      : apiError?.status === 404
+        ? 'not-found'
+        : 'error'
   return (
-    <main className="workspace-error-state" role="alert">
-      <p className="agent-page-eyebrow">
-        {apiError?.status === 403
-          ? '403 · ACCESS DENIED'
-          : 'TICKET READ FAILED'}
-      </p>
-      <h1>티켓을 열 수 없습니다.</h1>
-      <p>
-        {apiError?.status === 404
-          ? '티켓이 없거나 접근 가능한 범위에 없습니다.'
-          : '읽기 감사 기록을 포함한 요청을 완료하지 못했습니다.'}
-      </p>
-      {apiError?.requestId ? <p>요청 ID: {apiError.requestId}</p> : null}
-      <button className="compact-button" type="button" onClick={retry}>
-        다시 시도
-      </button>
-      <Link to="/agent/views/my-open">Views로 돌아가기</Link>
+    <main className="workspace-error-state">
+      <ScreenState
+        kind={kind}
+        title="티켓을 열 수 없습니다."
+        description={
+          apiError?.status === 404
+            ? '티켓이 없거나 접근 가능한 범위에 없습니다.'
+            : '읽기 감사 기록을 포함한 요청을 완료하지 못했습니다.'
+        }
+        requestId={apiError?.requestId}
+        action={
+          <div className="state-action-row">
+            <button className="compact-button" type="button" onClick={retry}>
+              다시 시도
+            </button>
+            <Link to="/agent/views/my-open">Views로 돌아가기</Link>
+          </div>
+        }
+      />
     </main>
   )
 }

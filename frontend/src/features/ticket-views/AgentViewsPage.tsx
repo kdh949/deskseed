@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { useParams, useSearchParams } from 'react-router'
 import { ApiError, listTicketsInView } from '../../api/client'
 import type {
   AgentTicketFilters,
   AgentTicketStatus,
   TicketPriority,
 } from '../../api/types'
-import { StatusBadge } from '../../components/StatusBadge'
+import { ScreenState, TableSkeleton, TicketTable } from '../../shared/ui/system'
 
 const VIEW_NAMES: Record<string, string> = {
   'my-open': '내 open',
@@ -150,69 +150,35 @@ export function AgentViewsPage() {
         ) : null}
       </section>
 
-      {query.isPending ? <TicketTableSkeleton viewName={viewName} /> : null}
+      {query.isPending ? (
+        <TableSkeleton label={`${viewName} 티켓 불러오는 중`} />
+      ) : null}
       {query.isError ? (
         <QueueError error={query.error} retry={() => query.refetch()} />
       ) : null}
       {query.data && query.data.items.length === 0 ? (
-        <section className="queue-state" role="status">
-          <h2>이 View에 표시할 티켓이 없습니다.</h2>
-          <p>필터를 해제하거나 새로고침해 보세요.</p>
-        </section>
+        <ScreenState
+          kind="empty"
+          title="이 View에 표시할 티켓이 없습니다."
+          description="필터를 해제하거나 새로고침해 보세요."
+          className="queue-state"
+        />
       ) : null}
       {query.data && query.data.items.length > 0 ? (
-        <div className="ticket-table-scroll">
-          <table className="ticket-table" aria-label={`${viewName} 티켓`}>
-            <thead>
-              <tr>
-                <th scope="col">상태</th>
-                <th scope="col">번호</th>
-                <th scope="col">제목</th>
-                <th scope="col">요청자</th>
-                <th scope="col">우선순위</th>
-                <th scope="col">그룹</th>
-                <th scope="col">담당자</th>
-                <th scope="col">업데이트</th>
-              </tr>
-            </thead>
-            <tbody>
-              {query.data.items.map((ticket) => (
-                <tr key={ticket.ticketNumber}>
-                  <td>
-                    <StatusBadge status={ticket.status} />
-                  </td>
-                  <td className="ticket-number">#{ticket.ticketNumber}</td>
-                  <td className="ticket-subject-cell">
-                    <Link
-                      to={`/agent/tickets/${ticket.ticketNumber}`}
-                      aria-label={`#${ticket.ticketNumber} ${ticket.subject} 열기`}
-                    >
-                      {ticket.subject}
-                    </Link>
-                    {ticket.isChild ? (
-                      <span className="row-kind">Child task</span>
-                    ) : null}
-                  </td>
-                  <td>{ticket.requester.displayName}</td>
-                  <td>
-                    <span
-                      className={`priority-label priority-${ticket.priority.toLowerCase()}`}
-                    >
-                      {ticket.priority}
-                    </span>
-                  </td>
-                  <td>{ticket.group?.name ?? '미배정'}</td>
-                  <td>{ticket.assignee?.displayName ?? '미배정'}</td>
-                  <td>
-                    <time dateTime={ticket.updatedAt}>
-                      {formatDate(ticket.updatedAt)}
-                    </time>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TicketTable
+          label={`${viewName} 티켓`}
+          items={query.data.items.map((ticket) => ({
+            ticketNumber: ticket.ticketNumber,
+            subject: ticket.subject,
+            status: ticket.status,
+            priority: ticket.priority,
+            requester: ticket.requester.displayName,
+            group: ticket.group?.name ?? '미배정',
+            assignee: ticket.assignee?.displayName ?? '미배정',
+            updatedLabel: formatDate(ticket.updatedAt),
+            isChild: ticket.isChild,
+          }))}
+        />
       ) : null}
 
       {query.data?.nextCursor ? (
@@ -249,34 +215,21 @@ function filtersFrom(searchParams: URLSearchParams): AgentTicketFilters {
   }
 }
 
-function TicketTableSkeleton({ viewName }: { viewName: string }) {
-  return (
-    <div
-      className="ticket-table-skeleton"
-      role="status"
-      aria-label={`${viewName} 티켓 불러오는 중`}
-      aria-busy="true"
-    >
-      <span />
-      <span />
-      <span />
-      <span />
-    </div>
-  )
-}
-
 function QueueError({ error, retry }: { error: Error; retry: () => void }) {
   const requestId = error instanceof ApiError ? error.requestId : undefined
   return (
-    <section className="queue-state queue-error" role="alert">
-      <h2>티켓 목록을 불러오지 못했습니다.</h2>
-      <p>
-        {requestId ? `요청 ID: ${requestId}` : '잠시 후 다시 시도해 주세요.'}
-      </p>
-      <button className="compact-button" type="button" onClick={retry}>
-        다시 시도
-      </button>
-    </section>
+    <ScreenState
+      kind="error"
+      title="티켓 목록을 불러오지 못했습니다."
+      description="잠시 후 다시 시도해 주세요."
+      requestId={requestId}
+      className="queue-state queue-error"
+      action={
+        <button className="compact-button" type="button" onClick={retry}>
+          다시 시도
+        </button>
+      }
+    />
   )
 }
 
