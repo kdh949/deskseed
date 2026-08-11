@@ -10,6 +10,7 @@ interface TicketTabsProps {
   status: AgentTicketStatus
   onRefresh: () => void
   refreshing?: boolean
+  unsaved?: boolean
 }
 
 export function TicketTabs({
@@ -20,6 +21,7 @@ export function TicketTabs({
   status,
   onRefresh,
   refreshing = false,
+  unsaved = false,
 }: TicketTabsProps) {
   return (
     <header className="ticket-tabbar">
@@ -31,12 +33,17 @@ export function TicketTabs({
           className="active-ticket-tab"
           role="tab"
           aria-selected="true"
-          aria-label={`티켓 #${ticketNumber} ${subject}`}
+          aria-label={`티켓 #${ticketNumber} ${subject}${unsaved ? ' 저장하지 않은 변경사항' : ''}`}
           tabIndex={0}
         >
           <StatusBadge status={status} />
           <span>#{ticketNumber}</span>
           <strong>{subject}</strong>
+          {unsaved ? (
+            <span className="ticket-unsaved-indicator">
+              <span aria-hidden="true">●</span> 미저장
+            </span>
+          ) : null}
         </div>
       </div>
       <button className="compact-button" type="button" onClick={onRefresh}>

@@ -197,11 +197,7 @@ export interface AgentTicketFilters {
 
 export type AgentReadIntent = 'NAVIGATION' | 'BACKGROUND'
 
-export type TicketFieldName =
-  | 'status'
-  | 'priority'
-  | 'groupId'
-  | 'assigneeId'
+export type TicketFieldName = 'status' | 'priority' | 'groupId' | 'assigneeId'
 
 export interface TicketAssignmentStaffOption {
   id: string

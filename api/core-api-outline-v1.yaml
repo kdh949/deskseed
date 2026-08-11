@@ -2215,7 +2215,7 @@ components:
           type: array
           items:
             type: string
-          description: `READ` is always present for a successful staff detail; `UPDATE` is present only when the current actor may mutate the current ticket.
+          description: "READ is always present for a successful staff detail; UPDATE is present only when the current actor may mutate the current ticket."
         assignmentOptions:
           $ref: '#/components/schemas/TicketAssignmentOptions'
         context:

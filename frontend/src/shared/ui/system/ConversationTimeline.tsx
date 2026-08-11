@@ -24,7 +24,11 @@ export function ConversationTimeline({
         </div>
         <span className="conversation-count">{items.length}</span>
       </header>
-      <ol className="conversation-list">
+      <ol
+        className="conversation-list"
+        aria-label="티켓 대화 목록"
+        tabIndex={0}
+      >
         {items.map((item) => (
           <li
             className={`conversation-entry conversation-${item.visibility.toLowerCase()}`}

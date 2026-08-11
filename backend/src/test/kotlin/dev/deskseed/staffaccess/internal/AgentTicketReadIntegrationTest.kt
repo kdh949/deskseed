@@ -81,6 +81,14 @@ class AgentTicketReadIntegrationTest {
             groupId = groupA,
             assigneeId = agentA,
         )
+        insertTicket(
+            number = 2003,
+            subject = "종료된 내 티켓",
+            status = "CLOSED",
+            priority = "NORMAL",
+            groupId = groupA,
+            assigneeId = agentA,
+        )
         val browser = login("agent-a@example.com", "Agent password 42")
 
         mockMvc.perform(get("/api/v1/agent/views").session(browser))
@@ -128,6 +136,11 @@ class AgentTicketReadIntegrationTest {
             .andExpect(jsonPath("$.capabilities.length()").value(2))
             .andExpect(jsonPath("$.capabilities[0]").value("READ"))
             .andExpect(jsonPath("$.capabilities[1]").value("UPDATE"))
+
+        mockMvc.perform(ticketDetail(2003, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capabilities.length()").value(1))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
 
         mockMvc.perform(get("/api/v1/agent/tickets/2001"))
             .andExpect(status().isUnauthorized)

@@ -63,7 +63,9 @@ export function changedTicketFields(
   serverFields: EditableTicketFields,
   localFields: EditableTicketFields,
 ): TicketFieldName[] {
-  return FIELD_ORDER.filter((field) => serverFields[field] !== localFields[field])
+  return FIELD_ORDER.filter(
+    (field) => serverFields[field] !== localFields[field],
+  )
 }
 
 export function buildUpdateTicketCommand({
@@ -90,7 +92,8 @@ export function buildUpdateTicketCommand({
     clientCommandId,
   }
   if (changedFields.includes('status')) command.status = localFields.status
-  if (changedFields.includes('priority')) command.priority = localFields.priority
+  if (changedFields.includes('priority'))
+    command.priority = localFields.priority
   if (changedFields.includes('groupId')) command.groupId = localFields.groupId
   if (changedFields.includes('assigneeId')) {
     command.assigneeId = localFields.assigneeId

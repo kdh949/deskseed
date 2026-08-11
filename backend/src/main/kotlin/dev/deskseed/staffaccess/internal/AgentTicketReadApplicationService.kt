@@ -14,6 +14,7 @@ import dev.deskseed.ticketing.StaffTicketListFilter
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSummary
+import dev.deskseed.ticketing.TicketStatus
 import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -159,11 +160,12 @@ internal class AgentTicketReadApplicationService(
         } catch (exception: DataAccessException) {
             throw AccessAuditUnavailableException(exception)
         }
-        val canUpdate = writeAuthorizationPolicy.canUpdate(
-            principal = principal,
-            currentGroupId = detail.ticket.group?.id,
-            currentAssigneeId = detail.ticket.assignee?.id,
-        )
+        val canUpdate = detail.ticket.status != TicketStatus.CLOSED &&
+            writeAuthorizationPolicy.canUpdate(
+                principal = principal,
+                currentGroupId = detail.ticket.group?.id,
+                currentAssigneeId = detail.ticket.assignee?.id,
+            )
         return AgentTicketWorkspaceDetail(
             detail = detail,
             capabilities = if (canUpdate) listOf("READ", "UPDATE") else listOf("READ"),

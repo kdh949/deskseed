@@ -1,10 +1,22 @@
-import { useId, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 
 export type ComposerMode = 'PUBLIC' | 'INTERNAL'
 
 interface ComposerModeSeamProps {
   initialMode?: ComposerMode
   disabledReason?: string
+  mode?: ComposerMode
+  drafts?: Record<ComposerMode, string>
+  onModeChange?: (mode: ComposerMode) => void
+  onDraftChange?: (mode: ComposerMode, value: string) => void
+  footer?: ReactNode
+  busy?: boolean
 }
 
 const MODES = [
@@ -12,16 +24,20 @@ const MODES = [
   { value: 'INTERNAL', label: '내부 메모', icon: '◆' },
 ] as const
 
-/**
- * Local-only seam for the later command composer. It deliberately has no
- * network submit behavior in this read-only PR.
- */
 export function ComposerModeSeam({
   initialMode = 'PUBLIC',
   disabledReason,
+  mode: controlledMode,
+  drafts: controlledDrafts,
+  onModeChange,
+  onDraftChange,
+  footer,
+  busy = false,
 }: ComposerModeSeamProps) {
-  const [mode, setMode] = useState<ComposerMode>(initialMode)
-  const [drafts, setDrafts] = useState({ PUBLIC: '', INTERNAL: '' })
+  const [localMode, setLocalMode] = useState<ComposerMode>(initialMode)
+  const [localDrafts, setLocalDrafts] = useState({ PUBLIC: '', INTERNAL: '' })
+  const mode = controlledMode ?? localMode
+  const drafts = controlledDrafts ?? localDrafts
   const baseId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const statusId = `${baseId}-status`
@@ -30,6 +46,18 @@ export function ComposerModeSeam({
   const tabId = (nextMode: ComposerMode) => `${baseId}-tab-${nextMode}`
   const panelId = (nextMode: ComposerMode) => `${baseId}-panel-${nextMode}`
   const draftId = (nextMode: ComposerMode) => `${baseId}-draft-${nextMode}`
+
+  const selectMode = (nextMode: ComposerMode) => {
+    if (controlledMode === undefined) setLocalMode(nextMode)
+    onModeChange?.(nextMode)
+  }
+
+  const updateDraft = (nextMode: ComposerMode, value: string) => {
+    if (controlledDrafts === undefined) {
+      setLocalDrafts((current) => ({ ...current, [nextMode]: value }))
+    }
+    onDraftChange?.(nextMode, value)
+  }
 
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -45,7 +73,7 @@ export function ComposerModeSeam({
             : (index - 1 + MODES.length) % MODES.length
     const nextMode = MODES[nextIndex]
     if (!nextMode) return
-    setMode(nextMode.value)
+    selectMode(nextMode.value)
     tabRefs.current[nextIndex]?.focus()
   }
 
@@ -79,7 +107,7 @@ export function ComposerModeSeam({
                 aria-selected={selected}
                 aria-controls={panelId(option.value)}
                 tabIndex={selected ? 0 : -1}
-                onClick={() => setMode(option.value)}
+                onClick={() => selectMode(option.value)}
                 onKeyDown={(event) => moveTab(event, index)}
               >
                 <span aria-hidden="true">{option.icon}</span> {option.label}
@@ -114,12 +142,10 @@ export function ComposerModeSeam({
               aria-describedby={statusId}
               value={drafts[option.value]}
               onChange={(event) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [option.value]: event.target.value,
-                }))
+                updateDraft(option.value, event.target.value)
               }
-              disabled={Boolean(disabledReason)}
+              disabled={Boolean(disabledReason) || busy}
+              maxLength={20_000}
             />
             {disabledReason ? (
               <p className="composer-disabled-reason">{disabledReason}</p>
@@ -127,6 +153,7 @@ export function ComposerModeSeam({
           </div>
         )
       })}
+      {footer}
     </section>
   )
 }
