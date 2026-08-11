@@ -194,6 +194,9 @@ internal class AgentTicketCommandTransaction(
         if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
             throw TicketWriteForbiddenException()
         }
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets are immutable")
+        }
         if (
             ticket.kind == TicketKind.INTERNAL_CHILD &&
             command.comment?.visibility == CommentVisibility.PUBLIC

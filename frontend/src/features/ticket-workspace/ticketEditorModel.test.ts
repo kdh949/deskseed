@@ -5,6 +5,7 @@ import {
   createEditableTicketFields,
   mergeLatestFields,
   readTicketDraft,
+  reconcileLatestFields,
   resolveConflictField,
   ticketDraftStorageKey,
   writeTicketDraft,
@@ -55,6 +56,43 @@ describe('ticket editor model', () => {
         },
       }),
     ).toEqual({ ...serverFields, status: 'PENDING', priority: 'HIGH' })
+  })
+
+  it('adds every dirty field changed by the server to the explicit conflict set', () => {
+    const reconciled = reconcileLatestFields({
+      confirmedFields: serverFields,
+      localFields: {
+        ...serverFields,
+        status: 'PENDING',
+        priority: 'HIGH',
+      },
+      latestFields: {
+        ...serverFields,
+        status: 'SOLVED',
+        priority: 'URGENT',
+      },
+      knownConflictFields: new Set(['status']),
+    })
+
+    expect(reconciled.localFields).toEqual({
+      ...serverFields,
+      status: 'PENDING',
+      priority: 'HIGH',
+    })
+    expect(reconciled.conflictingFields).toEqual(
+      new Set(['status', 'priority']),
+    )
+  })
+
+  it('detects a dirty same-field server change during a manual refresh', () => {
+    const reconciled = reconcileLatestFields({
+      confirmedFields: serverFields,
+      localFields: { ...serverFields, status: 'PENDING' },
+      latestFields: { ...serverFields, status: 'SOLVED' },
+    })
+
+    expect(reconciled.localFields.status).toBe('PENDING')
+    expect(reconciled.conflictingFields).toEqual(new Set(['status']))
   })
 
   it('requires an explicit server or local choice for a conflicting field', () => {

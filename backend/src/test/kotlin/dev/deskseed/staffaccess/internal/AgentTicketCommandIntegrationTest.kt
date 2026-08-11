@@ -256,6 +256,59 @@ class AgentTicketCommandIntegrationTest {
     }
 
     @Test
+    fun `closed ticket rejects comment-only and field-only commands without mutation`() {
+        val agentId = insertStaff("closed-writer@example.com", "종료 티켓 상담사", "AGENT")
+        val groupId = insertGroup("종료 티켓 그룹", agentId)
+        val browser = login("closed-writer@example.com")
+        val created = createAssignedTicket(browser, agentId, groupId, "closed-command@example.com")
+        jdbcTemplate.update("update tickets set status = 'CLOSED' where id = ?", created.ticketId)
+        val auditCountBefore = auditCount(created.ticketId)
+        val commentCountBefore = commentCount(created.ticketId)
+
+        performCommand(
+            browser,
+            created.ticketNumber,
+            "request-closed-comment-only",
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": [],
+              "comment": {"visibility": "INTERNAL", "body": "종료 티켓에 남으면 안 되는 메모"}
+            }
+            """.trimIndent(),
+        )
+            .andExpect(status().isUnprocessableContent)
+            .andExpect(jsonPath("$.type").value("/problems/ticket-status-transition-invalid"))
+
+        performCommand(
+            browser,
+            created.ticketNumber,
+            "request-closed-field-only",
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": ["priority"],
+              "priority": "URGENT"
+            }
+            """.trimIndent(),
+        )
+            .andExpect(status().isUnprocessableContent)
+            .andExpect(jsonPath("$.type").value("/problems/ticket-status-transition-invalid"))
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select status, priority, version from tickets where id = ?",
+                created.ticketId,
+            ),
+        )
+            .containsEntry("status", "CLOSED")
+            .containsEntry("priority", "NORMAL")
+            .containsEntry("version", 0L)
+        assertThat(commentCount(created.ticketId)).isEqualTo(commentCountBefore)
+        assertThat(auditCount(created.ticketId)).isEqualTo(auditCountBefore)
+    }
+
+    @Test
     fun `global read does not grant cross-group write and assignment requires active target membership`() {
         val agentA = insertStaff("agent-a@example.com", "상담사 A", "AGENT")
         val agentB = insertStaff("agent-b@example.com", "상담사 B", "AGENT")

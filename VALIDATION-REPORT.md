@@ -25,15 +25,15 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Canonical Docs: 55
 - Core Api Requirement Links: 37
 - Decision Definitions: 47
-- E2E Visual Baselines: 60
+- E2E Visual Baselines: 62
 - Json Files: 8
-- Markdown Files: 142
+- Markdown Files: 143
 - Openapi Operations: 53
 - Openapi Paths: 43
 - Requirement Definitions: 78
 - Task Briefs: 26
 - Verification Gate Definitions: 127
-- Yaml Files: 16
+- Yaml Files: 15
 
 ## Errors
 

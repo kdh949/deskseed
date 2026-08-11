@@ -22,7 +22,20 @@ const STATUS_OPTIONS: Array<[AgentTicketStatus, string]> = [
   ['PENDING', '고객 답변 대기'],
   ['ON_HOLD', '보류'],
   ['SOLVED', '해결됨'],
+  ['CLOSED', '종료'],
 ]
+
+const ALLOWED_STATUS_TRANSITIONS: Record<
+  AgentTicketStatus,
+  readonly AgentTicketStatus[]
+> = {
+  NEW: ['OPEN', 'PENDING', 'SOLVED'],
+  OPEN: ['PENDING', 'ON_HOLD', 'SOLVED'],
+  PENDING: ['OPEN', 'SOLVED'],
+  ON_HOLD: ['OPEN', 'SOLVED'],
+  SOLVED: ['OPEN'],
+  CLOSED: [],
+}
 
 const PRIORITY_OPTIONS: Array<[TicketPriority, string]> = [
   ['LOW', '낮음'],
@@ -58,6 +71,12 @@ export function TicketPropertiesEditor({
 }) {
   const selectedGroup = detail.assignmentOptions.groups.find(
     (group) => group.id === localFields.groupId,
+  )
+  const statusOptions = STATUS_OPTIONS.filter(
+    ([status]) =>
+      status === detail.ticket.status ||
+      status === localFields.status ||
+      ALLOWED_STATUS_TRANSITIONS[detail.ticket.status].includes(status),
   )
   return (
     <section className="ticket-properties-panel" aria-label="티켓 속성">
@@ -150,14 +169,11 @@ export function TicketPropertiesEditor({
               onFieldChange('status', event.target.value as AgentTicketStatus)
             }
           >
-            {STATUS_OPTIONS.map(([value, label]) => (
+            {statusOptions.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
             ))}
-            {localFields.status === 'CLOSED' ? (
-              <option value="CLOSED">종료</option>
-            ) : null}
           </select>
         </label>
         <label>
