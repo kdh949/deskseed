@@ -18,6 +18,13 @@ server:
         secure: true
 
 deskseed:
+  audit:
+    access:
+      enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
+      active-key-version: ${DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION:v1}
+      ciphertext-retention: ${DESKSEED_ACCESS_AUDIT_QUERY_CIPHERTEXT_RETENTION:30d}
+      keys:
+        v1: ${DESKSEED_ACCESS_AUDIT_KEY_V1}
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS}
   agent-ticket-read:

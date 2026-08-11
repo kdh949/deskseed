@@ -504,6 +504,13 @@ paths:
           enum:
           - NAVIGATION
           - BACKGROUND
+      - name: X-Origin-Search-Event-Id
+        in: header
+        required: false
+        description: "Canonical SEARCH_EXECUTED event selected by a search-result navigation. Accepted only for NAVIGATION reads by the same staff actor; successful use records SEARCH_RESULT_OPENED and links TICKET_VIEWED to the search event."
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: Agent ticket detail
@@ -717,52 +724,43 @@ paths:
         '403': *id001
         '404': *id001
   /api/v1/agent/search:
-    get:
-      summary: Search accessible tickets and customers
+    post:
+      summary: Search accessible tickets without placing the raw query in the URL
       operationId: searchAgentWorkspace
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Search
       x-deskseed-phase: R1
       x-deskseed-requirements:
+      - REQ-AUD-003
       - REQ-AUD-004
+      - REQ-AUD-005
+      - REQ-AUD-008
+      - REQ-PERM-001
       - REQ-SRCH-001
       security:
       - staffSession: []
       parameters:
-      - name: q
-        in: query
-        required: true
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 500
-      - name: scope
-        in: query
-        schema:
-          type: string
-          enum:
-          - TICKETS
-          - CUSTOMERS
-          default: TICKETS
-      - name: cursor
-        in: query
-        schema:
-          type: string
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 25
       - *id005
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTicketSearchRequest'
       responses:
         '200':
-          description: Search result page
+          description: Authorized ticket search results returned only after the canonical SEARCH_EXECUTED event commits.
+          headers:
+            Cache-Control:
+              description: Always no-store because the result is a protected staff projection.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SearchResultPage'
+                $ref: '#/components/schemas/AgentTicketSearchPage'
         '400': *id001
         '401': *id001
         '403': *id001
@@ -2687,50 +2685,89 @@ components:
           type:
           - string
           - 'null'
-    SearchResult:
+    AgentTicketSearchFilters:
       type: object
-      required:
-      - type
-      - id
-      - title
+      additionalProperties: false
       properties:
-        type:
+        status:
           type: string
           enum:
-          - TICKET
-          - CUSTOMER
-        id:
+          - NEW
+          - OPEN
+          - PENDING
+          - ON_HOLD
+          - SOLVED
+          - CLOSED
+        priority:
           type: string
-        title:
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
+        groupId:
           type: string
-        snippet:
-          type: string
-        ticketNumber:
-          type:
-          - integer
-          - 'null'
-          format: int64
-    SearchResultPage:
+          format: uuid
+        assigneeId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: string
+            enum:
+            - me
+            - unassigned
+    AgentTicketSearchRequest:
       type: object
+      additionalProperties: false
       required:
+      - query
+      - filters
+      - sort
+      - limit
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+        filters:
+          $ref: '#/components/schemas/AgentTicketSearchFilters'
+        sort:
+          type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+    AgentTicketSearchPage:
+      type: object
+      additionalProperties: false
+      required:
+      - searchEventId
       - searchInteractionId
       - items
+      - resultCount
+      - sort
       properties:
+        searchEventId:
+          type: string
+          format: uuid
         searchInteractionId:
           type: string
           format: uuid
         items:
           type: array
           items:
-            $ref: '#/components/schemas/SearchResult'
-        nextCursor:
-          type:
-          - string
-          - 'null'
-        resultCountApproximate:
-          type:
-          - integer
-          - 'null'
+            $ref: '#/components/schemas/TicketSummary'
+        resultCount:
+          type: integer
+          format: int64
+          minimum: 0
+        sort:
+          type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
     StaffAccount:
       type: object
       additionalProperties: false

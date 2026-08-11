@@ -20,6 +20,10 @@ routes:
     actor: agent
     phase: m2
     screen: ticket_workspace
+  - path: "/agent/search"
+    actor: agent
+    phase: r1
+    screen: agent_ticket_search
   - path: "/admin/people/staff"
     actor: admin
     phase: m6
