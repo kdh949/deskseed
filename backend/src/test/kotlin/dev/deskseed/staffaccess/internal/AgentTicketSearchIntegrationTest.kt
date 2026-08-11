@@ -1,6 +1,8 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.audit.internal.SearchQueryCiphertextRetentionJob
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -41,11 +43,14 @@ class AgentTicketSearchIntegrationTest {
     @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
 
+    @Autowired
+    private lateinit var ciphertextRetentionJob: SearchQueryCiphertextRetentionJob
+
     @BeforeEach
     fun clearState() {
         if (tableExists("search_audit_query_ciphertexts")) {
             jdbcTemplate.execute(
-                "truncate table search_audit_query_ciphertexts, search_audit_details, access_audit_events",
+                "truncate table search_audit_query_ciphertexts, search_audit_result_items, search_audit_details, access_audit_events",
             )
         } else if (tableExists("access_audit_events")) {
             jdbcTemplate.execute("truncate table access_audit_events")
@@ -133,6 +138,16 @@ class AgentTicketSearchIntegrationTest {
         assertThat(detail["filters"].toString()).contains("\"priority\": \"HIGH\"")
         assertThat(detail["sort"]).isEqualTo("updatedAt:desc,ticketNumber:desc")
         assertThat(detail["result_count"]).isEqualTo(2L)
+        assertThat(
+            jdbcTemplate.queryForList(
+                """
+                select ticket_number from search_audit_result_items
+                where access_event_id = ? order by result_ordinal
+                """.trimIndent(),
+                Long::class.java,
+                searchEventId,
+            ),
+        ).containsExactly(8103L, 8101L)
 
         val ciphertext = jdbcTemplate.queryForMap(
             """
@@ -147,6 +162,17 @@ class AgentTicketSearchIntegrationTest {
         val createdAt = (ciphertext["created_at"] as Timestamp).toInstant()
         val expiresAt = (ciphertext["expires_at"] as Timestamp).toInstant()
         assertThat(Duration.between(createdAt, expiresAt)).isEqualTo(Duration.ofDays(30))
+        assertThat(
+            jdbcTemplate.queryForList(
+                """
+                select column_name from information_schema.columns
+                where table_schema = 'public'
+                  and table_name like 'search_audit%'
+                  and column_name in ('query', 'raw_query', 'query_plaintext', 'query_original')
+                """.trimIndent(),
+                String::class.java,
+            ),
+        ).isEmpty()
     }
 
     @Test
@@ -203,9 +229,23 @@ class AgentTicketSearchIntegrationTest {
         val agent = insertStaff("invalid-origin@example.com", "Agent password 42", "원점 상담사")
         val group = insertGroup("원점 그룹", agent)
         insertTicket(8301, "원점 검증 대상", "OPEN", "NORMAL", group, agent)
+        insertTicket(8302, "다른 검색 결과", "OPEN", "NORMAL", group, agent)
         val browser = login("invalid-origin@example.com", "Agent password 42")
 
         mockMvc.perform(ticketDetail(8301, browser, UUID.randomUUID(), UUID.randomUUID()))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/invalid-search-origin"))
+            .andExpect(jsonPath("$.ticket").doesNotExist())
+
+        val unrelatedSearch = mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """{"query":"다른 검색 결과","filters":{},"sort":"updatedAt:desc,ticketNumber:desc","limit":25}""",
+            ),
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val unrelatedSearchEventId = UUID.fromString(stringField(unrelatedSearch, "searchEventId"))
+        mockMvc.perform(ticketDetail(8301, browser, UUID.randomUUID(), unrelatedSearchEventId))
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.type").value("/problems/invalid-search-origin"))
             .andExpect(jsonPath("$.ticket").doesNotExist())
@@ -245,6 +285,18 @@ class AgentTicketSearchIntegrationTest {
 
         mockMvc.perform(get("/api/v1/audit/activities").session(browser))
             .andExpect(status().isForbidden)
+
+        val anonymousCsrf = mockMvc.perform(get("/api/v1/agent/csrf"))
+            .andExpect(status().isOk)
+            .andReturn()
+        mockMvc.perform(
+            post("/api/v1/agent/search")
+                .session(anonymousCsrf.request.session as MockHttpSession)
+                .header("X-CSRF-TOKEN", stringField(anonymousCsrf.response.contentAsString, "token"))
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query":"감사 장애","filters":{},"sort":"updatedAt:desc,ticketNumber:desc","limit":25}"""),
+        ).andExpect(status().isUnauthorized)
     }
 
     @Test
@@ -270,6 +322,73 @@ class AgentTicketSearchIntegrationTest {
             String::class.java,
         )
         assertThat(redacted).isEqualTo("token=[REDACTED]")
+    }
+
+    @Test
+    fun `ciphertext retention deletes only expired rows and rolls back when its execution audit fails`() {
+        val now = Instant.parse("2026-08-12T00:00:00Z")
+        val expiredEvent = insertSearchAuditCiphertext(now.minusSeconds(60), now.minusSeconds(1))
+        val retainedEvent = insertSearchAuditCiphertext(now.minusSeconds(60), now.plusSeconds(3600))
+
+        val first = ciphertextRetentionJob.purgeExpired(now)
+        val second = ciphertextRetentionJob.purgeExpired(now)
+
+        assertThat(first).isEqualTo(1)
+        assertThat(second).isZero()
+        assertThat(
+            jdbcTemplate.queryForList(
+                "select access_event_id from search_audit_query_ciphertexts order by access_event_id",
+                UUID::class.java,
+            ),
+        ).containsExactly(retainedEvent)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from access_audit_events where id in (?, ?)",
+                Long::class.java,
+                expiredEvent,
+                retainedEvent,
+            ),
+        ).isEqualTo(2)
+        val execution = jdbcTemplate.queryForMap(
+            """
+            select actor_type, source, outcome, metadata_json
+            from admin_security_audit_events
+            where event_type = 'RETENTION_JOB_EXECUTED'
+              and metadata_json::jsonb ->> 'deletedCount' = '1'
+            limit 1
+            """.trimIndent(),
+        )
+        assertThat(execution["actor_type"]).isEqualTo("SYSTEM")
+        assertThat(execution["source"]).isEqualTo("SYSTEM_JOB")
+        assertThat(execution["outcome"]).isEqualTo("SUCCEEDED")
+        assertThat(execution["metadata_json"].toString())
+            .contains("search-query-ciphertext-v1")
+            .contains("\"deletedCount\":\"1\"")
+
+        val rollbackEvent = insertSearchAuditCiphertext(now.minusSeconds(60), now.minusSeconds(1))
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_retention_audit_insert() returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected retention audit failure'; end; ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_retention_audit before insert on admin_security_audit_events for each row execute function fail_retention_audit_insert()",
+        )
+        try {
+            assertThatThrownBy { ciphertextRetentionJob.purgeExpired(now) }
+                .hasMessageContaining("injected retention audit failure")
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_retention_audit on admin_security_audit_events")
+            jdbcTemplate.execute("drop function if exists fail_retention_audit_insert()")
+        }
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from search_audit_query_ciphertexts where access_event_id = ?",
+                Long::class.java,
+                rollbackEvent,
+            ),
+        ).isEqualTo(1)
     }
 
     private fun search(session: MockHttpSession, interactionId: UUID, body: String) =
@@ -395,6 +514,38 @@ class AgentTicketSearchIntegrationTest {
             Timestamp.from(updatedAt.minusSeconds(60)),
             Timestamp.from(updatedAt),
         )
+    }
+
+    private fun insertSearchAuditCiphertext(createdAt: Instant, expiresAt: Instant): UUID {
+        val eventId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                source, action, resource_type, resource_id, ticket_number,
+                interaction_id, request_id, correlation_id, outcome, http_status
+            ) values (?, ?, 'STAFF', ?, 'retention-test', 'AGENT_UI', 'SEARCH_EXECUTED',
+                      'SEARCH', null, null, ?, ?, ?, 'SUCCEEDED', 200)
+            """.trimIndent(),
+            eventId,
+            Timestamp.from(createdAt),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "retention-test-$eventId",
+            "retention-test-$eventId",
+        )
+        jdbcTemplate.update(
+            """
+            insert into search_audit_query_ciphertexts
+                (access_event_id, key_version, query_ciphertext, created_at, expires_at)
+            values (?, 'local-v1', ?, ?, ?)
+            """.trimIndent(),
+            eventId,
+            ByteArray(29) { 1 },
+            Timestamp.from(createdAt),
+            Timestamp.from(expiresAt),
+        )
+        return eventId
     }
 
     private fun tableExists(name: String): Boolean = jdbcTemplate.queryForObject(

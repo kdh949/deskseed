@@ -68,9 +68,16 @@ data class SearchExecutedAccessAudit(
     val normalizedFilters: Map<String, String>,
     val sort: String,
     val resultCount: Long,
+    val resultItems: List<SearchResultAuditItem>,
     val outcome: AccessAuditOutcome,
     val httpStatus: Int,
     val occurredAt: Instant,
+)
+
+data class SearchResultAuditItem(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ordinal: Int,
 )
 
 data class SearchResultOpenedAccessAudit(
@@ -104,7 +111,12 @@ interface AccessAuditWriter {
 
     fun appendSearchExecuted(event: SearchExecutedAccessAudit)
 
-    fun isValidSearchOrigin(originSearchEventId: UUID, actorId: UUID, sessionFingerprint: String): Boolean
+    fun isValidSearchOrigin(
+        originSearchEventId: UUID,
+        actorId: UUID,
+        sessionFingerprint: String,
+        ticketId: UUID,
+    ): Boolean
 
     /** Returns true when a new result-open event was appended, false for a duplicate interaction. */
     fun appendSearchResultOpened(event: SearchResultOpenedAccessAudit): Boolean

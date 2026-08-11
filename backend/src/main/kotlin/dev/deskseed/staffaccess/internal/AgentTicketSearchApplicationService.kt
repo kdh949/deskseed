@@ -8,6 +8,7 @@ import dev.deskseed.audit.AccessAuditSessionFingerprint
 import dev.deskseed.audit.AccessAuditWriter
 import dev.deskseed.audit.SearchExecutedAccessAudit
 import dev.deskseed.audit.SearchQueryProtector
+import dev.deskseed.audit.SearchResultAuditItem
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.StaffTicketReadScope
@@ -97,6 +98,9 @@ internal class AgentTicketSearchApplicationService(
                     normalizedFilters = normalizedFilters(request.filters),
                     sort = request.sort,
                     resultCount = result.resultCount,
+                    resultItems = result.items.mapIndexed { ordinal, ticket ->
+                        SearchResultAuditItem(ticket.id, ticket.ticketNumber, ordinal)
+                    },
                     outcome = AccessAuditOutcome.SUCCEEDED,
                     httpStatus = 200,
                     occurredAt = occurredAt,

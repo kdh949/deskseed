@@ -54,6 +54,24 @@ create table search_audit_details (
 create index search_audit_fingerprint_idx
     on search_audit_details (query_fingerprint, access_event_id);
 
+create table search_audit_result_items (
+    access_event_id uuid not null references access_audit_events (id),
+    ticket_id uuid not null,
+    ticket_number bigint not null,
+    result_ordinal integer not null,
+    primary key (access_event_id, ticket_id),
+    constraint search_audit_result_ordinal_unique unique (access_event_id, result_ordinal),
+    constraint search_audit_result_ticket_number_positive check (ticket_number > 0),
+    constraint search_audit_result_ordinal_nonnegative check (result_ordinal >= 0)
+);
+
+create index search_audit_result_ticket_idx
+    on search_audit_result_items (ticket_id, access_event_id);
+
+create trigger search_audit_result_items_immutable
+before update or delete on search_audit_result_items
+for each row execute function reject_access_audit_mutation();
+
 create table search_audit_query_ciphertexts (
     access_event_id uuid primary key references access_audit_events (id),
     key_version varchar(64) not null,

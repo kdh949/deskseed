@@ -21,6 +21,7 @@ class SearchQueryProtectionTest {
 
         assertThat(protected.queryRedacted).doesNotContain("correct-horse-battery-staple")
         assertThat(protected.queryRedacted).doesNotContain("customer@example.com")
+        assertThat(protected.queryRedacted).doesNotContain("\n", "\r", "\u0000")
         assertThat(protected.queryFingerprint).isNotBlank()
         assertThat(protected.keyVersion).isEqualTo("v1")
         assertThat(String(protected.queryCiphertext, Charsets.UTF_8)).doesNotContain(rawQuery)
@@ -86,6 +87,10 @@ class SearchQueryProtectionTest {
 
         assertThatThrownBy {
             protection(activeVersion = "v1", "v1" to Base64.getEncoder().encodeToString(ByteArray(16)))
+        }.isInstanceOf(SearchQueryConfigurationException::class.java)
+
+        assertThatThrownBy {
+            protection(activeVersion = "v".repeat(65), "v".repeat(65) to key(7))
         }.isInstanceOf(SearchQueryConfigurationException::class.java)
     }
 

@@ -154,6 +154,7 @@ internal class AgentTicketReadApplicationService(
                             originSearchEventId,
                             principal.id,
                             auditContext.sessionFingerprint!!,
+                            detail.ticket.id,
                         )
                     )
             ) {

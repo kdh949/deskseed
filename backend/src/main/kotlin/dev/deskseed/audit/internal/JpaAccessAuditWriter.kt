@@ -36,7 +36,7 @@ internal class JpaAccessAuditWriter(
             Timestamp.from(event.occurredAt),
             event.context.actorType.name,
             event.context.actorId,
-            event.context.actorDisplaySnapshot.take(100),
+            actorSnapshot(event.context.actorDisplaySnapshot),
             event.context.source.name,
             event.ticketId,
             event.ticketNumber,
@@ -71,7 +71,7 @@ internal class JpaAccessAuditWriter(
             Timestamp.from(event.occurredAt),
             event.context.actorType.name,
             event.context.actorId,
-            event.context.actorDisplaySnapshot.take(100),
+            actorSnapshot(event.context.actorDisplaySnapshot),
             event.context.source.name,
             event.ticketId,
             event.ticketNumber,
@@ -93,6 +93,15 @@ internal class JpaAccessAuditWriter(
         validateStaffContext(event.context)
         require(event.outcome == AccessAuditOutcome.SUCCEEDED) { "Canonical search audit requires success outcome" }
         require(event.resultCount >= 0) { "Search result count cannot be negative" }
+        require(event.resultItems.size <= 100 && event.resultItems.size <= event.resultCount) {
+            "Search result audit membership must be bounded by the result count"
+        }
+        require(event.resultItems.map { it.ticketId }.distinct().size == event.resultItems.size) {
+            "Search result audit membership cannot contain duplicate tickets"
+        }
+        require(event.resultItems.map { it.ordinal } == event.resultItems.indices.toList()) {
+            "Search result audit membership ordinals must be contiguous"
+        }
         jdbcTemplate.update(
             """
             insert into access_audit_events (
@@ -106,7 +115,7 @@ internal class JpaAccessAuditWriter(
             Timestamp.from(event.occurredAt),
             event.context.actorType.name,
             event.context.actorId,
-            event.context.actorDisplaySnapshot.take(100),
+            actorSnapshot(event.context.actorDisplaySnapshot),
             event.context.source.name,
             event.interactionId,
             event.context.sessionFingerprint?.take(100),
@@ -133,6 +142,22 @@ internal class JpaAccessAuditWriter(
             event.sort,
             event.resultCount,
         )
+        if (event.resultItems.isNotEmpty()) {
+            jdbcTemplate.batchUpdate(
+                """
+                insert into search_audit_result_items (
+                    access_event_id, ticket_id, ticket_number, result_ordinal
+                ) values (?, ?, ?, ?)
+                """.trimIndent(),
+                event.resultItems,
+                event.resultItems.size,
+            ) { statement, item ->
+                statement.setObject(1, event.eventId)
+                statement.setObject(2, item.ticketId)
+                statement.setLong(3, item.ticketNumber)
+                statement.setInt(4, item.ordinal)
+            }
+        }
         jdbcTemplate.update(
             """
             insert into search_audit_query_ciphertexts (
@@ -152,18 +177,24 @@ internal class JpaAccessAuditWriter(
         originSearchEventId: UUID,
         actorId: UUID,
         sessionFingerprint: String,
+        ticketId: UUID,
     ): Boolean = jdbcTemplate.queryForObject(
         """
         select exists (
-            select 1 from access_audit_events
-            where id = ? and action = 'SEARCH_EXECUTED' and outcome = 'SUCCEEDED'
-              and actor_type = 'STAFF' and actor_id = ? and session_fingerprint = ?
+            select 1
+            from access_audit_events event
+            join search_audit_result_items result_item
+              on result_item.access_event_id = event.id
+            where event.id = ? and event.action = 'SEARCH_EXECUTED' and event.outcome = 'SUCCEEDED'
+              and event.actor_type = 'STAFF' and event.actor_id = ? and event.session_fingerprint = ?
+              and result_item.ticket_id = ?
         )
         """.trimIndent(),
         Boolean::class.java,
         originSearchEventId,
         actorId,
         sessionFingerprint,
+        ticketId,
     ) == true
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -185,7 +216,7 @@ internal class JpaAccessAuditWriter(
             Timestamp.from(event.occurredAt),
             event.context.actorType.name,
             event.context.actorId,
-            event.context.actorDisplaySnapshot.take(100),
+            actorSnapshot(event.context.actorDisplaySnapshot),
             event.context.source.name,
             event.ticketId,
             event.ticketNumber,
@@ -211,6 +242,10 @@ internal class JpaAccessAuditWriter(
     private fun sanitize(value: String?, maxLength: Int): String? = value
         ?.filterNot { it.isISOControl() }
         ?.take(maxLength)
+
+    private fun actorSnapshot(value: String): String = sanitize(value, 100)
+        ?.ifBlank { "STAFF" }
+        ?: "STAFF"
 
     private fun filtersJson(filters: Map<String, String>): String = filters.entries
         .sortedBy(Map.Entry<String, String>::key)

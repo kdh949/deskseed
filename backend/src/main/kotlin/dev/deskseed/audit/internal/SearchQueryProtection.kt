@@ -32,6 +32,7 @@ internal data class SearchQueryAuditProperties(
     val activeKeyVersion: String = "",
     val keys: Map<String, String> = emptyMap(),
     val ciphertextRetention: Duration = Duration.ofDays(30),
+    val retentionBatchSize: Int = 1000,
 )
 
 internal class SearchQueryConfigurationException(message: String, cause: Throwable? = null) :
@@ -51,12 +52,18 @@ internal class SearchQueryProtection(
             if (properties.activeKeyVersion.isBlank()) {
                 throw SearchQueryConfigurationException("Access audit active key version is required")
             }
+            if (properties.activeKeyVersion.length > MAX_KEY_VERSION_LENGTH) {
+                throw SearchQueryConfigurationException("Access audit active key version is too long")
+            }
             if (decodedKeys[properties.activeKeyVersion] == null) {
                 throw SearchQueryConfigurationException("Access audit active key version is not configured")
             }
         }
         if (properties.ciphertextRetention.isZero || properties.ciphertextRetention.isNegative) {
             throw SearchQueryConfigurationException("Search query ciphertext retention must be positive")
+        }
+        if (properties.retentionBatchSize !in 1..10_000) {
+            throw SearchQueryConfigurationException("Search query ciphertext retention batch size must be between 1 and 10000")
         }
     }
 
@@ -156,6 +163,7 @@ internal class SearchQueryProtection(
 
     private fun redact(rawQuery: String): String {
         var redacted = Normalizer.normalize(rawQuery, Normalizer.Form.NFKC)
+            .filterNot { it.isISOControl() && !it.isWhitespace() }
             .replace(WHITESPACE, " ")
             .trim()
         redacted = AUTHORIZATION.replace(redacted) { match -> "${match.groupValues[1]} [REDACTED]" }
@@ -170,7 +178,9 @@ internal class SearchQueryProtection(
 
     private fun decodeKeys(properties: SearchQueryAuditProperties): Map<String, ByteArray> =
         properties.keys.mapValues { (version, encoded) ->
-            if (version.isBlank()) throw SearchQueryConfigurationException("Access audit key version is blank")
+            if (version.isBlank() || version.length > MAX_KEY_VERSION_LENGTH) {
+                throw SearchQueryConfigurationException("Access audit key version must contain between 1 and 64 characters")
+            }
             val decoded = try {
                 Base64.getDecoder().decode(encoded)
             } catch (exception: IllegalArgumentException) {
@@ -184,6 +194,7 @@ internal class SearchQueryProtection(
 
     private companion object {
         const val MAX_QUERY_LENGTH = 500
+        const val MAX_KEY_VERSION_LENGTH = 64
         const val ROOT_KEY_BYTES = 32
         const val GCM_NONCE_BYTES = 12
         const val GCM_TAG_BITS = 128

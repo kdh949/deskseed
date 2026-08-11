@@ -23,6 +23,9 @@ deskseed:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
       active-key-version: ${DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION:v1}
       ciphertext-retention: ${DESKSEED_ACCESS_AUDIT_QUERY_CIPHERTEXT_RETENTION:30d}
+      retention-batch-size: ${DESKSEED_ACCESS_AUDIT_RETENTION_BATCH_SIZE:1000}
+      retention-job-interval: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INTERVAL:1h}
+      retention-job-initial-delay: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INITIAL_DELAY:10m}
       keys:
         v1: ${DESKSEED_ACCESS_AUDIT_KEY_V1}
   cors:
