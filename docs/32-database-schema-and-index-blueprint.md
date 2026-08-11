@@ -242,13 +242,34 @@ Indexes:
 activity_event_id
 query_redacted
 query_fingerprint
-query_ciphertext required
-key_version nullable
+query_key_version
 normalized_filter_json
+sort
 result_count
 ```
 
-민감 원문을 기본 activity table과 분리한다.
+### search_audit_result_items
+
+```text
+activity_event_id
+ticket_id
+ticket_number
+result_ordinal
+```
+
+서버가 반환한 bounded result membership을 불변 child metadata로 보존해 search-result open linkage를 client 주장만으로 만들지 않는다.
+
+### search_audit_query_ciphertexts
+
+```text
+activity_event_id
+key_version
+query_ciphertext required
+created_at
+expires_at
+```
+
+민감 원문 ciphertext를 기본 activity/search metadata와 분리하고 별도 단기 retention으로 삭제한다. 평문 query column은 두지 않는다.
 
 ## 5. Integration tables
 

@@ -10,15 +10,20 @@ import dev.deskseed.ticketing.StaffTicketSummary
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import jakarta.servlet.http.HttpServletRequest
+import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
+import jakarta.validation.constraints.Size
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -30,6 +35,7 @@ import java.util.UUID
 @Validated
 internal class AgentTicketReadController(
     private val applicationService: AgentTicketReadApplicationService,
+    private val searchApplicationService: AgentTicketSearchApplicationService,
 ) {
     @GetMapping("/views")
     fun views(@AuthenticationPrincipal principal: StaffPrincipal): List<SavedViewResponse> =
@@ -79,6 +85,7 @@ internal class AgentTicketReadController(
         @PathVariable @Positive ticketNumber: Long,
         @RequestHeader("X-Interaction-Id") interactionId: UUID,
         @RequestHeader("X-Deskseed-Read-Intent") readIntent: AgentReadIntent,
+        @RequestHeader("X-Origin-Search-Event-Id", required = false) originSearchEventId: UUID?,
         request: HttpServletRequest,
     ): ResponseEntity<AgentTicketDetailResponse> {
         val workspace = applicationService.readTicket(
@@ -86,9 +93,11 @@ internal class AgentTicketReadController(
             ticketNumber = ticketNumber,
             interactionId = interactionId,
             intent = readIntent,
+            originSearchEventId = originSearchEventId,
             context = AgentReadRequestContext(
                 requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
                 correlationId = request.getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+                sessionId = authenticatedSessionId(request),
                 ipAddress = request.remoteAddr,
                 userAgent = request.getHeader("User-Agent"),
             ),
@@ -128,6 +137,48 @@ internal class AgentTicketReadController(
             )
     }
 
+    @PostMapping("/search")
+    fun search(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @RequestHeader("X-Interaction-Id") interactionId: UUID,
+        @Valid @RequestBody body: AgentTicketSearchRequestBody,
+        request: HttpServletRequest,
+    ): ResponseEntity<AgentTicketSearchPageResponse> {
+        val page = searchApplicationService.search(
+            principal = principal,
+            interactionId = interactionId,
+            request = AgentTicketSearchRequest(
+                query = body.query,
+                filters = AgentTicketSearchFilter(
+                    status = body.filters.status,
+                    priority = body.filters.priority,
+                    groupId = body.filters.groupId,
+                    assigneeId = body.filters.assigneeId,
+                ),
+                sort = body.sort,
+                limit = body.limit,
+            ),
+            context = AgentReadRequestContext(
+                requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
+                correlationId = request.getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+                sessionId = authenticatedSessionId(request),
+                ipAddress = request.remoteAddr,
+                userAgent = request.getHeader("User-Agent"),
+            ),
+        )
+        return ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
+            .body(
+                AgentTicketSearchPageResponse(
+                    searchEventId = page.searchEventId,
+                    searchInteractionId = page.searchInteractionId,
+                    items = page.items.map(::ticketResponse),
+                    resultCount = page.resultCount,
+                    sort = page.sort,
+                ),
+            )
+    }
+
     private fun ticketResponse(ticket: StaffTicketSummary) = TicketSummaryResponse(
         ticketNumber = ticket.ticketNumber,
         subject = ticket.subject,
@@ -163,10 +214,43 @@ internal class AgentTicketReadController(
     private fun actorResponse(actor: StaffActorSummary) =
         ActorSummaryResponse(actor.id, actor.type, actor.displayName)
 
+    private fun authenticatedSessionId(request: HttpServletRequest): String =
+        request.getSession(false)?.id
+            ?: throw AccessAuditUnavailableException(IllegalStateException("Authenticated staff session is unavailable"))
+
     private companion object {
         const val STABLE_SORT = "updatedAt:desc,ticketNumber:desc"
     }
 }
+
+internal data class AgentTicketSearchFiltersRequest(
+    val status: TicketStatus? = null,
+    val priority: TicketPriority? = null,
+    val groupId: UUID? = null,
+    @field:Size(max = 64)
+    val assigneeId: String? = null,
+)
+
+internal data class AgentTicketSearchRequestBody(
+    @field:NotBlank
+    @field:Size(max = 500)
+    val query: String,
+    @field:Valid
+    val filters: AgentTicketSearchFiltersRequest,
+    @field:NotBlank
+    val sort: String,
+    @field:Min(1)
+    @field:Max(100)
+    val limit: Int,
+)
+
+internal data class AgentTicketSearchPageResponse(
+    val searchEventId: UUID,
+    val searchInteractionId: UUID,
+    val items: List<TicketSummaryResponse>,
+    val resultCount: Long,
+    val sort: String,
+)
 
 internal data class SavedViewResponse(
     val key: String,

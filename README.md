@@ -117,6 +117,12 @@ docker compose up --build
 
 상담사 View cursor는 HMAC으로 서명합니다. production profile에서는 `DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY`에 32 bytes 이상인 별도 비밀값을 설정해야 기동합니다. 예를 들어 `openssl rand -base64 48`으로 생성한 값을 외부 secret manager에 보관하고 환경 변수로 주입합니다. `DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID`는 현재 발급 키를 식별하며, 키를 교체할 때 이전 key ID와 비밀값을 설정에 잠시 유지해 기존 cursor를 읽을 수 있게 합니다. 로컬 Compose의 기본값은 개발 전용이며 배포에 사용하면 안 됩니다.
 
+### Access/search audit encryption key
+
+상담사 검색 원문은 URL이나 평문 DB 열에 저장하지 않고, event ID와 목적을 associated data로 묶은 authenticated ciphertext로 저장합니다. production profile에서 access audit이 켜져 있으면 `DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION`과 그 버전의 32-byte base64 키(현재 `DESKSEED_ACCESS_AUDIT_KEY_V1`)가 필수이며, 누락·오형식은 startup/readiness를 실패시킵니다. `openssl rand -base64 32`로 생성한 값을 외부 secret manager에서 주입하고 저장소·로그에 넣지 마세요.
+
+원문 ciphertext의 기본 보존은 30일입니다. `DESKSEED_ACCESS_AUDIT_QUERY_CIPHERTEXT_RETENTION`으로 새 이벤트의 만료 시각을 설정하고, bounded retention job의 batch/interval은 `DESKSEED_ACCESS_AUDIT_RETENTION_BATCH_SIZE`와 `DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INTERVAL`로 조정합니다. 키 교체 시 active version을 올리되 아직 보존 중인 ciphertext의 이전 version key는 만료 전까지 keyring에 유지해야 합니다.
+
 ## 검증
 
 ```bash

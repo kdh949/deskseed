@@ -34,6 +34,7 @@ class SecurityConfiguration(
                 "X-Request-Access-Token",
                 "X-Interaction-Id",
                 "X-Deskseed-Read-Intent",
+                "X-Origin-Search-Event-Id",
                 "If-Match",
                 RequestIdFilter.REQUEST_ID_HEADER,
                 RequestIdFilter.CORRELATION_ID_HEADER,

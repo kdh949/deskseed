@@ -6,7 +6,7 @@
 
 ## Required decisions
 
-D-013, D-014, D-018, D-019, D-020
+D-008, D-013, D-014, D-018, D-019, D-020, D-041, D-045. ADR 0033의 required authenticated ciphertext 결정이 ADR 0014의 optional ciphertext 부분을 대체한다.
 
 ## In scope
 
@@ -18,6 +18,7 @@ D-013, D-014, D-018, D-019, D-020
 - redacted query + HMAC fingerprint
 - encrypted raw query port and disabled/no-key behavior
 - PostgreSQL-backed tests
+- configurable 30-day ciphertext expiry and bounded audited retention deletion
 
 ## Out of scope
 
@@ -38,4 +39,4 @@ D-013, D-014, D-018, D-019, D-020
 
 ## Gates
 
-ARCH-004, ACC-001, ACC-002, ACC-003, ACC-004, ACC-007
+ARCH-004, ACC-001, ACC-002, ACC-003, ACC-004, ACC-007, PERM-001, RET-001, RET-002, RET-004, PERF-003, SEARCH-AUD-001

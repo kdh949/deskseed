@@ -52,7 +52,7 @@ export interface FieldError {
   code?: string
 }
 
-export type StaffRole = 'ADMIN' | 'AGENT'
+export type StaffRole = 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR'
 export type StaffStatus = 'ACTIVE' | 'DISABLED'
 export type OrganizationStatus = 'ACTIVE' | 'DISABLED'
 
@@ -145,6 +145,28 @@ export interface AgentTicketPage {
   items: AgentTicketSummary[]
   nextCursor: string | null
   totalApproximate: number | null
+  sort: 'updatedAt:desc,ticketNumber:desc'
+}
+
+export interface AgentTicketSearchFilters {
+  status?: AgentTicketStatus
+  priority?: TicketPriority
+  groupId?: string
+  assigneeId?: string
+}
+
+export interface AgentTicketSearchInput {
+  query: string
+  filters: AgentTicketSearchFilters
+  sort: 'updatedAt:desc,ticketNumber:desc'
+  limit: number
+}
+
+export interface AgentTicketSearchPage {
+  searchEventId: string
+  searchInteractionId: string
+  items: AgentTicketSummary[]
+  resultCount: number
   sort: 'updatedAt:desc,ticketNumber:desc'
 }
 
@@ -268,4 +290,126 @@ export interface CreateChildTicketResult {
   childTicketNumber: number
   parentAuditId: string
   childAuditId: string
+}
+
+export type AuditLedgerType =
+  'TICKET_CHANGE' | 'ACCESS_SEARCH' | 'ADMIN_SECURITY'
+export type AuditOutcome = 'SUCCEEDED' | 'DENIED' | 'FAILED'
+
+export interface AuditActivityFilters {
+  from?: string
+  to?: string
+  ledger?: AuditLedgerType
+  action?: string
+  actorType?: ActorSummary['type']
+  actorId?: string
+  ticketNumber?: number
+  groupId?: string
+  field?: string
+  source?: string
+  outcome?: AuditOutcome
+  requestId?: string
+  correlationId?: string
+  searchFingerprint?: string
+  limit?: number
+}
+
+export interface AuditActivity {
+  id: string
+  ledger: AuditLedgerType
+  action: string
+  actor: ActorSummary
+  occurredAt: string
+  ticketNumber: number | null
+  groupId: string | null
+  field: string | null
+  resourceType: string | null
+  resourceId: string | null
+  summary: string
+  source: string
+  outcome: AuditOutcome
+  requestId: string | null
+  correlationId: string | null
+  protectedContentAvailable: boolean
+  searchFingerprint: string | null
+}
+
+export interface AuditProjectionStatus {
+  state: 'CURRENT' | 'DEGRADED' | 'REBUILDING'
+  projectedCount: number
+  lastRebuiltAt: string | null
+}
+
+export interface AuditActivityPage {
+  items: AuditActivity[]
+  nextCursor: string | null
+  snapshotAt: string
+  projection: AuditProjectionStatus
+}
+
+export interface AuditSearchContext {
+  queryRedacted: string
+  queryFingerprint: string
+  filters: Record<string, string>
+  sort: string | null
+  resultCount: number
+  originSearchActivityId: string | null
+  openedActivities: Array<{
+    activityId: string
+    ticketNumber: number
+    occurredAt: string
+  }>
+}
+
+export interface AuditActivityDetail extends AuditActivity {
+  canonicalEventId: string
+  canonicalParentId: string | null
+  fieldChange: {
+    field: string
+    before: unknown
+    after: unknown
+  } | null
+  interactionId: string | null
+  sessionFingerprint: string | null
+  authType: string | null
+  ipAddress: string | null
+  userAgent: string | null
+  search: AuditSearchContext | null
+  metadata: Record<string, unknown>
+}
+
+export interface SearchQueryRevealResult {
+  activityId: string
+  state: 'AVAILABLE' | 'RETENTION_EXPIRED' | 'KEY_UNAVAILABLE'
+  rawQuery: string | null
+  keyVersion: string | null
+  revealedAt: string | null
+}
+
+export interface CreateAuditExportInput {
+  format: 'CSV' | 'JSONL'
+  filters: AuditActivityFilters
+  fields: string[]
+  reason: string
+}
+
+export interface AuditExportJob {
+  id: string
+  status: 'REQUESTED'
+  createdAt: string
+  format: 'CSV' | 'JSONL'
+  fields: string[]
+  artifact: {
+    state: 'NOT_CREATED'
+    generationAvailable: false
+  }
+}
+
+export interface AuditProjectionRebuildResult {
+  ticketChangeCount: number
+  accessSearchCount: number
+  adminSecurityCount: number
+  totalCount: number
+  completedAt: string
+  projection: AuditProjectionStatus
 }

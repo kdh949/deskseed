@@ -134,6 +134,8 @@ Retention job:
 
 The normal application role cannot call arbitrary audit delete APIs.
 
+The first access/search slice realizes this policy for `search_audit_query_ciphertexts`: each row receives an immutable `expires_at` when it is written (30 days by default), and a bounded `FOR UPDATE SKIP LOCKED` job deletes only expired ciphertext rows. Canonical `AccessAuditEvent` and redacted/fingerprint metadata remain intact. Each batch appends `RETENTION_JOB_EXECUTED` to the existing admin/security ledger in the same transaction; if that audit insert fails, the deletion rolls back. No public or staff CRUD endpoint exposes ciphertext deletion.
+
 ## 9. Backup and replicas
 
 Documentation must state:

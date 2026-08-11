@@ -65,12 +65,16 @@ internal class StaffSessionController(
         session.maxInactiveInterval = sessionIdle.seconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         session.setAttribute(StaffSessionValidationFilter.ABSOLUTE_EXPIRES_AT, now.plus(sessionAbsolute))
         session.setAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT, now)
+        session.setAttribute(StaffSessionValidationFilter.AUTHENTICATED_AT, now)
 
         val principal = StaffPrincipal.from(identity)
         val authentication = UsernamePasswordAuthenticationToken.authenticated(
             principal,
             null,
-            listOf(SimpleGrantedAuthority("ROLE_${principal.role.name}")),
+            buildList {
+                add(SimpleGrantedAuthority("ROLE_${principal.role.name}"))
+                principal.authorities.sorted().forEach { add(SimpleGrantedAuthority(it)) }
+            },
         )
         val context = SecurityContextHolder.createEmptyContext().apply {
             this.authentication = authentication
@@ -95,11 +99,7 @@ internal class StaffSessionController(
         email = principal.email,
         displayName = principal.displayName,
         role = principal.role,
-        capabilities = if (principal.role == StaffRole.ADMIN) {
-            listOf("ADMIN_MANAGE", "AGENT_WORKSPACE")
-        } else {
-            listOf("AGENT_WORKSPACE")
-        },
+        capabilities = principal.authorities.sorted(),
     )
 
     private fun HttpServletRequest.requestId(): String =

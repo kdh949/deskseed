@@ -6,7 +6,18 @@ import type {
   AgentTicketDetail,
   AgentTicketFilters,
   AgentTicketPage,
+  AgentTicketSearchInput,
+  AgentTicketSearchPage,
   AgentTicketSummary,
+  AuditActivity,
+  AuditActivityDetail,
+  AuditActivityFilters,
+  AuditActivityPage,
+  AuditExportJob,
+  AuditProjectionRebuildResult,
+  AuditProjectionStatus,
+  AuditSearchContext,
+  CreateAuditExportInput,
   CreateChildTicketCommand,
   CreateChildTicketResult,
   CreateStaffInput,
@@ -22,6 +33,7 @@ import type {
   SubmittedRequest,
   SupportGroup,
   SavedAgentView,
+  SearchQueryRevealResult,
   TicketHistoryItem,
   TicketAssignmentGroupOption,
   TicketAssignmentOptions,
@@ -98,6 +110,24 @@ function isNonBlankString(value: unknown): value is string {
 
 function isTimestamp(value: unknown): value is string {
   return isNonBlankString(value) && Number.isFinite(Date.parse(value))
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
+}
+
+function isCanonicalUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
 }
 
 function isTicketStatus(value: unknown): value is TicketStatus {
@@ -321,7 +351,7 @@ export async function getPublicRequest(
   return request
 }
 
-const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT'])
+const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT', 'SECURITY_AUDITOR'])
 
 function isStaffRole(value: unknown): value is StaffRole {
   return typeof value === 'string' && STAFF_ROLES.has(value as StaffRole)
@@ -954,15 +984,54 @@ export async function listTicketsInView(
   }
 }
 
+export async function searchAgentTickets(
+  input: AgentTicketSearchInput,
+  interactionId: string,
+): Promise<AgentTicketSearchPage> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/search',
+    'POST',
+    input,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const body = await checkedBody(response)
+  if (!isRecord(body) || !Array.isArray(body.items)) {
+    throw malformedSuccess(response)
+  }
+  const items = body.items.map(decodeAgentTicketSummary)
+  if (
+    !isUuid(body.searchEventId) ||
+    !isUuid(body.searchInteractionId) ||
+    items.some((ticket) => !ticket) ||
+    typeof body.resultCount !== 'number' ||
+    !Number.isSafeInteger(body.resultCount) ||
+    body.resultCount < 0 ||
+    body.sort !== 'updatedAt:desc,ticketNumber:desc'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    searchEventId: body.searchEventId,
+    searchInteractionId: body.searchInteractionId,
+    items: items as AgentTicketSummary[],
+    resultCount: body.resultCount,
+    sort: body.sort,
+  }
+}
+
 export async function getAgentTicket(
   ticketNumber: number,
   interactionId: string,
   intent: AgentReadIntent,
+  originSearchEventId?: string,
 ): Promise<AgentTicketDetail> {
   const response = await staffFetch(`/api/v1/agent/tickets/${ticketNumber}`, {
     headers: {
       'X-Interaction-Id': interactionId,
       'X-Deskseed-Read-Intent': intent,
+      ...(originSearchEventId
+        ? { 'X-Origin-Search-Event-Id': originSearchEventId }
+        : {}),
     },
   })
   const detail = decodeAgentTicketDetail(await checkedBody(response))
@@ -1012,4 +1081,356 @@ export async function createChildTicket(
   const result = decodeCreateChildTicketResult(await checkedBody(response))
   if (!result) throw malformedSuccess(response)
   return result
+}
+
+const AUDIT_LEDGERS = new Set([
+  'TICKET_CHANGE',
+  'ACCESS_SEARCH',
+  'ADMIN_SECURITY',
+])
+const AUDIT_OUTCOMES = new Set(['SUCCEEDED', 'DENIED', 'FAILED'])
+const AUDIT_PROJECTION_STATES = new Set(['CURRENT', 'DEGRADED', 'REBUILDING'])
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function decodeAuditActivity(value: unknown): AuditActivity | undefined {
+  if (!isRecord(value)) return undefined
+  const actor = decodeActorSummary(value.actor)
+  if (
+    !isCanonicalUuid(value.id) ||
+    typeof value.ledger !== 'string' ||
+    !AUDIT_LEDGERS.has(value.ledger) ||
+    !isNonBlankString(value.action) ||
+    !actor ||
+    !isTimestamp(value.occurredAt) ||
+    (value.ticketNumber !== null && !isTicketNumber(value.ticketNumber)) ||
+    !isNullableString(value.groupId) ||
+    !isNullableString(value.field) ||
+    !isNullableString(value.resourceType) ||
+    !isNullableString(value.resourceId) ||
+    !isNonBlankString(value.summary) ||
+    !isNonBlankString(value.source) ||
+    typeof value.outcome !== 'string' ||
+    !AUDIT_OUTCOMES.has(value.outcome) ||
+    !isNullableString(value.requestId) ||
+    !isNullableString(value.correlationId) ||
+    typeof value.protectedContentAvailable !== 'boolean' ||
+    !isNullableString(value.searchFingerprint)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    ledger: value.ledger as AuditActivity['ledger'],
+    action: value.action,
+    actor,
+    occurredAt: value.occurredAt,
+    ticketNumber: value.ticketNumber,
+    groupId: value.groupId,
+    field: value.field,
+    resourceType: value.resourceType,
+    resourceId: value.resourceId,
+    summary: value.summary,
+    source: value.source,
+    outcome: value.outcome as AuditActivity['outcome'],
+    requestId: value.requestId,
+    correlationId: value.correlationId,
+    protectedContentAvailable: value.protectedContentAvailable,
+    searchFingerprint: value.searchFingerprint,
+  }
+}
+
+function decodeAuditProjectionStatus(
+  value: unknown,
+): AuditProjectionStatus | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.state !== 'string' ||
+    !AUDIT_PROJECTION_STATES.has(value.state) ||
+    typeof value.projectedCount !== 'number' ||
+    !Number.isSafeInteger(value.projectedCount) ||
+    value.projectedCount < 0 ||
+    (value.lastRebuiltAt !== null && !isTimestamp(value.lastRebuiltAt))
+  ) {
+    return undefined
+  }
+  return {
+    state: value.state as AuditProjectionStatus['state'],
+    projectedCount: value.projectedCount,
+    lastRebuiltAt: value.lastRebuiltAt,
+  }
+}
+
+function decodeAuditSearchContext(
+  value: unknown,
+): AuditSearchContext | null | undefined {
+  if (value === null) return null
+  if (
+    !isRecord(value) ||
+    !isNonBlankString(value.queryRedacted) ||
+    !isNonBlankString(value.queryFingerprint) ||
+    !isRecord(value.filters) ||
+    !Object.values(value.filters).every((item) => typeof item === 'string') ||
+    !isNullableString(value.sort) ||
+    typeof value.resultCount !== 'number' ||
+    !Number.isSafeInteger(value.resultCount) ||
+    value.resultCount < 0 ||
+    !isNullableString(value.originSearchActivityId) ||
+    !Array.isArray(value.openedActivities)
+  ) {
+    return undefined
+  }
+  const openedActivities = value.openedActivities.flatMap((item) => {
+    if (
+      !isRecord(item) ||
+      !isCanonicalUuid(item.activityId) ||
+      !isTicketNumber(item.ticketNumber) ||
+      !isTimestamp(item.occurredAt)
+    ) {
+      return []
+    }
+    return [
+      {
+        activityId: item.activityId,
+        ticketNumber: item.ticketNumber,
+        occurredAt: item.occurredAt,
+      },
+    ]
+  })
+  if (openedActivities.length !== value.openedActivities.length)
+    return undefined
+  return {
+    queryRedacted: value.queryRedacted,
+    queryFingerprint: value.queryFingerprint,
+    filters: value.filters as Record<string, string>,
+    sort: value.sort,
+    resultCount: value.resultCount,
+    originSearchActivityId: value.originSearchActivityId,
+    openedActivities,
+  }
+}
+
+function decodeAuditActivityPage(
+  value: unknown,
+): AuditActivityPage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(decodeAuditActivity)
+  const projection = decodeAuditProjectionStatus(value.projection)
+  if (
+    items.some((item) => !item) ||
+    !isNullableString(value.nextCursor) ||
+    !isTimestamp(value.snapshotAt) ||
+    !projection
+  ) {
+    return undefined
+  }
+  return {
+    items: items as AuditActivity[],
+    nextCursor: value.nextCursor,
+    snapshotAt: value.snapshotAt,
+    projection,
+  }
+}
+
+function decodeAuditActivityDetail(
+  value: unknown,
+): AuditActivityDetail | undefined {
+  const activity = decodeAuditActivity(value)
+  if (!activity || !isRecord(value)) return undefined
+  const search = decodeAuditSearchContext(value.search)
+  const fieldChange = value.fieldChange
+  if (
+    !isCanonicalUuid(value.canonicalEventId) ||
+    !isNullableString(value.canonicalParentId) ||
+    (fieldChange !== null &&
+      (!isRecord(fieldChange) || !isNonBlankString(fieldChange.field))) ||
+    !isNullableString(value.interactionId) ||
+    !isNullableString(value.sessionFingerprint) ||
+    !isNullableString(value.authType) ||
+    !isNullableString(value.ipAddress) ||
+    !isNullableString(value.userAgent) ||
+    search === undefined ||
+    !isRecord(value.metadata)
+  ) {
+    return undefined
+  }
+  return {
+    ...activity,
+    canonicalEventId: value.canonicalEventId,
+    canonicalParentId: value.canonicalParentId,
+    fieldChange:
+      fieldChange === null
+        ? null
+        : {
+            field: fieldChange.field as string,
+            before: fieldChange.before,
+            after: fieldChange.after,
+          },
+    interactionId: value.interactionId,
+    sessionFingerprint: value.sessionFingerprint,
+    authType: value.authType,
+    ipAddress: value.ipAddress,
+    userAgent: value.userAgent,
+    search,
+    metadata: value.metadata,
+  }
+}
+
+function decodeSearchQueryRevealResult(
+  value: unknown,
+): SearchQueryRevealResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.activityId) ||
+    !['AVAILABLE', 'RETENTION_EXPIRED', 'KEY_UNAVAILABLE'].includes(
+      String(value.state),
+    ) ||
+    !isNullableString(value.rawQuery) ||
+    !isNullableString(value.keyVersion) ||
+    (value.revealedAt !== null && !isTimestamp(value.revealedAt))
+  ) {
+    return undefined
+  }
+  return {
+    activityId: value.activityId,
+    state: value.state as SearchQueryRevealResult['state'],
+    rawQuery: value.rawQuery,
+    keyVersion: value.keyVersion,
+    revealedAt: value.revealedAt,
+  }
+}
+
+function decodeAuditExportJob(value: unknown): AuditExportJob | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    value.status !== 'REQUESTED' ||
+    !isTimestamp(value.createdAt) ||
+    !['CSV', 'JSONL'].includes(String(value.format)) ||
+    !Array.isArray(value.fields) ||
+    !value.fields.every(isNonBlankString) ||
+    !isRecord(value.artifact) ||
+    value.artifact.state !== 'NOT_CREATED' ||
+    value.artifact.generationAvailable !== false
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    status: 'REQUESTED',
+    createdAt: value.createdAt,
+    format: value.format as AuditExportJob['format'],
+    fields: value.fields,
+    artifact: { state: 'NOT_CREATED', generationAvailable: false },
+  }
+}
+
+function appendAuditFilters(
+  search: URLSearchParams,
+  filters: AuditActivityFilters,
+) {
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') search.set(key, String(value))
+  })
+}
+
+export async function listAuditActivities(
+  filters: AuditActivityFilters,
+  cursor: string | null,
+  interactionId: string,
+): Promise<AuditActivityPage> {
+  const search = new URLSearchParams()
+  appendAuditFilters(search, filters)
+  if (cursor) search.set('cursor', cursor)
+  const response = await staffFetch(`/api/v1/audit/activities?${search}`, {
+    headers: { 'X-Interaction-Id': interactionId },
+  })
+  const decoded = decodeAuditActivityPage(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function getAuditActivity(
+  activityId: string,
+  interactionId: string,
+): Promise<AuditActivityDetail> {
+  const response = await staffFetch(
+    `/api/v1/audit/activities/${encodeURIComponent(activityId)}`,
+    { headers: { 'X-Interaction-Id': interactionId } },
+  )
+  const decoded = decodeAuditActivityDetail(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function revealAuditSearchQuery(
+  activityId: string,
+  reason: string,
+  interactionId: string,
+): Promise<SearchQueryRevealResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/audit/activities/${encodeURIComponent(activityId)}/search-query-reveal`,
+    'POST',
+    { reason },
+    { 'X-Interaction-Id': interactionId },
+  )
+  const decoded = decodeSearchQueryRevealResult(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createAuditExport(
+  input: CreateAuditExportInput,
+  interactionId: string,
+): Promise<AuditExportJob> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/audit/exports',
+    'POST',
+    input,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const decoded = decodeAuditExportJob(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function rebuildAuditProjection(
+  interactionId: string,
+): Promise<AuditProjectionRebuildResult> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/audit/projection/rebuild',
+    'POST',
+    undefined,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const body = await checkedBody(response)
+  if (!isRecord(body)) throw malformedSuccess(response)
+  const projection = decodeAuditProjectionStatus(body.projection)
+  if (
+    !projection ||
+    ![
+      'ticketChangeCount',
+      'accessSearchCount',
+      'adminSecurityCount',
+      'totalCount',
+    ].every(
+      (key) =>
+        typeof body[key] === 'number' &&
+        Number.isSafeInteger(body[key]) &&
+        (body[key] as number) >= 0,
+    ) ||
+    !isTimestamp(body.completedAt)
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    ticketChangeCount: body.ticketChangeCount as number,
+    accessSearchCount: body.accessSearchCount as number,
+    adminSecurityCount: body.adminSecurityCount as number,
+    totalCount: body.totalCount as number,
+    completedAt: body.completedAt,
+    projection,
+  }
 }

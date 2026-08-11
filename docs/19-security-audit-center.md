@@ -282,11 +282,14 @@ When access audit is enabled, a missing/invalid raw-query encryption key is a st
 ```text
 SEARCH_EXECUTED event S1
   resultCount=25
+  returnedResultMembership=[ticket 1042, ...] // bounded immutable child metadata
 
 TICKET_VIEWED event V1
   ticket=1042
   originSearchEventId=S1
 ```
+
+`X-Origin-Search-Event-Id`는 authorization proof가 아니다. 서버는 같은 actor와 authenticated session인지뿐 아니라 열려는 ticket이 S1의 실제 returned-result membership에 포함됐는지도 검증한 뒤 `SEARCH_RESULT_OPENED`/linked `TICKET_VIEWED`를 기록한다. 임의의 자기 search event ID를 다른 ticket에 붙이는 client claim은 거부한다.
 
 This enables investigations such as “검색어 X를 사용한 뒤 어떤 고객 티켓을 열었는가?”
 

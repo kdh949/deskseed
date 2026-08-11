@@ -3,6 +3,8 @@ package dev.deskseed.ticketing.internal
 import dev.deskseed.ticketing.DefaultStaffView
 import dev.deskseed.ticketing.StaffTicketListFilter
 import dev.deskseed.ticketing.StaffTicketReadStore
+import dev.deskseed.ticketing.StaffTicketReadScope
+import dev.deskseed.ticketing.StaffTicketSearchFilter
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
@@ -14,6 +16,7 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
+import org.springframework.dao.InvalidDataAccessApiUsageException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DelegatingDataSource
 import org.springframework.transaction.annotation.Transactional
@@ -47,7 +50,9 @@ class StaffTicketQueryEvidenceIntegrationTest {
 
     @BeforeEach
     fun seed() {
-        jdbcTemplate.execute("truncate table access_audit_events")
+        jdbcTemplate.execute(
+            "truncate table search_audit_query_ciphertexts, search_audit_result_items, search_audit_details, access_audit_events",
+        )
         jdbcTemplate.update("delete from request_access_tokens")
         jdbcTemplate.update("delete from ticket_audit_events")
         jdbcTemplate.update("delete from ticket_audits")
@@ -139,6 +144,40 @@ class StaffTicketQueryEvidenceIntegrationTest {
         val detail = ticketStore.findDetail(6001)
         assertThat(detail?.comments).hasSize(100)
         assertThat(queryCounter.count()).isEqualTo(3)
+    }
+
+    @Test
+    fun `search uses a fixed count and result query regardless of comment count`() {
+        queryCounter.reset()
+
+        val result = ticketStore.search(
+            query = "대화 99",
+            scope = StaffTicketReadScope.ALL_TICKETS,
+            actorId = staffId,
+            filters = StaffTicketSearchFilter(),
+            limit = 25,
+        )
+
+        assertThat(result.resultCount).isEqualTo(1)
+        assertThat(result.items.map { it.ticketNumber }).containsExactly(6001)
+        assertThat(queryCounter.count()).isEqualTo(2)
+    }
+
+    @Test
+    fun `unsupported search scope fails before issuing SQL`() {
+        queryCounter.reset()
+
+        assertThatThrownBy {
+            ticketStore.search(
+                query = "쿼리",
+                scope = StaffTicketReadScope.OWN_GROUPS,
+                actorId = staffId,
+                filters = StaffTicketSearchFilter(),
+                limit = 25,
+            )
+        }.isInstanceOf(InvalidDataAccessApiUsageException::class.java)
+            .hasRootCauseInstanceOf(IllegalArgumentException::class.java)
+        assertThat(queryCounter.count()).isZero()
     }
 
     @Test

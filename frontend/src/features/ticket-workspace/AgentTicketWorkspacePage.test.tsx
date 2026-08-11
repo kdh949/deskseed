@@ -148,6 +148,28 @@ afterEach(() => {
 })
 
 describe('AgentTicketWorkspacePage', () => {
+  it('sends an opaque origin search event only on the initial result navigation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(detail), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage(
+      '/agent/tickets/1042?originSearchEventId=11111111-1111-4111-8111-111111111111',
+    )
+
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    const requestOptions = fetchMock.mock.calls[0]![1] as {
+      headers: Record<string, string>
+    }
+    expect(requestOptions.headers['X-Origin-Search-Event-Id']).toBe(
+      '11111111-1111-4111-8111-111111111111',
+    )
+  })
+
   it('renders the read-only three-panel staff projection with public and internal conversation', async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(

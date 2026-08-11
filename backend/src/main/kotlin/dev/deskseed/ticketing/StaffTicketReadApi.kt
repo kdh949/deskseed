@@ -29,6 +29,18 @@ data class StaffTicketListFilter(
     val assignee: String? = null,
 )
 
+data class StaffTicketSearchFilter(
+    val status: TicketStatus? = null,
+    val priority: TicketPriority? = null,
+    val groupId: UUID? = null,
+    val assignee: String? = null,
+)
+
+data class StaffTicketSearchResult(
+    val items: List<StaffTicketSummary>,
+    val resultCount: Long,
+)
+
 data class StaffTicketCursor(
     val updatedAt: Instant,
     val ticketNumber: Long,
@@ -101,6 +113,14 @@ interface StaffTicketReadStore {
     ): List<StaffTicketSummary>
 
     fun findDetail(ticketNumber: Long): StaffTicketDetail?
+
+    fun search(
+        query: String,
+        scope: StaffTicketReadScope,
+        actorId: UUID,
+        filters: StaffTicketSearchFilter,
+        limit: Int,
+    ): StaffTicketSearchResult
 
     fun hasRelationReadGrant(ticketId: UUID, actorId: UUID): Boolean
 }

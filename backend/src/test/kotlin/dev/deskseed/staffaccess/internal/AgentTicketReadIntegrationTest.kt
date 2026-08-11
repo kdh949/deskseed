@@ -41,7 +41,9 @@ class AgentTicketReadIntegrationTest {
     @BeforeEach
     fun clearState() {
         if (jdbcTemplate.queryForObject("select to_regclass('access_audit_events') is not null", Boolean::class.java) == true) {
-            jdbcTemplate.execute("truncate table access_audit_events")
+            jdbcTemplate.execute(
+                "truncate table search_audit_query_ciphertexts, search_audit_result_items, search_audit_details, access_audit_events",
+            )
         }
         jdbcTemplate.execute("truncate table admin_security_audit_events")
         jdbcTemplate.update("delete from request_access_tokens")
@@ -331,13 +333,14 @@ class AgentTicketReadIntegrationTest {
                 .header("Access-Control-Request-Method", "GET")
                 .header(
                     "Access-Control-Request-Headers",
-                    "X-Interaction-Id, X-Deskseed-Read-Intent",
+                    "X-Interaction-Id, X-Deskseed-Read-Intent, X-Origin-Search-Event-Id",
                 ),
         )
             .andExpect(status().isOk)
             .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
             .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Interaction-Id")))
             .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Deskseed-Read-Intent")))
+            .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Origin-Search-Event-Id")))
 
         mockMvc.perform(
             ticketDetail(7001, browser, UUID.randomUUID(), "BACKGROUND")

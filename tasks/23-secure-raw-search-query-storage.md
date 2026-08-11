@@ -13,7 +13,7 @@ REQ-AUD-004, REQ-AUD-005, REQ-AUD-009.
 - authenticated application-layer encryption port.
 - ciphertext, nonce/metadata, key version, redacted query, HMAC fingerprint.
 - raw-storage REQUIRED_ENCRYPTED startup validation.
-- 90-day configurable raw retention.
+- 30-day configurable raw ciphertext retention, as accepted by D-045/ADR 0033.
 - privileged single-event reveal with reason, no-store, and self-audit.
 - key rotation and retention tests.
 

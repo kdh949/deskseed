@@ -504,6 +504,13 @@ paths:
           enum:
           - NAVIGATION
           - BACKGROUND
+      - name: X-Origin-Search-Event-Id
+        in: header
+        required: false
+        description: "Canonical SEARCH_EXECUTED event selected by a search-result navigation. Accepted only for NAVIGATION reads by the same staff actor; successful use records SEARCH_RESULT_OPENED and links TICKET_VIEWED to the search event."
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: Agent ticket detail
@@ -717,52 +724,43 @@ paths:
         '403': *id001
         '404': *id001
   /api/v1/agent/search:
-    get:
-      summary: Search accessible tickets and customers
+    post:
+      summary: Search accessible tickets without placing the raw query in the URL
       operationId: searchAgentWorkspace
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Search
       x-deskseed-phase: R1
       x-deskseed-requirements:
+      - REQ-AUD-003
       - REQ-AUD-004
+      - REQ-AUD-005
+      - REQ-AUD-008
+      - REQ-PERM-001
       - REQ-SRCH-001
       security:
       - staffSession: []
       parameters:
-      - name: q
-        in: query
-        required: true
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 500
-      - name: scope
-        in: query
-        schema:
-          type: string
-          enum:
-          - TICKETS
-          - CUSTOMERS
-          default: TICKETS
-      - name: cursor
-        in: query
-        schema:
-          type: string
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 25
       - *id005
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTicketSearchRequest'
       responses:
         '200':
-          description: Search result page
+          description: Authorized ticket search results returned only after the canonical SEARCH_EXECUTED event commits.
+          headers:
+            Cache-Control:
+              description: Always no-store because the result is a protected staff projection.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SearchResultPage'
+                $ref: '#/components/schemas/AgentTicketSearchPage'
         '400': *id001
         '401': *id001
         '403': *id001
@@ -1111,6 +1109,7 @@ paths:
     get:
       summary: Query the unified audit explorer projection
       operationId: listAuditActivities
+      x-deskseed-contract-status: FROZEN
       tags:
       - Audit
       x-deskseed-phase: R2
@@ -1133,11 +1132,18 @@ paths:
       - name: ledger
         in: query
         schema:
-          type: string
+          $ref: '#/components/schemas/AuditLedgerType'
       - name: action
         in: query
         schema:
           type: string
+          minLength: 1
+          maxLength: 80
+      - name: actorType
+        in: query
+        schema:
+          type: string
+          enum: [CUSTOMER, STAFF, INTEGRATION_CLIENT, TRIGGER, AUTOMATION, SYSTEM]
       - name: actorId
         in: query
         schema:
@@ -1148,8 +1154,48 @@ paths:
         schema:
           type: integer
           format: int64
+          minimum: 1
+      - name: groupId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: field
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 60
+      - name: source
+        in: query
+        schema:
+          type: string
+          enum: [CUSTOMER_PORTAL, AGENT_UI, ADMIN_UI, PLATFORM_API, TRIGGER, AUTOMATION, SYSTEM_JOB]
+      - name: outcome
+        in: query
+        schema:
+          $ref: '#/components/schemas/AuditOutcome'
+      - name: requestId
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - name: correlationId
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - name: searchFingerprint
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
       - name: cursor
         in: query
+        description: HMAC-signed keyset cursor bound to normalized filters and the first-page snapshot.
         schema:
           type: string
       - name: limit
@@ -1159,10 +1205,15 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
-      - *id005
+      - $ref: '#/components/parameters/AuditInteractionHeader'
       responses:
         '200':
           description: Audit activity page
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
@@ -1171,10 +1222,41 @@ paths:
         '401': *id001
         '403': *id001
         '503': *id001
-  /api/v1/audit/activities/{activityId}/reveal:
+  /api/v1/audit/activities/{activityId}:
+    get:
+      summary: Read one normalized activity without opening the source ticket
+      operationId: getAuditActivity
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Audit
+      x-deskseed-phase: R2
+      x-deskseed-requirements: [REQ-AUD-002, REQ-AUD-004, REQ-AUD-006]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AuditActivityId'
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      responses:
+        '200':
+          description: Allowlisted canonical detail. Comment bodies and raw search queries are absent.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditActivityDetail'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '503': *id001
+  /api/v1/audit/activities/{activityId}/search-query-reveal:
     post:
-      summary: Reveal protected audit content with a reason
-      operationId: revealAuditActivityContent
+      summary: Reveal the exact query for one SEARCH_EXECUTED event
+      operationId: revealAuditSearchQuery
+      x-deskseed-contract-status: FROZEN
       tags:
       - Audit
       x-deskseed-phase: R2
@@ -1184,38 +1266,38 @@ paths:
       security:
       - staffSession: []
       parameters:
-      - name: activityId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+      - $ref: '#/components/parameters/AuditActivityId'
+      - $ref: '#/components/parameters/AuditInteractionHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProtectedRevealRequest'
+              $ref: '#/components/schemas/SearchQueryRevealRequest'
       responses:
         '200':
-          description: Protected content
+          description: One-event reveal or a structured retention/key-unavailable state.
           headers:
             Cache-Control:
               schema:
                 type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProtectedRevealResult'
+                $ref: '#/components/schemas/SearchQueryRevealResult'
         '400': *id001
         '401': *id001
         '403': *id001
         '404': *id001
+        '422': *id001
         '503': *id001
   /api/v1/audit/exports:
     post:
       summary: Request an asynchronous audit export
       operationId: createAuditExport
+      x-deskseed-contract-status: FROZEN
+      description: Persists the authorized request, permission snapshot and NOT_CREATED artifact placeholder. File generation is a documented follow-up.
       tags:
       - Audit
       x-deskseed-phase: R2
@@ -1224,6 +1306,9 @@ paths:
       - REQ-EXP-001
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -1241,6 +1326,65 @@ paths:
         '401': *id001
         '403': *id001
         '429': *id001
+        '503': *id001
+  /api/v1/audit/exports/{jobId}:
+    get:
+      summary: Read the requesting auditor's export skeleton
+      operationId: getAuditExport
+      x-deskseed-contract-status: FROZEN
+      tags: [Audit]
+      x-deskseed-phase: R2
+      x-deskseed-requirements: [REQ-AUD-006]
+      security:
+      - staffSession: []
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      responses:
+        '200':
+          description: Requester-bound job and placeholder artifact state.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJob'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '503': *id001
+  /api/v1/audit/projection/rebuild:
+    post:
+      summary: Rebuild the derived activity projection from canonical ledgers
+      operationId: rebuildAuditActivityProjection
+      x-deskseed-contract-status: FROZEN
+      tags: [Audit]
+      x-deskseed-phase: R2
+      x-deskseed-requirements: [REQ-AUD-002, REQ-AUD-006]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Rebuild counts and projection health.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditProjectionRebuildResult'
+        '401': *id001
+        '403': *id001
+        '409': *id001
+        '503': *id001
   /api/v1/customer/me:
     get:
       summary: Read the verified customer account
@@ -1740,6 +1884,21 @@ components:
       name: groupId
       in: path
       required: true
+      schema:
+        type: string
+        format: uuid
+    AuditActivityId:
+      name: activityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AuditInteractionHeader:
+      name: X-Interaction-Id
+      in: header
+      required: true
+      description: Auditor navigation/filter interaction. Cursor requests reuse the first-page value.
       schema:
         type: string
         format: uuid
@@ -2687,50 +2846,89 @@ components:
           type:
           - string
           - 'null'
-    SearchResult:
+    AgentTicketSearchFilters:
       type: object
-      required:
-      - type
-      - id
-      - title
+      additionalProperties: false
       properties:
-        type:
+        status:
           type: string
           enum:
-          - TICKET
-          - CUSTOMER
-        id:
+          - NEW
+          - OPEN
+          - PENDING
+          - ON_HOLD
+          - SOLVED
+          - CLOSED
+        priority:
           type: string
-        title:
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
+        groupId:
           type: string
-        snippet:
-          type: string
-        ticketNumber:
-          type:
-          - integer
-          - 'null'
-          format: int64
-    SearchResultPage:
+          format: uuid
+        assigneeId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: string
+            enum:
+            - me
+            - unassigned
+    AgentTicketSearchRequest:
       type: object
+      additionalProperties: false
       required:
+      - query
+      - filters
+      - sort
+      - limit
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+        filters:
+          $ref: '#/components/schemas/AgentTicketSearchFilters'
+        sort:
+          type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+    AgentTicketSearchPage:
+      type: object
+      additionalProperties: false
+      required:
+      - searchEventId
       - searchInteractionId
       - items
+      - resultCount
+      - sort
       properties:
+        searchEventId:
+          type: string
+          format: uuid
         searchInteractionId:
           type: string
           format: uuid
         items:
           type: array
           items:
-            $ref: '#/components/schemas/SearchResult'
-        nextCursor:
-          type:
-          - string
-          - 'null'
-        resultCountApproximate:
-          type:
-          - integer
-          - 'null'
+            $ref: '#/components/schemas/TicketSummary'
+        resultCount:
+          type: integer
+          format: int64
+          minimum: 0
+        sort:
+          type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
     StaffAccount:
       type: object
       additionalProperties: false
@@ -2793,6 +2991,7 @@ components:
       enum:
       - ADMIN
       - AGENT
+      - SECURITY_AUDITOR
     StaffStatus:
       type: string
       enum:
@@ -2899,8 +3098,24 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
+    AuditLedgerType:
+      type: string
+      enum: [TICKET_CHANGE, ACCESS_SEARCH, ADMIN_SECURITY]
+    AuditOutcome:
+      type: string
+      enum: [SUCCEEDED, DENIED, FAILED]
+    AuditFieldChange:
+      type: object
+      additionalProperties: false
+      required: [field, before, after]
+      properties:
+        field:
+          type: string
+        before: {}
+        after: {}
     AuditActivity:
       type: object
+      additionalProperties: false
       required:
       - id
       - ledger
@@ -2908,17 +3123,13 @@ components:
       - actor
       - occurredAt
       - outcome
+      - source
       properties:
         id:
           type: string
           format: uuid
         ledger:
-          type: string
-          enum:
-          - TICKET_CHANGE
-          - ACCESS_SEARCH
-          - ADMIN_SECURITY
-          - INTEGRATION_DELIVERY
+          $ref: '#/components/schemas/AuditLedgerType'
         action:
           type: string
         actor:
@@ -2931,6 +3142,11 @@ components:
           - integer
           - 'null'
           format: int64
+        groupId:
+          type: [string, 'null']
+          format: uuid
+        field:
+          type: [string, 'null']
         resourceType:
           type:
           - string
@@ -2939,12 +3155,12 @@ components:
           type:
           - string
           - 'null'
-        fieldChanges:
-          type: array
-          items:
-            $ref: '#/components/schemas/TicketAuditEvent'
-        outcome:
+        summary:
           type: string
+        source:
+          type: string
+        outcome:
+          $ref: '#/components/schemas/AuditOutcome'
         requestId:
           type:
           - string
@@ -2955,10 +3171,14 @@ components:
           - 'null'
         protectedContentAvailable:
           type: boolean
+        searchFingerprint:
+          type: [string, 'null']
     AuditActivityPage:
       type: object
       required:
       - items
+      - snapshotAt
+      - projection
       properties:
         items:
           type: array
@@ -2968,8 +3188,95 @@ components:
           type:
           - string
           - 'null'
-    ProtectedRevealRequest:
+        snapshotAt:
+          type: string
+          format: date-time
+        projection:
+          $ref: '#/components/schemas/AuditProjectionStatus'
+    AuditProjectionStatus:
       type: object
+      additionalProperties: false
+      required: [state, projectedCount, lastRebuiltAt]
+      properties:
+        state:
+          type: string
+          enum: [CURRENT, DEGRADED, REBUILDING]
+        projectedCount:
+          type: integer
+          format: int64
+          minimum: 0
+        lastRebuiltAt:
+          type: [string, 'null']
+          format: date-time
+    AuditSearchContext:
+      type: object
+      additionalProperties: false
+      required: [queryRedacted, queryFingerprint, filters, resultCount, openedActivities]
+      properties:
+        queryRedacted:
+          type: string
+        queryFingerprint:
+          type: string
+        filters:
+          type: object
+          additionalProperties:
+            type: string
+        sort:
+          type: string
+        resultCount:
+          type: integer
+          format: int64
+          minimum: 0
+        originSearchActivityId:
+          type: [string, 'null']
+          format: uuid
+        openedActivities:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [activityId, ticketNumber, occurredAt]
+            properties:
+              activityId: { type: string, format: uuid }
+              ticketNumber: { type: integer, format: int64 }
+              occurredAt: { type: string, format: date-time }
+    AuditActivityDetail:
+      allOf:
+      - $ref: '#/components/schemas/AuditActivity'
+      - type: object
+        required: [canonicalEventId, metadata]
+        properties:
+          canonicalEventId:
+            type: string
+            format: uuid
+          canonicalParentId:
+            type: [string, 'null']
+            format: uuid
+          fieldChange:
+            oneOf:
+            - $ref: '#/components/schemas/AuditFieldChange'
+            - type: 'null'
+          interactionId:
+            type: [string, 'null']
+            format: uuid
+          sessionFingerprint:
+            type: [string, 'null']
+          authType:
+            type: [string, 'null']
+          ipAddress:
+            type: [string, 'null']
+          userAgent:
+            type: [string, 'null']
+          search:
+            oneOf:
+            - $ref: '#/components/schemas/AuditSearchContext'
+            - type: 'null'
+          metadata:
+            type: object
+            additionalProperties: true
+    SearchQueryRevealRequest:
+      type: object
+      additionalProperties: false
       required:
       - reason
       properties:
@@ -2977,28 +3284,29 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
-        contentTypes:
-          type: array
-          items:
-            type: string
-    ProtectedRevealResult:
+    SearchQueryRevealResult:
       type: object
+      additionalProperties: false
       required:
       - activityId
-      - revealedAt
-      - content
+      - state
       properties:
         activityId:
           type: string
           format: uuid
-        revealedAt:
+        state:
           type: string
+          enum: [AVAILABLE, RETENTION_EXPIRED, KEY_UNAVAILABLE]
+        rawQuery:
+          type: [string, 'null']
+        keyVersion:
+          type: [string, 'null']
+        revealedAt:
+          type: [string, 'null']
           format: date-time
-        content:
-          type: object
-          additionalProperties: true
     CreateAuditExport:
       type: object
+      additionalProperties: false
       required:
       - format
       - filters
@@ -3011,22 +3319,47 @@ components:
           - CSV
           - JSONL
         filters:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/AuditExportFilters'
         fields:
           type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
           items:
             type: string
+            enum: [occurredAt, ledger, action, actor, ticketNumber, groupId, field, source, outcome, requestId, correlationId, searchFingerprint]
         reason:
           type: string
           minLength: 1
           maxLength: 1000
+    AuditExportFilters:
+      type: object
+      additionalProperties: false
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        ledger: { $ref: '#/components/schemas/AuditLedgerType' }
+        action: { type: string, maxLength: 80 }
+        actorType: { type: string }
+        actorId: { type: string, format: uuid }
+        ticketNumber: { type: integer, format: int64, minimum: 1 }
+        groupId: { type: string, format: uuid }
+        field: { type: string, maxLength: 60 }
+        source: { type: string }
+        outcome: { $ref: '#/components/schemas/AuditOutcome' }
+        requestId: { type: string, maxLength: 100 }
+        correlationId: { type: string, maxLength: 100 }
+        searchFingerprint: { type: string, maxLength: 100 }
     ExportJob:
       type: object
+      additionalProperties: false
       required:
       - id
       - status
       - createdAt
+      - format
+      - fields
+      - artifact
       properties:
         id:
           type: string
@@ -3034,24 +3367,39 @@ components:
         status:
           type: string
           enum:
-          - QUEUED
-          - RUNNING
-          - SUCCEEDED
-          - FAILED
-          - EXPIRED
+          - REQUESTED
         createdAt:
           type: string
           format: date-time
-        downloadUrl:
-          type:
-          - string
-          - 'null'
-          format: uri
-        expiresAt:
-          type:
-          - string
-          - 'null'
-          format: date-time
+        format:
+          type: string
+          enum: [CSV, JSONL]
+        fields:
+          type: array
+          items: { type: string }
+        artifact:
+          type: object
+          additionalProperties: false
+          required: [state, generationAvailable]
+          properties:
+            state:
+              type: string
+              enum: [NOT_CREATED]
+            generationAvailable:
+              type: boolean
+              const: false
+    AuditProjectionRebuildResult:
+      type: object
+      additionalProperties: false
+      required: [ticketChangeCount, accessSearchCount, adminSecurityCount, totalCount, completedAt, projection]
+      properties:
+        ticketChangeCount: { type: integer, format: int64, minimum: 0 }
+        accessSearchCount: { type: integer, format: int64, minimum: 0 }
+        adminSecurityCount: { type: integer, format: int64, minimum: 0 }
+        totalCount: { type: integer, format: int64, minimum: 0 }
+        completedAt: { type: string, format: date-time }
+        projection:
+          $ref: '#/components/schemas/AuditProjectionStatus'
     CurrentCustomer:
       type: object
       required:

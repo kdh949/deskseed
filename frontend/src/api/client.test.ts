@@ -6,6 +6,7 @@ import {
   getPublicRequest,
   listAgentViews,
   listTicketsInView,
+  searchAgentTickets,
   submitRequest,
   transferAgentTicket,
   updateAgentTicket,
@@ -269,6 +270,62 @@ describe('customer request API client', () => {
 })
 
 describe('agent ticket read API client', () => {
+  it('posts the raw search query outside the URL and decodes its canonical audit linkage', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            searchEventId: '11111111-1111-4111-8111-111111111111',
+            searchInteractionId: '22222222-2222-4222-8222-222222222222',
+            items: [],
+            resultCount: 0,
+            sort: 'updatedAt:desc,ticketNumber:desc',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      searchAgentTickets(
+        {
+          query: 'customer@example.com secret value',
+          filters: { status: 'OPEN', assigneeId: 'me' },
+          sort: 'updatedAt:desc,ticketNumber:desc',
+          limit: 25,
+        },
+        '22222222-2222-4222-8222-222222222222',
+      ),
+    ).resolves.toMatchObject({
+      searchEventId: '11111111-1111-4111-8111-111111111111',
+      resultCount: 0,
+    })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agent/search')
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        'X-CSRF-TOKEN': 'csrf-token',
+        'X-Interaction-Id': '22222222-2222-4222-8222-222222222222',
+        'Content-Type': 'application/json',
+      },
+    })
+    expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain('customer')
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      query: 'customer@example.com secret value',
+      filters: { status: 'OPEN', assigneeId: 'me' },
+      sort: 'updatedAt:desc,ticketNumber:desc',
+      limit: 25,
+    })
+  })
+
   it('decodes default views and sends stable filters through the queue URL', async () => {
     const fetchMock = vi
       .fn()
@@ -403,6 +460,7 @@ describe('agent ticket read API client', () => {
       1042,
       '11111111-1111-4111-8111-111111111111',
       'NAVIGATION',
+      '22222222-2222-4222-8222-222222222222',
     )
 
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/tickets/1042', {
@@ -411,6 +469,7 @@ describe('agent ticket read API client', () => {
       headers: {
         'X-Interaction-Id': '11111111-1111-4111-8111-111111111111',
         'X-Deskseed-Read-Intent': 'NAVIGATION',
+        'X-Origin-Search-Event-Id': '22222222-2222-4222-8222-222222222222',
       },
     })
     expect(detail.comments[0]?.visibility).toBe('INTERNAL')

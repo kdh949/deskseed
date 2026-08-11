@@ -58,7 +58,7 @@ surfaces:
       - method: POST
         path: "/api/v1/agent/tickets/{ticketNumber}/children"
         command: CreateChildTicket
-      - method: GET
+      - method: POST
         path: "/api/v1/agent/search"
         query: AgentSearch
         audit: SEARCH_EXECUTED

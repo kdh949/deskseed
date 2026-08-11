@@ -52,6 +52,26 @@ logging:
     level: "%5p [requestId:%X{requestId:-}]"
 
 deskseed:
+  audit:
+    access:
+      enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
+      active-key-version: ${DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION:local-v1}
+      ciphertext-retention: ${DESKSEED_ACCESS_AUDIT_QUERY_CIPHERTEXT_RETENTION:30d}
+      retention-batch-size: ${DESKSEED_ACCESS_AUDIT_RETENTION_BATCH_SIZE:1000}
+      retention-job-interval: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INTERVAL:1h}
+      retention-job-initial-delay: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INITIAL_DELAY:10m}
+      keys:
+        # Public local-development material only. Production must provision its own 32-byte base64 key.
+        local-v1: ${DESKSEED_ACCESS_AUDIT_KEY_LOCAL_V1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+    explorer:
+      reveal:
+        recent-authentication: ${DESKSEED_AUDIT_REVEAL_RECENT_AUTHENTICATION:15m}
+        mfa-required: ${DESKSEED_AUDIT_REVEAL_MFA_REQUIRED:false}
+      cursor:
+        active-key-id: ${DESKSEED_AUDIT_CURSOR_ACTIVE_KEY_ID:v1}
+        signing-keys:
+          # Local-only development value. Production overrides this with a provisioned secret.
+          v1: ${DESKSEED_AUDIT_CURSOR_SIGNING_KEY:deskseed-local-audit-explorer-cursor-signing-key-change-before-production}
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS:http://localhost:5173}
   portal:

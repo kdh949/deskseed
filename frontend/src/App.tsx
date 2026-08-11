@@ -3,10 +3,15 @@ import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { AgentShell } from './features/agent-shell/AgentShell'
 import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
+import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { AdminShell } from './features/admin/AdminShell'
+import { AuditShell } from './features/audit/AuditShell'
+import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
 import {
+  AgentRoute,
   AdminRoute,
+  AuditRoute,
   StaffRoute,
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
@@ -47,29 +52,35 @@ export const appRoutes: RouteObject[] = [
         element: <StaffRoute />,
         children: [
           {
-            path: '/agent',
-            element: <AgentShell />,
+            element: <AgentRoute />,
             children: [
               {
-                index: true,
-                element: <Navigate to="/agent/views/my-open" replace />,
-              },
-              {
-                path: 'home',
-                element: <Navigate to="/agent/views/my-open" replace />,
-              },
-              {
-                path: 'views',
-                element: <Navigate to="/agent/views/my-open" replace />,
-              },
-              { path: 'views/:viewKey', element: <AgentViewsPage /> },
-              {
-                path: 'tickets/:ticketNumber',
-                element: <AgentTicketWorkspacePage />,
-              },
-              {
-                path: '*',
-                element: <Navigate to="/agent/views/my-open" replace />,
+                path: '/agent',
+                element: <AgentShell />,
+                children: [
+                  {
+                    index: true,
+                    element: <Navigate to="/agent/views/my-open" replace />,
+                  },
+                  {
+                    path: 'home',
+                    element: <Navigate to="/agent/views/my-open" replace />,
+                  },
+                  {
+                    path: 'views',
+                    element: <Navigate to="/agent/views/my-open" replace />,
+                  },
+                  { path: 'views/:viewKey', element: <AgentViewsPage /> },
+                  { path: 'search', element: <AgentSearchPage /> },
+                  {
+                    path: 'tickets/:ticketNumber',
+                    element: <AgentTicketWorkspacePage />,
+                  },
+                  {
+                    path: '*',
+                    element: <Navigate to="/agent/views/my-open" replace />,
+                  },
+                ],
               },
             ],
           },
@@ -89,6 +100,26 @@ export const appRoutes: RouteObject[] = [
                   {
                     path: '*',
                     element: <Navigate to="/admin/staff" replace />,
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            element: <AuditRoute />,
+            children: [
+              {
+                path: '/audit',
+                element: <AuditShell />,
+                children: [
+                  {
+                    index: true,
+                    element: <Navigate to="/audit/activity" replace />,
+                  },
+                  { path: 'activity', element: <AuditExplorerPage /> },
+                  {
+                    path: '*',
+                    element: <Navigate to="/audit/activity" replace />,
                   },
                 ],
               },

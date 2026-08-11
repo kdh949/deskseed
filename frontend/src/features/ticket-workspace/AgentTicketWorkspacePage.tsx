@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
 import { ScreenState, SplitPanel, TicketTabs } from '../../shared/ui/system'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
@@ -15,6 +15,8 @@ import { useTicketEditor } from './useTicketEditor'
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
+  const [searchParams] = useSearchParams()
+  const originSearchEventId = validUuid(searchParams.get('originSearchEventId'))
   const session = useStaffSession()
   const interactionId = useMemo(createInteractionId, [ticketNumber])
   const queryClient = useQueryClient()
@@ -22,7 +24,12 @@ export function AgentTicketWorkspacePage() {
   const query = useQuery({
     queryKey,
     queryFn: () =>
-      getAgentTicket(ticketNumber ?? 0, interactionId, 'NAVIGATION'),
+      getAgentTicket(
+        ticketNumber ?? 0,
+        interactionId,
+        'NAVIGATION',
+        originSearchEventId,
+      ),
     enabled: ticketNumber !== null,
   })
 
@@ -265,4 +272,13 @@ function createInteractionId(): string {
     byte.toString(16).padStart(2, '0'),
   ).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function validUuid(value: string | null): string | undefined {
+  return value &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+    ? value
+    : undefined
 }

@@ -20,6 +20,7 @@ export function AgentShell() {
   const views = useQuery({ queryKey: ['agent-views'], queryFn: listAgentViews })
   const navItems: NavRailItem[] = [
     { to: '/agent/views', label: 'Views', icon: 'V' },
+    { to: '/agent/search', label: '검색', icon: 'S' },
     ...(session.staff?.role === 'ADMIN'
       ? [{ to: '/admin/staff', label: '관리자 설정', icon: 'A' }]
       : []),
