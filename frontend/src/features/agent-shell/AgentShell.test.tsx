@@ -92,6 +92,10 @@ describe('AgentShell', () => {
     ).toBeVisible()
 
     await user.tab()
+    expect(
+      screen.getByRole('link', { name: '상담사 작업 내용으로 건너뛰기' }),
+    ).toHaveFocus()
+    await user.tab()
     expect(screen.getByRole('link', { name: 'Deskseed Views' })).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('link', { name: 'Views' })).toHaveFocus()

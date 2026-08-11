@@ -81,7 +81,8 @@ a {
   gap: 12px;
   text-decoration: none;
 }
-.brand-mark {
+.brand-mark,
+.deskseed-brand-mark {
   width: 40px;
   height: 40px;
   border-radius: 6px;
@@ -90,6 +91,11 @@ a {
   background: var(--brand);
   color: white;
   font-weight: 800;
+}
+
+.deskseed-brand-mark.is-compact {
+  width: 34px;
+  height: 34px;
 }
 .brand strong,
 .brand small {
@@ -601,6 +607,11 @@ textarea[aria-invalid='true'] {
 .agent-brand {
   background: #14848a;
   font-size: 1rem;
+}
+.agent-brand .deskseed-brand-mark {
+  width: 40px;
+  height: 40px;
+  background: transparent;
 }
 .agent-nav-items {
   display: grid;
@@ -1425,7 +1436,7 @@ textarea[aria-invalid='true'] {
   text-decoration: none;
 }
 
-.admin-brand span {
+.admin-brand .deskseed-brand-mark {
   width: 34px;
   height: 34px;
   display: grid;
