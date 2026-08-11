@@ -602,6 +602,7 @@ textarea[aria-invalid='true'] {
   font-size: 0.82rem;
   font-weight: 800;
   text-decoration: none;
+  padding: 0;
 }
 
 .agent-brand {
@@ -1103,7 +1104,7 @@ textarea[aria-invalid='true'] {
   color: #435a63;
 }
 .priority-low {
-  color: #668087;
+  color: var(--ds-color-text-subtle);
 }
 .queue-pagination {
   display: flex;
@@ -1186,6 +1187,12 @@ textarea[aria-invalid='true'] {
   border-bottom-color: #fff;
   border-radius: 5px 5px 0 0;
   background: #fff;
+}
+
+.ticket-tabs-list {
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
 }
 .active-ticket-tab strong {
   max-width: 330px;
@@ -1325,7 +1332,8 @@ textarea[aria-invalid='true'] {
   background: #fff;
   box-shadow: 0 1px 2px rgba(20, 42, 49, 0.04);
 }
-.conversation-entry > header {
+.conversation-entry > header,
+.conversation-entry > article > header {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
@@ -1349,7 +1357,8 @@ textarea[aria-invalid='true'] {
   color: #596970;
   font-size: 0.7rem;
 }
-.conversation-entry > p {
+.conversation-entry > p,
+.conversation-entry > article > p {
   margin: 15px 0 2px 43px;
   color: #28383f;
   line-height: 1.7;
@@ -1471,7 +1480,7 @@ textarea[aria-invalid='true'] {
 }
 .history-list span,
 .history-list time {
-  color: #718087;
+  color: var(--ds-color-text-subtle);
   font-size: 0.72rem;
 }
 .related-context h2 {
@@ -1646,6 +1655,7 @@ textarea[aria-invalid='true'] {
   margin: 8px 0 6px;
   font-size: clamp(2rem, 4vw, 3rem);
   letter-spacing: -0.04em;
+  line-height: 1.08;
 }
 
 .admin-title-row p:last-child {

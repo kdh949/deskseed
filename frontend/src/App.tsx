@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { AgentShell } from './features/agent-shell/AgentShell'
@@ -17,7 +18,27 @@ import { NewRequestPage } from './pages/NewRequestPage'
 import { RequestDetailPage } from './pages/RequestDetailPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
 
+const FrontendSystemFixturePage = import.meta.env.DEV
+  ? lazy(() =>
+      import('./features/frontend-system-fixtures/FrontendSystemFixturePage').then(
+        (module) => ({ default: module.FrontendSystemFixturePage }),
+      ),
+    )
+  : null
+
 export const appRoutes: RouteObject[] = [
+  ...(import.meta.env.DEV
+    ? [
+        {
+          path: '/__fixtures__/frontend-system/:fixtureName',
+          element: FrontendSystemFixturePage ? (
+            <Suspense fallback={null}>
+              <FrontendSystemFixturePage />
+            </Suspense>
+          ) : null,
+        },
+      ]
+    : []),
   {
     element: <StaffSessionLayout />,
     children: [
