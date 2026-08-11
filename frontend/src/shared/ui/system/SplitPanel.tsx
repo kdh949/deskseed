@@ -1,6 +1,68 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from 'react'
+import {
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react'
 
-interface PanelResizerProps {
+interface SplitPanelProps {
+  propertyPanel: ReactNode
+  conversationPanel: ReactNode
+  contextPanel?: ReactNode
+  propertyWidth: number
+  contextWidth: number
+  onPropertyWidthChange: (value: number) => void
+  onContextWidthChange: (value: number) => void
+}
+
+export function SplitPanel({
+  propertyPanel,
+  conversationPanel,
+  contextPanel,
+  propertyWidth,
+  contextWidth,
+  onPropertyWidthChange,
+  onContextWidthChange,
+}: SplitPanelProps) {
+  const style = {
+    '--property-panel-width': `${propertyWidth}px`,
+    '--context-panel-width': `${contextWidth}px`,
+  } as CSSProperties
+
+  return (
+    <div
+      className={`ticket-workspace-grid${contextPanel ? '' : ' context-collapsed'}`}
+      style={style}
+    >
+      {propertyPanel}
+      <ResizeHandle
+        label="속성 패널 너비 조절"
+        value={propertyWidth}
+        minimum={240}
+        maximum={420}
+        direction={1}
+        onChange={onPropertyWidthChange}
+      />
+      {conversationPanel}
+      {contextPanel ? (
+        <>
+          <ResizeHandle
+            label="컨텍스트 패널 너비 조절"
+            value={contextWidth}
+            minimum={240}
+            maximum={520}
+            direction={-1}
+            onChange={onContextWidthChange}
+          />
+          {contextPanel}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+interface ResizeHandleProps {
   label: string
   value: number
   minimum: number
@@ -9,14 +71,14 @@ interface PanelResizerProps {
   onChange: (value: number) => void
 }
 
-export function PanelResizer({
+function ResizeHandle({
   label,
   value,
   minimum,
   maximum,
   direction,
   onChange,
-}: PanelResizerProps) {
+}: ResizeHandleProps) {
   const dragStart = useRef<{ x: number; width: number } | null>(null)
 
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {

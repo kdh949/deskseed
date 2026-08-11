@@ -613,6 +613,15 @@ textarea[aria-invalid='true'] {
   height: 40px;
   background: transparent;
 }
+
+.status-badge-symbol {
+  margin-right: var(--ds-space-1);
+  font-size: 0.62em;
+}
+
+.conversation-entry > article {
+  display: contents;
+}
 .agent-nav-items {
   display: grid;
   gap: 8px;

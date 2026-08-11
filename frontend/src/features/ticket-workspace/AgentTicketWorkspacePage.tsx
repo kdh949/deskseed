@@ -1,11 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useRef, type CSSProperties } from 'react'
+import { useMemo, useRef } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
 import type { AgentTicketStatus } from '../../api/types'
-import { StatusBadge } from '../../components/StatusBadge'
+import {
+  PropertyPanel,
+  SplitPanel,
+  TicketTabs,
+  type PropertyPanelItem,
+} from '../../shared/ui/system'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
-import { PanelResizer } from './PanelResizer'
 import { TicketContextPanel } from './TicketContextPanel'
 import { TicketConversation } from './TicketConversation'
 import { usePanelPreferences } from './usePanelPreferences'
@@ -38,42 +42,30 @@ export function AgentTicketWorkspacePage() {
 
   const detail = query.data
   const ticket = detail.ticket
-  const gridStyle = {
-    '--property-panel-width': `${preferences.propertyWidth}px`,
-    '--context-panel-width': `${preferences.contextWidth}px`,
-  } as CSSProperties
+  const properties: PropertyPanelItem[] = [
+    { label: '상태', value: statusLabel(ticket.status) },
+    { label: '우선순위', value: ticket.priority },
+    { label: '요청자', value: ticket.requester.displayName },
+    { label: '그룹', value: ticket.group?.name ?? '미배정' },
+    { label: '담당자', value: ticket.assignee?.displayName ?? '미배정' },
+    { label: '업데이트', value: formatDate(ticket.updatedAt) },
+    { label: '티켓 유형', value: ticket.isChild ? 'Child task' : '일반 티켓' },
+  ]
 
   return (
     <main
       className="ticket-workspace-page"
       aria-labelledby="ticket-workspace-title"
     >
-      <header className="ticket-tabbar">
-        <Link
-          className="ticket-back-link"
-          to="/agent/views/my-open"
-          aria-label="Views로 돌아가기"
-        >
-          ←
-        </Link>
-        <div className="active-ticket-tab">
-          <StatusBadge status={ticket.status} />
-          <span>#{ticket.ticketNumber}</span>
-          <strong>{ticket.subject}</strong>
-        </div>
-        <button
-          className="compact-button"
-          type="button"
-          onClick={() => query.refetch()}
-        >
-          티켓 새로고침
-        </button>
-        {query.isFetching ? (
-          <span className="sr-only" role="status">
-            티켓 최신 정보 확인 중
-          </span>
-        ) : null}
-      </header>
+      <TicketTabs
+        backTo="/agent/views/my-open"
+        backLabel="Views로 돌아가기"
+        ticketNumber={ticket.ticketNumber}
+        subject={ticket.subject}
+        status={ticket.status}
+        onRefresh={() => query.refetch()}
+        refreshing={query.isFetching}
+      />
       <header className="ticket-titlebar">
         <div>
           <p className="agent-page-eyebrow">
@@ -101,70 +93,34 @@ export function AgentTicketWorkspacePage() {
           </button>
         )}
       </header>
-      <div
-        className={`ticket-workspace-grid${preferences.contextCollapsed ? ' context-collapsed' : ''}`}
-        style={gridStyle}
-      >
-        <section className="ticket-properties-panel" aria-label="티켓 속성">
-          <header className="workspace-panel-header">
-            <h2>속성</h2>
-            <span>v{ticket.version}</span>
-          </header>
-          <dl className="ticket-properties">
-            <Property label="상태" value={statusLabel(ticket.status)} />
-            <Property label="우선순위" value={ticket.priority} />
-            <Property label="요청자" value={ticket.requester.displayName} />
-            <Property label="그룹" value={ticket.group?.name ?? '미배정'} />
-            <Property
-              label="담당자"
-              value={ticket.assignee?.displayName ?? '미배정'}
-            />
-            <Property label="업데이트" value={formatDate(ticket.updatedAt)} />
-            <Property
-              label="티켓 유형"
-              value={ticket.isChild ? 'Child task' : '일반 티켓'}
-            />
-          </dl>
-          <div className="read-boundary-note">
-            <strong>읽기 범위: ALL_TICKETS</strong>
-            <p>
-              다른 그룹 티켓의 쓰기 권한은 현재 그룹·담당자 정책을 따릅니다.
-            </p>
-          </div>
-        </section>
-        <PanelResizer
-          label="속성 패널 너비 조절"
-          value={preferences.propertyWidth}
-          minimum={240}
-          maximum={420}
-          direction={1}
-          onChange={setPropertyWidth}
-        />
-        <TicketConversation comments={detail.comments} />
-        {!preferences.contextCollapsed ? (
-          <>
-            <PanelResizer
-              label="컨텍스트 패널 너비 조절"
-              value={preferences.contextWidth}
-              minimum={240}
-              maximum={520}
-              direction={-1}
-              onChange={setContextWidth}
-            />
+      <SplitPanel
+        propertyWidth={preferences.propertyWidth}
+        contextWidth={preferences.contextWidth}
+        onPropertyWidthChange={setPropertyWidth}
+        onContextWidthChange={setContextWidth}
+        propertyPanel={
+          <PropertyPanel
+            title="속성"
+            meta={`v${ticket.version}`}
+            items={properties}
+            footer={
+              <div className="read-boundary-note">
+                <strong>읽기 범위: ALL_TICKETS</strong>
+                <p>
+                  다른 그룹 티켓의 쓰기 권한은 현재 그룹·담당자 정책을 따릅니다.
+                </p>
+              </div>
+            }
+          />
+        }
+        conversationPanel={<TicketConversation comments={detail.comments} />}
+        contextPanel={
+          preferences.contextCollapsed ? undefined : (
             <TicketContextPanel detail={detail} />
-          </>
-        ) : null}
-      </div>
+          )
+        }
+      />
     </main>
-  )
-}
-
-function Property({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
   )
 }
 
