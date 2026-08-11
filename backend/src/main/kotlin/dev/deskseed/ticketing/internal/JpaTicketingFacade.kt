@@ -81,6 +81,7 @@ internal class JpaTicketingFacade(
                 id = auditId,
                 ticketId = ticket.id,
                 ticketVersion = 0,
+                expectedVersion = 0,
                 actorType = command.actor.actorType.name,
                 actorId = command.actor.actorId,
                 source = command.context.source.name,

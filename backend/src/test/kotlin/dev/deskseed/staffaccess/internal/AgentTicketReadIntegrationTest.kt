@@ -465,9 +465,9 @@ class AgentTicketReadIntegrationTest {
         jdbcTemplate.update(
             """
             insert into ticket_audits
-                (id, ticket_id, ticket_version, actor_type, actor_id, source,
+                (id, ticket_id, ticket_version, expected_version, actor_type, actor_id, source,
                  request_id, correlation_id, command_id, created_at)
-            values (?, ?, 0, 'STAFF', ?, 'AGENT_UI', 'fixture-request', 'fixture-correlation',
+            values (?, ?, 0, 0, 'STAFF', ?, 'AGENT_UI', 'fixture-request', 'fixture-correlation',
                     'fixture-command', now())
             """.trimIndent(),
             auditId,

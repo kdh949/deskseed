@@ -39,6 +39,7 @@ class SecurityConfiguration(
             )
             exposedHeaders = listOf(
                 "Location",
+                "ETag",
                 RequestIdFilter.REQUEST_ID_HEADER,
                 RequestIdFilter.CORRELATION_ID_HEADER,
             )

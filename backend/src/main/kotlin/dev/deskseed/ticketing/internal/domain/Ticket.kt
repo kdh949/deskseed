@@ -20,17 +20,30 @@ internal class Ticket private constructor(
     val channel: TicketChannel,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val groupId: UUID?,
+    val assigneeId: UUID?,
     val firstComment: TicketComment,
 ) {
     init {
         require(subject.isNotBlank()) { "Ticket subject must not be blank" }
         require(firstComment.ticketId == id) { "The first comment must belong to the ticket" }
-        require(firstComment.visibility == CommentVisibility.PUBLIC) {
-            "A customer web request must start with a public comment"
+        when (kind) {
+            TicketKind.CUSTOMER_REQUEST -> {
+                require(firstComment.visibility == CommentVisibility.PUBLIC) {
+                    "A customer web request must start with a public comment"
+                }
+                require(firstComment.authorType == CommentAuthorType.CUSTOMER) {
+                    "A customer web request must start with a customer comment"
+                }
+            }
+            TicketKind.AGENT_CREATED -> require(firstComment.authorType == CommentAuthorType.AGENT) {
+                "An agent-created ticket must start with an agent comment"
+            }
+            TicketKind.INTERNAL_CHILD -> require(firstComment.visibility == CommentVisibility.INTERNAL) {
+                "An internal child ticket must start with an internal comment"
+            }
         }
-        require(firstComment.authorType == CommentAuthorType.CUSTOMER) {
-            "A customer web request must start with a customer comment"
-        }
+        require(assigneeId == null || groupId != null) { "An assignee requires a group" }
     }
 
     companion object {
@@ -56,6 +69,8 @@ internal class Ticket private constructor(
                 channel = TicketChannel.WEB,
                 createdAt = now,
                 updatedAt = now,
+                groupId = null,
+                assigneeId = null,
                 firstComment = TicketComment(
                     id = UUID.randomUUID(),
                     ticketId = ticketId,
@@ -63,6 +78,47 @@ internal class Ticket private constructor(
                     authorId = requesterId,
                     visibility = CommentVisibility.PUBLIC,
                     body = message.trim(),
+                    createdAt = now,
+                ),
+            )
+        }
+
+        fun createByAgent(
+            ticketNumber: Long,
+            requesterId: UUID,
+            subject: String,
+            firstCommentBody: String,
+            firstCommentVisibility: CommentVisibility,
+            priority: TicketPriority,
+            groupId: UUID?,
+            assigneeId: UUID?,
+            actorId: UUID,
+            now: Instant,
+        ): Ticket {
+            require(ticketNumber > 0) { "Ticket number must be positive" }
+            require(firstCommentBody.isNotBlank()) { "First comment must not be blank" }
+
+            val ticketId = UUID.randomUUID()
+            return Ticket(
+                id = ticketId,
+                ticketNumber = ticketNumber,
+                requesterId = requesterId,
+                kind = TicketKind.AGENT_CREATED,
+                subject = subject.trim(),
+                status = TicketStatus.NEW,
+                priority = priority,
+                channel = TicketChannel.AGENT,
+                createdAt = now,
+                updatedAt = now,
+                groupId = groupId,
+                assigneeId = assigneeId,
+                firstComment = TicketComment(
+                    id = UUID.randomUUID(),
+                    ticketId = ticketId,
+                    authorType = CommentAuthorType.AGENT,
+                    authorId = actorId,
+                    visibility = firstCommentVisibility,
+                    body = firstCommentBody.trim(),
                     createdAt = now,
                 ),
             )

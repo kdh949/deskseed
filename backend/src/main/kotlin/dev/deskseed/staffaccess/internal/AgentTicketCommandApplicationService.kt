@@ -1,0 +1,91 @@
+package dev.deskseed.staffaccess.internal
+
+import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.foundation.CommandContext
+import dev.deskseed.organization.StaffRole
+import dev.deskseed.ticketing.AgentCommentDraft
+import dev.deskseed.ticketing.AgentTicketCommandService
+import dev.deskseed.ticketing.CommentVisibility
+import dev.deskseed.ticketing.CreateAgentTicketCommand
+import dev.deskseed.ticketing.StaffTicketCommandActor
+import dev.deskseed.ticketing.TicketCommandResult
+import dev.deskseed.ticketing.TicketField
+import dev.deskseed.ticketing.TicketPriority
+import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.UpdateAgentTicketCommand
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
+
+internal data class CreateAgentTicketInput(
+    val requesterName: String,
+    val requesterEmail: String,
+    val subject: String,
+    val firstComment: AgentCommentDraft,
+    val priority: TicketPriority,
+    val groupId: UUID?,
+    val assigneeId: UUID?,
+)
+
+internal data class UpdateAgentTicketInput(
+    val expectedVersion: Long,
+    val changedFields: Set<TicketField>,
+    val status: TicketStatus?,
+    val priority: TicketPriority?,
+    val groupId: UUID?,
+    val assigneeId: UUID?,
+    val comment: AgentCommentDraft?,
+)
+
+@Service
+internal class AgentTicketCommandApplicationService(
+    private val customerDirectory: CustomerDirectory,
+    private val ticketCommandService: AgentTicketCommandService,
+) {
+    @Transactional
+    fun create(
+        principal: StaffPrincipal,
+        input: CreateAgentTicketInput,
+        context: CommandContext,
+    ): TicketCommandResult {
+        val requester = customerDirectory.findOrCreateUnverified(input.requesterName, input.requesterEmail)
+        return ticketCommandService.create(
+            CreateAgentTicketCommand(
+                requesterId = requester.id,
+                subject = input.subject,
+                firstComment = input.firstComment,
+                priority = input.priority,
+                groupId = input.groupId,
+                assigneeId = input.assigneeId,
+                actor = principal.commandActor(),
+                context = context,
+            ),
+        )
+    }
+
+    fun update(
+        principal: StaffPrincipal,
+        ticketNumber: Long,
+        input: UpdateAgentTicketInput,
+        context: CommandContext,
+    ): TicketCommandResult = ticketCommandService.update(
+        UpdateAgentTicketCommand(
+            ticketNumber = ticketNumber,
+            expectedVersion = input.expectedVersion,
+            changedFields = input.changedFields,
+            status = input.status,
+            priority = input.priority,
+            groupId = input.groupId,
+            assigneeId = input.assigneeId,
+            comment = input.comment,
+            actor = principal.commandActor(),
+            context = context,
+        ),
+    )
+
+    private fun StaffPrincipal.commandActor() = StaffTicketCommandActor(
+        id = id,
+        displayName = displayName,
+        isAdmin = role == StaffRole.ADMIN,
+    )
+}

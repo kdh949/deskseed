@@ -469,6 +469,8 @@ paths:
         '401': *id001
         '403': *id001
         '409': *id001
+        '422': *id001
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}:
     get:
       summary: Read an agent ticket projection
@@ -536,13 +538,6 @@ paths:
       - staffSession: []
       parameters:
       - *id002
-      - &id004
-        name: If-Match
-        in: header
-        required: true
-        schema:
-          type: string
-        description: Ticket ETag returned by the latest read.
       requestBody:
         required: true
         content:
@@ -563,8 +558,23 @@ paths:
         '400': *id001
         '401': *id001
         '403': *id001
-        '409': *id001
-        '412': *id001
+        '409':
+          description: Requested fields overlap changes committed after expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldConflictProblem'
+              example:
+                type: /problems/ticket-field-conflict
+                title: Ticket fields changed concurrently
+                status: 409
+                detail: Some fields were changed by another actor.
+                requestId: req-123
+                currentVersion: 14
+                conflictingFields:
+                - assigneeId
+        '422': *id001
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/transfer:
     post:
       summary: Transfer ticket ownership to a group or agent
@@ -579,7 +589,13 @@ paths:
       - staffSession: []
       parameters:
       - *id002
-      - *id004
+      - &id004
+        name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+        description: Ticket ETag returned by the latest read.
       requestBody:
         required: true
         content:
@@ -1733,6 +1749,34 @@ components:
           items:
             type: string
       additionalProperties: true
+    TicketFieldConflictProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required:
+        - currentVersion
+        - conflictingFields
+        properties:
+          type:
+            type: string
+            const: /problems/ticket-field-conflict
+          status:
+            type: integer
+            const: 409
+          currentVersion:
+            type: integer
+            format: int64
+          conflictingFields:
+            type: array
+            minItems: 1
+            uniqueItems: true
+            items:
+              type: string
+              enum:
+              - status
+              - priority
+              - groupId
+              - assigneeId
     FieldError:
       type: object
       required:
@@ -2243,9 +2287,37 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
-    TicketPatch:
+    UpdateTicketCommand:
       type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - changedFields
+      anyOf:
+      - properties:
+          changedFields:
+            minItems: 1
+      - required:
+        - comment
+        properties:
+          comment:
+            $ref: '#/components/schemas/CommentDraft'
       properties:
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        changedFields:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - status
+            - priority
+            - groupId
+            - assigneeId
         status:
           $ref: '#/components/schemas/AgentTicketStatus'
         priority:
@@ -2260,35 +2332,10 @@ components:
           - string
           - 'null'
           format: uuid
-        subject:
-          type: string
-          minLength: 1
-          maxLength: 200
-    UpdateTicketCommand:
-      type: object
-      required:
-      - expectedVersion
-      - changedFields
-      properties:
-        expectedVersion:
-          type: integer
-          format: int64
-        changedFields:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            enum:
-            - subject
-            - status
-            - priority
-            - group
-            - assignee
-        patch:
-          $ref: '#/components/schemas/TicketPatch'
         comment:
-          $ref: '#/components/schemas/CommentDraft'
+          oneOf:
+          - $ref: '#/components/schemas/CommentDraft'
+          - type: 'null'
         clientCommandId:
           type: string
           format: uuid
@@ -2390,6 +2437,7 @@ components:
           $ref: '#/components/schemas/TicketSummary'
     CreateAgentTicket:
       type: object
+      additionalProperties: false
       required:
       - requester
       - subject
@@ -2398,15 +2446,19 @@ components:
       properties:
         requester:
           type: object
+          additionalProperties: false
           required:
           - name
           - email
           properties:
             name:
               type: string
+              minLength: 1
+              maxLength: 100
             email:
               type: string
               format: email
+              maxLength: 254
         subject:
           type: string
           minLength: 1
@@ -2424,6 +2476,9 @@ components:
           type:
           - string
           - 'null'
+          format: uuid
+        clientCommandId:
+          type: string
           format: uuid
     CreateChildTicketResult:
       type: object
@@ -2468,6 +2523,11 @@ components:
       - actor
       - source
       - createdAt
+      - requestId
+      - correlationId
+      - commandId
+      - expectedVersion
+      - resultVersion
       - events
       properties:
         id:
@@ -2485,6 +2545,16 @@ components:
           format: date-time
         correlationId:
           type: string
+        requestId:
+          type: string
+        commandId:
+          type: string
+        expectedVersion:
+          type: integer
+          format: int64
+        resultVersion:
+          type: integer
+          format: int64
         events:
           type: array
           items:

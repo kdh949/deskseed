@@ -88,7 +88,7 @@ Only public comments and customer-safe fields are returned.
 ### Combined ticket update
 
 ```http
-POST /api/v1/agent/tickets/1042/updates
+POST /api/v1/agent/tickets/1042/commands
 Content-Type: application/json
 ```
 

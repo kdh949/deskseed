@@ -177,6 +177,13 @@ load aggregate
 → commit
 ```
 
+Staff `UpdateTicket` uses the request `expectedVersion` and explicit field set. If the row is stale,
+the service intersects that set with structured audit fields committed after the expected version.
+An overlap is rejected with `409`; a disjoint change is applied to the latest row. If two transactions
+still race at commit, the losing optimistic transaction is fully rolled back and retried from the latest
+row with authorization and conflict checks repeated. Group changes that would invalidate the current
+assignee require the request to include an explicit compatible `assigneeId` or `null` clear.
+
 ### Sensitive read
 
 ```text
