@@ -22,6 +22,16 @@ const stateFixtures = [
   ['states', /Deskseed 상태 프리미티브/],
 ] as const
 
+test('fixture visual runner serves the development-only fixture route', async ({
+  page,
+}) => {
+  const response = await page.goto('/__fixtures__/frontend-system/agent-home')
+  expect(response?.ok()).toBe(true)
+  await expect(
+    page.getByRole('heading', { name: /좋은 오후예요/ }),
+  ).toBeVisible()
+})
+
 for (const [fixture, heading] of fixtures) {
   for (const viewport of viewports) {
     test(`${fixture} ${viewport.width}px 결정론적 시각 회귀`, async ({
@@ -91,17 +101,31 @@ test('skip link, context tabs, composer modes, and resize handles preserve keybo
   await customerTab.focus()
   await page.keyboard.press('ArrowRight')
   await expect(page.getByRole('tab', { name: '기록' })).toBeFocused()
-  await expect(page.getByRole('tabpanel')).toContainText('ASSIGNEE CHANGED')
+  await expect(page.getByRole('tabpanel', { name: '기록' })).toContainText(
+    'ASSIGNEE CHANGED',
+  )
 
   await expect(page.getByRole('status')).toContainText(
     '고객에게 공개되지 않습니다',
   )
   await page.getByRole('textbox', { name: '내부 메모' }).fill('팀 확인 메모')
-  await page.getByRole('tab', { name: '공개 답변' }).click()
+  const internalComposerTab = page.getByRole('tab', { name: '내부 메모' })
+  await internalComposerTab.focus()
+  await page.keyboard.press('ArrowRight')
+  const publicComposerTab = page.getByRole('tab', { name: '공개 답변' })
+  await expect(publicComposerTab).toBeFocused()
   await page.getByRole('textbox', { name: '공개 답변' }).fill('고객 안내 답변')
-  await page.getByRole('tab', { name: '내부 메모' }).click()
+  await publicComposerTab.focus()
+  await page.keyboard.press('End')
+  await expect(internalComposerTab).toBeFocused()
   await expect(page.getByRole('textbox', { name: '내부 메모' })).toHaveValue(
     '팀 확인 메모',
+  )
+  await internalComposerTab.focus()
+  await page.keyboard.press('Home')
+  await expect(publicComposerTab).toBeFocused()
+  await expect(page.getByRole('textbox', { name: '공개 답변' })).toHaveValue(
+    '고객 안내 답변',
   )
 
   await expect(page.locator('.visibility-internal').first()).toContainText(

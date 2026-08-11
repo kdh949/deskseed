@@ -25,7 +25,7 @@
 - Reusable inventory: AppShell, NavRail, WorkSidebar, TicketTabs, TicketTable, SplitPanel, PropertyPanel, ConversationTimeline, ContextPanel, notification/error and unified state primitives.
 - Garden imports are confined to `shared/ui/garden`; Deskseed wrappers own product styling and names.
 - Loading, empty, error, denied, not-found, stale and conflict variants share one state vocabulary.
-- PUBLIC reply and INTERNAL note seams expose text, icon and ARIA announcements and keep mode-specific drafts separate; no write API is added.
+- PUBLIC reply and INTERNAL note seams expose text, icon and ARIA announcements and keep mode-specific drafts separate; the Composer follows roving tab and tabpanel semantics with ArrowLeft/ArrowRight/Home/End; no write API is added.
 - Deterministic visual routes cover Agent Home, View Queue, Workspace, Admin, and public form/detail at 1280, 1440 and 1920 where required.
 - Keyboard checks cover skip links, logical focus order, table row open, tabs, and resize handles. Axe must report zero violations for the fixed fixtures.
 
@@ -33,7 +33,7 @@
 
 - Central typography, spacing, density, border, focus, status and z-index tokens.
 - Deskseed shell/workspace component extraction and current-page adoption.
-- Development-only deterministic fixture routes and screenshot baselines.
+- Development-only deterministic fixture routes and screenshot baselines, executed in a separate Vite development browser suite rather than the production Compose suite.
 - Component, keyboard, axe, visual and build verification.
 - Visual threshold/change-control documentation, requirement traceability evidence and Garden notice verification.
 
@@ -71,8 +71,8 @@
 ## Acceptance scenarios
 
 - Given any core screen state, when loading/empty/error/denied/conflict is rendered, then it uses the shared state primitive with an appropriate live-region role and recovery action.
-- Given keyboard-only navigation, when the user tabs from the document start, then the skip link is first, focus remains visible, rows/tabs/actions are reachable, and resize handles respond to arrow keys.
-- Given the reply mode seam, when PUBLIC and INTERNAL are switched, then label, icon and ARIA announcement all change and each mode retains its own draft.
+- Given keyboard-only navigation, when the user tabs from the document start, then the skip link is first, focus remains visible, rows/tabs/actions are reachable, Composer tabs use roving ArrowLeft/ArrowRight/Home/End focus, and resize handles respond to arrow keys.
+- Given the reply mode seam, when PUBLIC and INTERNAL are switched, then label, icon and ARIA announcement all change, each mode retains its own draft, and each tab controls its uniquely labelled panel.
 - Given visual fixtures at required widths, when Playwright captures them, then deterministic baselines match within the documented threshold and no snapshot is updated implicitly.
 - Given the production build, when assets/imports are inspected, then no Zendesk proprietary mark or screenshot is bundled and Garden imports occur only under `shared/ui/garden`.
 
@@ -82,7 +82,8 @@
 - `npm run typecheck`
 - `npm test`
 - `npm run build`
-- `npm run test:e2e`
+- `npm run test:e2e:dev`
+- `npm run test:e2e:stack`
 - source/asset/license scans documented with UI-001~005 evidence
 
 ## Compatibility and migration

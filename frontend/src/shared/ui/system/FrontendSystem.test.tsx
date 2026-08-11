@@ -9,17 +9,39 @@ import { Notification, ScreenState } from './Feedback'
 import { TicketTable } from './TicketTable'
 
 describe('Deskseed frontend system primitives', () => {
-  it('keeps PUBLIC and INTERNAL drafts separate and announces the active mode', async () => {
+  it('keeps PUBLIC and INTERNAL drafts separate with roving tab and panel semantics', async () => {
     const user = userEvent.setup()
     render(<ComposerModeSeam />)
 
+    const publicTab = screen.getByRole('tab', { name: '공개 답변' })
+    const internalTab = screen.getByRole('tab', { name: '내부 메모' })
+    const publicPanel = document.getElementById(
+      publicTab.getAttribute('aria-controls') ?? '',
+    )
+    const internalPanel = document.getElementById(
+      internalTab.getAttribute('aria-controls') ?? '',
+    )
+
+    expect(publicTab).toHaveAttribute('tabindex', '0')
+    expect(internalTab).toHaveAttribute('tabindex', '-1')
+    expect(publicTab.getAttribute('aria-controls')).not.toBe(
+      internalTab.getAttribute('aria-controls'),
+    )
+    expect(publicPanel).toHaveAttribute('role', 'tabpanel')
+    expect(publicPanel).toHaveAttribute('aria-labelledby', publicTab.id)
+    expect(internalPanel).toHaveAttribute('role', 'tabpanel')
+    expect(internalPanel).toHaveAttribute('aria-labelledby', internalTab.id)
     expect(screen.getByRole('status')).toHaveTextContent('공개 답변 모드')
     await user.type(
       screen.getByRole('textbox', { name: '공개 답변' }),
       '고객 답변',
     )
-    await user.click(screen.getByRole('tab', { name: '내부 메모' }))
+    publicTab.focus()
+    await user.keyboard('{ArrowRight}')
 
+    expect(internalTab).toHaveFocus()
+    expect(internalTab).toHaveAttribute('tabindex', '0')
+    expect(publicTab).toHaveAttribute('tabindex', '-1')
     expect(screen.getByRole('status')).toHaveTextContent(
       '고객에게 공개되지 않습니다',
     )
@@ -28,11 +50,22 @@ describe('Deskseed frontend system primitives', () => {
       screen.getByRole('textbox', { name: '내부 메모' }),
       '팀 메모',
     )
-    await user.click(screen.getByRole('tab', { name: '공개 답변' }))
+    internalTab.focus()
+    await user.keyboard('{Home}')
 
+    expect(publicTab).toHaveFocus()
     expect(screen.getByRole('textbox', { name: '공개 답변' })).toHaveValue(
       '고객 답변',
     )
+    publicTab.focus()
+    await user.keyboard('{End}')
+    expect(internalTab).toHaveFocus()
+    expect(screen.getByRole('textbox', { name: '내부 메모' })).toHaveValue(
+      '팀 메모',
+    )
+    internalTab.focus()
+    await user.keyboard('{ArrowLeft}')
+    expect(publicTab).toHaveFocus()
   })
 
   it('moves context tabs with arrow keys and updates the active panel', async () => {

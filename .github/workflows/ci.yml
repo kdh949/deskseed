@@ -85,6 +85,26 @@ jobs:
       - name: Verify browser flow against isolated stack
         run: bash scripts/run-customer-request-e2e.sh
 
+  frontend-browser-e2e:
+    name: Frontend browser E2E
+    needs: [frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.16.0'
+          package-manager-cache: false
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Verify development-only browser fixtures and mocked flows
+        working-directory: frontend
+        run: npm run test:e2e:dev
+
   compose-smoke:
     name: Compose health smoke
     runs-on: ubuntu-latest

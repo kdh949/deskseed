@@ -1,11 +1,11 @@
 import { Link } from 'react-router'
-import type { TicketPriority, TicketStatus } from '../../../api/types'
+import type { AgentTicketStatus, TicketPriority } from '../../../api/types'
 import { StatusBadge } from './StatusBadge'
 
 export interface TicketTableItem {
   ticketNumber: number
   subject: string
-  status: TicketStatus
+  status: AgentTicketStatus
   priority: TicketPriority
   requester: string
   group: string
