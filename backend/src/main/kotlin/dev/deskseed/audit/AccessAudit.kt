@@ -98,6 +98,16 @@ interface SearchQueryProtector {
     fun protect(eventId: UUID, rawQuery: String, occurredAt: Instant): ProtectedSearchQueryAudit
 }
 
+interface SearchQueryRevealer {
+    fun reveal(eventId: UUID, protected: ProtectedSearchQueryAudit): String
+}
+
+class SearchQueryKeyUnavailableException :
+    AccessAuditProtectionException("Protected search query key version is unavailable")
+
+open class SearchQueryAuthenticationException(cause: Throwable) :
+    AccessAuditProtectionException("Protected search query authentication failed", cause)
+
 fun interface AccessAuditSessionFingerprint {
     fun fingerprint(sessionId: String): String
 }

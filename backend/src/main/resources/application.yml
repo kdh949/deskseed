@@ -63,6 +63,15 @@ deskseed:
       keys:
         # Public local-development material only. Production must provision its own 32-byte base64 key.
         local-v1: ${DESKSEED_ACCESS_AUDIT_KEY_LOCAL_V1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+    explorer:
+      reveal:
+        recent-authentication: ${DESKSEED_AUDIT_REVEAL_RECENT_AUTHENTICATION:15m}
+        mfa-required: ${DESKSEED_AUDIT_REVEAL_MFA_REQUIRED:false}
+      cursor:
+        active-key-id: ${DESKSEED_AUDIT_CURSOR_ACTIVE_KEY_ID:v1}
+        signing-keys:
+          # Local-only development value. Production overrides this with a provisioned secret.
+          v1: ${DESKSEED_AUDIT_CURSOR_SIGNING_KEY:deskseed-local-audit-explorer-cursor-signing-key-change-before-production}
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS:http://localhost:5173}
   portal:

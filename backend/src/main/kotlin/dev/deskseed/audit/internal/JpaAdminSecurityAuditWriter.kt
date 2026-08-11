@@ -29,7 +29,10 @@ internal class JpaAdminSecurityAuditWriter(
                 requestId = event.requestId,
                 correlationId = event.correlationId,
                 metadataJson = objectMapper.writeValueAsString(
-                    event.metadata.mapValues { (_, value) -> value.take(200) },
+                    event.metadata.mapValues { (key, value) ->
+                        value.filterNot { it.isISOControl() }
+                            .take(if (key == "reason") 1000 else 256)
+                    },
                 ),
                 occurredAt = event.occurredAt,
             ),

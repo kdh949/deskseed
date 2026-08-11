@@ -4,6 +4,9 @@ import dev.deskseed.audit.AccessAuditProtectionException
 import dev.deskseed.audit.AccessAuditSessionFingerprint
 import dev.deskseed.audit.ProtectedSearchQueryAudit
 import dev.deskseed.audit.SearchQueryProtector
+import dev.deskseed.audit.SearchQueryRevealer
+import dev.deskseed.audit.SearchQueryKeyUnavailableException
+import dev.deskseed.audit.SearchQueryAuthenticationException
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.health.contributor.Health
@@ -38,13 +41,12 @@ internal data class SearchQueryAuditProperties(
 internal class SearchQueryConfigurationException(message: String, cause: Throwable? = null) :
     AccessAuditProtectionException(message, cause)
 
-internal class SearchQueryProtectionException(cause: Throwable) :
-    AccessAuditProtectionException("Protected search query authentication failed", cause)
+internal class SearchQueryProtectionException(cause: Throwable) : SearchQueryAuthenticationException(cause)
 
 internal class SearchQueryProtection(
     private val properties: SearchQueryAuditProperties,
     private val secureRandom: SecureRandom = SecureRandom(),
-) : SearchQueryProtector {
+) : SearchQueryProtector, SearchQueryRevealer {
     private val decodedKeys: Map<String, ByteArray> = decodeKeys(properties)
 
     init {
@@ -103,11 +105,9 @@ internal class SearchQueryProtection(
     }
 
     /** Narrow seam for a future reason-gated, self-audited single-event reveal use case. */
-    fun reveal(eventId: UUID, protected: ProtectedSearchQueryAudit): String {
+    override fun reveal(eventId: UUID, protected: ProtectedSearchQueryAudit): String {
         val rootKey = decodedKeys[protected.keyVersion]
-            ?: throw SearchQueryProtectionException(
-                SearchQueryConfigurationException("Protected search query key version is unavailable"),
-            )
+            ?: throw SearchQueryKeyUnavailableException()
         if (protected.queryCiphertext.size <= GCM_NONCE_BYTES) {
             throw SearchQueryProtectionException(GeneralSecurityException("Invalid ciphertext envelope"))
         }

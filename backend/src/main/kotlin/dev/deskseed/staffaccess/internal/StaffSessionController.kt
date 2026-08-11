@@ -65,6 +65,7 @@ internal class StaffSessionController(
         session.maxInactiveInterval = sessionIdle.seconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         session.setAttribute(StaffSessionValidationFilter.ABSOLUTE_EXPIRES_AT, now.plus(sessionAbsolute))
         session.setAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT, now)
+        session.setAttribute(StaffSessionValidationFilter.AUTHENTICATED_AT, now)
 
         val principal = StaffPrincipal.from(identity)
         val authentication = UsernamePasswordAuthenticationToken.authenticated(

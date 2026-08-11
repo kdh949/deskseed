@@ -28,6 +28,14 @@ deskseed:
       retention-job-initial-delay: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INITIAL_DELAY:10m}
       keys:
         v1: ${DESKSEED_ACCESS_AUDIT_KEY_V1}
+    explorer:
+      reveal:
+        recent-authentication: ${DESKSEED_AUDIT_REVEAL_RECENT_AUTHENTICATION:15m}
+        mfa-required: ${DESKSEED_AUDIT_REVEAL_MFA_REQUIRED:false}
+      cursor:
+        active-key-id: ${DESKSEED_AUDIT_CURSOR_ACTIVE_KEY_ID:v1}
+        signing-keys:
+          v1: ${DESKSEED_AUDIT_CURSOR_SIGNING_KEY}
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS}
   agent-ticket-read:

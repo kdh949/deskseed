@@ -82,6 +82,15 @@ class SecurityAuditorAuthorizationIntegrationTest {
                 .session(browser)
                 .header("X-Interaction-Id", UUID.randomUUID()),
         ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            post("/api/v1/audit/activities/{activityId}/search-query-reveal", UUID.randomUUID())
+                .session(browser)
+                .header("X-CSRF-TOKEN", csrf(browser))
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"reason":"direct URL attempt"}"""),
+        ).andExpect(status().isForbidden)
     }
 
     private fun insertStaff(email: String, role: String, name: String): UUID {

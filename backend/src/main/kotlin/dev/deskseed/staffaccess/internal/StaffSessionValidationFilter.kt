@@ -68,5 +68,7 @@ internal class StaffSessionValidationFilter(
     companion object {
         const val ABSOLUTE_EXPIRES_AT = "deskseed.staff.session.absolute-expires-at"
         const val LAST_ACTIVITY_AT = "deskseed.staff.session.last-activity-at"
+        const val AUTHENTICATED_AT = "deskseed.staff.session.authenticated-at"
+        const val MFA_VERIFIED_AT = "deskseed.staff.session.mfa-verified-at"
     }
 }
