@@ -96,6 +96,12 @@ internal class StaffTicketQueryRepository(
             """
             select t.id, t.ticket_number, t.subject, t.status, t.priority,
                    t.updated_at, t.version, t.kind,
+                   (select count(*)
+                    from ticket_relations relation
+                    join tickets child on child.id = relation.target_ticket_id
+                    where relation.source_ticket_id = t.id
+                      and relation.relation_type = 'PARENT_CHILD'
+                      and child.status not in ('SOLVED', 'CLOSED')) as open_child_count,
                    c.id as customer_id, c.name as customer_name,
                    g.id as group_id, g.name as group_name,
                    s.id as assignee_id, s.display_name as assignee_name
@@ -129,24 +135,61 @@ internal class StaffTicketQueryRepository(
                 updatedAt = result.getTimestamp("updated_at").toInstant(),
                 version = result.getLong("version"),
                 isChild = result.getString("kind") == "INTERNAL_CHILD",
+                openChildCount = result.getInt("open_child_count"),
             )
         }
     }
 
     override fun findDetail(ticketNumber: Long): StaffTicketDetail? {
         val parameters = MapSqlParameterSource("ticketNumber", ticketNumber)
-        val ticketRow = jdbcTemplate.query(
+        val ticketRows = jdbcTemplate.query(
             """
             select t.id, t.ticket_number, t.subject, t.status, t.priority,
                    t.updated_at, t.version, t.kind,
+                   (select count(*)
+                    from ticket_relations relation
+                    join tickets child on child.id = relation.target_ticket_id
+                    where relation.source_ticket_id = t.id
+                      and relation.relation_type = 'PARENT_CHILD'
+                      and child.status not in ('SOLVED', 'CLOSED')) as open_child_count,
                    c.id as customer_id, c.name as customer_name, c.email_display,
                    g.id as group_id, g.name as group_name,
-                   s.id as assignee_id, s.display_name as assignee_name
+                   s.id as assignee_id, s.display_name as assignee_name,
+                   linked.direction as related_direction,
+                   rt.id as related_id, rt.ticket_number as related_ticket_number,
+                   rt.subject as related_subject, rt.status as related_status,
+                   rt.priority as related_priority, rt.updated_at as related_updated_at,
+                   rt.version as related_version, rt.kind as related_kind,
+                   (select count(*)
+                    from ticket_relations open_relation
+                    join tickets open_child on open_child.id = open_relation.target_ticket_id
+                    where open_relation.source_ticket_id = rt.id
+                      and open_relation.relation_type = 'PARENT_CHILD'
+                      and open_child.status not in ('SOLVED', 'CLOSED')) as related_open_child_count,
+                   rc.id as related_customer_id, rc.name as related_customer_name,
+                   rg.id as related_group_id, rg.name as related_group_name,
+                   rs.id as related_assignee_id, rs.display_name as related_assignee_name
             from tickets t
             join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
+            left join lateral (
+                select 'PARENT' as direction, relation.source_ticket_id as related_ticket_id
+                from ticket_relations relation
+                where relation.target_ticket_id = t.id
+                  and relation.relation_type = 'PARENT_CHILD'
+                union all
+                select 'CHILD' as direction, relation.target_ticket_id as related_ticket_id
+                from ticket_relations relation
+                where relation.source_ticket_id = t.id
+                  and relation.relation_type = 'PARENT_CHILD'
+            ) linked on true
+            left join tickets rt on rt.id = linked.related_ticket_id
+            left join customers rc on rc.id = rt.requester_id
+            left join support_groups rg on rg.id = rt.group_id
+            left join staff_accounts rs on rs.id = rt.assignee_id
             where t.ticket_number = :ticketNumber
+            order by linked.direction desc, rt.ticket_number
             """.trimIndent(),
             parameters,
         ) { result, _ ->
@@ -168,14 +211,43 @@ internal class StaffTicketQueryRepository(
                     updatedAt = result.getTimestamp("updated_at").toInstant(),
                     version = result.getLong("version"),
                     isChild = result.getString("kind") == "INTERNAL_CHILD",
+                    openChildCount = result.getInt("open_child_count"),
                 ),
                 customer = StaffTicketCustomer(
                     id = customerId,
                     displayName = result.getString("customer_name"),
                     email = result.getString("email_display"),
                 ),
+                related = result.getString("related_direction")?.let { direction ->
+                    RelatedTicketRow(
+                        direction = direction,
+                        ticket = StaffTicketSummary(
+                            id = result.getObject("related_id", UUID::class.java),
+                            ticketNumber = result.getLong("related_ticket_number"),
+                            subject = result.getString("related_subject"),
+                            status = TicketStatus.valueOf(result.getString("related_status")),
+                            priority = TicketPriority.valueOf(result.getString("related_priority")),
+                            requester = StaffActorSummary(
+                                result.getObject("related_customer_id", UUID::class.java),
+                                "CUSTOMER",
+                                result.getString("related_customer_name"),
+                            ),
+                            group = result.getObject("related_group_id", UUID::class.java)?.let {
+                                StaffGroupReference(it, result.getString("related_group_name"))
+                            },
+                            assignee = result.getObject("related_assignee_id", UUID::class.java)?.let {
+                                StaffReference(it, result.getString("related_assignee_name"))
+                            },
+                            updatedAt = result.getTimestamp("related_updated_at").toInstant(),
+                            version = result.getLong("related_version"),
+                            isChild = result.getString("related_kind") == "INTERNAL_CHILD",
+                            openChildCount = result.getInt("related_open_child_count"),
+                        ),
+                    )
+                },
             )
-        }.firstOrNull() ?: return null
+        }
+        val ticketRow = ticketRows.firstOrNull() ?: return null
 
         val ticketParameters = MapSqlParameterSource("ticketId", ticketRow.summary.id)
         val comments = jdbcTemplate.query(
@@ -235,11 +307,62 @@ internal class StaffTicketQueryRepository(
             )
         }
 
-        return StaffTicketDetail(ticketRow.summary, comments, ticketRow.customer, history)
+        val related = ticketRows.mapNotNull(DetailRow::related)
+        return StaffTicketDetail(
+            ticket = ticketRow.summary,
+            comments = comments,
+            customer = ticketRow.customer,
+            history = history,
+            parent = related.firstOrNull { it.direction == "PARENT" }?.ticket,
+            children = related.filter { it.direction == "CHILD" }.map(RelatedTicketRow::ticket),
+        )
     }
+
+    override fun hasRelationReadGrant(ticketId: UUID, actorId: UUID): Boolean =
+        jdbcTemplate.queryForObject(
+            """
+            select exists (
+                select 1
+                from ticket_relations relation
+                join tickets child on child.id = relation.target_ticket_id
+                where relation.source_ticket_id = :ticketId
+                  and relation.relation_type = 'PARENT_CHILD'
+                  and (
+                      child.assignee_id = :actorId
+                      or exists (
+                          select 1
+                          from group_memberships membership
+                          join support_groups target_group
+                            on target_group.id = membership.group_id
+                           and target_group.status = 'ACTIVE'
+                          where membership.group_id = child.group_id
+                            and membership.staff_id = :actorId
+                            and membership.status = 'ACTIVE'
+                      )
+                  )
+                union all
+                select 1
+                from ticket_relations relation
+                join tickets parent on parent.id = relation.source_ticket_id
+                where relation.target_ticket_id = :ticketId
+                  and relation.relation_type = 'PARENT_CHILD'
+                  and parent.assignee_id = :actorId
+            )
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("ticketId", ticketId)
+                .addValue("actorId", actorId),
+            Boolean::class.java,
+        ) ?: false
 
     private data class DetailRow(
         val summary: StaffTicketSummary,
         val customer: StaffTicketCustomer,
+        val related: RelatedTicketRow?,
+    )
+
+    private data class RelatedTicketRow(
+        val direction: String,
+        val ticket: StaffTicketSummary,
     )
 }

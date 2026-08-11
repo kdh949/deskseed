@@ -86,6 +86,8 @@ data class StaffTicketDetail(
     val comments: List<StaffCommentView>,
     val customer: StaffTicketCustomer,
     val history: List<StaffTicketHistoryItem>,
+    val parent: StaffTicketSummary?,
+    val children: List<StaffTicketSummary>,
 )
 
 interface StaffTicketReadStore {
@@ -99,4 +101,6 @@ interface StaffTicketReadStore {
     ): List<StaffTicketSummary>
 
     fun findDetail(ticketNumber: Long): StaffTicketDetail?
+
+    fun hasRelationReadGrant(ticketId: UUID, actorId: UUID): Boolean
 }

@@ -1,30 +1,26 @@
-import { useQuery } from '@tanstack/react-query'
-import { useMemo, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
-import type { AgentTicketStatus } from '../../api/types'
-import {
-  PropertyPanel,
-  ScreenState,
-  SplitPanel,
-  TicketTabs,
-  type PropertyPanelItem,
-} from '../../shared/ui/system'
+import { ScreenState, SplitPanel, TicketTabs } from '../../shared/ui/system'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
 import { TicketContextPanel } from './TicketContextPanel'
 import { TicketConversation } from './TicketConversation'
+import { TicketPropertiesEditor } from './TicketPropertiesEditor'
+import { TicketReplyComposer } from './TicketReplyComposer'
+import { UnsavedNavigationDialog } from './UnsavedNavigationDialog'
 import { usePanelPreferences } from './usePanelPreferences'
+import { useTicketEditor } from './useTicketEditor'
 
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
   const session = useStaffSession()
   const interactionId = useMemo(createInteractionId, [ticketNumber])
-  const contextToggleRef = useRef<HTMLButtonElement>(null)
-  const { preferences, setPropertyWidth, setContextWidth, toggleContext } =
-    usePanelPreferences(session.staff?.id ?? 'unknown')
+  const queryClient = useQueryClient()
+  const queryKey = ['agent-ticket', ticketNumber, interactionId] as const
   const query = useQuery({
-    queryKey: ['agent-ticket', ticketNumber, interactionId],
+    queryKey,
     queryFn: () =>
       getAgentTicket(ticketNumber ?? 0, interactionId, 'NAVIGATION'),
     enabled: ticketNumber !== null,
@@ -42,16 +38,54 @@ export function AgentTicketWorkspacePage() {
   }
 
   const detail = query.data
+  const refreshLatest = async () => {
+    const latest = await getAgentTicket(
+      ticketNumber,
+      interactionId,
+      'BACKGROUND',
+    )
+    queryClient.setQueryData(queryKey, latest)
+    return latest
+  }
+
+  return (
+    <TicketWorkspaceContent
+      key={`${session.staff?.id ?? 'unknown'}:${ticketNumber}`}
+      detail={detail}
+      staffId={session.staff?.id ?? 'unknown'}
+      refreshLatest={refreshLatest}
+    />
+  )
+}
+
+function TicketWorkspaceContent({
+  detail,
+  staffId,
+  refreshLatest,
+}: {
+  detail: Awaited<ReturnType<typeof getAgentTicket>>
+  staffId: string
+  refreshLatest: () => Promise<Awaited<ReturnType<typeof getAgentTicket>>>
+}) {
+  const contextToggleRef = useRef<HTMLButtonElement>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const { preferences, setPropertyWidth, setContextWidth, toggleContext } =
+    usePanelPreferences(staffId)
+  const refreshWithStatus = async () => {
+    setRefreshing(true)
+    try {
+      return await refreshLatest()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+  const editor = useTicketEditor({
+    detail,
+    staffId,
+    refreshLatest: refreshWithStatus,
+  })
   const ticket = detail.ticket
-  const properties: PropertyPanelItem[] = [
-    { label: '상태', value: statusLabel(ticket.status) },
-    { label: '우선순위', value: ticket.priority },
-    { label: '요청자', value: ticket.requester.displayName },
-    { label: '그룹', value: ticket.group?.name ?? '미배정' },
-    { label: '담당자', value: ticket.assignee?.displayName ?? '미배정' },
-    { label: '업데이트', value: formatDate(ticket.updatedAt) },
-    { label: '티켓 유형', value: ticket.isChild ? 'Child task' : '일반 티켓' },
-  ]
+  const canUpdate = detail.capabilities.includes('UPDATE')
 
   return (
     <main
@@ -64,8 +98,9 @@ export function AgentTicketWorkspacePage() {
         ticketNumber={ticket.ticketNumber}
         subject={ticket.subject}
         status={ticket.status}
-        onRefresh={() => query.refetch()}
-        refreshing={query.isFetching}
+        onRefresh={() => void editor.refreshEditor()}
+        refreshing={refreshing}
+        unsaved={editor.isUnsaved}
       />
       <header className="ticket-titlebar">
         <div>
@@ -100,26 +135,52 @@ export function AgentTicketWorkspacePage() {
         onPropertyWidthChange={setPropertyWidth}
         onContextWidthChange={setContextWidth}
         propertyPanel={
-          <PropertyPanel
-            title="속성"
-            meta={`v${ticket.version}`}
-            items={properties}
+          <TicketPropertiesEditor
+            detail={detail}
+            localFields={editor.localFields}
+            conflict={editor.conflict}
+            conflictRef={editor.conflictRef}
+            disabled={!canUpdate || editor.submitting}
+            onFieldChange={editor.updateField}
+            onResolveConflict={editor.resolveField}
+            onReloadConflict={() => void editor.loadLatestForConflict()}
+          />
+        }
+        conversationPanel={
+          <TicketConversation
+            comments={detail.comments}
             footer={
-              <div className="read-boundary-note">
-                <strong>읽기 범위: ALL_TICKETS</strong>
-                <p>
-                  다른 그룹 티켓의 쓰기 권한은 현재 그룹·담당자 정책을 따릅니다.
-                </p>
-              </div>
+              canUpdate ? (
+                <TicketReplyComposer
+                  mode={editor.mode}
+                  drafts={editor.comments}
+                  submitting={editor.submitting}
+                  canSubmit={editor.canSubmit}
+                  error={editor.error}
+                  success={editor.success}
+                  warnings={editor.warnings}
+                  internalOnly={ticket.isChild}
+                  onModeChange={editor.setMode}
+                  onDraftChange={editor.updateDraft}
+                  onSubmit={() => void editor.submit()}
+                />
+              ) : undefined
             }
           />
         }
-        conversationPanel={<TicketConversation comments={detail.comments} />}
         contextPanel={
           preferences.contextCollapsed ? undefined : (
-            <TicketContextPanel detail={detail} />
+            <TicketContextPanel
+              detail={detail}
+              canUpdate={canUpdate}
+              onCommandCompleted={editor.refreshEditor}
+            />
           )
         }
+      />
+      <UnsavedNavigationDialog
+        blocker={editor.blocker}
+        submitting={editor.submitting}
       />
     </main>
   )
@@ -204,23 +265,4 @@ function createInteractionId(): string {
     byte.toString(16).padStart(2, '0'),
   ).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
-
-function statusLabel(status: AgentTicketStatus) {
-  const labels: Record<AgentTicketStatus, string> = {
-    NEW: '신규',
-    OPEN: '처리 중',
-    PENDING: '고객 답변 대기',
-    ON_HOLD: '보류',
-    SOLVED: '해결됨',
-    CLOSED: '종료',
-  }
-  return labels[status]
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('ko-KR', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
 }

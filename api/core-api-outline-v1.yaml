@@ -469,6 +469,8 @@ paths:
         '401': *id001
         '403': *id001
         '409': *id001
+        '422': *id001
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}:
     get:
       summary: Read an agent ticket projection
@@ -523,7 +525,9 @@ paths:
   /api/v1/agent/tickets/{ticketNumber}/commands:
     post:
       summary: Apply one atomic ticket update command
+      description: INTERNAL_CHILD tickets accept INTERNAL comments only; attempts to add a PUBLIC comment are rejected without mutation or audit.
       operationId: updateAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M3
@@ -531,18 +535,12 @@ paths:
       - REQ-TKT-010
       - REQ-TKT-013
       - REQ-TKT-014
+      - REQ-CHILD-002
       - REQ-AUD-001
       security:
       - staffSession: []
       parameters:
       - *id002
-      - &id004
-        name: If-Match
-        in: header
-        required: true
-        schema:
-          type: string
-        description: Ticket ETag returned by the latest read.
       requestBody:
         required: true
         content:
@@ -563,23 +561,48 @@ paths:
         '400': *id001
         '401': *id001
         '403': *id001
-        '409': *id001
-        '412': *id001
+        '409':
+          description: Requested fields overlap changes committed after expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldConflictProblem'
+              example:
+                type: /problems/ticket-field-conflict
+                title: Ticket fields changed concurrently
+                status: 409
+                detail: Some fields were changed by another actor.
+                requestId: req-123
+                currentVersion: 14
+                conflictingFields:
+                - assigneeId
+        '422': *id001
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/transfer:
     post:
       summary: Transfer ticket ownership to a group or agent
       operationId: transferAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M4
       x-deskseed-requirements:
       - REQ-TKT-011
       - REQ-TKT-012
+      - REQ-AUD-001
+      - REQ-AUD-007
       security:
       - staffSession: []
       parameters:
       - *id002
-      - *id004
+      - &id004
+        name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: '^"?[0-9]+"?$'
+        description: Ticket ETag returned by the latest audited staff read. It must identify the same version as `expectedVersion`.
       requestBody:
         required: true
         content:
@@ -601,11 +624,18 @@ paths:
         '401': *id001
         '403': *id001
         '409': *id001
-        '412': *id001
+        '412':
+          description: The ticket no longer matches the supplied If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketVersionPreconditionProblem'
+        '422': *id001
   /api/v1/agent/tickets/{ticketNumber}/children:
     post:
       summary: Create an internal child ticket
       operationId: createChildTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M5
@@ -613,6 +643,11 @@ paths:
       - REQ-CHILD-001
       - REQ-CHILD-002
       - REQ-CHILD-003
+      - REQ-CHILD-004
+      - REQ-CHILD-006
+      - REQ-CHILD-007
+      - REQ-AUD-001
+      - REQ-AUD-007
       security:
       - staffSession: []
       parameters:
@@ -627,6 +662,11 @@ paths:
       responses:
         '201':
           description: Child created
+          headers:
+            ETag:
+              description: Parent ticket ETag after the relation audit is committed.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -635,7 +675,13 @@ paths:
         '401': *id001
         '403': *id001
         '409': *id001
-        '412': *id001
+        '412':
+          description: The parent no longer matches the supplied If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketVersionPreconditionProblem'
+        '422': *id001
   /api/v1/agent/tickets/{ticketNumber}/audits:
     get:
       summary: Read ticket-local change history
@@ -1733,6 +1779,50 @@ components:
           items:
             type: string
       additionalProperties: true
+    TicketFieldConflictProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required:
+        - currentVersion
+        - conflictingFields
+        properties:
+          type:
+            type: string
+            const: /problems/ticket-field-conflict
+          status:
+            type: integer
+            const: 409
+          currentVersion:
+            type: integer
+            format: int64
+          conflictingFields:
+            type: array
+            minItems: 1
+            uniqueItems: true
+            items:
+              type: string
+              enum:
+              - status
+              - priority
+              - groupId
+              - assigneeId
+    TicketVersionPreconditionProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required:
+        - currentVersion
+        properties:
+          type:
+            type: string
+            const: /problems/ticket-version-precondition-failed
+          status:
+            type: integer
+            const: 412
+          currentVersion:
+            type: integer
+            format: int64
     FieldError:
       type: object
       required:
@@ -2156,8 +2246,10 @@ components:
       - ticket
       - comments
       - capabilities
+      - assignmentOptions
       - context
       - history
+      - warnings
       properties:
         ticket:
           $ref: '#/components/schemas/TicketSummary'
@@ -2169,6 +2261,9 @@ components:
           type: array
           items:
             type: string
+          description: "READ is always present for a successful staff detail; UPDATE is present only when the current actor may mutate the current ticket."
+        assignmentOptions:
+          $ref: '#/components/schemas/TicketAssignmentOptions'
         context:
           $ref: '#/components/schemas/TicketContext'
         history:
@@ -2179,14 +2274,61 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CommandWarning'
+    TicketAssignmentOptions:
+      type: object
+      additionalProperties: false
+      required:
+      - groups
+      properties:
+        groups:
+          type: array
+          description: Active groups and their active members, projected only on the audited staff detail surface.
+          items:
+            $ref: '#/components/schemas/TicketAssignmentGroupOption'
+    TicketAssignmentGroupOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - members
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAssignmentStaffOption'
+    TicketAssignmentStaffOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - displayName
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
     TicketContext:
       type: object
       additionalProperties: false
+      required:
+      - customer
+      - parent
+      - children
+      - externalReferences
       properties:
         customer:
           $ref: '#/components/schemas/TicketCustomer'
         parent:
-          $ref: '#/components/schemas/TicketSummary'
+          oneOf:
+          - $ref: '#/components/schemas/TicketSummary'
+          - type: 'null'
         children:
           type: array
           items:
@@ -2243,9 +2385,37 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
-    TicketPatch:
+    UpdateTicketCommand:
       type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - changedFields
+      anyOf:
+      - properties:
+          changedFields:
+            minItems: 1
+      - required:
+        - comment
+        properties:
+          comment:
+            $ref: '#/components/schemas/CommentDraft'
       properties:
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        changedFields:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - status
+            - priority
+            - groupId
+            - assigneeId
         status:
           $ref: '#/components/schemas/AgentTicketStatus'
         priority:
@@ -2260,40 +2430,16 @@ components:
           - string
           - 'null'
           format: uuid
-        subject:
-          type: string
-          minLength: 1
-          maxLength: 200
-    UpdateTicketCommand:
-      type: object
-      required:
-      - expectedVersion
-      - changedFields
-      properties:
-        expectedVersion:
-          type: integer
-          format: int64
-        changedFields:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            enum:
-            - subject
-            - status
-            - priority
-            - group
-            - assignee
-        patch:
-          $ref: '#/components/schemas/TicketPatch'
         comment:
-          $ref: '#/components/schemas/CommentDraft'
+          oneOf:
+          - $ref: '#/components/schemas/CommentDraft'
+          - type: 'null'
         clientCommandId:
           type: string
           format: uuid
     TransferTicketCommand:
       type: object
+      additionalProperties: false
       required:
       - expectedVersion
       - groupId
@@ -2319,6 +2465,7 @@ components:
           format: uuid
     CreateChildTicketCommand:
       type: object
+      additionalProperties: false
       required:
       - expectedVersion
       - subject
@@ -2352,16 +2499,23 @@ components:
           format: uuid
     CommandWarning:
       type: object
+      additionalProperties: false
       required:
       - code
       - message
+      - count
+      - relatedTicketNumbers
       properties:
         code:
           type: string
         message:
           type: string
+        count:
+          type: integer
+          minimum: 1
         relatedTicketNumbers:
           type: array
+          uniqueItems: true
           items:
             type: integer
             format: int64
@@ -2390,6 +2544,7 @@ components:
           $ref: '#/components/schemas/TicketSummary'
     CreateAgentTicket:
       type: object
+      additionalProperties: false
       required:
       - requester
       - subject
@@ -2398,15 +2553,19 @@ components:
       properties:
         requester:
           type: object
+          additionalProperties: false
           required:
           - name
           - email
           properties:
             name:
               type: string
+              minLength: 1
+              maxLength: 100
             email:
               type: string
               format: email
+              maxLength: 254
         subject:
           type: string
           minLength: 1
@@ -2425,20 +2584,31 @@ components:
           - string
           - 'null'
           format: uuid
+        clientCommandId:
+          type: string
+          format: uuid
     CreateChildTicketResult:
       type: object
       required:
       - parentTicketNumber
+      - parentVersion
       - childTicketNumber
-      - auditId
+      - parentAuditId
+      - childAuditId
       properties:
         parentTicketNumber:
+          type: integer
+          format: int64
+        parentVersion:
           type: integer
           format: int64
         childTicketNumber:
           type: integer
           format: int64
-        auditId:
+        parentAuditId:
+          type: string
+          format: uuid
+        childAuditId:
           type: string
           format: uuid
     TicketAuditEvent:
@@ -2468,6 +2638,11 @@ components:
       - actor
       - source
       - createdAt
+      - requestId
+      - correlationId
+      - commandId
+      - expectedVersion
+      - resultVersion
       - events
       properties:
         id:
@@ -2485,6 +2660,16 @@ components:
           format: date-time
         correlationId:
           type: string
+        requestId:
+          type: string
+        commandId:
+          type: string
+        expectedVersion:
+          type: integer
+          format: int64
+        resultVersion:
+          type: integer
+          format: int64
         events:
           type: array
           items:

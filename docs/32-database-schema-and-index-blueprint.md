@@ -178,7 +178,7 @@ created_at
 ticket_audits(
   id, ticket_id, actor_type, actor_id, source,
   request_id, correlation_id, causation_id,
-  occurred_at
+  expected_version, ticket_version (result version), occurred_at
 )
 
 ticket_audit_events(

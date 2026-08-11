@@ -18,19 +18,20 @@ interface NotificationProps {
   action?: ReactNode
   className?: string
   tabIndex?: number
+  urgent?: boolean
 }
 
 export const Notification = forwardRef<HTMLDivElement, NotificationProps>(
   function Notification(
-    { tone, title, children, action, className = '', tabIndex },
+    { tone, title, children, action, className = '', tabIndex, urgent },
     ref,
   ) {
-    const urgent = tone === 'danger' || tone === 'conflict'
+    const isUrgent = urgent ?? (tone === 'danger' || tone === 'conflict')
     const titleId = useId()
     return (
       <div
         className={`ds-notification tone-${tone} ${className}`.trim()}
-        role={urgent ? 'alert' : 'status'}
+        role={isUrgent ? 'alert' : 'status'}
         aria-labelledby={titleId}
         ref={ref}
         tabIndex={tabIndex}

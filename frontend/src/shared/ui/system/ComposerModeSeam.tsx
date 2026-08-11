@@ -1,10 +1,23 @@
-import { useId, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 
 export type ComposerMode = 'PUBLIC' | 'INTERNAL'
 
 interface ComposerModeSeamProps {
   initialMode?: ComposerMode
   disabledReason?: string
+  mode?: ComposerMode
+  drafts?: Record<ComposerMode, string>
+  onModeChange?: (mode: ComposerMode) => void
+  onDraftChange?: (mode: ComposerMode, value: string) => void
+  footer?: ReactNode
+  busy?: boolean
+  availableModes?: ComposerMode[]
 }
 
 const MODES = [
@@ -12,16 +25,28 @@ const MODES = [
   { value: 'INTERNAL', label: '내부 메모', icon: '◆' },
 ] as const
 
-/**
- * Local-only seam for the later command composer. It deliberately has no
- * network submit behavior in this read-only PR.
- */
 export function ComposerModeSeam({
   initialMode = 'PUBLIC',
   disabledReason,
+  mode: controlledMode,
+  drafts: controlledDrafts,
+  onModeChange,
+  onDraftChange,
+  footer,
+  busy = false,
+  availableModes = ['PUBLIC', 'INTERNAL'],
 }: ComposerModeSeamProps) {
-  const [mode, setMode] = useState<ComposerMode>(initialMode)
-  const [drafts, setDrafts] = useState({ PUBLIC: '', INTERNAL: '' })
+  const [localMode, setLocalMode] = useState<ComposerMode>(initialMode)
+  const [localDrafts, setLocalDrafts] = useState({ PUBLIC: '', INTERNAL: '' })
+  const configuredModes = MODES.filter((option) =>
+    availableModes.includes(option.value),
+  )
+  const modes = configuredModes.length ? configuredModes : MODES
+  const requestedMode = controlledMode ?? localMode
+  const mode = modes.some((option) => option.value === requestedMode)
+    ? requestedMode
+    : modes[0]!.value
+  const drafts = controlledDrafts ?? localDrafts
   const baseId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const statusId = `${baseId}-status`
@@ -31,21 +56,33 @@ export function ComposerModeSeam({
   const panelId = (nextMode: ComposerMode) => `${baseId}-panel-${nextMode}`
   const draftId = (nextMode: ComposerMode) => `${baseId}-draft-${nextMode}`
 
+  const selectMode = (nextMode: ComposerMode) => {
+    if (controlledMode === undefined) setLocalMode(nextMode)
+    onModeChange?.(nextMode)
+  }
+
+  const updateDraft = (nextMode: ComposerMode, value: string) => {
+    if (controlledDrafts === undefined) {
+      setLocalDrafts((current) => ({ ...current, [nextMode]: value }))
+    }
+    onDraftChange?.(nextMode, value)
+  }
+
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
-    const last = MODES.length - 1
+    const last = modes.length - 1
     const nextIndex =
       event.key === 'Home'
         ? 0
         : event.key === 'End'
           ? last
           : event.key === 'ArrowRight'
-            ? (index + 1) % MODES.length
-            : (index - 1 + MODES.length) % MODES.length
-    const nextMode = MODES[nextIndex]
+            ? (index + 1) % modes.length
+            : (index - 1 + modes.length) % modes.length
+    const nextMode = modes[nextIndex]
     if (!nextMode) return
-    setMode(nextMode.value)
+    selectMode(nextMode.value)
     tabRefs.current[nextIndex]?.focus()
   }
 
@@ -65,7 +102,7 @@ export function ComposerModeSeam({
           aria-label="답변 공개 범위"
           aria-orientation="horizontal"
         >
-          {MODES.map((option, index) => {
+          {modes.map((option, index) => {
             const selected = mode === option.value
             return (
               <button
@@ -79,7 +116,7 @@ export function ComposerModeSeam({
                 aria-selected={selected}
                 aria-controls={panelId(option.value)}
                 tabIndex={selected ? 0 : -1}
-                onClick={() => setMode(option.value)}
+                onClick={() => selectMode(option.value)}
                 onKeyDown={(event) => moveTab(event, index)}
               >
                 <span aria-hidden="true">{option.icon}</span> {option.label}
@@ -98,7 +135,7 @@ export function ComposerModeSeam({
           ? '내부 메모 모드입니다. 이 내용은 고객에게 공개되지 않습니다.'
           : '공개 답변 모드입니다. 이 내용은 고객에게 표시됩니다.'}
       </p>
-      {MODES.map((option) => {
+      {modes.map((option) => {
         const selected = mode === option.value
         return (
           <div
@@ -114,12 +151,10 @@ export function ComposerModeSeam({
               aria-describedby={statusId}
               value={drafts[option.value]}
               onChange={(event) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [option.value]: event.target.value,
-                }))
+                updateDraft(option.value, event.target.value)
               }
-              disabled={Boolean(disabledReason)}
+              disabled={Boolean(disabledReason) || busy}
+              maxLength={20_000}
             />
             {disabledReason ? (
               <p className="composer-disabled-reason">{disabledReason}</p>
@@ -127,6 +162,7 @@ export function ComposerModeSeam({
           </div>
         )
       })}
+      {footer}
     </section>
   )
 }

@@ -43,27 +43,27 @@
 | REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | 설정별 계약 테스트 |
 | REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | single-use·claim·격리 테스트 |
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
-| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`의 PUBLIC/INTERNAL projection 회귀 |
-| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002 |
+| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`, `customer-request.full-stack.spec.ts`의 실제 PUBLIC/INTERNAL 저장 회귀 |
+| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002, `customer-request.full-stack.spec.ts`의 PUBLIC 노출·INTERNAL 비노출 E2E |
 | REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39 | Agent create E2E |
-| REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트 |
-| REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34 | TKT-003 |
-| REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34 | Transfer E2E |
-| REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit |
-| REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34 | TKT-006 |
-| REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31 | 브라우저 E2E·시각 회귀 |
+| REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트, `AgentTicketWorkspacePage.test.tsx`의 통합 command body 회귀 |
+| REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34 | `TransferChildTicketIntegrationTest`의 active group/member 거부 및 원자적 rollback |
+| REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34 | `TransferChildTicketIntegrationTest`, `transfer-child-ticket.spec.ts`, full-stack transfer E2E |
+| REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketWorkspacePage.test.tsx`의 exact `changedFields`·comment 통합 요청 |
+| REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34 | TKT-006, `ticket-composer-conflict.spec.ts`의 두 browser context same-field/non-overlap E2E |
+| REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31 | `ticket-command-conflict-preserves-drafts.png`, banner focus·request ID·draft 보존 E2E |
 
 ## 4. 부모·자식 티켓 협업
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-CHILD-001 | 부모 티켓에서 내부 자식 티켓을 생성한다 | IMPLEMENTATION_READY | M5 | 01, 02, 30, 34 | TKT-004 |
-| REQ-CHILD-002 | 자식 티켓은 고객에게 완전히 숨겨진다 | IMPLEMENTATION_READY | M5 | 01, 33, 37 | 고객 API 비노출 |
-| REQ-CHILD-003 | 부모 소유권은 최초 상담사·그룹에 유지된다 | IMPLEMENTATION_READY | M5 | 02, 34 | ownership invariant |
-| REQ-CHILD-004 | 자식 담당자는 부모 대화 전체를 읽을 수 있다 | IMPLEMENTATION_READY | M5 | 30, 33 | parent read authorization |
+| REQ-CHILD-001 | 부모 티켓에서 내부 자식 티켓을 생성한다 | IMPLEMENTATION_READY | M5 | 01, 02, 30, 34 | `TransferChildTicketIntegrationTest`, V8 relation migration, component/browser/full-stack child E2E |
+| REQ-CHILD-002 | 자식 티켓은 고객에게 완전히 숨겨진다 | IMPLEMENTATION_READY | M5 | 01, 33, 37 | child PUBLIC command 원자적 거부, INTERNAL-only workspace, 고객 API shape·DOM·parent token child-number 404 통합/full-stack E2E |
+| REQ-CHILD-003 | 부모 소유권은 최초 상담사·그룹에 유지된다 | IMPLEMENTATION_READY | M5 | 02, 34 | transfer-vs-child ownership 비교 통합 테스트와 full-stack selected-group 회귀 |
+| REQ-CHILD-004 | 자식 담당자는 부모 대화 전체를 읽을 수 있다 | IMPLEMENTATION_READY | M5 | 30, 33 | `AgentTicketReadAuthorizationPolicyTest`의 relation grant seam; launch `ALL_TICKETS` 중복 grant 및 parent write 비승격 통합 테스트 |
 | REQ-CHILD-005 | 그룹별 NONE/READ/READ_WRITE 권한으로 확장한다 | BLUEPRINT_READY | P2 | 33, 38 | 정책 행렬 테스트 |
-| REQ-CHILD-006 | 미해결 자식이 있어도 부모 해결을 허용하되 경고한다 | IMPLEMENTATION_READY | M5 | 01, 30, 34 | TKT-005 |
-| REQ-CHILD-007 | 자식 해결은 부모 상태를 자동 변경하지 않는다 | IMPLEMENTATION_READY | M5 | 02, 34 | transition 회귀 테스트 |
+| REQ-CHILD-006 | 미해결 자식이 있어도 부모 해결을 허용하되 경고한다 | IMPLEMENTATION_READY | M5 | 01, 30, 34 | structured count/numbers command test, `transfer-child-solve-warning.png`, non-blocking browser 경고 |
+| REQ-CHILD-007 | 자식 해결은 부모 상태를 자동 변경하지 않는다 | IMPLEMENTATION_READY | M5 | 02, 34 | `TransferChildTicketIntegrationTest`의 child solve/parent version 불변 회귀 |
 
 ## 5. 변경·접근·보안 감사
 
@@ -131,8 +131,8 @@
 | REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | `frontend-system.spec.ts`의 Agent Home/View/Workspace 1280·1440·1920 Deskseed baseline |
 | REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | `AgentViewsPage.test.tsx`, `FrontendSystem.test.tsx`, keyboard row-open E2E |
 | REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | `frontend-system-workspace-{1280,1440,1920}.png` 및 keyboard separator E2E |
-| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/related seam과 사용자별 panel preference 구현; 앱·실제 child/external projection은 후속 |
-| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `npm run test:e2e:dev`의 `frontend-system.spec.ts`: axe 0, skip link, context/Composer roving tab, PUBLIC/INTERNAL draft, keyboard separator |
+| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/실제 parent-child projection·dialog 구현; 앱·external projection은 후속 |
+| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `npm run test:e2e:dev`: 38/38, axe 0, dialog focus entry/trap/restore, child relation·solve warning 시각 회귀 |
 | REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | Deskseed fixture baseline, Garden import/notice 및 proprietary asset scan |
 
 ## 10. 추적 규칙

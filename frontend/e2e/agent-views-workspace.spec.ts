@@ -90,6 +90,15 @@ const ticketDetail = {
     },
   ],
   capabilities: ['READ'],
+  assignmentOptions: {
+    groups: [
+      {
+        id: 'payments',
+        name: '결제 지원',
+        members: [{ id: 'agent-other', displayName: '박서연' }],
+      },
+    ],
+  },
   context: {
     customer: {
       id: 'customer-1',

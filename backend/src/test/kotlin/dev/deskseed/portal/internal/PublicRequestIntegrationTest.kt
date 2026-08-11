@@ -416,7 +416,7 @@ class PublicRequestIntegrationTest {
             ticketId(expired.ticketNumber),
         )
         jdbcTemplate.update(
-            "update request_access_tokens set revoked_at = now() where ticket_id = ?",
+            "update request_access_tokens set revoked_at = created_at where ticket_id = ?",
             ticketId(revoked.ticketNumber),
         )
 

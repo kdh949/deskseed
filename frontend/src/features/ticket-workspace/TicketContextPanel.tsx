@@ -1,11 +1,23 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import type { AgentTicketDetail } from '../../api/types'
 import { ContextPanel, type ContextPanelTab } from '../../shared/ui/system'
+import { CreateChildTicketDialog } from './CreateChildTicketDialog'
+import { TicketTransferDialog } from './TicketTransferDialog'
 
 type ContextTab = 'customer' | 'history' | 'related'
 
-export function TicketContextPanel({ detail }: { detail: AgentTicketDetail }) {
+export function TicketContextPanel({
+  detail,
+  canUpdate,
+  onCommandCompleted,
+}: {
+  detail: AgentTicketDetail
+  canUpdate: boolean
+  onCommandCompleted: () => Promise<unknown>
+}) {
   const [activeTab, setActiveTab] = useState<ContextTab>('customer')
+  const [dialog, setDialog] = useState<'transfer' | 'child' | null>(null)
   const tabs: ContextPanelTab[] = [
     { id: 'customer', label: '고객' },
     { id: 'history', label: '기록' },
@@ -59,12 +71,48 @@ export function TicketContextPanel({ detail }: { detail: AgentTicketDetail }) {
       ) : null}
       {activeTab === 'related' ? (
         <div className="related-context">
-          <h2>연결된 티켓</h2>
-          <p>
-            {detail.context.children.length
-              ? `Child task ${detail.context.children.length}개`
-              : '연결된 child task가 없습니다.'}
-          </p>
+          <h2>Parent ticket</h2>
+          {detail.context.parent ? (
+            <RelatedTicketLink ticket={detail.context.parent} />
+          ) : (
+            <p>연결된 parent ticket이 없습니다.</p>
+          )}
+          <h2>Child tickets</h2>
+          {detail.context.children.length ? (
+            <ul className="related-ticket-list">
+              {detail.context.children.map((child) => (
+                <li key={child.ticketNumber}>
+                  <RelatedTicketLink ticket={child} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>연결된 child ticket이 없습니다.</p>
+          )}
+          {canUpdate ? (
+            <div className="related-ticket-actions">
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => setDialog('transfer')}
+              >
+                티켓 이관
+              </button>
+              {!detail.ticket.isChild ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => setDialog('child')}
+                >
+                  내부 child 만들기
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="related-write-note">
+              관계에 의한 읽기는 parent 쓰기 권한을 부여하지 않습니다.
+            </p>
+          )}
           <h2>외부 참조</h2>
           <p>
             {detail.context.externalReferences.length
@@ -73,7 +121,39 @@ export function TicketContextPanel({ detail }: { detail: AgentTicketDetail }) {
           </p>
         </div>
       ) : null}
+      {dialog === 'transfer' ? (
+        <TicketTransferDialog
+          detail={detail}
+          onClose={() => setDialog(null)}
+          onCompleted={onCommandCompleted}
+        />
+      ) : null}
+      {dialog === 'child' ? (
+        <CreateChildTicketDialog
+          detail={detail}
+          onClose={() => setDialog(null)}
+          onCompleted={onCommandCompleted}
+        />
+      ) : null}
     </ContextPanel>
+  )
+}
+
+function RelatedTicketLink({
+  ticket,
+}: {
+  ticket: AgentTicketDetail['ticket']
+}) {
+  return (
+    <Link
+      className="related-ticket-link"
+      to={`/agent/tickets/${ticket.ticketNumber}`}
+    >
+      <span>
+        #{ticket.ticketNumber} {ticket.subject}
+      </span>
+      <small>{ticket.status}</small>
+    </Link>
   )
 }
 

@@ -19,7 +19,11 @@ export function PropertyPanel({
   footer,
 }: PropertyPanelProps) {
   return (
-    <section className="ticket-properties-panel" aria-label="티켓 속성">
+    <section
+      className="ticket-properties-panel"
+      aria-label="티켓 속성"
+      tabIndex={0}
+    >
       <header className="workspace-panel-header">
         <h2>{title}</h2>
         {meta ? <span>{meta}</span> : null}

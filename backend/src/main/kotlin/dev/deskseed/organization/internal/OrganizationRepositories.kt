@@ -1,5 +1,7 @@
 package dev.deskseed.organization.internal
 
+import dev.deskseed.organization.OrganizationStatus
+
 import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
@@ -7,6 +9,8 @@ internal interface SupportGroupRepository : JpaRepository<SupportGroupEntity, UU
     fun findByNameIgnoreCase(name: String): SupportGroupEntity?
 
     fun findAllByOrderByNameAscIdAsc(): List<SupportGroupEntity>
+
+    fun findAllByStatusOrderByNameAscIdAsc(status: OrganizationStatus): List<SupportGroupEntity>
 }
 
 internal interface GroupMembershipRepository : JpaRepository<GroupMembershipEntity, UUID> {
@@ -23,4 +27,9 @@ internal interface GroupMembershipRepository : JpaRepository<GroupMembershipEnti
     ): List<GroupMembershipEntity>
 
     fun countByGroupIdAndStatus(groupId: UUID, status: GroupMembershipStatus): Long
+
+    fun findAllByGroupIdInAndStatus(
+        groupIds: Collection<UUID>,
+        status: GroupMembershipStatus,
+    ): List<GroupMembershipEntity>
 }

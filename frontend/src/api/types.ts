@@ -42,6 +42,8 @@ export interface ProblemDetails {
   requestId?: string
   code?: string
   fieldErrors?: FieldError[]
+  currentVersion?: number
+  conflictingFields?: TicketFieldName[]
 }
 
 export interface FieldError {
@@ -173,6 +175,7 @@ export interface AgentTicketDetail {
   ticket: AgentTicketSummary
   comments: AgentComment[]
   capabilities: string[]
+  assignmentOptions: TicketAssignmentOptions
   context: {
     customer: TicketCustomerContext
     parent: AgentTicketSummary | null
@@ -193,3 +196,76 @@ export interface AgentTicketFilters {
 }
 
 export type AgentReadIntent = 'NAVIGATION' | 'BACKGROUND'
+
+export type TicketFieldName = 'status' | 'priority' | 'groupId' | 'assigneeId'
+
+export interface TicketAssignmentStaffOption {
+  id: string
+  displayName: string
+}
+
+export interface TicketAssignmentGroupOption {
+  id: string
+  name: string
+  members: TicketAssignmentStaffOption[]
+}
+
+export interface TicketAssignmentOptions {
+  groups: TicketAssignmentGroupOption[]
+}
+
+export interface TicketCommentDraft {
+  visibility: TicketVisibility
+  body: string
+}
+
+export interface UpdateTicketCommand {
+  expectedVersion: number
+  changedFields: TicketFieldName[]
+  status?: AgentTicketStatus
+  priority?: TicketPriority
+  groupId?: string | null
+  assigneeId?: string | null
+  comment: TicketCommentDraft | null
+  clientCommandId: string
+}
+
+export interface TransferTicketCommand {
+  expectedVersion: number
+  groupId: string
+  assigneeId: string | null
+  reason: string | null
+  clientCommandId: string
+}
+
+export interface CreateChildTicketCommand {
+  expectedVersion: number
+  subject: string
+  body: string
+  groupId: string
+  assigneeId: string | null
+  priority: TicketPriority
+  clientCommandId: string
+}
+
+export interface TicketCommandWarning {
+  code: string
+  message: string
+  count: number
+  relatedTicketNumbers: number[]
+}
+
+export interface TicketCommandResult {
+  ticketNumber: number
+  version: number
+  auditId: string
+  warnings: TicketCommandWarning[]
+}
+
+export interface CreateChildTicketResult {
+  parentTicketNumber: number
+  parentVersion: number
+  childTicketNumber: number
+  parentAuditId: string
+  childAuditId: string
+}

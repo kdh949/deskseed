@@ -2,6 +2,7 @@ package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.containsInAnyOrder
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -80,6 +81,14 @@ class AgentTicketReadIntegrationTest {
             groupId = groupA,
             assigneeId = agentA,
         )
+        insertTicket(
+            number = 2003,
+            subject = "종료된 내 티켓",
+            status = "CLOSED",
+            priority = "NORMAL",
+            groupId = groupA,
+            assigneeId = agentA,
+        )
         val browser = login("agent-a@example.com", "Agent password 42")
 
         mockMvc.perform(get("/api/v1/agent/views").session(browser))
@@ -111,6 +120,26 @@ class AgentTicketReadIntegrationTest {
             .andExpect(jsonPath("$.comments.length()").value(2))
             .andExpect(jsonPath("$.comments[1].visibility").value("INTERNAL"))
             .andExpect(jsonPath("$.history[0].eventType").value("TICKET_CREATED"))
+            .andExpect(jsonPath("$.capabilities.length()").value(1))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
+            .andExpect(
+                jsonPath("$.assignmentOptions.groups[*].name")
+                    .value(containsInAnyOrder("고객 지원", "결제 지원")),
+            )
+            .andExpect(
+                jsonPath("$.assignmentOptions.groups[*].members[*].displayName")
+                    .value(containsInAnyOrder("상담사 A", "상담사 B")),
+            )
+
+        mockMvc.perform(ticketDetail(2002, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capabilities.length()").value(2))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
+            .andExpect(jsonPath("$.capabilities[1]").value("UPDATE"))
+
+        mockMvc.perform(ticketDetail(2003, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capabilities.length()").value(1))
             .andExpect(jsonPath("$.capabilities[0]").value("READ"))
 
         mockMvc.perform(get("/api/v1/agent/tickets/2001"))
@@ -465,9 +494,9 @@ class AgentTicketReadIntegrationTest {
         jdbcTemplate.update(
             """
             insert into ticket_audits
-                (id, ticket_id, ticket_version, actor_type, actor_id, source,
+                (id, ticket_id, ticket_version, expected_version, actor_type, actor_id, source,
                  request_id, correlation_id, command_id, created_at)
-            values (?, ?, 0, 'STAFF', ?, 'AGENT_UI', 'fixture-request', 'fixture-correlation',
+            values (?, ?, 0, 0, 'STAFF', ?, 'AGENT_UI', 'fixture-request', 'fixture-correlation',
                     'fixture-command', now())
             """.trimIndent(),
             auditId,
