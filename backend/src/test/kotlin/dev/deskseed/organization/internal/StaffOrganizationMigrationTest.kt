@@ -41,20 +41,36 @@ class StaffOrganizationMigrationTest {
                 )
                 statement.executeUpdate(
                     """
-                    insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at)
+                    insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at, version)
                     values ('30000000-0000-0000-0000-000000000001',
                             '20000000-0000-0000-0000-000000000001',
-                            '10000000-0000-0000-0000-000000000001', 'ACTIVE', now(), now())
+                            '10000000-0000-0000-0000-000000000001', 'ACTIVE', now(), now(), 0)
                     """.trimIndent(),
                 )
 
                 assertThatThrownBy {
                     statement.executeUpdate(
                         """
-                        insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at)
+                        insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at, version)
                         values ('30000000-0000-0000-0000-000000000002',
                                 '20000000-0000-0000-0000-000000000001',
-                                '10000000-0000-0000-0000-000000000001', 'ACTIVE', now(), now())
+                                '10000000-0000-0000-0000-000000000001', 'ACTIVE', now(), now(), 0)
+                        """.trimIndent(),
+                    )
+                }.isInstanceOf(SQLException::class.java)
+
+                statement.executeUpdate(
+                    """
+                    insert into support_groups (id, name, status, created_at, updated_at, version)
+                    values ('20000000-0000-0000-0000-000000000002', 'Support', 'ACTIVE', now(), now(), 0)
+                    """.trimIndent(),
+                )
+
+                assertThatThrownBy {
+                    statement.executeUpdate(
+                        """
+                        insert into support_groups (id, name, status, created_at, updated_at, version)
+                        values ('20000000-0000-0000-0000-000000000003', ' support ', 'ACTIVE', now(), now(), 0)
                         """.trimIndent(),
                     )
                 }.isInstanceOf(SQLException::class.java)

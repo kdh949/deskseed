@@ -33,6 +33,7 @@ internal class JpaOrganizationAdministration(
     private val ticketAssignmentUsage: TicketAssignmentUsage,
     private val passwordEncoder: PasswordEncoder,
     private val auditWriter: AdminSecurityAuditWriter,
+    private val organizationMutationLock: OrganizationMutationLock,
     private val clock: Clock,
 ) : OrganizationAdministration {
     @PreAuthorize("hasRole('ADMIN')")
@@ -46,6 +47,7 @@ internal class JpaOrganizationAdministration(
         command: CreateStaffAccountCommand,
         actor: AdminActorContext,
     ): StaffAccountView {
+        organizationMutationLock.acquire()
         val email = command.email.trim()
         val normalizedEmail = email.lowercase()
         if (staffRepository.findByEmailNormalized(normalizedEmail) != null) {
@@ -82,6 +84,7 @@ internal class JpaOrganizationAdministration(
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     override fun disableStaff(staffId: UUID, actor: AdminActorContext) {
+        organizationMutationLock.acquire()
         if (staffId == actor.staffId) throw OrganizationConflictException("SELF_DISABLE_NOT_ALLOWED")
         val staff = staffRepository.findById(staffId)
             .orElseThrow { OrganizationNotFoundException("STAFF_NOT_FOUND") }
@@ -123,6 +126,7 @@ internal class JpaOrganizationAdministration(
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     override fun createGroup(name: String, actor: AdminActorContext): SupportGroupView {
+        organizationMutationLock.acquire()
         val normalizedName = validatedGroupName(name)
         if (groupRepository.findByNameIgnoreCase(normalizedName) != null) {
             throw OrganizationConflictException("DUPLICATE_GROUP_NAME")
@@ -144,6 +148,7 @@ internal class JpaOrganizationAdministration(
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     override fun renameGroup(groupId: UUID, name: String, actor: AdminActorContext): SupportGroupView {
+        organizationMutationLock.acquire()
         val group = activeGroup(groupId)
         val normalizedName = validatedGroupName(name)
         groupRepository.findByNameIgnoreCase(normalizedName)?.let { existing ->
@@ -167,6 +172,7 @@ internal class JpaOrganizationAdministration(
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     override fun disableGroup(groupId: UUID, actor: AdminActorContext) {
+        organizationMutationLock.acquire()
         val group = activeGroup(groupId)
         if (ticketAssignmentUsage.hasTicketsInGroup(groupId)) {
             throw OrganizationConflictException("GROUP_HAS_ASSIGNED_TICKETS")
@@ -202,6 +208,7 @@ internal class JpaOrganizationAdministration(
         staffId: UUID,
         actor: AdminActorContext,
     ): GroupMembershipView {
+        organizationMutationLock.acquire()
         activeGroup(groupId)
         val staff = staffRepository.findById(staffId)
             .filter { it.status == StaffStatus.ACTIVE }
@@ -234,6 +241,7 @@ internal class JpaOrganizationAdministration(
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     override fun removeGroupMember(groupId: UUID, staffId: UUID, actor: AdminActorContext) {
+        organizationMutationLock.acquire()
         activeGroup(groupId)
         val membership = membershipRepository.findByGroupIdAndStaffId(groupId, staffId)
             ?.takeIf { it.status == GroupMembershipStatus.ACTIVE }

@@ -223,6 +223,30 @@ class AdminOrganizationIntegrationTest {
     }
 
     @Test
+    fun `group names conflict case insensitively through the admin API`() {
+        insertStaff("admin@example.com", "Admin password 42", "ADMIN")
+        val browser = login("admin@example.com", "Admin password 42")
+
+        mockMvc.perform(
+            post("/api/v1/admin/groups")
+                .session(browser.session)
+                .csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"Support"}"""),
+        ).andExpect(status().isCreated)
+
+        mockMvc.perform(
+            post("/api/v1/admin/groups")
+                .session(browser.session)
+                .csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":" support "}"""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("DUPLICATE_GROUP_NAME"))
+    }
+
+    @Test
     fun `current assignment blocks membership staff and group deactivation`() {
         insertStaff("admin@example.com", "Admin password 42", "ADMIN")
         val agentId = insertStaff("agent@example.com", "Agent password 42", "AGENT")

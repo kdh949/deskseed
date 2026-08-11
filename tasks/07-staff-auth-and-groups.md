@@ -37,6 +37,8 @@ An operator can bootstrap the first ADMIN without committing a credential, staff
 - Normalized staff email is unique; active membership pair is unique.
 - Disabled staff cannot log in or reuse an existing session.
 - Self-disable, last-active-ADMIN disable, assigned staff disable, assigned group disable, and assigned membership removal are rejected.
+- PostgreSQL transaction advisory locking serializes organization mutations that span administrators, groups, staff, and memberships; the membership row also has an optimistic version.
+- Group names are unique under `lower(btrim(name))`, with duplicate conflicts reported as `DUPLICATE_GROUP_NAME`.
 - Organization mutation and AdminSecurityAudit commit or roll back together.
 - Duplicate membership and uniqueness conflicts return 409 with no partial change.
 - Login errors do not distinguish unknown, wrong-password, or disabled accounts; throttling returns 429 with Retry-After.

@@ -59,14 +59,25 @@ internal class AdminOrganizationExceptionHandler {
     )
 
     @ExceptionHandler(DataIntegrityViolationException::class)
-    fun uniquenessConflict(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+    fun uniquenessConflict(
+        exception: DataIntegrityViolationException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ProblemDetail> = response(
         request,
         HttpStatus.CONFLICT,
         "/problems/admin-organization-conflict",
         "Organization change conflicted",
         "The requested organization change conflicts with an existing resource.",
-        "RESOURCE_CONFLICT",
+        if (exception.hasConstraint("support_groups_name_ci_unique")) {
+            "DUPLICATE_GROUP_NAME"
+        } else {
+            "RESOURCE_CONFLICT"
+        },
     )
+
+    private fun Throwable.hasConstraint(constraint: String): Boolean =
+        generateSequence(this) { it.cause }
+            .any { throwable -> throwable.message?.contains(constraint) == true }
 
     @ExceptionHandler(DataAccessException::class)
     fun auditUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(

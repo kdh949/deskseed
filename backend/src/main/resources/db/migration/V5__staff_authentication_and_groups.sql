@@ -30,6 +30,8 @@ create table support_groups (
 );
 
 create index support_groups_status_name_idx on support_groups (status, name, id);
+create unique index support_groups_name_ci_unique
+    on support_groups (lower(btrim(name)));
 
 create table group_memberships (
     id uuid primary key,
@@ -38,6 +40,7 @@ create table group_memberships (
     status varchar(20) not null,
     created_at timestamptz not null,
     updated_at timestamptz not null,
+    version bigint not null default 0,
     constraint group_membership_pair_unique unique (group_id, staff_id),
     constraint group_membership_status_valid check (status in ('ACTIVE', 'INACTIVE'))
 );
