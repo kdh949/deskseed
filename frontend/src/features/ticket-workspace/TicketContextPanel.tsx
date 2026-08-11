@@ -98,13 +98,15 @@ export function TicketContextPanel({
               >
                 티켓 이관
               </button>
-              <button
-                className="button primary"
-                type="button"
-                onClick={() => setDialog('child')}
-              >
-                내부 child 만들기
-              </button>
+              {!detail.ticket.isChild ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => setDialog('child')}
+                >
+                  내부 child 만들기
+                </button>
+              ) : null}
             </div>
           ) : (
             <p className="related-write-note">

@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   Outlet,
@@ -945,6 +951,108 @@ describe('AgentTicketWorkspacePage', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     )
     expect(trigger).toHaveFocus()
+  })
+
+  it('does not offer nested child creation from an internal child ticket', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ...detail,
+            ticket: { ...detail.ticket, isChild: true },
+            capabilities: ['READ', 'UPDATE'],
+            context: {
+              ...detail.context,
+              parent: {
+                ...detail.ticket,
+                ticketNumber: 1001,
+                subject: '원래 고객 문의',
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.click(screen.getByRole('tab', { name: '관련' }))
+
+    expect(screen.getByRole('button', { name: '티켓 이관' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: '내부 child 만들기' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('requires an ownership change and enforces the transfer reason boundary', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const commandCalls: Array<[string, RequestInit | undefined]> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: 'csrf-transfer-boundary',
+                headerName: 'X-CSRF-TOKEN',
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/transfer')) {
+          commandCalls.push([input, init])
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'transfer-boundary-audit-id',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.click(screen.getByRole('tab', { name: '관련' }))
+    await user.click(screen.getByRole('button', { name: '티켓 이관' }))
+
+    const submit = screen.getByRole('button', { name: '소유권 이관' })
+    const reason = screen.getByRole('textbox', {
+      name: '이관 사유 (내부 메모)',
+    })
+    expect(submit).toBeDisabled()
+    expect(reason).toHaveAttribute('maxlength', '2000')
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '대상 그룹' }),
+      'group-support',
+    )
+    expect(submit).toBeEnabled()
+
+    fireEvent.change(reason, { target: { value: '가'.repeat(2_001) } })
+    expect(submit).toBeDisabled()
+    fireEvent.change(reason, { target: { value: '가'.repeat(2_000) } })
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+
+    await waitFor(() => expect(commandCalls).toHaveLength(1))
+    expect(JSON.parse(String(commandCalls[0]?.[1]?.body)).reason).toHaveLength(
+      2_000,
+    )
   })
 
   it('submits transfer through its own ETag guarded dialog and restores focus', async () => {

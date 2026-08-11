@@ -7,6 +7,8 @@ import {
   createTicketCommandId,
 } from './TicketActionDialogFrame'
 
+const MAX_TRANSFER_REASON_LENGTH = 2_000
+
 export function TicketTransferDialog({
   detail,
   onClose,
@@ -38,13 +40,18 @@ export function TicketTransferDialog({
   const selectedGroup = detail.assignmentOptions.groups.find(
     (group) => group.id === groupId,
   )
+  const currentGroupId = detail.ticket.group?.id ?? ''
+  const currentAssigneeId = detail.ticket.assignee?.id ?? ''
+  const hasOwnershipChange =
+    groupId !== currentGroupId || assigneeId !== currentAssigneeId
+  const reasonTooLong = reason.length > MAX_TRANSFER_REASON_LENGTH
   const close = () => {
     if (!submitting) onClose()
   }
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!groupId || submitting) return
+    if (!groupId || !hasOwnershipChange || reasonTooLong || submitting) return
     setSubmitting(true)
     setError(null)
     try {
@@ -131,7 +138,7 @@ export function TicketTransferDialog({
           <textarea
             value={reason}
             disabled={submitting}
-            maxLength={10_000}
+            maxLength={MAX_TRANSFER_REASON_LENGTH}
             onChange={(event) => setReason(event.target.value)}
           />
         </label>
@@ -148,7 +155,9 @@ export function TicketTransferDialog({
             className="button primary"
             type="submit"
             aria-busy={submitting}
-            disabled={!groupId || submitting}
+            disabled={
+              !groupId || !hasOwnershipChange || reasonTooLong || submitting
+            }
           >
             {submitting ? '이관 중…' : '소유권 이관'}
           </button>
