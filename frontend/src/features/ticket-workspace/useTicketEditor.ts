@@ -10,8 +10,8 @@ import {
   buildUpdateTicketCommand,
   changedTicketFields,
   createEditableTicketFields,
-  mergeLatestFields,
   readTicketDraft,
+  reconcileLatestFields,
   resolveConflictField,
   ticketDraftStorageKey,
   writeTicketDraft,
@@ -133,7 +133,9 @@ export function useTicketEditor({
     setSuccess(null)
   }
 
-  const loadLatestForConflict = async () => {
+  const loadLatestForConflict = async (
+    knownConflictFields?: Set<TicketFieldName>,
+  ) => {
     setConflict((current) =>
       current
         ? { ...current, loadingLatest: true, latestError: undefined }
@@ -142,22 +144,23 @@ export function useTicketEditor({
     try {
       const latest = await refreshLatest()
       const latestFields = createEditableTicketFields(latest.ticket)
-      const currentDirty = new Set(
-        changedTicketFields(serverFields, localFields),
-      )
-      setLocalFields(
-        mergeLatestFields({
-          localFields,
-          dirtyFields: currentDirty,
-          latestFields,
-        }),
-      )
+      const reconciled = reconcileLatestFields({
+        confirmedFields: serverFields,
+        localFields,
+        latestFields,
+        knownConflictFields,
+      })
+      setLocalFields(reconciled.localFields)
       setServerFields(latestFields)
       setBaseVersion(latest.ticket.version)
       setConflict((current) =>
         current
           ? {
               ...current,
+              fields: new Set([
+                ...current.fields,
+                ...reconciled.conflictingFields,
+              ]),
               currentVersion: latest.ticket.version,
               latestFields,
               loadingLatest: false,
@@ -204,13 +207,35 @@ export function useTicketEditor({
     try {
       const latest = await refreshLatest()
       const latestFields = createEditableTicketFields(latest.ticket)
-      setLocalFields(
-        mergeLatestFields({ localFields, dirtyFields, latestFields }),
-      )
+      const reconciled = reconcileLatestFields({
+        confirmedFields: serverFields,
+        localFields,
+        latestFields,
+        knownConflictFields: conflict?.fields,
+      })
+      setLocalFields(reconciled.localFields)
       setServerFields(latestFields)
       setBaseVersion(latest.ticket.version)
+      setConflict((current) => {
+        const fields = new Set([
+          ...(current?.fields ?? []),
+          ...reconciled.conflictingFields,
+        ])
+        if (fields.size === 0) return null
+        return {
+          fields,
+          currentVersion: latest.ticket.version,
+          latestFields,
+          requestId: current?.requestId,
+          loadingLatest: false,
+        }
+      })
       setError(null)
-      setSuccess('최신 티켓 정보를 확인했습니다.')
+      setSuccess(
+        reconciled.conflictingFields.size === 0
+          ? '최신 티켓 정보를 확인했습니다.'
+          : null,
+      )
       return latest
     } catch (cause) {
       const apiError = cause instanceof ApiError ? cause : null
@@ -278,7 +303,7 @@ export function useTicketEditor({
           requestId: apiError.requestId,
           loadingLatest: true,
         })
-        await loadLatestForConflict()
+        await loadLatestForConflict(new Set(apiError.problem.conflictingFields))
       } else {
         setError({
           message:

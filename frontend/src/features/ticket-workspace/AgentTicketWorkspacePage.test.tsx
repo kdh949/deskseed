@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   Outlet,
@@ -559,6 +559,157 @@ describe('AgentTicketWorkspacePage', () => {
     expect(screen.getByRole('button', { name: '변경사항 저장' })).toBeEnabled()
   })
 
+  it('adds a second server-changed dirty field while the conflict refresh is pending', async () => {
+    const user = userEvent.setup()
+    const editableDetail = {
+      ...detail,
+      ticket: { ...detail.ticket, priority: 'NORMAL' },
+      capabilities: ['READ', 'UPDATE'],
+    }
+    const latestDetail = {
+      ...editableDetail,
+      ticket: {
+        ...editableDetail.ticket,
+        status: 'SOLVED',
+        priority: 'URGENT',
+        version: 5,
+      },
+    }
+    let detailReads = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                type: '/problems/ticket-field-conflict',
+                status: 409,
+                requestId: 'request-pending-refresh-conflict',
+                currentVersion: 4,
+                conflictingFields: ['status'],
+              }),
+              { status: 409 },
+            ),
+          )
+        }
+        detailReads += 1
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(detailReads === 1 ? editableDetail : latestDetail),
+            { status: 200 },
+          ),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '상태' }),
+      'PENDING',
+    )
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '우선순위' }),
+      'HIGH',
+    )
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+
+    const conflict = await screen.findByRole('alert', { name: /변경 충돌/ })
+    expect(conflict).toHaveTextContent('상태, 우선순위')
+    expect(
+      within(conflict).getAllByRole('button', { name: '내 변경으로 재시도' }),
+    ).toHaveLength(2)
+    expect(screen.getByRole('combobox', { name: '상태' })).toHaveValue(
+      'PENDING',
+    )
+    expect(screen.getByRole('combobox', { name: '우선순위' })).toHaveValue(
+      'HIGH',
+    )
+    expect(screen.getByRole('button', { name: '변경사항 저장' })).toBeDisabled()
+  })
+
+  it('requires explicit resolution when manual refresh sees a dirty same-field change', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const latestDetail = {
+      ...editableDetail,
+      ticket: { ...editableDetail.ticket, status: 'SOLVED', version: 4 },
+    }
+    let detailReads = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        detailReads += 1
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(detailReads === 1 ? editableDetail : latestDetail),
+            { status: 200 },
+          ),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '상태' }),
+      'PENDING',
+    )
+    await user.click(screen.getByRole('button', { name: '티켓 새로고침' }))
+
+    const conflict = await screen.findByRole('alert', { name: /변경 충돌/ })
+    expect(conflict).toHaveTextContent('상태')
+    expect(screen.getByRole('combobox', { name: '상태' })).toHaveValue(
+      'PENDING',
+    )
+    expect(screen.getByRole('button', { name: '변경사항 저장' })).toBeDisabled()
+  })
+
+  it.each([
+    ['NEW', ['NEW', 'OPEN', 'PENDING', 'SOLVED']],
+    ['OPEN', ['OPEN', 'PENDING', 'ON_HOLD', 'SOLVED']],
+    ['PENDING', ['OPEN', 'PENDING', 'SOLVED']],
+    ['ON_HOLD', ['OPEN', 'ON_HOLD', 'SOLVED']],
+    ['SOLVED', ['OPEN', 'SOLVED']],
+    ['CLOSED', ['CLOSED']],
+  ] as const)(
+    'offers only valid status transitions from %s',
+    async (currentStatus, expectedStatuses) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              ...detail,
+              ticket: { ...detail.ticket, status: currentStatus },
+              capabilities: ['READ', 'UPDATE'],
+            }),
+            { status: 200 },
+          ),
+        ),
+      )
+
+      renderPage()
+      const statusSelect = await screen.findByRole('combobox', {
+        name: '상태',
+      })
+      expect(
+        within(statusSelect)
+          .getAllByRole('option')
+          .map((option) => (option as HTMLOptionElement).value),
+      ).toEqual(expectedStatuses)
+    },
+  )
+
   it('warns before ticket navigation when a draft is unsaved', async () => {
     const user = userEvent.setup()
     vi.stubGlobal(
@@ -579,11 +730,29 @@ describe('AgentTicketWorkspacePage', () => {
       screen.getByRole('textbox', { name: '공개 답변' }),
       '저장하지 않은 답변',
     )
-    await user.click(screen.getByRole('button', { name: '티켓 1043 열기' }))
+    const navigationTrigger = screen.getByRole('button', {
+      name: '티켓 1043 열기',
+    })
+    await user.click(navigationTrigger)
 
-    expect(await screen.findByRole('dialog')).toHaveTextContent(
-      '저장하지 않은 변경사항',
-    )
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('저장하지 않은 변경사항')
+    const keepEditing = within(dialog).getByRole('button', {
+      name: '계속 편집',
+    })
+    const leave = within(dialog).getByRole('button', {
+      name: '초안 유지하고 나가기',
+    })
+    expect(document.activeElement).toBe(keepEditing)
+    await user.tab()
+    expect(document.activeElement).toBe(leave)
+    await user.tab()
+    expect(document.activeElement).toBe(keepEditing)
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(leave)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(navigationTrigger)
     expect(
       screen.getByRole('heading', { name: '결제 승인 오류' }),
     ).toBeVisible()

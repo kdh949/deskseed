@@ -118,6 +118,40 @@ export function mergeLatestFields({
   ) as unknown as EditableTicketFields
 }
 
+export function reconcileLatestFields({
+  confirmedFields,
+  localFields,
+  latestFields,
+  knownConflictFields = new Set(),
+}: {
+  confirmedFields: EditableTicketFields
+  localFields: EditableTicketFields
+  latestFields: EditableTicketFields
+  knownConflictFields?: Set<TicketFieldName>
+}) {
+  const dirtyFields = new Set(changedTicketFields(confirmedFields, localFields))
+  const serverChangedFields = new Set(
+    changedTicketFields(confirmedFields, latestFields),
+  )
+  const conflictingFields = new Set(knownConflictFields)
+  for (const field of dirtyFields) {
+    if (
+      serverChangedFields.has(field) &&
+      localFields[field] !== latestFields[field]
+    ) {
+      conflictingFields.add(field)
+    }
+  }
+  return {
+    localFields: mergeLatestFields({
+      localFields,
+      dirtyFields,
+      latestFields,
+    }),
+    conflictingFields,
+  }
+}
+
 export function resolveConflictField({
   field,
   choice,
