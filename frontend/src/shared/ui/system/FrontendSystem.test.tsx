@@ -14,15 +14,25 @@ describe('Deskseed frontend system primitives', () => {
     render(<ComposerModeSeam />)
 
     expect(screen.getByRole('status')).toHaveTextContent('공개 답변 모드')
-    await user.type(screen.getByRole('textbox', { name: '공개 답변' }), '고객 답변')
+    await user.type(
+      screen.getByRole('textbox', { name: '공개 답변' }),
+      '고객 답변',
+    )
     await user.click(screen.getByRole('tab', { name: '내부 메모' }))
 
-    expect(screen.getByRole('status')).toHaveTextContent('고객에게 공개되지 않습니다')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '고객에게 공개되지 않습니다',
+    )
     expect(screen.getByRole('textbox', { name: '내부 메모' })).toHaveValue('')
-    await user.type(screen.getByRole('textbox', { name: '내부 메모' }), '팀 메모')
+    await user.type(
+      screen.getByRole('textbox', { name: '내부 메모' }),
+      '팀 메모',
+    )
     await user.click(screen.getByRole('tab', { name: '공개 답변' }))
 
-    expect(screen.getByRole('textbox', { name: '공개 답변' })).toHaveValue('고객 답변')
+    expect(screen.getByRole('textbox', { name: '공개 답변' })).toHaveValue(
+      '고객 답변',
+    )
   })
 
   it('moves context tabs with arrow keys and updates the active panel', async () => {
@@ -40,7 +50,11 @@ describe('Deskseed frontend system primitives', () => {
   it('uses explicit roles and text for async states and notifications', () => {
     render(
       <>
-        <ScreenState kind="denied" title="권한이 없습니다." requestId="safe-id" />
+        <ScreenState
+          kind="denied"
+          title="권한이 없습니다."
+          requestId="safe-id"
+        />
         <Notification tone="warning" title="열린 child ticket이 있습니다." />
       </>,
     )

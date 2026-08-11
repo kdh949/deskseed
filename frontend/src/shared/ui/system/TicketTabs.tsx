@@ -22,19 +22,22 @@ export function TicketTabs({
   refreshing = false,
 }: TicketTabsProps) {
   return (
-    <header className="ticket-tabbar" aria-label="열린 티켓 탭">
+    <header className="ticket-tabbar">
       <Link className="ticket-back-link" to={backTo} aria-label={backLabel}>
         <span aria-hidden="true">←</span>
       </Link>
-      <div
-        className="active-ticket-tab"
-        role="tab"
-        aria-selected="true"
-        aria-label={`티켓 #${ticketNumber} ${subject}`}
-      >
-        <StatusBadge status={status} />
-        <span>#{ticketNumber}</span>
-        <strong>{subject}</strong>
+      <div className="ticket-tabs-list" role="tablist" aria-label="열린 티켓">
+        <div
+          className="active-ticket-tab"
+          role="tab"
+          aria-selected="true"
+          aria-label={`티켓 #${ticketNumber} ${subject}`}
+          tabIndex={0}
+        >
+          <StatusBadge status={status} />
+          <span>#{ticketNumber}</span>
+          <strong>{subject}</strong>
+        </div>
       </div>
       <button className="compact-button" type="button" onClick={onRefresh}>
         티켓 새로고침

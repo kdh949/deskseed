@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { forwardRef, useId, type ReactNode } from 'react'
 
 export type FeedbackTone =
   'info' | 'success' | 'warning' | 'danger' | 'conflict'
@@ -17,32 +17,36 @@ interface NotificationProps {
   children?: ReactNode
   action?: ReactNode
   className?: string
+  tabIndex?: number
 }
 
-export function Notification({
-  tone,
-  title,
-  children,
-  action,
-  className = '',
-}: NotificationProps) {
-  const urgent = tone === 'danger' || tone === 'conflict'
-  return (
-    <div
-      className={`ds-notification tone-${tone} ${className}`.trim()}
-      role={urgent ? 'alert' : 'status'}
-    >
-      <span className="ds-notification-icon" aria-hidden="true">
-        {ICONS[tone]}
-      </span>
-      <div className="ds-notification-content">
-        <strong>{title}</strong>
-        {children}
+export const Notification = forwardRef<HTMLDivElement, NotificationProps>(
+  function Notification(
+    { tone, title, children, action, className = '', tabIndex },
+    ref,
+  ) {
+    const urgent = tone === 'danger' || tone === 'conflict'
+    const titleId = useId()
+    return (
+      <div
+        className={`ds-notification tone-${tone} ${className}`.trim()}
+        role={urgent ? 'alert' : 'status'}
+        aria-labelledby={titleId}
+        ref={ref}
+        tabIndex={tabIndex}
+      >
+        <span className="ds-notification-icon" aria-hidden="true">
+          {ICONS[tone]}
+        </span>
+        <div className="ds-notification-content">
+          <strong id={titleId}>{title}</strong>
+          {children}
+        </div>
+        {action ? <div className="ds-notification-action">{action}</div> : null}
       </div>
-      {action ? <div className="ds-notification-action">{action}</div> : null}
-    </div>
-  )
-}
+    )
+  },
+)
 
 export type ScreenStateKind =
   'loading' | 'empty' | 'error' | 'denied' | 'not-found' | 'conflict' | 'stale'
@@ -68,6 +72,7 @@ interface ScreenStateProps {
   action?: ReactNode
   compact?: boolean
   className?: string
+  ariaLabel?: string
 }
 
 export function ScreenState({
@@ -78,25 +83,29 @@ export function ScreenState({
   action,
   compact = false,
   className = '',
+  ariaLabel,
 }: ScreenStateProps) {
   const meta = STATE_META[kind]
+  const titleId = useId()
   return (
     <section
       className={`ds-screen-state state-${kind}${compact ? ' is-compact' : ''} ${className}`.trim()}
       role={meta.urgent ? 'alert' : 'status'}
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabel ? undefined : titleId}
       aria-busy={kind === 'loading' ? true : undefined}
     >
       <span className="ds-screen-state-icon" aria-hidden="true">
         {meta.icon}
       </span>
       <p className="ds-screen-state-label">{meta.label}</p>
-      <h2>{title}</h2>
+      <h2 id={titleId}>{title}</h2>
       {description ? (
         <div className="ds-screen-state-description">{description}</div>
       ) : null}
       {requestId ? (
         <p className="ds-request-id">
-          요청 ID <code>{requestId}</code>
+          요청 ID: <code>{requestId}</code>
         </p>
       ) : null}
       {action ? <div className="ds-screen-state-action">{action}</div> : null}

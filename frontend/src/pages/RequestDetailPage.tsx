@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 import { ApiError, getPublicRequest } from '../api/client'
 import { StatusBadge } from '../components/StatusBadge'
 import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
+import { ScreenState } from '../shared/ui/system'
 
 const TOKEN_MIN_LENGTH = 32
 const TOKEN_MAX_LENGTH = 256
@@ -94,15 +95,12 @@ export function RequestDetailPage() {
 
   if (query.isPending) {
     return (
-      <section
-        className="narrow-panel loading-state"
-        role="status"
-        aria-label="문의 내용을 불러오는 중"
-        aria-busy="true"
-      >
-        <div className="loading-line" aria-hidden="true" />
-        <div className="loading-line short" aria-hidden="true" />
-        <p>문의 내용을 불러오는 중입니다…</p>
+      <section className="narrow-panel">
+        <ScreenState
+          kind="loading"
+          ariaLabel="문의 내용을 불러오는 중"
+          title="문의 내용을 불러오는 중입니다."
+        />
       </section>
     )
   }
@@ -112,41 +110,36 @@ export function RequestDetailPage() {
     const isDenied = error?.status === 404
     return (
       <section className="narrow-panel">
-        <div
-          className="error-banner"
-          role="alert"
-          aria-labelledby="request-read-error-title"
-        >
-          <strong id="request-read-error-title">
-            {isDenied ? '문의 정보를 확인할 수 없습니다' : '문의 조회 오류'}
-          </strong>
-          <span>
-            {isDenied
+        <ScreenState
+          kind={isDenied ? 'denied' : 'error'}
+          title={isDenied ? '문의 정보를 확인할 수 없습니다' : '문의 조회 오류'}
+          description={
+            isDenied
               ? '접수 번호와 조회 키를 확인해 주세요.'
-              : '잠시 후 다시 시도해 주세요.'}
-          </span>
-          {!isDenied && error?.requestId && (
-            <small>요청 ID: {error.requestId}</small>
-          )}
-        </div>
-        <div className="button-row">
-          <button
-            className="button secondary"
-            type="button"
-            onClick={resetToken}
-          >
-            다른 조회 키 입력
-          </button>
-          {!isDenied && (
-            <button
-              className="button secondary"
-              type="button"
-              onClick={() => query.refetch()}
-            >
-              다시 시도
-            </button>
-          )}
-        </div>
+              : '잠시 후 다시 시도해 주세요.'
+          }
+          requestId={isDenied ? undefined : error?.requestId}
+          action={
+            <div className="button-row">
+              <button
+                className="button secondary"
+                type="button"
+                onClick={resetToken}
+              >
+                다른 조회 키 입력
+              </button>
+              {!isDenied ? (
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => query.refetch()}
+                >
+                  다시 시도
+                </button>
+              ) : null}
+            </div>
+          }
+        />
       </section>
     )
   }

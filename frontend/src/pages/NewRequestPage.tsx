@@ -19,6 +19,7 @@ import {
   validateRequestForm,
 } from '../features/customer-requests/requestForm'
 import { RequestSuccess } from '../features/customer-requests/RequestSuccess'
+import { Notification } from '../shared/ui/system'
 
 type TouchedFields = Partial<Record<RequestField, boolean>>
 
@@ -234,17 +235,19 @@ export function NewRequestPage() {
           </p>
         )}
         {summary && (
-          <div
-            className="error-banner"
-            role="alert"
-            aria-labelledby="request-error-title"
+          <Notification
+            tone="danger"
+            title={summary.title}
             ref={summaryRef}
             tabIndex={-1}
           >
-            <strong id="request-error-title">{summary.title}</strong>
-            <span>{summary.detail}</span>
-            {summary.requestId && <small>요청 ID: {summary.requestId}</small>}
-          </div>
+            <p>{summary.detail}</p>
+            {summary.requestId ? (
+              <p className="ds-request-id">
+                요청 ID: <code>{summary.requestId}</code>
+              </p>
+            ) : null}
+          </Notification>
         )}
         <div className="field-grid two-columns">
           <RequestFieldControl

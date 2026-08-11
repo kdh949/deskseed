@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, createStaff, disableStaff, listStaff } from '../api/client'
 import type { StaffAccount, StaffRole } from '../api/types'
+import { Notification, ScreenState } from '../shared/ui/system'
 
 function adminError(error: unknown): string {
   if (!(error instanceof ApiError)) return '요청을 처리할 수 없습니다.'
@@ -82,9 +83,12 @@ export function AdminStaffPage() {
         </div>
       </div>
       {error ? (
-        <div className="error-banner" role="alert" tabIndex={-1} ref={errorRef}>
-          {error}
-        </div>
+        <Notification
+          tone="danger"
+          title={error}
+          tabIndex={-1}
+          ref={errorRef}
+        />
       ) : null}
       <div className="admin-grid">
         <section className="admin-panel" aria-labelledby="create-staff-title">
@@ -148,10 +152,14 @@ export function AdminStaffPage() {
         >
           <h2 id="staff-list-title">등록된 직원</h2>
           {loading ? (
-            <p className="admin-state">직원 목록을 불러오는 중입니다.</p>
+            <ScreenState
+              kind="loading"
+              compact
+              title="직원 목록을 불러오는 중입니다."
+            />
           ) : null}
           {!loading && !error && staff.length === 0 ? (
-            <p className="admin-state">등록된 직원이 없습니다.</p>
+            <ScreenState kind="empty" compact title="등록된 직원이 없습니다." />
           ) : null}
           {!loading && staff.length > 0 ? (
             <div className="admin-table-wrap">

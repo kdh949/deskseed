@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useStaffSession } from '../features/staff-auth/StaffSessionContext'
+import { Notification, ScreenState } from '../shared/ui/system'
 
 function safeDestination(value: unknown, isAdmin: boolean): string {
   if (
@@ -31,7 +32,13 @@ export function StaffLoginPage() {
 
   if (session.status === 'loading') {
     return (
-      <main className="staff-login-page">직원 세션을 확인하고 있습니다.</main>
+      <main className="staff-login-page">
+        <ScreenState
+          kind="loading"
+          compact
+          title="직원 세션을 확인하고 있습니다."
+        />
+      </main>
     )
   }
   if (session.status === 'authenticated' && session.staff) {
@@ -73,14 +80,12 @@ export function StaffLoginPage() {
           상담사 및 관리자 계정으로 작업 공간에 접속합니다.
         </p>
         {error ? (
-          <div
-            className="error-banner"
-            role="alert"
+          <Notification
+            tone="danger"
+            title={error}
             tabIndex={-1}
             ref={alertRef}
-          >
-            {error}
-          </div>
+          />
         ) : null}
         <form className="staff-login-form" onSubmit={submit}>
           <label>

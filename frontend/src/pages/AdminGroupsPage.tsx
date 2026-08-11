@@ -11,6 +11,7 @@ import {
   renameGroup,
 } from '../api/client'
 import type { GroupMembership, StaffAccount, SupportGroup } from '../api/types'
+import { Notification, ScreenState } from '../shared/ui/system'
 
 function groupError(error: unknown): string {
   if (!(error instanceof ApiError)) return '요청을 처리할 수 없습니다.'
@@ -121,9 +122,12 @@ export function AdminGroupsPage() {
         </div>
       </div>
       {error ? (
-        <div className="error-banner" role="alert" tabIndex={-1} ref={errorRef}>
-          {error}
-        </div>
+        <Notification
+          tone="danger"
+          title={error}
+          tabIndex={-1}
+          ref={errorRef}
+        />
       ) : null}
       <div className="admin-grid groups-grid">
         <section className="admin-panel" aria-labelledby="group-list-title">
@@ -143,10 +147,14 @@ export function AdminGroupsPage() {
             </button>
           </form>
           {loading ? (
-            <p className="admin-state">그룹 목록을 불러오는 중입니다.</p>
+            <ScreenState
+              kind="loading"
+              compact
+              title="그룹 목록을 불러오는 중입니다."
+            />
           ) : null}
           {!loading && groups.length === 0 ? (
-            <p className="admin-state">아직 그룹이 없습니다.</p>
+            <ScreenState kind="empty" compact title="아직 그룹이 없습니다." />
           ) : null}
           <ul className="group-list">
             {groups.map((group) => (
@@ -180,7 +188,11 @@ export function AdminGroupsPage() {
             {selected ? `${selected.name} 멤버십` : '멤버십'}
           </h2>
           {!selected ? (
-            <p className="admin-state">활성 그룹을 선택해 주세요.</p>
+            <ScreenState
+              kind="empty"
+              compact
+              title="활성 그룹을 선택해 주세요."
+            />
           ) : null}
           {selected ? (
             <>
@@ -251,10 +263,18 @@ export function AdminGroupsPage() {
                 </button>
               </form>
               {membersLoading ? (
-                <p className="admin-state">멤버를 불러오는 중입니다.</p>
+                <ScreenState
+                  kind="loading"
+                  compact
+                  title="멤버를 불러오는 중입니다."
+                />
               ) : null}
               {!membersLoading && members.length === 0 ? (
-                <p className="admin-state">이 그룹에 활성 멤버가 없습니다.</p>
+                <ScreenState
+                  kind="empty"
+                  compact
+                  title="이 그룹에 활성 멤버가 없습니다."
+                />
               ) : null}
               <ul className="membership-list">
                 {members.map((member) => (
