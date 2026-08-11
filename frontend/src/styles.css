@@ -1030,6 +1030,63 @@ textarea[aria-invalid='true'] {
   color: #24363d;
   background: #fff;
 }
+
+.agent-search-form {
+  min-height: 72px;
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  padding: 12px 28px;
+  border-bottom: 1px solid #dfe5e7;
+  background: #fff;
+}
+.agent-search-form label {
+  display: grid;
+  gap: 4px;
+  color: #5c6c73;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.agent-search-form input,
+.agent-search-form select {
+  height: 36px;
+  border: 1px solid #bdc8cc;
+  border-radius: 4px;
+  color: #24363d;
+  background: #fff;
+}
+.agent-search-form input {
+  width: min(520px, 42vw);
+  padding: 0 11px;
+}
+.agent-search-form select {
+  min-width: 124px;
+  padding: 0 28px 0 9px;
+}
+.agent-search-submit {
+  height: 36px;
+}
+.agent-search-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.search-results-summary {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 28px;
+  border-bottom: 1px solid #dfe5e7;
+  background: #fff;
+}
+.search-results-summary h2 {
+  margin: 0;
+  font-size: 0.94rem;
+}
+.search-results-summary span {
+  color: #65757d;
+  font-size: 0.78rem;
+}
 .queue-refresh-indicator {
   margin: 0 0 8px auto;
   color: #4a7277;
@@ -1867,6 +1924,20 @@ textarea[aria-invalid='true'] {
   .ticket-workspace-grid {
     --property-panel-width: 260px !important;
     --context-panel-width: 270px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .agent-search-form {
+    align-items: stretch;
+    flex-wrap: wrap;
+    padding-inline: 18px;
+  }
+  .agent-search-query {
+    flex: 1 0 100%;
+  }
+  .agent-search-form input {
+    width: 100%;
   }
 }
 

@@ -153,7 +153,154 @@ function addTransferTargetGroup(ticketNumber: number) {
   )
 }
 
+function queryDatabaseJson(sql: string): Record<string, unknown> {
+  if (!composeProject) {
+    throw new Error('The isolated Compose project is required')
+  }
+  const output = execFileSync(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      composeProject,
+      '--file',
+      composeFile,
+      'exec',
+      '-T',
+      'db',
+      'psql',
+      '-U',
+      'deskseed',
+      '-d',
+      'deskseed',
+      '-tA',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-c',
+      sql,
+    ],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  ).trim()
+  return JSON.parse(output) as Record<string, unknown>
+}
+
 test.skip(!fullStackEnabled, 'Runs only against the isolated Compose stack')
+
+test('real search links one semantic navigation to its canonical audit event', async ({
+  browser,
+  baseURL,
+  page: customerPage,
+}) => {
+  if (!adminEmail || !adminPassword || !baseURL) {
+    throw new Error('Bootstrap admin credentials are required')
+  }
+  const unique = Date.now()
+  const subject = `감사 연결 검색 ${unique}`
+  const rawQuery = subject
+
+  await customerPage.goto('/requests/new')
+  await customerPage
+    .getByRole('textbox', { name: /이름/ })
+    .fill('검색 감사 고객')
+  await customerPage
+    .getByRole('textbox', { name: /이메일/ })
+    .fill(`search-audit-${unique}@example.com`)
+  await customerPage.getByRole('textbox', { name: /제목/ }).fill(subject)
+  await customerPage
+    .getByRole('textbox', { name: /문의 내용/ })
+    .fill('검색 감사 E2E의 최초 공개 문의')
+  await customerPage.getByRole('button', { name: '문의 접수' }).click()
+  const heading = customerPage.getByRole('heading', { name: /문의 #\d+/ })
+  await expect(heading).toBeVisible()
+  const ticketNumber = Number((await heading.textContent())?.match(/\d+/)?.[0])
+  expect(Number.isSafeInteger(ticketNumber)).toBe(true)
+  assignToBootstrapAdmin(ticketNumber)
+
+  const staffContext = await browser.newContext()
+  const staffPage = await staffContext.newPage()
+  try {
+    await staffPage.goto(`${baseURL}/agent/login`)
+    await staffPage.getByLabel('이메일').fill(adminEmail)
+    await staffPage.getByLabel('비밀번호').fill(adminPassword)
+    await staffPage.getByRole('button', { name: '로그인' }).click()
+    await expect(staffPage).toHaveURL(/\/admin\/staff$/)
+    await staffPage.goto(`${baseURL}/agent/search`)
+
+    const searchResponsePromise = staffPage.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith('/api/v1/agent/search'),
+    )
+    await staffPage
+      .getByRole('searchbox', { name: '티켓 검색어' })
+      .fill(rawQuery)
+    await staffPage.getByRole('button', { name: '티켓 검색' }).click()
+    const searchResponse = await searchResponsePromise
+    expect(searchResponse.status()).toBe(200)
+    expect(searchResponse.url()).not.toContain(rawQuery)
+    expect(searchResponse.request().postDataJSON()).toMatchObject({
+      query: rawQuery,
+      filters: {},
+    })
+    const searchPayload = (await searchResponse.json()) as {
+      searchEventId: string
+      resultCount: number
+    }
+    expect(searchPayload.resultCount).toBe(1)
+    const resultLink = staffPage.getByRole('link', {
+      name: `#${ticketNumber} ${subject} 열기`,
+    })
+    await expect(resultLink).toHaveAttribute(
+      'href',
+      `/agent/tickets/${ticketNumber}?originSearchEventId=${searchPayload.searchEventId}`,
+    )
+
+    const detailRequestPromise = staffPage.waitForRequest(
+      (request) =>
+        request.method() === 'GET' &&
+        request.url().endsWith(`/api/v1/agent/tickets/${ticketNumber}`),
+    )
+    await resultLink.click()
+    const detailRequest = await detailRequestPromise
+    expect(detailRequest.headers()['x-origin-search-event-id']).toBe(
+      searchPayload.searchEventId,
+    )
+    await expect(
+      staffPage.getByRole('heading', { name: subject }),
+    ).toBeVisible()
+
+    await staffPage.getByRole('button', { name: '티켓 새로고침' }).click()
+    const firstAudit = queryDatabaseJson(`
+      select json_build_object(
+        'views', count(*) filter (where a.action = 'TICKET_VIEWED'),
+        'opens', count(*) filter (where a.action = 'SEARCH_RESULT_OPENED')
+      )
+      from access_audit_events a
+      join tickets t on t.id = a.resource_id
+      where t.ticket_number = ${ticketNumber}
+        and a.origin_search_event_id = '${searchPayload.searchEventId}'::uuid
+    `)
+    expect(firstAudit).toEqual({ views: 1, opens: 1 })
+
+    await staffPage.reload()
+    await expect(
+      staffPage.getByRole('heading', { name: subject }),
+    ).toBeVisible()
+    const refreshedAudit = queryDatabaseJson(`
+      select json_build_object(
+        'views', count(*) filter (where a.action = 'TICKET_VIEWED'),
+        'opens', count(*) filter (where a.action = 'SEARCH_RESULT_OPENED')
+      )
+      from access_audit_events a
+      join tickets t on t.id = a.resource_id
+      where t.ticket_number = ${ticketNumber}
+        and a.origin_search_event_id = '${searchPayload.searchEventId}'::uuid
+    `)
+    expect(refreshedAudit).toEqual({ views: 2, opens: 2 })
+  } finally {
+    await staffContext.close()
+  }
+})
 
 // This broad projection fixture complements the real relation workflow below by checking that
 // unrelated INTERNAL_CHILD rows are never included by requester association alone.

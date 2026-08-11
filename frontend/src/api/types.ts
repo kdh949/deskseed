@@ -148,6 +148,28 @@ export interface AgentTicketPage {
   sort: 'updatedAt:desc,ticketNumber:desc'
 }
 
+export interface AgentTicketSearchFilters {
+  status?: AgentTicketStatus
+  priority?: TicketPriority
+  groupId?: string
+  assigneeId?: string
+}
+
+export interface AgentTicketSearchInput {
+  query: string
+  filters: AgentTicketSearchFilters
+  sort: 'updatedAt:desc,ticketNumber:desc'
+  limit: number
+}
+
+export interface AgentTicketSearchPage {
+  searchEventId: string
+  searchInteractionId: string
+  items: AgentTicketSummary[]
+  resultCount: number
+  sort: 'updatedAt:desc,ticketNumber:desc'
+}
+
 export interface AgentComment {
   id: string
   visibility: TicketVisibility

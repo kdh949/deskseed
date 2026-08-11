@@ -6,6 +6,8 @@ import type {
   AgentTicketDetail,
   AgentTicketFilters,
   AgentTicketPage,
+  AgentTicketSearchInput,
+  AgentTicketSearchPage,
   AgentTicketSummary,
   CreateChildTicketCommand,
   CreateChildTicketResult,
@@ -98,6 +100,15 @@ function isNonBlankString(value: unknown): value is string {
 
 function isTimestamp(value: unknown): value is string {
   return isNonBlankString(value) && Number.isFinite(Date.parse(value))
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
 }
 
 function isTicketStatus(value: unknown): value is TicketStatus {
@@ -954,15 +965,54 @@ export async function listTicketsInView(
   }
 }
 
+export async function searchAgentTickets(
+  input: AgentTicketSearchInput,
+  interactionId: string,
+): Promise<AgentTicketSearchPage> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/search',
+    'POST',
+    input,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const body = await checkedBody(response)
+  if (!isRecord(body) || !Array.isArray(body.items)) {
+    throw malformedSuccess(response)
+  }
+  const items = body.items.map(decodeAgentTicketSummary)
+  if (
+    !isUuid(body.searchEventId) ||
+    !isUuid(body.searchInteractionId) ||
+    items.some((ticket) => !ticket) ||
+    typeof body.resultCount !== 'number' ||
+    !Number.isSafeInteger(body.resultCount) ||
+    body.resultCount < 0 ||
+    body.sort !== 'updatedAt:desc,ticketNumber:desc'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    searchEventId: body.searchEventId,
+    searchInteractionId: body.searchInteractionId,
+    items: items as AgentTicketSummary[],
+    resultCount: body.resultCount,
+    sort: body.sort,
+  }
+}
+
 export async function getAgentTicket(
   ticketNumber: number,
   interactionId: string,
   intent: AgentReadIntent,
+  originSearchEventId?: string,
 ): Promise<AgentTicketDetail> {
   const response = await staffFetch(`/api/v1/agent/tickets/${ticketNumber}`, {
     headers: {
       'X-Interaction-Id': interactionId,
       'X-Deskseed-Read-Intent': intent,
+      ...(originSearchEventId
+        ? { 'X-Origin-Search-Event-Id': originSearchEventId }
+        : {}),
     },
   })
   const detail = decodeAgentTicketDetail(await checkedBody(response))

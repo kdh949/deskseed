@@ -72,11 +72,11 @@
 | REQ-AUD-001 | 누가 언제 어떤 티켓 내용을 어떻게 수정했는지 기록한다 | IMPLEMENTATION_READY | M3 | 19, 32, 34 | CHG-001~005 |
 | REQ-AUD-002 | 티켓별 열람 없이 전역 화면에서 변경 전후를 조회한다 | IMPLEMENTATION_READY | R2 | 19, 30, 39 | Audit Explorer E2E |
 | REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | `AgentTicketReadIntegrationTest`: 모든 성공 detail의 `API_RESOURCE_READ`, navigation 1건, 동일 interaction refetch의 추가 semantic view 0건, background semantic view 0건, audit 실패 fail-closed |
-| REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34 | ACC-003/004 |
-| REQ-AUD-005 | 검색어 원문을 암호화 저장하고 마스킹본·HMAC 지문도 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53 | 암호화·reveal·로그 비노출 |
+| REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34 | `AgentTicketSearchIntegrationTest`의 filter/count/context와 `SEARCH_RESULT_OPENED` linkage/dedupe; real-stack search→ticket DB-ledger E2E |
+| REQ-AUD-005 | 검색어 원문을 암호화 저장하고 마스킹본·HMAC 지문도 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53 | `SearchQueryProtectionTest`의 exact round-trip/tamper/AAD/rotation, missing-key startup, DB plaintext-column 부재, 로그 캡처, 30일 expiry·retention rollback |
 | REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | AUD-003/004 |
 | REQ-AUD-007 | Ticket change audit은 변경과 같은 트랜잭션에 기록한다 | IMPLEMENTATION_READY | M3 | 03, 19, 32 | CHG-001 |
-| REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ACC-002 |
+| REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ticket detail/search audit insert 장애 주입 시 503·projection 미반환, retention audit 장애 시 delete rollback |
 | REQ-AUD-009 | 감사 보존 기간·원문 공개 정책을 관리자 설정으로 관리한다 | PROVISIONAL | R2/P2 | 23, 36 | retention job·권한 테스트 |
 
 ## 6. 외부 전산·API·SDK
@@ -105,7 +105,7 @@
 | REQ-AUT-001 | 티켓 이벤트 조건 기반 trigger를 제공한다 | BLUEPRINT_READY | P4 | 12, 34, 45 | AUT-001~008 |
 | REQ-AUT-002 | 시간 경과 기반 automation을 제공한다 | BLUEPRINT_READY | P4 | 12, 45 | AUT-009 |
 | REQ-EXP-001 | 티켓 상세·변경 이력·필터 결과를 추출한다 | BLUEPRINT_READY | P5 | 18, 20, 30, 46 | ANA-007, EXP-001/002 |
-| REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | BLUEPRINT_READY | P6/P9 | 03, 11, 47 | SRCH verification suite |
+| REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | IMPLEMENTATION_READY | P6/P9 | 03, 11, 47 | frozen POST search contract, parameterized PostgreSQL authorized query, exact count/stable sort, fixed 2-SQL query-count test, component+real-stack E2E |
 | REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35 | PERF-001~004 |
 
 

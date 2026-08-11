@@ -3,6 +3,7 @@ import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { AgentShell } from './features/agent-shell/AgentShell'
 import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
+import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { AdminShell } from './features/admin/AdminShell'
 import {
@@ -63,6 +64,7 @@ export const appRoutes: RouteObject[] = [
                 element: <Navigate to="/agent/views/my-open" replace />,
               },
               { path: 'views/:viewKey', element: <AgentViewsPage /> },
+              { path: 'search', element: <AgentSearchPage /> },
               {
                 path: 'tickets/:ticketNumber',
                 element: <AgentTicketWorkspacePage />,
