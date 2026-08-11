@@ -5,7 +5,7 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 14ebf5838245d5ef4b655a80231506ef83c63b3f8d4b1e7aa44e65ce5f4abb3c       10615  README.md
 607978a57219571ef2b32084db639c280a1844ad7f2a8545206bec7619b8963c        4016  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-cb00ab266d09592505fe38d3f80482b8c503a6313ec305759f39561ebabb8b9b       83812  api/core-api-outline-v1.yaml
+6f32bd187babf82cbe5c194c7e23cdb0c434d9d7d2844748dd28e6b59fa38461       94180  api/core-api-outline-v1.yaml
 72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -46,7 +46,7 @@ d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  do
 ca3cc02cf5a9e7b922f1d8936079b6f21adbcbe9319323f496a36da7a1a8da92        7110  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 4cf4e0236b234de4f297c8402311e49a06b93795376216fcfb8f2f737d14158b        5444  docs/25-implementation-decision-register.md
-89d6c83d6ae25ee9dd0bb1b6276595dd4286183a670efb8460f3061980fe6cd9       16876  docs/26-requirement-traceability.md
+ad4a19342c8767c9abb21d17129f0f314248dca76a6f5fac02c69cd1a52e40ca       17340  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  docs/28-frontend-product-and-information-architecture.md
 54f95cb71d8d951e208f3ed2e33d798e2b39e05bedd20402ef4b61ffa5f8d494        6900  docs/29-zendesk-inspired-design-system.md
@@ -110,12 +110,16 @@ b97b83d95d2dd7e034db2cb4b194473e40f2dc8b1389f1edbd8b2f264140d32d         749  do
 873dc11bb116ced62e55f556175f2fed62f2bc7f415062c58afa894580bf9026         792  docs/adr/0033-required-encrypted-raw-search-query-audit.md
 849a29e80c41d20fc53df27dbbbc83c45e4630ea26d844d35bfd310aa09ad3c6         598  docs/adr/0034-mailpit-development-outbound-mail-adapter.md
 c0f853d3ed6181f5808ee891e33bb0a0ec6e7d17be9f73a600f8de53bd94f7a2        3223  docs/adr/0035-staff-password-session-bootstrap.md
-16afbda4ec181e6ea880679f69cf84c3082d0741d7b4d473cdf4dc8ed401ac0b         321  docs/performance/README.md
+5dc1696b96bd45999b9a99a066da5bb09c3c06fe8f2b9b01c37798eec65c19d0         409  docs/performance/README.md
 d84442e2313fbe9800f7b4d8f411a7576d1ee4c1ec799052f2c8ff7543b6808a        2713  docs/performance/agent-ticket-read-query-plan.md
+21c1ba4ada8d4f9f50a736c2c720439c77249486db8736441e6ca2e43bbf517e        4204  docs/performance/audit-explorer-1m-query-plan.md
+6d9fd101c7d7935c2c976fc36e7d10acb4cd4939c84db7bca22781c7f9991fd2        8191  scripts/audit-explorer-performance.sql
 43f23ccccc6115061b4cc8d5e3069f214f3409c8d00b7e77b93e5a2815151c30         562  scripts/compose-smoke.sh
 ddb445dda6b94dc5f42a8d44a38b886daa7c6e235b8ce1f63eaea7a20eb70d90        1016  scripts/demo-request.sh
 c16d522f6854b2f51ea3acbefd7d6b808eaecbd6757f37bc5adfa7d89f732682          35  scripts/requirements-docs.txt
 0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a          14  scripts/requirements.txt
+bc88ed8b9cce3eb51980049cec0e0356e4aaa194097b1d6eb29aeab8b0cd68aa        2156  scripts/run-audit-explorer-e2e.sh
+eeb254520a57811577cabd62d1eb3360aa0c15611d55952ef0d3ba8f72ecfa4b         953  scripts/run-audit-explorer-performance.sh
 0bf22ef51f1863991e239da477c0478409f3c0f7384bc58f1f30e2b068b145d8        2462  scripts/run-customer-request-e2e.sh
 9e1099a506dc760a4dff8c9d2da9892392e492d91d592010455512260e1de6c9       19981  scripts/validate_documentation.py
 d337270b000da9602956653c37190cab863c7b95c21ec2a1b91c4c142bceb298        7660  scripts/verify_seed.py
@@ -148,6 +152,7 @@ cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  ta
 30b2fd9face7cbd9c37472c30136bd0931dec6871c4d5a51019ec1a250de5307         986  tasks/25-first-reply-sla-configurable-schedule.md
 6cfdcf472d76fcab1d6a76b59dc899b82cba97a5c5fcfa4865de45eaf032658c        6118  tasks/briefs/access-search-audit.md
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
+1facdae3c4be1b43efcbebdfb50ffabd8fd2599c0c78bcfcaa0d9558b50d6c9f        9086  tasks/briefs/audit-explorer-core.md
 9b1f9db9e4594effb46d9d4d331e2cba4dac8f253b280aae73a950c33204a8c3        6311  tasks/briefs/frontend-system-hardening.md
 3a6d7193d41c641085636f4e171e2a9b303e5d7c227205c9375cdc7af10ce453        8017  tasks/briefs/ticket-composer-conflict-ui.md
 7f84ef9f335d14e94d4a943e3489f2faf3ea7413a4a7cdf7acab672fa449df38        6300  tasks/briefs/ticket-update-audit-concurrency.md
