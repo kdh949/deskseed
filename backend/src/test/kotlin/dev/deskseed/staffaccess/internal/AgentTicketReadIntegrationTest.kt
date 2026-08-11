@@ -41,7 +41,9 @@ class AgentTicketReadIntegrationTest {
     @BeforeEach
     fun clearState() {
         if (jdbcTemplate.queryForObject("select to_regclass('access_audit_events') is not null", Boolean::class.java) == true) {
-            jdbcTemplate.execute("truncate table access_audit_events")
+            jdbcTemplate.execute(
+                "truncate table search_audit_query_ciphertexts, search_audit_details, access_audit_events",
+            )
         }
         jdbcTemplate.execute("truncate table admin_security_audit_events")
         jdbcTemplate.update("delete from request_access_tokens")

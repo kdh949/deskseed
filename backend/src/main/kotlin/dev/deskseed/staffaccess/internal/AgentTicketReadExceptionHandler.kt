@@ -29,8 +29,17 @@ internal class AgentTicketReadExceptionHandler {
         request,
         HttpStatus.SERVICE_UNAVAILABLE,
         "/problems/access-audit-unavailable",
-        "Ticket detail unavailable",
-        "The protected read could not be safely audited. Try again later.",
+        "Protected data unavailable",
+        "The protected read or search could not be safely audited. Try again later.",
+    )
+
+    @ExceptionHandler(InvalidSearchOriginException::class)
+    fun invalidSearchOrigin(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request,
+        HttpStatus.BAD_REQUEST,
+        "/problems/invalid-search-origin",
+        "Invalid search origin",
+        "The search-result navigation context is invalid or no longer belongs to this session.",
     )
 
     @ExceptionHandler(

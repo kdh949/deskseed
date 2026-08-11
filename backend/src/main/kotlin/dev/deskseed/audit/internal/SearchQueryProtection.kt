@@ -1,5 +1,9 @@
 package dev.deskseed.audit.internal
 
+import dev.deskseed.audit.AccessAuditProtectionException
+import dev.deskseed.audit.AccessAuditSessionFingerprint
+import dev.deskseed.audit.ProtectedSearchQueryAudit
+import dev.deskseed.audit.SearchQueryProtector
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.health.contributor.Health
@@ -30,24 +34,16 @@ internal data class SearchQueryAuditProperties(
     val ciphertextRetention: Duration = Duration.ofDays(30),
 )
 
-internal data class ProtectedSearchQuery(
-    val queryRedacted: String,
-    val queryFingerprint: String,
-    val keyVersion: String,
-    val queryCiphertext: ByteArray,
-    val expiresAt: Instant,
-)
-
 internal class SearchQueryConfigurationException(message: String, cause: Throwable? = null) :
-    IllegalStateException(message, cause)
+    AccessAuditProtectionException(message, cause)
 
 internal class SearchQueryProtectionException(cause: Throwable) :
-    IllegalStateException("Protected search query authentication failed", cause)
+    AccessAuditProtectionException("Protected search query authentication failed", cause)
 
 internal class SearchQueryProtection(
     private val properties: SearchQueryAuditProperties,
     private val secureRandom: SecureRandom = SecureRandom(),
-) {
+) : SearchQueryProtector {
     private val decodedKeys: Map<String, ByteArray> = decodeKeys(properties)
 
     init {
@@ -64,7 +60,7 @@ internal class SearchQueryProtection(
         }
     }
 
-    fun protect(eventId: UUID, rawQuery: String, occurredAt: Instant): ProtectedSearchQuery {
+    override fun protect(eventId: UUID, rawQuery: String, occurredAt: Instant): ProtectedSearchQueryAudit {
         if (!properties.enabled) {
             throw SearchQueryConfigurationException("Access audit is disabled for protected search")
         }
@@ -87,7 +83,7 @@ internal class SearchQueryProtection(
         cipher.updateAAD(associatedData(eventId))
         val encrypted = cipher.doFinal(rawQuery.toByteArray(StandardCharsets.UTF_8))
 
-        return ProtectedSearchQuery(
+        return ProtectedSearchQueryAudit(
             queryRedacted = redact(rawQuery),
             queryFingerprint = Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint),
             keyVersion = properties.activeKeyVersion,
@@ -100,7 +96,7 @@ internal class SearchQueryProtection(
     }
 
     /** Narrow seam for a future reason-gated, self-audited single-event reveal use case. */
-    fun reveal(eventId: UUID, protected: ProtectedSearchQuery): String {
+    fun reveal(eventId: UUID, protected: ProtectedSearchQueryAudit): String {
         val rootKey = decodedKeys[protected.keyVersion]
             ?: throw SearchQueryProtectionException(
                 SearchQueryConfigurationException("Protected search query key version is unavailable"),
@@ -127,6 +123,19 @@ internal class SearchQueryProtection(
     }
 
     fun activeKeyVersion(): String? = properties.activeKeyVersion.takeIf { properties.enabled }
+
+    fun fingerprintSession(sessionId: String): String {
+        if (!properties.enabled) {
+            throw SearchQueryConfigurationException("Access audit is disabled for protected reads")
+        }
+        require(sessionId.isNotBlank()) { "Authenticated session is required" }
+        val rootKey = decodedKeys.getValue(properties.activeKeyVersion)
+        val fingerprint = hmac(
+            derive(rootKey, SESSION_KEY_PURPOSE),
+            "$SESSION_MESSAGE_PURPOSE\u0000$sessionId".toByteArray(StandardCharsets.UTF_8),
+        )
+        return "${properties.activeKeyVersion}:${Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint)}"
+    }
 
     private fun associatedData(eventId: UUID): ByteArray =
         "$CIPHERTEXT_AAD_PURPOSE|$eventId".toByteArray(StandardCharsets.UTF_8)
@@ -184,6 +193,8 @@ internal class SearchQueryProtection(
         const val FINGERPRINT_KEY_PURPOSE = "deskseed:access-audit:search-query:fingerprint-key:v1"
         const val FINGERPRINT_MESSAGE_PURPOSE = "deskseed:access-audit:search-query:fingerprint:v1"
         const val CIPHERTEXT_AAD_PURPOSE = "deskseed:access-audit:search-query:ciphertext:v1"
+        const val SESSION_KEY_PURPOSE = "deskseed:access-audit:staff-session:fingerprint-key:v1"
+        const val SESSION_MESSAGE_PURPOSE = "deskseed:access-audit:staff-session:fingerprint:v1"
         val WHITESPACE = Regex("\\s+")
         val AUTHORIZATION = Regex("\\b(bearer|basic)\\s+[^\\s]+", RegexOption.IGNORE_CASE)
         val NAMED_SECRET = Regex(
@@ -200,6 +211,10 @@ internal class SearchQueryProtection(
 internal class SearchQueryProtectionConfiguration {
     @Bean
     fun searchQueryProtection(properties: SearchQueryAuditProperties) = SearchQueryProtection(properties)
+
+    @Bean
+    fun accessAuditSessionFingerprint(protection: SearchQueryProtection): AccessAuditSessionFingerprint =
+        AccessAuditSessionFingerprint(protection::fingerprintSession)
 
     @Bean("accessAuditKeyHealthIndicator")
     fun accessAuditKeyHealthIndicator(protection: SearchQueryProtection) = HealthIndicator {
