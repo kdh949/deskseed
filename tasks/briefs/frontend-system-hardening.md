@@ -27,7 +27,7 @@
 - Loading, empty, error, denied, not-found, stale and conflict variants share one state vocabulary.
 - PUBLIC reply and INTERNAL note seams expose text, icon and ARIA announcements and keep mode-specific drafts separate; no write API is added.
 - Deterministic visual routes cover Agent Home, View Queue, Workspace, Admin, and public form/detail at 1280, 1440 and 1920 where required.
-- Keyboard checks cover skip links, logical focus order, table row open, tabs, and resize handles. Axe must report no serious/critical violations.
+- Keyboard checks cover skip links, logical focus order, table row open, tabs, and resize handles. Axe must report zero violations for the fixed fixtures.
 
 ## In scope
 

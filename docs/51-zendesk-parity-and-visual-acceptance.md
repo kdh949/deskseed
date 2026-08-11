@@ -189,7 +189,7 @@ Must support:
 Every release stores screenshots at light mode and required widths.
 
 ```text
-AGT-002 Agent Home: 1280, 1440
+AGT-002 Agent Home: 1280, 1440, 1920
 AGT-003 View queue: 1280, 1440, 1920
 AGT-004 Ticket normal: 1280, 1440, 1920
 AGT-004 Ticket internal draft
@@ -202,6 +202,7 @@ PUB request form/detail mobile+desktop
 ```
 
 Snapshots use deterministic fixtures, fixed Clock, stable fonts, and disabled animation.
+Deskseed의 frontend system baseline은 `frontend-system.spec.ts`가 관리하며, 상세 임계값과 갱신 승인 절차는 `docs/40-frontend-visual-regression-and-accessibility.md`를 따른다.
 
 ## 8. Interaction parity scenarios
 

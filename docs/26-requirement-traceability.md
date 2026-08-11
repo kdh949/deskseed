@@ -128,12 +128,12 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | `agent-views-workspace.spec.ts` 업무 E2E 및 Deskseed 브랜드 시각 기준 이미지 |
-| REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | `AgentViewsPage.test.tsx`, cursor backend 통합 테스트, keyboard row-open E2E |
-| REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | `agent-ticket-workspace-{1280,1440,1920}.png` 및 패널 resize/collapse E2E |
+| REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | `frontend-system.spec.ts`의 Agent Home/View/Workspace 1280·1440·1920 Deskseed baseline |
+| REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | `AgentViewsPage.test.tsx`, `FrontendSystem.test.tsx`, keyboard row-open E2E |
+| REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | `frontend-system-workspace-{1280,1440,1920}.png` 및 keyboard separator E2E |
 | REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/related seam과 사용자별 panel preference 구현; 앱·실제 child/external projection은 후속 |
-| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `agent-views-workspace.spec.ts`: axe 0, Tab row-open, keyboard separator |
-| REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | 브랜드·라이선스 검토 |
+| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `frontend-system.spec.ts`: axe 0, skip link, tab, PUBLIC/INTERNAL, keyboard separator |
+| REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | Deskseed fixture baseline, Garden import/notice 및 proprietary asset scan |
 
 ## 10. 추적 규칙
 
