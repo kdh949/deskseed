@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,7 +16,7 @@ function TestApp() {
   )
 }
 
-function sessionFetch(role: 'ADMIN' | 'AGENT') {
+function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.endsWith('/api/v1/agent/me')) {
@@ -23,12 +24,19 @@ function sessionFetch(role: 'ADMIN' | 'AGENT') {
         JSON.stringify({
           id: `${role.toLowerCase()}-id`,
           email: `${role.toLowerCase()}@example.com`,
-          displayName: role === 'ADMIN' ? '관리자' : '상담사',
+          displayName:
+            role === 'ADMIN'
+              ? '관리자'
+              : role === 'SECURITY_AUDITOR'
+                ? '보안 감사자'
+                : '상담사',
           role,
           capabilities:
             role === 'ADMIN'
               ? ['ADMIN_MANAGE', 'AGENT_WORKSPACE']
-              : ['AGENT_WORKSPACE'],
+              : role === 'SECURITY_AUDITOR'
+                ? ['audit:activity:read', 'audit:search-query:reveal']
+                : ['AGENT_WORKSPACE'],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
@@ -61,6 +69,21 @@ function sessionFetch(role: 'ADMIN' | 'AGENT') {
           nextCursor: null,
           totalApproximate: null,
           sort: 'updatedAt:desc,ticketNumber:desc',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    if (url.includes('/api/v1/audit/activities')) {
+      return new Response(
+        JSON.stringify({
+          items: [],
+          nextCursor: null,
+          snapshotAt: '2026-08-11T00:00:00Z',
+          projection: {
+            state: 'CURRENT',
+            projectedCount: 0,
+            lastRebuiltAt: null,
+          },
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
@@ -127,6 +150,71 @@ describe('App', () => {
     ).toBeVisible()
   })
 
+  it('renders the audit explorer only for a security auditor session', async () => {
+    vi.stubGlobal('fetch', sessionFetch('SECURITY_AUDITOR'))
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={['/audit/activity']}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: '활동 조사' }),
+    ).toBeVisible()
+    expect(screen.getByText('READ ONLY')).toBeVisible()
+    expect(
+      screen.queryByRole('link', { name: '상담사 화면' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('does not call audit APIs when an agent enters a direct audit URL', async () => {
+    const fetchMock = sessionFetch('AGENT')
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={['/audit/activity']}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        name: '보안 감사자 권한이 필요합니다.',
+      }),
+    ).toBeVisible()
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/api/v1/audit/'),
+      ),
+    ).toBe(false)
+  })
+
+  it('does not call ticket APIs when a security auditor enters a direct agent URL', async () => {
+    const fetchMock = sessionFetch('SECURITY_AUDITOR')
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={['/agent/tickets/1042']}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        name: '상담사 작업 공간 권한이 필요합니다.',
+      }),
+    ).toBeVisible()
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/api/v1/agent/tickets/'),
+      ),
+    ).toBe(false)
+  })
+
   it('returns to login when an authenticated admin request reports an expired session', async () => {
     const fetchMock = sessionFetch('ADMIN')
     fetchMock.mockImplementationOnce(
@@ -166,4 +254,3 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 })
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

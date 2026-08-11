@@ -10,12 +10,14 @@ import {
 export function TicketActionDialogFrame({
   title,
   description,
+  eyebrow = 'OWNERSHIP & COLLABORATION',
   initialFocusRef,
   onClose,
   children,
 }: {
   title: string
   description: string
+  eyebrow?: string
   initialFocusRef: RefObject<HTMLElement | null>
   onClose: () => void
   children: ReactNode
@@ -75,7 +77,7 @@ export function TicketActionDialogFrame({
       >
         <header>
           <div>
-            <p className="agent-page-eyebrow">OWNERSHIP &amp; COLLABORATION</p>
+            <p className="agent-page-eyebrow">{eyebrow}</p>
             <h2 id={titleId}>{title}</h2>
           </div>
           <button

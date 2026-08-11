@@ -79,7 +79,7 @@ export function AdminStaffPage() {
         <div>
           <p className="eyebrow">ORGANIZATION</p>
           <h1 id="staff-admin-title">직원 계정</h1>
-          <p>ADMIN 또는 AGENT 역할의 직원을 만들고 접근을 비활성화합니다.</p>
+          <p>ADMIN, AGENT 또는 읽기 전용 SECURITY_AUDITOR 계정을 관리합니다.</p>
         </div>
       </div>
       {error ? (
@@ -122,6 +122,9 @@ export function AdminStaffPage() {
               >
                 <option value="AGENT">AGENT</option>
                 <option value="ADMIN">ADMIN</option>
+                <option value="SECURITY_AUDITOR">
+                  SECURITY_AUDITOR · 읽기 전용
+                </option>
               </select>
             </label>
             <label>

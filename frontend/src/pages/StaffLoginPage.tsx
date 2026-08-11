@@ -3,17 +3,30 @@ import { Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useStaffSession } from '../features/staff-auth/StaffSessionContext'
 import { Notification, ScreenState } from '../shared/ui/system'
+import type { StaffRole } from '../api/types'
 
-function safeDestination(value: unknown, isAdmin: boolean): string {
+function defaultDestination(role: StaffRole): string {
+  if (role === 'ADMIN') return '/admin/staff'
+  if (role === 'SECURITY_AUDITOR') return '/audit/activity'
+  return '/agent/home'
+}
+
+function safeDestination(value: unknown, role: StaffRole): string {
+  const allowedPrefix =
+    role === 'ADMIN'
+      ? ['/admin', '/agent']
+      : role === 'SECURITY_AUDITOR'
+        ? ['/audit']
+        : ['/agent']
   if (
     typeof value === 'string' &&
     value.startsWith('/') &&
     !value.startsWith('//') &&
-    (isAdmin || !value.startsWith('/admin'))
+    allowedPrefix.some((prefix) => value.startsWith(prefix))
   ) {
     return value
   }
-  return isAdmin ? '/admin/staff' : '/agent/home'
+  return defaultDestination(role)
 }
 
 export function StaffLoginPage() {
@@ -44,7 +57,7 @@ export function StaffLoginPage() {
   if (session.status === 'authenticated' && session.staff) {
     return (
       <Navigate
-        to={safeDestination(undefined, session.staff.role === 'ADMIN')}
+        to={safeDestination(undefined, session.staff.role)}
         replace
       />
     )
@@ -57,7 +70,7 @@ export function StaffLoginPage() {
     try {
       const staff = await session.signIn(email, password)
       const from = (location.state as { from?: unknown } | null)?.from
-      navigate(safeDestination(from, staff.role === 'ADMIN'), { replace: true })
+      navigate(safeDestination(from, staff.role), { replace: true })
     } catch (caught) {
       setError(
         caught instanceof ApiError && caught.status === 429
@@ -77,7 +90,7 @@ export function StaffLoginPage() {
         <p className="eyebrow">DESKSEED STAFF</p>
         <h1 id="staff-login-title">직원 로그인</h1>
         <p className="muted">
-          상담사 및 관리자 계정으로 작업 공간에 접속합니다.
+          상담사, 관리자 및 보안 감사자 계정으로 허용된 작업 공간에 접속합니다.
         </p>
         {error ? (
           <Notification

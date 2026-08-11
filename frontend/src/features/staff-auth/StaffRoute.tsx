@@ -62,8 +62,68 @@ export function AdminRoute() {
           title="관리자 권한이 필요합니다."
           description="이 계정은 관리자 설정을 열 수 없습니다."
           action={
-            <Link className="button primary" to="/agent/home">
-              상담사 작업 공간으로 이동
+            <Link
+              className="button primary"
+              to={
+                session.staff?.role === 'SECURITY_AUDITOR'
+                  ? '/audit/activity'
+                  : '/agent/home'
+              }
+            >
+              {session.staff?.role === 'SECURITY_AUDITOR'
+                ? '감사 조사 화면으로 이동'
+                : '상담사 작업 공간으로 이동'}
+            </Link>
+          }
+        />
+      </main>
+    )
+  }
+  return <Outlet />
+}
+
+export function AgentRoute() {
+  const session = useStaffSession()
+  const allowed =
+    (session.staff?.role === 'ADMIN' || session.staff?.role === 'AGENT') &&
+    session.staff.capabilities.includes('AGENT_WORKSPACE')
+  if (!allowed) {
+    return (
+      <main className="staff-gate">
+        <ScreenState
+          kind="denied"
+          title="상담사 작업 공간 권한이 필요합니다."
+          description="보안 감사자 계정은 티켓 화면과 변경 작업을 사용할 수 없습니다."
+          action={
+            <Link className="button primary" to="/audit/activity">
+              감사 조사 화면으로 이동
+            </Link>
+          }
+        />
+      </main>
+    )
+  }
+  return <Outlet />
+}
+
+export function AuditRoute() {
+  const session = useStaffSession()
+  const allowed =
+    session.staff?.role === 'SECURITY_AUDITOR' &&
+    session.staff.capabilities.includes('audit:activity:read')
+  if (!allowed) {
+    return (
+      <main className="staff-gate">
+        <ScreenState
+          kind="denied"
+          title="보안 감사자 권한이 필요합니다."
+          description="이 계정은 통합 감사 원장을 조사할 수 없습니다."
+          action={
+            <Link
+              className="button primary"
+              to={session.staff?.role === 'ADMIN' ? '/admin/staff' : '/agent/home'}
+            >
+              허용된 작업 공간으로 이동
             </Link>
           }
         />

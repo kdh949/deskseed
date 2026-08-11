@@ -16,9 +16,10 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:dev": "playwright test agent-views-workspace.spec.ts customer-request.spec.ts frontend-system.spec.ts staff-auth-admin.spec.ts ticket-composer-conflict.spec.ts transfer-child-ticket.spec.ts",
+    "test:e2e:dev": "playwright test agent-views-workspace.spec.ts audit-explorer.spec.ts customer-request.spec.ts frontend-system.spec.ts staff-auth-admin.spec.ts ticket-composer-conflict.spec.ts transfer-child-ticket.spec.ts",
     "test:e2e:update": "playwright test --update-snapshots",
-    "test:e2e:stack": "bash ../scripts/run-customer-request-e2e.sh"
+    "test:e2e:stack": "bash ../scripts/run-customer-request-e2e.sh",
+    "test:e2e:audit-stack": "bash ../scripts/run-audit-explorer-e2e.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "5.101.4",
