@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
+import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -13,6 +14,7 @@ import org.springframework.mock.web.MockHttpSession
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -176,6 +178,20 @@ class AgentTicketReadIntegrationTest {
                 .queryParam("priority", "HIGH")
                 .queryParam("cursor", cursor),
         ).andExpect(status().isBadRequest)
+
+        val cursorParts = cursor.split('.')
+        val signature = cursorParts[2]
+        val tampered = listOf(
+            cursorParts[0],
+            cursorParts[1],
+            (if (signature.first() == 'A') 'B' else 'A').toString() + signature.drop(1),
+        ).joinToString(".")
+        mockMvc.perform(
+            get("/api/v1/agent/views/my-open/tickets")
+                .session(browser)
+                .queryParam("limit", "2")
+                .queryParam("cursor", tampered),
+        ).andExpect(status().isBadRequest)
     }
 
     @Test
@@ -210,7 +226,7 @@ class AgentTicketReadIntegrationTest {
     }
 
     @Test
-    fun `one navigation writes one semantic view while refetch and background reads add none`() {
+    fun `agent reads record every protected resource access while navigation writes one semantic view`() {
         val agent = insertStaff("agent@example.com", "Agent password 42", "AGENT", "상담사")
         val group = insertGroup("감사 그룹", agent)
         val ticket = insertTicket(number = 4001, subject = "감사 대상 티켓", groupId = group, assigneeId = agent)
@@ -223,13 +239,15 @@ class AgentTicketReadIntegrationTest {
         mockMvc.perform(ticketDetail(4001, browser, interactionId, "BACKGROUND")).andExpect(status().isOk)
 
         assertThat(viewEventCount(agent, 4001)).isEqualTo(1)
+        assertThat(resourceReadEventCount(agent, 4001)).isEqualTo(3)
 
         mockMvc.perform(ticketDetail(4001, browser, UUID.randomUUID(), "NAVIGATION")).andExpect(status().isOk)
         assertThat(viewEventCount(agent, 4001)).isEqualTo(2)
+        assertThat(resourceReadEventCount(agent, 4001)).isEqualTo(4)
     }
 
     @Test
-    fun `access audit insert failure fails closed without returning protected detail`() {
+    fun `background read audit failure fails closed without returning protected detail`() {
         val agent = insertStaff("agent@example.com", "Agent password 42", "AGENT", "상담사")
         val group = insertGroup("보호 그룹", agent)
         insertTicket(number = 5001, subject = "보호 티켓", groupId = group, assigneeId = agent)
@@ -244,7 +262,7 @@ class AgentTicketReadIntegrationTest {
             "create trigger fail_access_audit before insert on access_audit_events for each row execute function fail_access_audit_insert()",
         )
         try {
-            mockMvc.perform(ticketDetail(5001, browser, UUID.randomUUID(), "NAVIGATION"))
+            mockMvc.perform(ticketDetail(5001, browser, UUID.randomUUID(), "BACKGROUND"))
                 .andExpect(status().isServiceUnavailable)
                 .andExpect(jsonPath("$.type").value("/problems/access-audit-unavailable"))
                 .andExpect(jsonPath("$.ticket").doesNotExist())
@@ -252,6 +270,52 @@ class AgentTicketReadIntegrationTest {
             jdbcTemplate.execute("drop trigger if exists fail_access_audit on access_audit_events")
             jdbcTemplate.execute("drop function if exists fail_access_audit_insert()")
         }
+    }
+
+    @Test
+    fun `agent read supports canonical on hold list rows and closed direct detail`() {
+        val agent = insertStaff("canonical@example.com", "Agent password 42", "AGENT", "상담사")
+        val group = insertGroup("상태 그룹", agent)
+        insertTicket(6001, "보류 중 티켓", status = "ON_HOLD", groupId = group)
+        insertTicket(6002, "종료 티켓", status = "CLOSED", groupId = group, assigneeId = agent)
+        val browser = login("canonical@example.com", "Agent password 42")
+
+        mockMvc.perform(get("/api/v1/agent/views/unassigned-my-groups/tickets").session(browser))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[?(@.ticketNumber == 6001)].status").value("ON_HOLD"))
+
+        mockMvc.perform(ticketDetail(6002, browser, UUID.randomUUID(), "BACKGROUND"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.ticket.status").value("CLOSED"))
+    }
+
+    @Test
+    fun `allowed origin can preflight and complete protected detail with read headers`() {
+        val agent = insertStaff("cors@example.com", "Agent password 42", "AGENT", "상담사")
+        val group = insertGroup("CORS 그룹", agent)
+        insertTicket(7001, "CORS 대상 티켓", groupId = group, assigneeId = agent)
+        val browser = login("cors@example.com", "Agent password 42")
+
+        mockMvc.perform(
+            options("/api/v1/agent/tickets/7001")
+                .header("Origin", "http://localhost:5173")
+                .header("Access-Control-Request-Method", "GET")
+                .header(
+                    "Access-Control-Request-Headers",
+                    "X-Interaction-Id, X-Deskseed-Read-Intent",
+                ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
+            .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Interaction-Id")))
+            .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Deskseed-Read-Intent")))
+
+        mockMvc.perform(
+            ticketDetail(7001, browser, UUID.randomUUID(), "BACKGROUND")
+                .header("Origin", "http://localhost:5173"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
     }
 
     private fun ticketDetail(number: Long, session: MockHttpSession, interactionId: UUID, intent: String) =
@@ -265,6 +329,16 @@ class AgentTicketReadIntegrationTest {
         """
         select count(*) from access_audit_events
         where actor_id = ? and ticket_number = ? and action = 'TICKET_VIEWED' and outcome = 'SUCCEEDED'
+        """.trimIndent(),
+        Long::class.java,
+        agentId,
+        ticketNumber,
+    )!!
+
+    private fun resourceReadEventCount(agentId: UUID, ticketNumber: Long): Long = jdbcTemplate.queryForObject(
+        """
+        select count(*) from access_audit_events
+        where actor_id = ? and ticket_number = ? and action = 'API_RESOURCE_READ' and outcome = 'SUCCEEDED'
         """.trimIndent(),
         Long::class.java,
         agentId,

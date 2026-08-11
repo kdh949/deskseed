@@ -25,7 +25,7 @@
 
 - Routes: `/agent/views/:viewKey`, `/agent/tickets/:ticketNumber`.
 - Views: `my-open`, `unassigned-my-groups`, `pending`, `recently-solved`, `my-child-tasks`.
-- Queue order: `(updatedAt DESC, ticketNumber DESC)` with an opaque cursor bound to view and filters.
+- Queue order: `(updatedAt DESC, ticketNumber DESC)` with a versioned HMAC-signed opaque cursor bound to view and filters.
 - Filters: status, priority, group and assignee.
 - Workspace: global rail, work navigation, ticket tabs, properties, conversation and context panel.
 - States: loading, empty, error, denied and not-found. This read-only slice has no edit conflict state.
@@ -37,7 +37,7 @@
 - Server-side `ALL_TICKETS` read policy seam.
 - Bounded default-view queries and stable cursor pagination.
 - Staff detail projection with customer, PUBLIC/INTERNAL comments, properties, ticket-local history and empty related-context seams.
-- Strict, deduplicated `TICKET_VIEWED` persistence before success.
+- Every successful detail read persists `API_RESOURCE_READ` before success; `NAVIGATION` additionally persists deduplicated `TICKET_VIEWED`.
 - Read-only Views and 3-panel Workspace UI.
 - Contract, PostgreSQL integration, component and browser tests plus query-plan evidence.
 
@@ -53,7 +53,7 @@
 - Customer endpoints never expose INTERNAL comments, staff fields, relations or audit metadata.
 - Active staff authorization and staff projection happen server-side.
 - Sensitive detail read and canonical access audit complete in one transaction; audit failure returns `503` without the body.
-- `(actor, ticket, interactionId, TICKET_VIEWED)` is unique. Same-interaction navigation/refetch is a no-op; `BACKGROUND` never records a semantic view.
+- Every successful detail read records `API_RESOURCE_READ`, including caller-supplied `BACKGROUND`. `(actor, ticket, interactionId, TICKET_VIEWED)` is unique; same-interaction navigation/refetch is a no-op and `BACKGROUND` never records the separate semantic-view action.
 - Reads have no idempotency key or optimistic concurrency requirement and perform no external I/O.
 
 ## Data and privacy
@@ -66,8 +66,8 @@
 
 - Authorization bypass: global read is limited to active staff and the staff projection.
 - Visibility leak: INTERNAL content exists only on the staff endpoint and is regression-tested absent from customer endpoints.
-- Audit bypass/tampering: strict write, unique semantic view and append-only trigger.
-- Cursor manipulation: opaque versioned cursor is decoded and checked against view/filter fingerprint.
+- Audit bypass/tampering: strict resource-read write, unique semantic view and append-only trigger.
+- Cursor manipulation: opaque versioned HMAC cursor is checked in constant time and bound to its view/filter fingerprint; retained key IDs support rotation.
 - N+1/query amplification: fixed bulk queries with query-count assertions and PostgreSQL plan evidence.
 
 ## Acceptance scenarios
@@ -75,14 +75,15 @@
 - Given two active agents in different groups, either can list and directly open the other's staff-visible ticket.
 - Given a customer or inactive staff session, agent list/detail is denied without protected data.
 - Given equal `updatedAt`, pagination orders by descending ticket number with no duplicate or omission.
-- Given one navigation interaction, the first successful detail returns data and writes one `TICKET_VIEWED`; same-interaction refetch writes zero; a new interaction writes one.
-- Given access-audit insert failure, detail returns the stable audit-unavailable problem and no success body.
+- Given one navigation interaction, every successful detail read writes `API_RESOURCE_READ`; the first navigation writes one `TICKET_VIEWED`, same-interaction refetch writes zero additional semantic views, and a new interaction writes one.
+- Given any access-audit insert failure, including a caller-supplied `BACKGROUND` read, detail returns the stable audit-unavailable problem and no success body.
 - Given a customer request with an INTERNAL comment, staff detail includes it while customer detail does not.
 
 ## Compatibility and migration
 
 - Core Agent API outline is promoted to a frozen internal contract for the three read operations.
 - Migration is additive. Rollback is application rollback plus forward migration cleanup after backup; no destructive down migration is shipped.
+- Pre-release unsigned v1 cursors are deliberately rejected after the v2 HMAC envelope change; clients restart the bounded View from its first page. Retained signing-key IDs keep already-issued v2 cursors valid during key rotation.
 - Existing customer and admin routes remain compatible.
 
 ## Human explanation
@@ -92,7 +93,7 @@ The current Ticket row remains the current-state source of truth, while access a
 ## Completion evidence
 
 - Contract: the three Agent read operations are frozen in `api/core-api-outline-v1.yaml`.
-- Backend: cross-group `ALL_TICKETS` list/detail, five default Views, stable cursor/filter binding, strict append-only access audit and query-count/plan integration tests.
+- Backend: cross-group `ALL_TICKETS` list/detail, all six canonical staff statuses, five default Views, HMAC cursor/filter binding, strict append-only access audit and query-count/plan integration tests.
 - Frontend: Deskseed global/work navigation, dense ticket table, URL filters, read-only properties/conversation/context Workspace, user-specific collapse/width preferences and complete loading/empty/error/denied states.
 - Visual/accessibility: Views and Workspace baselines at 1280, 1440 and 1920; keyboard row open and separators; axe reports no violations in the fixture flow.
 - Non-goals retained: search/search audit, mutation/composer/transfer/child creation, custom View builder, context apps, real child/external-reference projections and latency percentiles.

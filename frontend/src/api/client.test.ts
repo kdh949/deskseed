@@ -319,14 +319,14 @@ describe('agent ticket read API client', () => {
     expect(queueUrl).toContain('limit=25')
   })
 
-  it('sends navigation metadata and allowlists the staff detail projection', async () => {
+  it('sends navigation metadata and decodes an on-hold staff detail projection', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           ticket: {
             ticketNumber: 1042,
             subject: '결제 오류',
-            status: 'OPEN',
+            status: 'ON_HOLD',
             priority: 'URGENT',
             requester: {
               id: 'customer-id',
@@ -403,7 +403,48 @@ describe('agent ticket read API client', () => {
     })
     expect(detail.comments[0]?.visibility).toBe('INTERNAL')
     expect(detail.context.customer.email).toBe('customer@example.com')
+    expect(detail.ticket.status).toBe('ON_HOLD')
     expect(JSON.stringify(detail)).not.toContain('private-marker')
+  })
+
+  it('decodes a closed ticket in an agent list response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                ticketNumber: 1042,
+                subject: '종료된 티켓',
+                status: 'CLOSED',
+                priority: 'NORMAL',
+                requester: {
+                  id: 'customer-id',
+                  type: 'CUSTOMER',
+                  displayName: '김고객',
+                },
+                group: null,
+                assignee: null,
+                updatedAt: '2026-08-10T00:00:00Z',
+                version: 3,
+                isChild: false,
+                openChildCount: 0,
+                sla: null,
+              },
+            ],
+            nextCursor: null,
+            totalApproximate: null,
+            sort: 'updatedAt:desc,ticketNumber:desc',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+
+    await expect(listTicketsInView('recently-solved')).resolves.toMatchObject({
+      items: [{ status: 'CLOSED' }],
+    })
   })
 
   it('rejects malformed agent list and detail success bodies', async () => {

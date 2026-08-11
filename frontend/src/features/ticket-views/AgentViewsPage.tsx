@@ -3,8 +3,8 @@ import { Link, useParams, useSearchParams } from 'react-router'
 import { ApiError, listTicketsInView } from '../../api/client'
 import type {
   AgentTicketFilters,
+  AgentTicketStatus,
   TicketPriority,
-  TicketStatus,
 } from '../../api/types'
 import { StatusBadge } from '../../components/StatusBadge'
 
@@ -16,7 +16,14 @@ const VIEW_NAMES: Record<string, string> = {
   'my-child-tasks': '내 child tasks',
 }
 
-const STATUSES: TicketStatus[] = ['NEW', 'OPEN', 'PENDING', 'SOLVED']
+const STATUSES: AgentTicketStatus[] = [
+  'NEW',
+  'OPEN',
+  'PENDING',
+  'ON_HOLD',
+  'SOLVED',
+  'CLOSED',
+]
 const PRIORITIES: TicketPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT']
 
 export function AgentViewsPage() {
@@ -224,7 +231,7 @@ export function AgentViewsPage() {
 }
 
 function filtersFrom(searchParams: URLSearchParams): AgentTicketFilters {
-  const status = searchParams.get('status') as TicketStatus | null
+  const status = searchParams.get('status') as AgentTicketStatus | null
   const priority = searchParams.get('priority') as TicketPriority | null
   return {
     ...(status ? { status } : {}),

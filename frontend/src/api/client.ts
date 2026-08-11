@@ -2,6 +2,7 @@ import type {
   ActorSummary,
   AgentComment,
   AgentReadIntent,
+  AgentTicketStatus,
   AgentTicketDetail,
   AgentTicketFilters,
   AgentTicketPage,
@@ -32,6 +33,14 @@ const TICKET_STATUSES = new Set<TicketStatus>([
   'OPEN',
   'PENDING',
   'SOLVED',
+])
+const AGENT_TICKET_STATUSES = new Set<AgentTicketStatus>([
+  'NEW',
+  'OPEN',
+  'PENDING',
+  'ON_HOLD',
+  'SOLVED',
+  'CLOSED',
 ])
 const ACCESS_TOKEN_MIN_LENGTH = 32
 const ACCESS_TOKEN_MAX_LENGTH = 256
@@ -79,6 +88,13 @@ function isTimestamp(value: unknown): value is string {
 
 function isTicketStatus(value: unknown): value is TicketStatus {
   return typeof value === 'string' && TICKET_STATUSES.has(value as TicketStatus)
+}
+
+function isAgentTicketStatus(value: unknown): value is AgentTicketStatus {
+  return (
+    typeof value === 'string' &&
+    AGENT_TICKET_STATUSES.has(value as AgentTicketStatus)
+  )
 }
 
 function isTicketNumber(value: unknown): value is number {
@@ -597,7 +613,7 @@ function decodeAgentTicketSummary(
   if (
     !isTicketNumber(value.ticketNumber) ||
     !isNonBlankString(value.subject) ||
-    !isTicketStatus(value.status) ||
+    !isAgentTicketStatus(value.status) ||
     !isTicketPriority(value.priority) ||
     !requester ||
     group === undefined ||

@@ -57,6 +57,12 @@ deskseed:
   portal:
     request-access-token:
       ttl: ${DESKSEED_REQUEST_ACCESS_TOKEN_TTL:30d}
+  agent-ticket-read:
+    cursor:
+      active-key-id: ${DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID:v1}
+      signing-keys:
+        # Local-only development value. Production overrides this with a provisioned secret.
+        v1: ${DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY:deskseed-local-development-cursor-signing-key-change-before-production}
   staff-auth:
     password-cost: ${DESKSEED_AUTH_PASSWORD_COST:12}
     session-idle: ${DESKSEED_AUTH_SESSION_IDLE:60m}

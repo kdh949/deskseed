@@ -74,6 +74,8 @@ describe('AgentViewsPage', () => {
     expect(
       await screen.findByRole('table', { name: 'Pending 티켓' }),
     ).toBeVisible()
+    expect(screen.getByRole('option', { name: 'ON_HOLD' })).toBeVisible()
+    expect(screen.getByRole('option', { name: 'CLOSED' })).toBeVisible()
     expect(screen.getByRole('columnheader', { name: '상태' })).toBeVisible()
     expect(
       screen.getByRole('link', { name: '#1042 결제 승인 오류 열기' }),

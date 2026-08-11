@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useState, type CSSProperties } from 'react'
+import { useMemo, useRef, type CSSProperties } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
+import type { AgentTicketStatus } from '../../api/types'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
 import { PanelResizer } from './PanelResizer'
@@ -11,17 +12,22 @@ import { usePanelPreferences } from './usePanelPreferences'
 
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
-  const ticketNumber = Number(ticketNumberParam)
+  const ticketNumber = parseTicketNumber(ticketNumberParam)
   const session = useStaffSession()
-  const [interactionId] = useState(createInteractionId)
+  const interactionId = useMemo(createInteractionId, [ticketNumber])
   const contextToggleRef = useRef<HTMLButtonElement>(null)
   const { preferences, setPropertyWidth, setContextWidth, toggleContext } =
     usePanelPreferences(session.staff?.id ?? 'unknown')
   const query = useQuery({
     queryKey: ['agent-ticket', ticketNumber, interactionId],
-    queryFn: () => getAgentTicket(ticketNumber, interactionId, 'NAVIGATION'),
-    enabled: Number.isSafeInteger(ticketNumber) && ticketNumber > 0,
+    queryFn: () =>
+      getAgentTicket(ticketNumber ?? 0, interactionId, 'NAVIGATION'),
+    enabled: ticketNumber !== null,
   })
+
+  if (ticketNumber === null) {
+    return <InvalidTicketRoute />
+  }
 
   if (query.isPending) {
     return <WorkspaceLoading ticketNumber={ticketNumberParam} />
@@ -175,6 +181,17 @@ function WorkspaceLoading({ ticketNumber }: { ticketNumber: string }) {
   )
 }
 
+function InvalidTicketRoute() {
+  return (
+    <main className="workspace-error-state" role="alert">
+      <p className="agent-page-eyebrow">INVALID TICKET URL</p>
+      <h1>티켓 번호를 확인할 수 없습니다.</h1>
+      <p>양의 정수 티켓 번호로 다시 시도해 주세요.</p>
+      <Link to="/agent/views/my-open">Views로 돌아가기</Link>
+    </main>
+  )
+}
+
 function WorkspaceError({ error, retry }: { error: Error; retry: () => void }) {
   const apiError = error instanceof ApiError ? error : null
   return (
@@ -199,22 +216,41 @@ function WorkspaceError({ error, retry }: { error: Error; retry: () => void }) {
   )
 }
 
-function createInteractionId() {
-  return (
-    globalThis.crypto?.randomUUID?.() ??
-    `interaction-${Date.now()}-${Math.random().toString(16).slice(2)}`
-  )
+function parseTicketNumber(value: string): number | null {
+  if (!/^[1-9]\d*$/.test(value)) return null
+  const ticketNumber = Number(value)
+  return Number.isSafeInteger(ticketNumber) ? ticketNumber : null
 }
 
-function statusLabel(status: string) {
-  return (
-    {
-      NEW: '신규',
-      OPEN: '처리 중',
-      PENDING: '고객 답변 대기',
-      SOLVED: '해결됨',
-    }[status] ?? status
-  )
+function createInteractionId(): string {
+  const webCrypto = globalThis.crypto
+  if (webCrypto?.randomUUID) return webCrypto.randomUUID()
+
+  const bytes = new Uint8Array(16)
+  if (webCrypto?.getRandomValues) webCrypto.getRandomValues(bytes)
+  else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256)
+    }
+  }
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function statusLabel(status: AgentTicketStatus) {
+  const labels: Record<AgentTicketStatus, string> = {
+    NEW: '신규',
+    OPEN: '처리 중',
+    PENDING: '고객 답변 대기',
+    ON_HOLD: '보류',
+    SOLVED: '해결됨',
+    CLOSED: '종료',
+  }
+  return labels[status]
 }
 
 function formatDate(value: string) {

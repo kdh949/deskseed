@@ -113,6 +113,10 @@ docker compose up --build
 
 첫 로그인 성공 후 `DESKSEED_BOOTSTRAP_ADMIN_ENABLED=false`로 되돌리고 비밀번호 파일을 안전하게 삭제합니다. 부분 설정, 잘못된 이메일, 일반 파일이 아닌 경로, 12자 미만 또는 128자 초과 비밀번호는 기동을 실패시킵니다. 비밀번호 원문은 API 응답·감사·애플리케이션 로그에 기록되지 않습니다.
 
+### Agent View cursor signing key
+
+상담사 View cursor는 HMAC으로 서명합니다. production profile에서는 `DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY`에 32 bytes 이상인 별도 비밀값을 설정해야 기동합니다. 예를 들어 `openssl rand -base64 48`으로 생성한 값을 외부 secret manager에 보관하고 환경 변수로 주입합니다. `DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID`는 현재 발급 키를 식별하며, 키를 교체할 때 이전 key ID와 비밀값을 설정에 잠시 유지해 기존 cursor를 읽을 수 있게 합니다. 로컬 Compose의 기본값은 개발 전용이며 배포에 사용하면 안 됩니다.
+
 ## 검증
 
 ```bash

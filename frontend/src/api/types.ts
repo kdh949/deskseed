@@ -1,4 +1,5 @@
 export type TicketStatus = 'NEW' | 'OPEN' | 'PENDING' | 'SOLVED'
+export type AgentTicketStatus = TicketStatus | 'ON_HOLD' | 'CLOSED'
 export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 export type TicketVisibility = 'PUBLIC' | 'INTERNAL'
 
@@ -126,7 +127,7 @@ export interface TicketReference {
 export interface AgentTicketSummary {
   ticketNumber: number
   subject: string
-  status: TicketStatus
+  status: AgentTicketStatus
   priority: TicketPriority
   requester: ActorSummary
   group: GroupReference | null
@@ -183,7 +184,7 @@ export interface AgentTicketDetail {
 }
 
 export interface AgentTicketFilters {
-  status?: TicketStatus
+  status?: AgentTicketStatus
   priority?: TicketPriority
   groupId?: string
   assigneeId?: string

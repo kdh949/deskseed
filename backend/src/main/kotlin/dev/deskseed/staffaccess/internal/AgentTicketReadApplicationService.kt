@@ -2,6 +2,7 @@ package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.audit.AccessAuditOutcome
 import dev.deskseed.audit.AccessAuditWriter
+import dev.deskseed.audit.TicketResourceReadAccessAudit
 import dev.deskseed.audit.TicketViewAccessAudit
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
@@ -105,8 +106,27 @@ internal class AgentTicketReadApplicationService(
     ): StaffTicketDetail {
         requireActiveStaffRead(principal)
         val detail = ticketStore.findDetail(ticketNumber) ?: throw AgentTicketNotFoundException()
-        if (intent == AgentReadIntent.NAVIGATION) {
-            try {
+        try {
+            val occurredAt = Instant.now(clock)
+            accessAuditWriter.appendTicketResourceRead(
+                TicketResourceReadAccessAudit(
+                    actorType = ActorType.STAFF,
+                    actorId = principal.id,
+                    actorDisplaySnapshot = principal.displayName,
+                    source = RequestSource.AGENT_UI,
+                    ticketId = detail.ticket.id,
+                    ticketNumber = detail.ticket.ticketNumber,
+                    interactionId = interactionId,
+                    requestId = context.requestId,
+                    correlationId = context.correlationId,
+                    ipAddress = context.ipAddress,
+                    userAgent = context.userAgent,
+                    outcome = AccessAuditOutcome.SUCCEEDED,
+                    httpStatus = 200,
+                    occurredAt = occurredAt,
+                ),
+            )
+            if (intent == AgentReadIntent.NAVIGATION) {
                 accessAuditWriter.appendTicketViewed(
                     TicketViewAccessAudit(
                         actorType = ActorType.STAFF,
@@ -122,12 +142,12 @@ internal class AgentTicketReadApplicationService(
                         userAgent = context.userAgent,
                         outcome = AccessAuditOutcome.SUCCEEDED,
                         httpStatus = 200,
-                        occurredAt = Instant.now(clock),
+                        occurredAt = occurredAt,
                     ),
                 )
-            } catch (exception: DataAccessException) {
-                throw AccessAuditUnavailableException(exception)
             }
+        } catch (exception: DataAccessException) {
+            throw AccessAuditUnavailableException(exception)
         }
         return detail
     }

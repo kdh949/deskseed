@@ -385,6 +385,7 @@ paths:
           type: string
       - name: cursor
         in: query
+        description: Opaque, versioned HMAC-signed keyset cursor bound to this view and filters.
         schema:
           type: string
       - name: limit
@@ -405,7 +406,7 @@ paths:
       - name: status
         in: query
         schema:
-          $ref: '#/components/schemas/TicketStatus'
+          $ref: '#/components/schemas/AgentTicketStatus'
       - name: priority
         in: query
         schema:
@@ -495,7 +496,7 @@ paths:
       - name: X-Deskseed-Read-Intent
         in: header
         required: true
-        description: "NAVIGATION records one semantic view; BACKGROUND never records one."
+        description: "Every successful detail read records a required resource-read audit. NAVIGATION additionally records one deduplicated semantic view; BACKGROUND never records a semantic view."
         schema:
           type: string
           enum:
@@ -1970,11 +1971,22 @@ components:
           - ALL_TICKETS
     TicketStatus:
       type: string
+      description: Customer-visible ticket status projection.
       enum:
       - NEW
       - OPEN
       - PENDING
       - SOLVED
+    AgentTicketStatus:
+      type: string
+      description: Canonical status projection for staff ticket reads and commands.
+      enum:
+      - NEW
+      - OPEN
+      - PENDING
+      - ON_HOLD
+      - SOLVED
+      - CLOSED
     TicketPriority:
       type: string
       enum:
@@ -2026,7 +2038,7 @@ components:
         subject:
           type: string
         status:
-          $ref: '#/components/schemas/TicketStatus'
+          $ref: '#/components/schemas/AgentTicketStatus'
         priority:
           $ref: '#/components/schemas/TicketPriority'
         requester:
@@ -2235,7 +2247,7 @@ components:
       type: object
       properties:
         status:
-          $ref: '#/components/schemas/TicketStatus'
+          $ref: '#/components/schemas/AgentTicketStatus'
         priority:
           $ref: '#/components/schemas/TicketPriority'
         groupId:
@@ -3057,7 +3069,7 @@ components:
         pauseStatuses:
           type: array
           items:
-            $ref: '#/components/schemas/TicketStatus'
+            $ref: '#/components/schemas/AgentTicketStatus'
           default:
           - PENDING
     FirstReplySlaPolicy:

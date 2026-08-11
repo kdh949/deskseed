@@ -20,3 +20,7 @@ server:
 deskseed:
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS}
+  agent-ticket-read:
+    cursor:
+      signing-keys:
+        v1: ${DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY}

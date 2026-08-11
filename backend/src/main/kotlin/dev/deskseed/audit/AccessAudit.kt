@@ -28,7 +28,27 @@ data class TicketViewAccessAudit(
     val occurredAt: Instant,
 )
 
+data class TicketResourceReadAccessAudit(
+    val actorType: ActorType,
+    val actorId: UUID,
+    val actorDisplaySnapshot: String,
+    val source: RequestSource,
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val interactionId: UUID,
+    val requestId: String,
+    val correlationId: String,
+    val ipAddress: String?,
+    val userAgent: String?,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
 interface AccessAuditWriter {
+    /** Appends one required access audit for every successful protected ticket-detail read. */
+    fun appendTicketResourceRead(event: TicketResourceReadAccessAudit)
+
     /** Returns true when a new semantic view was appended, false for a duplicate interaction. */
     fun appendTicketViewed(event: TicketViewAccessAudit): Boolean
 }
