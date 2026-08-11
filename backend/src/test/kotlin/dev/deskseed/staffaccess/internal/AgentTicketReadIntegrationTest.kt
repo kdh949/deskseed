@@ -2,6 +2,7 @@ package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.containsInAnyOrder
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -111,7 +112,22 @@ class AgentTicketReadIntegrationTest {
             .andExpect(jsonPath("$.comments.length()").value(2))
             .andExpect(jsonPath("$.comments[1].visibility").value("INTERNAL"))
             .andExpect(jsonPath("$.history[0].eventType").value("TICKET_CREATED"))
+            .andExpect(jsonPath("$.capabilities.length()").value(1))
             .andExpect(jsonPath("$.capabilities[0]").value("READ"))
+            .andExpect(
+                jsonPath("$.assignmentOptions.groups[*].name")
+                    .value(containsInAnyOrder("고객 지원", "결제 지원")),
+            )
+            .andExpect(
+                jsonPath("$.assignmentOptions.groups[*].members[*].displayName")
+                    .value(containsInAnyOrder("상담사 A", "상담사 B")),
+            )
+
+        mockMvc.perform(ticketDetail(2002, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capabilities.length()").value(2))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
+            .andExpect(jsonPath("$.capabilities[1]").value("UPDATE"))
 
         mockMvc.perform(get("/api/v1/agent/tickets/2001"))
             .andExpect(status().isUnauthorized)

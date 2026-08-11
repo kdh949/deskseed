@@ -526,6 +526,7 @@ paths:
     post:
       summary: Apply one atomic ticket update command
       operationId: updateAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M3
@@ -2200,6 +2201,7 @@ components:
       - ticket
       - comments
       - capabilities
+      - assignmentOptions
       - context
       - history
       properties:
@@ -2213,6 +2215,9 @@ components:
           type: array
           items:
             type: string
+          description: `READ` is always present for a successful staff detail; `UPDATE` is present only when the current actor may mutate the current ticket.
+        assignmentOptions:
+          $ref: '#/components/schemas/TicketAssignmentOptions'
         context:
           $ref: '#/components/schemas/TicketContext'
         history:
@@ -2223,6 +2228,46 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CommandWarning'
+    TicketAssignmentOptions:
+      type: object
+      additionalProperties: false
+      required:
+      - groups
+      properties:
+        groups:
+          type: array
+          description: Active groups and their active members, projected only on the audited staff detail surface.
+          items:
+            $ref: '#/components/schemas/TicketAssignmentGroupOption'
+    TicketAssignmentGroupOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - members
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAssignmentStaffOption'
+    TicketAssignmentStaffOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - displayName
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
     TicketContext:
       type: object
       additionalProperties: false

@@ -81,7 +81,7 @@ internal class AgentTicketReadController(
         @RequestHeader("X-Deskseed-Read-Intent") readIntent: AgentReadIntent,
         request: HttpServletRequest,
     ): ResponseEntity<AgentTicketDetailResponse> {
-        val detail = applicationService.readTicket(
+        val workspace = applicationService.readTicket(
             principal = principal,
             ticketNumber = ticketNumber,
             interactionId = interactionId,
@@ -95,23 +95,34 @@ internal class AgentTicketReadController(
         )
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())
-            .eTag(detail.ticket.version.toString())
+            .eTag(workspace.detail.ticket.version.toString())
             .body(
                 AgentTicketDetailResponse(
-                    ticket = ticketResponse(detail.ticket),
-                    comments = detail.comments.map(::commentResponse),
-                    capabilities = listOf("READ"),
+                    ticket = ticketResponse(workspace.detail.ticket),
+                    comments = workspace.detail.comments.map(::commentResponse),
+                    capabilities = workspace.capabilities,
+                    assignmentOptions = TicketAssignmentOptionsResponse(
+                        groups = workspace.assignmentOptions.map { group ->
+                            TicketAssignmentGroupOptionResponse(
+                                id = group.id,
+                                name = group.name,
+                                members = group.members.map { member ->
+                                    TicketAssignmentStaffOptionResponse(member.id, member.displayName)
+                                },
+                            )
+                        },
+                    ),
                     context = TicketContextResponse(
                         customer = TicketCustomerResponse(
-                            id = detail.customer.id,
-                            displayName = detail.customer.displayName,
-                            email = detail.customer.email,
+                            id = workspace.detail.customer.id,
+                            displayName = workspace.detail.customer.displayName,
+                            email = workspace.detail.customer.email,
                         ),
                         parent = null,
                         children = emptyList(),
                         externalReferences = emptyList(),
                     ),
-                    history = detail.history.map(::historyResponse),
+                    history = workspace.detail.history.map(::historyResponse),
                     warnings = emptyList(),
                 ),
             )
@@ -213,6 +224,21 @@ internal data class TicketContextResponse(
     val externalReferences: List<Any>,
 )
 
+internal data class TicketAssignmentStaffOptionResponse(
+    val id: UUID,
+    val displayName: String,
+)
+
+internal data class TicketAssignmentGroupOptionResponse(
+    val id: UUID,
+    val name: String,
+    val members: List<TicketAssignmentStaffOptionResponse>,
+)
+
+internal data class TicketAssignmentOptionsResponse(
+    val groups: List<TicketAssignmentGroupOptionResponse>,
+)
+
 internal data class TicketHistoryResponse(
     val id: UUID,
     val eventType: String,
@@ -224,6 +250,7 @@ internal data class AgentTicketDetailResponse(
     val ticket: TicketSummaryResponse,
     val comments: List<AgentCommentResponse>,
     val capabilities: List<String>,
+    val assignmentOptions: TicketAssignmentOptionsResponse,
     val context: TicketContextResponse,
     val history: List<TicketHistoryResponse>,
     val warnings: List<Any>,

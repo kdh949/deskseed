@@ -6,6 +6,8 @@ import dev.deskseed.audit.TicketResourceReadAccessAudit
 import dev.deskseed.audit.TicketViewAccessAudit
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.organization.TicketAssignmentCatalog
+import dev.deskseed.organization.TicketAssignmentGroupOption
 import dev.deskseed.ticketing.DefaultStaffView
 import dev.deskseed.ticketing.StaffTicketDetail
 import dev.deskseed.ticketing.StaffTicketListFilter
@@ -45,11 +47,19 @@ internal data class AgentTicketPage(
     val nextCursor: String?,
 )
 
+internal data class AgentTicketWorkspaceDetail(
+    val detail: StaffTicketDetail,
+    val capabilities: List<String>,
+    val assignmentOptions: List<TicketAssignmentGroupOption>,
+)
+
 @Service
 internal class AgentTicketReadApplicationService(
     private val ticketStore: StaffTicketReadStore,
     private val accessAuditWriter: AccessAuditWriter,
     private val cursorCodec: AgentTicketCursorCodec,
+    private val assignmentCatalog: TicketAssignmentCatalog,
+    private val writeAuthorizationPolicy: GroupOrAssigneeTicketWriteAuthorizationPolicy,
     private val clock: Clock,
 ) {
     val readScope: StaffTicketReadScope = StaffTicketReadScope.ALL_TICKETS
@@ -103,7 +113,7 @@ internal class AgentTicketReadApplicationService(
         interactionId: UUID,
         intent: AgentReadIntent,
         context: AgentReadRequestContext,
-    ): StaffTicketDetail {
+    ): AgentTicketWorkspaceDetail {
         requireActiveStaffRead(principal)
         val detail = ticketStore.findDetail(ticketNumber) ?: throw AgentTicketNotFoundException()
         try {
@@ -149,7 +159,16 @@ internal class AgentTicketReadApplicationService(
         } catch (exception: DataAccessException) {
             throw AccessAuditUnavailableException(exception)
         }
-        return detail
+        val canUpdate = writeAuthorizationPolicy.canUpdate(
+            principal = principal,
+            currentGroupId = detail.ticket.group?.id,
+            currentAssigneeId = detail.ticket.assignee?.id,
+        )
+        return AgentTicketWorkspaceDetail(
+            detail = detail,
+            capabilities = if (canUpdate) listOf("READ", "UPDATE") else listOf("READ"),
+            assignmentOptions = assignmentCatalog.listActiveGroups(),
+        )
     }
 
     private fun requireActiveStaffRead(principal: StaffPrincipal) {

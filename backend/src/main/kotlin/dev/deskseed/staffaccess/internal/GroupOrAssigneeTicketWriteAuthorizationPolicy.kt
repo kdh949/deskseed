@@ -11,6 +11,20 @@ import java.util.UUID
 internal class GroupOrAssigneeTicketWriteAuthorizationPolicy(
     private val assignmentDirectory: TicketAssignmentDirectory,
 ) : TicketWriteAuthorizationPolicy, TicketAssignmentPolicy {
+    fun canUpdate(
+        principal: StaffPrincipal,
+        currentGroupId: UUID?,
+        currentAssigneeId: UUID?,
+    ): Boolean = canUpdate(
+        actor = StaffTicketCommandActor(
+            id = principal.id,
+            displayName = principal.displayName,
+            isAdmin = principal.role == dev.deskseed.organization.StaffRole.ADMIN,
+        ),
+        currentGroupId = currentGroupId,
+        currentAssigneeId = currentAssigneeId,
+    )
+
     override fun canUpdate(
         actor: StaffTicketCommandActor,
         currentGroupId: UUID?,
