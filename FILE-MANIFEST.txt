@@ -60,7 +60,7 @@ ba430f639faeab6fe0b05489f8290a7ac3d2940d5e165013d2d53cdc4e591082        3971  do
 56f7811dc8d6966bdd485e03899eb12abc59a636d893961260ca7ce01f007b3a        3374  docs/37-customer-portal-and-identity-blueprint.md
 d656e849bc6bdd8ea351c609e20a642bd6bd3306be5e638621722c8425a0c1ce        4936  docs/38-post-mvp-capability-blueprints.md
 97e9f9820fb1b24def6ebf8a95a1ae21342fd99eadd3b67c9ba3a812329f394d        4322  docs/39-api-contract-freeze-plan.md
-78cf761183281c2d79d941411f69b22c0f5d72d2c96e12a44855f27f152111b2        2708  docs/40-frontend-visual-regression-and-accessibility.md
+cb6afb1ba35523582187f322a934225289c706b6bf0ce2e8947373ba8d1e9763        4400  docs/40-frontend-visual-regression-and-accessibility.md
 124ed38dfc46f153f2fefcaef669f79aa7072a24bf9029b4502943f8ab340e8f        2312  docs/41-feature-implementation-dependency-map.md
 5980d939e7a55e7d5173c46f79c59f8f873ba9bd14c4053b469030c0794ee44c        4603  docs/42-zendesk-frontend-research.md
 a6d391143e02939d415acb9cf13f788d928754db7ffcd7d5645f9629f6570795        3235  docs/43-coverage-assessment-v03-to-v05.md
@@ -71,7 +71,7 @@ a6b24c25dd329f0ed3bc43928de44a88bdef324a333ee92d3cfc0df852b57ca1        7649  do
 b13e8b6a6de58afbd1475e01ad96d7aa7bad68f46d600c9f143a2be5585f89ed        4021  docs/48-attachments-rich-text-redaction-implementation-spec.md
 bb937eedf79d4f305fc64091872ab78ccad9b7ab3da24f116a3a663d23f35e00        5130  docs/49-email-notifications-and-channel-adapters.md
 a5a37f74c69d261606aea60ec71e32f02a7725ef60060e3d3af20a05c8b40241       10149  docs/50-codex-implementation-runbook.md
-22ee0c71a6252374e6e57bfb1695b5538018049190737d50d0d088883ab955cb        8137  docs/51-zendesk-parity-and-visual-acceptance.md
+cecb1b42be8f0be8d287d1fd2afe31eca92499027b1f59c0f6cbca8eb266385f        8342  docs/51-zendesk-parity-and-visual-acceptance.md
 f801e5392187f47c3ccedd2d7eb07e1ec9d08f25b2377436b51261939aa909db       10303  docs/52-admin-settings-catalog.md
 75a4338c3879f562cecb7c3d13a4c995daad9e9d8edb15f9f1cde7f08925229c        5879  docs/53-accepted-decisions-2026-08-10.md
 1dd6d96b7d15e1bc298989082b04d38fd7d82a80279b6b31d0bb26af3c8cb22b        1864  docs/54-next-decision-gates.md
@@ -147,3 +147,4 @@ f4970505b88b6b1988e1f5ef0ad72f2b1bfe1e3e92f2088cf029c8b78264c094         964  ta
 cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  tasks/24-business-schedule-admin.md
 30b2fd9face7cbd9c37472c30136bd0931dec6871c4d5a51019ec1a250de5307         986  tasks/25-first-reply-sla-configurable-schedule.md
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
+fb236398bdd0ac16abb0a47bddeeed155c55f7fa1c41b0a3e9db71ac2eb31b0f        5983  tasks/briefs/frontend-system-hardening.md
