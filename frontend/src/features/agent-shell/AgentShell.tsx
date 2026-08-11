@@ -1,73 +1,113 @@
-import { NavLink } from 'react-router'
-import { DeskseedButton } from '../../shared/ui/DeskseedButton'
-
-const navigationItems = [
-  { label: '홈', symbol: 'H', to: '/agent/home' },
-  { label: 'Views', symbol: 'V', to: '/agent/views' },
-]
+import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet } from 'react-router'
+import { listAgentViews } from '../../api/client'
+import {
+  AppShell,
+  NavRail,
+  WorkSidebar,
+  type NavRailItem,
+} from '../../shared/ui/system'
+import { useStaffSession } from '../staff-auth/StaffSessionContext'
 
 export function AgentShell() {
+  const session = useStaffSession()
+  const staffId = session.staff?.id ?? 'unknown'
+  const storageKey = `deskseed:agent:${staffId}:work-nav-collapsed:v1`
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(storageKey) === 'true',
+  )
+  const views = useQuery({ queryKey: ['agent-views'], queryFn: listAgentViews })
+  const navItems: NavRailItem[] = [
+    { to: '/agent/views', label: 'Views', icon: 'V' },
+    ...(session.staff?.role === 'ADMIN'
+      ? [{ to: '/admin/staff', label: '관리자 설정', icon: 'A' }]
+      : []),
+  ]
+
+  useEffect(() => {
+    setCollapsed(localStorage.getItem(storageKey) === 'true')
+  }, [storageKey])
+
+  const toggleNavigation = () => {
+    setCollapsed((current) => {
+      localStorage.setItem(storageKey, String(!current))
+      return !current
+    })
+  }
+
   return (
-    <div className="agent-shell">
-      <nav className="agent-global-nav" aria-label="상담사 전역 탐색">
-        <NavLink
-          className="agent-brand"
-          to="/agent/home"
-          aria-label="Deskseed 상담사 홈"
-        >
-          <span aria-hidden="true">D</span>
-        </NavLink>
-        <div className="agent-nav-items">
-          {navigationItems.map((item) => (
-            <NavLink
-              className="agent-nav-link"
-              key={item.to}
-              to={item.to}
-              aria-label={item.label}
+    <AppShell
+      className={`agent-shell${collapsed ? ' work-nav-collapsed' : ''}`}
+      contentId="agent-main"
+      skipLabel="상담사 작업 내용으로 건너뛰기"
+    >
+      <NavRail
+        brandDestination="/agent/views/my-open"
+        brandLabel="Deskseed Views"
+        items={navItems}
+        accountName={session.staff?.displayName}
+      />
+
+      <WorkSidebar
+        eyebrow="WORKSPACE"
+        title="Views"
+        collapsed={collapsed}
+        onToggle={toggleNavigation}
+        footer={
+          <div className="agent-user-card">
+            <span className="agent-user-avatar" aria-hidden="true">
+              {session.staff?.displayName.slice(0, 1)}
+            </span>
+            <div>
+              <strong>{session.staff?.displayName}</strong>
+              <span>{session.staff?.role}</span>
+            </div>
+            <button
+              className="text-button"
+              type="button"
+              onClick={session.signOut}
             >
-              <span aria-hidden="true">{item.symbol}</span>
-              <span className="agent-nav-tooltip">{item.label}</span>
+              로그아웃
+            </button>
+          </div>
+        }
+      >
+        <nav className="saved-views-nav" aria-label="기본 Views">
+          {views.isPending ? <p role="status">Views 불러오는 중</p> : null}
+          {views.isError ? (
+            <div className="work-nav-error" role="alert">
+              <p>Views를 불러오지 못했습니다.</p>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => views.refetch()}
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : null}
+          {views.data?.map((view) => (
+            <NavLink
+              key={view.key}
+              to={`/agent/views/${view.key}`}
+              aria-label={`${view.name}, 티켓 ${view.ticketCount ?? '수 미확인'}개`}
+            >
+              <span className="view-nav-icon" aria-hidden="true">
+                ≡
+              </span>
+              <span>{view.name}</span>
+              {view.ticketCount !== null ? (
+                <strong>{view.ticketCount}</strong>
+              ) : null}
             </NavLink>
           ))}
-        </div>
-      </nav>
+        </nav>
+      </WorkSidebar>
 
-      <aside className="agent-work-nav" aria-label="상담사 작업 탐색">
-        <p className="agent-work-nav-eyebrow">DESKSEED</p>
-        <h1>상담사 작업 공간</h1>
-        <p>Views와 티켓 업무 흐름은 다음 세로 슬라이스에서 연결됩니다.</p>
-      </aside>
-
-      <section className="agent-content-column">
-        <header className="agent-topbar">
-          <div>
-            <p className="agent-topbar-eyebrow">AGENT HOME</p>
-            <h2>비어 있는 작업 공간</h2>
-          </div>
-          <DeskseedButton
-            type="button"
-            disabled
-            aria-describedby="agent-shell-notice"
-          >
-            새 티켓
-          </DeskseedButton>
-        </header>
-        <main className="agent-workspace" aria-label="상담사 작업 공간">
-          <section
-            className="agent-empty-state"
-            aria-labelledby="agent-empty-title"
-          >
-            <p className="agent-empty-state-mark" aria-hidden="true">
-              +
-            </p>
-            <h3 id="agent-empty-title">아직 열려 있는 티켓이 없습니다.</h3>
-            <p id="agent-shell-notice">
-              이 화면은 Deskseed의 독립 브랜드 Shell입니다. 업무 데이터와 API는
-              아직 연결하지 않았습니다.
-            </p>
-          </section>
-        </main>
-      </section>
-    </div>
+      <div className="agent-content-column" id="agent-main" tabIndex={-1}>
+        <Outlet />
+      </div>
+    </AppShell>
   )
 }

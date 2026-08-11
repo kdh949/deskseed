@@ -93,7 +93,7 @@ Zendesk와 동일한 색상 값을 복사하는 대신 Garden semantic token과 
 | NEW | 신규 | 아직 상담사가 본격 처리하지 않음 |
 | OPEN | 처리 중 | 상담사가 처리해야 함 |
 | PENDING | 고객 대기 | 고객 응답 대기 |
-| HOLD | 내부 대기 | 다른 팀·외부 조건 대기; post-MVP |
+| ON_HOLD | 보류 | 다른 팀·외부 조건 대기 |
 | SOLVED | 해결 | 고객 관점 해결 |
 | CLOSED | 종료 | system-only, 수정 불가; later |
 

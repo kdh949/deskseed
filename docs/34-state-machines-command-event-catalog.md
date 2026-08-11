@@ -2,22 +2,18 @@
 
 ## 1. Ticket status model
 
-MVP statuses:
+Canonical persisted statuses:
 
 ```text
 NEW
 OPEN
 PENDING
+ON_HOLD
 SOLVED
+CLOSED
 ```
 
-Post-MVP:
-
-```text
-HOLD
-CLOSED (system-only)
-custom status mapped to a base category
-```
+The customer projection currently exposes `NEW`, `OPEN`, `PENDING`, and `SOLVED`; staff reads preserve all six canonical values. `CLOSED` remains system-only, and custom status-to-base-category mapping is post-MVP work.
 
 ## 2. Transition table
 

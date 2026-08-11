@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository combines the v0.6 documentation seed with an executable M0 backend bootstrap and M1 anonymous customer-request vertical slice. Documentation status and implementation status are deliberately separate: a documented contract is not evidence that its runtime behavior exists.
+This repository combines the v0.6 documentation seed with an executable M0 backend bootstrap, M1 anonymous customer-request vertical slice, and M2 staff-authentication/organization vertical slice. Documentation status and implementation status are deliberately separate: a documented contract is not evidence that its runtime behavior exists.
 
 ## Implemented baseline
 
@@ -15,6 +15,8 @@ This repository combines the v0.6 documentation seed with an executable M0 backe
 - customer portal request submit and public-only lookup with an opaque stored-hash access token.
 - initial React customer portal and Docker Compose development setup.
 - Garden 9.15.7 primitives behind `shared/ui` wrappers, a standalone Deskseed Agent Shell route, and keyboard-focus regression tests.
+- BCrypt staff login with bounded server sessions, CSRF, PostgreSQL throttling, active-account revalidation, and password-file first-ADMIN bootstrap.
+- ADMIN-only staff/group/membership APIs and UI with API/method authorization, direct-route guards, current-assignment protection, and transactional admin/security audit.
 - pinned frontend lockfile with Prettier, ESLint, Vitest, strict type checks, and production build gates.
 - CI parity for documentation validation, backend tests, frontend quality gates, and an isolated Docker Compose health smoke.
 
@@ -36,6 +38,7 @@ Detailed implementation specifications exist for Platform API/webhooks/exports/S
 ## Current verification boundary
 
 - M1 regression tests cover first-public-comment/no-description, public-only projection, token hashing, change-audit ordering, append-only audit triggers, and customer actor/request/correlation attribution.
+- M2 regression tests cover generic and disabled login failure, lockout, logout/expiry, session/security headers, ADMIN API and method authorization, duplicate membership, audit rollback, direct admin URL denial, and CSRF-protected browser CRUD.
 - `V2__add_ticket_audit_command_context.sql` is additive. It preserves existing canonical audit rows with the bounded `legacy-migration` marker and requires context on new writes without bypassing append-only triggers.
 - Testcontainers requires a Docker-compatible container runtime. The repository does not use H2 as PostgreSQL proof.
 - `scripts/validate_documentation.py` verifies documentation structure and machine-readable contracts; it does not verify Kotlin/React runtime behavior.
@@ -43,7 +46,7 @@ Detailed implementation specifications exist for Platform API/webhooks/exports/S
 
 ## Not yet implemented
 
-- staff authentication, organization/group management, staff workspace, replies, internal notes, transfer, child-ticket collaboration, and field-aware concurrency.
+- ticket workspace queues, replies, internal notes, transfer, child-ticket collaboration, and field-aware concurrency.
 - Access/Search Audit, Audit Explorer, protected reveal, export, retention jobs, and Platform API runtime surfaces.
 - scoped integration credentials, ETags, ExternalReference, webhook delivery, incremental export, generated SDKs, and extension SDKs.
 - production credential/KMS provisioning, backup/restore runbooks, and performance evidence.

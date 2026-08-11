@@ -82,10 +82,11 @@ version
 
 ```text
 groups(id, name, status, created_at, updated_at, version)
-group_memberships(group_id, staff_id, status, created_at)
+group_memberships(group_id, staff_id, status, created_at, updated_at, version)
 ```
 
-Unique active membership pair.
+- `lower(btrim(groups.name))` is unique.
+- A membership pair has one mutable row and an optimistic version.
 
 ### tickets
 

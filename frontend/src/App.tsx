@@ -1,13 +1,103 @@
+import { lazy, Suspense } from 'react'
 import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
 import { AgentShell } from './features/agent-shell/AgentShell'
+import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
+import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
+import { AdminShell } from './features/admin/AdminShell'
+import {
+  AdminRoute,
+  StaffRoute,
+  StaffSessionLayout,
+} from './features/staff-auth/StaffRoute'
+import { AdminGroupsPage } from './pages/AdminGroupsPage'
+import { AdminStaffPage } from './pages/AdminStaffPage'
 import { HomePage } from './pages/HomePage'
 import { LookupPage } from './pages/LookupPage'
 import { NewRequestPage } from './pages/NewRequestPage'
 import { RequestDetailPage } from './pages/RequestDetailPage'
+import { StaffLoginPage } from './pages/StaffLoginPage'
+
+const FrontendSystemFixturePage = import.meta.env.DEV
+  ? lazy(() =>
+      import('./features/frontend-system-fixtures/FrontendSystemFixturePage').then(
+        (module) => ({ default: module.FrontendSystemFixturePage }),
+      ),
+    )
+  : null
 
 export const appRoutes: RouteObject[] = [
-  { path: '/agent/*', element: <AgentShell /> },
+  ...(import.meta.env.DEV
+    ? [
+        {
+          path: '/__fixtures__/frontend-system/:fixtureName',
+          element: FrontendSystemFixturePage ? (
+            <Suspense fallback={null}>
+              <FrontendSystemFixturePage />
+            </Suspense>
+          ) : null,
+        },
+      ]
+    : []),
+  {
+    element: <StaffSessionLayout />,
+    children: [
+      { path: '/agent/login', element: <StaffLoginPage /> },
+      {
+        element: <StaffRoute />,
+        children: [
+          {
+            path: '/agent',
+            element: <AgentShell />,
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+              {
+                path: 'home',
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+              {
+                path: 'views',
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+              { path: 'views/:viewKey', element: <AgentViewsPage /> },
+              {
+                path: 'tickets/:ticketNumber',
+                element: <AgentTicketWorkspacePage />,
+              },
+              {
+                path: '*',
+                element: <Navigate to="/agent/views/my-open" replace />,
+              },
+            ],
+          },
+          {
+            element: <AdminRoute />,
+            children: [
+              {
+                path: '/admin',
+                element: <AdminShell />,
+                children: [
+                  {
+                    index: true,
+                    element: <Navigate to="/admin/staff" replace />,
+                  },
+                  { path: 'staff', element: <AdminStaffPage /> },
+                  { path: 'groups', element: <AdminGroupsPage /> },
+                  {
+                    path: '*',
+                    element: <Navigate to="/admin/staff" replace />,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
   {
     element: (
       <AppShell>

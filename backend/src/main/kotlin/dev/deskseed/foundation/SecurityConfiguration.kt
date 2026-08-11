@@ -3,10 +3,8 @@ package dev.deskseed.foundation
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.http.HttpMethod
-import org.springframework.security.config.http.SessionCreationPolicy
-import org.springframework.security.config.annotation.web.builders.HttpSecurity
-import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
@@ -15,25 +13,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 class SecurityConfiguration(
     @Value("\${deskseed.cors.allowed-origins:http://localhost:5173}")
     private val allowedOrigins: String,
+    @Value("\${deskseed.staff-auth.password-cost:12}")
+    private val passwordCost: Int,
 ) {
     @Bean
-    fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
-        http
-            .csrf { it.disable() }
-            .cors { }
-            .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
-            .httpBasic { it.disable() }
-            .formLogin { it.disable() }
-            .logout { it.disable() }
-            .authorizeHttpRequests {
-                it.requestMatchers(HttpMethod.POST, "/api/v1/requests").permitAll()
-                it.requestMatchers(HttpMethod.GET, "/api/v1/requests/*").permitAll()
-                it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
-                it.anyRequest().denyAll()
-            }
-
-        return http.build()
-    }
+    fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(passwordCost)
 
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
@@ -42,11 +26,14 @@ class SecurityConfiguration(
                 .split(',')
                 .map(String::trim)
                 .filter(String::isNotBlank)
-            allowedMethods = listOf("GET", "POST", "OPTIONS")
+            allowedMethods = listOf("GET", "POST", "PATCH", "DELETE", "OPTIONS")
             allowedHeaders = listOf(
                 "Content-Type",
                 "Accept",
+                "X-CSRF-TOKEN",
                 "X-Request-Access-Token",
+                "X-Interaction-Id",
+                "X-Deskseed-Read-Intent",
                 RequestIdFilter.REQUEST_ID_HEADER,
                 RequestIdFilter.CORRELATION_ID_HEADER,
             )
@@ -55,7 +42,7 @@ class SecurityConfiguration(
                 RequestIdFilter.REQUEST_ID_HEADER,
                 RequestIdFilter.CORRELATION_ID_HEADER,
             )
-            allowCredentials = false
+            allowCredentials = true
             maxAge = 3600
         }
 

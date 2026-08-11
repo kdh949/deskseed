@@ -40,7 +40,7 @@ if ! PLAYWRIGHT_USE_EXISTING_SERVER=1 \
   PLAYWRIGHT_BASE_URL="http://127.0.0.1:$frontend_port" \
   E2E_FULL_STACK=1 \
   DESKSEED_E2E_COMPOSE_PROJECT="$e2e_project" \
-    npx playwright test; then
+    npx playwright test customer-request.full-stack.spec.ts; then
   docker compose --project-name "$e2e_project" --file "$repository_root/compose.yaml" \
     logs --no-color --tail 200 backend frontend
   exit 1

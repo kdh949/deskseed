@@ -21,6 +21,14 @@ services:
       DATABASE_USERNAME: ${DATABASE_USERNAME:-deskseed}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-deskseed-local-only}
       DESKSEED_CORS_ALLOWED_ORIGINS: ${DESKSEED_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID: ${DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID:-v1}
+      DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY: ${DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY:-deskseed-local-development-cursor-signing-key-change-before-production}
+      DESKSEED_BOOTSTRAP_ADMIN_ENABLED: ${DESKSEED_BOOTSTRAP_ADMIN_ENABLED:-false}
+      DESKSEED_BOOTSTRAP_ADMIN_EMAIL: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:-}
+      DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:-}
+      DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/deskseed-first-admin-password
+    secrets:
+      - deskseed-first-admin-password
     depends_on:
       db:
         condition: service_healthy
@@ -37,3 +45,7 @@ services:
 
 volumes:
   deskseed-postgres:
+
+secrets:
+  deskseed-first-admin-password:
+    file: ${DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE:-/dev/null}

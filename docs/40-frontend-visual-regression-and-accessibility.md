@@ -30,6 +30,7 @@ shortcut은 설정에서 끌 수 있고 도움말 dialog를 제공한다.
 - sticky header/composer/banner가 focus를 가리지 않음.
 - modal/drawer open 시 focus 이동, close 시 origin 복원.
 - panel resize handle keyboard 지원.
+- Composer mode tab은 roving `tabIndex`와 ArrowLeft/ArrowRight/Home/End로 focus와 선택을 함께 이동하고, 각 tab은 고유한 panel을 가리킨다.
 - virtualized table 사용 시 logical focus 유지.
 
 ## 4. Semantic components
@@ -78,19 +79,30 @@ Data states:
 
 ## 7. Screenshot baselines
 
-폴더 제안:
+현재 baseline은 Playwright의 platform 분리를 그대로 보존한다.
 
 ```text
-frontend/tests/visual/
-├── views/
-├── ticket/
-├── customer/
-├── audit/
-├── admin/
-└── integrations/
+frontend/e2e/__screenshots__/
+├── darwin/
+└── linux/
 ```
 
-baseline update는 자동 승인하지 않는다.
+`frontend-system.spec.ts`는 다음을 고정한다.
+
+- Agent Home, View Queue, Workspace, Admin, Public form/detail: 1280x800, 1440x900, 1920x1080.
+- Workspace INTERNAL draft, same-field conflict, 공통 상태 gallery: 1440x900.
+- fixture route는 `import.meta.env.DEV`에서만 등록하고 production bundle에는 포함하지 않는다.
+- 데이터와 시각 시간 표현은 고정 fixture를 사용하고 animation은 비활성화한다.
+
+허용 임계값은 Playwright `threshold: 0.2`, `maxDiffPixelRatio: 0.01`이다. 즉 픽셀별 색상 차이 판정 임계값을 0.2로 두고, 판정된 차이 픽셀이 전체의 1%를 넘으면 실패한다. 넓은 레이아웃 이동을 숨기는 화면별 예외는 두지 않는다.
+
+baseline 변경 통제:
+
+1. fixture/mock browser suite는 Vite development server에서 `npm run test:e2e:dev`로 실행한다. production Compose suite는 `npm run test:e2e:stack`으로 `customer-request.full-stack.spec.ts`만 실행한다. 두 suite는 별도 CI job이며 snapshot을 쓰지 않는다.
+2. 의도한 UI 변경은 실패 diff와 실제 화면을 먼저 확인한 뒤에만 `npx playwright test e2e/frontend-system.spec.ts --update-snapshots=all`로 갱신한다.
+3. Darwin과 Linux 이미지는 각 플랫폼의 동일 Playwright 버전에서 생성한다. 한 플랫폼 이미지를 다른 플랫폼 폴더로 복사하지 않는다.
+4. PR은 변경 이유와 대표 before/after를 설명하고, 무관한 baseline 변경을 포함하지 않는다.
+5. 사람의 화면 검토 없이 대량 snapshot 갱신을 승인하지 않는다.
 
 ## 8. Component stories
 
@@ -111,5 +123,7 @@ baseline update는 자동 승인하지 않는다.
 - critical E2E axe.
 - keyboard script.
 - manual screen-reader checklist per stable release.
+
+`frontend-system.spec.ts`는 development-only fixture route가 실제 제공됨을 먼저 확인하고, 1440px의 모든 핵심 fixture와 INTERNAL/conflict/state fixture에서 axe violation 0을 요구한다. 별도 keyboard 시나리오는 최초 Tab의 skip link, context tab arrow 이동, Composer의 roving tab ArrowLeft/ArrowRight/Home/End와 PUBLIC/INTERNAL draft 보존, 텍스트·아이콘 기반 visibility, 양쪽 resize separator의 keyboard semantics를 검증한다. production Compose suite는 fixture route에 접근하지 않는다.
 
 자동 도구 통과만으로 접근성 완료를 주장하지 않는다.

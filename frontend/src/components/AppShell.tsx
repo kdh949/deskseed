@@ -1,18 +1,14 @@
 import type { PropsWithChildren } from 'react'
 import { Link, NavLink } from 'react-router'
+import { AppShell as AppShellFrame, BrandMark } from '../shared/ui/system'
 
 export function AppShell({ children }: PropsWithChildren) {
   return (
-    <div className="app-shell">
-      <a className="skip-link" href="#main-content">
-        본문으로 건너뛰기
-      </a>
+    <AppShellFrame className="app-shell" contentId="main-content">
       <header className="site-header">
         <div className="header-inner">
           <Link className="brand" to="/">
-            <span className="brand-mark" aria-hidden="true">
-              D
-            </span>
+            <BrandMark />
             <span>
               <strong>Deskseed</strong>
               <small>고객지원 포털</small>
@@ -30,6 +26,6 @@ export function AppShell({ children }: PropsWithChildren) {
       <footer>
         <p>Deskseed · 익명 문의 접수와 공개 대화 조회</p>
       </footer>
-    </div>
+    </AppShellFrame>
   )
 }

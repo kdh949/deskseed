@@ -245,15 +245,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerRequestPage'
         '401': *id001
+  /api/v1/agent/csrf:
+    get:
+      summary: Issue a CSRF token bound to the browser session
+      operationId: getStaffCsrfToken
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Staff Session
+      security: []
+      x-deskseed-phase: M2
+      x-deskseed-requirements:
+      - REQ-AUTH-005
+      responses:
+        '200':
+          description: CSRF token
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+            Set-Cookie:
+              description: HttpOnly staff session cookie; Secure in production and SameSite=Lax.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfToken'
   /api/v1/agent/session:
     post:
       summary: Create a staff session
       operationId: createStaffSession
+      x-deskseed-contract-status: FROZEN
       tags:
       - Staff Session
       x-deskseed-phase: M2
       x-deskseed-requirements:
-      - REQ-TKT-007
+      - REQ-AUTH-005
+      - REQ-AUTH-006
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -265,6 +296,7 @@ paths:
           description: Session created
           headers:
             Set-Cookie:
+              description: HttpOnly; SameSite=Lax; Secure in production; idle 60 minutes and absolute 12 hours.
               schema:
                 type: string
         '400': *id001
@@ -273,13 +305,16 @@ paths:
     delete:
       summary: Destroy the current staff session
       operationId: deleteStaffSession
+      x-deskseed-contract-status: FROZEN
       tags:
       - Staff Session
       x-deskseed-phase: M2
       x-deskseed-requirements:
-      - REQ-TKT-007
+      - REQ-AUTH-005
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
       responses:
         '204':
           description: Session destroyed
@@ -288,11 +323,12 @@ paths:
     get:
       summary: Read current staff identity and capabilities
       operationId: getCurrentStaff
+      x-deskseed-contract-status: FROZEN
       tags:
       - Staff Session
       x-deskseed-phase: M2
       x-deskseed-requirements:
-      - REQ-TKT-007
+      - REQ-AUTH-005
       security:
       - staffSession: []
       responses:
@@ -307,11 +343,13 @@ paths:
     get:
       summary: List accessible saved views
       operationId: listAgentViews
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Views
       x-deskseed-phase: M2
       x-deskseed-requirements:
       - REQ-UI-002
+      - REQ-PERM-001
       security:
       - staffSession: []
       responses:
@@ -329,12 +367,14 @@ paths:
     get:
       summary: List tickets in a saved view
       operationId: listTicketsInView
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Views
       x-deskseed-phase: M2
       x-deskseed-requirements:
       - REQ-UI-002
       - REQ-TKT-010
+      - REQ-PERM-001
       security:
       - staffSession: []
       parameters:
@@ -345,6 +385,7 @@ paths:
           type: string
       - name: cursor
         in: query
+        description: Opaque, versioned HMAC-signed keyset cursor bound to this view and filters.
         schema:
           type: string
       - name: limit
@@ -356,8 +397,31 @@ paths:
           default: 50
       - name: sort
         in: query
+        description: Fixed stable ordering. Other values are rejected.
         schema:
           type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
+          default: updatedAt:desc,ticketNumber:desc
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/AgentTicketStatus'
+      - name: priority
+        in: query
+        schema:
+          $ref: '#/components/schemas/TicketPriority'
+      - name: groupId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: assigneeId
+        in: query
+        description: UUID, `me`, or `unassigned`.
+        schema:
+          type: string
+          pattern: '^(me|unassigned|[0-9a-fA-F-]{36})$'
       responses:
         '200':
           description: Ticket page
@@ -409,6 +473,7 @@ paths:
     get:
       summary: Read an agent ticket projection
       operationId: getAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M2
@@ -428,6 +493,15 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: X-Deskseed-Read-Intent
+        in: header
+        required: true
+        description: "Every successful detail read records a required resource-read audit. NAVIGATION additionally records one deduplicated semantic view; BACKGROUND never records a semantic view."
+        schema:
+          type: string
+          enum:
+          - NAVIGATION
+          - BACKGROUND
       responses:
         '200':
           description: Agent ticket detail
@@ -651,11 +725,12 @@ paths:
     get:
       summary: List staff accounts
       operationId: listStaffAccounts
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin
       x-deskseed-phase: M6
       x-deskseed-requirements:
-      - REQ-PROD-002
+      - REQ-PERM-002
       security:
       - staffSession: []
       responses:
@@ -672,13 +747,16 @@ paths:
     post:
       summary: Create a staff account
       operationId: createStaffAccount
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin
       x-deskseed-phase: M6
       x-deskseed-requirements:
-      - REQ-PROD-002
+      - REQ-PERM-002
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -696,14 +774,39 @@ paths:
         '401': *id001
         '403': *id001
         '409': *id001
-  /api/v1/admin/groups:
-    get:
-      summary: List groups
-      operationId: listGroups
+  /api/v1/admin/staff/{staffId}:
+    delete:
+      summary: Disable a staff account
+      operationId: disableStaffAccount
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin
       x-deskseed-phase: M6
       x-deskseed-requirements:
+      - REQ-AUTH-005
+      - REQ-PERM-002
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204':
+          description: Staff disabled and their sessions become unusable on the next protected request
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': *id001
+  /api/v1/admin/groups:
+    get:
+      summary: List groups
+      operationId: listGroups
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PERM-002
       - REQ-TKT-011
       security:
       - staffSession: []
@@ -721,13 +824,17 @@ paths:
     post:
       summary: Create a group
       operationId: createGroup
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin
       x-deskseed-phase: M6
       x-deskseed-requirements:
+      - REQ-PERM-002
       - REQ-TKT-011
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -744,6 +851,146 @@ paths:
         '400': *id001
         '401': *id001
         '403': *id001
+        '409': *id001
+  /api/v1/admin/groups/{groupId}:
+    patch:
+      summary: Rename a support group
+      operationId: updateGroup
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PERM-002
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGroup'
+      responses:
+        '200':
+          description: Group updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': *id001
+    delete:
+      summary: Disable an unused support group
+      operationId: disableGroup
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PERM-002
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204':
+          description: Group disabled
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': *id001
+  /api/v1/admin/groups/{groupId}/members:
+    get:
+      summary: List active members of a support group
+      operationId: listGroupMembers
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PERM-002
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Active memberships
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupMembership'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+    post:
+      summary: Add an active staff member to a support group
+      operationId: createGroupMembership
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PERM-002
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupMembership'
+      responses:
+        '201':
+          description: Membership created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMembership'
+        '400': *id001
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': *id001
+  /api/v1/admin/groups/{groupId}/members/{staffId}:
+    delete:
+      summary: Remove an active staff member from a support group
+      operationId: deleteGroupMembership
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-PERM-002
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204':
+          description: Membership removed
+        '401': *id001
+        '403': *id001
+        '404': *id001
         '409': *id001
   /api/v1/admin/settings/{key}:
     get:
@@ -1426,6 +1673,30 @@ components:
       type: apiKey
       in: cookie
       name: DESKSEED_CUSTOMER_SESSION
+  parameters:
+    CsrfHeader:
+      name: X-CSRF-TOKEN
+      in: header
+      required: true
+      description: Token returned by `getStaffCsrfToken` and bound to the browser session.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 256
+    StaffId:
+      name: staffId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
     Problem:
       type: object
@@ -1614,6 +1885,7 @@ components:
           - 'null'
     StaffLogin:
       type: object
+      additionalProperties: false
       required:
       - email
       - password
@@ -1621,36 +1893,59 @@ components:
         email:
           type: string
           format: email
+          maxLength: 254
         password:
           type: string
           format: password
+          minLength: 1
+          maxLength: 128
+          writeOnly: true
+    CsrfToken:
+      type: object
+      additionalProperties: false
+      required:
+      - token
+      - headerName
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 256
+        headerName:
+          type: string
+          enum: [X-CSRF-TOKEN]
     CurrentStaff:
       type: object
+      additionalProperties: false
       required:
       - id
+      - email
       - displayName
-      - roles
+      - role
       - capabilities
       properties:
         id:
           type: string
           format: uuid
+        email:
+          type: string
+          format: email
         displayName:
           type: string
-        roles:
-          type: array
-          items:
-            type: string
+        role:
+          $ref: '#/components/schemas/StaffRole'
         capabilities:
           type: array
           items:
             type: string
     SavedView:
       type: object
+      additionalProperties: false
       required:
       - key
       - name
       - scope
+      - readScope
       properties:
         key:
           type: string
@@ -1670,13 +1965,28 @@ components:
           type:
           - integer
           - 'null'
+        readScope:
+          type: string
+          enum:
+          - ALL_TICKETS
     TicketStatus:
       type: string
+      description: Customer-visible ticket status projection.
       enum:
       - NEW
       - OPEN
       - PENDING
       - SOLVED
+    AgentTicketStatus:
+      type: string
+      description: Canonical status projection for staff ticket reads and commands.
+      enum:
+      - NEW
+      - OPEN
+      - PENDING
+      - ON_HOLD
+      - SOLVED
+      - CLOSED
     TicketPriority:
       type: string
       enum:
@@ -1728,7 +2038,7 @@ components:
         subject:
           type: string
         status:
-          $ref: '#/components/schemas/TicketStatus'
+          $ref: '#/components/schemas/AgentTicketStatus'
         priority:
           $ref: '#/components/schemas/TicketPriority'
         requester:
@@ -1751,8 +2061,10 @@ components:
           $ref: '#/components/schemas/SlaBadge'
     TicketSummaryPage:
       type: object
+      additionalProperties: false
       required:
       - items
+      - sort
       properties:
         items:
           type: array
@@ -1767,6 +2079,9 @@ components:
           - integer
           - 'null'
           format: int64
+        sort:
+          type: string
+          const: updatedAt:desc,ticketNumber:desc
     StaffRef:
       type:
       - object
@@ -1836,11 +2151,13 @@ components:
             $ref: '#/components/schemas/PublicAttachment'
     AgentTicketDetail:
       type: object
+      additionalProperties: false
       required:
       - ticket
       - comments
       - capabilities
       - context
+      - history
       properties:
         ticket:
           $ref: '#/components/schemas/TicketSummary'
@@ -1854,16 +2171,20 @@ components:
             type: string
         context:
           $ref: '#/components/schemas/TicketContext'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketHistoryItem'
         warnings:
           type: array
           items:
             $ref: '#/components/schemas/CommandWarning'
     TicketContext:
       type: object
+      additionalProperties: false
       properties:
         customer:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/TicketCustomer'
         parent:
           $ref: '#/components/schemas/TicketSummary'
         children:
@@ -1875,6 +2196,41 @@ components:
           items:
             type: object
             additionalProperties: true
+    TicketCustomer:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - displayName
+      - email
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+    TicketHistoryItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - eventType
+      - actor
+      - occurredAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+        actor:
+          $ref: '#/components/schemas/ActorSummary'
+        occurredAt:
+          type: string
+          format: date-time
     CommentDraft:
       type: object
       required:
@@ -1891,7 +2247,7 @@ components:
       type: object
       properties:
         status:
-          $ref: '#/components/schemas/TicketStatus'
+          $ref: '#/components/schemas/AgentTicketStatus'
         priority:
           $ref: '#/components/schemas/TicketPriority'
         groupId:
@@ -2192,12 +2548,14 @@ components:
           - 'null'
     StaffAccount:
       type: object
+      additionalProperties: false
       required:
       - id
       - email
       - displayName
-      - roles
+      - role
       - status
+      - memberships
       properties:
         id:
           type: string
@@ -2207,44 +2565,57 @@ components:
           format: email
         displayName:
           type: string
-        roles:
+        role:
+          $ref: '#/components/schemas/StaffRole'
+        status:
+          $ref: '#/components/schemas/StaffStatus'
+        memberships:
           type: array
           items:
-            type: string
-            enum:
-            - ADMIN
-            - AGENT
-            - SECURITY_AUDITOR
-        status:
-          type: string
-          enum:
-          - ACTIVE
-          - DISABLED
+            $ref: '#/components/schemas/GroupRef'
+        lastLoginAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
     CreateStaffAccount:
       type: object
+      additionalProperties: false
       required:
       - email
       - displayName
-      - roles
+      - role
+      - password
       properties:
         email:
           type: string
           format: email
+          maxLength: 254
         displayName:
           type: string
-        roles:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-        groupIds:
-          type: array
-          items:
-            type: string
-            format: uuid
+          minLength: 1
+          maxLength: 100
+        role:
+          $ref: '#/components/schemas/StaffRole'
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 128
+          writeOnly: true
+    StaffRole:
+      type: string
+      enum:
+      - ADMIN
+      - AGENT
+    StaffStatus:
+      type: string
+      enum:
+      - ACTIVE
+      - DISABLED
     Group:
       type: object
+      additionalProperties: false
       required:
       - id
       - name
@@ -2262,8 +2633,10 @@ components:
           - DISABLED
         memberCount:
           type: integer
+          minimum: 0
     CreateGroup:
       type: object
+      additionalProperties: false
       required:
       - name
       properties:
@@ -2271,6 +2644,44 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+    UpdateGroup:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    CreateGroupMembership:
+      type: object
+      additionalProperties: false
+      required:
+      - staffId
+      properties:
+        staffId:
+          type: string
+          format: uuid
+    GroupMembership:
+      type: object
+      additionalProperties: false
+      required:
+      - groupId
+      - staffId
+      - staffDisplayName
+      - role
+      properties:
+        groupId:
+          type: string
+          format: uuid
+        staffId:
+          type: string
+          format: uuid
+        staffDisplayName:
+          type: string
+        role:
+          $ref: '#/components/schemas/StaffRole'
     AdminSetting:
       type: object
       required:
@@ -2658,7 +3069,7 @@ components:
         pauseStatuses:
           type: array
           items:
-            $ref: '#/components/schemas/TicketStatus'
+            $ref: '#/components/schemas/AgentTicketStatus'
           default:
           - PENDING
     FirstReplySlaPolicy:
