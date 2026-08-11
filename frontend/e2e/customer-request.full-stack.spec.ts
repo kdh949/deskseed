@@ -8,6 +8,8 @@ const composeProject = process.env.DESKSEED_E2E_COMPOSE_PROJECT ?? ''
 const composeFile = resolve(process.cwd(), '../compose.yaml')
 const internalBody = 'E2E_INTERNAL_COMMENT_DO_NOT_EXPOSE'
 const unrelatedInternalTicketSubject = 'E2E_INTERNAL_TICKET_DO_NOT_EXPOSE'
+const adminEmail = process.env.DESKSEED_E2E_ADMIN_EMAIL ?? ''
+const adminPassword = process.env.DESKSEED_E2E_ADMIN_PASSWORD ?? ''
 
 function addPrivateFixtures(ticketNumber: number) {
   if (!composeProject || !Number.isSafeInteger(ticketNumber)) {
@@ -34,6 +36,55 @@ function addPrivateFixtures(ticketNumber: number) {
       'INTERNAL_CHILD', '${unrelatedInternalTicketSubject}', 'NEW', 'NORMAL', null, null,
       'AGENT', 0, now(), now(), null
     from target;
+  `
+  execFileSync(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      composeProject,
+      '--file',
+      composeFile,
+      'exec',
+      '-T',
+      'db',
+      'psql',
+      '-U',
+      'deskseed',
+      '-d',
+      'deskseed',
+      '-v',
+      'ON_ERROR_STOP=1',
+    ],
+    { input: sql, stdio: ['pipe', 'pipe', 'pipe'] },
+  )
+}
+
+function assignToBootstrapAdmin(ticketNumber: number) {
+  if (!composeProject || !Number.isSafeInteger(ticketNumber) || !adminEmail) {
+    throw new Error(
+      'The isolated stack, ticket, and bootstrap admin are required',
+    )
+  }
+  const sql = `
+    with admin as (
+      select id from staff_accounts where email_normalized = '${adminEmail}'
+    ), created_group as (
+      insert into support_groups
+        (id, name, status, created_at, updated_at, version)
+      values
+        (gen_random_uuid(), 'E2E Composer ${ticketNumber}', 'ACTIVE', now(), now(), 0)
+      returning id
+    ), created_membership as (
+      insert into group_memberships
+        (id, group_id, staff_id, status, created_at, updated_at, version)
+      select gen_random_uuid(), created_group.id, admin.id, 'ACTIVE', now(), now(), 0
+      from created_group cross join admin
+    )
+    update tickets
+    set group_id = (select id from created_group),
+        assignee_id = (select id from admin)
+    where ticket_number = ${ticketNumber};
   `
   execFileSync(
     'docker',
@@ -132,4 +183,82 @@ test('real create to detail flow excludes internal comments and other tickets fr
     session: Object.keys(sessionStorage),
   }))
   expect(storage).toEqual({ local: [], session: [] })
+})
+
+test('real staff composer exposes PUBLIC reply but keeps INTERNAL note out of customer projection', async ({
+  browser,
+  baseURL,
+  page: customerPage,
+}) => {
+  if (!adminEmail || !adminPassword || !baseURL) {
+    throw new Error('Bootstrap admin credentials are required')
+  }
+  const unique = Date.now()
+  const publicReply = `E2E 공개 답변 ${unique}`
+  const internalNote = `E2E 내부 메모 ${unique}`
+
+  await customerPage.goto('/requests/new')
+  await customerPage
+    .getByRole('textbox', { name: /이름/ })
+    .fill('Composer 고객')
+  await customerPage
+    .getByRole('textbox', { name: /이메일/ })
+    .fill(`composer-${unique}@example.com`)
+  await customerPage
+    .getByRole('textbox', { name: /제목/ })
+    .fill('Composer 공개 경계 검증')
+  await customerPage
+    .getByRole('textbox', { name: /문의 내용/ })
+    .fill('고객이 작성한 최초 공개 문의')
+  await customerPage.getByRole('button', { name: '문의 접수' }).click()
+
+  const heading = customerPage.getByRole('heading', { name: /문의 #\d+/ })
+  await expect(heading).toBeVisible()
+  const ticketNumber = Number((await heading.textContent())?.match(/\d+/)?.[0])
+  expect(Number.isSafeInteger(ticketNumber)).toBe(true)
+  assignToBootstrapAdmin(ticketNumber)
+
+  const staffContext = await browser.newContext()
+  const staffPage = await staffContext.newPage()
+  try {
+    await staffPage.goto(`${baseURL}/agent/login`)
+    await staffPage.getByLabel('이메일').fill(adminEmail)
+    await staffPage.getByLabel('비밀번호').fill(adminPassword)
+    await staffPage.getByRole('button', { name: '로그인' }).click()
+    await expect(staffPage).toHaveURL(/\/admin\/staff$/)
+    await staffPage.goto(`${baseURL}/agent/tickets/${ticketNumber}`)
+    await expect(
+      staffPage.getByRole('heading', { name: 'Composer 공개 경계 검증' }),
+    ).toBeVisible()
+
+    await staffPage
+      .getByRole('textbox', { name: '공개 답변' })
+      .fill(publicReply)
+    await staffPage.getByRole('button', { name: '변경사항 저장' }).click()
+    await expect(staffPage.getByText(/공개 답변과 변경사항/)).toBeVisible()
+
+    await staffPage.getByRole('tab', { name: '내부 메모' }).click()
+    await staffPage
+      .getByRole('textbox', { name: '내부 메모' })
+      .fill(internalNote)
+    await staffPage.getByRole('button', { name: '변경사항 저장' }).click()
+    await expect(staffPage.getByText(/내부 메모와 변경사항/)).toBeVisible()
+    await expect(staffPage.getByText(publicReply)).toBeVisible()
+    await expect(staffPage.getByText(internalNote)).toBeVisible()
+
+    const responsePromise = customerPage.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        response.url().endsWith(`/api/v1/requests/${ticketNumber}`),
+    )
+    await customerPage.getByRole('link', { name: '문의 내용 보기' }).click()
+    const response = await responsePromise
+    const payload = JSON.stringify(await response.json())
+    expect(payload).toContain(publicReply)
+    expect(payload).not.toContain(internalNote)
+    await expect(customerPage.getByText(publicReply)).toBeVisible()
+    await expect(customerPage.getByText(internalNote)).toHaveCount(0)
+  } finally {
+    await staffContext.close()
+  }
 })

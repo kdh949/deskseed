@@ -93,6 +93,14 @@
 - `cd backend && ./gradlew test`
 - Gate evidence: TKT-002/003/006, CHG-001~003, UI-001~005.
 
+### Captured evidence (2026-08-11)
+
+- Frontend: TypeScript, ESLint, Prettier, production build and 56 Vitest tests passed.
+- Browser: all 37 development Playwright tests passed; `ticket-composer-conflict.spec.ts` covers same-field conflict, non-overlap merge and keyboard-only INTERNAL save with axe, while `ticket-command-conflict-preserves-drafts.png` captures the focused property banner and preserved PUBLIC draft.
+- Full stack: isolated Compose run passed customer create plus real staff PUBLIC/INTERNAL composer saves; customer API and DOM exposed the PUBLIC reply and excluded the INTERNAL note.
+- Backend: all 72 Gradle tests passed; `AgentTicketReadIntegrationTest` covers active assignment options and CLOSED ticket read-only capability against PostgreSQL.
+- Contracts: `validate_documentation.py` and `verify_seed.py` passed with 43 OpenAPI paths and 53 operations.
+
 ## Compatibility and migration
 
 - OpenAPI: compatible additive detail fields plus frozen command conflict extensions; no released M3 client is broken.
