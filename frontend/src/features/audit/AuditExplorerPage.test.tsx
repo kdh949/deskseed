@@ -220,6 +220,45 @@ describe('AuditExplorerPage', () => {
       ).not.toBeInTheDocument(),
     )
   })
+
+  it('does not expose cached detail before a new semantic navigation is audited', async () => {
+    const user = userEvent.setup()
+    const baseFetch = auditFetch()
+    let detailCalls = 0
+    let releaseSecondDetail: (() => void) | undefined
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), 'http://deskseed.test').pathname
+      if (path === `/api/v1/audit/activities/${CHANGE_ID}`) {
+        detailCalls += 1
+        if (detailCalls === 2) {
+          await new Promise<void>((resolve) => {
+            releaseSecondDetail = resolve
+          })
+        }
+      }
+      return baseFetch(input, init)
+    })
+    renderExplorer(fetchMock)
+
+    await user.click(
+      await screen.findByRole('button', { name: 'STATUS_CHANGED' }),
+    )
+    expect(await screen.findByText('OPEN')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '닫기' }))
+    await user.click(screen.getByRole('button', { name: 'STATUS_CHANGED' }))
+
+    await waitFor(() => expect(detailCalls).toBe(2))
+    expect(screen.queryByText('OPEN')).not.toBeInTheDocument()
+    const detailInteractions = fetchMock.mock.calls
+      .filter(([input]) =>
+        new URL(String(input), 'http://deskseed.test').pathname.endsWith(CHANGE_ID),
+      )
+      .map(([, init]) => new Headers(init?.headers).get('X-Interaction-Id'))
+    expect(new Set(detailInteractions).size).toBe(2)
+
+    releaseSecondDetail?.()
+    expect(await screen.findByText('OPEN')).toBeVisible()
+  })
 })
 
 function json(body: unknown, status = 200) {

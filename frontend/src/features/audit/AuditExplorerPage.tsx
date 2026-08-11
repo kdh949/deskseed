@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import {
   ApiError,
@@ -36,19 +36,20 @@ export function AuditExplorerPage() {
   const [cursor, setCursor] = useState<string | null>(null)
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([])
   const [exportOpen, setExportOpen] = useState(false)
+  const [refreshSequence, setRefreshSequence] = useState(0)
   const filters = filtersFrom(searchParams)
   const filterKey = filterKeyFrom(searchParams)
-  const listInteraction = useRef({ key: filterKey, id: createAuditInteractionId() })
-  if (listInteraction.current.key !== filterKey) {
-    listInteraction.current = { key: filterKey, id: createAuditInteractionId() }
-  }
+  const listInteractionId = useMemo(
+    () => createAuditInteractionId(),
+    [filterKey, refreshSequence],
+  )
   const query = useQuery({
-    queryKey: ['audit-activities', filterKey, cursor],
+    queryKey: ['audit-activities', listInteractionId, filterKey, cursor],
     queryFn: () =>
       listAuditActivities(
         { ...filters, limit: 50 },
         cursor,
-        listInteraction.current.id,
+        listInteractionId,
       ),
   })
   const rebuild = useMutation({
@@ -75,8 +76,7 @@ export function AuditExplorerPage() {
     setSearchParams(next, { replace: true })
   }
   const refresh = () => {
-    listInteraction.current = { key: filterKey, id: createAuditInteractionId() }
-    void query.refetch()
+    setRefreshSequence((current) => current + 1)
   }
 
   return (

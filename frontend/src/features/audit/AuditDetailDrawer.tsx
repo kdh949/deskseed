@@ -43,7 +43,11 @@ export function AuditDetailDrawer({
     }
   }
   const detail = useQuery({
-    queryKey: ['audit-activity-detail', activityId],
+    queryKey: [
+      'audit-activity-detail',
+      activityId,
+      interactionRef.current.interactionId,
+    ],
     queryFn: () =>
       getAuditActivity(activityId, interactionRef.current.interactionId),
   })
