@@ -171,6 +171,9 @@ internal class AgentTicketCommandTransaction(
         if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
             throw TicketWriteForbiddenException()
         }
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets are immutable")
+        }
         if (command.expectedVersion > ticket.version) {
             throw TicketCommandInvalidException("expectedVersion cannot be newer than the ticket")
         }
