@@ -1,25 +1,11 @@
+@import './styles/tokens.css';
+
 :root {
-  font-family:
-    Inter,
-    Pretendard,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  color: #142b38;
-  background: #f5f7f8;
+  font-family: var(--ds-font-sans);
+  color: var(--ds-color-text);
+  background: var(--ds-color-surface-subtle);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #142b38;
-  --muted: #5f6f78;
-  --line: #d8e0e4;
-  --surface: #ffffff;
-  --brand: #147b80;
-  --brand-dark: #0b5359;
-  --brand-soft: #e5f3f3;
-  --danger: #a1262f;
-  --danger-soft: #fff2f2;
-  --focus: #096f75;
 }
 
 * {
@@ -30,7 +16,10 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f5f7f8;
+  background: var(--ds-color-surface-subtle);
+  color: var(--ds-color-text);
+  font-size: var(--ds-type-body-size);
+  line-height: var(--ds-type-body-line);
 }
 
 button,
@@ -44,13 +33,13 @@ a {
 }
 
 :focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
+  outline: var(--ds-focus-width) solid var(--ds-color-focus);
+  outline-offset: var(--ds-focus-offset);
 }
 
 .skip-link {
   position: fixed;
-  z-index: 100;
+  z-index: var(--ds-z-skip-link);
   top: 8px;
   left: 8px;
   padding: 10px 14px;
