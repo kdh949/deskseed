@@ -33,7 +33,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Requirement Definitions: 78
 - Task Briefs: 26
 - Verification Gate Definitions: 127
-- Yaml Files: 16
+- Yaml Files: 14
 
 ## Errors
 
