@@ -1,6 +1,7 @@
 package dev.deskseed.organization.internal
 
 import dev.deskseed.organization.StaffIdentity
+import dev.deskseed.organization.StaffAuthorityCatalog
 import dev.deskseed.organization.StaffIdentityService
 import dev.deskseed.organization.StaffStatus
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -47,5 +48,6 @@ internal class JpaStaffIdentityService(
         displayName = displayName,
         role = role,
         status = status,
+        authorities = StaffAuthorityCatalog.forRole(role),
     )
 }

@@ -10,6 +10,7 @@ internal data class StaffPrincipal(
     val email: String,
     val displayName: String,
     val role: StaffRole,
+    val authorities: Set<String> = dev.deskseed.organization.StaffAuthorityCatalog.forRole(role),
 ) : Serializable {
     companion object {
         fun from(identity: StaffIdentity): StaffPrincipal = StaffPrincipal(
@@ -17,6 +18,7 @@ internal data class StaffPrincipal(
             email = identity.email,
             displayName = identity.displayName,
             role = identity.role,
+            authorities = identity.authorities,
         )
     }
 }

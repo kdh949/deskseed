@@ -70,7 +70,10 @@ internal class StaffSessionController(
         val authentication = UsernamePasswordAuthenticationToken.authenticated(
             principal,
             null,
-            listOf(SimpleGrantedAuthority("ROLE_${principal.role.name}")),
+            buildList {
+                add(SimpleGrantedAuthority("ROLE_${principal.role.name}"))
+                principal.authorities.sorted().forEach { add(SimpleGrantedAuthority(it)) }
+            },
         )
         val context = SecurityContextHolder.createEmptyContext().apply {
             this.authentication = authentication
@@ -95,11 +98,7 @@ internal class StaffSessionController(
         email = principal.email,
         displayName = principal.displayName,
         role = principal.role,
-        capabilities = if (principal.role == StaffRole.ADMIN) {
-            listOf("ADMIN_MANAGE", "AGENT_WORKSPACE")
-        } else {
-            listOf("AGENT_WORKSPACE")
-        },
+        capabilities = principal.authorities.sorted(),
     )
 
     private fun HttpServletRequest.requestId(): String =

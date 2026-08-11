@@ -44,7 +44,8 @@ internal class StaffSessionValidationFilter(
         val activeIdentity = staffIdentityService.findActiveById(principal.id)
         val expired = absoluteExpiry == null || !absoluteExpiry.isAfter(now) ||
             lastActivity == null || !lastActivity.plus(sessionIdle).isAfter(now)
-        val identityChanged = activeIdentity == null || activeIdentity.role != principal.role
+        val identityChanged = activeIdentity == null || activeIdentity.role != principal.role ||
+            activeIdentity.authorities != principal.authorities
 
         if (expired || identityChanged) {
             session?.invalidate()
