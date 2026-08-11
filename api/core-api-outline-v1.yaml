@@ -525,6 +525,7 @@ paths:
   /api/v1/agent/tickets/{ticketNumber}/commands:
     post:
       summary: Apply one atomic ticket update command
+      description: INTERNAL_CHILD tickets accept INTERNAL comments only; attempts to add a PUBLIC comment are rejected without mutation or audit.
       operationId: updateAgentTicket
       x-deskseed-contract-status: FROZEN
       tags:
@@ -534,6 +535,7 @@ paths:
       - REQ-TKT-010
       - REQ-TKT-013
       - REQ-TKT-014
+      - REQ-CHILD-002
       - REQ-AUD-001
       security:
       - staffSession: []
@@ -580,12 +582,15 @@ paths:
     post:
       summary: Transfer ticket ownership to a group or agent
       operationId: transferAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M4
       x-deskseed-requirements:
       - REQ-TKT-011
       - REQ-TKT-012
+      - REQ-AUD-001
+      - REQ-AUD-007
       security:
       - staffSession: []
       parameters:
@@ -596,7 +601,8 @@ paths:
         required: true
         schema:
           type: string
-        description: Ticket ETag returned by the latest read.
+          pattern: '^"?[0-9]+"?$'
+        description: Ticket ETag returned by the latest audited staff read. It must identify the same version as `expectedVersion`.
       requestBody:
         required: true
         content:
@@ -618,11 +624,18 @@ paths:
         '401': *id001
         '403': *id001
         '409': *id001
-        '412': *id001
+        '412':
+          description: The ticket no longer matches the supplied If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketVersionPreconditionProblem'
+        '422': *id001
   /api/v1/agent/tickets/{ticketNumber}/children:
     post:
       summary: Create an internal child ticket
       operationId: createChildTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M5
@@ -630,6 +643,11 @@ paths:
       - REQ-CHILD-001
       - REQ-CHILD-002
       - REQ-CHILD-003
+      - REQ-CHILD-004
+      - REQ-CHILD-006
+      - REQ-CHILD-007
+      - REQ-AUD-001
+      - REQ-AUD-007
       security:
       - staffSession: []
       parameters:
@@ -644,6 +662,11 @@ paths:
       responses:
         '201':
           description: Child created
+          headers:
+            ETag:
+              description: Parent ticket ETag after the relation audit is committed.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -652,7 +675,13 @@ paths:
         '401': *id001
         '403': *id001
         '409': *id001
-        '412': *id001
+        '412':
+          description: The parent no longer matches the supplied If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketVersionPreconditionProblem'
+        '422': *id001
   /api/v1/agent/tickets/{ticketNumber}/audits:
     get:
       summary: Read ticket-local change history
@@ -1778,6 +1807,22 @@ components:
               - priority
               - groupId
               - assigneeId
+    TicketVersionPreconditionProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required:
+        - currentVersion
+        properties:
+          type:
+            type: string
+            const: /problems/ticket-version-precondition-failed
+          status:
+            type: integer
+            const: 412
+          currentVersion:
+            type: integer
+            format: int64
     FieldError:
       type: object
       required:
@@ -2204,6 +2249,7 @@ components:
       - assignmentOptions
       - context
       - history
+      - warnings
       properties:
         ticket:
           $ref: '#/components/schemas/TicketSummary'
@@ -2271,11 +2317,18 @@ components:
     TicketContext:
       type: object
       additionalProperties: false
+      required:
+      - customer
+      - parent
+      - children
+      - externalReferences
       properties:
         customer:
           $ref: '#/components/schemas/TicketCustomer'
         parent:
-          $ref: '#/components/schemas/TicketSummary'
+          oneOf:
+          - $ref: '#/components/schemas/TicketSummary'
+          - type: 'null'
         children:
           type: array
           items:
@@ -2386,6 +2439,7 @@ components:
           format: uuid
     TransferTicketCommand:
       type: object
+      additionalProperties: false
       required:
       - expectedVersion
       - groupId
@@ -2411,6 +2465,7 @@ components:
           format: uuid
     CreateChildTicketCommand:
       type: object
+      additionalProperties: false
       required:
       - expectedVersion
       - subject
@@ -2444,16 +2499,23 @@ components:
           format: uuid
     CommandWarning:
       type: object
+      additionalProperties: false
       required:
       - code
       - message
+      - count
+      - relatedTicketNumbers
       properties:
         code:
           type: string
         message:
           type: string
+        count:
+          type: integer
+          minimum: 1
         relatedTicketNumbers:
           type: array
+          uniqueItems: true
           items:
             type: integer
             format: int64
@@ -2529,16 +2591,24 @@ components:
       type: object
       required:
       - parentTicketNumber
+      - parentVersion
       - childTicketNumber
-      - auditId
+      - parentAuditId
+      - childAuditId
       properties:
         parentTicketNumber:
+          type: integer
+          format: int64
+        parentVersion:
           type: integer
           format: int64
         childTicketNumber:
           type: integer
           format: int64
-        auditId:
+        parentAuditId:
+          type: string
+          format: uuid
+        childAuditId:
           type: string
           format: uuid
     TicketAuditEvent:

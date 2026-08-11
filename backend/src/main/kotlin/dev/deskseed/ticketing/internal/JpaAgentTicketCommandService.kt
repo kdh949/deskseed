@@ -1,25 +1,35 @@
 package dev.deskseed.ticketing.internal
 
 import dev.deskseed.foundation.ActorType
+import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.CommentAuthorType
+import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
+import dev.deskseed.ticketing.CreateChildTicketCommand
+import dev.deskseed.ticketing.CreateChildTicketResult
 import dev.deskseed.ticketing.TicketAssignmentInvalidException
 import dev.deskseed.ticketing.TicketAssignmentPolicy
 import dev.deskseed.ticketing.TicketAuditUnavailableException
 import dev.deskseed.ticketing.TicketCommandInvalidException
 import dev.deskseed.ticketing.TicketCommandResult
+import dev.deskseed.ticketing.TicketCommandWarning
 import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketFieldConflictException
+import dev.deskseed.ticketing.TicketKind
+import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.TicketTransitionInvalidException
 import dev.deskseed.ticketing.TicketUpdateContentionException
+import dev.deskseed.ticketing.TicketVersionPreconditionFailedException
 import dev.deskseed.ticketing.TicketWriteAuthorizationPolicy
 import dev.deskseed.ticketing.TicketWriteForbiddenException
 import dev.deskseed.ticketing.UpdateAgentTicketCommand
+import dev.deskseed.ticketing.TransferTicketCommand
+import dev.deskseed.ticketing.internal.domain.ParentChildRelationRules
 import dev.deskseed.ticketing.internal.domain.Ticket
 import dev.deskseed.ticketing.internal.domain.TicketStatusTransitions
 import jakarta.persistence.OptimisticLockException
@@ -42,11 +52,23 @@ internal class JpaAgentTicketCommandService(
         transaction.create(command)
     }
 
-    override fun update(command: UpdateAgentTicketCommand): TicketCommandResult {
+    override fun update(command: UpdateAgentTicketCommand): TicketCommandResult = executeRetriable {
+        transaction.update(command)
+    }
+
+    override fun transfer(command: TransferTicketCommand): TicketCommandResult = executeRetriable {
+        transaction.transfer(command)
+    }
+
+    override fun createChild(command: CreateChildTicketCommand): CreateChildTicketResult = executeRetriable {
+        transaction.createChild(command)
+    }
+
+    private fun <T> executeRetriable(block: () -> T): T {
         var optimisticFailure: RuntimeException? = null
         repeat(MAX_OPTIMISTIC_ATTEMPTS) {
             try {
-                return transaction.update(command)
+                return block()
             } catch (failure: RuntimeException) {
                 if (failure.isOptimisticFailure()) {
                     optimisticFailure = failure
@@ -78,6 +100,7 @@ internal class JpaAgentTicketCommandService(
 internal class AgentTicketCommandTransaction(
     private val ticketRepository: TicketRepository,
     private val commentRepository: TicketCommentRepository,
+    private val relationRepository: TicketRelationRepository,
     private val auditRepository: TicketAuditRepository,
     private val auditEventRepository: TicketAuditEventRepository,
     private val ticketNumberGenerator: TicketNumberGenerator,
@@ -171,6 +194,12 @@ internal class AgentTicketCommandTransaction(
         if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
             throw TicketWriteForbiddenException()
         }
+        if (
+            ticket.kind == TicketKind.INTERNAL_CHILD &&
+            command.comment?.visibility == CommentVisibility.PUBLIC
+        ) {
+            throw TicketCommandInvalidException("Internal child tickets cannot contain public comments")
+        }
         if (command.expectedVersion > ticket.version) {
             throw TicketCommandInvalidException("expectedVersion cannot be newer than the ticket")
         }
@@ -258,7 +287,244 @@ internal class AgentTicketCommandTransaction(
             now = now,
             events = events,
         )
+        val warnings = if (oldStatus != TicketStatus.SOLVED && newStatus == TicketStatus.SOLVED) {
+            relationRepository.findOpenChildTicketNumbers(ticket.id).takeIf { it.isNotEmpty() }?.let {
+                listOf(
+                    TicketCommandWarning(
+                        code = "OPEN_CHILD_TICKETS",
+                        message = "${it.size}개의 열린 child ticket이 있지만 parent 해결은 저장되었습니다.",
+                        relatedTicketNumbers = it,
+                    ),
+                )
+            } ?: emptyList()
+        } else {
+            emptyList()
+        }
+        return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId, warnings)
+    }
+
+    @Transactional
+    fun transfer(command: TransferTicketCommand): TicketCommandResult {
+        validateStaffContext(command.actor.id, command.context.source)
+        if (command.expectedVersion < 0) throw TicketCommandInvalidException("expectedVersion must be non-negative")
+        command.reason?.let { reason ->
+            if (reason.length > 2_000) throw TicketCommandInvalidException("reason must not exceed 2000 characters")
+        }
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
+            throw TicketWriteForbiddenException()
+        }
+        requireExactVersion(command.expectedVersion, ticket.version)
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets cannot be transferred")
+        }
+        validateAssignment(command.groupId, command.assigneeId)
+
+        val oldGroupId = ticket.groupId
+        val oldAssigneeId = ticket.assigneeId
+        if (oldGroupId == command.groupId && oldAssigneeId == command.assigneeId) {
+            throw TicketCommandInvalidException("Transfer must change group or assignee ownership")
+        }
+
+        val now = Instant.now(clock)
+        val events = mutableListOf<NewAuditEvent>()
+        command.reason?.trim()?.takeIf(String::isNotEmpty)?.let { reason ->
+            val draft = AgentCommentDraft(CommentVisibility.INTERNAL, reason)
+            val commentId = UUID.randomUUID()
+            commentRepository.saveAndFlush(
+                TicketCommentEntity(
+                    id = commentId,
+                    ticketId = ticket.id,
+                    authorType = CommentAuthorType.AGENT,
+                    authorId = command.actor.id,
+                    visibility = CommentVisibility.INTERNAL,
+                    body = reason,
+                    createdAt = now,
+                ),
+            )
+            events += commentAuditEvent(commentId, draft, now)
+        }
+        if (oldGroupId != command.groupId) {
+            events += referenceAuditEvent("GROUP_CHANGED", TicketField.GROUP_ID, oldGroupId, command.groupId)
+        }
+        if (oldAssigneeId != command.assigneeId) {
+            events += referenceAuditEvent(
+                "ASSIGNEE_CHANGED",
+                TicketField.ASSIGNEE_ID,
+                oldAssigneeId,
+                command.assigneeId,
+            )
+        }
+
+        ticket.groupId = command.groupId
+        ticket.assigneeId = command.assigneeId
+        ticket.updatedAt = now
+        ticketRepository.saveAndFlush(ticket)
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            resultVersion = ticket.version,
+            actorId = command.actor.id,
+            context = command.context.toAuditContext(),
+            now = now,
+            events = events,
+        )
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId)
+    }
+
+    @Transactional
+    fun createChild(command: CreateChildTicketCommand): CreateChildTicketResult {
+        validateStaffContext(command.actor.id, command.context.source)
+        if (command.expectedVersion < 0) throw TicketCommandInvalidException("expectedVersion must be non-negative")
+        validateText(command.subject, "subject", 200)
+        validateText(command.body, "body", 20_000)
+        validateAssignment(command.groupId, command.assigneeId)
+
+        val parent = ticketRepository.findByTicketNumber(command.parentTicketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (!authorizationPolicy.canUpdate(command.actor, parent.groupId, parent.assigneeId)) {
+            throw TicketWriteForbiddenException()
+        }
+        requireExactVersion(command.expectedVersion, parent.version)
+        if (parent.status == TicketStatus.CLOSED) {
+            throw TicketRelationInvalidException("Closed tickets cannot create child tickets")
+        }
+
+        val now = Instant.now(clock)
+        val child = Ticket.createInternalChild(
+            ticketNumber = ticketNumberGenerator.next(),
+            requesterId = parent.requesterId,
+            subject = command.subject,
+            firstCommentBody = command.body,
+            priority = command.priority,
+            groupId = command.groupId,
+            assigneeId = command.assigneeId,
+            actorId = command.actor.id,
+            now = now,
+        )
+        try {
+            ParentChildRelationRules.requireValid(
+                sourceTicketId = parent.id,
+                targetTicketId = child.id,
+                sourceAlreadyHasParent = parent.kind == TicketKind.INTERNAL_CHILD ||
+                    relationRepository.existsByTargetTicketIdAndRelationType(
+                        parent.id,
+                        TicketRelationType.PARENT_CHILD,
+                    ),
+                targetAlreadyHasParent = relationRepository.existsByTargetTicketIdAndRelationType(
+                    child.id,
+                    TicketRelationType.PARENT_CHILD,
+                ),
+                wouldCreateCycle = relationRepository.wouldCreateParentChildCycle(parent.id, child.id),
+            )
+        } catch (exception: IllegalArgumentException) {
+            throw TicketRelationInvalidException(exception.message ?: "Invalid parent-child relation")
+        }
+
+        val childEntity = ticketRepository.saveAndFlush(
+            TicketEntity(
+                id = child.id,
+                ticketNumber = child.ticketNumber,
+                requesterId = child.requesterId,
+                kind = child.kind,
+                subject = child.subject,
+                status = child.status,
+                priority = child.priority,
+                groupId = child.groupId,
+                assigneeId = child.assigneeId,
+                channel = child.channel,
+                createdAt = child.createdAt,
+                updatedAt = child.updatedAt,
+            ),
+        )
+        commentRepository.saveAndFlush(
+            TicketCommentEntity(
+                id = child.firstComment.id,
+                ticketId = child.firstComment.ticketId,
+                authorType = child.firstComment.authorType,
+                authorId = child.firstComment.authorId,
+                visibility = child.firstComment.visibility,
+                body = child.firstComment.body,
+                createdAt = child.firstComment.createdAt,
+            ),
+        )
+        val relationId = UUID.randomUUID()
+        relationRepository.saveAndFlush(
+            TicketRelationEntity(
+                id = relationId,
+                sourceTicketId = parent.id,
+                targetTicketId = child.id,
+                relationType = TicketRelationType.PARENT_CHILD,
+                createdByActorType = ActorType.STAFF,
+                createdByActorId = command.actor.id,
+                createdAt = now,
+            ),
+        )
+
+        parent.updatedAt = now
+        ticketRepository.saveAndFlush(parent)
+        val auditContext = command.context.toAuditContext()
+        val relationMetadata = mapOf(
+            "relationId" to relationId.toString(),
+            "relationType" to TicketRelationType.PARENT_CHILD.name,
+            "parentTicketNumber" to parent.ticketNumber,
+            "childTicketNumber" to child.ticketNumber,
+        )
+        val childAuditId = appendAudit(
+            ticket = childEntity,
+            expectedVersion = 0,
+            resultVersion = childEntity.version,
+            actorId = command.actor.id,
+            context = auditContext,
+            now = now,
+            events = listOf(
+                NewAuditEvent(
+                    type = "TICKET_CREATED",
+                    metadata = mapOf(
+                        "kind" to child.kind.name,
+                        "channel" to child.channel.name,
+                        "priority" to child.priority.name,
+                        "groupId" to child.groupId.toString(),
+                        "assigneeId" to child.assigneeId?.toString(),
+                    ),
+                ),
+                commentAuditEvent(
+                    child.firstComment.id,
+                    AgentCommentDraft(CommentVisibility.INTERNAL, child.firstComment.body),
+                    now,
+                ),
+                NewAuditEvent(type = "TICKET_RELATION_CREATED", metadata = relationMetadata),
+            ),
+        )
+        val parentAuditId = appendAudit(
+            ticket = parent,
+            expectedVersion = command.expectedVersion,
+            resultVersion = parent.version,
+            actorId = command.actor.id,
+            context = auditContext,
+            now = now,
+            events = listOf(
+                NewAuditEvent(
+                    type = "CHILD_TICKET_CREATED",
+                    after = objectMapper.writeValueAsString(
+                        mapOf("id" to child.id.toString(), "ticketNumber" to child.ticketNumber),
+                    ),
+                    metadata = mapOf(
+                        "groupId" to child.groupId.toString(),
+                        "assigneeId" to child.assigneeId?.toString(),
+                    ),
+                ),
+                NewAuditEvent(type = "TICKET_RELATION_CREATED", metadata = relationMetadata),
+            ),
+        )
+        return CreateChildTicketResult(
+            parentTicketNumber = parent.ticketNumber,
+            parentVersion = parent.version,
+            childTicketNumber = child.ticketNumber,
+            parentAuditId = parentAuditId,
+            childAuditId = childAuditId,
+        )
     }
 
     private fun validateUpdateCommand(command: UpdateAgentTicketCommand) {
@@ -281,6 +547,19 @@ internal class AgentTicketCommandTransaction(
         }
         command.comment?.let(::validateComment)
     }
+
+    private fun requireExactVersion(expectedVersion: Long, currentVersion: Long) {
+        if (expectedVersion != currentVersion) {
+            throw TicketVersionPreconditionFailedException(currentVersion)
+        }
+    }
+
+    private fun CommandContext.toAuditContext() = AuditCommandContext(
+        source = source.name,
+        requestId = requestId,
+        correlationId = correlationId,
+        commandId = commandId,
+    )
 
     private fun validateStaffContext(actorId: UUID, source: RequestSource) {
         if (actorId == UUID(0, 0) || source != RequestSource.AGENT_UI) {

@@ -1,4 +1,4 @@
-import type { TicketVisibility } from '../../api/types'
+import type { TicketCommandWarning, TicketVisibility } from '../../api/types'
 import {
   ComposerModeSeam,
   Notification,
@@ -13,6 +13,8 @@ export function TicketReplyComposer({
   canSubmit,
   error,
   success,
+  warnings,
+  internalOnly = false,
   onModeChange,
   onDraftChange,
   onSubmit,
@@ -23,6 +25,8 @@ export function TicketReplyComposer({
   canSubmit: boolean
   error: { message: string; requestId?: string; saved?: boolean } | null
   success: string | null
+  warnings: TicketCommandWarning[]
+  internalOnly?: boolean
   onModeChange: (mode: ComposerMode) => void
   onDraftChange: (mode: ComposerMode, value: string) => void
   onSubmit: () => void
@@ -45,8 +49,27 @@ export function TicketReplyComposer({
         </Notification>
       ) : null}
       {success ? <Notification tone="success" title={success} /> : null}
+      {warnings.map((warning) => (
+        <Notification
+          key={`${warning.code}:${warning.relatedTicketNumbers.join(',')}`}
+          tone="warning"
+          urgent
+          title="열린 child ticket 경고 — 저장 완료"
+        >
+          <p>{warning.message}</p>
+          {warning.relatedTicketNumbers.length ? (
+            <p>
+              영향받는 child:{' '}
+              {warning.relatedTicketNumbers
+                .map((ticketNumber) => `#${ticketNumber}`)
+                .join(', ')}
+            </p>
+          ) : null}
+        </Notification>
+      ))}
       <ComposerModeSeam
         mode={mode}
+        availableModes={internalOnly ? ['INTERNAL'] : undefined}
         drafts={drafts}
         onModeChange={onModeChange}
         onDraftChange={onDraftChange}

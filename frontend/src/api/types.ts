@@ -230,9 +230,42 @@ export interface UpdateTicketCommand {
   clientCommandId: string
 }
 
+export interface TransferTicketCommand {
+  expectedVersion: number
+  groupId: string
+  assigneeId: string | null
+  reason: string | null
+  clientCommandId: string
+}
+
+export interface CreateChildTicketCommand {
+  expectedVersion: number
+  subject: string
+  body: string
+  groupId: string
+  assigneeId: string | null
+  priority: TicketPriority
+  clientCommandId: string
+}
+
+export interface TicketCommandWarning {
+  code: string
+  message: string
+  count: number
+  relatedTicketNumbers: number[]
+}
+
 export interface TicketCommandResult {
   ticketNumber: number
   version: number
   auditId: string
-  warnings: Array<{ code: string; message: string }>
+  warnings: TicketCommandWarning[]
+}
+
+export interface CreateChildTicketResult {
+  parentTicketNumber: number
+  parentVersion: number
+  childTicketNumber: number
+  parentAuditId: string
+  childAuditId: string
 }

@@ -4,6 +4,7 @@ import { ApiError, updateAgentTicket } from '../../api/client'
 import type {
   AgentTicketDetail,
   TicketFieldName,
+  TicketCommandWarning,
   TicketVisibility,
 } from '../../api/types'
 import {
@@ -58,6 +59,7 @@ export function useTicketEditor({
   const [conflict, setConflict] = useState<TicketConflictState | null>(null)
   const [error, setError] = useState<TicketEditorError | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [warnings, setWarnings] = useState<TicketCommandWarning[]>([])
   const conflictRef = useRef<HTMLDivElement>(null)
   const storageKey = ticketDraftStorageKey(staffId, detail.ticket.ticketNumber)
   const dirtyFields = useMemo(
@@ -227,7 +229,9 @@ export function useTicketEditor({
     setSubmitting(true)
     setError(null)
     setSuccess(null)
+    setWarnings([])
     const submittedMode = mode
+    const submittedComment = comments[submittedMode].trim().length > 0
     const command = buildUpdateTicketCommand({
       expectedVersion: baseVersion,
       serverFields,
@@ -240,6 +244,7 @@ export function useTicketEditor({
         detail.ticket.ticketNumber,
         command,
       )
+      setWarnings(result.warnings)
       setComments((current) => ({ ...current, [submittedMode]: '' }))
       try {
         const latest = await refreshLatest()
@@ -249,9 +254,11 @@ export function useTicketEditor({
         setBaseVersion(latest.ticket.version)
         setConflict(null)
         setSuccess(
-          submittedMode === 'PUBLIC'
-            ? '공개 답변과 변경사항을 저장했습니다.'
-            : '내부 메모와 변경사항을 저장했습니다.',
+          !submittedComment
+            ? '변경사항을 저장했습니다.'
+            : submittedMode === 'PUBLIC'
+              ? '공개 답변과 변경사항을 저장했습니다.'
+              : '내부 메모와 변경사항을 저장했습니다.',
         )
       } catch (cause) {
         const apiError = cause instanceof ApiError ? cause : null
@@ -310,6 +317,7 @@ export function useTicketEditor({
     submit,
     error,
     success,
+    warnings,
     isUnsaved,
     blocker,
     canSubmit: hasActiveSubmit && !submitting && !unresolvedConflict,
@@ -324,7 +332,7 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
   )
   if (!stored) {
     return {
-      mode: 'PUBLIC' as const,
+      mode: detail.ticket.isChild ? ('INTERNAL' as const) : ('PUBLIC' as const),
       comments: { PUBLIC: '', INTERNAL: '' },
       fields: freshFields,
       serverFields: freshFields,
@@ -335,12 +343,22 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
   if (storedDirty.length === 0) {
     return {
       ...stored,
+      mode: detail.ticket.isChild ? ('INTERNAL' as const) : stored.mode,
+      comments: detail.ticket.isChild
+        ? { ...stored.comments, PUBLIC: '' }
+        : stored.comments,
       fields: freshFields,
       serverFields: freshFields,
       baseVersion: detail.ticket.version,
     }
   }
-  return stored
+  return detail.ticket.isChild
+    ? {
+        ...stored,
+        mode: 'INTERNAL' as const,
+        comments: { ...stored.comments, PUBLIC: '' },
+      }
+    : stored
 }
 
 function assignEditableField(

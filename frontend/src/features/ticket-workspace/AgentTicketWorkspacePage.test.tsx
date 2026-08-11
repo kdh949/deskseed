@@ -589,6 +589,327 @@ describe('AgentTicketWorkspacePage', () => {
     ).toBeVisible()
   })
 
+  it('offers INTERNAL composition only for an internal child ticket', async () => {
+    const user = userEvent.setup()
+    const childDetail = {
+      ...detail,
+      ticket: {
+        ...detail.ticket,
+        subject: '고객 비노출 내부 조사',
+        isChild: true,
+      },
+      capabilities: ['READ', 'UPDATE'],
+      context: {
+        ...detail.context,
+        parent: { ...detail.ticket, ticketNumber: 1001 },
+      },
+    }
+    const commands: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: 'csrf-child',
+                headerName: 'X-CSRF-TOKEN',
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          commands.push(JSON.parse(String(init?.body)))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'child-note-audit',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(childDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '고객 비노출 내부 조사' })
+    expect(
+      screen.queryByRole('tab', { name: '공개 답변' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '내부 메모' })).toBeVisible()
+    await user.type(
+      screen.getByRole('textbox', { name: '내부 메모' }),
+      'child 전용 내부 진행 상황',
+    )
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+
+    await waitFor(() => expect(commands).toHaveLength(1))
+    expect(commands[0]).toMatchObject({
+      comment: {
+        visibility: 'INTERNAL',
+        body: 'child 전용 내부 진행 상황',
+      },
+    })
+  })
+
+  it('shows related parent and children and submits an accessible child dialog command', async () => {
+    const user = userEvent.setup()
+    const editableDetail = {
+      ...detail,
+      capabilities: ['READ', 'UPDATE'],
+      context: {
+        ...detail.context,
+        parent: {
+          ...detail.ticket,
+          ticketNumber: 1001,
+          subject: '원래 고객 문의',
+          isChild: false,
+        },
+        children: [
+          {
+            ...detail.ticket,
+            ticketNumber: 1043,
+            subject: '기존 결제 조사',
+            isChild: true,
+          },
+        ],
+      },
+    }
+    const commandCalls: Array<[string, RequestInit | undefined]> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: 'csrf-child',
+                headerName: 'X-CSRF-TOKEN',
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/children')) {
+          commandCalls.push([input, init])
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                parentTicketNumber: 1042,
+                parentVersion: 4,
+                childTicketNumber: 1044,
+                parentAuditId: 'parent-audit-id',
+                childAuditId: 'child-audit-id',
+              }),
+              { status: 201 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.click(screen.getByRole('tab', { name: '관련' }))
+    expect(
+      screen.getByRole('link', { name: /#1001 원래 고객 문의/ }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: /#1043 기존 결제 조사/ }),
+    ).toBeVisible()
+
+    const trigger = screen.getByRole('button', { name: '내부 child 만들기' })
+    await user.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: '내부 child 만들기' })
+    expect(dialog).toBeVisible()
+    expect(document.activeElement).toBe(
+      screen.getByRole('textbox', { name: 'Child 제목' }),
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Child 제목' }),
+      '신규 승인 로그 확인',
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: '내부 작업 설명' }),
+      '고객에게 비노출되는 조사 메모',
+    )
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '대상 그룹' }),
+      'group-support',
+    )
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '대상 담당자' }),
+      'agent-id',
+    )
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Child 우선순위' }),
+      'HIGH',
+    )
+    await user.click(screen.getByRole('button', { name: 'Child 생성' }))
+
+    await waitFor(() => expect(commandCalls).toHaveLength(1))
+    expect(commandCalls[0]?.[0]).toBe('/api/v1/agent/tickets/1042/children')
+    expect(commandCalls[0]?.[1]?.headers).toMatchObject({
+      'If-Match': '"3"',
+      'X-CSRF-TOKEN': 'csrf-child',
+    })
+    expect(JSON.parse(String(commandCalls[0]?.[1]?.body))).toMatchObject({
+      expectedVersion: 3,
+      subject: '신규 승인 로그 확인',
+      body: '고객에게 비노출되는 조사 메모',
+      groupId: 'group-support',
+      assigneeId: 'agent-id',
+      priority: 'HIGH',
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
+    expect(trigger).toHaveFocus()
+  })
+
+  it('submits transfer through its own ETag guarded dialog and restores focus', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const commandCalls: Array<[string, RequestInit | undefined]> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: 'csrf-transfer',
+                headerName: 'X-CSRF-TOKEN',
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/transfer')) {
+          commandCalls.push([input, init])
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'transfer-audit-id',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.click(screen.getByRole('tab', { name: '관련' }))
+    const trigger = screen.getByRole('button', { name: '티켓 이관' })
+    await user.click(trigger)
+    expect(screen.getByRole('dialog', { name: '티켓 이관' })).toBeVisible()
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '대상 그룹' }),
+      'group-support',
+    )
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '대상 담당자' }),
+      'agent-id',
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: '이관 사유 (내부 메모)' }),
+      '고객 지원 그룹이 응답 책임을 인수합니다.',
+    )
+    await user.click(screen.getByRole('button', { name: '소유권 이관' }))
+
+    await waitFor(() => expect(commandCalls).toHaveLength(1))
+    expect(commandCalls[0]?.[0]).toBe('/api/v1/agent/tickets/1042/transfer')
+    expect(commandCalls[0]?.[1]?.headers).toMatchObject({
+      'If-Match': '"3"',
+      'X-CSRF-TOKEN': 'csrf-transfer',
+    })
+    expect(JSON.parse(String(commandCalls[0]?.[1]?.body))).toMatchObject({
+      expectedVersion: 3,
+      groupId: 'group-support',
+      assigneeId: 'agent-id',
+      reason: '고객 지원 그룹이 응답 책임을 인수합니다.',
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
+    expect(trigger).toHaveFocus()
+  })
+
+  it('announces the non blocking open child warning after parent solve', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'solve-audit-id',
+                warnings: [
+                  {
+                    code: 'OPEN_CHILD_TICKETS',
+                    message: '열린 child ticket 2개가 있지만 저장되었습니다.',
+                    count: 2,
+                    relatedTicketNumbers: [1043, 1044],
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '상태' }),
+      'SOLVED',
+    )
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+
+    const warning = await screen.findByRole('alert', {
+      name: /열린 child ticket/,
+    })
+    expect(warning).toHaveTextContent('2개')
+    expect(warning).toHaveTextContent('#1043')
+    expect(warning).toHaveTextContent('#1044')
+  })
+
   it('restores PUBLIC and INTERNAL drafts independently after moving between tickets', async () => {
     const user = userEvent.setup()
     const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }

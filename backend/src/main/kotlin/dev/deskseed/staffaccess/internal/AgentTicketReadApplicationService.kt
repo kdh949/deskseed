@@ -17,6 +17,7 @@ import dev.deskseed.ticketing.StaffTicketSummary
 import dev.deskseed.ticketing.TicketStatus
 import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Duration
@@ -54,6 +55,15 @@ internal data class AgentTicketWorkspaceDetail(
     val assignmentOptions: List<TicketAssignmentGroupOption>,
 )
 
+@Component
+internal class AgentTicketReadAuthorizationPolicy {
+    fun canRead(
+        scope: StaffTicketReadScope,
+        directGrant: Boolean,
+        relationGrant: Boolean,
+    ): Boolean = scope == StaffTicketReadScope.ALL_TICKETS || directGrant || relationGrant
+}
+
 @Service
 internal class AgentTicketReadApplicationService(
     private val ticketStore: StaffTicketReadStore,
@@ -61,6 +71,7 @@ internal class AgentTicketReadApplicationService(
     private val cursorCodec: AgentTicketCursorCodec,
     private val assignmentCatalog: TicketAssignmentCatalog,
     private val writeAuthorizationPolicy: GroupOrAssigneeTicketWriteAuthorizationPolicy,
+    private val readAuthorizationPolicy: AgentTicketReadAuthorizationPolicy,
     private val clock: Clock,
 ) {
     val readScope: StaffTicketReadScope = StaffTicketReadScope.ALL_TICKETS
@@ -117,6 +128,16 @@ internal class AgentTicketReadApplicationService(
     ): AgentTicketWorkspaceDetail {
         requireActiveStaffRead(principal)
         val detail = ticketStore.findDetail(ticketNumber) ?: throw AgentTicketNotFoundException()
+        val directGrant = writeAuthorizationPolicy.canUpdate(
+            principal = principal,
+            currentGroupId = detail.ticket.group?.id,
+            currentAssigneeId = detail.ticket.assignee?.id,
+        )
+        val relationGrant = readScope != StaffTicketReadScope.ALL_TICKETS &&
+            ticketStore.hasRelationReadGrant(detail.ticket.id, principal.id)
+        if (!readAuthorizationPolicy.canRead(readScope, directGrant, relationGrant)) {
+            throw AgentTicketNotFoundException()
+        }
         try {
             val occurredAt = Instant.now(clock)
             accessAuditWriter.appendTicketResourceRead(
@@ -160,12 +181,7 @@ internal class AgentTicketReadApplicationService(
         } catch (exception: DataAccessException) {
             throw AccessAuditUnavailableException(exception)
         }
-        val canUpdate = detail.ticket.status != TicketStatus.CLOSED &&
-            writeAuthorizationPolicy.canUpdate(
-                principal = principal,
-                currentGroupId = detail.ticket.group?.id,
-                currentAssigneeId = detail.ticket.assignee?.id,
-            )
+        val canUpdate = detail.ticket.status != TicketStatus.CLOSED && directGrant
         return AgentTicketWorkspaceDetail(
             detail = detail,
             capabilities = if (canUpdate) listOf("READ", "UPDATE") else listOf("READ"),

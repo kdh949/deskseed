@@ -123,6 +123,46 @@ internal class Ticket private constructor(
                 ),
             )
         }
+
+        fun createInternalChild(
+            ticketNumber: Long,
+            requesterId: UUID,
+            subject: String,
+            firstCommentBody: String,
+            priority: TicketPriority,
+            groupId: UUID,
+            assigneeId: UUID?,
+            actorId: UUID,
+            now: Instant,
+        ): Ticket {
+            require(ticketNumber > 0) { "Ticket number must be positive" }
+            require(firstCommentBody.isNotBlank()) { "First comment must not be blank" }
+
+            val ticketId = UUID.randomUUID()
+            return Ticket(
+                id = ticketId,
+                ticketNumber = ticketNumber,
+                requesterId = requesterId,
+                kind = TicketKind.INTERNAL_CHILD,
+                subject = subject.trim(),
+                status = TicketStatus.NEW,
+                priority = priority,
+                channel = TicketChannel.AGENT,
+                createdAt = now,
+                updatedAt = now,
+                groupId = groupId,
+                assigneeId = assigneeId,
+                firstComment = TicketComment(
+                    id = UUID.randomUUID(),
+                    ticketId = ticketId,
+                    authorType = CommentAuthorType.AGENT,
+                    authorId = actorId,
+                    visibility = CommentVisibility.INTERNAL,
+                    body = firstCommentBody.trim(),
+                    createdAt = now,
+                ),
+            )
+        }
     }
 }
 

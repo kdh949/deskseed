@@ -49,16 +49,59 @@ data class UpdateAgentTicketCommand(
     val context: CommandContext,
 )
 
+data class TransferTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val groupId: UUID,
+    val assigneeId: UUID?,
+    val reason: String?,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class CreateChildTicketCommand(
+    val parentTicketNumber: Long,
+    val expectedVersion: Long,
+    val subject: String,
+    val body: String,
+    val groupId: UUID,
+    val assigneeId: UUID?,
+    val priority: TicketPriority,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class TicketCommandWarning(
+    val code: String,
+    val message: String,
+    val relatedTicketNumbers: List<Long>,
+) {
+    val count: Int = relatedTicketNumbers.size
+}
+
 data class TicketCommandResult(
     val ticketNumber: Long,
     val version: Long,
     val auditId: UUID,
+    val warnings: List<TicketCommandWarning> = emptyList(),
+)
+
+data class CreateChildTicketResult(
+    val parentTicketNumber: Long,
+    val parentVersion: Long,
+    val childTicketNumber: Long,
+    val parentAuditId: UUID,
+    val childAuditId: UUID,
 )
 
 interface AgentTicketCommandService {
     fun create(command: CreateAgentTicketCommand): TicketCommandResult
 
     fun update(command: UpdateAgentTicketCommand): TicketCommandResult
+
+    fun transfer(command: TransferTicketCommand): TicketCommandResult
+
+    fun createChild(command: CreateChildTicketCommand): CreateChildTicketResult
 }
 
 interface TicketWriteAuthorizationPolicy {
@@ -89,6 +132,10 @@ class TicketFieldConflictException(
     val currentVersion: Long,
     val conflictingFields: List<String>,
 ) : RuntimeException()
+
+class TicketVersionPreconditionFailedException(val currentVersion: Long) : RuntimeException()
+
+class TicketRelationInvalidException(val reason: String) : RuntimeException(reason)
 
 class TicketAuditUnavailableException(cause: Throwable) : RuntimeException(cause)
 

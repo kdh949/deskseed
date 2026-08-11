@@ -7,11 +7,14 @@ import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
+import dev.deskseed.ticketing.CreateChildTicketCommand
+import dev.deskseed.ticketing.CreateChildTicketResult
 import dev.deskseed.ticketing.StaffTicketCommandActor
 import dev.deskseed.ticketing.TicketCommandResult
 import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.TransferTicketCommand
 import dev.deskseed.ticketing.UpdateAgentTicketCommand
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -35,6 +38,22 @@ internal data class UpdateAgentTicketInput(
     val groupId: UUID?,
     val assigneeId: UUID?,
     val comment: AgentCommentDraft?,
+)
+
+internal data class TransferTicketInput(
+    val expectedVersion: Long,
+    val groupId: UUID,
+    val assigneeId: UUID?,
+    val reason: String?,
+)
+
+internal data class CreateChildTicketInput(
+    val expectedVersion: Long,
+    val subject: String,
+    val body: String,
+    val groupId: UUID,
+    val assigneeId: UUID?,
+    val priority: TicketPriority,
 )
 
 @Service
@@ -78,6 +97,42 @@ internal class AgentTicketCommandApplicationService(
             groupId = input.groupId,
             assigneeId = input.assigneeId,
             comment = input.comment,
+            actor = principal.commandActor(),
+            context = context,
+        ),
+    )
+
+    fun transfer(
+        principal: StaffPrincipal,
+        ticketNumber: Long,
+        input: TransferTicketInput,
+        context: CommandContext,
+    ): TicketCommandResult = ticketCommandService.transfer(
+        TransferTicketCommand(
+            ticketNumber = ticketNumber,
+            expectedVersion = input.expectedVersion,
+            groupId = input.groupId,
+            assigneeId = input.assigneeId,
+            reason = input.reason,
+            actor = principal.commandActor(),
+            context = context,
+        ),
+    )
+
+    fun createChild(
+        principal: StaffPrincipal,
+        parentTicketNumber: Long,
+        input: CreateChildTicketInput,
+        context: CommandContext,
+    ): CreateChildTicketResult = ticketCommandService.createChild(
+        CreateChildTicketCommand(
+            parentTicketNumber = parentTicketNumber,
+            expectedVersion = input.expectedVersion,
+            subject = input.subject,
+            body = input.body,
+            groupId = input.groupId,
+            assigneeId = input.assigneeId,
+            priority = input.priority,
             actor = principal.commandActor(),
             context = context,
         ),

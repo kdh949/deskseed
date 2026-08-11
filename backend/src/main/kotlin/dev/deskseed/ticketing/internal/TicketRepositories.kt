@@ -20,6 +20,51 @@ internal interface TicketCommentRepository : JpaRepository<TicketCommentEntity, 
     fun saveAndFlush(entity: TicketCommentEntity): TicketCommentEntity
 }
 
+internal interface TicketRelationRepository : JpaRepository<TicketRelationEntity, UUID> {
+    fun existsByTargetTicketIdAndRelationType(
+        targetTicketId: UUID,
+        relationType: TicketRelationType,
+    ): Boolean
+
+    @Query(
+        value = """
+            with recursive descendants(ticket_id) as (
+                select target_ticket_id
+                from ticket_relations
+                where source_ticket_id = :targetTicketId
+                  and relation_type = 'PARENT_CHILD'
+                union
+                select relation.target_ticket_id
+                from ticket_relations relation
+                join descendants on descendants.ticket_id = relation.source_ticket_id
+                where relation.relation_type = 'PARENT_CHILD'
+            )
+            select exists(
+                select 1 from descendants where ticket_id = :sourceTicketId
+            )
+        """,
+        nativeQuery = true,
+    )
+    fun wouldCreateParentChildCycle(
+        @Param("sourceTicketId") sourceTicketId: UUID,
+        @Param("targetTicketId") targetTicketId: UUID,
+    ): Boolean
+
+    @Query(
+        value = """
+            select child.ticket_number
+            from ticket_relations relation
+            join tickets child on child.id = relation.target_ticket_id
+            where relation.source_ticket_id = :parentTicketId
+              and relation.relation_type = 'PARENT_CHILD'
+              and child.status not in ('SOLVED', 'CLOSED')
+            order by child.ticket_number
+        """,
+        nativeQuery = true,
+    )
+    fun findOpenChildTicketNumbers(@Param("parentTicketId") parentTicketId: UUID): List<Long>
+}
+
 internal interface TicketAuditRepository : Repository<TicketAuditEntity, UUID> {
     fun saveAndFlush(entity: TicketAuditEntity): TicketAuditEntity
 

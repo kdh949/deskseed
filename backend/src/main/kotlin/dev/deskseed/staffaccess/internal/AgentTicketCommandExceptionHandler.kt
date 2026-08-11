@@ -6,8 +6,10 @@ import dev.deskseed.ticketing.TicketAssignmentInvalidException
 import dev.deskseed.ticketing.TicketAuditUnavailableException
 import dev.deskseed.ticketing.TicketCommandInvalidException
 import dev.deskseed.ticketing.TicketFieldConflictException
+import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketTransitionInvalidException
 import dev.deskseed.ticketing.TicketUpdateContentionException
+import dev.deskseed.ticketing.TicketVersionPreconditionFailedException
 import dev.deskseed.ticketing.TicketWriteForbiddenException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.ConstraintViolationException
@@ -78,6 +80,31 @@ internal class AgentTicketCommandExceptionHandler {
         }
         return response
     }
+
+    @ExceptionHandler(TicketVersionPreconditionFailedException::class)
+    fun preconditionFailed(
+        exception: TicketVersionPreconditionFailedException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ProblemDetail> {
+        val response = problem(
+            request,
+            HttpStatus.PRECONDITION_FAILED,
+            "/problems/ticket-version-precondition-failed",
+            "Ticket version precondition failed",
+            "The ticket changed after the supplied ETag was read.",
+        )
+        response.body?.setProperty("currentVersion", exception.currentVersion)
+        return response
+    }
+
+    @ExceptionHandler(TicketRelationInvalidException::class)
+    fun invalidRelation(request: HttpServletRequest) = problem(
+        request,
+        HttpStatus.UNPROCESSABLE_CONTENT,
+        "/problems/ticket-relation-invalid",
+        "Ticket relation is invalid",
+        "The requested parent-child relation violates the relation policy.",
+    )
 
     @ExceptionHandler(
         TicketCommandInvalidException::class,

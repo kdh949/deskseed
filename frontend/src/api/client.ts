@@ -7,6 +7,8 @@ import type {
   AgentTicketFilters,
   AgentTicketPage,
   AgentTicketSummary,
+  CreateChildTicketCommand,
+  CreateChildTicketResult,
   CreateStaffInput,
   CurrentStaff,
   GroupReference,
@@ -28,6 +30,7 @@ import type {
   TicketPriority,
   TicketStatus,
   TicketVisibility,
+  TransferTicketCommand,
   UpdateTicketCommand,
 } from './types'
 
@@ -452,12 +455,14 @@ async function unsafeStaffFetch(
   path: string,
   method: 'POST' | 'PATCH' | 'DELETE',
   body?: unknown,
+  additionalHeaders: Record<string, string> = {},
 ) {
   const csrf = await csrfHeaders()
   return staffFetch(path, {
     method,
     headers: {
       ...csrf,
+      ...additionalHeaders,
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -852,11 +857,24 @@ function decodeTicketCommandResult(
     if (
       !isRecord(warning) ||
       !isNonBlankString(warning.code) ||
-      !isNonBlankString(warning.message)
+      !isNonBlankString(warning.message) ||
+      typeof warning.count !== 'number' ||
+      !Number.isSafeInteger(warning.count) ||
+      warning.count < 1 ||
+      !Array.isArray(warning.relatedTicketNumbers) ||
+      !warning.relatedTicketNumbers.every(isTicketNumber) ||
+      warning.count !== warning.relatedTicketNumbers.length
     ) {
       return []
     }
-    return [{ code: warning.code, message: warning.message }]
+    return [
+      {
+        code: warning.code,
+        message: warning.message,
+        count: warning.count,
+        relatedTicketNumbers: warning.relatedTicketNumbers,
+      },
+    ]
   })
   if (warnings.length !== value.warnings.length) return undefined
   return {
@@ -864,6 +882,30 @@ function decodeTicketCommandResult(
     version: value.version,
     auditId: value.auditId,
     warnings,
+  }
+}
+
+function decodeCreateChildTicketResult(
+  value: unknown,
+): CreateChildTicketResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isTicketNumber(value.parentTicketNumber) ||
+    typeof value.parentVersion !== 'number' ||
+    !Number.isSafeInteger(value.parentVersion) ||
+    value.parentVersion < 0 ||
+    !isTicketNumber(value.childTicketNumber) ||
+    !isNonBlankString(value.parentAuditId) ||
+    !isNonBlankString(value.childAuditId)
+  ) {
+    return undefined
+  }
+  return {
+    parentTicketNumber: value.parentTicketNumber,
+    parentVersion: value.parentVersion,
+    childTicketNumber: value.childTicketNumber,
+    parentAuditId: value.parentAuditId,
+    childAuditId: value.childAuditId,
   }
 }
 
@@ -938,6 +980,36 @@ export async function updateAgentTicket(
     command,
   )
   const result = decodeTicketCommandResult(await checkedBody(response))
+  if (!result) throw malformedSuccess(response)
+  return result
+}
+
+export async function transferAgentTicket(
+  ticketNumber: number,
+  command: TransferTicketCommand,
+): Promise<TicketCommandResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/transfer`,
+    'POST',
+    command,
+    { 'If-Match': `"${command.expectedVersion}"` },
+  )
+  const result = decodeTicketCommandResult(await checkedBody(response))
+  if (!result) throw malformedSuccess(response)
+  return result
+}
+
+export async function createChildTicket(
+  ticketNumber: number,
+  command: CreateChildTicketCommand,
+): Promise<CreateChildTicketResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/children`,
+    'POST',
+    command,
+    { 'If-Match': `"${command.expectedVersion}"` },
+  )
+  const result = decodeCreateChildTicketResult(await checkedBody(response))
   if (!result) throw malformedSuccess(response)
   return result
 }

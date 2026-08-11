@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
+  createChildTicket,
   getAgentTicket,
   getPublicRequest,
   listAgentViews,
   listTicketsInView,
   submitRequest,
+  transferAgentTicket,
   updateAgentTicket,
 } from './client'
 
@@ -517,6 +519,150 @@ describe('agent ticket read API client', () => {
       status: 409,
       requestId: 'request-conflict-409',
       problem: { currentVersion: 9, conflictingFields: ['priority'] },
+    })
+  })
+
+  it('sends transfer and child as distinct ETag guarded commands', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            token: 'csrf-transfer',
+            headerName: 'X-CSRF-TOKEN',
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 8,
+            auditId: 'transfer-audit-id',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-child', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            parentTicketNumber: 1042,
+            parentVersion: 9,
+            childTicketNumber: 1043,
+            parentAuditId: 'parent-audit-id',
+            childAuditId: 'child-audit-id',
+          }),
+          { status: 201 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      transferAgentTicket(1042, {
+        expectedVersion: 7,
+        groupId: 'group-payments',
+        assigneeId: 'agent-specialist',
+        reason: '전문 그룹이 소유권을 인수합니다.',
+        clientCommandId: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).resolves.toMatchObject({ ticketNumber: 1042, version: 8 })
+    await expect(
+      createChildTicket(1042, {
+        expectedVersion: 8,
+        subject: '승인 로그 확인',
+        body: '고객 비노출 내부 조사',
+        groupId: 'group-payments',
+        assigneeId: null,
+        priority: 'HIGH',
+        clientCommandId: '22222222-2222-4222-8222-222222222222',
+      }),
+    ).resolves.toEqual({
+      parentTicketNumber: 1042,
+      parentVersion: 9,
+      childTicketNumber: 1043,
+      parentAuditId: 'parent-audit-id',
+      childAuditId: 'child-audit-id',
+    })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      '/api/v1/agent/tickets/1042/transfer',
+    )
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'If-Match': '"7"',
+        'X-CSRF-TOKEN': 'csrf-transfer',
+      },
+    })
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      '/api/v1/agent/tickets/1042/children',
+    )
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'If-Match': '"8"',
+        'X-CSRF-TOKEN': 'csrf-child',
+      },
+    })
+  })
+
+  it('preserves the open child warning count and ticket numbers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ticketNumber: 1042,
+              version: 8,
+              auditId: 'solve-audit-id',
+              warnings: [
+                {
+                  code: 'OPEN_CHILD_TICKETS',
+                  message: '2개의 열린 child ticket이 있지만 저장되었습니다.',
+                  count: 2,
+                  relatedTicketNumbers: [1043, 1044],
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+    )
+
+    await expect(
+      updateAgentTicket(1042, {
+        expectedVersion: 7,
+        changedFields: ['status'],
+        status: 'SOLVED',
+        comment: null,
+        clientCommandId: '33333333-3333-4333-8333-333333333333',
+      }),
+    ).resolves.toMatchObject({
+      warnings: [
+        {
+          code: 'OPEN_CHILD_TICKETS',
+          count: 2,
+          relatedTicketNumbers: [1043, 1044],
+        },
+      ],
     })
   })
 

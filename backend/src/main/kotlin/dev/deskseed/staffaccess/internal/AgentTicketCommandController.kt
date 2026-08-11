@@ -5,6 +5,7 @@ import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.CommentVisibility
+import dev.deskseed.ticketing.CreateChildTicketResult
 import dev.deskseed.ticketing.TicketCommandInvalidException
 import dev.deskseed.ticketing.TicketCommandResult
 import dev.deskseed.ticketing.TicketField
@@ -23,6 +24,7 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import tools.jackson.databind.JsonNode
@@ -93,6 +95,56 @@ internal class AgentTicketCommandController(
         return ResponseEntity.ok().eTag(result.version.toString()).body(result.toResponse())
     }
 
+    @PostMapping("/{ticketNumber}/transfer")
+    fun transfer(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @PathVariable @Positive ticketNumber: Long,
+        @RequestHeader("If-Match") ifMatch: String,
+        @Valid @RequestBody body: TransferTicketRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<TicketCommandResponse> {
+        requireMatchingIfMatch(ifMatch, body.expectedVersion)
+        val result = applicationService.transfer(
+            principal = principal,
+            ticketNumber = ticketNumber,
+            input = TransferTicketInput(
+                expectedVersion = body.expectedVersion,
+                groupId = body.groupId,
+                assigneeId = body.assigneeId,
+                reason = body.reason,
+            ),
+            context = commandContext(request, body.clientCommandId),
+        )
+        return ResponseEntity.ok().eTag(result.version.toString()).body(result.toResponse())
+    }
+
+    @PostMapping("/{ticketNumber}/children")
+    fun createChild(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @PathVariable @Positive ticketNumber: Long,
+        @RequestHeader("If-Match") ifMatch: String,
+        @Valid @RequestBody body: CreateChildTicketRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<CreateChildTicketResponse> {
+        requireMatchingIfMatch(ifMatch, body.expectedVersion)
+        val result = applicationService.createChild(
+            principal = principal,
+            parentTicketNumber = ticketNumber,
+            input = CreateChildTicketInput(
+                expectedVersion = body.expectedVersion,
+                subject = body.subject,
+                body = body.body,
+                groupId = body.groupId,
+                assigneeId = body.assigneeId,
+                priority = body.priority,
+            ),
+            context = commandContext(request, body.clientCommandId),
+        )
+        return ResponseEntity.created(URI.create("/api/v1/agent/tickets/${result.childTicketNumber}"))
+            .eTag(result.parentVersion.toString())
+            .body(result.toResponse())
+    }
+
     private fun validateDeclaredFields(body: UpdateAgentTicketRequest, fields: Set<TicketField>) {
         if (fields.isEmpty() && body.comment == null) {
             throw TicketCommandInvalidException("A field or comment is required")
@@ -124,11 +176,34 @@ internal class AgentTicketCommandController(
         return clientCommandId?.let { accepted.copy(commandId = it.toString()) } ?: accepted
     }
 
+    private fun requireMatchingIfMatch(ifMatch: String, expectedVersion: Long) {
+        val parsed = ifMatch.trim().removeSurrounding("\"").toLongOrNull()
+            ?: throw TicketCommandInvalidException("If-Match must contain a numeric ticket ETag")
+        if (parsed != expectedVersion) {
+            throw TicketCommandInvalidException("If-Match and expectedVersion must identify the same version")
+        }
+    }
+
     private fun TicketCommandResult.toResponse() = TicketCommandResponse(
         ticketNumber = ticketNumber,
         version = version,
         auditId = auditId,
-        warnings = emptyList(),
+        warnings = warnings.map {
+            TicketCommandWarningResponse(
+                code = it.code,
+                message = it.message,
+                count = it.count,
+                relatedTicketNumbers = it.relatedTicketNumbers,
+            )
+        },
+    )
+
+    private fun CreateChildTicketResult.toResponse() = CreateChildTicketResponse(
+        parentTicketNumber = parentTicketNumber,
+        parentVersion = parentVersion,
+        childTicketNumber = childTicketNumber,
+        parentAuditId = parentAuditId,
+        childAuditId = childAuditId,
     )
 
     private fun CommentDraftRequest.toDraft() = AgentCommentDraft(visibility, body)
@@ -165,9 +240,42 @@ internal data class UpdateAgentTicketRequest(
     val clientCommandId: UUID? = null,
 )
 
+internal data class TransferTicketRequest(
+    @field:PositiveOrZero val expectedVersion: Long,
+    val groupId: UUID,
+    val assigneeId: UUID? = null,
+    @field:Size(max = 2_000) val reason: String? = null,
+    val clientCommandId: UUID? = null,
+)
+
+internal data class CreateChildTicketRequest(
+    @field:PositiveOrZero val expectedVersion: Long,
+    @field:NotBlank @field:Size(max = 200) val subject: String,
+    @field:NotBlank @field:Size(max = 20_000) val body: String,
+    val groupId: UUID,
+    val assigneeId: UUID? = null,
+    val priority: TicketPriority,
+    val clientCommandId: UUID? = null,
+)
+
+internal data class TicketCommandWarningResponse(
+    val code: String,
+    val message: String,
+    val count: Int,
+    val relatedTicketNumbers: List<Long>,
+)
+
 internal data class TicketCommandResponse(
     val ticketNumber: Long,
     val version: Long,
     val auditId: UUID,
-    val warnings: List<Any>,
+    val warnings: List<TicketCommandWarningResponse>,
+)
+
+internal data class CreateChildTicketResponse(
+    val parentTicketNumber: Long,
+    val parentVersion: Long,
+    val childTicketNumber: Long,
+    val parentAuditId: UUID,
+    val childAuditId: UUID,
 )

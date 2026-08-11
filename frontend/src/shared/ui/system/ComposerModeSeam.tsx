@@ -17,6 +17,7 @@ interface ComposerModeSeamProps {
   onDraftChange?: (mode: ComposerMode, value: string) => void
   footer?: ReactNode
   busy?: boolean
+  availableModes?: ComposerMode[]
 }
 
 const MODES = [
@@ -33,10 +34,18 @@ export function ComposerModeSeam({
   onDraftChange,
   footer,
   busy = false,
+  availableModes = ['PUBLIC', 'INTERNAL'],
 }: ComposerModeSeamProps) {
   const [localMode, setLocalMode] = useState<ComposerMode>(initialMode)
   const [localDrafts, setLocalDrafts] = useState({ PUBLIC: '', INTERNAL: '' })
-  const mode = controlledMode ?? localMode
+  const configuredModes = MODES.filter((option) =>
+    availableModes.includes(option.value),
+  )
+  const modes = configuredModes.length ? configuredModes : MODES
+  const requestedMode = controlledMode ?? localMode
+  const mode = modes.some((option) => option.value === requestedMode)
+    ? requestedMode
+    : modes[0]!.value
   const drafts = controlledDrafts ?? localDrafts
   const baseId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -62,16 +71,16 @@ export function ComposerModeSeam({
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
-    const last = MODES.length - 1
+    const last = modes.length - 1
     const nextIndex =
       event.key === 'Home'
         ? 0
         : event.key === 'End'
           ? last
           : event.key === 'ArrowRight'
-            ? (index + 1) % MODES.length
-            : (index - 1 + MODES.length) % MODES.length
-    const nextMode = MODES[nextIndex]
+            ? (index + 1) % modes.length
+            : (index - 1 + modes.length) % modes.length
+    const nextMode = modes[nextIndex]
     if (!nextMode) return
     selectMode(nextMode.value)
     tabRefs.current[nextIndex]?.focus()
@@ -93,7 +102,7 @@ export function ComposerModeSeam({
           aria-label="답변 공개 범위"
           aria-orientation="horizontal"
         >
-          {MODES.map((option, index) => {
+          {modes.map((option, index) => {
             const selected = mode === option.value
             return (
               <button
@@ -126,7 +135,7 @@ export function ComposerModeSeam({
           ? '내부 메모 모드입니다. 이 내용은 고객에게 공개되지 않습니다.'
           : '공개 답변 모드입니다. 이 내용은 고객에게 표시됩니다.'}
       </p>
-      {MODES.map((option) => {
+      {modes.map((option) => {
         const selected = mode === option.value
         return (
           <div

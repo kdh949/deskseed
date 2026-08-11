@@ -158,6 +158,8 @@ function TicketWorkspaceContent({
                   canSubmit={editor.canSubmit}
                   error={editor.error}
                   success={editor.success}
+                  warnings={editor.warnings}
+                  internalOnly={ticket.isChild}
                   onModeChange={editor.setMode}
                   onDraftChange={editor.updateDraft}
                   onSubmit={() => void editor.submit()}
@@ -168,7 +170,11 @@ function TicketWorkspaceContent({
         }
         contextPanel={
           preferences.contextCollapsed ? undefined : (
-            <TicketContextPanel detail={detail} />
+            <TicketContextPanel
+              detail={detail}
+              canUpdate={canUpdate}
+              onCommandCompleted={editor.refreshEditor}
+            />
           )
         }
       />
