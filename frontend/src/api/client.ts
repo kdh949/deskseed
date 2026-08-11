@@ -21,9 +21,14 @@ import type {
   SupportGroup,
   SavedAgentView,
   TicketHistoryItem,
+  TicketAssignmentGroupOption,
+  TicketAssignmentOptions,
+  TicketCommandResult,
+  TicketFieldName,
   TicketPriority,
   TicketStatus,
   TicketVisibility,
+  UpdateTicketCommand,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -58,6 +63,12 @@ const ACTOR_TYPES = new Set<ActorSummary['type']>([
   'TRIGGER',
   'AUTOMATION',
   'SYSTEM',
+])
+const TICKET_FIELD_NAMES = new Set<TicketFieldName>([
+  'status',
+  'priority',
+  'groupId',
+  'assigneeId',
 ])
 
 export class ApiError extends Error {
@@ -139,6 +150,13 @@ function decodeFieldErrors(value: unknown): ProblemDetails['fieldErrors'] {
 function decodeProblem(value: unknown): ProblemDetails | undefined {
   if (!isRecord(value)) return undefined
   const fieldErrors = decodeFieldErrors(value.fieldErrors)
+  const conflictingFields = Array.isArray(value.conflictingFields)
+    ? value.conflictingFields.filter(
+        (field): field is TicketFieldName =>
+          typeof field === 'string' &&
+          TICKET_FIELD_NAMES.has(field as TicketFieldName),
+      )
+    : undefined
   return {
     ...(typeof value.type === 'string' ? { type: value.type } : {}),
     ...(typeof value.title === 'string' ? { title: value.title } : {}),
@@ -150,6 +168,14 @@ function decodeProblem(value: unknown): ProblemDetails | undefined {
       : {}),
     ...(typeof value.code === 'string' ? { code: value.code } : {}),
     ...(fieldErrors ? { fieldErrors } : {}),
+    ...(typeof value.currentVersion === 'number' &&
+    Number.isSafeInteger(value.currentVersion)
+      ? { currentVersion: value.currentVersion }
+      : {}),
+    ...(Array.isArray(value.conflictingFields) &&
+    conflictingFields?.length === value.conflictingFields.length
+      ? { conflictingFields }
+      : {}),
   }
 }
 
@@ -716,6 +742,7 @@ function decodeAgentTicketDetail(
     !isRecord(value) ||
     !Array.isArray(value.comments) ||
     !Array.isArray(value.capabilities) ||
+    !isRecord(value.assignmentOptions) ||
     !isRecord(value.context) ||
     !Array.isArray(value.history) ||
     !Array.isArray(value.warnings)
@@ -733,6 +760,9 @@ function decodeAgentTicketDetail(
     ? value.context.children.map(decodeAgentTicketSummary)
     : []
   const history = value.history.map(decodeHistory)
+  const assignmentOptions = decodeTicketAssignmentOptions(
+    value.assignmentOptions,
+  )
   if (
     !ticket ||
     comments.some((comment) => !comment) ||
@@ -745,6 +775,7 @@ function decodeAgentTicketDetail(
     children.some((child) => !child) ||
     !Array.isArray(value.context.externalReferences) ||
     history.some((item) => !item) ||
+    !assignmentOptions ||
     !value.capabilities.every(isNonBlankString)
   ) {
     return undefined
@@ -753,6 +784,7 @@ function decodeAgentTicketDetail(
     ticket,
     comments: comments as AgentComment[],
     capabilities: value.capabilities,
+    assignmentOptions,
     context: {
       customer: {
         id: customer.id,
@@ -765,6 +797,73 @@ function decodeAgentTicketDetail(
     },
     history: history as TicketHistoryItem[],
     warnings: [...value.warnings],
+  }
+}
+
+function decodeTicketAssignmentOptions(
+  value: Record<string, unknown>,
+): TicketAssignmentOptions | undefined {
+  if (!Array.isArray(value.groups)) return undefined
+  const groups = value.groups.map(decodeTicketAssignmentGroupOption)
+  if (groups.some((group) => !group)) return undefined
+  return { groups: groups as TicketAssignmentGroupOption[] }
+}
+
+function decodeTicketAssignmentGroupOption(
+  value: unknown,
+): TicketAssignmentGroupOption | undefined {
+  if (
+    !isRecord(value) ||
+    !isNonBlankString(value.id) ||
+    !isNonBlankString(value.name) ||
+    !Array.isArray(value.members)
+  ) {
+    return undefined
+  }
+  const members = value.members.flatMap((member) => {
+    if (
+      !isRecord(member) ||
+      !isNonBlankString(member.id) ||
+      !isNonBlankString(member.displayName)
+    ) {
+      return []
+    }
+    return [{ id: member.id, displayName: member.displayName }]
+  })
+  if (members.length !== value.members.length) return undefined
+  return { id: value.id, name: value.name, members }
+}
+
+function decodeTicketCommandResult(
+  value: unknown,
+): TicketCommandResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isTicketNumber(value.ticketNumber) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0 ||
+    !isNonBlankString(value.auditId) ||
+    !Array.isArray(value.warnings)
+  ) {
+    return undefined
+  }
+  const warnings = value.warnings.flatMap((warning) => {
+    if (
+      !isRecord(warning) ||
+      !isNonBlankString(warning.code) ||
+      !isNonBlankString(warning.message)
+    ) {
+      return []
+    }
+    return [{ code: warning.code, message: warning.message }]
+  })
+  if (warnings.length !== value.warnings.length) return undefined
+  return {
+    ticketNumber: value.ticketNumber,
+    version: value.version,
+    auditId: value.auditId,
+    warnings,
   }
 }
 
@@ -827,4 +926,18 @@ export async function getAgentTicket(
   const detail = decodeAgentTicketDetail(await checkedBody(response))
   if (!detail) throw malformedSuccess(response)
   return detail
+}
+
+export async function updateAgentTicket(
+  ticketNumber: number,
+  command: UpdateTicketCommand,
+): Promise<TicketCommandResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/commands`,
+    'POST',
+    command,
+  )
+  const result = decodeTicketCommandResult(await checkedBody(response))
+  if (!result) throw malformedSuccess(response)
+  return result
 }

@@ -6,6 +6,7 @@ import {
   listAgentViews,
   listTicketsInView,
   submitRequest,
+  updateAgentTicket,
 } from './client'
 
 const submitInput = {
@@ -356,7 +357,16 @@ describe('agent ticket read API client', () => {
               attachments: [],
             },
           ],
-          capabilities: ['READ'],
+          capabilities: ['READ', 'UPDATE'],
+          assignmentOptions: {
+            groups: [
+              {
+                id: 'group-id',
+                name: '결제 지원',
+                members: [{ id: 'staff-id', displayName: '상담사' }],
+              },
+            ],
+          },
           context: {
             customer: {
               id: 'customer-id',
@@ -404,7 +414,110 @@ describe('agent ticket read API client', () => {
     expect(detail.comments[0]?.visibility).toBe('INTERNAL')
     expect(detail.context.customer.email).toBe('customer@example.com')
     expect(detail.ticket.status).toBe('ON_HOLD')
+    expect(detail.assignmentOptions.groups[0]?.members[0]?.displayName).toBe(
+      '상담사',
+    )
     expect(JSON.stringify(detail)).not.toContain('private-marker')
+  })
+
+  it('sends one exact combined ticket command with CSRF protection', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 8,
+            auditId: '11111111-1111-4111-8111-111111111111',
+            warnings: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      updateAgentTicket(1042, {
+        expectedVersion: 7,
+        changedFields: ['status', 'priority', 'groupId', 'assigneeId'],
+        status: 'PENDING',
+        priority: 'HIGH',
+        groupId: '22222222-2222-4222-8222-222222222222',
+        assigneeId: null,
+        comment: { visibility: 'INTERNAL', body: '결제팀 확인 요청' },
+        clientCommandId: '33333333-3333-4333-8333-333333333333',
+      }),
+    ).resolves.toMatchObject({ version: 8 })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      '/api/v1/agent/tickets/1042/commands',
+    )
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': 'csrf-token',
+      },
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      expectedVersion: 7,
+      changedFields: ['status', 'priority', 'groupId', 'assigneeId'],
+      status: 'PENDING',
+      priority: 'HIGH',
+      groupId: '22222222-2222-4222-8222-222222222222',
+      assigneeId: null,
+      comment: { visibility: 'INTERNAL', body: '결제팀 확인 요청' },
+      clientCommandId: '33333333-3333-4333-8333-333333333333',
+    })
+  })
+
+  it('preserves field-conflict metadata and its safe request id', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              type: '/problems/ticket-field-conflict',
+              status: 409,
+              requestId: 'request-conflict-409',
+              currentVersion: 9,
+              conflictingFields: ['priority'],
+            }),
+            { status: 409 },
+          ),
+        ),
+    )
+
+    const error = await updateAgentTicket(1042, {
+      expectedVersion: 7,
+      changedFields: ['priority'],
+      priority: 'HIGH',
+      comment: null,
+      clientCommandId: '33333333-3333-4333-8333-333333333333',
+    }).catch((cause: unknown) => cause)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      status: 409,
+      requestId: 'request-conflict-409',
+      problem: { currentVersion: 9, conflictingFields: ['priority'] },
+    })
   })
 
   it('decodes a closed ticket in an agent list response', async () => {
