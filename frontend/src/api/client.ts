@@ -351,11 +351,7 @@ export async function getPublicRequest(
   return request
 }
 
-const STAFF_ROLES = new Set<StaffRole>([
-  'ADMIN',
-  'AGENT',
-  'SECURITY_AUDITOR',
-])
+const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT', 'SECURITY_AUDITOR'])
 
 function isStaffRole(value: unknown): value is StaffRole {
   return typeof value === 'string' && STAFF_ROLES.has(value as StaffRole)
@@ -1087,7 +1083,11 @@ export async function createChildTicket(
   return result
 }
 
-const AUDIT_LEDGERS = new Set(['TICKET_CHANGE', 'ACCESS_SEARCH', 'ADMIN_SECURITY'])
+const AUDIT_LEDGERS = new Set([
+  'TICKET_CHANGE',
+  'ACCESS_SEARCH',
+  'ADMIN_SECURITY',
+])
 const AUDIT_OUTCOMES = new Set(['SUCCEEDED', 'DENIED', 'FAILED'])
 const AUDIT_PROJECTION_STATES = new Set(['CURRENT', 'DEGRADED', 'REBUILDING'])
 
@@ -1199,7 +1199,8 @@ function decodeAuditSearchContext(
       },
     ]
   })
-  if (openedActivities.length !== value.openedActivities.length) return undefined
+  if (openedActivities.length !== value.openedActivities.length)
+    return undefined
   return {
     queryRedacted: value.queryRedacted,
     queryFingerprint: value.queryFingerprint,
@@ -1211,7 +1212,9 @@ function decodeAuditSearchContext(
   }
 }
 
-function decodeAuditActivityPage(value: unknown): AuditActivityPage | undefined {
+function decodeAuditActivityPage(
+  value: unknown,
+): AuditActivityPage | undefined {
   if (!isRecord(value) || !Array.isArray(value.items)) return undefined
   const items = value.items.map(decodeAuditActivity)
   const projection = decodeAuditProjectionStatus(value.projection)
@@ -1407,7 +1410,12 @@ export async function rebuildAuditProjection(
   const projection = decodeAuditProjectionStatus(body.projection)
   if (
     !projection ||
-    !['ticketChangeCount', 'accessSearchCount', 'adminSecurityCount', 'totalCount'].every(
+    ![
+      'ticketChangeCount',
+      'accessSearchCount',
+      'adminSecurityCount',
+      'totalCount',
+    ].every(
       (key) =>
         typeof body[key] === 'number' &&
         Number.isSafeInteger(body[key]) &&

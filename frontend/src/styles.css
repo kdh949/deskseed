@@ -867,7 +867,13 @@ textarea[aria-invalid='true'] {
 
 .audit-id-cell code,
 .is-mono {
-  font-family: var(--ds-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(
+    --ds-font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace
+  );
   font-size: 0.68rem;
   overflow-wrap: anywhere;
 }

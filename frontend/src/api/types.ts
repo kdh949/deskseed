@@ -293,9 +293,7 @@ export interface CreateChildTicketResult {
 }
 
 export type AuditLedgerType =
-  | 'TICKET_CHANGE'
-  | 'ACCESS_SEARCH'
-  | 'ADMIN_SECURITY'
+  'TICKET_CHANGE' | 'ACCESS_SEARCH' | 'ADMIN_SECURITY'
 export type AuditOutcome = 'SUCCEEDED' | 'DENIED' | 'FAILED'
 
 export interface AuditActivityFilters {

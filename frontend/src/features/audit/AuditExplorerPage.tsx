@@ -46,11 +46,7 @@ export function AuditExplorerPage() {
   const query = useQuery({
     queryKey: ['audit-activities', listInteractionId, filterKey, cursor],
     queryFn: () =>
-      listAuditActivities(
-        { ...filters, limit: 50 },
-        cursor,
-        listInteractionId,
-      ),
+      listAuditActivities({ ...filters, limit: 50 }, cursor, listInteractionId),
   })
   const rebuild = useMutation({
     mutationFn: () => rebuildAuditProjection(createAuditInteractionId()),
@@ -83,11 +79,13 @@ export function AuditExplorerPage() {
     <div className="audit-explorer-page" aria-labelledby="audit-explorer-title">
       <header className="audit-title-row">
         <div>
-          <p className="agent-page-eyebrow">UNIFIED AUDIT EXPLORER · READ ONLY</p>
+          <p className="agent-page-eyebrow">
+            UNIFIED AUDIT EXPLORER · READ ONLY
+          </p>
           <h1 id="audit-explorer-title">활동 조사</h1>
           <p>
-            Ticket Change, Access/Search, Admin/Security canonical 원장을 한 흐름에서
-            조사합니다.
+            Ticket Change, Access/Search, Admin/Security canonical 원장을 한
+            흐름에서 조사합니다.
           </p>
         </div>
         <div className="audit-title-actions">
@@ -123,7 +121,10 @@ export function AuditExplorerPage() {
         </Notification>
       ) : null}
       {rebuild.data ? (
-        <Notification tone="success" title="Projection 재생성이 완료되었습니다.">
+        <Notification
+          tone="success"
+          title="Projection 재생성이 완료되었습니다."
+        >
           <p>
             {rebuild.data.totalCount.toLocaleString()}건 · Ticket{' '}
             {rebuild.data.ticketChangeCount.toLocaleString()} · Access{' '}
@@ -161,7 +162,10 @@ export function AuditExplorerPage() {
           tone="warning"
           title={`Projection 상태: ${query.data?.projection.state}`}
         >
-          <p>Canonical 원장은 유지됩니다. 결과가 stale할 수 있으므로 재생성 상태를 확인하세요.</p>
+          <p>
+            Canonical 원장은 유지됩니다. 결과가 stale할 수 있으므로 재생성
+            상태를 확인하세요.
+          </p>
         </Notification>
       ) : null}
 
@@ -179,7 +183,9 @@ export function AuditExplorerPage() {
             <span role="status">최신 결과 확인 중</span>
           ) : null}
         </header>
-        {query.isPending ? <TableSkeleton label="감사 활동 불러오는 중" /> : null}
+        {query.isPending ? (
+          <TableSkeleton label="감사 활동 불러오는 중" />
+        ) : null}
         {query.isError ? (
           <AuditListError error={query.error} retry={() => query.refetch()} />
         ) : null}
@@ -236,7 +242,10 @@ export function AuditExplorerPage() {
         />
       ) : null}
       {exportOpen ? (
-        <AuditExportDialog filters={filters} onClose={() => setExportOpen(false)} />
+        <AuditExportDialog
+          filters={filters}
+          onClose={() => setExportOpen(false)}
+        />
       ) : null}
     </div>
   )
@@ -254,14 +263,43 @@ function AuditFilters({
   return (
     <section className="audit-filter-panel" aria-label="감사 활동 필터">
       <div className="audit-filter-primary">
-        <FilterInput label="시작일" type="date" value={params.get('from') ?? ''} onChange={(value) => update('from', value)} />
-        <FilterInput label="종료일" type="date" value={params.get('to') ?? ''} onChange={(value) => update('to', value)} />
-        <FilterInput label="활동" value={params.get('action') ?? ''} placeholder="예: SEARCH_EXECUTED" onChange={(value) => update('action', value)} />
-        <FilterInput label="행위자 ID" value={params.get('actorId') ?? ''} placeholder="UUID" onChange={(value) => update('actorId', value)} />
-        <FilterInput label="티켓" type="number" value={params.get('ticketNumber') ?? ''} placeholder="1042" onChange={(value) => update('ticketNumber', value)} />
+        <FilterInput
+          label="시작일"
+          type="date"
+          value={params.get('from') ?? ''}
+          onChange={(value) => update('from', value)}
+        />
+        <FilterInput
+          label="종료일"
+          type="date"
+          value={params.get('to') ?? ''}
+          onChange={(value) => update('to', value)}
+        />
+        <FilterInput
+          label="활동"
+          value={params.get('action') ?? ''}
+          placeholder="예: SEARCH_EXECUTED"
+          onChange={(value) => update('action', value)}
+        />
+        <FilterInput
+          label="행위자 ID"
+          value={params.get('actorId') ?? ''}
+          placeholder="UUID"
+          onChange={(value) => update('actorId', value)}
+        />
+        <FilterInput
+          label="티켓"
+          type="number"
+          value={params.get('ticketNumber') ?? ''}
+          placeholder="1042"
+          onChange={(value) => update('ticketNumber', value)}
+        />
         <label>
           <span>결과</span>
-          <select value={params.get('outcome') ?? ''} onChange={(event) => update('outcome', event.target.value)}>
+          <select
+            value={params.get('outcome') ?? ''}
+            onChange={(event) => update('outcome', event.target.value)}
+          >
             <option value="">전체</option>
             <option value="SUCCEEDED">SUCCEEDED</option>
             <option value="DENIED">DENIED</option>
@@ -277,27 +315,74 @@ function AuditFilters({
         <div>
           <label>
             <span>행위자 유형</span>
-            <select value={params.get('actorType') ?? ''} onChange={(event) => update('actorType', event.target.value)}>
+            <select
+              value={params.get('actorType') ?? ''}
+              onChange={(event) => update('actorType', event.target.value)}
+            >
               <option value="">전체</option>
-              {['CUSTOMER', 'STAFF', 'INTEGRATION_CLIENT', 'TRIGGER', 'AUTOMATION', 'SYSTEM'].map((type) => (
-                <option key={type} value={type}>{type}</option>
+              {[
+                'CUSTOMER',
+                'STAFF',
+                'INTEGRATION_CLIENT',
+                'TRIGGER',
+                'AUTOMATION',
+                'SYSTEM',
+              ].map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
               ))}
             </select>
           </label>
-          <FilterInput label="그룹 ID" value={params.get('groupId') ?? ''} placeholder="UUID" onChange={(value) => update('groupId', value)} />
-          <FilterInput label="필드" value={params.get('field') ?? ''} placeholder="status" onChange={(value) => update('field', value)} />
+          <FilterInput
+            label="그룹 ID"
+            value={params.get('groupId') ?? ''}
+            placeholder="UUID"
+            onChange={(value) => update('groupId', value)}
+          />
+          <FilterInput
+            label="필드"
+            value={params.get('field') ?? ''}
+            placeholder="status"
+            onChange={(value) => update('field', value)}
+          />
           <label>
             <span>소스</span>
-            <select value={params.get('source') ?? ''} onChange={(event) => update('source', event.target.value)}>
+            <select
+              value={params.get('source') ?? ''}
+              onChange={(event) => update('source', event.target.value)}
+            >
               <option value="">전체</option>
-              {['CUSTOMER_PORTAL', 'AGENT_UI', 'ADMIN_UI', 'PLATFORM_API', 'TRIGGER', 'AUTOMATION', 'SYSTEM_JOB'].map((source) => (
-                <option key={source} value={source}>{source}</option>
+              {[
+                'CUSTOMER_PORTAL',
+                'AGENT_UI',
+                'ADMIN_UI',
+                'PLATFORM_API',
+                'TRIGGER',
+                'AUTOMATION',
+                'SYSTEM_JOB',
+              ].map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
               ))}
             </select>
           </label>
-          <FilterInput label="요청 ID" value={params.get('requestId') ?? ''} onChange={(value) => update('requestId', value)} />
-          <FilterInput label="상관 ID" value={params.get('correlationId') ?? ''} onChange={(value) => update('correlationId', value)} />
-          <FilterInput label="검색 fingerprint" value={params.get('searchFingerprint') ?? ''} onChange={(value) => update('searchFingerprint', value)} />
+          <FilterInput
+            label="요청 ID"
+            value={params.get('requestId') ?? ''}
+            onChange={(value) => update('requestId', value)}
+          />
+          <FilterInput
+            label="상관 ID"
+            value={params.get('correlationId') ?? ''}
+            onChange={(value) => update('correlationId', value)}
+          />
+          <FilterInput
+            label="검색 fingerprint"
+            value={params.get('searchFingerprint') ?? ''}
+            onChange={(value) => update('searchFingerprint', value)}
+          />
         </div>
       </details>
     </section>
@@ -357,19 +442,53 @@ function AuditActivityTable({
         </thead>
         <tbody>
           {items.map((activity) => (
-            <tr key={activity.id} className={selectedId === activity.id ? 'is-selected' : undefined}>
-              <td><time dateTime={activity.occurredAt}>{formatTime(activity.occurredAt)}</time></td>
-              <td><span className={`audit-ledger ledger-${activity.ledger.toLowerCase()}`}>{shortLedger(activity.ledger)}</span></td>
-              <td><strong>{activity.actor.displayName}</strong><small>{activity.actor.type}</small></td>
+            <tr
+              key={activity.id}
+              className={selectedId === activity.id ? 'is-selected' : undefined}
+            >
               <td>
-                <button className="audit-activity-button" type="button" onClick={() => onSelect(activity.id)}>
+                <time dateTime={activity.occurredAt}>
+                  {formatTime(activity.occurredAt)}
+                </time>
+              </td>
+              <td>
+                <span
+                  className={`audit-ledger ledger-${activity.ledger.toLowerCase()}`}
+                >
+                  {shortLedger(activity.ledger)}
+                </span>
+              </td>
+              <td>
+                <strong>{activity.actor.displayName}</strong>
+                <small>{activity.actor.type}</small>
+              </td>
+              <td>
+                <button
+                  className="audit-activity-button"
+                  type="button"
+                  onClick={() => onSelect(activity.id)}
+                >
                   {activity.action}
                 </button>
                 <small>{activity.source}</small>
               </td>
-              <td>{activity.ticketNumber ? `#${activity.ticketNumber}` : activity.resourceType ?? '—'}{activity.field ? <small>field: {activity.field}</small> : null}</td>
-              <td><span className={`audit-outcome outcome-${activity.outcome.toLowerCase()}`}>{activity.outcome}</span></td>
-              <td className="audit-id-cell"><code>{compactId(activity.requestId)}</code><small>{compactId(activity.correlationId)}</small></td>
+              <td>
+                {activity.ticketNumber
+                  ? `#${activity.ticketNumber}`
+                  : (activity.resourceType ?? '—')}
+                {activity.field ? <small>field: {activity.field}</small> : null}
+              </td>
+              <td>
+                <span
+                  className={`audit-outcome outcome-${activity.outcome.toLowerCase()}`}
+                >
+                  {activity.outcome}
+                </span>
+              </td>
+              <td className="audit-id-cell">
+                <code>{compactId(activity.requestId)}</code>
+                <small>{compactId(activity.correlationId)}</small>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -383,11 +502,19 @@ function AuditListError({ error, retry }: { error: Error; retry: () => void }) {
   return (
     <ScreenState
       kind={apiError?.status === 403 ? 'denied' : 'error'}
-      title={apiError?.status === 403 ? '감사 활동을 조회할 권한이 없습니다.' : '감사 활동을 불러오지 못했습니다.'}
+      title={
+        apiError?.status === 403
+          ? '감사 활동을 조회할 권한이 없습니다.'
+          : '감사 활동을 불러오지 못했습니다.'
+      }
       description="Canonical self-audit 저장 또는 projection 상태를 확인한 뒤 다시 시도하세요."
       requestId={apiError?.requestId}
       className="queue-state"
-      action={<button className="compact-button" type="button" onClick={retry}>다시 시도</button>}
+      action={
+        <button className="compact-button" type="button" onClick={retry}>
+          다시 시도
+        </button>
+      }
     />
   )
 }
@@ -399,18 +526,30 @@ function filtersFrom(params: URLSearchParams): AuditActivityFilters {
   return {
     ...(from ? { from: `${from}T00:00:00.000Z` } : {}),
     ...(to ? { to: `${to}T23:59:59.999Z` } : {}),
-    ...(params.get('ledger') ? { ledger: params.get('ledger') as AuditLedgerType } : {}),
+    ...(params.get('ledger')
+      ? { ledger: params.get('ledger') as AuditLedgerType }
+      : {}),
     ...(params.get('action') ? { action: params.get('action')! } : {}),
-    ...(params.get('actorType') ? { actorType: params.get('actorType') as AuditActivity['actor']['type'] } : {}),
+    ...(params.get('actorType')
+      ? { actorType: params.get('actorType') as AuditActivity['actor']['type'] }
+      : {}),
     ...(params.get('actorId') ? { actorId: params.get('actorId')! } : {}),
-    ...(Number.isSafeInteger(ticketNumber) && ticketNumber > 0 ? { ticketNumber } : {}),
+    ...(Number.isSafeInteger(ticketNumber) && ticketNumber > 0
+      ? { ticketNumber }
+      : {}),
     ...(params.get('groupId') ? { groupId: params.get('groupId')! } : {}),
     ...(params.get('field') ? { field: params.get('field')! } : {}),
     ...(params.get('source') ? { source: params.get('source')! } : {}),
-    ...(params.get('outcome') ? { outcome: params.get('outcome') as AuditOutcome } : {}),
+    ...(params.get('outcome')
+      ? { outcome: params.get('outcome') as AuditOutcome }
+      : {}),
     ...(params.get('requestId') ? { requestId: params.get('requestId')! } : {}),
-    ...(params.get('correlationId') ? { correlationId: params.get('correlationId')! } : {}),
-    ...(params.get('searchFingerprint') ? { searchFingerprint: params.get('searchFingerprint')! } : {}),
+    ...(params.get('correlationId')
+      ? { correlationId: params.get('correlationId')! }
+      : {}),
+    ...(params.get('searchFingerprint')
+      ? { searchFingerprint: params.get('searchFingerprint')! }
+      : {}),
   }
 }
 

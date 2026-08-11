@@ -93,7 +93,9 @@ export function AuditExportDialog({
               value={format}
               disabled={mutation.isPending}
               onChange={(event) =>
-                setFormat(event.target.value as CreateAuditExportInput['format'])
+                setFormat(
+                  event.target.value as CreateAuditExportInput['format'],
+                )
               }
             >
               <option value="CSV">CSV</option>
@@ -134,7 +136,9 @@ export function AuditExportDialog({
               className="button primary"
               type="submit"
               aria-busy={mutation.isPending}
-              disabled={!reason.trim() || fields.length === 0 || mutation.isPending}
+              disabled={
+                !reason.trim() || fields.length === 0 || mutation.isPending
+              }
             >
               {mutation.isPending ? '요청 저장 중…' : 'Export 요청 저장'}
             </button>

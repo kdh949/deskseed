@@ -89,7 +89,10 @@ function auditFetch() {
         ],
       })
     }
-    if (path === '/api/v1/audit/activities' && (!init?.method || init.method === 'GET')) {
+    if (
+      path === '/api/v1/audit/activities' &&
+      (!init?.method || init.method === 'GET')
+    ) {
       expect(new Headers(init?.headers).get('X-Interaction-Id')).toMatch(
         /^[0-9a-f-]{36}$/,
       )
@@ -178,10 +181,14 @@ describe('AuditExplorerPage', () => {
     const changeButton = await screen.findByRole('button', {
       name: 'STATUS_CHANGED',
     })
-    expect(screen.queryByText('alice@example.com priority:urgent')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('alice@example.com priority:urgent'),
+    ).not.toBeInTheDocument()
     await user.click(changeButton)
 
-    expect(await screen.findByRole('dialog', { name: '활동 상세' })).toBeVisible()
+    expect(
+      await screen.findByRole('dialog', { name: '활동 상세' }),
+    ).toBeVisible()
     expect(screen.getByText('OPEN')).toBeVisible()
     expect(screen.getByText('PENDING')).toBeVisible()
     expect(screen.queryByText('private comment body')).not.toBeInTheDocument()
@@ -226,18 +233,20 @@ describe('AuditExplorerPage', () => {
     const baseFetch = auditFetch()
     let detailCalls = 0
     let releaseSecondDetail: (() => void) | undefined
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = new URL(String(input), 'http://deskseed.test').pathname
-      if (path === `/api/v1/audit/activities/${CHANGE_ID}`) {
-        detailCalls += 1
-        if (detailCalls === 2) {
-          await new Promise<void>((resolve) => {
-            releaseSecondDetail = resolve
-          })
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(input), 'http://deskseed.test').pathname
+        if (path === `/api/v1/audit/activities/${CHANGE_ID}`) {
+          detailCalls += 1
+          if (detailCalls === 2) {
+            await new Promise<void>((resolve) => {
+              releaseSecondDetail = resolve
+            })
+          }
         }
-      }
-      return baseFetch(input, init)
-    })
+        return baseFetch(input, init)
+      },
+    )
     renderExplorer(fetchMock)
 
     await user.click(
@@ -251,7 +260,9 @@ describe('AuditExplorerPage', () => {
     expect(screen.queryByText('OPEN')).not.toBeInTheDocument()
     const detailInteractions = fetchMock.mock.calls
       .filter(([input]) =>
-        new URL(String(input), 'http://deskseed.test').pathname.endsWith(CHANGE_ID),
+        new URL(String(input), 'http://deskseed.test').pathname.endsWith(
+          CHANGE_ID,
+        ),
       )
       .map(([, init]) => new Headers(init?.headers).get('X-Interaction-Id'))
     expect(new Set(detailInteractions).size).toBe(2)
@@ -264,6 +275,9 @@ describe('AuditExplorerPage', () => {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    },
   })
 }

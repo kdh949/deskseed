@@ -92,7 +92,11 @@ export function AuditDetailDrawer({
         </header>
         <div className="audit-drawer-body">
           {detail.isPending ? (
-            <ScreenState compact kind="loading" title="활동 상세를 불러오는 중입니다." />
+            <ScreenState
+              compact
+              kind="loading"
+              title="활동 상세를 불러오는 중입니다."
+            />
           ) : null}
           {detail.isError ? (
             <DetailError error={detail.error} retry={() => detail.refetch()} />
@@ -127,29 +131,47 @@ function AuditDetailContent({
     <>
       <section className="audit-detail-section">
         <div className="audit-detail-heading">
-          <span className={`audit-ledger ledger-${detail.ledger.toLowerCase()}`}>
+          <span
+            className={`audit-ledger ledger-${detail.ledger.toLowerCase()}`}
+          >
             {ledgerLabel(detail.ledger)}
           </span>
-          <span className={`audit-outcome outcome-${detail.outcome.toLowerCase()}`}>
+          <span
+            className={`audit-outcome outcome-${detail.outcome.toLowerCase()}`}
+          >
             {detail.outcome}
           </span>
         </div>
         <h3>{detail.action}</h3>
         <p>{detail.summary}</p>
         <dl className="audit-detail-grid">
-          <DetailTerm label="발생 시각" value={formatDateTime(detail.occurredAt)} />
+          <DetailTerm
+            label="발생 시각"
+            value={formatDateTime(detail.occurredAt)}
+          />
           <DetailTerm
             label="행위자"
             value={`${detail.actor.displayName} · ${detail.actor.type}`}
           />
           <DetailTerm label="원본 event" value={detail.canonicalEventId} mono />
-          <DetailTerm label="원본 parent" value={detail.canonicalParentId} mono />
-          <DetailTerm label="티켓" value={detail.ticketNumber ? `#${detail.ticketNumber}` : null} />
+          <DetailTerm
+            label="원본 parent"
+            value={detail.canonicalParentId}
+            mono
+          />
+          <DetailTerm
+            label="티켓"
+            value={detail.ticketNumber ? `#${detail.ticketNumber}` : null}
+          />
           <DetailTerm label="소스" value={detail.source} />
           <DetailTerm label="요청 ID" value={detail.requestId} mono />
           <DetailTerm label="상관 ID" value={detail.correlationId} mono />
           <DetailTerm label="interaction" value={detail.interactionId} mono />
-          <DetailTerm label="session fingerprint" value={detail.sessionFingerprint} mono />
+          <DetailTerm
+            label="session fingerprint"
+            value={detail.sessionFingerprint}
+            mono
+          />
           <DetailTerm label="인증 방식" value={detail.authType} />
           <DetailTerm label="IP" value={detail.ipAddress} mono />
           <DetailTerm label="User agent" value={detail.userAgent} />
@@ -157,7 +179,10 @@ function AuditDetailContent({
       </section>
 
       {detail.fieldChange ? (
-        <section className="audit-detail-section" aria-labelledby="field-change-title">
+        <section
+          className="audit-detail-section"
+          aria-labelledby="field-change-title"
+        >
           <h3 id="field-change-title">{detail.fieldChange.field} 변경</h3>
           <div className="audit-diff-grid">
             <div>
@@ -186,7 +211,12 @@ function AuditDetailContent({
           <h3>허용된 metadata</h3>
           <dl className="audit-metadata-list">
             {Object.entries(detail.metadata).map(([key, value]) => (
-              <DetailTerm key={key} label={key} value={displayValue(value)} mono />
+              <DetailTerm
+                key={key}
+                label={key}
+                value={displayValue(value)}
+                mono
+              />
             ))}
           </dl>
         </section>
@@ -239,7 +269,10 @@ function SearchInvestigation({
   }
 
   return (
-    <section className="audit-detail-section" aria-labelledby="search-context-title">
+    <section
+      className="audit-detail-section"
+      aria-labelledby="search-context-title"
+    >
       <h3 id="search-context-title">검색 조사 경로</h3>
       <dl className="audit-detail-grid">
         <DetailTerm label="redacted query" value={search.queryRedacted} />
@@ -322,7 +355,10 @@ function SearchInvestigation({
           ) : null}
           {result && result.state !== 'AVAILABLE' ? (
             <Notification tone="warning" title={`원문 상태: ${result.state}`}>
-              <p>원문은 반환되지 않았습니다. Key version: {result.keyVersion ?? 'unknown'}</p>
+              <p>
+                원문은 반환되지 않았습니다. Key version:{' '}
+                {result.keyVersion ?? 'unknown'}
+              </p>
             </Notification>
           ) : null}
         </div>

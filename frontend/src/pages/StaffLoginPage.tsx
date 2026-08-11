@@ -56,10 +56,7 @@ export function StaffLoginPage() {
   }
   if (session.status === 'authenticated' && session.staff) {
     return (
-      <Navigate
-        to={safeDestination(undefined, session.staff.role)}
-        replace
-      />
+      <Navigate to={safeDestination(undefined, session.staff.role)} replace />
     )
   }
 

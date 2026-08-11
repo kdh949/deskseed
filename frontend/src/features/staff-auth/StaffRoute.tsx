@@ -121,7 +121,9 @@ export function AuditRoute() {
           action={
             <Link
               className="button primary"
-              to={session.staff?.role === 'ADMIN' ? '/admin/staff' : '/agent/home'}
+              to={
+                session.staff?.role === 'ADMIN' ? '/admin/staff' : '/agent/home'
+              }
             >
               허용된 작업 공간으로 이동
             </Link>
