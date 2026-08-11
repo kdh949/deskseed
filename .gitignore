@@ -23,3 +23,4 @@ Thumbs.db
 
 # Local data
 .postgres-data/
+backend/.gradle-user-home/
