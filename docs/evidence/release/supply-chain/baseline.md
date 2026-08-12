@@ -183,6 +183,26 @@ evidence, not a registry freshness or provenance-attestation claim.
 
 ## Container CVE and SBOM baseline
 
+### Final follow-up build and egress boundary
+
+The PR #22 final source at `10fdfeb9946fc1a81dae749e1781a8fac8d4047d`
+was exported with `git archive` to an isolated temporary tree and rebuilt with `--pull
+--no-cache`. The Docker client used a mode-0600 `{ "auths": {} }` configuration, the
+validated local Docker Desktop socket, pinned Buildx/Scout plugins and
+`OTEL_SDK_DISABLED=true`; the preexisting user Docker config remained byte-identical.
+
+| Image | Exact image ID | Size | Revision label |
+|---|---|---:|---|
+| Backend | `sha256:bf4887022a09ce044b96eb3b99d499511ce3cda711a0b5e96e3190f10a926d44` | 136,891,183 B | `10fdfeb9946fc1a81dae749e1781a8fac8d4047d` |
+| Frontend | `sha256:c88351342d9daf6eec19a20d6a32b6d160f8962f543606d2a8a5c99a5a4a6ef9` | 26,107,956 B | `10fdfeb9946fc1a81dae749e1781a8fac8d4047d` |
+
+Docker Scout 1.24 was available, but its CVE/SBOM analysis can transmit image package
+metadata to Docker's external service. That egress was not owner-authorized, so the four
+Scout commands were **NOT RUN** on these images; this is not a zero-vulnerability or SBOM
+claim. No installed local-only Trivy, Grype or Syft alternative was available. Both exact
+image IDs/tags and all temporary source/config paths were removed and verified absent.
+The container CVE/SPDX verdict therefore remains `UNKNOWN`.
+
 The final operations images were deliberately deleted after exact cleanup. To rerun Scout,
 start from a clean checkout of the exact release commit, build new scan-only tags, capture
 their IDs/revision labels, and then scan those tags rather than any older local tag:
