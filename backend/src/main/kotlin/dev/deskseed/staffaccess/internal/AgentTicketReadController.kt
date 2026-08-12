@@ -124,11 +124,13 @@ internal class AgentTicketReadController(
                         },
                     ),
                     context = TicketContextResponse(
-                        customer = TicketCustomerResponse(
-                            id = workspace.detail.customer.id,
-                            displayName = workspace.detail.customer.displayName,
-                            email = workspace.detail.customer.email,
-                        ),
+                        customer = workspace.detail.customer?.let {
+                            TicketCustomerResponse(
+                                id = it.id,
+                                displayName = it.displayName,
+                                email = it.email,
+                            )
+                        },
                         parent = workspace.detail.parent?.let(::ticketResponse),
                         children = workspace.detail.children.map(::ticketResponse),
                         externalReferences = emptyList(),
@@ -322,7 +324,7 @@ internal data class AgentCommentResponse(
 internal data class TicketCustomerResponse(val id: UUID, val displayName: String, val email: String)
 
 internal data class TicketContextResponse(
-    val customer: TicketCustomerResponse,
+    val customer: TicketCustomerResponse?,
     val parent: TicketSummaryResponse?,
     val children: List<TicketSummaryResponse>,
     val externalReferences: List<Any>,

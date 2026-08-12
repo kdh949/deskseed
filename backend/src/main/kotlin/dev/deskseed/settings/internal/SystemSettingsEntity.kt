@@ -7,6 +7,7 @@ import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.time.Instant
 
 @Entity
@@ -21,6 +22,10 @@ internal class SystemSettingsEntity(
 
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.EPOCH,
+
+    @Version
+    @Column(name = "version", nullable = false)
+    var version: Long = 0,
 ) {
     companion object {
         const val SINGLETON_ID: Int = 1

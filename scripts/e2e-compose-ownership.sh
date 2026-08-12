@@ -56,6 +56,9 @@ e2e_initialize_resource_identity() {
     printf '  db:\n'
     printf '    labels:\n'
     printf '      "%s": "%s"\n' "$e2e_resource_owner_label_key" "$e2e_run_marker"
+    printf '  mailpit:\n'
+    printf '    labels:\n'
+    printf '      "%s": "%s"\n' "$e2e_resource_owner_label_key" "$e2e_run_marker"
     for service in backend frontend; do
       local image_name="$e2e_backend_image"
       [[ "$service" == frontend ]] && image_name="$e2e_frontend_image"
@@ -101,7 +104,7 @@ e2e_assert_resource_names_absent() {
     return 1
   }
 
-  for service in db backend frontend; do
+  for service in db mailpit backend frontend; do
     for expected_name in "${e2e_project}-${service}-1" "${e2e_project}_${service}_1"; do
       if docker container inspect "$expected_name" >/dev/null 2>&1; then
         printf 'Preflight found a preexisting container named %s; it will not be touched.\n' "$expected_name" >&2
@@ -371,15 +374,15 @@ e2e_assert_expected_stack_captured() {
   local image_id
 
   [[ "$e2e_resources_captured" == true ]] || return 1
-  [[ "${#e2e_owned_container_records[@]}" -eq 3 \
+  [[ "${#e2e_owned_container_records[@]}" -eq 4 \
     && "${#e2e_owned_network_records[@]}" -eq 1 \
     && "${#e2e_owned_volume_records[@]}" -eq 1 \
     && "${#e2e_owned_image_ids[@]}" -eq 2 ]] || {
-    printf 'Captured E2E resource cardinality did not match the three-service stack.\n' >&2
+    printf 'Captured E2E resource cardinality did not match the four-service stack.\n' >&2
     return 1
   }
 
-  for service in db backend frontend; do
+  for service in db mailpit backend frontend; do
     modern_name="${e2e_project}-${service}-1"
     legacy_name="${e2e_project}_${service}_1"
     found=false

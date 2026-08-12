@@ -13,6 +13,7 @@
 -- external_systems, external_references
 -- idempotency_records
 -- outbox_events, webhook_endpoints, webhook_deliveries, webhook_attempts
+-- outbound_mail_intents, outbound_mail_attempts, outbound_mail_delivery_events (implemented by Flyway V18)
 -- system_settings
 -- later: SLA, analytics, triggers, attachments, channel delivery
 

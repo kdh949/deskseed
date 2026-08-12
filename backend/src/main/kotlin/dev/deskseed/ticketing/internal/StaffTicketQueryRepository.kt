@@ -26,6 +26,7 @@ import org.springframework.stereotype.Repository
 import java.time.Clock
 import java.time.Instant
 import java.sql.Timestamp
+import java.sql.ResultSet
 import java.util.UUID
 
 @Repository
@@ -131,7 +132,7 @@ internal class StaffTicketQueryRepository(
                    fact.target_minutes as sla_target_minutes, fact.policy_version as sla_policy_version,
                    fact.schedule_version as sla_schedule_version
             from tickets t
-            join customers c on c.id = t.requester_id
+            left join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
             left join analytics_first_reply_facts fact on fact.ticket_id = t.id
@@ -147,11 +148,7 @@ internal class StaffTicketQueryRepository(
                 subject = result.getString("subject"),
                 status = TicketStatus.valueOf(result.getString("status")),
                 priority = TicketPriority.valueOf(result.getString("priority")),
-                requester = StaffActorSummary(
-                    id = result.getObject("customer_id", UUID::class.java),
-                    type = "CUSTOMER",
-                    displayName = result.getString("customer_name"),
-                ),
+                requester = requesterSummary(result),
                 group = result.getObject("group_id", UUID::class.java)?.let {
                     StaffGroupReference(it, result.getString("group_name"))
                 },
@@ -231,7 +228,7 @@ internal class StaffTicketQueryRepository(
         val whereClause = conditions.joinToString("\n  and ")
         val fromClause = """
             from tickets t
-            join customers c on c.id = t.requester_id
+            left join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
             left join analytics_first_reply_facts fact on fact.ticket_id = t.id
@@ -271,11 +268,7 @@ internal class StaffTicketQueryRepository(
                 subject = result.getString("subject"),
                 status = TicketStatus.valueOf(result.getString("status")),
                 priority = TicketPriority.valueOf(result.getString("priority")),
-                requester = StaffActorSummary(
-                    id = result.getObject("customer_id", UUID::class.java),
-                    type = "CUSTOMER",
-                    displayName = result.getString("customer_name"),
-                ),
+                requester = requesterSummary(result),
                 group = result.getObject("group_id", UUID::class.java)?.let {
                     StaffGroupReference(it, result.getString("group_name"))
                 },
@@ -327,7 +320,7 @@ internal class StaffTicketQueryRepository(
                    rg.id as related_group_id, rg.name as related_group_name,
                    rs.id as related_assignee_id, rs.display_name as related_assignee_name
             from tickets t
-            join customers c on c.id = t.requester_id
+            left join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
             left join analytics_first_reply_facts fact on fact.ticket_id = t.id
@@ -359,7 +352,7 @@ internal class StaffTicketQueryRepository(
                     subject = result.getString("subject"),
                     status = TicketStatus.valueOf(result.getString("status")),
                     priority = TicketPriority.valueOf(result.getString("priority")),
-                    requester = StaffActorSummary(customerId, "CUSTOMER", result.getString("customer_name")),
+                    requester = requesterSummary(result),
                     group = result.getObject("group_id", UUID::class.java)?.let {
                         StaffGroupReference(it, result.getString("group_name"))
                     },
@@ -372,11 +365,13 @@ internal class StaffTicketQueryRepository(
                     openChildCount = result.getInt("open_child_count"),
                     sla = slaBadge(result, result.getString("kind"), now, riskAt),
                 ),
-                customer = StaffTicketCustomer(
-                    id = customerId,
-                    displayName = result.getString("customer_name"),
-                    email = result.getString("email_display"),
-                ),
+                customer = customerId?.let {
+                    StaffTicketCustomer(
+                        id = it,
+                        displayName = result.getString("customer_name"),
+                        email = result.getString("email_display"),
+                    )
+                },
                 related = result.getString("related_direction")?.let { direction ->
                     RelatedTicketRow(
                         direction = direction,
@@ -386,11 +381,7 @@ internal class StaffTicketQueryRepository(
                             subject = result.getString("related_subject"),
                             status = TicketStatus.valueOf(result.getString("related_status")),
                             priority = TicketPriority.valueOf(result.getString("related_priority")),
-                            requester = StaffActorSummary(
-                                result.getObject("related_customer_id", UUID::class.java),
-                                "CUSTOMER",
-                                result.getString("related_customer_name"),
-                            ),
+                            requester = requesterSummary(result, "related_customer_id", "related_customer_name"),
                             group = result.getObject("related_group_id", UUID::class.java)?.let {
                                 StaffGroupReference(it, result.getString("related_group_name"))
                             },
@@ -413,7 +404,11 @@ internal class StaffTicketQueryRepository(
             """
             select tc.id, tc.visibility, tc.author_type, tc.author_id, tc.body, tc.created_at,
                    coalesce(c.name, s.display_name,
-                       case tc.author_type when 'SYSTEM' then 'Deskseed' else '자동화' end) as actor_name
+                       case tc.author_type
+                           when 'SYSTEM' then 'Deskseed'
+                           when 'INTEGRATION_CLIENT' then 'IntegrationClient'
+                           else '자동화'
+                       end) as actor_name
             from ticket_comments tc
             left join customers c on tc.author_type = 'CUSTOMER' and c.id = tc.author_id
             left join staff_accounts s on tc.author_type = 'AGENT' and s.id = tc.author_id
@@ -436,6 +431,7 @@ internal class StaffTicketQueryRepository(
                 source = when (authorType) {
                     "CUSTOMER" -> "WEB"
                     "AGENT" -> "AGENT_UI"
+                    "INTEGRATION_CLIENT" -> "PLATFORM_API"
                     else -> authorType
                 },
             )
@@ -516,9 +512,22 @@ internal class StaffTicketQueryRepository(
 
     private data class DetailRow(
         val summary: StaffTicketSummary,
-        val customer: StaffTicketCustomer,
+        val customer: StaffTicketCustomer?,
         val related: RelatedTicketRow?,
     )
+
+    private fun requesterSummary(
+        result: ResultSet,
+        idColumn: String = "customer_id",
+        nameColumn: String = "customer_name",
+    ): StaffActorSummary {
+        val customerId = result.getObject(idColumn, UUID::class.java)
+        return if (customerId == null) {
+            StaffActorSummary(null, "INTEGRATION_CLIENT", "내부 작업")
+        } else {
+            StaffActorSummary(customerId, "CUSTOMER", result.getString(nameColumn))
+        }
+    }
 
     private data class RelatedTicketRow(
         val direction: String,

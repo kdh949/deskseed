@@ -1,7 +1,7 @@
 # First Reply SLA query-plan evidence
 
 - Date: 2026-08-12 (Asia/Seoul)
-- PostgreSQL: 17-alpine, disposable Docker Compose database with Flyway V1–V19
+- PostgreSQL: 17-alpine, disposable Docker Compose database with Flyway V1–V25
 - Fixture: one synthetic active First Reply target and its reconciled analytics fact
 - Scope: plan shape and index selection only; this is not release-scale latency evidence
 
@@ -53,7 +53,7 @@ row-by-row policy or schedule lookup to the ticket workspace.
 
 ## Limitation
 
-The million-ticket release performance fixture predates V19 and was not regenerated in
+The million-ticket release performance fixture predates the First Reply SLA slice and was not regenerated in
 this vertical slice. Before production-scale approval, add SLA fact cardinality to that
 fixture and record warm-cache p95 plus `EXPLAIN (ANALYZE, BUFFERS)` for the exact SLA
 filtered Views and analytics queries.

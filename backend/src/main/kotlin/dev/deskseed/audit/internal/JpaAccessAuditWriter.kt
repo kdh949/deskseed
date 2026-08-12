@@ -22,7 +22,7 @@ internal class JpaAccessAuditWriter(
 ) : AccessAuditWriter {
     @Transactional(propagation = Propagation.MANDATORY)
     override fun appendTicketResourceRead(event: TicketResourceReadAccessAudit) {
-        validateStaffContext(event.context)
+        validateResourceReadContext(event.context)
         jdbcTemplate.update(
             """
             insert into access_audit_events (
@@ -241,13 +241,29 @@ internal class JpaAccessAuditWriter(
         }
     }
 
+    private fun validateResourceReadContext(context: AccessAuditContext) {
+        if (context.actorType == ActorType.INTEGRATION_CLIENT) {
+            require(context.source == RequestSource.PLATFORM_API) {
+                "Integration resource read audit requires PLATFORM_API source"
+            }
+            require(context.authType == dev.deskseed.audit.AccessAuditAuthType.API_KEY) {
+                "Integration resource read audit requires API_KEY authentication"
+            }
+            require(context.sessionFingerprint == null) {
+                "Integration resource read audit cannot contain a staff session fingerprint"
+            }
+            return
+        }
+        validateStaffContext(context)
+    }
+
     private fun sanitize(value: String?, maxLength: Int): String? = value
         ?.filterNot { it.isISOControl() }
         ?.take(maxLength)
 
     private fun actorSnapshot(value: String): String = sanitize(value, 100)
-        ?.ifBlank { "STAFF" }
-        ?: "STAFF"
+        ?.ifBlank { "ACTOR" }
+        ?: "ACTOR"
 
     private fun filtersJson(filters: Map<String, String>): String = filters.entries
         .sortedBy(Map.Entry<String, String>::key)

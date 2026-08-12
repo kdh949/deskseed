@@ -58,6 +58,19 @@ export type StaffStatus = 'ACTIVE' | 'DISABLED'
 export type GrantableAuditAuthority =
   'AUDIT_SEARCH_QUERY_REVEAL' | 'AUDIT_EXPORT' | 'AUDIT_PROJECTION_REBUILD'
 export type OrganizationStatus = 'ACTIVE' | 'DISABLED'
+export type CustomerAccessMode =
+  'ANONYMOUS_ALLOWED' | 'REGISTRATION_OPTIONAL' | 'REGISTRATION_REQUIRED'
+
+export interface CustomerAccessModeSetting {
+  mode: CustomerAccessMode
+  version: number
+  updatedAt: string
+}
+
+export interface UpdateCustomerAccessModeInput {
+  mode: CustomerAccessMode
+  expectedVersion: number
+}
 
 export interface CurrentStaff {
   id: string
@@ -258,6 +271,144 @@ export interface CreateStaffInput {
   password: string
 }
 
+export type IntegrationScope =
+  | 'tickets:create'
+  | 'tickets:read'
+  | 'tickets:update'
+  | 'tickets:comment:internal'
+export type IntegrationClientStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED'
+export type IntegrationCredentialStatus =
+  'ACTIVE' | 'RETIRING' | 'EXPIRED' | 'REVOKED'
+export type IntegrationTicketKind = 'CUSTOMER_REQUEST' | 'INTERNAL_TASK'
+export type IntegrationTicketField =
+  'status' | 'priority' | 'groupId' | 'assigneeId'
+
+export interface IntegrationResourceConstraints {
+  allowedGroupIds: string[] | null
+  allowedTicketKinds: IntegrationTicketKind[] | null
+  allowedFields: IntegrationTicketField[] | null
+  ipAllowlist: string[] | null
+}
+
+export interface IntegrationCredential {
+  id: string
+  sequence: number
+  publicKeyId: string
+  status: IntegrationCredentialStatus
+  expiresAt: string
+  overlapExpiresAt: string | null
+  createdAt: string
+  revokedAt: string | null
+  lastUsedAt: string | null
+  lastUsedIp: string | null
+}
+
+export interface IntegrationClient {
+  id: string
+  name: string
+  description: string
+  status: IntegrationClientStatus
+  scopes: IntegrationScope[]
+  resourceConstraints: IntegrationResourceConstraints
+  credentials: IntegrationCredential[]
+  expiresAt: string | null
+  lastUsedAt: string | null
+  lastUsedIp: string | null
+  createdAt: string
+}
+
+export interface CreateIntegrationClientInput {
+  name: string
+  description: string
+  scopes: IntegrationScope[]
+  resourceConstraints: {
+    allowedGroupIds?: string[]
+    allowedTicketKinds?: IntegrationTicketKind[]
+    allowedFields?: IntegrationTicketField[]
+    ipAllowlist?: string[]
+  }
+  expiresAt: string
+}
+
+export interface RotateIntegrationCredentialInput {
+  expiresAt: string
+  overlapSeconds: number
+}
+
+export interface IntegrationCredentialIssue {
+  client: IntegrationClient
+  credential: IntegrationCredential
+  apiKey: string
+}
+
+export type ExternalSystemStatus = 'ACTIVE' | 'DISABLED'
+export type ExternalObjectType =
+  'ORDER' | 'PAYMENT' | 'REFUND' | 'USER' | 'STORE' | 'OPS_CASE' | 'CUSTOM'
+export type ExternalReferenceLinkState =
+  'AVAILABLE' | 'SYSTEM_DISABLED' | 'HOST_NOT_ALLOWED'
+export type ExternalMetadataValue = string | number | boolean
+
+export interface ExternalSystem {
+  id: string
+  systemKey: string
+  displayName: string
+  status: ExternalSystemStatus
+  allowedHostnames: string[]
+  createdAt: string
+  updatedAt: string
+  version: number
+}
+
+export interface ExternalReference {
+  id: string
+  system: ExternalSystem
+  objectType: ExternalObjectType
+  externalId: string
+  displayLabel: string
+  linkState: ExternalReferenceLinkState
+  safeDeepLink: string | null
+  metadata: Record<string, ExternalMetadataValue>
+  metadataObservedAt: string
+  createdBy: { actorId: string; displayName: string }
+  createdAt: string
+}
+
+export interface ExternalReferenceContext {
+  ticketVersion: number
+  canManage: boolean
+  availableSystems: ExternalSystem[]
+  items: ExternalReference[]
+}
+
+export interface CreateExternalSystemInput {
+  systemKey: string
+  displayName: string
+  allowedHostnames: string[]
+}
+
+export interface UpdateExternalSystemInput {
+  displayName: string
+  status: ExternalSystemStatus
+  allowedHostnames: string[]
+  expectedVersion: number
+}
+
+export interface CreateExternalReferenceInput {
+  externalSystemId: string
+  objectType: ExternalObjectType
+  externalId: string
+  displayLabel: string
+  safeDeepLink: string
+  metadata: Record<string, ExternalMetadataValue>
+  metadataObservedAt: string
+  expectedVersion: number
+}
+
+export interface ExternalReferenceCommandResult {
+  ticketVersion: number
+  reference: ExternalReference
+}
+
 export interface SavedAgentView {
   key: string
   name: string
@@ -357,7 +508,7 @@ export interface AgentTicketDetail {
   capabilities: string[]
   assignmentOptions: TicketAssignmentOptions
   context: {
-    customer: TicketCustomerContext
+    customer: TicketCustomerContext | null
     parent: AgentTicketSummary | null
     children: AgentTicketSummary[]
     externalReferences: unknown[]

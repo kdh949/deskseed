@@ -5,9 +5,10 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RequestAccessProvider } from '../features/customer-requests/RequestAccessContext'
 import { RequestSubmissionProvider } from '../features/customer-requests/RequestSubmissionContext'
+import { CustomerSessionProvider } from '../features/customer-auth/CustomerSessionContext'
 import { NewRequestPage } from './NewRequestPage'
 
-function renderPage() {
+function renderPage(withCustomerSession = false) {
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false } },
   })
@@ -15,13 +16,20 @@ function renderPage() {
     [{ path: '/requests/new', element: <NewRequestPage /> }],
     { initialEntries: ['/requests/new'] },
   )
+  const page = (
+    <RequestAccessProvider>
+      <RequestSubmissionProvider>
+        <RouterProvider router={router} />
+      </RequestSubmissionProvider>
+    </RequestAccessProvider>
+  )
   return render(
     <QueryClientProvider client={queryClient}>
-      <RequestAccessProvider>
-        <RequestSubmissionProvider>
-          <RouterProvider router={router} />
-        </RequestSubmissionProvider>
-      </RequestAccessProvider>
+      {withCustomerSession ? (
+        <CustomerSessionProvider>{page}</CustomerSessionProvider>
+      ) : (
+        page
+      )}
     </QueryClientProvider>,
   )
 }
@@ -41,6 +49,95 @@ afterEach(() => {
 })
 
 describe('NewRequestPage', () => {
+  it('uses authenticated identity and customer CSRF when registration is required', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/customer/me')) {
+        return new Response(
+          JSON.stringify({
+            id: 'customer-id',
+            email: 'account@example.com',
+            displayName: '계정 고객',
+            verifiedAt: '2026-08-10T00:00:00Z',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (url.endsWith('/api/v1/customer/access-mode')) {
+        return new Response(JSON.stringify({ mode: 'REGISTRATION_REQUIRED' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.endsWith('/api/v1/customer/csrf')) {
+        return new Response(JSON.stringify({ token: 'customer-csrf-token' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.endsWith('/api/v1/requests')) {
+        return new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            status: 'NEW',
+            accessToken: 'request-access-token-that-is-long-enough',
+            createdAt: '2026-08-10T00:00:00Z',
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderPage(true)
+
+    expect(await screen.findByLabelText(/이름 \(로그인 계정\)/)).toHaveValue(
+      '계정 고객',
+    )
+    expect(screen.getByLabelText(/이메일 \(로그인 계정\)/)).toHaveValue(
+      'account@example.com',
+    )
+    await user.type(screen.getByLabelText(/제목/), '인증 문의')
+    await user.type(screen.getByLabelText(/문의 내용/), '인증 고객 문의 본문')
+    await user.click(screen.getByRole('button', { name: '문의 접수' }))
+
+    await screen.findByText('문의 #1042')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/requests',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.objectContaining({
+          'X-CSRF-TOKEN': 'customer-csrf-token',
+        }),
+      }),
+    )
+  })
+
+  it('blocks an anonymous form when registration is required', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith('/api/v1/customer/me')
+          ? new Response(null, { status: 401 })
+          : new Response(JSON.stringify({ mode: 'REGISTRATION_REQUIRED' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+      ),
+    )
+    renderPage(true)
+
+    expect(
+      await screen.findByRole('heading', {
+        name: '로그인 후 문의를 접수할 수 있습니다.',
+      }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: '문의 접수' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('keeps keyboard focus on the next field after blur and focuses the summary on submit', async () => {
     const user = userEvent.setup()
     renderPage()

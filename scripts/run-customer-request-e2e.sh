@@ -11,6 +11,7 @@ e2e_work_dir="$(mktemp -d "$e2e_temp_root/deskseed-customer-e2e.XXXXXX")"
 chmod 700 "$e2e_work_dir"
 backend_port="${DESKSEED_E2E_BACKEND_PORT:-18080}"
 frontend_port="${DESKSEED_E2E_FRONTEND_PORT:-15173}"
+mailpit_port="${DESKSEED_E2E_MAILPIT_PORT:-18025}"
 admin_email="e2e-admin@deskseed.test"
 admin_password="Deskseed E2E admin 42!"
 admin_password_file="$e2e_work_dir/admin-password"
@@ -59,6 +60,7 @@ e2e_assert_resource_names_absent
 compose_up_status=0
 if DESKSEED_BACKEND_PORT="$backend_port" \
   DESKSEED_FRONTEND_PORT="$frontend_port" \
+  DESKSEED_MAILPIT_PORT="$mailpit_port" \
   DESKSEED_CORS_ALLOWED_ORIGINS="http://127.0.0.1:$frontend_port" \
   DESKSEED_BOOTSTRAP_ADMIN_ENABLED="true" \
   DESKSEED_BOOTSTRAP_ADMIN_EMAIL="$admin_email" \
@@ -92,7 +94,8 @@ fi
 stack_ready=false
 for _attempt in $(seq 1 60); do
   if curl --fail --silent "http://127.0.0.1:$backend_port/actuator/health" >/dev/null \
-    && curl --fail --silent "http://127.0.0.1:$frontend_port/" >/dev/null; then
+    && curl --fail --silent "http://127.0.0.1:$frontend_port/" >/dev/null \
+    && curl --fail --silent "http://127.0.0.1:$mailpit_port/readyz" >/dev/null; then
     stack_ready=true
     break
   fi
@@ -112,6 +115,7 @@ if ! PLAYWRIGHT_USE_EXISTING_SERVER=1 \
   DESKSEED_E2E_COMPOSE_PROJECT="$e2e_project" \
   DESKSEED_E2E_ADMIN_EMAIL="$admin_email" \
   DESKSEED_E2E_ADMIN_PASSWORD="$admin_password" \
+  DESKSEED_E2E_MAILPIT_URL="http://127.0.0.1:$mailpit_port" \
     npx playwright test customer-request.full-stack.spec.ts; then
   docker compose --project-name "$e2e_project" "${compose_files[@]}" \
     logs --no-color --tail 200 backend frontend

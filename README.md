@@ -15,6 +15,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 | 정합성 | 담당자/그룹 invariant, field-aware optimistic concurrency, same-field `409`과 draft 복구, 응답 유실 시 exact UpdateTicket command replay, transfer와 child-ticket 명령 분리, 열린 child 경고 후 parent solve 허용 |
 | 감사 | 한 command/한 `TicketAudit`과 ordered events, semantic `TICKET_VIEWED`, 검색→티켓 열람 연결, strict audit failure, 분리된 change/access/admin 원장과 재생성 가능한 Audit Explorer projection |
 | 감사자 화면 | 기본 routine activity 목록·상세, 명시적 영속 grant와 이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
+| Outbound mail 기반 | PostgreSQL intent/attempt outbox, PUBLIC 답변·접수 알림, retry/manual-retry seam, Mailpit 개발 SMTP/UI/API; production provider는 미선택 |
 | 배포·검증 | Docker Compose, Flyway, PostgreSQL Testcontainers, 실제 브라우저 E2E, visual/axe/keyboard suite, 설치·upgrade·backup·restore rehearsal, 성능 fixture/query-plan harness |
 
 핵심 데이터 규칙은 다음과 같다.
@@ -34,7 +35,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 
 | 범위 | 현재 상태 |
 | --- | --- |
-| 고객 계정, email ownership, magic link, My Requests, 익명 티켓 claim | 설계만 존재; 미구현 |
+| 고객 계정, email ownership, magic link token 발급/소비, My Requests, 익명 티켓 claim | mail template/outbox 기반만 구현; 인증 흐름 미구현 |
 | 고객 profile 상세 접근 감사 (`ACC-005`) | 미구현 |
 | Platform API, IntegrationClient, idempotency/ETag, ExternalReference, webhook, generated SDK (`ACC-006` 포함) | 계약·blueprint만 존재; runtime 미구현 |
 | Audit export artifact 생성·download·expiry·deletion (verification gate `AUD-004` 전체) | allowlisted request와 self-audit만 구현; artifact state는 `NOT_CREATED` |
@@ -83,6 +84,7 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 - Agent: `http://127.0.0.1:5173/agent/views/my-open`, `/agent/search`
 - Audit Explorer: `http://127.0.0.1:5173/audit/activity`
 - Backend health: `http://127.0.0.1:8080/actuator/health`
+- Mailpit 개발 UI/API: `http://127.0.0.1:8025` (backend SMTP target `mailpit:1025`)
 
 첫 로그인 후 bootstrap 환경 변수를 다시 주입하지 말고 backend를 재생성한 다음 임시 비밀번호 파일을 안전하게 삭제한다. 직원이 이미 있는 DB에서 bootstrap은 기존 계정을 변경하지 않는다.
 

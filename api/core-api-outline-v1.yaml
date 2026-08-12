@@ -53,6 +53,7 @@ tags:
 - name: Agent Tickets
 - name: Agent Search
 - name: Admin
+- name: Integration Admin
 - name: Audit
 - name: Customer Auth
 - name: Admin Schedule
@@ -60,13 +61,19 @@ tags:
 paths:
   /api/v1/requests:
     post:
-      summary: Submit an anonymous customer request
-      description: Each submission creates an isolated unverified customer; matching email input never merges or claims an earlier profile.
-      operationId: createAnonymousRequest
+      summary: Submit a customer request
+      description: >-
+        Anonymous submissions create an isolated unverified customer; matching email input never merges or claims an earlier profile.
+        When a valid customer session is present, the session customer becomes the requester and body name/email never override
+        authenticated identity. The configured customer access mode may reject anonymous submission. A one-time request access token
+        is returned in both modes for explicit ticket-scoped lookup or claim workflows and is revoked when ownership is claimed.
+      operationId: createCustomerRequest
       x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
-      security: []
+      security:
+      - {}
+      - customerSession: []
       x-deskseed-phase: M1
       x-deskseed-requirements:
       - REQ-TKT-001
@@ -85,6 +92,15 @@ paths:
               subject: 결제가 되지 않아요
               message: 결제 버튼을 누르면 오류가 발생합니다.
               privacyConsent: true
+      parameters:
+      - name: X-CSRF-TOKEN
+        in: header
+        required: false
+        description: Required only when the optional customer session authenticates the request; obtained from `getCustomerCsrfToken`.
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 256
       x-deskseed-generic-problem: &id001
         description: RFC 9457 Problem Details
         content:
@@ -112,10 +128,6 @@ paths:
               description: Customer-safe request URL; the access token is not embedded.
               schema:
                 type: string
-            Cache-Control:
-              description: Always `no-store` because the response contains the one-time access token.
-              schema:
-                type: string
             X-Request-Id:
               schema:
                 type: string
@@ -132,6 +144,9 @@ paths:
                 accessToken: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU
                 createdAt: '2026-08-10T00:00:00Z'
         '400': *anonymousRequestProblem
+        '403':
+          <<: *anonymousRequestProblem
+          description: Anonymous submission is disabled by access mode, or authenticated customer CSRF validation failed.
         '409': *anonymousRequestProblem
         '429': *anonymousRequestProblem
         '503': *anonymousRequestProblem
@@ -252,6 +267,7 @@ paths:
     get:
       summary: List requests for a verified customer account
       operationId: listCustomerRequests
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -279,11 +295,39 @@ paths:
       responses:
         '200':
           description: Request page
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerRequestPage'
         '401': *id001
+  /api/v1/customer/access-mode:
+    get:
+      summary: Read the effective customer request access mode
+      operationId: getCustomerAccessMode
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Customer Portal
+      security: []
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      responses:
+        '200':
+          description: Effective customer access mode
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeResponse'
   /api/v1/agent/csrf:
     get:
       summary: Issue a CSRF token bound to the browser session
@@ -817,6 +861,135 @@ paths:
               schema:
                 $ref: '#/components/schemas/TicketVersionPreconditionProblem'
         '422': *id001
+  /api/v1/agent/tickets/{ticketNumber}/external-references:
+    get:
+      summary: Read safe external-reference context for an authorized staff ticket
+      description: >-
+        Returns stored-only reference context. This operation never fetches, resolves, or
+        redirects through an external URL. It records a required staff resource-read audit
+        and never emits semantic TICKET_VIEWED for background tab loading.
+      operationId: listAgentTicketExternalReferences
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - *id002
+      - *id005
+      responses:
+        '200':
+          description: Bounded staff-only reference context with currently usable links only.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReferenceContext' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503': *id001
+    post:
+      summary: Link a ticket to one validated external identity
+      description: >-
+        Validates an active registry system, exact allowed HTTPS hostname, bounded metadata,
+        ticket write scope, and ticket version before atomically storing one reference and
+        one TicketAudit. At most 100 references may be linked to one ticket; the next create
+        returns EXTERNAL_REFERENCE_LIMIT_REACHED without truncating the list. No external request is made.
+      operationId: createAgentTicketExternalReference
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004, REQ-AUD-001]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - *id002
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExternalReferenceCommand' }
+      responses:
+        '201':
+          description: Reference and ticket audit committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReferenceCommandResult' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The ticket no longer matches If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/TicketVersionPreconditionProblem' }
+        '422': *id001
+        '503': *id001
+  /api/v1/agent/tickets/{ticketNumber}/external-references/{referenceId}:
+    delete:
+      summary: Unlink an external reference without mutating the external system
+      description: >-
+        Removes only the Deskseed reference and atomically records one TicketAudit. No
+        external delete, fetch, or callback is performed.
+      operationId: deleteAgentTicketExternalReference
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004, REQ-AUD-001]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - *id002
+      - *id004
+      - $ref: '#/components/parameters/ExternalReferenceId'
+      responses:
+        '200':
+          description: Local reference removed and audit committed.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteExternalReferenceResult' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The ticket no longer matches If-Match.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/TicketVersionPreconditionProblem' }
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/audits:
     get:
       summary: Read ticket-local change history
@@ -1299,6 +1472,315 @@ paths:
         '404': *id001
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/integration-clients:
+    get:
+      summary: List integration machine principals without credential secrets
+      operationId: listIntegrationClients
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: Bounded client list. Credential hashes and secrets are absent.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: Create an integration client and show its first API key once
+      operationId: createIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIntegrationClient' }
+      responses:
+        '201':
+          description: Client created. The API key is returned by this response only.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationCredentialIssue' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}:
+    get:
+      summary: Read one integration client and credential metadata
+      operationId: getIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client detail without any credential verifier or secret.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/integration-clients/{clientId}/disable:
+    post:
+      summary: Disable an active integration client immediately
+      operationId: disableIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client disabled; all credentials fail authentication.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}/revoke:
+    post:
+      summary: Permanently revoke an integration client and every credential
+      operationId: revokeIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client and credentials permanently revoked.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}/rotate:
+    post:
+      summary: Rotate a client credential with at most 24 hours of overlap
+      operationId: rotateIntegrationClientCredential
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateIntegrationCredential' }
+      responses:
+        '200':
+          description: New API key returned once; the previous key follows the bounded overlap.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationCredentialIssue' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/external-systems:
+    get:
+      summary: List external-system registry entries
+      operationId: listAdminExternalSystems
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Bounded registry list without provider secrets or credentials.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: Register an external system and exact HTTPS hostname allowlist
+      description: >-
+        Registers one system while the bounded registry contains fewer than 100 entries.
+        The next create returns EXTERNAL_SYSTEM_LIMIT_REACHED; list responses are never silently truncated.
+      operationId: createExternalSystem
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExternalSystem' }
+      responses:
+        '201':
+          description: Registry entry and AdminSecurityAudit committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/external-systems/{systemId}:
+    put:
+      summary: Update external-system display, status, and hostname policy
+      operationId: updateExternalSystem
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExternalSystemId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExternalSystemIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateExternalSystem' }
+      responses:
+        '200':
+          description: Registry and AdminSecurityAudit update committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: External-system version no longer matches If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ExternalSystemVersionPreconditionProblem' }
+        '503': *id001
   /api/v1/admin/settings/{key}:
     get:
       summary: Read an allowed admin setting
@@ -1681,6 +2163,7 @@ paths:
     get:
       summary: Read the verified customer account
       operationId: getCurrentCustomer
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Auth
       x-deskseed-phase: P1
@@ -1715,6 +2198,7 @@ paths:
     get:
       summary: Read an authenticated customer-safe request projection
       operationId: getCustomerRequest
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -1725,6 +2209,11 @@ paths:
       responses:
         '200':
           description: Customer request detail
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
@@ -1747,6 +2236,13 @@ paths:
     post:
       summary: Add an authenticated PUBLIC customer follow-up
       operationId: addAuthenticatedCustomerComment
+      description: >-
+        Creates one PUBLIC customer comment, one canonical ticket audit, and one
+        durable request-received mail intent in the same transaction. An exact
+        requester/clientCommandId replay returns the original comment; reuse for a
+        different ticket or body returns 409. SOLVED and CLOSED requests are not
+        reopened by this operation.
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -1758,10 +2254,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddCustomerComment'
+              $ref: '#/components/schemas/AddAuthenticatedCustomerComment'
       responses:
         '201':
-          description: Public comment created
+          description: Public comment created, or the stable result of an exact replay
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
@@ -1785,6 +2286,68 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /api/v1/admin/settings/customer-access-mode:
+    get:
+      summary: Read the customer request access mode
+      operationId: getCustomerAccessModeSetting
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Customer access mode setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeSetting'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+    put:
+      summary: Change the customer request access mode
+      operationId: updateCustomerAccessModeSetting
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerAccessMode'
+      responses:
+        '200':
+          description: Customer access mode updated and audited atomically
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeSetting'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/business-schedules:
     get:
       summary: List business schedules at their latest immutable versions
@@ -2332,6 +2895,35 @@ components:
         minimum: 1
         maximum: 100
         default: 50
+    IntegrationClientId:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalSystemId:
+      name: systemId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalReferenceId:
+      name: referenceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalSystemIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: External-system ETag; it must identify the same version as expectedVersion.
+      schema:
+        type: string
+        pattern: '^"?[0-9]+"?$'
     StaffId:
       name: staffId
       in: path
@@ -2617,10 +3209,12 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+          description: Anonymous requester name; ignored when a valid customer session supplies the requester identity.
         email:
           type: string
           format: email
           maxLength: 254
+          description: Anonymous requester email; ignored when a valid customer session supplies the requester identity.
         subject:
           type: string
           minLength: 1
@@ -2647,7 +3241,9 @@ components:
           $ref: '#/components/schemas/TicketStatus'
         accessToken:
           type: string
-          description: Returned only at creation; server stores a hash.
+          description: >-
+            Returned only at creation in both anonymous and authenticated modes for ticket-scoped lookup/claim recovery;
+            server stores only a digest and revokes active tokens when ownership is explicitly claimed.
         createdAt:
           type: string
           format: date-time
@@ -2660,6 +3256,23 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
+    AddAuthenticatedCustomerComment:
+      type: object
+      additionalProperties: false
+      required:
+      - body
+      - clientCommandId
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        clientCommandId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9._:-]+$'
+          description: Stable customer command identifier retained across transport retries.
     PublicComment:
       type: object
       additionalProperties: false
@@ -2731,17 +3344,76 @@ components:
             $ref: '#/components/schemas/PublicComment'
     CustomerRequestPage:
       type: object
+      additionalProperties: false
       required:
       - items
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CustomerRequestDetail'
+            $ref: '#/components/schemas/CustomerRequestSummary'
         nextCursor:
           type:
           - string
           - 'null'
+    CustomerRequestSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - ticketNumber
+      - subject
+      - status
+      - createdAt
+      - updatedAt
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomerAccessMode:
+      type: string
+      enum: [ANONYMOUS_ALLOWED, REGISTRATION_OPTIONAL, REGISTRATION_REQUIRED]
+    CustomerAccessModeResponse:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+    CustomerAccessModeSetting:
+      type: object
+      additionalProperties: false
+      required: [mode, version, updatedAt]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateCustomerAccessMode:
+      type: object
+      additionalProperties: false
+      required: [mode, expectedVersion]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
     StaffLogin:
       type: object
       additionalProperties: false
@@ -3103,7 +3775,10 @@ components:
       - externalReferences
       properties:
         customer:
-          $ref: '#/components/schemas/TicketCustomer'
+          description: Null for requesterless INTERNAL_WORK_ITEM tickets.
+          oneOf:
+          - $ref: '#/components/schemas/TicketCustomer'
+          - type: 'null'
         parent:
           oneOf:
           - $ref: '#/components/schemas/TicketSummary'
@@ -3591,6 +4266,309 @@ components:
           - string
           - 'null'
           format: date-time
+    ExternalSystemStatus:
+      type: string
+      enum: [ACTIVE, DISABLED]
+    ExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [id, systemKey, displayName, status, allowedHostnames, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        systemKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$'
+          description: Immutable normalized registry identifier.
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/ExternalSystemStatus' }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: Exact canonical public DNS hostnames; wildcards, localhost, and IP literals are forbidden.
+          items: { type: string, minLength: 1, maxLength: 253 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [systemKey, displayName, allowedHostnames]
+      properties:
+        systemKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$'
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 253 }
+    UpdateExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [displayName, status, allowedHostnames, expectedVersion]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/ExternalSystemStatus' }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 253 }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    ExternalObjectType:
+      type: string
+      enum: [ORDER, PAYMENT, REFUND, USER, STORE, OPS_CASE, CUSTOM]
+    ExternalReferenceLinkState:
+      type: string
+      enum: [AVAILABLE, SYSTEM_DISABLED, HOST_NOT_ALLOWED]
+    ExternalReferenceMetadataValue:
+      oneOf:
+      - type: string
+        maxLength: 200
+      - type: number
+      - type: boolean
+    ExternalReferenceMetadataSnapshot:
+      type: object
+      additionalProperties: false
+      maxProperties: 8
+      properties:
+        status: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        storeName: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        amountDisplay: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        currency: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        occurredAt: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        ownerLabel: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        channel: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+    ExternalReferenceActor:
+      type: object
+      additionalProperties: false
+      required: [actorId, displayName]
+      properties:
+        actorId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+    ExternalReference:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - system
+      - objectType
+      - externalId
+      - displayLabel
+      - linkState
+      - metadata
+      - metadataObservedAt
+      - createdBy
+      - createdAt
+      properties:
+        id: { type: string, format: uuid }
+        system: { $ref: '#/components/schemas/ExternalSystem' }
+        objectType: { $ref: '#/components/schemas/ExternalObjectType' }
+        externalId: { type: string, minLength: 1, maxLength: 200 }
+        displayLabel: { type: string, minLength: 1, maxLength: 200 }
+        linkState: { $ref: '#/components/schemas/ExternalReferenceLinkState' }
+        safeDeepLink:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+          description: Present only while the system is active and the stored host remains allowed.
+        metadata: { $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot' }
+        metadataObservedAt: { type: string, format: date-time }
+        createdBy: { $ref: '#/components/schemas/ExternalReferenceActor' }
+        createdAt: { type: string, format: date-time }
+    ExternalReferenceContext:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, canManage, availableSystems, items]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        canManage: { type: boolean }
+        availableSystems:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ExternalSystem' }
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ExternalReference' }
+    CreateExternalReferenceCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - externalSystemId
+      - objectType
+      - externalId
+      - displayLabel
+      - safeDeepLink
+      - metadata
+      - metadataObservedAt
+      - expectedVersion
+      properties:
+        externalSystemId: { type: string, format: uuid }
+        objectType: { $ref: '#/components/schemas/ExternalObjectType' }
+        externalId: { type: string, minLength: 1, maxLength: 200 }
+        displayLabel: { type: string, minLength: 1, maxLength: 200 }
+        safeDeepLink:
+          type: string
+          format: uri
+          minLength: 9
+          maxLength: 2048
+          description: Exact-host HTTPS URL; userinfo and credential-like query keys are forbidden.
+        metadata: { $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot' }
+        metadataObservedAt: { type: string, format: date-time }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    ExternalReferenceCommandResult:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, reference]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        reference: { $ref: '#/components/schemas/ExternalReference' }
+    DeleteExternalReferenceResult:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, removedReferenceId]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        removedReferenceId: { type: string, format: uuid }
+    ExternalSystemVersionPreconditionProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        additionalProperties: true
+        required: [currentVersion]
+        properties:
+          currentVersion: { type: integer, format: int64, minimum: 0 }
+    IntegrationScope:
+      type: string
+      enum:
+      - tickets:create
+      - tickets:read
+      - tickets:update
+      - tickets:comment:internal
+    IntegrationClientStatus:
+      type: string
+      enum: [ACTIVE, DISABLED, REVOKED]
+    IntegrationCredentialStatus:
+      type: string
+      enum: [ACTIVE, RETIRING, EXPIRED, REVOKED]
+    IntegrationResourceConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        allowedGroupIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        allowedTicketKinds:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string, enum: [CUSTOMER_REQUEST, INTERNAL_TASK] }
+        allowedFields:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items: { type: string, enum: [status, priority, groupId, assigneeId] }
+        ipAllowlist:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          description: Optional literal IP or CIDR allowlist. Absence means no network restriction at this client seam.
+          items:
+            type: string
+            minLength: 2
+            maxLength: 64
+    IntegrationCredentialMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, publicKeyId, status, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        publicKeyId:
+          type: string
+          minLength: 16
+          maxLength: 32
+        status: { $ref: '#/components/schemas/IntegrationCredentialStatus' }
+        expiresAt: { type: string, format: date-time }
+        overlapExpiresAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        lastUsedIp: { type: [string, 'null'] }
+    IntegrationClient:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, status, scopes, resourceConstraints, credentials, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        status: { $ref: '#/components/schemas/IntegrationClientStatus' }
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/IntegrationScope' }
+        resourceConstraints: { $ref: '#/components/schemas/IntegrationResourceConstraints' }
+        credentials:
+          type: array
+          items: { $ref: '#/components/schemas/IntegrationCredentialMetadata' }
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: Latest effective credential expiry for list display.
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        lastUsedIp: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    CreateIntegrationClient:
+      type: object
+      additionalProperties: false
+      required: [name, description, scopes, resourceConstraints, expiresAt]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/IntegrationScope' }
+        resourceConstraints: { $ref: '#/components/schemas/IntegrationResourceConstraints' }
+        expiresAt: { type: string, format: date-time }
+    RotateIntegrationCredential:
+      type: object
+      additionalProperties: false
+      required: [expiresAt, overlapSeconds]
+      properties:
+        expiresAt: { type: string, format: date-time }
+        overlapSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+    IntegrationCredentialIssue:
+      type: object
+      additionalProperties: false
+      required: [client, credential, apiKey]
+      properties:
+        client: { $ref: '#/components/schemas/IntegrationClient' }
+        credential: { $ref: '#/components/schemas/IntegrationCredentialMetadata' }
+        apiKey:
+          type: string
+          pattern: '^dsk_live_[A-Za-z0-9_-]{16,32}\.[A-Za-z0-9_-]{43}$'
+          readOnly: true
+          x-deskseed-one-time-display: true
     CreateStaffAccount:
       type: object
       additionalProperties: false
@@ -4050,6 +5028,7 @@ components:
           $ref: '#/components/schemas/AuditProjectionStatus'
     CurrentCustomer:
       type: object
+      additionalProperties: false
       required:
       - id
       - email

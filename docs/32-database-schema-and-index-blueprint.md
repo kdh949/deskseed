@@ -112,7 +112,7 @@ unique(staff_id, authority)
 ```text
 id
 ticket_number
-kind                 CUSTOMER_REQUEST | INTERNAL_TASK
+kind                 CUSTOMER_REQUEST | INTERNAL_CHILD | AGENT_CREATED | INTERNAL_WORK_ITEM
 requester_customer_id nullable
 subject
 status
@@ -295,31 +295,53 @@ expires_at
 ### integration_clients / credentials
 
 ```text
-integration_clients(id, name, status, scopes_json, constraints_json, ...)
-integration_credentials(id, client_id, public_key_id, secret_hash, status, expires_at, last_used_at, last_used_ip, ...)
+integration_clients(
+ id, name, description, status, scopes_json, constraints_json,
+ created_by_staff_id, created_at, updated_at, last_used_at, last_used_ip, version
+)
+integration_credentials(
+ id, client_id, sequence, public_key_id, secret_hash, status,
+ expires_at, overlap_expires_at, rotated_from_credential_id,
+ created_by_staff_id, created_at, revoked_at, last_used_at, last_used_ip, version
+)
 ```
 
-원문 secret 저장 금지.
+- 원문 secret column은 두지 않고 발급/회전 응답에서만 한 번 반환한다.
+- `public_key_id`는 unique locator이고 `secret_hash`는 salt가 포함된 slow verifier다.
+- status는 client `ACTIVE/DISABLED/REVOKED`, credential `ACTIVE/RETIRING/REVOKED`로 제한한다. `EXPIRED`는 시간에서 계산하는 projection 상태다.
+- client마다 ACTIVE credential은 최대 1개, RETIRING credential은 최대 1개인 partial unique index로 bounded-overlap rotation을 보장한다.
+- `expires_at > created_at`, RETIRING에만 `overlap_expires_at` 존재, revoke metadata 정합성을 check constraint로 보호한다.
+- scopes/constraints JSON shape를 DB constraint로 검증하고 지원 scope vocabulary는 application/OpenAPI enum으로 고정한다.
+- V18 migration이 이 구조와 actor/source audit enum 확장을 소유한다.
 
 ### external_systems / external_references
 
 ```text
-external_systems(id, system_key, name, status, allowed_hosts_json, ...)
+external_systems(
+ id, system_key, display_name, status, allowed_hostnames_json,
+ created_by_staff_id, created_at, updated_at, version
+)
 external_references(
  id, ticket_id, external_system_id, object_type, external_id,
- display_label, safe_deep_link, metadata_json, created_at, created_by...
+ display_label, safe_deep_link, metadata_snapshot_json, metadata_observed_at,
+ created_by_actor_type, created_by_actor_id, created_by_actor_display, created_at
 )
 ```
 
-Unique `(external_system_id, object_type, external_id, ticket_id)`.
+- Unique `(ticket_id, external_system_id, object_type, external_id)`; the same external identity may be linked to another ticket.
+- status is `ACTIVE/DISABLED`; object type is `ORDER/PAYMENT/REFUND/USER/STORE/OPS_CASE/CUSTOM`.
+- allowed hostnames and metadata remain bounded JSON text with DB shape/byte checks plus stricter application allowlists.
+- ticket/created and external identity indexes support bounded context reads and duplicate investigation.
+- V22 adds these tables without backfill or any provider credential/raw payload column.
 
 ### idempotency_records
 
 ```text
 client_id
-idempotency_key
+operation_id
+idempotency_key_hash
 request_hash
-status
+status                  IN_PROGRESS | SUCCEEDED | FAILED_FINAL
 response_status nullable
 response_headers_json nullable
 response_body_json nullable
@@ -328,7 +350,10 @@ created_at
 expires_at
 ```
 
-Unique `(client_id, idempotency_key)`.
+Unique `(client_id, operation_id, idempotency_key_hash)`. Raw idempotency keys and Authorization values are never stored. V23 adds the
+receipt table together with nullable `INTERNAL_WORK_ITEM` requester support and the `INTEGRATION_CLIENT` comment author. The
+`(expires_at, id)` index drives `FOR UPDATE SKIP LOCKED` bounded cleanup; final receipts expire immediately while stale `IN_PROGRESS` rows
+use a distinct abandonment grace before deletion.
 
 ### outbox_events / webhook tables
 
@@ -341,6 +366,42 @@ webhook_attempts
 ```
 
 Event와 delivery를 분리해 동일 event의 여러 endpoint 전달을 지원한다.
+
+### outbound_mail_intents / attempts / delivery events
+
+```text
+outbound_mail_intents(
+ id, idempotency_key, stable_message_id,
+ template_key, template_version,
+ sender_address, recipient_address, subject, text_body,
+ ticket_id, comment_id, customer_id,
+ actor/source/request/correlation/command,
+ status, attempt_count, cycle_attempt_count, max_attempts,
+ retry_cycle, manual_retry_count,
+ next_attempt_at, lease_expires_at, last_error_code,
+ queued_at, sent_at, failed_at, version
+)
+
+outbound_mail_attempts(
+ id, intent_id, attempt_number, retry_cycle, cycle_attempt_number,
+ provider, status, provider_message_id,
+ failure_class, failure_code,
+ started_at, finished_at, next_retry_at
+)
+
+outbound_mail_delivery_events(
+ id, intent_id, attempt_id, event_type,
+ actor/source/request/correlation,
+ reason_code, bounded_reason_text, occurred_at
+)
+```
+
+- unique `idempotency_key`가 같은 business notification의 중복 intent를 막는다.
+- `stable_message_id`는 모든 attempt에서 유지한다.
+- due/expired-lease partial index와 `FOR UPDATE SKIP LOCKED`가 bounded worker claim을 지원한다.
+- recipient/template/version/rendered plain-text snapshot은 delivery 조사에 보존한다.
+- attempt/event에는 provider response body나 exception message를 저장하지 않는다.
+- delivery event는 append-only이며 Ticket Change, Access/Search, Admin/Security ledger와 합치지 않는다.
 
 ## 6. Business schedule foundation and later SLA/analytics
 
@@ -392,6 +453,21 @@ setting_change_audits (canonical audit ledger와 연결)
 ```
 
 설정은 typed key registry를 통해 접근한다. 임의 string key를 코드 곳곳에서 사용하지 않는다.
+
+### 8.1 Implemented customer portal state (V20)
+
+- `system_settings.customer_access_mode` is the typed enum source for
+  `ANONYMOUS_ALLOWED | REGISTRATION_OPTIONAL | REGISTRATION_REQUIRED` and
+  `system_settings.version` provides optimistic concurrency for the audited ADMIN update.
+- `customer_request_claim_grants` stores a ticket FK, SHA-256 token digest, keyed email
+  fingerprint, expiry and single-use consume timestamp. Raw proof and raw email are absent.
+- `customer_request_claim_grants_cleanup_idx` supports bounded expired/consumed cleanup.
+- `tickets_customer_portal_idx (requester_id, updated_at desc, ticket_number desc)` is partial
+  to `CUSTOMER_REQUEST` and backs the authenticated ownership-first list projection.
+- `ticket_audits_customer_command_replay_idx` locates the canonical CUSTOMER command result;
+  the ticket audit remains the replay source rather than a second command-result table.
+- V20 does not rewrite existing ticket requester IDs. Ownership changes only through the
+  explicit, audited claim command.
 
 ## 9. Migration 순서
 
