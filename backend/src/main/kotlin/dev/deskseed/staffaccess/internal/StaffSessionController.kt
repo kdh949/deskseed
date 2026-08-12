@@ -2,6 +2,7 @@ package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.organization.StaffRole
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.Valid
@@ -109,21 +110,31 @@ internal class StaffSessionController(
         getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE)?.toString() ?: requestId()
 }
 
+@Schema(description = "직원 세션에 귀속된 CSRF 토큰")
 internal data class StaffCsrfResponse(
     val token: String,
     val headerName: String,
 )
 
+@Schema(description = "직원 로그인 요청")
 internal data class StaffLoginRequest(
+    @field:Schema(description = "직원 계정 이메일", example = "agent@example.com")
     @field:NotBlank
     @field:Email
     @field:Size(max = 254)
     val email: String,
+
+    @field:Schema(
+        description = "직원 비밀번호. 문서나 로그에 저장하지 않습니다.",
+        example = "not-a-real-password",
+        accessMode = Schema.AccessMode.WRITE_ONLY,
+    )
     @field:NotBlank
     @field:Size(max = 128)
     val password: String,
 )
 
+@Schema(description = "현재 인증된 직원과 보유 권한")
 internal data class CurrentStaffResponse(
     val id: String,
     val email: String,

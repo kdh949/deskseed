@@ -7,6 +7,7 @@ import dev.deskseed.ticketing.PlatformTicketKind
 import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
@@ -135,9 +136,15 @@ internal class PlatformTicketController(
     }
 }
 
+@Schema(description = "외부 시스템이 생성할 고객 문의 또는 내부 작업 티켓")
 internal data class CreatePlatformTicketRequest(
     val kind: PlatformTicketKind,
+    @field:Schema(description = "티켓 제목", example = "결제가 중복으로 처리됐어요")
     @field:NotBlank @field:Size(max = 200) val subject: String,
+    @field:Schema(
+        description = "CUSTOMER_REQUEST는 첫 PUBLIC 코멘트, INTERNAL_WORK_ITEM은 첫 INTERNAL 코멘트가 되는 본문",
+        example = "주문 ORD-2026-1042의 중복 승인 조사가 필요합니다.",
+    )
     @field:NotBlank @field:Size(max = 50_000) val message: String,
     @field:Valid val requester: PlatformRequesterRequest? = null,
     val priority: TicketPriority = TicketPriority.NORMAL,
@@ -161,12 +168,15 @@ internal data class CreatePlatformTicketRequest(
     }
 }
 
+@Schema(description = "고객 문의 티켓의 요청자 정보")
 internal data class PlatformRequesterRequest(
     @field:NotBlank @field:Size(max = 100) val name: String,
     @field:NotBlank @field:Email @field:Size(max = 320) val email: String,
 )
 
+@Schema(description = "외부 시스템이 추가할 INTERNAL 메모")
 internal data class AddInternalCommentRequest(
+    @field:Schema(description = "고객에게 노출되지 않는 내부 메모", example = "결제 게이트웨이 로그와 주문 이력을 확인하세요.")
     @field:NotBlank @field:Size(max = 50_000) val body: String,
 )
 
