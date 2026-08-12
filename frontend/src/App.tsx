@@ -13,7 +13,6 @@ import {
   AdminRoute,
   AuditRoute,
   ExternalSystemAdminRoute,
-  IntegrationAreaRoute,
   IntegrationAdminRoute,
   StaffRoute,
   StaffSessionLayout,
@@ -90,33 +89,28 @@ export const appRoutes: RouteObject[] = [
             ],
           },
           {
-            element: <IntegrationAreaRoute />,
+            path: '/integrations',
+            element: <AdminShell />,
             children: [
               {
-                path: '/integrations',
-                element: <AdminShell />,
+                index: true,
+                element: <Navigate to="/integrations/clients" replace />,
+              },
+              {
+                element: <IntegrationAdminRoute />,
                 children: [
-                  {
-                    index: true,
-                    element: <Navigate to="/integrations/clients" replace />,
-                  },
-                  {
-                    element: <IntegrationAdminRoute />,
-                    children: [
-                      { path: 'clients', element: <IntegrationClientsPage /> },
-                    ],
-                  },
-                  {
-                    element: <ExternalSystemAdminRoute />,
-                    children: [
-                      { path: 'systems', element: <ExternalSystemsPage /> },
-                    ],
-                  },
-                  {
-                    path: '*',
-                    element: <Navigate to="/integrations/clients" replace />,
-                  },
+                  { path: 'clients', element: <IntegrationClientsPage /> },
                 ],
+              },
+              {
+                element: <ExternalSystemAdminRoute />,
+                children: [
+                  { path: 'systems', element: <ExternalSystemsPage /> },
+                ],
+              },
+              {
+                path: '*',
+                element: <Navigate to="/integrations/clients" replace />,
               },
             ],
           },
