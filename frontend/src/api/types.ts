@@ -167,6 +167,86 @@ export interface BusinessSchedulePreview {
   dstPolicy: 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
 }
 
+export type FirstReplySlaState =
+  | 'ACTIVE'
+  | 'AT_RISK'
+  | 'PAUSED'
+  | 'ACHIEVED'
+  | 'BREACHED'
+  | 'CANCELLED'
+  | 'NO_POLICY'
+
+export interface FirstReplySlaBadge {
+  metric: 'FIRST_REPLY'
+  state: FirstReplySlaState
+  dueAt: string | null
+  targetMinutes: number | null
+  policyVersion: number | null
+  scheduleVersion: number | null
+}
+
+export type TicketChannel = 'WEB' | 'AGENT' | 'EMAIL' | 'CHAT' | 'API'
+
+export interface FirstReplySlaPolicyDefinition {
+  name: string
+  position: number
+  scheduleId: string
+  conditions: {
+    groupId: string | null
+    channel: TicketChannel | null
+  }
+  targets: Record<TicketPriority, number | null>
+  pauseStatuses: AgentTicketStatus[]
+}
+
+export interface FirstReplySlaPolicy extends FirstReplySlaPolicyDefinition {
+  id: string
+  scheduleVersion: number
+  version: number
+  aggregateVersion: number
+  active: boolean
+  createdAt: string
+  createdBy: {
+    actorType: 'STAFF'
+    actorId: string
+    displayName: string
+  }
+}
+
+export interface FirstReplySlaPreviewInput {
+  candidate: FirstReplySlaPolicyDefinition | null
+  ticket: {
+    priority: TicketPriority
+    groupId: string | null
+    channel: TicketChannel
+  }
+  startAt: string
+}
+
+export interface FirstReplySlaPreview {
+  matched: boolean
+  dueAt: string | null
+  targetMinutes: number | null
+  policyId: string | null
+  policyVersion: number | null
+  scheduleId: string | null
+  scheduleVersion: number | null
+  dstPolicy: 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+}
+
+export interface FirstReplySlaAnalytics {
+  metric: 'FIRST_REPLY'
+  calculationVersion: string
+  active: number
+  paused: number
+  achieved: number
+  breached: number
+  cancelled: number
+  noPolicy: number
+  achievedRateDenominator: number
+  achievedRate: number | null
+}
+
 export interface CreateStaffInput {
   email: string
   displayName: string
@@ -212,7 +292,7 @@ export interface AgentTicketSummary {
   version: number
   isChild: boolean
   openChildCount: number
-  sla: null
+  sla: FirstReplySlaBadge | null
 }
 
 export interface AgentTicketPage {
@@ -287,6 +367,7 @@ export interface AgentTicketFilters {
   priority?: TicketPriority
   groupId?: string
   assigneeId?: string
+  slaState?: FirstReplySlaState
   cursor?: string
   limit?: number
 }

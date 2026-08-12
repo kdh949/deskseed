@@ -38,7 +38,24 @@ function ticket(ticketNumber: number, subject: string) {
     version: 0,
     isChild: false,
     openChildCount: 0,
-    sla: null,
+    sla:
+      ticketNumber === 1042
+        ? {
+            metric: 'FIRST_REPLY',
+            state: 'BREACHED',
+            dueAt: '2026-08-10T09:00:00Z',
+            targetMinutes: 60,
+            policyVersion: 2,
+            scheduleVersion: 1,
+          }
+        : {
+            metric: 'FIRST_REPLY',
+            state: 'NO_POLICY',
+            dueAt: null,
+            targetMinutes: null,
+            policyVersion: null,
+            scheduleVersion: null,
+          },
   }
 }
 
@@ -98,6 +115,11 @@ describe('AgentViewsPage', () => {
     expect(screen.getByRole('option', { name: 'CLOSED' })).toBeVisible()
     expect(screen.getByRole('columnheader', { name: '상태' })).toBeVisible()
     expect(
+      screen.getByRole('columnheader', { name: 'First Reply SLA' }),
+    ).toBeVisible()
+    expect(screen.getByText('위반')).toBeVisible()
+    expect(screen.getByText('정책 없음')).toBeVisible()
+    expect(
       screen.getByRole('link', { name: '#1042 결제 승인 오류 열기' }),
     ).toBeVisible()
     expect(screen.getByText('URGENT', { selector: 'span' })).toBeVisible()
@@ -108,6 +130,12 @@ describe('AgentViewsPage', () => {
     await screen.findByRole('table', { name: 'Pending 티켓' })
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('status=PENDING')
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('priority=URGENT')
+    await user.selectOptions(
+      screen.getByLabelText('First Reply SLA 필터'),
+      'BREACHED',
+    )
+    await screen.findByRole('table', { name: 'Pending 티켓' })
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('slaState=BREACHED')
 
     await user.click(await screen.findByRole('button', { name: '다음 페이지' }))
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('cursor=next-page')

@@ -24,6 +24,8 @@ import dev.deskseed.ticketing.TicketKind
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.TicketSlaLifecycleChanged
+import dev.deskseed.ticketing.TicketSubmitted
 import dev.deskseed.ticketing.TicketTransitionInvalidException
 import dev.deskseed.ticketing.TicketUpdateContentionException
 import dev.deskseed.ticketing.TicketVersionPreconditionFailedException
@@ -36,6 +38,7 @@ import dev.deskseed.ticketing.internal.domain.Ticket
 import dev.deskseed.ticketing.internal.domain.TicketStatusTransitions
 import jakarta.persistence.OptimisticLockException
 import org.springframework.dao.DataAccessException
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -111,6 +114,7 @@ internal class AgentTicketCommandTransaction(
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val authorizationPolicy: TicketWriteAuthorizationPolicy,
     private val objectMapper: ObjectMapper,
+    private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
 ) {
     @Transactional
@@ -190,6 +194,26 @@ internal class AgentTicketCommandTransaction(
                     ),
                 ),
                 commentAuditEvent(ticket.firstComment.id, command.firstComment, now),
+            ),
+        )
+        eventPublisher.publishEvent(
+            TicketSubmitted(
+                ticketId = ticket.id,
+                ticketNumber = ticket.ticketNumber,
+                requesterId = ticket.requesterId,
+                kind = ticket.kind,
+                priority = ticket.priority,
+                groupId = ticket.groupId,
+                channel = ticket.channel,
+                status = ticket.status,
+                ticketAuditId = auditId,
+                actorType = "STAFF",
+                actorId = command.actor.id,
+                source = command.context.source.name,
+                requestId = command.context.requestId,
+                correlationId = command.context.correlationId,
+                startsFirstReplySla = false,
+                occurredAt = now,
             ),
         )
         return TicketCommandResult(ticket.ticketNumber, ticketEntity.version, auditId)
@@ -340,6 +364,20 @@ internal class AgentTicketCommandTransaction(
             ),
             now = now,
             events = eventsWithResult,
+        )
+        eventPublisher.publishEvent(
+            TicketSlaLifecycleChanged(
+                ticketId = ticket.id,
+                previousStatus = oldStatus,
+                currentStatus = newStatus,
+                humanStaffPublicReply = command.comment?.visibility == CommentVisibility.PUBLIC,
+                ticketAuditId = auditId,
+                actorId = command.actor.id,
+                source = command.context.source.name,
+                requestId = command.context.requestId,
+                correlationId = command.context.correlationId,
+                occurredAt = now,
+            ),
         )
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId, warnings)
     }
@@ -567,6 +605,26 @@ internal class AgentTicketCommandTransaction(
                     ),
                 ),
                 NewAuditEvent(type = "TICKET_RELATION_CREATED", metadata = relationMetadata),
+            ),
+        )
+        eventPublisher.publishEvent(
+            TicketSubmitted(
+                ticketId = child.id,
+                ticketNumber = child.ticketNumber,
+                requesterId = child.requesterId,
+                kind = child.kind,
+                priority = child.priority,
+                groupId = child.groupId,
+                channel = child.channel,
+                status = child.status,
+                ticketAuditId = childAuditId,
+                actorType = "STAFF",
+                actorId = command.actor.id,
+                source = command.context.source.name,
+                requestId = command.context.requestId,
+                correlationId = command.context.correlationId,
+                startsFirstReplySla = false,
+                occurredAt = now,
             ),
         )
         return CreateChildTicketResult(

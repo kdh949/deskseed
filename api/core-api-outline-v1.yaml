@@ -23,9 +23,6 @@ x-deskseed-staff-actor-consistency:
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting
-  - listSlaPolicies
-  - createSlaPolicy
-  - activateSlaPolicy
   parameter:
     $ref: '#/components/parameters/ExpectedStaffActorHeader'
   invalidHeaderResponse:
@@ -492,6 +489,11 @@ paths:
         schema:
           type: string
           pattern: '^(me|unassigned|[0-9a-fA-F-]{36})$'
+      - name: slaState
+        in: query
+        description: Effective First Reply state; overdue ACTIVE rows are returned as BREACHED.
+        schema:
+          $ref: '#/components/schemas/FirstReplySlaDisplayState'
       responses:
         '200':
           description: Ticket page
@@ -1693,6 +1695,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentCustomer'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -1763,12 +1766,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicComment'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -1993,8 +1991,9 @@ paths:
         '412': *id001
   /api/v1/admin/sla-policies:
     get:
-      summary: List First Reply SLA policies
+      summary: List First Reply SLA policies at their latest immutable versions
       operationId: listSlaPolicies
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin SLA
       x-deskseed-phase: P3
@@ -2002,6 +2001,8 @@ paths:
       - REQ-SLA-001
       - REQ-SLA-003
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Policies
@@ -2011,6 +2012,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/FirstReplySlaPolicy'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -2023,9 +2025,11 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
     post:
-      summary: Create a versioned First Reply SLA policy
+      summary: Create a First Reply SLA policy with an inactive immutable first version
       operationId: createSlaPolicy
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin SLA
       x-deskseed-phase: P3
@@ -2033,6 +2037,9 @@ paths:
       - REQ-SLA-001
       - REQ-SLA-003
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -2042,16 +2049,13 @@ paths:
       responses:
         '201':
           description: Policy created
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FirstReplySlaPolicy'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -2065,22 +2069,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409':
-          description: RFC 9457 Problem Details
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/sla-policies/preview:
+    post:
+      summary: Preview ordered policy selection and First Reply due time without mutation
+      operationId: previewFirstReplySlaPolicy
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FirstReplySlaPreviewRequest' }
+      responses:
+        '200':
+          description: Side-effect-free deterministic policy preview
           content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-  /api/v1/admin/sla-policies/{policyId}/activate:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaPreviewResult' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+  /api/v1/admin/sla-policies/{policyId}:
     parameters:
-    - name: policyId
+    - &slaPolicyId
+      name: policyId
       in: path
       required: true
       schema:
         type: string
         format: uuid
-    post:
-      summary: Activate a First Reply SLA policy version
-      operationId: activateSlaPolicy
+    get:
+      summary: Read the latest immutable First Reply SLA policy version
+      operationId: getSlaPolicy
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin SLA
       x-deskseed-phase: P3
@@ -2088,19 +2117,18 @@ paths:
       - REQ-SLA-001
       - REQ-SLA-003
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: Activated policy
+          description: Latest policy version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FirstReplySlaPolicy'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -2120,11 +2148,132 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409':
-          description: RFC 9457 Problem Details
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/sla-policies/{policyId}/versions:
+    parameters:
+    - *slaPolicyId
+    get:
+      summary: List immutable First Reply SLA policy versions newest first
+      operationId: listSlaPolicyVersions
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Policy version history
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: '#/components/schemas/Problem'
+                type: array
+                items: { $ref: '#/components/schemas/FirstReplySlaPolicy' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+    post:
+      summary: Create a new immutable First Reply SLA policy version
+      operationId: createSlaPolicyVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: If-Match
+        in: header
+        required: true
+        description: Quoted policy aggregate version returned as ETag.
+        schema: { type: string, pattern: '^"[0-9]+"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FirstReplySlaPolicyInput' }
+      responses:
+        '201':
+          description: New immutable policy version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaPolicy' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '412': *id001
+  /api/v1/admin/sla-policies/{policyId}/versions/{version}/activation:
+    parameters:
+    - *slaPolicyId
+    - name: version
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    put:
+      summary: Activate an immutable First Reply SLA policy version
+      operationId: activateSlaPolicyVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: If-Match
+        in: header
+        required: true
+        description: Quoted policy aggregate version returned as ETag.
+        schema: { type: string, pattern: '^"[0-9]+"$' }
+      responses:
+        '200':
+          description: Activated policy version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaPolicy' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '412': *id001
+  /api/v1/analytics/first-reply-sla:
+    get:
+      summary: Reconcile First Reply SLA outcomes from immutable target facts
+      operationId: getFirstReplySlaAnalytics
+      x-deskseed-contract-status: FROZEN
+      tags: [Analytics]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: policyId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: priority
+        in: query
+        schema: { $ref: '#/components/schemas/TicketPriority' }
+      responses:
+        '200':
+          description: Reconciled First Reply SLA counts and metric definition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaAnalytics' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
 components:
   securitySchemes:
     staffSession:
@@ -2816,19 +2965,29 @@ components:
       type:
       - object
       - 'null'
+      additionalProperties: false
+      required: [metric, state, dueAt, targetMinutes, policyVersion, scheduleVersion]
       properties:
         metric:
           type: string
-        status:
-          type: string
-          enum:
-          - ACTIVE
-          - AT_RISK
-          - ACHIEVED
-          - BREACHED
+          const: FIRST_REPLY
+        state:
+          $ref: '#/components/schemas/FirstReplySlaDisplayState'
         dueAt:
-          type: string
+          type: [string, 'null']
           format: date-time
+        targetMinutes:
+          type: [integer, 'null']
+          minimum: 1
+        policyVersion:
+          type: [integer, 'null']
+          minimum: 1
+        scheduleVersion:
+          type: [integer, 'null']
+          minimum: 1
+    FirstReplySlaDisplayState:
+      type: string
+      enum: [ACTIVE, AT_RISK, PAUSED, ACHIEVED, BREACHED, CANCELLED, NO_POLICY]
     AgentComment:
       type: object
       required:
@@ -4111,12 +4270,25 @@ components:
           - integer
           - 'null'
           minimum: 1
+          maximum: 525600
+    FirstReplySlaPolicyConditions:
+      type: object
+      additionalProperties: false
+      properties:
+        groupId:
+          type: [string, 'null']
+          format: uuid
+        channel:
+          type: [string, 'null']
+          enum: [WEB, AGENT, EMAIL, CHAT, API, null]
     FirstReplySlaPolicyInput:
       type: object
       additionalProperties: false
       required:
       - name
+      - position
       - scheduleId
+      - conditions
       - targets
       - pauseStatuses
       properties:
@@ -4124,15 +4296,23 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        position:
+          type: integer
+          minimum: 1
+          maximum: 10000
         scheduleId:
           type: string
           format: uuid
+        conditions:
+          $ref: '#/components/schemas/FirstReplySlaPolicyConditions'
         targets:
           $ref: '#/components/schemas/PriorityTargets'
         pauseStatuses:
           type: array
           items:
             $ref: '#/components/schemas/AgentTicketStatus'
+          uniqueItems: true
+          maxItems: 6
           default:
           - PENDING
     FirstReplySlaPolicy:
@@ -4142,6 +4322,8 @@ components:
         required:
         - id
         - version
+        - aggregateVersion
+        - scheduleVersion
         - active
         - createdAt
         properties:
@@ -4151,8 +4333,65 @@ components:
           version:
             type: integer
             minimum: 1
+          aggregateVersion:
+            type: integer
+            format: int64
+            minimum: 0
+          scheduleVersion:
+            type: integer
+            minimum: 1
           active:
             type: boolean
           createdAt:
             type: string
             format: date-time
+    FirstReplySlaPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [ticket, startAt]
+      properties:
+        candidate:
+          oneOf:
+          - $ref: '#/components/schemas/FirstReplySlaPolicyInput'
+          - type: 'null'
+        ticket:
+          type: object
+          additionalProperties: false
+          required: [priority, channel]
+          properties:
+            priority: { $ref: '#/components/schemas/TicketPriority' }
+            groupId: { type: [string, 'null'], format: uuid }
+            channel: { type: string, enum: [WEB, AGENT, EMAIL, CHAT, API] }
+        startAt: { type: string, format: date-time }
+    FirstReplySlaPreviewResult:
+      type: object
+      additionalProperties: false
+      required: [matched, dueAt, targetMinutes, policyId, policyVersion, scheduleId, scheduleVersion, dstPolicy]
+      properties:
+        matched: { type: boolean }
+        dueAt: { type: [string, 'null'], format: date-time }
+        targetMinutes: { type: [integer, 'null'], minimum: 1 }
+        policyId: { type: [string, 'null'], format: uuid }
+        policyVersion: { type: [integer, 'null'], minimum: 1 }
+        scheduleId: { type: [string, 'null'], format: uuid }
+        scheduleVersion: { type: [integer, 'null'], minimum: 1 }
+        dstPolicy: { type: string, enum: [GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH] }
+    FirstReplySlaAnalytics:
+      type: object
+      additionalProperties: false
+      required: [metric, calculationVersion, active, paused, achieved, breached, cancelled, noPolicy, achievedRateDenominator, achievedRate]
+      properties:
+        metric: { type: string, const: FIRST_REPLY }
+        calculationVersion: { type: string }
+        active: { type: integer, format: int64, minimum: 0 }
+        paused: { type: integer, format: int64, minimum: 0 }
+        achieved: { type: integer, format: int64, minimum: 0 }
+        breached: { type: integer, format: int64, minimum: 0 }
+        cancelled: { type: integer, format: int64, minimum: 0 }
+        noPolicy: { type: integer, format: int64, minimum: 0 }
+        achievedRateDenominator: { type: integer, format: int64, minimum: 0 }
+        achievedRate:
+          type: [number, 'null']
+          format: double
+          minimum: 0
+          maximum: 1

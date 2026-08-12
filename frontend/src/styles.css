@@ -1707,6 +1707,61 @@ textarea[aria-invalid='true'] {
 .ticket-table tbody tr:hover {
   background: #f4f9f9;
 }
+
+.sla-badge {
+  display: inline-grid;
+  gap: 2px;
+  min-width: 88px;
+  padding: 5px 8px;
+  border: 1px solid #c8d2d6;
+  border-radius: 5px;
+  background: #f5f7f8;
+  color: var(--ink);
+  font-size: 0.74rem;
+}
+
+.sla-badge small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.sla-breached,
+.sla-at_risk,
+.sla-at-risk {
+  border-color: #d58b81;
+  background: #fff2ef;
+  color: #8f2f23;
+}
+
+.sla-achieved {
+  border-color: #86b9a4;
+  background: #eef9f4;
+  color: #176447;
+}
+
+.sla-paused,
+.sla-no_policy,
+.sla-no-policy {
+  border-color: #d6b873;
+  background: #fff9e9;
+  color: #70520d;
+}
+
+.workspace-sla {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 6px 9px;
+  border: 1px solid #c8d2d6;
+  border-radius: 5px;
+  background: #f5f7f8;
+  font-size: 0.78rem;
+}
+
+.workspace-sla small {
+  color: var(--muted);
+}
 .ticket-subject-cell {
   width: 36%;
 }
@@ -2798,11 +2853,137 @@ textarea[aria-invalid='true'] {
   border-bottom: 1px solid #e4e9ec;
 }
 
+.sla-analytics-strip {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.6fr);
+  gap: 24px;
+  align-items: center;
+  margin: 18px 0 22px;
+  padding: 18px 20px;
+  border: 1px solid #cddfe0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f2f8f8, #fff);
+}
+
+.sla-analytics-strip h2,
+.sla-analytics-strip p {
+  margin: 0;
+}
+
+.sla-analytics-strip > dl {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(64px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.sla-analytics-strip > dl > div {
+  padding: 10px;
+  border-left: 1px solid #dce6e7;
+}
+
+.sla-analytics-strip dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.sla-analytics-strip dd {
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 750;
+}
+
 .schedule-layout {
   display: grid;
   grid-template-columns: minmax(230px, 0.24fr) minmax(0, 0.76fr);
   gap: 22px;
   align-items: start;
+}
+
+.schedule-editor {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid #dce3e6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.schedule-list > button {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 13px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #f5f7f8;
+  color: var(--ink);
+  text-align: left;
+}
+
+.schedule-list > button[aria-pressed='true'] {
+  border-color: #8fbcc0;
+  background: var(--brand-soft);
+}
+
+.schedule-list > button span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.schedule-editor-heading,
+.schedule-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.policy-definition,
+.policy-preview,
+.schedule-versions {
+  margin-top: 22px;
+  padding: 20px;
+  border: 1px solid #dce3e6;
+  border-radius: 7px;
+}
+
+.policy-definition legend {
+  padding: 0 6px;
+  font-weight: 750;
+}
+
+.policy-field-grid,
+.policy-target-grid,
+.policy-pause-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.policy-target-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.policy-target-grid label,
+.policy-pause-grid label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.policy-target-grid input {
+  min-width: 0;
+}
+
+.policy-pause-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.schedule-version-row {
+  padding: 12px 0;
+  border-top: 1px solid #e4e9ec;
 }
 
 .schedule-workspace {
@@ -3029,6 +3210,12 @@ textarea[aria-invalid='true'] {
   .schedule-layout {
     grid-template-columns: 1fr;
   }
+  .sla-analytics-strip {
+    grid-template-columns: 1fr;
+  }
+  .sla-analytics-strip > dl {
+    grid-template-columns: repeat(3, minmax(64px, 1fr));
+  }
   .schedule-list {
     position: static;
   }
@@ -3058,5 +3245,8 @@ textarea[aria-invalid='true'] {
   .exception-row,
   .weekday-row {
     grid-template-columns: 1fr;
+  }
+  .sla-analytics-strip > dl {
+    grid-template-columns: repeat(2, minmax(64px, 1fr));
   }
 }

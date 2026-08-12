@@ -29,6 +29,12 @@ import type {
   CreateChildTicketResult,
   CreateStaffInput,
   CurrentStaff,
+  FirstReplySlaAnalytics,
+  FirstReplySlaBadge,
+  FirstReplySlaPolicy,
+  FirstReplySlaPolicyDefinition,
+  FirstReplySlaPreview,
+  FirstReplySlaPreviewInput,
   GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
@@ -109,6 +115,15 @@ const TICKET_PRIORITIES = new Set<TicketPriority>([
   'URGENT',
 ])
 const TICKET_VISIBILITIES = new Set<TicketVisibility>(['PUBLIC', 'INTERNAL'])
+const FIRST_REPLY_SLA_STATES = new Set<FirstReplySlaBadge['state']>([
+  'ACTIVE',
+  'AT_RISK',
+  'PAUSED',
+  'ACHIEVED',
+  'BREACHED',
+  'CANCELLED',
+  'NO_POLICY',
+])
 const ACTOR_TYPES = new Set<ActorSummary['type']>([
   'CUSTOMER',
   'STAFF',
@@ -1090,6 +1105,209 @@ export async function previewBusinessSchedule(
   }
 }
 
+function decodeFirstReplySlaPolicy(
+  value: unknown,
+): FirstReplySlaPolicy | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    typeof value.position !== 'number' ||
+    !Number.isSafeInteger(value.position) ||
+    !isCanonicalUuid(value.scheduleId) ||
+    typeof value.scheduleVersion !== 'number' ||
+    !Number.isSafeInteger(value.scheduleVersion) ||
+    !isRecord(value.conditions) ||
+    !isRecord(value.targets) ||
+    !Array.isArray(value.pauseStatuses) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    typeof value.aggregateVersion !== 'number' ||
+    !Number.isSafeInteger(value.aggregateVersion) ||
+    typeof value.active !== 'boolean' ||
+    !isTimestamp(value.createdAt) ||
+    !isRecord(value.createdBy) ||
+    value.createdBy.actorType !== 'STAFF' ||
+    !isCanonicalUuid(value.createdBy.actorId) ||
+    !isNonBlankString(value.createdBy.displayName)
+  ) {
+    return undefined
+  }
+  const targetRecord = value.targets as Record<string, unknown>
+  const target = (priority: TicketPriority): number | null | undefined => {
+    const minutes = targetRecord[priority]
+    return minutes === undefined || minutes === null
+      ? null
+      : typeof minutes === 'number' &&
+          Number.isSafeInteger(minutes) &&
+          minutes > 0
+        ? minutes
+        : undefined
+  }
+  const targets = {
+    LOW: target('LOW'),
+    NORMAL: target('NORMAL'),
+    HIGH: target('HIGH'),
+    URGENT: target('URGENT'),
+  }
+  if (
+    Object.values(targets).some((minutes) => minutes === undefined) ||
+    (value.conditions.groupId !== null &&
+      !isCanonicalUuid(value.conditions.groupId)) ||
+    (value.conditions.channel !== null &&
+      !['WEB', 'AGENT', 'EMAIL', 'CHAT', 'API'].includes(
+        String(value.conditions.channel),
+      )) ||
+    !value.pauseStatuses.every(isAgentTicketStatus)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    position: value.position,
+    scheduleId: value.scheduleId,
+    scheduleVersion: value.scheduleVersion,
+    conditions: {
+      groupId: value.conditions.groupId as string | null,
+      channel: value.conditions
+        .channel as FirstReplySlaPolicy['conditions']['channel'],
+    },
+    targets: targets as FirstReplySlaPolicy['targets'],
+    pauseStatuses: value.pauseStatuses as FirstReplySlaPolicy['pauseStatuses'],
+    version: value.version,
+    aggregateVersion: value.aggregateVersion,
+    active: value.active,
+    createdAt: value.createdAt,
+    createdBy: {
+      actorType: 'STAFF',
+      actorId: value.createdBy.actorId,
+      displayName: value.createdBy.displayName,
+    },
+  }
+}
+
+function decodeFirstReplySlaPolicies(response: Response, body: unknown) {
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const policies = body.map(decodeFirstReplySlaPolicy)
+  if (policies.some((policy) => !policy)) throw malformedSuccess(response)
+  return policies as FirstReplySlaPolicy[]
+}
+
+export async function listFirstReplySlaPolicies(): Promise<
+  FirstReplySlaPolicy[]
+> {
+  const response = await staffFetch('/api/v1/admin/sla-policies')
+  return decodeFirstReplySlaPolicies(response, await checkedBody(response))
+}
+
+export async function listFirstReplySlaPolicyVersions(
+  policyId: string,
+): Promise<FirstReplySlaPolicy[]> {
+  const response = await staffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions`,
+  )
+  return decodeFirstReplySlaPolicies(response, await checkedBody(response))
+}
+
+export async function createFirstReplySlaPolicy(
+  definition: FirstReplySlaPolicyDefinition,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/sla-policies',
+    'POST',
+    definition,
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function createFirstReplySlaPolicyVersion(
+  policyId: string,
+  aggregateVersion: number,
+  definition: FirstReplySlaPolicyDefinition,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions`,
+    'POST',
+    definition,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function activateFirstReplySlaPolicyVersion(
+  policyId: string,
+  version: number,
+  aggregateVersion: number,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions/${version}/activation`,
+    'PUT',
+    undefined,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function previewFirstReplySlaPolicy(
+  input: FirstReplySlaPreviewInput,
+): Promise<FirstReplySlaPreview> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/sla-policies/preview',
+    'POST',
+    input,
+  )
+  const value = await checkedBody(response)
+  if (
+    !isRecord(value) ||
+    typeof value.matched !== 'boolean' ||
+    (value.dueAt !== null && !isTimestamp(value.dueAt)) ||
+    (value.targetMinutes !== null && typeof value.targetMinutes !== 'number') ||
+    (value.policyId !== null && !isCanonicalUuid(value.policyId)) ||
+    (value.policyVersion !== null && typeof value.policyVersion !== 'number') ||
+    (value.scheduleId !== null && !isCanonicalUuid(value.scheduleId)) ||
+    (value.scheduleVersion !== null &&
+      typeof value.scheduleVersion !== 'number') ||
+    value.dstPolicy !== 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return value as unknown as FirstReplySlaPreview
+}
+
+export async function getFirstReplySlaAnalytics(): Promise<FirstReplySlaAnalytics> {
+  const response = await staffFetch('/api/v1/analytics/first-reply-sla')
+  const value = await checkedBody(response)
+  const countFields = [
+    'active',
+    'paused',
+    'achieved',
+    'breached',
+    'cancelled',
+    'noPolicy',
+    'achievedRateDenominator',
+  ]
+  if (
+    !isRecord(value) ||
+    value.metric !== 'FIRST_REPLY' ||
+    !isNonBlankString(value.calculationVersion) ||
+    !countFields.every(
+      (field) =>
+        typeof value[field] === 'number' && Number.isSafeInteger(value[field]),
+    ) ||
+    (value.achievedRate !== null && typeof value.achievedRate !== 'number')
+  ) {
+    throw malformedSuccess(response)
+  }
+  return value as unknown as FirstReplySlaAnalytics
+}
+
 function decodeActorSummary(value: unknown): ActorSummary | undefined {
   if (!isRecord(value)) return undefined
   if (
@@ -1131,6 +1349,37 @@ function decodeTicketReference(
   return { id: value.id, displayName: value.displayName }
 }
 
+function decodeFirstReplySlaBadge(
+  value: unknown,
+): FirstReplySlaBadge | undefined {
+  if (
+    !isRecord(value) ||
+    value.metric !== 'FIRST_REPLY' ||
+    typeof value.state !== 'string' ||
+    !FIRST_REPLY_SLA_STATES.has(value.state as FirstReplySlaBadge['state']) ||
+    (value.dueAt !== null && !isTimestamp(value.dueAt)) ||
+    (value.targetMinutes !== null &&
+      (typeof value.targetMinutes !== 'number' ||
+        !Number.isSafeInteger(value.targetMinutes))) ||
+    (value.policyVersion !== null &&
+      (typeof value.policyVersion !== 'number' ||
+        !Number.isSafeInteger(value.policyVersion))) ||
+    (value.scheduleVersion !== null &&
+      (typeof value.scheduleVersion !== 'number' ||
+        !Number.isSafeInteger(value.scheduleVersion)))
+  ) {
+    return undefined
+  }
+  return {
+    metric: 'FIRST_REPLY',
+    state: value.state as FirstReplySlaBadge['state'],
+    dueAt: value.dueAt,
+    targetMinutes: value.targetMinutes,
+    policyVersion: value.policyVersion,
+    scheduleVersion: value.scheduleVersion,
+  }
+}
+
 function decodeAgentTicketSummary(
   value: unknown,
 ): AgentTicketSummary | undefined {
@@ -1139,6 +1388,7 @@ function decodeAgentTicketSummary(
   const group = value.group === null ? null : decodeGroupReference(value.group)
   const assignee =
     value.assignee === null ? null : decodeTicketReference(value.assignee)
+  const sla = value.sla === null ? null : decodeFirstReplySlaBadge(value.sla)
   if (
     !isTicketNumber(value.ticketNumber) ||
     !isNonBlankString(value.subject) ||
@@ -1153,7 +1403,7 @@ function decodeAgentTicketSummary(
     typeof value.isChild !== 'boolean' ||
     typeof value.openChildCount !== 'number' ||
     !Number.isSafeInteger(value.openChildCount) ||
-    value.sla !== null
+    sla === undefined
   ) {
     return undefined
   }
@@ -1169,7 +1419,7 @@ function decodeAgentTicketSummary(
     version: value.version,
     isChild: value.isChild,
     openChildCount: value.openChildCount,
-    sla: null,
+    sla,
   }
 }
 
@@ -1425,6 +1675,7 @@ export async function listTicketsInView(
   if (filters.priority) search.set('priority', filters.priority)
   if (filters.groupId) search.set('groupId', filters.groupId)
   if (filters.assigneeId) search.set('assigneeId', filters.assigneeId)
+  if (filters.slaState) search.set('slaState', filters.slaState)
   if (filters.cursor) search.set('cursor', filters.cursor)
   if (filters.limit) search.set('limit', String(filters.limit))
   const query = search.size ? `?${search.toString()}` : ''

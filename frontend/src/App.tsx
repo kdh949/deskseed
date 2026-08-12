@@ -18,6 +18,7 @@ import {
 import { AdminGroupsPage } from './pages/AdminGroupsPage'
 import { AdminBusinessSchedulesPage } from './pages/AdminBusinessSchedulesPage'
 import { AdminStaffPage } from './pages/AdminStaffPage'
+import { AdminFirstReplySlaPage } from './pages/AdminFirstReplySlaPage'
 import { HomePage } from './pages/HomePage'
 import { LookupPage } from './pages/LookupPage'
 import { NewRequestPage } from './pages/NewRequestPage'
@@ -101,6 +102,10 @@ export const appRoutes: RouteObject[] = [
                   {
                     path: 'business-rules/schedules',
                     element: <AdminBusinessSchedulesPage />,
+                  },
+                  {
+                    path: 'business-rules/sla',
+                    element: <AdminFirstReplySlaPage />,
                   },
                   {
                     path: '*',

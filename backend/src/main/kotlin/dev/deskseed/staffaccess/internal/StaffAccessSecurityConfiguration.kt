@@ -53,6 +53,7 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/me").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                it.requestMatchers(HttpMethod.GET, "/api/v1/analytics/**").hasAnyRole("ADMIN", "AGENT")
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/activities/*/search-query-reveal")
                     .authenticated()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/exports")

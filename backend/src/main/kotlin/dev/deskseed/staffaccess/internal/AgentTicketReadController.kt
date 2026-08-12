@@ -7,6 +7,7 @@ import dev.deskseed.ticketing.StaffCommentView
 import dev.deskseed.ticketing.StaffTicketHistoryItem
 import dev.deskseed.ticketing.StaffTicketListFilter
 import dev.deskseed.ticketing.StaffTicketSummary
+import dev.deskseed.ticketing.StaffSlaDisplayState
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import jakarta.servlet.http.HttpServletRequest
@@ -61,13 +62,14 @@ internal class AgentTicketReadController(
         @RequestParam(required = false) priority: TicketPriority?,
         @RequestParam(required = false) groupId: UUID?,
         @RequestParam(required = false) assigneeId: String?,
+        @RequestParam(required = false) slaState: StaffSlaDisplayState?,
     ): TicketSummaryPageResponse {
         require(sort == STABLE_SORT) { "Unsupported ticket sort" }
         val view = DefaultStaffView.fromKey(viewKey) ?: throw AgentTicketNotFoundException()
         val page = applicationService.listTickets(
             principal = principal,
             view = view,
-            filters = StaffTicketListFilter(status, priority, groupId, assigneeId),
+            filters = StaffTicketListFilter(status, priority, groupId, assigneeId, slaState),
             cursor = cursor,
             limit = limit,
         )
@@ -191,7 +193,16 @@ internal class AgentTicketReadController(
         version = ticket.version,
         isChild = ticket.isChild,
         openChildCount = ticket.openChildCount,
-        sla = null,
+        sla = ticket.sla?.let {
+            SlaBadgeResponse(
+                metric = it.metric,
+                state = it.state.name,
+                dueAt = it.dueAt?.toString(),
+                targetMinutes = it.targetMinutes,
+                policyVersion = it.policyVersion,
+                scheduleVersion = it.scheduleVersion,
+            )
+        },
     )
 
     private fun commentResponse(comment: StaffCommentView) = AgentCommentResponse(
@@ -280,7 +291,16 @@ internal data class TicketSummaryResponse(
     val version: Long,
     val isChild: Boolean,
     val openChildCount: Int,
-    val sla: Any?,
+    val sla: SlaBadgeResponse?,
+)
+
+internal data class SlaBadgeResponse(
+    val metric: String,
+    val state: String,
+    val dueAt: String?,
+    val targetMinutes: Long?,
+    val policyVersion: Int?,
+    val scheduleVersion: Int?,
 )
 
 internal data class ActorSummaryResponse(val id: UUID?, val type: String, val displayName: String)

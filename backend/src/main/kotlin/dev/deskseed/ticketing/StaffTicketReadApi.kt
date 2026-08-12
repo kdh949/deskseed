@@ -27,6 +27,7 @@ data class StaffTicketListFilter(
     val priority: TicketPriority? = null,
     val groupId: UUID? = null,
     val assignee: String? = null,
+    val slaState: StaffSlaDisplayState? = null,
 )
 
 data class StaffTicketSearchFilter(
@@ -69,6 +70,26 @@ data class StaffTicketSummary(
     val version: Long,
     val isChild: Boolean,
     val openChildCount: Int = 0,
+    val sla: StaffSlaBadge? = null,
+)
+
+enum class StaffSlaDisplayState {
+    ACTIVE,
+    AT_RISK,
+    PAUSED,
+    ACHIEVED,
+    BREACHED,
+    CANCELLED,
+    NO_POLICY,
+}
+
+data class StaffSlaBadge(
+    val metric: String = "FIRST_REPLY",
+    val state: StaffSlaDisplayState,
+    val dueAt: Instant?,
+    val targetMinutes: Long?,
+    val policyVersion: Int?,
+    val scheduleVersion: Int?,
 )
 
 data class StaffCommentView(
