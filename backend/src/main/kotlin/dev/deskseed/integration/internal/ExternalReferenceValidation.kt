@@ -1,6 +1,7 @@
 package dev.deskseed.integration.internal
 
 import dev.deskseed.integration.ExternalReferenceValidationException
+import dev.deskseed.integration.StrictIpLiteralParser
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
@@ -142,7 +143,10 @@ internal class ExternalReferenceValidation(
         return BigDecimal.valueOf(value).stripTrailingZeros()
     }
 
-    private fun looksLikeIpLiteral(value: String): Boolean = value.contains(':') || IPV4.matches(value)
+    private fun looksLikeIpLiteral(value: String): Boolean =
+        value.contains(':') ||
+            StrictIpLiteralParser.parse(value) != null ||
+            value.split('.').all { label -> label.isNotEmpty() && label.all(Char::isDigit) }
 
     private fun invalidUnless(condition: Boolean, code: String) {
         if (!condition) throw ExternalReferenceValidationException(code)
@@ -164,7 +168,6 @@ internal class ExternalReferenceValidation(
         private val HOSTNAME = Regex(
             "^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
         )
-        private val IPV4 = Regex("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")
         private val ENCODED_CONTROL = Regex("%(?:0[0-9a-f]|1[0-9a-f]|7f)", RegexOption.IGNORE_CASE)
         private val PRIVATE_HOST_SUFFIXES = setOf("localhost", "local", "internal", "home", "lan")
         private val CREDENTIAL_QUERY_TOKENS = setOf(

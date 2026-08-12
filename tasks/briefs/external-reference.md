@@ -51,6 +51,7 @@
 - Literal IPv4/IPv6, localhost/local/internal names, wildcard hosts, private/link-local candidates, and dangerous schemes fail before persistence or audit serialization.
 - Metadata has at most eight approved scalar keys, at most 2048 serialized bytes, and no object/array/null value.
 - `(ticket, system, objectType, externalId)` is unique. The same external identity may link to another ticket.
+- The registry and each ticket are capped at 100 entries under transaction-scoped capacity locks; the 101st create is a stable conflict and list responses are never silently truncated.
 - Create/delete locks and versions the ticket, persists one TicketAudit with one ordered ExternalReference event, and commits/rolls back together.
 - Registry mutation and AdminSecurityAudit commit/roll back together.
 - Duplicate create is a stable conflict; stale ticket/system version is precondition failure; retry requires an intentional fresh read.

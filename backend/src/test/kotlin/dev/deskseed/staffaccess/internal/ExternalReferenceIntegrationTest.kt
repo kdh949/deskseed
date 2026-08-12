@@ -351,6 +351,88 @@ class ExternalReferenceIntegrationTest {
         }
     }
 
+    @Test
+    fun `registry and ticket reference cardinality reject the one hundred first item without truncation`() {
+        val adminId = insertStaff("admin@example.com", "Admin password 42", "ADMIN")
+        val admin = login("admin@example.com", "Admin password 42")
+        val now = Timestamp.from(Instant.parse("2026-08-12T00:00:00Z"))
+        repeat(100) { index ->
+            jdbcTemplate.update(
+                """
+                insert into external_systems
+                    (id, system_key, display_name, status, allowed_hostnames_json,
+                     created_by_staff_id, created_at, updated_at, version)
+                values (?, ?, ?, 'ACTIVE', '["registry.example.com"]', ?, ?, ?, 0)
+                """.trimIndent(),
+                UUID.randomUUID(),
+                "registry-$index",
+                "Registry $index",
+                adminId,
+                now,
+                now,
+            )
+        }
+
+        mockMvc.perform(
+            post("/api/v1/admin/external-systems")
+                .session(admin.session)
+                .csrf(admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"systemKey":"registry-overflow","displayName":"Overflow","allowedHostnames":["overflow.example.com"]}""",
+                ),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("EXTERNAL_SYSTEM_LIMIT_REACHED"))
+        mockMvc.perform(get("/api/v1/admin/external-systems").session(admin.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(100))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from external_systems", Long::class.java)).isEqualTo(100)
+
+        jdbcTemplate.update("delete from external_systems")
+        val customer = createPublicTicket()
+        val systemId = jsonUuid(createSystem(admin, "ticket-ref", "Ticket Ref", "admin.shop.example"), "id")
+        val ticketId = jdbcTemplate.queryForObject(
+            "select id from tickets where ticket_number = ?",
+            UUID::class.java,
+            customer.ticketNumber,
+        )!!
+        repeat(100) { index ->
+            jdbcTemplate.update(
+                """
+                insert into external_references
+                    (id, ticket_id, external_system_id, object_type, external_id, display_label,
+                     safe_deep_link, metadata_snapshot_json, metadata_observed_at,
+                     created_by_actor_type, created_by_actor_id, created_by_actor_display, created_at)
+                values (?, ?, ?, 'ORDER', ?, ?, ?, '{}', ?, 'STAFF', ?, '관리자', ?)
+                """.trimIndent(),
+                UUID.randomUUID(),
+                ticketId,
+                systemId,
+                "order-$index",
+                "Order $index",
+                "https://admin.shop.example/orders/$index",
+                now,
+                adminId,
+                now,
+            )
+        }
+
+        createReference(admin, customer.ticketNumber, systemId, 0, "order-overflow")
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("EXTERNAL_REFERENCE_LIMIT_REACHED"))
+        mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}/external-references", customer.ticketNumber)
+                .session(admin.session)
+                .header("X-Interaction-Id", UUID.randomUUID()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(100))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from external_references", Long::class.java)).isEqualTo(100)
+        assertThat(ticketVersion(customer.ticketNumber)).isZero()
+        assertThat(ticketAuditEventCount("EXTERNAL_REFERENCE_CREATED")).isZero()
+    }
+
     private fun createSystem(browser: Browser, key: String, name: String, host: String): String =
         mockMvc.perform(
             post("/api/v1/admin/external-systems")

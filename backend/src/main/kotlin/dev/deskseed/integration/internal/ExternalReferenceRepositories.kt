@@ -7,8 +7,8 @@ import org.springframework.data.jpa.repository.Query
 import java.util.UUID
 
 internal interface ExternalSystemRepository : JpaRepository<ExternalSystemEntity, UUID> {
-    fun findTop100ByOrderByDisplayNameAscIdAsc(): List<ExternalSystemEntity>
-    fun findTop100ByStatusOrderByDisplayNameAscIdAsc(status: String): List<ExternalSystemEntity>
+    fun findAllByOrderByDisplayNameAscIdAsc(): List<ExternalSystemEntity>
+    fun findAllByStatusOrderByDisplayNameAscIdAsc(status: String): List<ExternalSystemEntity>
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select system from ExternalSystemEntity system where system.id = :id")
@@ -16,7 +16,7 @@ internal interface ExternalSystemRepository : JpaRepository<ExternalSystemEntity
 }
 
 internal interface ExternalReferenceRepository : JpaRepository<ExternalReferenceEntity, UUID> {
-    fun findTop100ByTicketIdOrderByCreatedAtDescIdDesc(ticketId: UUID): List<ExternalReferenceEntity>
+    fun findAllByTicketIdOrderByCreatedAtDescIdDesc(ticketId: UUID): List<ExternalReferenceEntity>
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query(
