@@ -12,12 +12,14 @@ import dev.deskseed.sla.BusinessScheduleConflictException
 import dev.deskseed.sla.BusinessScheduleDefinition
 import dev.deskseed.sla.BusinessScheduleNotFoundException
 import dev.deskseed.sla.BusinessSchedulePreconditionFailedException
+import dev.deskseed.sla.BusinessScheduleValidationException
 import dev.deskseed.sla.BusinessScheduleView
 import dev.deskseed.sla.BusinessTimePreview
 import dev.deskseed.sla.DeterministicBusinessTimeCalculator
 import dev.deskseed.sla.ExceptionMode
 import dev.deskseed.sla.ScheduleDateException
 import dev.deskseed.sla.ScheduleExceptionView
+import dev.deskseed.sla.ScheduleValidationIssue
 import dev.deskseed.sla.ScheduleVersionActorView
 import dev.deskseed.sla.WeekdaySchedule
 import dev.deskseed.sla.WeekdayScheduleView
@@ -29,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.sql.ResultSet
 import java.time.Clock
 import java.time.DayOfWeek
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -215,6 +218,17 @@ internal class JdbcBusinessScheduleAdministration(
     ): BusinessTimePreview {
         require(startAt <= endAt) { "Preview endAt must not precede startAt" }
         require(businessMinutes in 0..MAX_PREVIEW_MINUTES)
+        if (Duration.between(startAt, endAt) > MAX_PREVIEW_ELAPSED_RANGE) {
+            throw BusinessScheduleValidationException(
+                listOf(
+                    ScheduleValidationIssue(
+                        "endAt",
+                        "PREVIEW_RANGE_TOO_LARGE",
+                        "Preview elapsed range cannot exceed 366 days.",
+                    ),
+                ),
+            )
+        }
         val calculator = DeterministicBusinessTimeCalculator(definition)
         return BusinessTimePreview(
             dueAt = calculator.addBusinessMinutes(startAt, businessMinutes),
@@ -360,6 +374,7 @@ internal class JdbcBusinessScheduleAdministration(
                 )
             },
             version = version,
+            activeVersion = root.activeVersion,
             aggregateVersion = root.aggregateVersion,
             active = root.activeVersion == version,
             createdAt = metadata.createdAt,
@@ -524,5 +539,6 @@ internal class JdbcBusinessScheduleAdministration(
     private companion object {
         val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
         const val MAX_PREVIEW_MINUTES = 525_600L
+        val MAX_PREVIEW_ELAPSED_RANGE: Duration = Duration.ofDays(366)
     }
 }

@@ -50,6 +50,7 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
       id: SCHEDULE_ID,
       ...definition,
       version,
+      activeVersion,
       aggregateVersion,
       active: version === activeVersion,
       createdAt:
@@ -104,6 +105,8 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
     ) {
       expect(request.headers()['x-csrf-token']).toBe(CSRF_TOKEN)
       const body = request.postDataJSON()
+      expect(body.startAt).toBe('2026-08-14T08:00:00.000Z')
+      expect(body.endAt).toBe('2026-08-17T01:00:00.000Z')
       expect(body.schedule.weekdays[5]).toEqual({
         weekday: 'SATURDAY',
         enabled: true,
@@ -181,6 +184,7 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
 
   await page.getByRole('button', { name: '새 버전 저장' }).click()
   await expect(page.getByText('버전 2가 저장되었습니다.')).toBeVisible()
+  await expect(page.getByText('활성 v1 · 최신 v2 초안')).toBeVisible()
   await page.getByRole('button', { name: '버전 2 활성화' }).click()
   await expect(page.getByText('버전 2가 활성화되었습니다.')).toBeVisible()
   expect(consoleProblems).toEqual([])

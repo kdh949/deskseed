@@ -17,6 +17,7 @@ import type {
   BusinessWeekday,
   BusinessWeekdaySchedule,
 } from '../api/types'
+import { localDateTimeToInstant } from '../shared/timeZone'
 import { Notification, ScreenState } from '../shared/ui/system'
 
 const DAYS: { key: BusinessWeekday; label: string }[] = [
@@ -206,8 +207,8 @@ export function AdminBusinessSchedulesPage() {
       setPreview(
         await previewBusinessSchedule({
           schedule: draft,
-          startAt: new Date(previewStart).toISOString(),
-          endAt: new Date(previewEnd).toISOString(),
+          startAt: localDateTimeToInstant(previewStart, draft.timeZone),
+          endAt: localDateTimeToInstant(previewEnd, draft.timeZone),
           businessMinutes: previewMinutes,
         }),
       )
@@ -342,8 +343,11 @@ export function AdminBusinessSchedulesPage() {
                   <strong>{schedule.name}</strong>
                   <span>{schedule.timeZone}</span>
                   <small>
-                    v{schedule.version} ·{' '}
-                    {schedule.active ? '활성' : '활성 버전 없음'}
+                    {schedule.activeVersion === null
+                      ? `최신 v${schedule.version} · 활성 버전 없음`
+                      : schedule.activeVersion === schedule.version
+                        ? `활성 v${schedule.version} · 최신`
+                        : `활성 v${schedule.activeVersion} · 최신 v${schedule.version} 초안`}
                   </small>
                 </button>
               </li>
@@ -578,7 +582,10 @@ export function AdminBusinessSchedulesPage() {
             <div className="schedule-section-heading">
               <div>
                 <h2 id="schedule-preview-title">미저장 일정 미리보기</h2>
-                <p>저장 전 초안에 동일한 결정론적 계산기를 적용합니다.</p>
+                <p>
+                  저장 전 초안에 동일한 결정론적 계산기를 적용합니다. 입력과
+                  결과는 {localPreviewZone} 기준입니다.
+                </p>
               </div>
               <span className="dst-policy">
                 DST: gap 전진 · overlap 양쪽 포함

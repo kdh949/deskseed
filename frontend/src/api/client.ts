@@ -915,6 +915,10 @@ function decodeBusinessSchedule(value: unknown): BusinessSchedule | undefined {
     typeof value.version !== 'number' ||
     !Number.isSafeInteger(value.version) ||
     value.version < 1 ||
+    (value.activeVersion !== null &&
+      (typeof value.activeVersion !== 'number' ||
+        !Number.isSafeInteger(value.activeVersion) ||
+        value.activeVersion < 1)) ||
     typeof value.aggregateVersion !== 'number' ||
     !Number.isSafeInteger(value.aggregateVersion) ||
     value.aggregateVersion < 0 ||
@@ -984,6 +988,7 @@ function decodeBusinessSchedule(value: unknown): BusinessSchedule | undefined {
     weekdays,
     exceptions,
     version: value.version,
+    activeVersion: value.activeVersion as number | null,
     aggregateVersion: value.aggregateVersion,
     active: value.active,
     createdAt: value.createdAt,

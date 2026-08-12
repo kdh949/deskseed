@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
+import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -52,6 +53,7 @@ class BusinessScheduleAdminIntegrationTest {
             .andExpect(jsonPath("$[0].name").value("Default Support Hours"))
             .andExpect(jsonPath("$[0].timeZone").value("Asia/Seoul"))
             .andExpect(jsonPath("$[0].version").value(1))
+            .andExpect(jsonPath("$[0].activeVersion").value(1))
             .andExpect(jsonPath("$[0].active").value(true))
             .andExpect(jsonPath("$[0].weekdays[0].weekday").value("MONDAY"))
             .andExpect(jsonPath("$[0].weekdays[0].intervals[0].start").value("09:00"))
@@ -82,6 +84,31 @@ class BusinessScheduleAdminIntegrationTest {
     }
 
     @Test
+    fun `preview rejects elapsed ranges longer than one year`() {
+        val browser = adminBrowser()
+
+        mockMvc.perform(
+            post("/api/v1/admin/business-schedules/preview")
+                .session(browser.session)
+                .csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "schedule": ${scheduleJson("Bounded preview")},
+                      "startAt": "2026-01-01T00:00:00Z",
+                      "endAt": "2027-01-03T00:00:00Z",
+                      "businessMinutes": 120
+                    }
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.fieldErrors[0].field").value("endAt"))
+            .andExpect(jsonPath("$.fieldErrors[0].code").value("PREVIEW_RANGE_TOO_LARGE"))
+    }
+
+    @Test
     fun `saving creates immutable version and activation is audited with stale writes rejected`() {
         val browser = adminBrowser()
         val uniqueName = "Versioned ${UUID.randomUUID()}"
@@ -95,6 +122,7 @@ class BusinessScheduleAdminIntegrationTest {
             .andExpect(status().isCreated)
             .andExpect(header().string("ETag", "\"0\""))
             .andExpect(jsonPath("$.version").value(1))
+            .andExpect(content().string(containsString("\"activeVersion\":null")))
             .andExpect(jsonPath("$.active").value(false))
             .andReturn().response.contentAsString
         val scheduleId = UUID.fromString(stringField(created, "id"))
@@ -110,6 +138,7 @@ class BusinessScheduleAdminIntegrationTest {
             .andExpect(status().isCreated)
             .andExpect(header().string("ETag", "\"1\""))
             .andExpect(jsonPath("$.version").value(2))
+            .andExpect(content().string(containsString("\"activeVersion\":null")))
             .andExpect(jsonPath("$.active").value(false))
             .andExpect(jsonPath("$.weekdays[5].enabled").value(true))
             .andExpect(jsonPath("$.exceptions[1].mode").value("CLOSED"))
@@ -137,6 +166,7 @@ class BusinessScheduleAdminIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(header().string("ETag", "\"2\""))
             .andExpect(jsonPath("$.version").value(2))
+            .andExpect(jsonPath("$.activeVersion").value(2))
             .andExpect(jsonPath("$.active").value(true))
 
         mockMvc.perform(

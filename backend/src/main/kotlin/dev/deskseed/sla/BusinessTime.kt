@@ -214,9 +214,13 @@ class DeterministicBusinessTimeCalculator(
             return null
         }
 
-        // At most 366 exception dates can mask weekly openings. The fixed tail
-        // finds the next weekly opening without iterating toward a remote date.
-        val searchEnd = startDate.plusDays((schedule.exceptions.size + 14).toLong())
+        // Once the last dated exception is behind us, two complete weeks are
+        // sufficient to encounter a recurring weekday opening, including a
+        // weekly interval that becomes empty on a DST gap date.
+        val lastExceptionDate = schedule.exceptions.keys
+            .filterNot { it.isBefore(startDate) }
+            .maxOrNull()
+        val searchEnd = maxOf(startDate, lastExceptionDate ?: startDate).plusDays(14)
         var date = startDate
         while (!date.isAfter(searchEnd)) {
             effectiveIntervals(date).forEach { interval ->
@@ -237,10 +241,23 @@ class DeterministicBusinessTimeCalculator(
                 ?.intervals
                 .orEmpty()
         }
-        return localIntervals.mapNotNull { interval ->
+        val resolved = localIntervals.mapNotNull { interval ->
             val start = resolveBoundary(date, interval.start, startBoundary = true)
             val end = resolveBoundary(date, interval.end, startBoundary = false)
             if (start < end) EffectiveInterval(start, end) else null
+        }.sortedBy { it.start }
+
+        return resolved.fold(mutableListOf()) { canonical, interval ->
+            val previous = canonical.lastOrNull()
+            if (previous != null && !interval.start.isAfter(previous.end)) {
+                canonical[canonical.lastIndex] = EffectiveInterval(
+                    previous.start,
+                    maxOf(previous.end, interval.end),
+                )
+            } else {
+                canonical += interval
+            }
+            canonical
         }
     }
 

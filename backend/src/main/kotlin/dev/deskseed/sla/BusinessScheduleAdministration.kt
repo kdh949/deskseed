@@ -1,5 +1,6 @@
 package dev.deskseed.sla
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
 import java.time.DayOfWeek
@@ -47,6 +48,8 @@ data class BusinessScheduleView(
     val weekdays: List<WeekdayScheduleView>,
     val exceptions: List<ScheduleExceptionView>,
     val version: Int,
+    @get:JsonInclude(JsonInclude.Include.ALWAYS)
+    val activeVersion: Int?,
     val aggregateVersion: Long,
     val active: Boolean,
     val createdAt: Instant,

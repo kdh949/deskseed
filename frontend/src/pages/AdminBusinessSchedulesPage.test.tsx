@@ -39,6 +39,7 @@ const schedule: BusinessSchedule = {
   })),
   exceptions: [],
   version: 1,
+  activeVersion: 1,
   aggregateVersion: 0,
   active: true,
   createdAt: '2026-08-10T00:00:00Z',
@@ -89,6 +90,8 @@ describe('AdminBusinessSchedulesPage', () => {
       expect(apiMocks.previewBusinessSchedule).toHaveBeenCalledTimes(1),
     )
     const request = apiMocks.previewBusinessSchedule.mock.calls[0]![0]
+    expect(request.startAt).toBe('2026-08-14T08:00:00.000Z')
+    expect(request.endAt).toBe('2026-08-17T01:00:00.000Z')
     expect(request.schedule.weekdays[5]).toEqual({
       weekday: 'SATURDAY',
       enabled: true,
@@ -99,6 +102,24 @@ describe('AdminBusinessSchedulesPage', () => {
     })
     expect(await screen.findByText('2026. 8. 17. 오전 10:00')).toBeVisible()
     expect(screen.getByText('120분')).toBeVisible()
+  })
+
+  it('shows the active version separately from the latest draft', async () => {
+    const latestDraft = {
+      ...schedule,
+      version: 2,
+      activeVersion: 1,
+      active: false,
+    }
+    apiMocks.listBusinessSchedules.mockResolvedValue([latestDraft])
+    apiMocks.listBusinessScheduleVersions.mockResolvedValue([
+      latestDraft,
+      schedule,
+    ])
+
+    render(<AdminBusinessSchedulesPage />)
+
+    expect(await screen.findByText('활성 v1 · 최신 v2 초안')).toBeVisible()
   })
 
   it('saves an immutable version then activates it with the latest aggregate version', async () => {
