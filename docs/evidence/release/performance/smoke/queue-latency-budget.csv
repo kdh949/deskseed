@@ -1,0 +1,6 @@
+query_name,p95_ms,budget_ms,within_budget
+queue_my_child_tasks_first_page,1.068,50,t
+queue_my_open_first_page,0.746,50,t
+queue_pending_first_page,0.903,50,t
+queue_recently_solved_first_page,1.110,50,t
+queue_unassigned_my_groups_first_page,1.221,50,t

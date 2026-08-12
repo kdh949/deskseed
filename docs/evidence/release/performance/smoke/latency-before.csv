@@ -1,0 +1,11 @@
+query_name,phase,samples,min_ms,p50_ms,p95_ms,max_ms
+audit_action_and_date,before,15,0.072,0.073,0.081,0.082
+audit_actor_and_date,before,15,0.623,0.676,0.874,0.989
+audit_first_cursor_page,before,15,0.069,0.072,0.084,0.089
+audit_ticket_and_date,before,15,0.062,0.071,0.080,0.081
+queue_my_child_tasks_first_page,before,15,0.577,0.616,0.767,0.801
+queue_my_open_first_page,before,15,0.699,0.739,0.944,0.998
+queue_pending_first_page,before,15,0.634,0.696,0.804,0.805
+queue_recently_solved_first_page,before,15,0.635,0.667,0.741,0.782
+queue_unassigned_my_groups_first_page,before,15,0.915,0.974,1.130,1.290
+staff_command_replay_lookup,before,15,0.114,0.120,0.143,0.149

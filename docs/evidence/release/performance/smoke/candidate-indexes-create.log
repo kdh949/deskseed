@@ -1,0 +1,10 @@
+Timing is on.
+CREATE INDEX
+Time: 6.537 ms
+CREATE INDEX
+Time: 5.839 ms
+Time: 0.514 ms
+ANALYZE
+Time: 21.559 ms
+ANALYZE
+Time: 88.363 ms

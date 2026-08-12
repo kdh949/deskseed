@@ -1,0 +1,7 @@
+status=PASS
+container_name=deskseed-release-perf-smoke-S9Aj9q-65529-9378
+container_id=a75ff3c006ab549ffb23614d88f7dad7d3ce967cfab74a0eebf538e3c2e96287
+data_volume=dcb6e9990f475fd2c9613a096ea465761f732fa523dd84ffe936c894c4201af7
+container_cleanup=REMOVED_AND_VERIFIED_ABSENT
+volume_cleanup=REMOVED_AND_VERIFIED_ABSENT
+scratch_cleanup=REMOVED_AND_VERIFIED_ABSENT

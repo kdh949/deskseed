@@ -1,0 +1,7 @@
+status=PASS
+container_name=deskseed-release-perf-release-mONTjk-67229-3107
+container_id=35552a5f4069356d983296350843375df2e90b921b439c26aa906ad4ebdfb17a
+data_volume=841349b09ba8ed87a98b89669a10c2684355e89aff6e68f8e72a46170fc388fb
+container_cleanup=REMOVED_AND_VERIFIED_ABSENT
+volume_cleanup=REMOVED_AND_VERIFIED_ABSENT
+scratch_cleanup=REMOVED_AND_VERIFIED_ABSENT
