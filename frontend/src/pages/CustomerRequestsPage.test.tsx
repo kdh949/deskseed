@@ -113,6 +113,41 @@ describe('Customer Requests portal', () => {
     })
   })
 
+  it('loads the next cursor page and removes duplicate tickets', async () => {
+    const user = userEvent.setup()
+    apiMocks.listCustomerRequests
+      .mockResolvedValueOnce({ items: [request], nextCursor: 'cursor-2' })
+      .mockResolvedValueOnce({
+        items: [
+          request,
+          {
+            ...request,
+            ticketNumber: 1041,
+            subject: '이전 문의',
+          },
+        ],
+        nextCursor: null,
+      })
+    renderAt('/account/requests')
+
+    await user.click(
+      await screen.findByRole('button', { name: '문의 더 보기' }),
+    )
+
+    expect(await screen.findByRole('link', { name: /이전 문의/ })).toBeVisible()
+    expect(
+      screen.getAllByRole('link', { name: /결제 오류 문의/ }),
+    ).toHaveLength(1)
+    expect(apiMocks.listCustomerRequests).toHaveBeenNthCalledWith(
+      2,
+      undefined,
+      'cursor-2',
+    )
+    expect(
+      screen.queryByRole('button', { name: '문의 더 보기' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('preserves follow-up draft on failure and invalidates detail after success', async () => {
     const user = userEvent.setup()
     apiMocks.getCustomerRequest.mockResolvedValue({
@@ -151,6 +186,44 @@ describe('Customer Requests portal', () => {
     await user.click(screen.getByRole('button', { name: '공개 답변 보내기' }))
     await waitFor(() => expect(draft).toHaveValue(''))
     expect(apiMocks.addCustomerFollowUp).toHaveBeenCalledTimes(2)
+    expect(apiMocks.addCustomerFollowUp.mock.calls[0]?.[2]).toBe(
+      apiMocks.addCustomerFollowUp.mock.calls[1]?.[2],
+    )
+  })
+
+  it('uses a new command id when the draft changes after a failure', async () => {
+    const user = userEvent.setup()
+    apiMocks.getCustomerRequest.mockResolvedValue({
+      ...request,
+      comments: [],
+    })
+    apiMocks.addCustomerFollowUp
+      .mockRejectedValueOnce(new ApiError('temporary', 503))
+      .mockResolvedValueOnce({
+        id: 'comment-2',
+        authorDisplayName: '고객',
+        body: '수정한 추가 정보',
+        createdAt: request.updatedAt,
+      })
+    renderAt('/account/requests/1042')
+
+    const draft = await screen.findByRole('textbox', { name: '공개 후속 답변' })
+    await user.type(draft, '추가 정보')
+    await user.click(screen.getByRole('button', { name: '공개 답변 보내기' }))
+    await screen.findByRole('alert', {
+      name: '후속 답변을 보내지 못했습니다.',
+    })
+    await user.clear(draft)
+    await user.type(draft, '수정한 추가 정보')
+    await user.click(screen.getByRole('button', { name: '공개 답변 보내기' }))
+
+    await waitFor(() => expect(draft).toHaveValue(''))
+    expect(apiMocks.addCustomerFollowUp.mock.calls[0]?.[2]).not.toBe(
+      apiMocks.addCustomerFollowUp.mock.calls[1]?.[2],
+    )
+    expect(apiMocks.addCustomerFollowUp.mock.calls[1]?.[1]).toBe(
+      '수정한 추가 정보',
+    )
   })
 
   it('renders denied detail without leaking server detail', async () => {

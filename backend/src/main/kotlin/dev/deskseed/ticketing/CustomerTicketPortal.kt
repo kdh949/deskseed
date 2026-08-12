@@ -54,6 +54,12 @@ data class ClaimCustomerTicketCommand(
     val context: CommandContext,
 )
 
+sealed interface CustomerTicketClaimResult {
+    data class Claimed(val auditId: UUID) : CustomerTicketClaimResult
+    data object NotFound : CustomerTicketClaimResult
+    data object Denied : CustomerTicketClaimResult
+}
+
 interface CustomerTicketPortal {
     fun list(query: CustomerTicketPageQuery): CustomerTicketPage
 
@@ -63,7 +69,7 @@ interface CustomerTicketPortal {
 
     fun findClaimable(ticketId: UUID, ticketNumber: Long): ClaimableCustomerTicket?
 
-    fun claim(command: ClaimCustomerTicketCommand): UUID
+    fun claim(command: ClaimCustomerTicketCommand): CustomerTicketClaimResult
 }
 
 class CustomerTicketNotFoundException : RuntimeException()

@@ -6,7 +6,7 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 607978a57219571ef2b32084db639c280a1844ad7f2a8545206bec7619b8963c        4016  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-ec3b1b3e435edcc38a93a7e5f9b29f9c8706b5e1ddee476cc86c74e130f2ee2d      121452  api/core-api-outline-v1.yaml
+9cf764c2b2d86b9745a78aec7ac1355a400d5ab0d23ce0fc973aaeb95c09c6c9      122609  api/core-api-outline-v1.yaml
 cb2f10b73d9146415239a3d2cb36f490952898190d62b477b785fbfd812dbad2       10534  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml

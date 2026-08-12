@@ -12,8 +12,8 @@ import dev.deskseed.ticketing.ClaimCustomerTicketCommand
 import dev.deskseed.ticketing.CustomerFollowUpCommand
 import dev.deskseed.ticketing.CustomerFollowUpResult
 import dev.deskseed.ticketing.CustomerRequestStatus
-import dev.deskseed.ticketing.CustomerTicketClaimDeniedException
 import dev.deskseed.ticketing.CustomerTicketNotFoundException
+import dev.deskseed.ticketing.CustomerTicketClaimResult
 import dev.deskseed.ticketing.CustomerTicketPageQuery
 import dev.deskseed.ticketing.CustomerTicketPortal
 import dev.deskseed.ticketing.PublicTicketView
@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
-import java.util.Locale
 
 internal data class CustomerRequestListResult(
     val items: List<dev.deskseed.ticketing.CustomerTicketSummary>,
@@ -115,33 +114,24 @@ internal class CustomerRequestPortalApplicationService(
         require(hasAccess.xor(hasGrant)) { "Exactly one customer claim proof is required" }
         val method = if (hasAccess) ClaimMethod.REQUEST_ACCESS_TOKEN else ClaimMethod.SIGNED_GRANT
         val grant = if (hasGrant) {
-            claimGrantStore.consume(requireNotNull(input.claimToken), ticketNumber, principal.email)
+            claimGrantStore.lockAndValidate(requireNotNull(input.claimToken), ticketNumber, principal.email)
         } else {
             null
         }
-        if (grant?.emailMismatch == true) {
+        if (grant == LockedClaimGrant.EmailMismatch) {
             appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
             return ClaimOutcome.DENIED
         }
         val ticketId = if (hasAccess) {
             accessTokenStore.lockTicketIdForClaim(requireNotNull(input.requestAccessToken))
         } else {
-            grant?.ticketId
+            (grant as? LockedClaimGrant.Valid)?.ticketId
         }
         if (ticketId == null) {
             appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
             return ClaimOutcome.NOT_FOUND
         }
-        val claimable = ticketPortal.findClaimable(ticketId, ticketNumber)
-        if (claimable == null) {
-            appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
-            return ClaimOutcome.NOT_FOUND
-        }
-        if (claimable.requesterEmail.trim().lowercase(Locale.ROOT) != principal.email.trim().lowercase(Locale.ROOT)) {
-            appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
-            return ClaimOutcome.DENIED
-        }
-        return try {
+        return when (
             ticketPortal.claim(
                 ClaimCustomerTicketCommand(
                     ticketId = ticketId,
@@ -151,15 +141,21 @@ internal class CustomerRequestPortalApplicationService(
                     context = context,
                 ),
             )
-            accessTokenStore.revokeAll(ticketId)
-            appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.SUCCEEDED, context)
-            ClaimOutcome.CLAIMED
-        } catch (_: CustomerTicketClaimDeniedException) {
-            appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
-            ClaimOutcome.DENIED
-        } catch (_: CustomerTicketNotFoundException) {
-            appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
-            ClaimOutcome.NOT_FOUND
+        ) {
+            is CustomerTicketClaimResult.Claimed -> {
+                accessTokenStore.revokeAll(ticketId)
+                (grant as? LockedClaimGrant.Valid)?.grantId?.let(claimGrantStore::markConsumed)
+                appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.SUCCEEDED, context)
+                ClaimOutcome.CLAIMED
+            }
+            CustomerTicketClaimResult.Denied -> {
+                appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
+                ClaimOutcome.DENIED
+            }
+            CustomerTicketClaimResult.NotFound -> {
+                appendClaimAudit(principal, ticketNumber, method, AdminSecurityOutcome.DENIED, context)
+                ClaimOutcome.NOT_FOUND
+            }
         }
     }
 

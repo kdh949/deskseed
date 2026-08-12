@@ -42,7 +42,7 @@ internal class CustomerRequestCursorCodec(
     }
 
     private fun sign(value: String): ByteArray = Mac.getInstance("HmacSHA256").run {
-        val key = Base64.getDecoder().decode(properties.claimSigningKey)
+        val key = Base64.getDecoder().decode(properties.requestCursorSigningKey)
         init(SecretKeySpec(key, "HmacSHA256"))
         doFinal(value.toByteArray(StandardCharsets.UTF_8))
     }

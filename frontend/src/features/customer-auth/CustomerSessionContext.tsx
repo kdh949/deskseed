@@ -44,3 +44,7 @@ export function useCustomerSession() {
     )
   return value
 }
+
+export function useOptionalCustomerSession() {
+  return useContext(CustomerSessionContext)
+}

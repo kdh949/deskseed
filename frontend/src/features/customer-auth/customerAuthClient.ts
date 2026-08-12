@@ -1,3 +1,5 @@
+import type { CustomerAccessMode } from '../../api/types'
+
 export interface CurrentCustomer {
   id: string
   email: string
@@ -53,6 +55,28 @@ export async function getCurrentCustomer(): Promise<CurrentCustomer | null> {
   if (!isCurrentCustomer(body))
     throw new Error('customer-session-response-invalid')
   return body
+}
+
+export async function getCustomerAccessMode(): Promise<CustomerAccessMode> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/customer/access-mode`, {
+    credentials: 'include',
+    cache: 'no-store',
+  })
+  if (!response.ok) throw new Error('customer-access-mode-read-failed')
+  const body: unknown = await response.json()
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    Array.isArray(body) ||
+    ![
+      'ANONYMOUS_ALLOWED',
+      'REGISTRATION_OPTIONAL',
+      'REGISTRATION_REQUIRED',
+    ].includes(String((body as Record<string, unknown>).mode))
+  ) {
+    throw new Error('customer-access-mode-response-invalid')
+  }
+  return (body as { mode: CustomerAccessMode }).mode
 }
 
 function isCurrentCustomer(value: unknown): value is CurrentCustomer {

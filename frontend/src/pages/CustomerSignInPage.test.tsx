@@ -1,4 +1,5 @@
 import { StrictMode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -65,11 +66,13 @@ describe('customer magic-link pages', () => {
 
     const token = takeAndClearMagicLinkToken()
     render(
-      <StrictMode>
-        <MemoryRouter>
-          <CustomerMagicLinkConsumePage token={token} />
-        </MemoryRouter>
-      </StrictMode>,
+      <QueryClientProvider client={new QueryClient()}>
+        <StrictMode>
+          <MemoryRouter>
+            <CustomerMagicLinkConsumePage token={token} />
+          </MemoryRouter>
+        </StrictMode>
+      </QueryClientProvider>,
     )
 
     expect(await screen.findByText('로그인되었습니다.')).toBeInTheDocument()
@@ -84,9 +87,11 @@ describe('customer magic-link pages', () => {
   it('does not make a request when the fragment is missing', () => {
     window.history.replaceState(null, '', '/customer/sign-in/consume')
     render(
-      <MemoryRouter>
-        <CustomerMagicLinkConsumePage token={takeAndClearMagicLinkToken()} />
-      </MemoryRouter>,
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CustomerMagicLinkConsumePage token={takeAndClearMagicLinkToken()} />
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
     expect(
       screen.getByText('로그인 링크를 사용할 수 없습니다.'),

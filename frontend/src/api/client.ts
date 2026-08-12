@@ -355,10 +355,27 @@ async function successfulResponseBody(response: Response): Promise<unknown> {
 
 export async function submitRequest(
   input: SubmitRequestInput,
+  authenticatedCustomer = false,
 ): Promise<SubmittedRequest> {
+  let csrfToken: string | undefined
+  if (authenticatedCustomer) {
+    const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+    const csrfBody = await successfulResponseBody(csrfResponse)
+    if (!isRecord(csrfBody) || !isNonBlankString(csrfBody.token)) {
+      throw malformedSuccess(csrfResponse)
+    }
+    csrfToken = csrfBody.token
+  }
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+    },
     cache: 'no-store',
     body: JSON.stringify(input),
   })

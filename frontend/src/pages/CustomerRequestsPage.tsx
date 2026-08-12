@@ -1,5 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState, type FormEvent } from 'react'
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import {
   ApiError,
@@ -28,10 +33,23 @@ export function CustomerRequestsPage() {
     'requestAccessToken' | 'claimToken'
   >('requestAccessToken')
   const resultRef = useRef<HTMLDivElement>(null)
-  const requests = useQuery({
+  const requests = useInfiniteQuery({
     queryKey: ['customer-requests', status || 'ALL'],
-    queryFn: () => listCustomerRequests(status || undefined),
+    queryFn: ({ pageParam }) =>
+      listCustomerRequests(status || undefined, pageParam ?? undefined),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
   })
+  const requestItems = useMemo(() => {
+    const seen = new Set<number>()
+    return (requests.data?.pages ?? []).flatMap((page) =>
+      page.items.filter((item) => {
+        if (seen.has(item.ticketNumber)) return false
+        seen.add(item.ticketNumber)
+        return true
+      }),
+    )
+  }, [requests.data])
   const claim = useMutation({
     mutationFn: ({
       number,
@@ -115,33 +133,45 @@ export function CustomerRequestsPage() {
             </button>
           }
         />
-      ) : requests.data.items.length === 0 ? (
+      ) : requestItems.length === 0 ? (
         <ScreenState
           kind="empty"
           title="아직 연결된 문의가 없습니다."
           description="새 문의를 접수하거나 아래에서 기존 익명 문의를 연결하세요."
         />
       ) : (
-        <ul className="customer-request-list" aria-label="내 문의 목록">
-          {requests.data.items.map((request) => (
-            <li key={request.ticketNumber}>
-              <Link to={`/account/requests/${request.ticketNumber}`}>
-                <span className="customer-request-number">
-                  #{request.ticketNumber}
-                </span>
-                <strong>{request.subject}</strong>
-                <span
-                  className={`customer-status status-${request.status.toLowerCase()}`}
-                >
-                  {STATUS_LABELS[request.status]}
-                </span>
-                <time dateTime={request.updatedAt}>
-                  {new Date(request.updatedAt).toLocaleDateString('ko-KR')}
-                </time>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div>
+          <ul className="customer-request-list" aria-label="내 문의 목록">
+            {requestItems.map((request) => (
+              <li key={request.ticketNumber}>
+                <Link to={`/account/requests/${request.ticketNumber}`}>
+                  <span className="customer-request-number">
+                    #{request.ticketNumber}
+                  </span>
+                  <strong>{request.subject}</strong>
+                  <span
+                    className={`customer-status status-${request.status.toLowerCase()}`}
+                  >
+                    {STATUS_LABELS[request.status]}
+                  </span>
+                  <time dateTime={request.updatedAt}>
+                    {new Date(request.updatedAt).toLocaleDateString('ko-KR')}
+                  </time>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {requests.hasNextPage ? (
+            <button
+              className="button secondary"
+              type="button"
+              disabled={requests.isFetchingNextPage}
+              onClick={() => void requests.fetchNextPage()}
+            >
+              {requests.isFetchingNextPage ? '불러오는 중…' : '문의 더 보기'}
+            </button>
+          ) : null}
+        </div>
       )}
 
       <section className="claim-card" aria-labelledby="claim-title">
@@ -238,7 +268,7 @@ export function CustomerRequestDetailPage() {
   const queryClient = useQueryClient()
   const ticketNumber = Number(useParams().ticketNumber)
   const [draft, setDraft] = useState('')
-  const commandId = useRef<string | null>(null)
+  const pendingCommand = useRef<{ id: string; body: string } | null>(null)
   const statusRef = useRef<HTMLDivElement>(null)
   const request = useQuery({
     queryKey: ['customer-request', ticketNumber],
@@ -247,8 +277,14 @@ export function CustomerRequestDetailPage() {
   })
   const followUp = useMutation({
     mutationFn: () => {
-      commandId.current ??= crypto.randomUUID()
-      return addCustomerFollowUp(ticketNumber, draft, commandId.current)
+      if (pendingCommand.current?.body !== draft) {
+        pendingCommand.current = { id: crypto.randomUUID(), body: draft }
+      }
+      return addCustomerFollowUp(
+        ticketNumber,
+        pendingCommand.current.body,
+        pendingCommand.current.id,
+      )
     },
     onSuccess: async () => {
       await Promise.all([
@@ -258,7 +294,7 @@ export function CustomerRequestDetailPage() {
         queryClient.invalidateQueries({ queryKey: ['customer-requests'] }),
       ])
       setDraft('')
-      commandId.current = null
+      pendingCommand.current = null
       statusRef.current?.focus()
     },
     onError: () => statusRef.current?.focus(),

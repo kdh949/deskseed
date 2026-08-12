@@ -18,6 +18,7 @@ import dev.deskseed.ticketing.CustomerFollowUpConflictException
 import dev.deskseed.ticketing.CustomerFollowUpResult
 import dev.deskseed.ticketing.CustomerRequestStatus
 import dev.deskseed.ticketing.CustomerTicketClaimDeniedException
+import dev.deskseed.ticketing.CustomerTicketClaimResult
 import dev.deskseed.ticketing.CustomerTicketNotFoundException
 import dev.deskseed.ticketing.CustomerTicketPage
 import dev.deskseed.ticketing.CustomerTicketPageQuery
@@ -158,21 +159,21 @@ internal class JpaCustomerTicketPortal(
     ).singleOrNull()
 
     @Transactional
-    override fun claim(command: ClaimCustomerTicketCommand): UUID {
+    override fun claim(command: ClaimCustomerTicketCommand): CustomerTicketClaimResult {
         require(command.context.source == RequestSource.CUSTOMER_PORTAL)
         val ticket = ticketRepository.lockByTicketNumber(command.ticketNumber)
             ?.takeIf { it.id == command.ticketId && it.kind == TicketKind.CUSTOMER_REQUEST }
-            ?: throw CustomerTicketNotFoundException()
+            ?: return CustomerTicketClaimResult.NotFound
         val oldRequester = customerDirectory.findById(ticket.requesterId)
             ?.takeIf { it.verifiedAt == null }
-            ?: throw CustomerTicketNotFoundException()
+            ?: return CustomerTicketClaimResult.NotFound
         val newRequester = customerDirectory.findById(command.accountCustomerId)
             ?.takeIf { it.verifiedAt != null }
-            ?: throw CustomerTicketClaimDeniedException()
+            ?: return CustomerTicketClaimResult.Denied
         if (normalize(oldRequester.email) != normalize(command.accountEmail) ||
             normalize(newRequester.email) != normalize(command.accountEmail)
         ) {
-            throw CustomerTicketClaimDeniedException()
+            return CustomerTicketClaimResult.Denied
         }
         val oldVersion = ticket.version
         val now = Instant.now(clock)
@@ -210,7 +211,7 @@ internal class JpaCustomerTicketPortal(
                 ),
             ),
         )
-        return auditId
+        return CustomerTicketClaimResult.Claimed(auditId)
     }
 
     private fun appendFollowUpAudit(

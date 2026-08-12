@@ -28,6 +28,10 @@ import java.security.MessageDigest
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @SpringBootTest(
     properties = [
@@ -115,6 +119,14 @@ class CustomerRequestPortalIntegrationTest {
             post("/api/v1/requests")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestJson("optional@example.com", "선택 가입 익명 문의")),
+        ).andExpect(status().isCreated)
+
+        val staleCookie = Cookie(session.cookie.name, UUID.randomUUID().toString() + "-stale")
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .cookie(staleCookie)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("stale-cookie@example.com", "만료 쿠키 익명 문의")),
         ).andExpect(status().isCreated)
     }
 
@@ -206,6 +218,53 @@ class CustomerRequestPortalIntegrationTest {
     }
 
     @Test
+    fun `concurrent signed grants produce one claim and preserve the losing grant and denial audit`() {
+        val session = customerSession("grant-race@example.com")
+        val request = submitAnonymous("grant-race@example.com", "동시 claim 문의")
+        val tokens = listOf(
+            issueClaimGrant(request.ticketNumber, request.accessToken),
+            issueClaimGrant(request.ticketNumber, request.accessToken),
+        )
+        val csrfToken = csrf(session.cookie)
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val futures = tokens.map { token ->
+                executor.submit(
+                    Callable {
+                        start.await(5, TimeUnit.SECONDS)
+                        claimWithSignedGrant(session, request.ticketNumber, token, csrfToken)
+                            .andReturn().response.status
+                    },
+                )
+            }
+            start.countDown()
+            val statuses = futures.map { it.get(10, TimeUnit.SECONDS) }
+
+            assertThat(statuses).containsExactlyInAnyOrder(204, 404)
+        } finally {
+            executor.shutdownNow()
+        }
+
+        assertThat(requesterId(request.ticketNumber)).isEqualTo(session.customerId)
+        assertThat(ticketAuditEventCount(request.ticketNumber, "REQUESTER_CHANGED")).isEqualTo(1)
+        assertThat(securityEventCount("CUSTOMER_REQUEST_CLAIMED")).isEqualTo(1)
+        assertThat(securityEventCount("CUSTOMER_REQUEST_CLAIM_DENIED")).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from customer_request_claim_grants where consumed_at is not null",
+                Long::class.java,
+            ),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from customer_request_claim_grants where consumed_at is null",
+                Long::class.java,
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
     fun `expired signed claim grant is rejected without storing or logging bearer plaintext`(output: CapturedOutput) {
         val session = customerSession("grant-expired@example.com")
         val request = submitAnonymous("grant-expired@example.com", "만료 claim 문의")
@@ -280,11 +339,16 @@ class CustomerRequestPortalIntegrationTest {
                 .content(objectMapper.writeValueAsString(mapOf("requestAccessToken" to token))),
         )
 
-    private fun claimWithSignedGrant(session: CustomerSessionFixture, ticketNumber: Long, token: String) =
+    private fun claimWithSignedGrant(
+        session: CustomerSessionFixture,
+        ticketNumber: Long,
+        token: String,
+        csrfToken: String = csrf(session.cookie),
+    ) =
         mockMvc.perform(
             post("/api/v1/customer/requests/{ticketNumber}/claim", ticketNumber)
                 .cookie(session.cookie)
-                .header("X-CSRF-TOKEN", csrf(session.cookie))
+                .header("X-CSRF-TOKEN", csrfToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(mapOf("claimToken" to token))),
         )

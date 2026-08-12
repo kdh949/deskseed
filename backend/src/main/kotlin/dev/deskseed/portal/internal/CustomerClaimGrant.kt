@@ -6,6 +6,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.beans.factory.InitializingBean
 import org.springframework.context.annotation.Configuration
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
@@ -28,11 +29,31 @@ internal data class CustomerPortalSecurityProperties(
     var claimGrantTtl: Duration = Duration.ofMinutes(15),
     var claimSigningKey: String = "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
     var claimFingerprintKey: String = "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
-) {
+    var requestCursorSigningKey: String = "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+) : InitializingBean {
+    override fun afterPropertiesSet() = validate()
+
     fun validate() {
         require(claimGrantTtl in Duration.ofMinutes(5)..Duration.ofMinutes(60))
-        require(Base64.getDecoder().decode(claimSigningKey).size >= 32)
-        require(Base64.getDecoder().decode(claimFingerprintKey).size >= 32)
+        val keys = listOf(
+            decodeKey("claim signing", claimSigningKey),
+            decodeKey("claim fingerprint", claimFingerprintKey),
+            decodeKey("request cursor signing", requestCursorSigningKey),
+        )
+        keys.indices.forEach { left ->
+            ((left + 1) until keys.size).forEach { right ->
+                require(!MessageDigest.isEqual(keys[left], keys[right])) {
+                    "customer portal security keys must be purpose-specific"
+                }
+            }
+        }
+    }
+
+    private fun decodeKey(purpose: String, value: String): ByteArray {
+        val decoded = runCatching { Base64.getDecoder().decode(value) }
+            .getOrElse { throw IllegalArgumentException("$purpose key must be valid Base64") }
+        require(decoded.size >= 32) { "$purpose key must contain at least 32 bytes" }
+        return decoded
     }
 }
 
@@ -56,10 +77,17 @@ internal interface CustomerRequestClaimGrantRepository : JpaRepository<CustomerR
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select grant from CustomerRequestClaimGrantEntity grant where grant.tokenDigest = :digest")
     fun lockByDigest(@Param("digest") digest: String): CustomerRequestClaimGrantEntity?
+
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select grant from CustomerRequestClaimGrantEntity grant where grant.id = :id")
+    fun lockById(@Param("id") id: UUID): CustomerRequestClaimGrantEntity?
 }
 
 internal data class IssuedClaimGrant(val token: String, val expiresAt: Instant)
-internal data class ConsumedClaimGrant(val ticketId: UUID?, val emailMismatch: Boolean = false)
+internal sealed interface LockedClaimGrant {
+    data class Valid(val grantId: UUID, val ticketId: UUID) : LockedClaimGrant
+    data object EmailMismatch : LockedClaimGrant
+}
 
 @Service
 internal class CustomerClaimGrantStore(
@@ -72,7 +100,6 @@ internal class CustomerClaimGrantStore(
 
     @Transactional
     fun issue(ticketId: UUID, ticketNumber: Long, requesterEmail: String): IssuedClaimGrant {
-        properties.validate()
         val now = Instant.now(clock)
         val expiresAt = now.plus(properties.claimGrantTtl)
         val id = UUID.randomUUID()
@@ -94,10 +121,10 @@ internal class CustomerClaimGrantStore(
     }
 
     @Transactional
-    fun consume(rawToken: String, ticketNumber: Long, accountEmail: String): ConsumedClaimGrant? {
+    fun lockAndValidate(rawToken: String, ticketNumber: Long, accountEmail: String): LockedClaimGrant? {
         val parsed = parseAndVerify(rawToken) ?: return null
         if (parsed.ticketNumber != ticketNumber) return null
-        if (parsed.emailFingerprint != fingerprint(accountEmail)) return ConsumedClaimGrant(null, emailMismatch = true)
+        if (parsed.emailFingerprint != fingerprint(accountEmail)) return LockedClaimGrant.EmailMismatch
         val now = Instant.now(clock)
         val entity = repository.lockByDigest(sha256(rawToken))
             ?.takeIf {
@@ -105,9 +132,17 @@ internal class CustomerClaimGrantStore(
                     it.consumedAt == null && it.expiresAt > now &&
                     it.expiresAt.epochSecond == parsed.expiresAtEpochSecond
             } ?: return null
+        return LockedClaimGrant.Valid(entity.id, entity.ticketId)
+    }
+
+    @Transactional
+    fun markConsumed(grantId: UUID) {
+        val now = Instant.now(clock)
+        val entity = repository.lockById(grantId)
+            ?.takeIf { it.consumedAt == null && it.expiresAt > now }
+            ?: error("Validated customer claim grant is no longer consumable")
         entity.consumedAt = now
         repository.saveAndFlush(entity)
-        return ConsumedClaimGrant(entity.ticketId)
     }
 
     fun fingerprint(email: String): String = hex(hmac(fingerprintKey(), email.trim().lowercase()))

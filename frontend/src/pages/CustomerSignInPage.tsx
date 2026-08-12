@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import {
   consumeCustomerMagicLink,
@@ -98,6 +99,7 @@ export function CustomerMagicLinkConsumePage({
 }: {
   token: string | null
 }) {
+  const queryClient = useQueryClient()
   const startedRef = useRef(false)
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     token ? 'loading' : 'error',
@@ -107,9 +109,13 @@ export function CustomerMagicLinkConsumePage({
     if (!token || startedRef.current) return
     startedRef.current = true
     void consumeCustomerMagicLink(token)
-      .then(() => setState('success'))
+      .then(async (customer) => {
+        await queryClient.cancelQueries({ queryKey: ['customer-session'] })
+        queryClient.setQueryData(['customer-session'], customer)
+        setState('success')
+      })
       .catch(() => setState('error'))
-  }, [token])
+  }, [queryClient, token])
 
   return (
     <main className="page customer-auth-page">

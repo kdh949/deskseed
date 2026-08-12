@@ -173,7 +173,10 @@ export function createAppRoutes(
             {
               element: <CustomerRoute />,
               children: [
-                { path: '/account/requests', element: <CustomerRequestsPage /> },
+                {
+                  path: '/account/requests',
+                  element: <CustomerRequestsPage />,
+                },
                 {
                   path: '/account/requests/:ticketNumber',
                   element: <CustomerRequestDetailPage />,
@@ -182,7 +185,10 @@ export function createAppRoutes(
             },
           ],
         },
-        { path: '/lookup', element: <Navigate to="/requests/lookup" replace /> },
+        {
+          path: '/lookup',
+          element: <Navigate to="/requests/lookup" replace />,
+        },
         { path: '*', element: <Navigate to="/" replace /> },
       ],
     },

@@ -30,6 +30,11 @@ deskseed:
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
     consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL}
+  customer-portal:
+    claim-grant-ttl: ${DESKSEED_CUSTOMER_CLAIM_GRANT_TTL:15m}
+    claim-signing-key: ${DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY}
+    claim-fingerprint-key: ${DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY}
+    request-cursor-signing-key: ${DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}

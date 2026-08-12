@@ -53,9 +53,14 @@ internal class CustomerCsrfFilter(
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
         ((!request.requestURI.startsWith("/api/v1/customer/") &&
-            !(request.method == "POST" && request.requestURI == "/api/v1/requests" && request.customerSessionCookie() != null))) ||
+            !(request.method == "POST" && request.requestURI == "/api/v1/requests" && authenticatedCustomer()))) ||
             request.requestURI.startsWith("/api/v1/customer/auth/") ||
             request.method in setOf("GET", "HEAD", "OPTIONS", "TRACE")
+
+    private fun authenticatedCustomer(): Boolean = SecurityContextHolder.getContext().authentication
+        ?.takeIf { it.isAuthenticated }
+        ?.authorities
+        ?.any { it.authority == "ROLE_CUSTOMER" } == true
 
     override fun doFilterInternal(
         request: HttpServletRequest,

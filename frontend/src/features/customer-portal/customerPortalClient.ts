@@ -48,9 +48,16 @@ export class ApiError extends Error {
 
 export async function listCustomerRequests(
   status?: CustomerRequestStatus,
+  cursor?: string,
+  limit = 25,
 ): Promise<CustomerRequestPage> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : ''
-  const response = await customerFetch(`/api/v1/customer/requests${query}`)
+  const parameters = new URLSearchParams()
+  if (status) parameters.set('status', status)
+  if (cursor) parameters.set('cursor', cursor)
+  parameters.set('limit', String(limit))
+  const response = await customerFetch(
+    `/api/v1/customer/requests?${parameters.toString()}`,
+  )
   const body = await checkedJson(response)
   if (!isRecord(body) || !Array.isArray(body.items)) throw malformed(response)
   const items = body.items.map(decodeSummary)

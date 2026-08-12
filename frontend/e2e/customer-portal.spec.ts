@@ -37,7 +37,7 @@ for (const viewport of [
   }) => {
     await page.setViewportSize(viewport)
     await authenticate(page)
-    await page.route('**/api/v1/customer/requests', (route) =>
+    await page.route(/\/api\/v1\/customer\/requests(?:\?.*)?$/, (route) =>
       route.fulfill({
         status: 200,
         json: {
@@ -80,7 +80,7 @@ test('expired claim proof keeps input and moves focus to a safe state', async ({
   page,
 }) => {
   await authenticate(page)
-  await page.route('**/api/v1/customer/requests', (route) =>
+  await page.route(/\/api\/v1\/customer\/requests(?:\?.*)?$/, (route) =>
     route.fulfill({ status: 200, json: { items: [], nextCursor: null } }),
   )
   await page.route('**/api/v1/customer/csrf', (route) =>
