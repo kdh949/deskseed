@@ -7,7 +7,6 @@ export function AgentShellLayout() {
     <AgentShell
       displayName={session.staff?.displayName ?? '상담사'}
       onSignOut={session.signOut}
-      role={session.staff?.role}
     />
   )
 }

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { AgentShell, DeskseedThemeProvider } from '../../design-system'
 
 describe('AgentShell', () => {
-  it('keeps the empty workspace within the desktop layout and exposes keyboard focusable navigation', async () => {
+  it('exposes only the keyboard-accessible Queue navigation contract', async () => {
     const user = userEvent.setup()
     render(
       <DeskseedThemeProvider>
@@ -15,25 +15,24 @@ describe('AgentShell', () => {
       </DeskseedThemeProvider>,
     )
 
-    const workspace = screen.getByRole('main', { name: '상담사 작업 공간' })
-    expect(workspace).toHaveClass('agent-workspace')
-    expect(screen.getByText('처리할 티켓을 선택하세요')).toBeVisible()
     expect(
       screen
-        .getByRole('link', { name: 'Deskseed 상담사 홈' })
+        .getByRole('link', { name: 'Deskseed 티켓 큐' })
         .querySelector('img'),
     ).toHaveAttribute(
       'src',
       expect.stringContaining('brand-mark-transparent-v2.png'),
     )
-    expect(screen.getByRole('button', { name: '생성' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Views' })).toBeVisible()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '생성' }),
+    ).not.toBeInTheDocument()
 
     await user.tab()
-    expect(
-      screen.getByRole('link', { name: 'Deskseed 상담사 홈' }),
-    ).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'Deskseed 티켓 큐' })).toHaveFocus()
     await user.tab()
-    expect(screen.getByRole('link', { name: '홈' })).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'Views' })).toHaveFocus()
     expect(
       screen.queryByRole('link', { name: '관리자 설정' }),
     ).not.toBeInTheDocument()

@@ -50,7 +50,7 @@ export interface FieldError {
   code?: string
 }
 
-export type StaffRole = 'ADMIN' | 'AGENT'
+export type StaffRole = 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR'
 export type StaffStatus = 'ACTIVE' | 'DISABLED'
 export type OrganizationStatus = 'ACTIVE' | 'DISABLED'
 

@@ -292,7 +292,7 @@ export async function getPublicRequest(
   return request
 }
 
-const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT'])
+const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT', 'SECURITY_AUDITOR'])
 
 function isStaffRole(value: unknown): value is StaffRole {
   return typeof value === 'string' && STAFF_ROLES.has(value as StaffRole)

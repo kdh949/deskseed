@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router'
 import {
   AgentShell,
-  CustomerPortalShell,
   DeskseedIcon,
   DsButton,
   QueueTicketTable,
@@ -11,7 +10,6 @@ import {
   ViewNavigation,
   type QueueTicketTableItem,
 } from '../../design-system'
-import { AgentHomePage } from '../../design-system/shells/AgentShell/AgentShell'
 import { TicketWorkspace } from '../ticket-workspace/TicketWorkspace'
 
 const fixtureTickets: QueueTicketTableItem[] = [
@@ -73,34 +71,7 @@ export function FrontendSystemFixturePage() {
       </AgentShell>
     )
   }
-  if (fixtureName === 'agent-home') {
-    return (
-      <AgentShell displayName="Mina Park">
-        <AgentHomePage />
-      </AgentShell>
-    )
-  }
-  if (fixtureName === 'public-form' || fixtureName === 'public-detail') {
-    return (
-      <CustomerPortalShell>
-        <ScreenState
-          description="제품 경로와 같은 고객 포털 셸에서 상태만 고정해 확인합니다."
-          kind="empty"
-          title="고객 포털 시각 점검"
-        />
-      </CustomerPortalShell>
-    )
-  }
-  if (fixtureName === 'admin' || fixtureName === 'states') {
-    return (
-      <ScreenState
-        description="이 화면은 현재 디자인 시스템 프리미티브만 사용합니다."
-        kind="empty"
-        title="화면 준비 중"
-      />
-    )
-  }
-  return <Navigate to="/__fixtures__/frontend-system/agent-home" replace />
+  return <Navigate to="/__fixtures__/frontend-system/view-queue" replace />
 }
 
 function QueueFixture({ state }: { state: string }) {

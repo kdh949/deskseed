@@ -16,7 +16,7 @@ function TestApp() {
   )
 }
 
-function sessionFetch(role: 'ADMIN' | 'AGENT') {
+function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.endsWith('/api/v1/agent/me')) {
@@ -24,12 +24,19 @@ function sessionFetch(role: 'ADMIN' | 'AGENT') {
         JSON.stringify({
           id: `${role.toLowerCase()}-id`,
           email: `${role.toLowerCase()}@example.com`,
-          displayName: role === 'ADMIN' ? '관리자' : '상담사',
+          displayName:
+            role === 'ADMIN'
+              ? '관리자'
+              : role === 'SECURITY_AUDITOR'
+                ? '보안 감사자'
+                : '상담사',
           role,
           capabilities:
             role === 'ADMIN'
               ? ['ADMIN_MANAGE', 'AGENT_WORKSPACE']
-              : ['AGENT_WORKSPACE'],
+              : role === 'AGENT'
+                ? ['AGENT_WORKSPACE']
+                : ['audit:activity:read'],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
@@ -73,11 +80,11 @@ function sessionFetch(role: 'ADMIN' | 'AGENT') {
 describe('App', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('renders the Agent Shell without the public customer portal chrome', async () => {
+  it('redirects the root route to the Agent Queue', async () => {
     vi.stubGlobal('fetch', sessionFetch('AGENT'))
     render(
       <DeskseedThemeProvider>
-        <MemoryRouter initialEntries={['/agent/home']}>
+        <MemoryRouter initialEntries={['/']}>
           <TestApp />
         </MemoryRouter>
       </DeskseedThemeProvider>,
@@ -93,7 +100,7 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('does not render admin screens when an agent enters a direct admin URL', async () => {
+  it('renders the canonical not-found state for a removed product route', async () => {
     vi.stubGlobal('fetch', sessionFetch('AGENT'))
     render(
       <DeskseedThemeProvider>
@@ -104,7 +111,9 @@ describe('App', () => {
     )
 
     expect(
-      await screen.findByRole('heading', { name: '관리자 권한이 필요합니다.' }),
+      await screen.findByRole('heading', {
+        name: '페이지를 찾을 수 없습니다.',
+      }),
     ).toBeVisible()
     expect(
       screen.queryByRole('heading', { name: '직원 계정' }),
@@ -114,60 +123,39 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('renders admin screens only for an admin session', async () => {
+  it('denies the Agent Workspace to a security auditor', async () => {
+    vi.stubGlobal('fetch', sessionFetch('SECURITY_AUDITOR'))
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={['/agent/views/my-open']}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        name: '상담사 작업 공간 권한이 필요합니다.',
+      }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('main', { name: '티켓 큐' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('redirects an authenticated admin from login to the Agent Queue', async () => {
     vi.stubGlobal('fetch', sessionFetch('ADMIN'))
     render(
       <DeskseedThemeProvider>
-        <MemoryRouter initialEntries={['/admin/staff']}>
+        <MemoryRouter initialEntries={['/agent/login']}>
           <TestApp />
         </MemoryRouter>
       </DeskseedThemeProvider>,
     )
 
+    expect(await screen.findByRole('main', { name: '티켓 큐' })).toBeVisible()
     expect(
-      await screen.findByRole('heading', { name: '직원 계정' }),
-    ).toBeVisible()
-    expect(
-      screen.getByRole('navigation', { name: '관리자 설정 메뉴' }),
-    ).toBeVisible()
-  })
-
-  it('returns to login when an authenticated admin request reports an expired session', async () => {
-    const fetchMock = sessionFetch('ADMIN')
-    fetchMock.mockImplementationOnce(
-      async () =>
-        new Response(
-          JSON.stringify({
-            id: 'admin-id',
-            email: 'admin@example.com',
-            displayName: '관리자',
-            role: 'ADMIN',
-            capabilities: ['ADMIN_MANAGE', 'AGENT_WORKSPACE'],
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-    )
-    fetchMock.mockImplementationOnce(
-      async () =>
-        new Response(JSON.stringify({ status: 401 }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/problem+json' },
-        }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    render(
-      <DeskseedThemeProvider>
-        <MemoryRouter initialEntries={['/admin/staff']}>
-          <TestApp />
-        </MemoryRouter>
-      </DeskseedThemeProvider>,
-    )
-
-    expect(
-      await screen.findByRole('heading', { name: '직원 로그인' }),
-    ).toBeVisible()
-    expect(
-      screen.queryByRole('heading', { name: '직원 계정' }),
+      screen.queryByRole('heading', { name: '직원 로그인' }),
     ).not.toBeInTheDocument()
   })
 })

@@ -1,7 +1,6 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate, useOutlet } from 'react-router'
 import { DeskseedIcon } from '../../primitives/DeskseedIcon'
-import { DsButton } from '../../primitives/DeskseedControls'
 import {
   DeskseedBrandMark,
   DsAvatar,
@@ -10,20 +9,7 @@ import {
 import agentAvatar from '../../../assets/deskseed/agent-mina-park-v1.png'
 
 const navigationItems = [
-  { id: 'home', icon: 'home' as const, label: '홈', to: '/agent/home' },
   { id: 'views', icon: 'inbox' as const, label: 'Views', to: '/agent/views' },
-  {
-    id: 'customers',
-    icon: 'userGroup' as const,
-    label: '고객',
-    to: '/agent/customers',
-  },
-  {
-    id: 'knowledge',
-    icon: 'bookClosed' as const,
-    label: '지식',
-    to: '/agent/knowledge',
-  },
 ]
 
 type AgentNavigationItemId = (typeof navigationItems)[number]['id']
@@ -38,7 +24,6 @@ type AgentShellProps = {
   children?: ReactNode
   displayName: string
   onSignOut?: () => void
-  role?: 'ADMIN' | 'AGENT'
 }
 
 export function AgentShell({
@@ -46,7 +31,6 @@ export function AgentShell({
   children,
   displayName,
   onSignOut,
-  role = 'AGENT',
 }: AgentShellProps) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -68,7 +52,7 @@ export function AgentShell({
       navigate(
         remainingTickets[0]
           ? `/agent/tickets/${remainingTickets[0].number}`
-          : '/agent/home',
+          : '/agent/views/my-open',
       )
     }
   }
@@ -78,8 +62,8 @@ export function AgentShell({
       <nav className="agent-global-nav" aria-label="상담사 전역 탐색">
         <NavLink
           className="agent-brand"
-          to="/agent/home"
-          aria-label="Deskseed 상담사 홈"
+          to="/agent/views/my-open"
+          aria-label="Deskseed 티켓 큐"
         >
           <DeskseedBrandMark transparent />
         </NavLink>
@@ -101,20 +85,6 @@ export function AgentShell({
               <span className="agent-nav-tooltip">{item.label}</span>
             </NavLink>
           ))}
-          {role === 'ADMIN' ? (
-            <NavLink
-              className="agent-nav-link"
-              to="/admin/staff"
-              aria-label="관리자 설정"
-            >
-              <DeskseedIcon name="gear" />
-              <span className="agent-nav-tooltip">관리자 설정</span>
-            </NavLink>
-          ) : null}
-        </div>
-        <div className="agent-nav-bottom">
-          <DsIconButton icon="notification" label="알림" />
-          <DsIconButton icon="info" label="도움말" />
         </div>
       </nav>
       <div className="agent-main-column">
@@ -153,22 +123,9 @@ export function AgentShell({
                     </button>
                   </div>
                 ))}
-                <DsIconButton icon="plus" label="새 티켓 탭 열기" />
               </nav>
             </>
           ) : null}
-          {!isTicketRoute ? (
-            <DsButton className="agent-create-ticket" tone="ghost">
-              <DeskseedIcon name="plus" size="sm" />
-              생성
-            </DsButton>
-          ) : null}
-          <label className="agent-search">
-            <DeskseedIcon name="search" />
-            <span className="sr-only">Deskseed 검색</span>
-            <input placeholder="Search Deskseed" type="search" />
-            <kbd>⌘ K</kbd>
-          </label>
           <div className="agent-profile">
             <DsAvatar name={displayName} size="sm" src={agentAvatar} />
             <span>
@@ -182,31 +139,8 @@ export function AgentShell({
             />
           </div>
         </header>
-        {children ?? outlet ?? <AgentHomePage />}
+        {children ?? outlet}
       </div>
     </div>
-  )
-}
-
-export function AgentHomePage() {
-  return (
-    <main className="agent-workspace" aria-label="상담사 작업 공간">
-      <section
-        className="agent-empty-state"
-        aria-labelledby="agent-empty-title"
-      >
-        <span className="agent-empty-state-icon">
-          <DeskseedIcon name="inbox" size="lg" />
-        </span>
-        <h1 id="agent-empty-title">처리할 티켓을 선택하세요</h1>
-        <p>
-          Views에서 티켓을 열면 고객 대화, 티켓 속성, 고객 맥락을 한 화면에서
-          이어서 처리할 수 있습니다.
-        </p>
-        <NavLink className="ticket-secondary-button" to="/agent/tickets/1042">
-          예시 티켓 열기
-        </NavLink>
-      </section>
-    </main>
   )
 }

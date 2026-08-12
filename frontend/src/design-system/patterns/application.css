@@ -114,65 +114,73 @@
   }
 }
 
-.customer-portal-shell {
+.staff-login-page {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  place-items: center;
+  padding: var(--ds-ref-space-6);
   background: var(--ds-background-subtle);
 }
 
-.customer-portal-header {
-  min-height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-ref-space-5);
-  padding: 0 max(var(--ds-ref-space-5), calc((100vw - 1120px) / 2));
-  border-bottom: 1px solid var(--ds-border-default);
-  background: var(--ds-background-default);
+.staff-login-card {
+  width: min(100%, 400px);
+  padding: var(--ds-ref-space-8);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-container);
+  background: var(--ds-background-raised);
 }
 
-.customer-portal-brand,
-.customer-portal-header nav {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-ref-space-3);
-  text-decoration: none;
+.staff-login-card h1 {
+  margin: var(--ds-ref-space-1) 0 var(--ds-ref-space-2);
+  font-size: var(--ds-ref-font-size-xl);
+  line-height: var(--ds-ref-line-height-lg);
 }
 
-.customer-portal-brand > span {
-  display: grid;
+.staff-login-eyebrow,
+.staff-login-description {
+  margin: 0;
 }
 
-.customer-portal-brand small,
-.customer-portal-footer {
-  color: var(--ds-foreground-muted);
+.staff-login-eyebrow {
+  color: var(--ds-foreground-primary);
   font-size: var(--ds-ref-font-size-xs);
+  font-weight: var(--ds-ref-font-weight-bold);
+  letter-spacing: 0.08em;
 }
 
-.customer-portal-header nav a {
-  padding: var(--ds-ref-space-2);
+.staff-login-description {
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-sm);
+  line-height: var(--ds-ref-line-height-sm);
+}
+
+.staff-login-form {
+  display: grid;
+  gap: var(--ds-ref-space-4);
+  margin-top: var(--ds-ref-space-6);
+}
+
+.staff-login-form label {
+  display: grid;
+  gap: var(--ds-ref-space-2);
   color: var(--ds-foreground-subtle);
   font-size: var(--ds-ref-font-size-sm);
-  text-decoration: none;
-}
-
-.customer-portal-header nav a[aria-current='page'] {
-  color: var(--ds-foreground-primary);
   font-weight: var(--ds-ref-font-weight-semibold);
 }
 
-.customer-portal-main {
-  width: min(1120px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: var(--ds-ref-space-8) 0;
+.staff-login-form input {
+  min-height: var(--ds-ref-control-default);
+  padding: 0 var(--ds-ref-space-3);
+  border: 1px solid var(--ds-input-border);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-foreground-default);
+  background: var(--ds-input-background);
 }
 
-.customer-portal-footer {
-  padding: var(--ds-ref-space-4);
-  border-top: 1px solid var(--ds-border-default);
-  text-align: center;
-  background: var(--ds-background-default);
+.staff-login-form input:focus-visible {
+  border-color: var(--ds-input-border-focus);
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
 }
 
 .staff-gate,

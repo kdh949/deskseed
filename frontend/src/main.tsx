@@ -3,8 +3,6 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { appRoutes } from './App'
-import { RequestAccessProvider } from './features/customer-requests/RequestAccessContext'
-import { RequestSubmissionProvider } from './features/customer-requests/RequestSubmissionContext'
 import { DeskseedThemeProvider } from './design-system'
 import './design-system/index.css'
 
@@ -26,11 +24,7 @@ function startApplication() {
     <StrictMode>
       <DeskseedThemeProvider>
         <QueryClientProvider client={queryClient}>
-          <RequestAccessProvider>
-            <RequestSubmissionProvider>
-              <RouterProvider router={router} />
-            </RequestSubmissionProvider>
-          </RequestAccessProvider>
+          <RouterProvider router={router} />
         </QueryClientProvider>
       </DeskseedThemeProvider>
     </StrictMode>,

@@ -2,18 +2,18 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useStaffSession } from '../features/staff-auth/StaffSessionContext'
-import { Notification, ScreenState } from '../design-system'
+import { DsButton, Notification, ScreenState } from '../design-system'
 
-function safeDestination(value: unknown, isAdmin: boolean): string {
+function safeDestination(value: unknown): string {
   if (
     typeof value === 'string' &&
     value.startsWith('/') &&
     !value.startsWith('//') &&
-    (isAdmin || !value.startsWith('/admin'))
+    (value.startsWith('/agent/views/') || value.startsWith('/agent/tickets/'))
   ) {
     return value
   }
-  return isAdmin ? '/admin/staff' : '/agent/home'
+  return '/agent/views/my-open'
 }
 
 export function StaffLoginPage() {
@@ -42,12 +42,7 @@ export function StaffLoginPage() {
     )
   }
   if (session.status === 'authenticated' && session.staff) {
-    return (
-      <Navigate
-        to={safeDestination(undefined, session.staff.role === 'ADMIN')}
-        replace
-      />
-    )
+    return <Navigate to={safeDestination(undefined)} replace />
   }
 
   async function submit(event: FormEvent) {
@@ -55,9 +50,9 @@ export function StaffLoginPage() {
     setSubmitting(true)
     setError(null)
     try {
-      const staff = await session.signIn(email, password)
+      await session.signIn(email, password)
       const from = (location.state as { from?: unknown } | null)?.from
-      navigate(safeDestination(from, staff.role === 'ADMIN'), { replace: true })
+      navigate(safeDestination(from), { replace: true })
     } catch (caught) {
       setError(
         caught instanceof ApiError && caught.status === 429
@@ -74,9 +69,9 @@ export function StaffLoginPage() {
   return (
     <main className="staff-login-page">
       <section className="staff-login-card" aria-labelledby="staff-login-title">
-        <p className="eyebrow">DESKSEED STAFF</p>
+        <p className="staff-login-eyebrow">DESKSEED STAFF</p>
         <h1 id="staff-login-title">직원 로그인</h1>
-        <p className="muted">
+        <p className="staff-login-description">
           상담사 및 관리자 계정으로 작업 공간에 접속합니다.
         </p>
         {error ? (
@@ -110,13 +105,9 @@ export function StaffLoginPage() {
               onChange={(event) => setPassword(event.target.value)}
             />
           </label>
-          <button
-            className="button primary"
-            type="submit"
-            disabled={submitting}
-          >
+          <DsButton tone="primary" type="submit" disabled={submitting}>
             {submitting ? '로그인 중…' : '로그인'}
-          </button>
+          </DsButton>
         </form>
       </section>
     </main>

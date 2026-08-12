@@ -48,16 +48,19 @@ export function StaffRoute() {
   return <Outlet />
 }
 
-export function AdminRoute() {
+export function AgentRoute() {
   const session = useStaffSession()
-  if (session.staff?.role !== 'ADMIN') {
+  const allowed =
+    (session.staff?.role === 'ADMIN' || session.staff?.role === 'AGENT') &&
+    session.staff.capabilities.includes('AGENT_WORKSPACE')
+  if (!allowed) {
     return (
       <main className="staff-gate">
         <ScreenState
           kind="denied"
-          title="관리자 권한이 필요합니다."
-          description="이 계정은 관리자 설정을 열 수 없습니다."
-          action={<Link to="/agent/home">상담사 작업 공간으로 이동</Link>}
+          title="상담사 작업 공간 권한이 필요합니다."
+          description="이 계정은 티켓 큐와 작업 공간을 열 수 없습니다."
+          action={<Link to="/agent/login">다른 계정으로 로그인</Link>}
         />
       </main>
     )

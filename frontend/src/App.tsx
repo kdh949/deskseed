@@ -1,21 +1,14 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
-import { CustomerPortalShell } from './design-system'
-import { AdminShell } from './features/admin/AdminShell'
+import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
+import { ScreenState } from './design-system'
 import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
 import {
-  AdminRoute,
+  AgentRoute,
   StaffRoute,
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
 import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
-import { AdminGroupsPage } from './pages/AdminGroupsPage'
-import { AdminStaffPage } from './pages/AdminStaffPage'
-import { HomePage } from './pages/HomePage'
-import { LookupPage } from './pages/LookupPage'
-import { NewRequestPage } from './pages/NewRequestPage'
-import { RequestDetailPage } from './pages/RequestDetailPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
 
 const FrontendSystemFixturePage = import.meta.env.DEV
@@ -56,28 +49,12 @@ export const appRoutes: RouteObject[] = [
         element: <StaffRoute />,
         children: [
           {
-            path: '/agent',
-            element: <AgentShellLayout />,
-            children: agentChildren,
-          },
-          {
-            element: <AdminRoute />,
+            element: <AgentRoute />,
             children: [
               {
-                path: '/admin',
-                element: <AdminShell />,
-                children: [
-                  {
-                    index: true,
-                    element: <Navigate to="/admin/staff" replace />,
-                  },
-                  { path: 'staff', element: <AdminStaffPage /> },
-                  { path: 'groups', element: <AdminGroupsPage /> },
-                  {
-                    path: '*',
-                    element: <Navigate to="/admin/staff" replace />,
-                  },
-                ],
+                path: '/agent',
+                element: <AgentShellLayout />,
+                children: agentChildren,
               },
             ],
           },
@@ -85,20 +62,19 @@ export const appRoutes: RouteObject[] = [
       },
     ],
   },
+  { path: '/', element: <Navigate to="/agent/views/my-open" replace /> },
   {
+    path: '*',
     element: (
-      <CustomerPortalShell>
-        <Outlet />
-      </CustomerPortalShell>
+      <main className="workspace-error-state">
+        <ScreenState
+          action={<Link to="/agent/views/my-open">티켓 큐로 이동</Link>}
+          description="요청한 프론트엔드 화면은 현재 제공되지 않습니다."
+          kind="not-found"
+          title="페이지를 찾을 수 없습니다."
+        />
+      </main>
     ),
-    children: [
-      { index: true, element: <HomePage /> },
-      { path: '/requests/new', element: <NewRequestPage /> },
-      { path: '/requests/lookup', element: <LookupPage /> },
-      { path: '/requests/:ticketNumber', element: <RequestDetailPage /> },
-      { path: '/lookup', element: <Navigate to="/requests/lookup" replace /> },
-      { path: '*', element: <Navigate to="/" replace /> },
-    ],
   },
 ]
 

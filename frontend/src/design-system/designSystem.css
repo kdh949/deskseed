@@ -136,21 +136,6 @@ a {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-.agent-nav-bottom {
-  display: grid;
-  justify-items: center;
-  width: 100%;
-  gap: var(--ds-ref-space-1);
-  padding: var(--ds-ref-space-3) 0;
-}
-.agent-nav-bottom .ds-icon-button {
-  color: var(--ds-foreground-subtle);
-}
-.agent-nav-bottom .ds-icon-button:hover {
-  color: var(--ds-foreground-primary);
-  background: var(--ds-nav-rail-selected-background);
-}
-
 .agent-main-column {
   min-width: 0;
   display: grid;
@@ -256,48 +241,8 @@ a {
   color: var(--ds-foreground-inverse);
   background: var(--ds-nav-rail-selected-background);
 }
-.agent-create-ticket {
-  flex: 0 0 auto;
-  color: var(--ds-foreground-inverse);
-}
-.agent-create-ticket:hover:not(:disabled) {
-  color: var(--ds-foreground-inverse);
-  background: var(--ds-background-chrome-input);
-}
-.agent-search {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--ds-ref-space-2);
-  width: min(290px, 20vw);
-  min-height: var(--ds-ref-control-default);
-  padding: 0 var(--ds-ref-space-2);
-  border: 1px solid var(--ds-border-chrome);
-  border-radius: var(--ds-ref-radius-control);
-  color: var(--ds-foreground-chrome-subtle);
-  background: var(--ds-background-chrome-input);
-}
-.agent-search input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: 0;
-  color: var(--ds-foreground-inverse);
-  background: transparent;
-  font-size: var(--ds-ref-font-size-sm);
-}
-.agent-search input::placeholder {
-  color: var(--ds-foreground-chrome-subtle);
-}
-.agent-search kbd {
-  padding: 1px var(--ds-ref-space-1);
-  border: 1px solid var(--ds-border-chrome-emphasis);
-  border-radius: var(--ds-ref-radius-control);
-  color: var(--ds-foreground-chrome-subtle);
-  font-size: var(--ds-ref-font-size-xs);
-  white-space: nowrap;
-}
 .agent-profile {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: var(--ds-ref-space-3);
@@ -315,42 +260,6 @@ a {
   font-size: var(--ds-ref-font-size-xs);
 }
 
-.agent-workspace {
-  min-width: 0;
-  min-height: calc(100vh - var(--ds-layout-top-chrome-height));
-  display: grid;
-  place-items: center;
-  padding: var(--ds-ref-space-8);
-  background: var(--ds-background-subtle);
-}
-.agent-empty-state {
-  display: grid;
-  justify-items: center;
-  max-width: 460px;
-  text-align: center;
-}
-.agent-empty-state-icon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  margin-bottom: var(--ds-ref-space-3);
-  border-radius: var(--ds-ref-radius-full);
-  color: var(--ds-foreground-primary);
-  background: var(--ds-background-selected);
-}
-.agent-empty-state h1 {
-  margin: 0;
-  color: var(--ds-foreground-default);
-  font-size: var(--ds-ref-font-size-lg);
-}
-.agent-empty-state p {
-  margin: var(--ds-ref-space-2) 0 var(--ds-ref-space-4);
-  color: var(--ds-foreground-subtle);
-  font-size: var(--ds-ref-font-size-sm);
-  line-height: var(--ds-ref-line-height-sm);
-}
-
 .agent-shell :focus-visible {
   outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
   outline-offset: var(--ds-focus-ring-offset);
@@ -363,8 +272,5 @@ a {
   .agent-ticket-tab:nth-of-type(n + 2),
   .agent-profile > span {
     display: none;
-  }
-  .agent-search {
-    width: min(260px, 35vw);
   }
 }

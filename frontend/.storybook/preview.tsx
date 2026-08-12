@@ -3,8 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { mswLoader } from 'msw-storybook-addon/csf3'
 import { DeskseedThemeProvider } from '../src/design-system'
-import { RequestAccessProvider } from '../src/features/customer-requests/RequestAccessContext'
-import { RequestSubmissionProvider } from '../src/features/customer-requests/RequestSubmissionContext'
 import { mswHandlers } from './msw-handlers'
 import '../src/design-system/index.css'
 
@@ -19,19 +17,14 @@ const preview: Preview = {
           },
         },
       })
-      const router = createMemoryRouter(
-        [{ path: '*', element: <Story /> }],
-        { initialEntries: ['/agent/views/my-open'] },
-      )
+      const router = createMemoryRouter([{ path: '*', element: <Story /> }], {
+        initialEntries: ['/agent/views/my-open'],
+      })
 
       return (
         <DeskseedThemeProvider>
           <QueryClientProvider client={queryClient}>
-            <RequestAccessProvider>
-              <RequestSubmissionProvider>
-                <RouterProvider router={router} />
-              </RequestSubmissionProvider>
-            </RequestAccessProvider>
+            <RouterProvider router={router} />
           </QueryClientProvider>
         </DeskseedThemeProvider>
       )
