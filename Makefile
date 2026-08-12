@@ -29,4 +29,4 @@ backend-test:
 frontend-check:
 	cd frontend && npm ci --no-audit --no-fund && npm run format:check && npm run lint && npm run typecheck && npm test -- --run && npm run build
 
-check: docs-check backend-test frontend-check
+check: seed-verify docs-check backend-test frontend-check

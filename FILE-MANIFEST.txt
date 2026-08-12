@@ -2,7 +2,7 @@ eefc53d5785a737c0a188604c727d9724363866e2b49d7ab1ff2c88efd0a8403        7842  AG
 f956527caf42b43922c62be6666e67d07c2a46e7dbaa9987d0aa327e4321cb5a        6907  CHANGELOG-v0.6.md
 b75b745d628fc422bba128c48b7833fd6f79f94dfa5d47210248a1875f4560a4        2426  CODEX_TASK_TEMPLATE.md
 e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IMPLEMENTATION-START-HERE.md
-a8f56ee4676d6e22664d5bafc1627e99567675b84f165663ce46cede5af5a836       15895  README.md
+b3a9b26ac54a3a573b2a48b1799439e3fb5ad5f36ef90e112d7a8340d988affc       15911  README.md
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 607978a57219571ef2b32084db639c280a1844ad7f2a8545206bec7619b8963c        4016  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
@@ -217,7 +217,7 @@ a50805122269887fe6456379c1fda2357a8b483003cc2c7289b6ba06479a2fdc         489  sc
 bef82d42d8736a98eccff5bd3e4739538566655825d702ac870069768e38d2b9       54933  scripts/run-release-performance.sh
 86039df10acf707d5941485169b22bd6ef5e8709afbeb9d456a87b7b3e6d1ea4       10278  scripts/test-e2e-compose-ownership.sh
 184c459eb7deb37537ff5227cf6d0e2e8aa7b7d225f34c4f1f00c18560262a1f       26148  scripts/validate_documentation.py
-d337270b000da9602956653c37190cab863c7b95c21ec2a1b91c4c142bceb298        7660  scripts/verify_seed.py
+7c2457d0aa47971689c7cac6c59adecbe1007c0ade630888f19cc14e24e05d8e        7798  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
 6b43d795b99c525d4ac87a5ff23896fe0fccd2ca434173698a26374b3fbdd59e        3331  tasks/00-bootstrap.md
 e6f15e59074b6894ffa4e6a422026ca521e3270a25ee142ab0748a630f2287ae        1498  tasks/01-access-audit-foundation.md

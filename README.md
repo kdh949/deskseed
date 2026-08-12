@@ -121,7 +121,7 @@ npm run dev
 
 | 목적 | 명령 |
 | --- | --- |
-| 문서 + backend + frontend 기본 gate | `make check` |
+| 시드 계약 + 문서 + backend + frontend 기본 gate | `make check` |
 | Docker Compose health smoke | `make compose-smoke` |
 | Core/Audit 실제 stack E2E | `bash scripts/run-release-e2e.sh` |
 | 1280/1440/1920 visual, axe, keyboard | `cd frontend && PLAYWRIGHT_BROWSER=chromium npm run test:e2e:dev` |
