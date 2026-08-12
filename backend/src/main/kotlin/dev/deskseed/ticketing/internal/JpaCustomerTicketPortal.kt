@@ -33,6 +33,7 @@ import tools.jackson.databind.ObjectMapper
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.UUID
 
@@ -98,7 +99,7 @@ internal class JpaCustomerTicketPortal(
         val customer = customerDirectory.findById(command.requesterId)
             ?.takeIf { it.verifiedAt != null && normalize(it.email) == normalize(command.requesterEmail) }
             ?: throw CustomerTicketNotFoundException()
-        val now = Instant.now(clock)
+        val now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
         val previousStatus = ticket.status
         if (ticket.status == TicketStatus.PENDING) ticket.status = TicketStatus.OPEN
         ticket.updatedAt = now
