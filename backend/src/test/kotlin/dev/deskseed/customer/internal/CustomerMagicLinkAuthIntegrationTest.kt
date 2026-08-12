@@ -2,6 +2,7 @@ package dev.deskseed.customer.internal
 
 import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -36,6 +37,7 @@ import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.system.measureNanoTime
 
 @SpringBootTest(
     properties = [
@@ -86,7 +88,7 @@ class CustomerMagicLinkAuthIntegrationTest {
     }
 
     @Test
-    fun `known unknown and rate limited requests return the same 202 contract and do not log existence`() {
+    fun `known unknown and rate limited requests return the same 202 contract and do not log existence`(output: CapturedOutput) {
         insertUnverifiedCustomer("known@example.com")
 
         val known = requestMagicLink("known@example.com")
@@ -118,6 +120,64 @@ class CustomerMagicLinkAuthIntegrationTest {
         ).isEqualTo(1)
         assertThat(jdbcTemplate.queryForObject("select string_agg(metadata_json, '') from admin_security_audit_events", String::class.java))
             .doesNotContain("known@example.com", "unknown@example.com")
+        assertThat(output.all).doesNotContain("known@example.com", "unknown@example.com")
+    }
+
+    @Test
+    fun `known and unknown requests are padded into the same response timing class`() {
+        insertUnverifiedCustomer("timing-known@example.com")
+        val elapsed = listOf("timing-known@example.com", "timing-unknown@example.com").map { email ->
+            measureNanoTime { requestMagicLink(email) }
+        }.map { Duration.ofNanos(it) }
+
+        assertThat(elapsed).allSatisfy { duration ->
+            assertThat(duration).isGreaterThanOrEqualTo(Duration.ofMillis(15))
+        }
+        assertThat(elapsed.max().minus(elapsed.min())).isLessThan(Duration.ofMillis(250))
+    }
+
+    @Test
+    fun `outbox insert failure rolls token rate and security audit back together`() {
+        insertUnverifiedCustomer("rollback@example.com")
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_customer_auth_mail_insert()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected customer auth outbox failure'; end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_customer_auth_mail_insert before insert on outbound_mail_intents for each row execute function fail_customer_auth_mail_insert()",
+        )
+        try {
+            assertThatThrownBy { requestMagicLink("rollback@example.com") }
+                .hasRootCauseInstanceOf(java.sql.SQLException::class.java)
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_customer_auth_mail_insert on outbound_mail_intents")
+            jdbcTemplate.execute("drop function if exists fail_customer_auth_mail_insert()")
+        }
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java)).isZero()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_request_limits", Long::class.java)).isZero()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java)).isZero()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java)).isZero()
+    }
+
+    @Test
+    fun `recipient and header injection inputs are rejected before intent creation`() {
+        listOf(
+            "not-a-mailbox",
+            "victim@example.com\r\nBcc:attacker@example.com",
+            "victim@example.com,attacker@example.com",
+        ).forEach { email ->
+            mockMvc.perform(
+                post("/api/v1/customer/auth/magic-link-requests")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(tools.jackson.databind.ObjectMapper().writeValueAsString(mapOf("email" to email))),
+            ).andExpect(status().isBadRequest)
+        }
+        assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java)).isZero()
     }
 
     @Test
@@ -192,19 +252,25 @@ class CustomerMagicLinkAuthIntegrationTest {
         currentCustomer(firstCookie).andExpect(status().isOk).andExpect(jsonPath("$.email").value("first@example.com"))
         currentCustomer(secondCookie).andExpect(status().isOk).andExpect(jsonPath("$.email").value("second@example.com"))
 
-        val csrf = csrf(firstCookie).andExpect(status().isOk).andReturn()
+        val rotatedCookie = consume(generateToken("first@example.com"), firstCookie)
+            .andExpect(status().isOk).andReturn().response.getCookie(CUSTOMER_COOKIE)!!
+        assertThat(rotatedCookie.value).isNotEqualTo(firstCookie.value)
+        currentCustomer(firstCookie).andExpect(status().isUnauthorized)
+        currentCustomer(rotatedCookie).andExpect(status().isOk)
+
+        val csrf = csrf(rotatedCookie).andExpect(status().isOk).andReturn()
             .response.contentAsString.substringAfter("\"token\":\"").substringBefore('"')
-        mockMvc.perform(delete("/api/v1/customer/session").cookie(firstCookie))
+        mockMvc.perform(delete("/api/v1/customer/session").cookie(rotatedCookie))
             .andExpect(status().isForbidden)
         mockMvc.perform(
             delete("/api/v1/customer/session")
-                .cookie(firstCookie)
+                .cookie(rotatedCookie)
                 .header("X-CSRF-TOKEN", csrf),
         )
             .andExpect(status().isNoContent)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")))
-        currentCustomer(firstCookie).andExpect(status().isUnauthorized)
+        currentCustomer(rotatedCookie).andExpect(status().isUnauthorized)
         currentCustomer(secondCookie).andExpect(status().isOk)
     }
 
@@ -237,8 +303,9 @@ class CustomerMagicLinkAuthIntegrationTest {
         oneTimeTokenService.generate(GenerateOneTimeTokenRequest(email, Duration.ofMinutes(15))).tokenValue
     }!!
 
-    private fun consume(token: String) = mockMvc.perform(
+    private fun consume(token: String, cookie: Cookie? = null) = mockMvc.perform(
         post("/api/v1/customer/auth/magic-link-sessions")
+            .apply { if (cookie != null) cookie(cookie) }
             .contentType(MediaType.APPLICATION_JSON)
             .content("""{"token":"$token"}"""),
     )

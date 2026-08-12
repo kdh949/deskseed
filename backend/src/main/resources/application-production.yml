@@ -22,6 +22,14 @@ deskseed:
     # A production provider is not selected in this slice. Operators must add a reviewed adapter/configuration.
     delivery-enabled: false
     transport: disabled
+    protected-content:
+      active-key-version: ${DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION:v1}
+      keys:
+        v1: ${DESKSEED_MAIL_PROTECTED_KEY_V1}
+  customer-auth:
+    fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
+    csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
+    consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
