@@ -7,6 +7,7 @@ import { RequestAccessProvider } from './features/customer-requests/RequestAcces
 import { RequestSubmissionProvider } from './features/customer-requests/RequestSubmissionContext'
 import { DeskseedThemeProvider } from './shared/ui/DeskseedThemeProvider'
 import './styles.css'
+import './design-system/index.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

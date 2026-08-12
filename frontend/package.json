@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:dev": "playwright test agent-views-workspace.spec.ts customer-request.spec.ts frontend-system.spec.ts staff-auth-admin.spec.ts",
+    "test:e2e:dev": "playwright test agent-views-workspace.spec.ts customer-request.spec.ts frontend-system.spec.ts staff-auth-admin.spec.ts ticket-workspace.spec.ts",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:e2e:stack": "bash ../scripts/run-customer-request-e2e.sh",
     "storybook": "storybook dev -p 6006",

@@ -1,28 +1,24 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
-import type { AgentTicketStatus } from '../../api/types'
-import {
-  PropertyPanel,
-  ScreenState,
-  SplitPanel,
-  TicketTabs,
-  type PropertyPanelItem,
-} from '../../shared/ui/system'
-import { useStaffSession } from '../staff-auth/StaffSessionContext'
-import { TicketContextPanel } from './TicketContextPanel'
-import { TicketConversation } from './TicketConversation'
-import { usePanelPreferences } from './usePanelPreferences'
+import type {
+  AgentComment,
+  AgentTicketDetail,
+  AgentTicketStatus,
+  TicketPriority,
+} from '../../api/types'
+import { DsButton, ScreenState } from '../../design-system'
+import { TicketWorkspace } from './TicketWorkspace'
+import type {
+  ConversationEntry,
+  WorkspaceTicket,
+} from './ticketWorkspaceFixture'
 
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
-  const session = useStaffSession()
   const interactionId = useMemo(createInteractionId, [ticketNumber])
-  const contextToggleRef = useRef<HTMLButtonElement>(null)
-  const { preferences, setPropertyWidth, setContextWidth, toggleContext } =
-    usePanelPreferences(session.staff?.id ?? 'unknown')
   const query = useQuery({
     queryKey: ['agent-ticket', ticketNumber, interactionId],
     queryFn: () =>
@@ -30,121 +26,32 @@ export function AgentTicketWorkspacePage() {
     enabled: ticketNumber !== null,
   })
 
-  if (ticketNumber === null) {
-    return <InvalidTicketRoute />
-  }
-
-  if (query.isPending) {
-    return <WorkspaceLoading ticketNumber={ticketNumberParam} />
-  }
+  if (ticketNumber === null) return <InvalidTicketRoute />
+  if (query.isPending) return <TicketWorkspace initialState="loading" />
   if (query.isError) {
     return <WorkspaceError error={query.error} retry={() => query.refetch()} />
   }
 
-  const detail = query.data
-  const ticket = detail.ticket
-  const properties: PropertyPanelItem[] = [
-    { label: '상태', value: statusLabel(ticket.status) },
-    { label: '우선순위', value: ticket.priority },
-    { label: '요청자', value: ticket.requester.displayName },
-    { label: '그룹', value: ticket.group?.name ?? '미배정' },
-    { label: '담당자', value: ticket.assignee?.displayName ?? '미배정' },
-    { label: '업데이트', value: formatDate(ticket.updatedAt) },
-    { label: '티켓 유형', value: ticket.isChild ? 'Child task' : '일반 티켓' },
-  ]
-
   return (
-    <main
-      className="ticket-workspace-page"
-      aria-labelledby="ticket-workspace-title"
-    >
-      <TicketTabs
-        backTo="/agent/views/my-open"
-        backLabel="Views로 돌아가기"
-        ticketNumber={ticket.ticketNumber}
-        subject={ticket.subject}
-        status={ticket.status}
-        onRefresh={() => query.refetch()}
-        refreshing={query.isFetching}
-      />
-      <header className="ticket-titlebar">
-        <div>
-          <p className="agent-page-eyebrow">
-            TICKET #{ticket.ticketNumber} · ALL_TICKETS READ
-          </p>
-          <h1 id="ticket-workspace-title">{ticket.subject}</h1>
-        </div>
-        {preferences.contextCollapsed ? (
-          <button
-            ref={contextToggleRef}
-            className="compact-button"
-            type="button"
-            onClick={toggleContext}
-          >
-            컨텍스트 패널 펼치기
-          </button>
-        ) : (
-          <button
-            ref={contextToggleRef}
-            className="compact-button"
-            type="button"
-            onClick={toggleContext}
-          >
-            컨텍스트 패널 접기
-          </button>
-        )}
-      </header>
-      <SplitPanel
-        propertyWidth={preferences.propertyWidth}
-        contextWidth={preferences.contextWidth}
-        onPropertyWidthChange={setPropertyWidth}
-        onContextWidthChange={setContextWidth}
-        propertyPanel={
-          <PropertyPanel
-            title="속성"
-            meta={`v${ticket.version}`}
-            items={properties}
-            footer={
-              <div className="read-boundary-note">
-                <strong>읽기 범위: ALL_TICKETS</strong>
-                <p>
-                  다른 그룹 티켓의 쓰기 권한은 현재 그룹·담당자 정책을 따릅니다.
-                </p>
-              </div>
-            }
-          />
-        }
-        conversationPanel={<TicketConversation comments={detail.comments} />}
-        contextPanel={
-          preferences.contextCollapsed ? undefined : (
-            <TicketContextPanel detail={detail} />
-          )
-        }
-      />
-    </main>
-  )
-}
-
-function WorkspaceLoading({ ticketNumber }: { ticketNumber: string }) {
-  return (
-    <main className="ticket-workspace-loading" aria-busy="true">
-      <span className="sr-only" role="status">
-        티켓 #{ticketNumber} 불러오는 중
-      </span>
-      <div />
-      <div />
-      <div />
-    </main>
+    <TicketWorkspace
+      detail={query.data}
+      onRefresh={() => query.refetch()}
+      refreshing={query.isFetching}
+      submitDisabledReason="현재 티켓은 읽기 전용입니다."
+      ticket={toWorkspaceTicket(query.data)}
+    />
   )
 }
 
 function InvalidTicketRoute() {
   return (
-    <main className="workspace-error-state" role="alert">
-      <p className="agent-page-eyebrow">INVALID TICKET URL</p>
-      <h1>티켓 번호를 확인할 수 없습니다.</h1>
-      <p>양의 정수 티켓 번호로 다시 시도해 주세요.</p>
-      <Link to="/agent/views/my-open">Views로 돌아가기</Link>
+    <main className="workspace-error-state">
+      <ScreenState
+        action={<Link to="/agent/views/my-open">내 티켓으로 돌아가기</Link>}
+        description="올바른 티켓 번호로 다시 시도해 주세요."
+        kind="not-found"
+        title="티켓 번호를 확인할 수 없습니다."
+      />
     </main>
   )
 }
@@ -160,25 +67,80 @@ function WorkspaceError({ error, retry }: { error: Error; retry: () => void }) {
   return (
     <main className="workspace-error-state">
       <ScreenState
-        kind={kind}
-        title="티켓을 열 수 없습니다."
-        description={
-          apiError?.status === 404
-            ? '티켓이 없거나 접근 가능한 범위에 없습니다.'
-            : '읽기 감사 기록을 포함한 요청을 완료하지 못했습니다.'
-        }
-        requestId={apiError?.requestId}
         action={
           <div className="state-action-row">
-            <button className="compact-button" type="button" onClick={retry}>
-              다시 시도
-            </button>
-            <Link to="/agent/views/my-open">Views로 돌아가기</Link>
+            <DsButton onClick={retry}>다시 시도</DsButton>
+            <Link to="/agent/views/my-open">내 티켓으로 돌아가기</Link>
           </div>
         }
+        description={
+          apiError?.status === 403
+            ? '현재 계정으로 이 티켓을 볼 수 없습니다.'
+            : apiError?.status === 404
+              ? '티켓이 없거나 더 이상 열 수 없습니다.'
+              : '잠시 후 다시 시도해 주세요.'
+        }
+        kind={kind}
+        requestId={apiError?.requestId}
+        title="티켓을 열 수 없습니다."
       />
     </main>
   )
+}
+
+function toWorkspaceTicket(detail: AgentTicketDetail): WorkspaceTicket {
+  const ticket = detail.ticket
+  return {
+    number: String(ticket.ticketNumber),
+    subject: ticket.subject,
+    createdAt: `업데이트 ${formatDate(ticket.updatedAt)}`,
+    status: statusLabel(ticket.status),
+    priority: priorityLabel(ticket.priority),
+    group: ticket.group?.name ?? '미배정',
+    assignee: ticket.assignee?.displayName ?? '미배정',
+    requester: ticket.requester.displayName,
+    conversation: detail.comments.map(toConversationEntry),
+  }
+}
+
+function toConversationEntry(comment: AgentComment): ConversationEntry {
+  if (comment.actor.type === 'SYSTEM') {
+    return {
+      kind: 'system',
+      timestamp: formatDate(comment.createdAt),
+      body: comment.body,
+    }
+  }
+  return {
+    kind: 'message',
+    visibility: comment.visibility === 'INTERNAL' ? 'internal' : 'public',
+    author: comment.actor.type === 'CUSTOMER' ? 'customer' : 'agent',
+    name: comment.actor.displayName,
+    timestamp: formatDate(comment.createdAt),
+    body: comment.body.split(/\n{2,}/),
+  }
+}
+
+function statusLabel(status: AgentTicketStatus): WorkspaceTicket['status'] {
+  const labels: Record<AgentTicketStatus, WorkspaceTicket['status']> = {
+    NEW: 'New',
+    OPEN: 'Open',
+    PENDING: 'Pending',
+    ON_HOLD: 'Pending',
+    SOLVED: 'Solved',
+    CLOSED: 'Solved',
+  }
+  return labels[status]
+}
+
+function priorityLabel(priority: TicketPriority): WorkspaceTicket['priority'] {
+  const labels: Record<TicketPriority, WorkspaceTicket['priority']> = {
+    LOW: 'Low',
+    NORMAL: 'Normal',
+    HIGH: 'High',
+    URGENT: 'Urgent',
+  }
+  return labels[priority]
 }
 
 function parseTicketNumber(value: string): number | null {
@@ -204,18 +166,6 @@ function createInteractionId(): string {
     byte.toString(16).padStart(2, '0'),
   ).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
-
-function statusLabel(status: AgentTicketStatus) {
-  const labels: Record<AgentTicketStatus, string> = {
-    NEW: '신규',
-    OPEN: '처리 중',
-    PENDING: '고객 답변 대기',
-    ON_HOLD: '보류',
-    SOLVED: '해결됨',
-    CLOSED: '종료',
-  }
-  return labels[status]
 }
 
 function formatDate(value: string) {

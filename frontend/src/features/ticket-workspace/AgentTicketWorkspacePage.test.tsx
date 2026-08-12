@@ -122,16 +122,24 @@ describe('AgentTicketWorkspacePage', () => {
     renderPage()
 
     expect(
-      await screen.findByRole('heading', { name: '결제 승인 오류' }),
+      await screen.findByRole('heading', { name: /#1042.*결제 승인 오류/ }),
     ).toBeVisible()
-    expect(screen.getByRole('region', { name: '티켓 속성' })).toBeVisible()
-    expect(screen.getByRole('region', { name: '대화' })).toBeVisible()
-    expect(screen.getByRole('region', { name: '티켓 컨텍스트' })).toBeVisible()
+    expect(
+      screen.getByRole('complementary', { name: '티켓 속성' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('region', { name: '티켓 대화 및 답변' }),
+    ).toBeVisible()
+    expect(screen.getByRole('tabpanel', { name: 'Customer' })).toBeVisible()
     expect(screen.getByText('결제가 계속 실패합니다.')).toBeVisible()
     expect(screen.getByText('PG사 확인이 필요합니다.')).toBeVisible()
-    expect(screen.getByText('내부 메모')).toBeVisible()
-    expect(screen.getByText('읽기 전용')).toBeVisible()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.getByText('INTERNAL')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: '내부 메모 추가' }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('textbox', { name: '내부 메모 내용' }),
+    ).toBeVisible()
 
     const request = fetchMock.mock.calls[0]!
     const requestOptions = request[1] as { headers: Record<string, string> }
@@ -153,7 +161,7 @@ describe('AgentTicketWorkspacePage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
-    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await screen.findByRole('heading', { name: /#1042.*결제 승인 오류/ })
     await user.click(screen.getByRole('button', { name: '티켓 새로고침' }))
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -188,22 +196,12 @@ describe('AgentTicketWorkspacePage', () => {
       thirdOptions.headers['X-Interaction-Id'],
     )
 
-    const propertySeparator = screen.getByRole('separator', {
-      name: '속성 패널 너비 조절',
-    })
-    propertySeparator.focus()
-    await user.keyboard('{ArrowRight}')
+    await user.click(screen.getByRole('button', { name: '티켓 속성 접기' }))
     expect(
-      localStorage.getItem('deskseed:agent:agent-id:workspace-panels:v1'),
-    ).toContain('propertyWidth')
-
-    await user.click(screen.getByRole('button', { name: '컨텍스트 패널 접기' }))
-    expect(
-      screen.queryByRole('region', { name: '티켓 컨텍스트' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: '컨텍스트 패널 펼치기' }),
+      screen.getByRole('button', { name: '티켓 속성 펼치기' }),
     ).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '고객 맥락 열기' }))
+    expect(screen.getByRole('button', { name: '고객 맥락 닫기' })).toBeVisible()
   })
 
   it('shows a safe denied state with a request id', async () => {
@@ -261,7 +259,7 @@ describe('AgentTicketWorkspacePage', () => {
     })
 
     renderPage()
-    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await screen.findByRole('heading', { name: /#1042.*결제 승인 오류/ })
 
     const request = fetchMock.mock.calls[0]!
     const options = request[1] as { headers: Record<string, string> }
