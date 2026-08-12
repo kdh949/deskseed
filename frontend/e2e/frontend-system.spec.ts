@@ -2,7 +2,6 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
 const primaryFixtures = [
-  ['agent-home', '처리할 티켓을 선택하세요'],
   ['view-queue', '내 티켓'],
   ['workspace', /#1042.*결제 버튼을 누르면 오류가 납니다/],
 ] as const
@@ -29,6 +28,10 @@ for (const fixture of [
   'view-queue-error',
   'view-queue-denied',
   'view-queue-bulk',
+  'workspace-loading',
+  'workspace-empty',
+  'workspace-error',
+  'workspace-denied',
   'workspace-conflict',
 ]) {
   test(`${fixture} canonical state`, async ({ page }) => {

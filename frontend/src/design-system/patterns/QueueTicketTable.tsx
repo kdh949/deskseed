@@ -140,6 +140,7 @@ export function QueueTicketTable({
         <thead>
           <tr>
             <th className="ds-queue-ticket-select-column" scope="col">
+              <span className="sr-only">티켓 선택</span>
               {onSelectAll ? (
                 <input
                   aria-label="현재 페이지 티켓 전체 선택"

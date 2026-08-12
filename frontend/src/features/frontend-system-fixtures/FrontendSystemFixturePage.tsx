@@ -48,8 +48,13 @@ const fixtureTickets: QueueTicketTableItem[] = [
   },
 ]
 
-export function FrontendSystemFixturePage() {
-  const { fixtureName } = useParams()
+export function FrontendSystemFixturePage({
+  fixtureName: fixtureNameOverride,
+}: {
+  fixtureName?: string
+} = {}) {
+  const { fixtureName: routeFixtureName } = useParams()
+  const fixtureName = fixtureNameOverride ?? routeFixtureName
   if (fixtureName?.startsWith('view-queue')) {
     return (
       <AgentShell activeNavigationItem="views" displayName="Mina Park">
@@ -68,6 +73,23 @@ export function FrontendSystemFixturePage() {
     return (
       <AgentShell displayName="Mina Park">
         <TicketWorkspace initialState="conflict" />
+      </AgentShell>
+    )
+  }
+  if (
+    fixtureName === 'workspace-loading' ||
+    fixtureName === 'workspace-empty' ||
+    fixtureName === 'workspace-error' ||
+    fixtureName === 'workspace-denied'
+  ) {
+    return (
+      <AgentShell displayName="Mina Park">
+        <TicketWorkspace
+          initialState={
+            fixtureName.replace('workspace-', '') as
+              'loading' | 'empty' | 'error' | 'denied'
+          }
+        />
       </AgentShell>
     )
   }

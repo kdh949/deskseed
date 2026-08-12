@@ -183,6 +183,7 @@ describe('AgentTicketWorkspacePage', () => {
     expect(secondOptions.headers['X-Interaction-Id']).toBe(
       firstOptions.headers['X-Interaction-Id'],
     )
+    expect(secondOptions.headers['X-Deskseed-Read-Intent']).toBe('BACKGROUND')
 
     await user.click(screen.getByRole('button', { name: '티켓 1043 열기' }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))

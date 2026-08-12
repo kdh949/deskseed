@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 test('production TicketWorkspace preserves separate PUBLIC and INTERNAL drafts', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1472, height: 1046 })
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/__fixtures__/frontend-system/workspace')
   await expect(
     page.getByRole('main', { name: '티켓 #1042 작업 공간' }),

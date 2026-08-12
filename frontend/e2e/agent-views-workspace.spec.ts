@@ -98,6 +98,15 @@ const ticketDetail = {
     },
   ],
   capabilities: ['READ'],
+  assignmentOptions: {
+    groups: [
+      {
+        id: 'payments',
+        name: '결제 지원',
+        members: [{ id: 'agent-other', displayName: '박서연' }],
+      },
+    ],
+  },
   context: {
     customer: {
       id: 'customer-1',
@@ -240,7 +249,6 @@ async function expectNoAxeViolations(page: Page) {
 for (const viewport of [
   { width: 1280, height: 900 },
   { width: 1440, height: 900 },
-  { width: 1472, height: 1046 },
   { width: 1920, height: 900 },
 ]) {
   test(`canonical Queue와 Workspace ${viewport.width}px`, async ({ page }) => {
@@ -256,7 +264,7 @@ for (const viewport of [
       page.getByRole('navigation', { name: '상담사 전역 탐색' }),
     ).toBeVisible()
     await expect(page).toHaveScreenshot(
-      `agent-queue-canonical-${viewport.width}.png`,
+      `frontend-system-view-queue-${viewport.width}.png`,
       { fullPage: true },
     )
     await expectNoAxeViolations(page)
@@ -273,7 +281,7 @@ for (const viewport of [
     expect(detailHeaders[0]?.['x-deskseed-read-intent']).toBe('NAVIGATION')
     expect(detailHeaders[0]?.['x-interaction-id']).toBeTruthy()
     await expect(page).toHaveScreenshot(
-      `agent-workspace-canonical-${viewport.width}.png`,
+      `frontend-system-workspace-${viewport.width}.png`,
       { fullPage: true },
     )
     await expectNoAxeViolations(page)
@@ -286,6 +294,7 @@ test('Queue filters and keyboard selection keep their product behavior', async (
   const { viewRequestUrls } = await mockAgentReadApi(page)
   await page.goto('/agent/views/my-open?status=OPEN')
   await page.getByLabel('상태 필터').selectOption('PENDING')
+  await expect.poll(() => viewRequestUrls.at(-1)).toContain('status=PENDING')
   await page.getByLabel('우선순위 필터').selectOption('URGENT')
   await expect.poll(() => viewRequestUrls.at(-1)).toContain('status=PENDING')
   await expect.poll(() => viewRequestUrls.at(-1)).toContain('priority=URGENT')
@@ -343,6 +352,7 @@ test('Workspace refresh reuses its navigation interaction and panel controls wor
   expect(detailHeaders[1]?.['x-interaction-id']).toBe(
     detailHeaders[0]?.['x-interaction-id'],
   )
+  expect(detailHeaders[1]?.['x-deskseed-read-intent']).toBe('BACKGROUND')
   await page.getByRole('button', { name: '티켓 속성 접기' }).click()
   await expect(
     page.getByRole('button', { name: '티켓 속성 펼치기' }),

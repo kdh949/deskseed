@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
-import { DeskseedIcon } from '../../design-system/primitives/DeskseedIcon'
-import { DsIconButton } from '../../design-system/primitives/DeskseedPrimitives'
-import { DsSelect } from '../../design-system/primitives/DeskseedControls'
+import {
+  DeskseedIcon,
+  DsButton,
+  DsIconButton,
+  DsSelect,
+  ScreenState,
+} from '../../design-system'
 import { ConversationTimeline } from './ConversationTimeline'
 import { ReplyComposer } from './ReplyComposer'
 import { TicketContextPanel } from './TicketContextPanel'
@@ -176,6 +180,16 @@ export function TicketWorkspace({
               label="티켓 추가 작업"
               onClick={() => setConflictVisible(true)}
             />
+            <button
+              aria-label={`고객 맥락 ${contextOpen ? '닫기' : '열기'}`}
+              aria-expanded={contextOpen}
+              className="ticket-context-toggle"
+              onClick={() => setContextOpen((current) => !current)}
+              title={`고객 맥락 ${contextOpen ? '닫기' : '열기'}`}
+              type="button"
+            >
+              <DeskseedIcon name="userGroup" />
+            </button>
           </div>
         </header>
         <ConversationTimeline entries={ticket.conversation} />
@@ -201,15 +215,6 @@ export function TicketWorkspace({
           onTabChange={setContextTab}
         />
       </div>
-      <button
-        aria-expanded={contextOpen}
-        className="ticket-context-toggle"
-        onClick={() => setContextOpen((current) => !current)}
-        type="button"
-      >
-        <DeskseedIcon name="userGroup" />
-        고객 맥락 {contextOpen ? '닫기' : '열기'}
-      </button>
     </main>
   )
 }
@@ -223,36 +228,30 @@ function WorkspaceStateView({
     loading: {
       title: '티켓을 불러오는 중',
       description: '대화와 속성 정보를 준비하고 있습니다.',
-      icon: 'clock' as const,
     },
     empty: {
       title: '열린 티켓이 없습니다',
       description: 'Views에서 처리할 티켓을 선택하면 이곳에 표시됩니다.',
-      icon: 'inbox' as const,
     },
     error: {
       title: '티켓을 불러오지 못했습니다',
       description: '일시적인 연결 문제일 수 있습니다. 다시 시도해 주세요.',
-      icon: 'alertWarning' as const,
     },
     denied: {
       title: '이 티켓에 접근할 수 없습니다',
       description:
         '현재 역할에는 이 티켓을 볼 권한이 없습니다. 관리자에게 문의해 주세요.',
-      icon: 'lock' as const,
     },
   }[state]
 
   return (
     <main aria-label="티켓 작업 공간 상태" className="ticket-workspace-state">
-      <DeskseedIcon name={content.icon} size="lg" />
-      <h1>{content.title}</h1>
-      <p>{content.description}</p>
-      {state === 'error' ? (
-        <button className="ticket-secondary-button" type="button">
-          다시 시도
-        </button>
-      ) : null}
+      <ScreenState
+        action={state === 'error' ? <DsButton>다시 시도</DsButton> : undefined}
+        description={content.description}
+        kind={state}
+        title={content.title}
+      />
     </main>
   )
 }

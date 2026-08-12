@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
 import type {
@@ -19,10 +19,22 @@ export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
   const interactionId = useMemo(createInteractionId, [ticketNumber])
+  const successfulInteractionId = useRef<string | null>(null)
   const query = useQuery({
     queryKey: ['agent-ticket', ticketNumber, interactionId],
-    queryFn: () =>
-      getAgentTicket(ticketNumber ?? 0, interactionId, 'NAVIGATION'),
+    queryFn: async () => {
+      const readIntent =
+        successfulInteractionId.current === interactionId
+          ? 'BACKGROUND'
+          : 'NAVIGATION'
+      const detail = await getAgentTicket(
+        ticketNumber ?? 0,
+        interactionId,
+        readIntent,
+      )
+      successfulInteractionId.current = interactionId
+      return detail
+    },
     enabled: ticketNumber !== null,
   })
 

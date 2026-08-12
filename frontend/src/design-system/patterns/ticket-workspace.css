@@ -751,7 +751,7 @@
   line-height: var(--ds-ref-line-height-sm);
 }
 
-@media (max-width: 1360px) {
+@media (max-width: 1500px) {
   .ticket-workspace {
     grid-template-columns: var(--ds-layout-property-panel-width) minmax(
         var(--ds-layout-conversation-min-width),
@@ -775,10 +775,8 @@
   }
 
   .ticket-context-toggle {
-    position: absolute;
+    position: relative;
     z-index: 4;
-    right: var(--ds-ref-space-4);
-    bottom: var(--ds-ref-space-4);
     display: inline-flex;
     align-items: center;
     gap: var(--ds-ref-space-2);
@@ -790,6 +788,7 @@
     background: var(--ds-background-raised);
     font-size: var(--ds-ref-font-size-sm);
     font-weight: var(--ds-ref-font-weight-semibold);
+    white-space: nowrap;
     cursor: pointer;
   }
 }
