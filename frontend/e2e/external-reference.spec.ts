@@ -357,7 +357,9 @@ for (const role of ['AGENT', 'SECURITY_AUDITOR'] as const) {
     })
     await page.goto('/integrations/systems')
     await expect(
-      page.getByRole('heading', { name: '연동 관리 권한이 필요합니다.' }),
+      page.getByRole('heading', {
+        name: '외부 시스템 관리 권한이 필요합니다.',
+      }),
     ).toBeVisible()
     expect(calls).toBe(0)
   })
