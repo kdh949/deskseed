@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { pressSequentialTab } from './keyboard'
 
 interface RelatedCommand {
   path: string
@@ -206,6 +207,7 @@ async function installApi(page: Page, server: CollaborationServer) {
 }
 
 test('transfer와 child는 독립 command이며 관계·경고 dialog가 접근 가능하다', async ({
+  browserName,
   page,
 }) => {
   const server = createCollaborationServer()
@@ -245,9 +247,9 @@ test('transfer와 child는 독립 command이며 관계·경고 dialog가 접근 
     name: '내부 child 만들기 닫기',
   })
   await childClose.focus()
-  await page.keyboard.press('Shift+Tab')
+  await pressSequentialTab(page, browserName, true)
   await expect(page.getByRole('button', { name: 'Child 생성' })).toBeFocused()
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await expect(childClose).toBeFocused()
   await expect(page).toHaveScreenshot('child-ticket-dialog.png', {
     fullPage: true,

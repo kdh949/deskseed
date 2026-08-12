@@ -82,7 +82,8 @@ function assignToBootstrapAdmin(ticketNumber: number) {
       from created_group cross join admin
     )
     update tickets
-    set group_id = (select id from created_group),
+    set status = 'OPEN',
+        group_id = (select id from created_group),
         assignee_id = (select id from admin)
     where ticket_number = ${ticketNumber};
   `
@@ -224,6 +225,30 @@ test('real search links one semantic navigation to its canonical audit event', a
     await staffPage.getByLabel('비밀번호').fill(adminPassword)
     await staffPage.getByRole('button', { name: '로그인' }).click()
     await expect(staffPage).toHaveURL(/\/admin\/staff$/)
+
+    await staffPage.goto(`${baseURL}/agent/views/my-open`)
+    await expect(
+      staffPage.getByRole('heading', { name: '내 open' }),
+    ).toBeVisible()
+    const viewTicketLink = staffPage.getByRole('link', {
+      name: `#${ticketNumber} ${subject} 열기`,
+    })
+    await expect(viewTicketLink).toBeVisible()
+    const viewDetailRequestPromise = staffPage.waitForRequest(
+      (request) =>
+        request.method() === 'GET' &&
+        request.url().endsWith(`/api/v1/agent/tickets/${ticketNumber}`),
+    )
+    await viewTicketLink.click()
+    const viewDetailRequest = await viewDetailRequestPromise
+    expect(viewDetailRequest.headers()['x-deskseed-read-intent']).toBe(
+      'NAVIGATION',
+    )
+    expect(viewDetailRequest.headers()['x-interaction-id']).toBeTruthy()
+    await expect(
+      staffPage.getByRole('heading', { name: subject }),
+    ).toBeVisible()
+
     await staffPage.goto(`${baseURL}/agent/search`)
 
     const searchResponsePromise = staffPage.waitForResponse(
@@ -451,6 +476,183 @@ test('real staff composer exposes PUBLIC reply but keeps INTERNAL note out of cu
     await expect(customerPage.getByText(internalNote)).toHaveCount(0)
   } finally {
     await staffContext.close()
+  }
+})
+
+test('real same-field conflict returns 409 without a partial save and preserves both drafts', async ({
+  browser,
+  baseURL,
+  page: customerPage,
+}) => {
+  if (!adminEmail || !adminPassword || !baseURL) {
+    throw new Error('Bootstrap admin credentials are required')
+  }
+  const unique = Date.now()
+  const subject = `E2E real conflict ${unique}`
+  const attemptedPublicReply = `E2E conflict public draft ${unique}`
+  const preservedInternalNote = `E2E conflict internal draft ${unique}`
+
+  await customerPage.goto('/requests/new')
+  await customerPage
+    .getByRole('textbox', { name: /이름/ })
+    .fill('동시 수정 고객')
+  await customerPage
+    .getByRole('textbox', { name: /이메일/ })
+    .fill(`real-conflict-${unique}@example.com`)
+  await customerPage.getByRole('textbox', { name: /제목/ }).fill(subject)
+  await customerPage
+    .getByRole('textbox', { name: /문의 내용/ })
+    .fill('실제 동시 수정 검증을 위한 최초 공개 문의')
+  await customerPage.getByRole('button', { name: '문의 접수' }).click()
+
+  const heading = customerPage.getByRole('heading', { name: /문의 #\d+/ })
+  await expect(heading).toBeVisible()
+  const ticketNumber = Number((await heading.textContent())?.match(/\d+/)?.[0])
+  expect(Number.isSafeInteger(ticketNumber)).toBe(true)
+  assignToBootstrapAdmin(ticketNumber)
+
+  const firstContext = await browser.newContext()
+  const secondContext = await browser.newContext()
+  const firstPage = await firstContext.newPage()
+  const secondPage = await secondContext.newPage()
+  try {
+    for (const staffPage of [firstPage, secondPage]) {
+      await staffPage.goto(`${baseURL}/agent/login`)
+      await staffPage.getByLabel('이메일').fill(adminEmail)
+      await staffPage.getByLabel('비밀번호').fill(adminPassword)
+      await staffPage.getByRole('button', { name: '로그인' }).click()
+      await expect(staffPage).toHaveURL(/\/admin\/staff$/)
+      await staffPage.goto(`${baseURL}/agent/tickets/${ticketNumber}`)
+      await expect(
+        staffPage.getByRole('heading', { name: subject }),
+      ).toBeVisible()
+    }
+
+    await firstPage
+      .getByRole('combobox', { name: '우선순위' })
+      .selectOption('HIGH')
+    await firstPage.getByRole('button', { name: '변경사항 저장' }).click()
+    await expect(firstPage.getByText('변경사항을 저장했습니다.')).toBeVisible()
+
+    const committedState = queryDatabaseJson(`
+      select json_build_object(
+        'priority', ticket.priority,
+        'version', ticket.version,
+        'auditCount', (
+          select count(*)::integer
+          from ticket_audits audit
+          where audit.ticket_id = ticket.id
+        ),
+        'attemptedCommentCount', (
+          select count(*)::integer
+          from ticket_comments comment
+          where comment.ticket_id = ticket.id
+            and comment.body in (
+              '${attemptedPublicReply}',
+              '${preservedInternalNote}'
+            )
+        )
+      )
+      from tickets ticket
+      where ticket.ticket_number = ${ticketNumber}
+    `)
+    expect(committedState).toMatchObject({
+      priority: 'HIGH',
+      version: 1,
+      attemptedCommentCount: 0,
+    })
+
+    await secondPage
+      .getByRole('textbox', { name: '공개 답변' })
+      .fill(attemptedPublicReply)
+    await secondPage.getByRole('tab', { name: '내부 메모' }).click()
+    await secondPage
+      .getByRole('textbox', { name: '내부 메모' })
+      .fill(preservedInternalNote)
+    await secondPage.getByRole('tab', { name: '공개 답변' }).click()
+    await secondPage
+      .getByRole('combobox', { name: '우선순위' })
+      .selectOption('URGENT')
+
+    const conflictResponsePromise = secondPage.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response
+          .url()
+          .endsWith(`/api/v1/agent/tickets/${ticketNumber}/commands`),
+    )
+    await secondPage.getByRole('button', { name: '변경사항 저장' }).click()
+    const conflictResponse = await conflictResponsePromise
+    expect(conflictResponse.status()).toBe(409)
+    expect(conflictResponse.request().postDataJSON()).toMatchObject({
+      expectedVersion: 0,
+      changedFields: ['priority'],
+      priority: 'URGENT',
+      comment: {
+        visibility: 'PUBLIC',
+        body: attemptedPublicReply,
+      },
+    })
+    expect(await conflictResponse.json()).toMatchObject({
+      type: '/problems/ticket-field-conflict',
+      status: 409,
+      currentVersion: 1,
+      conflictingFields: ['priority'],
+    })
+
+    const banner = secondPage.getByRole('alert', { name: /변경 충돌/ })
+    await expect(banner).toBeVisible()
+    await expect(banner).toBeFocused()
+    await expect(banner).toContainText('우선순위')
+    await expect(
+      secondPage.getByRole('combobox', { name: '우선순위' }),
+    ).toHaveValue('URGENT')
+    await expect(
+      secondPage.getByRole('textbox', { name: '공개 답변' }),
+    ).toHaveValue(attemptedPublicReply)
+    await secondPage.getByRole('tab', { name: '내부 메모' }).click()
+    await expect(
+      secondPage.getByRole('textbox', { name: '내부 메모' }),
+    ).toHaveValue(preservedInternalNote)
+
+    expect(
+      queryDatabaseJson(`
+        select json_build_object(
+          'priority', ticket.priority,
+          'version', ticket.version,
+          'auditCount', (
+            select count(*)::integer
+            from ticket_audits audit
+            where audit.ticket_id = ticket.id
+          ),
+          'attemptedCommentCount', (
+            select count(*)::integer
+            from ticket_comments comment
+            where comment.ticket_id = ticket.id
+              and comment.body in (
+                '${attemptedPublicReply}',
+                '${preservedInternalNote}'
+              )
+          )
+        )
+        from tickets ticket
+        where ticket.ticket_number = ${ticketNumber}
+      `),
+    ).toEqual(committedState)
+
+    const customerResponsePromise = customerPage.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        response.url().endsWith(`/api/v1/requests/${ticketNumber}`),
+    )
+    await customerPage.getByRole('link', { name: '문의 내용 보기' }).click()
+    const customerResponse = await customerResponsePromise
+    expect(customerResponse.status()).toBe(200)
+    expect(JSON.stringify(await customerResponse.json())).not.toContain(
+      attemptedPublicReply,
+    )
+  } finally {
+    await Promise.all([firstContext.close(), secondContext.close()])
   }
 })
 

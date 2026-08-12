@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { pressSequentialTab } from './keyboard'
 
 const ticket = {
   ticketNumber: 1042,
@@ -166,7 +167,10 @@ async function expectNoAxeViolations(page: Page) {
 }
 
 for (const width of [1280, 1440, 1920]) {
-  test(`Views와 3-panel Workspace ${width}px 시각 회귀`, async ({ page }) => {
+  test(`Views와 3-panel Workspace ${width}px 시각 회귀`, async ({
+    page,
+    browserName,
+  }) => {
     await page.setViewportSize({ width, height: 900 })
     const detailHeaders = await mockAgentReadApi(page)
     await page.goto('/agent/views/my-open')
@@ -183,7 +187,7 @@ for (const width of [1280, 1440, 1920]) {
     const ticketLink = page.getByRole('link', { name: /#1042 .* 열기/ })
     await page.locator('body').click()
     for (let index = 0; index < 20; index += 1) {
-      await page.keyboard.press('Tab')
+      await pressSequentialTab(page, browserName)
       if (
         await ticketLink.evaluate(
           (element) => element === document.activeElement,
