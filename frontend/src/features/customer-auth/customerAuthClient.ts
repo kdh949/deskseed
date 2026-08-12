@@ -42,6 +42,19 @@ export async function consumeCustomerMagicLink(
   return body
 }
 
+export async function getCurrentCustomer(): Promise<CurrentCustomer | null> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/customer/me`, {
+    credentials: 'include',
+    cache: 'no-store',
+  })
+  if (response.status === 401) return null
+  if (!response.ok) throw new Error('customer-session-read-failed')
+  const body: unknown = await response.json()
+  if (!isCurrentCustomer(body))
+    throw new Error('customer-session-response-invalid')
+  return body
+}
+
 function isCurrentCustomer(value: unknown): value is CurrentCustomer {
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     return false

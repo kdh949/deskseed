@@ -21,6 +21,8 @@ import type {
   CreateAuditExportInput,
   CreateChildTicketCommand,
   CreateChildTicketResult,
+  CustomerAccessModeSetting,
+  UpdateCustomerAccessModeInput,
   CreateStaffInput,
   CurrentStaff,
   GrantableAuditAuthority,
@@ -869,6 +871,51 @@ export async function removeGroupMember(
       'DELETE',
     ),
   )
+}
+
+export async function getCustomerAccessModeSetting(): Promise<CustomerAccessModeSetting> {
+  const response = await staffFetch(
+    '/api/v1/admin/settings/customer-access-mode',
+  )
+  const decoded = decodeCustomerAccessModeSetting(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function updateCustomerAccessModeSetting(
+  input: UpdateCustomerAccessModeInput,
+): Promise<CustomerAccessModeSetting> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/settings/customer-access-mode',
+    'PUT',
+    input,
+  )
+  const decoded = decodeCustomerAccessModeSetting(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+function decodeCustomerAccessModeSetting(
+  value: unknown,
+): CustomerAccessModeSetting | undefined {
+  if (!isRecord(value)) return undefined
+  if (
+    ![
+      'ANONYMOUS_ALLOWED',
+      'REGISTRATION_OPTIONAL',
+      'REGISTRATION_REQUIRED',
+    ].includes(String(value.mode)) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0 ||
+    !isTimestamp(value.updatedAt)
+  )
+    return undefined
+  return {
+    mode: value.mode as CustomerAccessModeSetting['mode'],
+    version: value.version,
+    updatedAt: value.updatedAt,
+  }
 }
 
 function decodeActorSummary(value: unknown): ActorSummary | undefined {

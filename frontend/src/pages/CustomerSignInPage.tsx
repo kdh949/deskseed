@@ -124,8 +124,8 @@ export function CustomerMagicLinkConsumePage({
             <Notification tone="success" title="로그인되었습니다.">
               이 브라우저에 안전한 고객 세션이 만들어졌습니다.
             </Notification>
-            <Link className="customer-auth-back" to="/">
-              고객 지원 홈으로 이동
+            <Link className="customer-auth-back" to="/account/requests">
+              내 문의로 이동
             </Link>
           </div>
         ) : (

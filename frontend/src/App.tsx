@@ -1,31 +1,40 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
 import { AppShell } from './components/AppShell'
+import { AdminShell } from './features/admin/AdminShell'
 import { AgentShell } from './features/agent-shell/AgentShell'
-import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
+import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
+import { AuditShell } from './features/audit/AuditShell'
+import {
+  CustomerRoute,
+  CustomerSessionLayout,
+} from './features/customer-auth/CustomerRoute'
 import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
-import { AdminShell } from './features/admin/AdminShell'
-import { AuditShell } from './features/audit/AuditShell'
-import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
+import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
 import {
-  AgentRoute,
   AdminRoute,
+  AgentRoute,
   AuditRoute,
   StaffRoute,
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
+import { AdminCustomerAccessPage } from './pages/AdminCustomerAccessPage'
 import { AdminGroupsPage } from './pages/AdminGroupsPage'
 import { AdminStaffPage } from './pages/AdminStaffPage'
+import {
+  CustomerMagicLinkConsumePage,
+  CustomerSignInPage,
+} from './pages/CustomerSignInPage'
+import {
+  CustomerRequestDetailPage,
+  CustomerRequestsPage,
+} from './pages/CustomerRequestsPage'
 import { HomePage } from './pages/HomePage'
 import { LookupPage } from './pages/LookupPage'
 import { NewRequestPage } from './pages/NewRequestPage'
 import { RequestDetailPage } from './pages/RequestDetailPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
-import {
-  CustomerMagicLinkConsumePage,
-  CustomerSignInPage,
-} from './pages/CustomerSignInPage'
 
 const FrontendSystemFixturePage = import.meta.env.DEV
   ? lazy(() =>
@@ -105,6 +114,10 @@ export function createAppRoutes(
                     { path: 'staff', element: <AdminStaffPage /> },
                     { path: 'groups', element: <AdminGroupsPage /> },
                     {
+                      path: 'access/customer-mode',
+                      element: <AdminCustomerAccessPage />,
+                    },
+                    {
                       path: '*',
                       element: <Navigate to="/admin/staff" replace />,
                     },
@@ -153,14 +166,23 @@ export function createAppRoutes(
             <CustomerMagicLinkConsumePage token={customerMagicLinkToken} />
           ),
         },
+        { path: '/requests/:ticketNumber', element: <RequestDetailPage /> },
         {
-          path: '/requests/:ticketNumber',
-          element: <RequestDetailPage />,
+          element: <CustomerSessionLayout />,
+          children: [
+            {
+              element: <CustomerRoute />,
+              children: [
+                { path: '/account/requests', element: <CustomerRequestsPage /> },
+                {
+                  path: '/account/requests/:ticketNumber',
+                  element: <CustomerRequestDetailPage />,
+                },
+              ],
+            },
+          ],
         },
-        {
-          path: '/lookup',
-          element: <Navigate to="/requests/lookup" replace />,
-        },
+        { path: '/lookup', element: <Navigate to="/requests/lookup" replace /> },
         { path: '*', element: <Navigate to="/" replace /> },
       ],
     },
