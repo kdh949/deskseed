@@ -9,6 +9,7 @@ enum class TicketKind {
     CUSTOMER_REQUEST,
     INTERNAL_CHILD,
     AGENT_CREATED,
+    INTERNAL_WORK_ITEM,
 }
 
 enum class TicketStatus {
@@ -43,6 +44,7 @@ enum class CommentVisibility {
 enum class CommentAuthorType {
     CUSTOMER,
     AGENT,
+    INTEGRATION_CLIENT,
     SYSTEM,
     AUTOMATION,
 }

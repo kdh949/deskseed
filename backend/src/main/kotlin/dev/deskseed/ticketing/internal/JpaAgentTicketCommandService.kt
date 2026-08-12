@@ -464,7 +464,8 @@ internal class AgentTicketCommandTransaction(
         val now = Instant.now(clock)
         val child = Ticket.createInternalChild(
             ticketNumber = ticketNumberGenerator.next(),
-            requesterId = parent.requesterId,
+            requesterId = parent.requesterId
+                ?: throw TicketRelationInvalidException("Requesterless work items cannot create child tickets"),
             subject = command.subject,
             firstCommentBody = command.body,
             priority = command.priority,

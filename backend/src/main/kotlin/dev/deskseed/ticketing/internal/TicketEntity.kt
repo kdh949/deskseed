@@ -23,8 +23,8 @@ internal class TicketEntity(
     @Column(name = "ticket_number", nullable = false, unique = true)
     val ticketNumber: Long,
 
-    @Column(name = "requester_id", nullable = false)
-    val requesterId: UUID,
+    @Column(name = "requester_id")
+    val requesterId: UUID?,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "kind", nullable = false, length = 40)

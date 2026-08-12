@@ -42,6 +42,14 @@ internal class Ticket private constructor(
             TicketKind.INTERNAL_CHILD -> require(firstComment.visibility == CommentVisibility.INTERNAL) {
                 "An internal child ticket must start with an internal comment"
             }
+            TicketKind.INTERNAL_WORK_ITEM -> {
+                require(firstComment.visibility == CommentVisibility.INTERNAL) {
+                    "An internal work item must start with an internal comment"
+                }
+                require(firstComment.authorType == CommentAuthorType.INTEGRATION_CLIENT) {
+                    "An internal work item must start with an IntegrationClient comment"
+                }
+            }
         }
         require(assigneeId == null || groupId != null) { "An assignee requires a group" }
     }

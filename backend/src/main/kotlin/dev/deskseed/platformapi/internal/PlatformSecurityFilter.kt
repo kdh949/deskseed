@@ -42,7 +42,7 @@ internal class PlatformSecurityFilter(
         val correlationId = request.identifier(RequestIdFilter.CORRELATION_ID_ATTRIBUTE)
         val remoteIp = networkBoundary.resolveAllowedClient(request)
         if (remoteIp == null) {
-            appendDenial(null, requestId, correlationId, "NETWORK_NOT_ALLOWED")
+            if (!appendDenialOrUnavailable(request, response, null, requestId, correlationId, "NETWORK_NOT_ALLOWED")) return
             problemWriter.write(
                 request,
                 response,
@@ -58,9 +58,19 @@ internal class PlatformSecurityFilter(
             ?.takeIf { it.startsWith("Bearer ", ignoreCase = false) }
             ?.substring(7)
             .orEmpty()
-        val authentication = authenticator.authenticate(
-            IntegrationAuthenticationRequest(apiKey, remoteIp, requestId, correlationId),
-        )
+        val authentication = try {
+            authenticator.authenticate(IntegrationAuthenticationRequest(apiKey, remoteIp, requestId, correlationId))
+        } catch (_: RuntimeException) {
+            problemWriter.write(
+                request,
+                response,
+                503,
+                "/problems/platform-security-audit-unavailable",
+                "Platform authentication unavailable",
+                "Required authentication audit persistence could not be completed.",
+            )
+            return
+        }
         if (authentication !is IntegrationAuthenticationResult.Success) {
             problemWriter.write(
                 request,
@@ -80,7 +90,7 @@ internal class PlatformSecurityFilter(
         response.setHeader("X-RateLimit-Reset", rate.resetAtEpochSecond.toString())
         if (!rate.allowed) {
             response.setHeader("Retry-After", rate.retryAfterSeconds.toString())
-            appendDenial(principal, requestId, correlationId, "RATE_LIMITED")
+            if (!appendDenialOrUnavailable(request, response, principal, requestId, correlationId, "RATE_LIMITED")) return
             problemWriter.write(
                 request,
                 response,
@@ -131,6 +141,28 @@ internal class PlatformSecurityFilter(
         )
     }
 
+    private fun appendDenialOrUnavailable(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        principal: AuthenticatedIntegrationClient?,
+        requestId: String,
+        correlationId: String,
+        reason: String,
+    ): Boolean = try {
+        appendDenial(principal, requestId, correlationId, reason)
+        true
+    } catch (_: RuntimeException) {
+        problemWriter.write(
+            request,
+            response,
+            503,
+            "/problems/platform-security-audit-unavailable",
+            "Platform security audit unavailable",
+            "Required security audit persistence could not be completed.",
+        )
+        false
+    }
+
     private fun HttpServletRequest.identifier(attribute: String): String =
         getAttribute(attribute)?.toString()?.takeIf(RequestIdFilter::isValidIdentifier)
             ?: error("RequestIdFilter must run before Platform security")
@@ -140,4 +172,3 @@ internal class PlatformSecurityFilter(
         private const val PLATFORM_PREFIX = "/api/v1/platform/"
     }
 }
-

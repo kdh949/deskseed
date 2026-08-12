@@ -59,6 +59,8 @@ deskseed:
       trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS:}
     rate-limit:
       requests-per-minute: ${DESKSEED_PLATFORM_RATE_LIMIT_PER_MINUTE:60}
+    idempotency:
+      retention: ${DESKSEED_PLATFORM_IDEMPOTENCY_RETENTION:24h}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
