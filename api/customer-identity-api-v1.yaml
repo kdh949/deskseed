@@ -17,7 +17,13 @@ paths:
       tags: [Customer Identity]
       operationId: requestCustomerMagicLink
       summary: Request a single-use email magic link
-      x-deskseed-requirements: [REQ-AUTH-001]
+      description: >-
+        For every syntactically valid email, including unknown and rate-limited
+        destinations, the operation returns the same 202 body, cache policy and timing
+        class. Delivery is a durable outbound-mail intent and account existence is not
+        exposed in the response, audit or logs.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-AUTH-001, REQ-AUTH-002]
       requestBody:
         required: true
         content:
@@ -26,44 +32,96 @@ paths:
       responses:
         '202':
           description: Generic accepted response regardless of account existence
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+            Referrer-Policy:
+              schema: { type: string, const: no-referrer }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericAccepted' }
         '400': { $ref: '#/components/responses/Problem' }
-        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
   /api/v1/customer/auth/magic-link-sessions:
     post:
       tags: [Customer Identity]
       operationId: consumeCustomerMagicLink
       summary: Atomically consume a single-use token and create a customer session
-      x-deskseed-requirements: [REQ-AUTH-001]
+      description: >-
+        The token is accepted only in a JSON request body. Success rotates any
+        presented customer session, creates or links a CustomerAccount without
+        changing historical anonymous ticket ownership, and sets a new opaque cookie.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-AUTH-001, REQ-AUTH-002]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/MagicLinkConsume' }
       responses:
-        '204':
-          description: Session created
+        '200':
+          description: Token consumed once and server session created
           headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+            Referrer-Policy:
+              schema: { type: string, const: no-referrer }
             Set-Cookie:
+              description: >-
+                DESKSEED_CUSTOMER_SESSION; Path=/; HttpOnly; Secure; SameSite=Lax.
+                Only a digest of the opaque value is retained server-side.
               schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentCustomer' }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
-        '410': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/v1/customer/csrf:
+    get:
+      tags: [Customer Identity]
+      operationId: getCustomerCsrfToken
+      summary: Return a CSRF token bound to the current customer session
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-AUTH-001]
+      security: [{ customerSession: [] }]
+      responses:
+        '200':
+          description: CSRF token for unsafe customer-session operations
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerCsrfToken' }
+        '401': { $ref: '#/components/responses/Problem' }
   /api/v1/customer/session:
     delete:
       tags: [Customer Identity]
       operationId: deleteCustomerSession
       summary: Invalidate the current customer session
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-AUTH-001]
       security: [{ customerSession: [] }]
+      parameters:
+        - $ref: '#/components/parameters/CustomerCsrfHeader'
       responses:
-        '204': { description: Session invalidated }
+        '204':
+          description: Server session revoked and cookie expired
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+            Set-Cookie:
+              description: Expired DESKSEED_CUSTOMER_SESSION cookie
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
   /api/v1/customer/requests/{ticketNumber}/claim:
     post:
       tags: [Customer Identity]
       operationId: claimAnonymousCustomerRequest
       summary: Claim one anonymous request using a request-specific proof
+      x-deskseed-contract-status: BLUEPRINT
       x-deskseed-requirements: [REQ-AUTH-002, REQ-TKT-005]
       security: [{ customerSession: [] }]
       parameters:
@@ -89,6 +147,16 @@ components:
       type: apiKey
       in: cookie
       name: DESKSEED_CUSTOMER_SESSION
+      description: >-
+        Opaque HttpOnly, Secure, SameSite=Lax cookie. The server stores only a digest
+        and resolves it to exactly one active CustomerAccount.
+  parameters:
+    CustomerCsrfHeader:
+      name: X-CSRF-TOKEN
+      in: header
+      required: true
+      description: Token derived for and bound to the opaque customer server session.
+      schema: { type: string, minLength: 32, maxLength: 256 }
   responses:
     Problem:
       description: RFC 9457 Problem Details
@@ -101,14 +169,34 @@ components:
       additionalProperties: false
       required: [email]
       properties:
-        email: { type: string, format: email, maxLength: 320 }
+        email: { type: string, format: email, maxLength: 254 }
         returnPath: { type: string, maxLength: 500, pattern: '^/' }
     MagicLinkConsume:
       type: object
       additionalProperties: false
       required: [token]
       properties:
-        token: { type: string, minLength: 32, maxLength: 1000 }
+        token:
+          type: string
+          minLength: 32
+          maxLength: 256
+          pattern: '^[A-Za-z0-9_-]+$'
+    CustomerCsrfToken:
+      type: object
+      additionalProperties: false
+      required: [token, headerName]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256 }
+        headerName: { type: string, const: X-CSRF-TOKEN }
+    CurrentCustomer:
+      type: object
+      additionalProperties: false
+      required: [id, email, displayName, verifiedAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        verifiedAt: { type: string, format: date-time }
     ClaimRequest:
       type: object
       additionalProperties: false

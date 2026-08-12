@@ -1684,6 +1684,7 @@ paths:
     get:
       summary: Read the verified customer account
       operationId: getCurrentCustomer
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Auth
       x-deskseed-phase: P1
@@ -3914,6 +3915,7 @@ components:
           $ref: '#/components/schemas/AuditProjectionStatus'
     CurrentCustomer:
       type: object
+      additionalProperties: false
       required:
       - id
       - email
