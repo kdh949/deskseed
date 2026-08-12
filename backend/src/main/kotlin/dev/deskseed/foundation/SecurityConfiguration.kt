@@ -9,6 +9,8 @@ import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
+internal const val EXPECTED_STAFF_ACTOR_HEADER = "X-Deskseed-Expected-Staff-Id"
+
 @Configuration(proxyBeanMethods = false)
 class SecurityConfiguration(
     @Value("\${deskseed.cors.allowed-origins:http://localhost:5173}")
@@ -26,7 +28,7 @@ class SecurityConfiguration(
                 .split(',')
                 .map(String::trim)
                 .filter(String::isNotBlank)
-            allowedMethods = listOf("GET", "POST", "PATCH", "DELETE", "OPTIONS")
+            allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
             allowedHeaders = listOf(
                 "Content-Type",
                 "Accept",
@@ -34,11 +36,15 @@ class SecurityConfiguration(
                 "X-Request-Access-Token",
                 "X-Interaction-Id",
                 "X-Deskseed-Read-Intent",
+                "X-Origin-Search-Event-Id",
+                EXPECTED_STAFF_ACTOR_HEADER,
+                "If-Match",
                 RequestIdFilter.REQUEST_ID_HEADER,
                 RequestIdFilter.CORRELATION_ID_HEADER,
             )
             exposedHeaders = listOf(
                 "Location",
+                "ETag",
                 RequestIdFilter.REQUEST_ID_HEADER,
                 RequestIdFilter.CORRELATION_ID_HEADER,
             )

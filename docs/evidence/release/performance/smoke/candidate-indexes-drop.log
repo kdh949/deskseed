@@ -1,0 +1,10 @@
+Timing is on.
+DROP INDEX
+Time: 1.236 ms
+DROP INDEX
+Time: 0.648 ms
+Time: 0.397 ms
+ANALYZE
+Time: 27.145 ms
+ANALYZE
+Time: 91.314 ms

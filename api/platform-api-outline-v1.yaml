@@ -38,6 +38,12 @@ paths:
               $ref: '#/components/headers/ETag'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -71,6 +77,12 @@ paths:
               $ref: '#/components/headers/ETag'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -107,6 +119,12 @@ paths:
               $ref: '#/components/headers/ETag'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -146,6 +164,17 @@ paths:
       responses:
         '201':
           description: Internal comment created
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -211,6 +240,20 @@ components:
       schema:
         type: integer
         minimum: 1
+    RateLimitLimit:
+      schema:
+        type: integer
+        minimum: 1
+    RateLimitRemaining:
+      schema:
+        type: integer
+        minimum: 0
+    RateLimitReset:
+      description: UTC epoch second when the current client window resets.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
   responses:
     Problem:
       description: RFC 9457 Problem Details
@@ -223,6 +266,12 @@ components:
       headers:
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
       content:
         application/problem+json:
           schema:
@@ -231,6 +280,14 @@ components:
     CreateTicketRequest:
       type: object
       additionalProperties: false
+      example:
+        kind: CUSTOMER_REQUEST
+        subject: Order 42 needs assistance
+        message: The fulfillment status did not update.
+        requester:
+          name: Mina Kim
+          email: mina@example.com
+        priority: NORMAL
       required:
       - kind
       - subject
@@ -244,7 +301,7 @@ components:
         subject:
           type: string
           minLength: 1
-          maxLength: 300
+          maxLength: 200
         message:
           type: string
           minLength: 1
@@ -266,9 +323,6 @@ components:
         assigneeId:
           type: string
           format: uuid
-        externalOperationId:
-          type: string
-          maxLength: 200
       allOf:
       - if:
           properties:
@@ -287,7 +341,7 @@ components:
         name:
           type: string
           minLength: 1
-          maxLength: 200
+          maxLength: 100
         email:
           type: string
           format: email
@@ -296,6 +350,9 @@ components:
       type: object
       additionalProperties: false
       minProperties: 1
+      example:
+        status: OPEN
+        priority: HIGH
       properties:
         status:
           type: string
@@ -303,7 +360,7 @@ components:
           - NEW
           - OPEN
           - PENDING
-          - HOLD
+          - ON_HOLD
           - SOLVED
         priority:
           type: string
@@ -322,13 +379,11 @@ components:
           - string
           - 'null'
           format: uuid
-        subject:
-          type: string
-          minLength: 1
-          maxLength: 300
     AddInternalCommentRequest:
       type: object
       additionalProperties: false
+      example:
+        body: Warehouse reconciliation started.
       required:
       - body
       properties:
@@ -339,8 +394,20 @@ components:
     PlatformTicket:
       type: object
       additionalProperties: false
+      example:
+        ticketNumber: 1000
+        kind: CUSTOMER_REQUEST
+        subject: Order 42 needs assistance
+        status: OPEN
+        priority: HIGH
+        groupId: null
+        assigneeId: null
+        version: 1
+        createdAt: '2026-08-12T00:00:00Z'
+        updatedAt: '2026-08-12T00:01:00Z'
       required:
       - ticketNumber
+      - kind
       - subject
       - status
       - priority
@@ -351,12 +418,29 @@ components:
         ticketNumber:
           type: integer
           format: int64
+        kind:
+          type: string
+          enum:
+          - CUSTOMER_REQUEST
+          - INTERNAL_WORK_ITEM
         subject:
           type: string
         status:
           type: string
+          enum:
+          - NEW
+          - OPEN
+          - PENDING
+          - ON_HOLD
+          - SOLVED
+          - CLOSED
         priority:
           type: string
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
         groupId:
           type:
           - string
@@ -380,6 +464,12 @@ components:
     InternalComment:
       type: object
       additionalProperties: false
+      example:
+        id: 4df6c6b5-3a31-4e8e-9d6c-49d6d12c5f80
+        ticketNumber: 1000
+        visibility: INTERNAL
+        body: Warehouse reconciliation started.
+        createdAt: '2026-08-12T00:02:00Z'
       required:
       - id
       - ticketNumber
@@ -404,6 +494,12 @@ components:
     Problem:
       type: object
       additionalProperties: true
+      example:
+        type: /problems/idempotency-key-reused
+        title: Idempotency key reused
+        status: 409
+        detail: The idempotency key was already used with a different request.
+        requestId: req-01
       required:
       - type
       - title

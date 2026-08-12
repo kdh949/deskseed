@@ -52,6 +52,60 @@ logging:
     level: "%5p [requestId:%X{requestId:-}]"
 
 deskseed:
+  platform:
+    network:
+      # Production must set both values. Empty values use loopback/RFC1918 development defaults outside prod.
+      allowed-client-cidrs: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS:}
+      trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS:}
+    rate-limit:
+      requests-per-minute: ${DESKSEED_PLATFORM_RATE_LIMIT_PER_MINUTE:60}
+      max-clients: ${DESKSEED_PLATFORM_RATE_LIMIT_MAX_CLIENTS:10000}
+      stale-after: ${DESKSEED_PLATFORM_RATE_LIMIT_STALE_AFTER:2m}
+    idempotency:
+      retention: ${DESKSEED_PLATFORM_IDEMPOTENCY_RETENTION:7d}
+      in-progress-grace: ${DESKSEED_PLATFORM_IDEMPOTENCY_IN_PROGRESS_GRACE:1h}
+      cleanup-batch-size: ${DESKSEED_PLATFORM_IDEMPOTENCY_CLEANUP_BATCH_SIZE:500}
+      cleanup-interval: ${DESKSEED_PLATFORM_IDEMPOTENCY_CLEANUP_INTERVAL:1h}
+      cleanup-initial-delay: ${DESKSEED_PLATFORM_IDEMPOTENCY_CLEANUP_INITIAL_DELAY:10m}
+  mail:
+    # Delivery is opt-in. The local Compose topology enables the Mailpit SMTP adapter.
+    delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}
+    scheduling-enabled: ${DESKSEED_MAIL_SCHEDULING_ENABLED:true}
+    transport: ${DESKSEED_MAIL_TRANSPORT:disabled}
+    from-address: ${DESKSEED_MAIL_FROM_ADDRESS:no-reply@deskseed.local}
+    public-base-url: ${DESKSEED_MAIL_PUBLIC_BASE_URL:http://localhost:5173}
+    retry-backoff: ${DESKSEED_MAIL_RETRY_BACKOFF:0s,1m,5m,30m,2h}
+    worker-fixed-delay: ${DESKSEED_MAIL_WORKER_FIXED_DELAY:5s}
+    worker-initial-delay: ${DESKSEED_MAIL_WORKER_INITIAL_DELAY:5s}
+    lease-duration: ${DESKSEED_MAIL_LEASE_DURATION:2m}
+    batch-size: ${DESKSEED_MAIL_BATCH_SIZE:20}
+    protected-content:
+      active-key-version: ${DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION:local-v1}
+      keys:
+        # Public local-development material only. Production must provision its own 32-byte key.
+        local-v1: ${DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1:AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=}
+  audit:
+    access:
+      enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
+      active-key-version: ${DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION:local-v1}
+      # Independent from raw-query encryption rotation. Public development-only material.
+      session-fingerprint-key: ${DESKSEED_ACCESS_AUDIT_SESSION_FINGERPRINT_KEY:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=}
+      ciphertext-retention: ${DESKSEED_ACCESS_AUDIT_QUERY_CIPHERTEXT_RETENTION:30d}
+      retention-batch-size: ${DESKSEED_ACCESS_AUDIT_RETENTION_BATCH_SIZE:1000}
+      retention-job-interval: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INTERVAL:1h}
+      retention-job-initial-delay: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INITIAL_DELAY:10m}
+      keys:
+        # Public local-development material only. Production must provision its own 32-byte base64 key.
+        local-v1: ${DESKSEED_ACCESS_AUDIT_KEY_LOCAL_V1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+    explorer:
+      reveal:
+        recent-authentication: ${DESKSEED_AUDIT_REVEAL_RECENT_AUTHENTICATION:15m}
+        mfa-required: ${DESKSEED_AUDIT_REVEAL_MFA_REQUIRED:false}
+      cursor:
+        active-key-id: ${DESKSEED_AUDIT_CURSOR_ACTIVE_KEY_ID:v1}
+        signing-keys:
+          # Local-only development value. Production overrides this with a provisioned secret.
+          v1: ${DESKSEED_AUDIT_CURSOR_SIGNING_KEY:deskseed-local-audit-explorer-cursor-signing-key-change-before-production}
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS:http://localhost:5173}
   portal:
@@ -74,3 +128,25 @@ deskseed:
       email: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:}
       display-name: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:}
       password-file: ${DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE:}
+  sla:
+    breach-scanner:
+      batch-size: ${DESKSEED_SLA_BREACH_SCAN_BATCH_SIZE:100}
+      interval: ${DESKSEED_SLA_BREACH_SCAN_INTERVAL:30s}
+      initial-delay: ${DESKSEED_SLA_BREACH_SCAN_INITIAL_DELAY:30s}
+  customer-auth:
+    magic-link-ttl: ${DESKSEED_CUSTOMER_MAGIC_LINK_TTL:15m}
+    request-limit: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_LIMIT:5}
+    request-window: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_WINDOW:15m}
+    response-min-duration: ${DESKSEED_CUSTOMER_MAGIC_LINK_RESPONSE_MIN_DURATION:100ms}
+    session-idle: ${DESKSEED_CUSTOMER_SESSION_IDLE:30m}
+    session-absolute: ${DESKSEED_CUSTOMER_SESSION_ABSOLUTE:12h}
+    # Independent local-development keys. Production must provision unique secrets.
+    fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=}
+    csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY:AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=}
+    consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL:http://localhost:5173/customer/sign-in/consume}
+  customer-portal:
+    claim-grant-ttl: ${DESKSEED_CUSTOMER_CLAIM_GRANT_TTL:15m}
+    # Independent public local-development keys. Production requires provisioned secrets.
+    claim-signing-key: ${DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY:BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=}
+    claim-fingerprint-key: ${DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY:BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=}
+    request-cursor-signing-key: ${DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY:BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=}

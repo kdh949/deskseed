@@ -1,6 +1,7 @@
 package dev.deskseed.organization.internal
 
 import dev.deskseed.organization.StaffIdentity
+import dev.deskseed.organization.StaffAuthorityCatalog
 import dev.deskseed.organization.StaffIdentityService
 import dev.deskseed.organization.StaffStatus
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -11,6 +12,7 @@ import java.util.UUID
 @Service
 internal class JpaStaffIdentityService(
     private val repository: StaffAccountRepository,
+    private val authorityGrantRepository: StaffAuthorityGrantRepository,
     private val passwordEncoder: PasswordEncoder,
 ) : StaffIdentityService {
     private val dummyHash: String by lazy {
@@ -47,5 +49,11 @@ internal class JpaStaffIdentityService(
         displayName = displayName,
         role = role,
         status = status,
+        authorities = StaffAuthorityCatalog.forIdentity(
+            role,
+            authorityGrantRepository.findAllByStaffIdOrderByAuthorityAsc(id)
+                .map(StaffAuthorityGrantEntity::authority)
+                .toSet(),
+        ),
     )
 }

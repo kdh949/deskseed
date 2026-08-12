@@ -2,8 +2,46 @@ openapi: 3.1.0
 info:
   title: Deskseed Core API Outline
   version: 0.6.0-implementation-ready
-  description: Customer, staff, admin, audit, customer magic-link, and schedule/SLA contract. Blueprint-only operations remain
-    marked by phase and requirement status.
+  description: >-
+    Customer, staff, admin, audit, customer magic-link, and schedule/SLA contract.
+    Blueprint-only operations remain marked by phase and requirement status. Every
+    implemented operation secured by staffSession exposes the optional
+    X-Deskseed-Expected-Staff-Id consistency header defined below. The header never
+    selects or authenticates an actor: the server compares it with the validated
+    session principal before controller execution or session activity renewal.
+x-deskseed-staff-actor-consistency:
+  appliesTo: every operation whose security includes staffSession
+  implementedOperationBinding: >-
+    Implemented operations carry the parameter and 400/409 responses directly so
+    OpenAPI generators and contract checks can discover them without interpreting
+    this extension.
+  blueprintOnlyBinding: >-
+    Blueprint-only staffSession operations inherit this policy extension and receive
+    the standard operation-level bindings when their contracts are frozen for
+    implementation.
+  blueprintOnlyOperationIds:
+  - listTicketAudits
+  - getAdminSetting
+  - updateAdminSetting
+  parameter:
+    $ref: '#/components/parameters/ExpectedStaffActorHeader'
+  invalidHeaderResponse:
+    $ref: '#/components/responses/InvalidExpectedStaffActor'
+  actorMismatchResponse:
+    $ref: '#/components/responses/StaffSessionActorMismatch'
+  establishmentExceptions:
+  - getStaffCsrfToken before sign-in; authenticated token acquisition sends the guard
+  - createStaffSession
+  - getCurrentStaff when verifying a just-created session
+  description: >-
+    Browser clients omit the header only while establishing and verifying a new
+    session. The dual-use getStaffCsrfToken operation accepts the optional header:
+    pre-sign-in callers omit it, while an authenticated unsafe workflow sends the same
+    actor snapshot that will guard its mutation. Missing headers remain compatible with
+    non-browser clients. A present header must be one canonical UUID value. Mismatch
+    fails closed without selecting
+    the supplied actor, invalidating the server session, renewing last activity, or
+    entering the target controller.
 servers:
 - url: http://localhost:8080
   description: Local development
@@ -15,6 +53,7 @@ tags:
 - name: Agent Tickets
 - name: Agent Search
 - name: Admin
+- name: Integration Admin
 - name: Audit
 - name: Customer Auth
 - name: Admin Schedule
@@ -22,12 +61,19 @@ tags:
 paths:
   /api/v1/requests:
     post:
-      summary: Submit an anonymous customer request
-      operationId: createAnonymousRequest
+      summary: Submit a customer request
+      description: >-
+        Anonymous submissions create an isolated unverified customer; matching email input never merges or claims an earlier profile.
+        When a valid customer session is present, the session customer becomes the requester and body name/email never override
+        authenticated identity. The configured customer access mode may reject anonymous submission. A one-time request access token
+        is returned in both modes for explicit ticket-scoped lookup or claim workflows and is revoked when ownership is claimed.
+      operationId: createCustomerRequest
       x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
-      security: []
+      security:
+      - {}
+      - customerSession: []
       x-deskseed-phase: M1
       x-deskseed-requirements:
       - REQ-TKT-001
@@ -46,6 +92,15 @@ paths:
               subject: 결제가 되지 않아요
               message: 결제 버튼을 누르면 오류가 발생합니다.
               privacyConsent: true
+      parameters:
+      - name: X-CSRF-TOKEN
+        in: header
+        required: false
+        description: Required only when the optional customer session authenticates the request; obtained from `getCustomerCsrfToken`.
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 256
       x-deskseed-generic-problem: &id001
         description: RFC 9457 Problem Details
         content:
@@ -73,10 +128,6 @@ paths:
               description: Customer-safe request URL; the access token is not embedded.
               schema:
                 type: string
-            Cache-Control:
-              description: Always `no-store` because the response contains the one-time access token.
-              schema:
-                type: string
             X-Request-Id:
               schema:
                 type: string
@@ -93,6 +144,9 @@ paths:
                 accessToken: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU
                 createdAt: '2026-08-10T00:00:00Z'
         '400': *anonymousRequestProblem
+        '403':
+          <<: *anonymousRequestProblem
+          description: Anonymous submission is disabled by access mode, or authenticated customer CSRF validation failed.
         '409': *anonymousRequestProblem
         '429': *anonymousRequestProblem
         '503': *anonymousRequestProblem
@@ -213,6 +267,7 @@ paths:
     get:
       summary: List requests for a verified customer account
       operationId: listCustomerRequests
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -240,14 +295,46 @@ paths:
       responses:
         '200':
           description: Request page
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerRequestPage'
         '401': *id001
+  /api/v1/customer/access-mode:
+    get:
+      summary: Read the effective customer request access mode
+      operationId: getCustomerAccessMode
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Customer Portal
+      security: []
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      responses:
+        '200':
+          description: Effective customer access mode
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeResponse'
   /api/v1/agent/csrf:
     get:
       summary: Issue a CSRF token bound to the browser session
+      description: >-
+        Dual-use endpoint. A pre-sign-in caller omits the expected-actor header. An
+        authenticated unsafe workflow supplies its confirmed actor snapshot so a
+        cross-tab session change is rejected before the subsequent mutation.
       operationId: getStaffCsrfToken
       x-deskseed-contract-status: FROZEN
       tags:
@@ -256,6 +343,8 @@ paths:
       x-deskseed-phase: M2
       x-deskseed-requirements:
       - REQ-AUTH-005
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: CSRF token
@@ -272,6 +361,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CsrfToken'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/session:
     post:
       summary: Create a staff session
@@ -315,10 +408,15 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Session destroyed
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/me:
     get:
       summary: Read current staff identity and capabilities
@@ -331,6 +429,8 @@ paths:
       - REQ-AUTH-005
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Current staff
@@ -338,7 +438,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentStaff'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/views:
     get:
       summary: List accessible saved views
@@ -352,6 +456,8 @@ paths:
       - REQ-PERM-001
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Views
@@ -361,8 +467,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SavedView'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/views/{viewKey}/tickets:
     get:
       summary: List tickets in a saved view
@@ -378,6 +488,7 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - name: viewKey
         in: path
         required: true
@@ -422,6 +533,11 @@ paths:
         schema:
           type: string
           pattern: '^(me|unassigned|[0-9a-fA-F-]{36})$'
+      - name: slaState
+        in: query
+        description: Effective First Reply state; overdue ACTIVE rows are returned as BREACHED.
+        schema:
+          $ref: '#/components/schemas/FirstReplySlaDisplayState'
       responses:
         '200':
           description: Ticket page
@@ -429,14 +545,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketSummaryPage'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/tickets:
     post:
       summary: Create a staff-originated ticket
       operationId: createAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M3
@@ -445,6 +565,9 @@ paths:
       - REQ-TKT-006
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -465,10 +588,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketCommandResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '422': *id001
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}:
     get:
       summary: Read an agent ticket projection
@@ -484,6 +611,7 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - *id002
       - &id005
         name: X-Interaction-Id
@@ -502,6 +630,13 @@ paths:
           enum:
           - NAVIGATION
           - BACKGROUND
+      - name: X-Origin-Search-Event-Id
+        in: header
+        required: false
+        description: "Canonical SEARCH_EXECUTED event selected by a search-result navigation. Accepted only for NAVIGATION reads by the same staff actor; successful use records SEARCH_RESULT_OPENED and links TICKET_VIEWED to the search event."
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: Agent ticket detail
@@ -516,14 +651,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentTicketDetail'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/commands:
     post:
       summary: Apply one atomic ticket update command
+      description: >-
+        INTERNAL_CHILD tickets accept INTERNAL comments only; attempts to add a PUBLIC comment are rejected without mutation or audit.
+        When clientCommandId is supplied, an exact retry by the same authenticated staff actor returns the original TicketCommandResult
+        without another comment, audit, or version mutation. Reusing that ID for another canonical payload, ticket, or staff ticket
+        operation returns /problems/client-command-id-reused.
       operationId: updateAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M3
@@ -531,18 +676,14 @@ paths:
       - REQ-TKT-010
       - REQ-TKT-013
       - REQ-TKT-014
+      - REQ-CHILD-002
       - REQ-AUD-001
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       - *id002
-      - &id004
-        name: If-Match
-        in: header
-        required: true
-        schema:
-          type: string
-        description: Ticket ETag returned by the latest read.
       requestBody:
         required: true
         content:
@@ -551,7 +692,7 @@ paths:
               $ref: '#/components/schemas/UpdateTicketCommand'
       responses:
         '200':
-          description: Command applied
+          description: Command applied, or the stable original result of an exact clientCommandId replay.
           headers:
             ETag:
               schema:
@@ -560,26 +701,81 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketCommandResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
-        '412': *id001
+        '409':
+          description: >-
+            Requested fields conflict with a newer version, clientCommandId was reused
+            for a different request, or the browser's confirmed actor differs from the
+            authenticated session principal.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/TicketFieldConflictProblem'
+                - $ref: '#/components/schemas/ClientCommandIdReusedProblem'
+                - $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+              examples:
+                fieldConflict:
+                  value:
+                    type: /problems/ticket-field-conflict
+                    title: Ticket fields changed concurrently
+                    status: 409
+                    detail: Some fields were changed by another actor.
+                    requestId: req-123
+                    currentVersion: 14
+                    conflictingFields:
+                    - assigneeId
+                clientCommandIdReused:
+                  value:
+                    type: /problems/client-command-id-reused
+                    title: Client command ID was already used
+                    status: 409
+                    detail: The client command ID identifies a different ticket command.
+                    requestId: req-456
+                staffSessionActorMismatch:
+                  value:
+                    type: /problems/staff-session-actor-mismatch
+                    title: Staff session actor changed
+                    status: 409
+                    detail: Refresh the staff session before continuing.
+                    requestId: req-actor-409
+        '422': *id001
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/transfer:
     post:
       summary: Transfer ticket ownership to a group or agent
       operationId: transferAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M4
       x-deskseed-requirements:
       - REQ-TKT-011
       - REQ-TKT-012
+      - REQ-AUD-001
+      - REQ-AUD-007
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       - *id002
-      - *id004
+      - &id004
+        name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: '^"?[0-9]+"?$'
+        description: Ticket ETag returned by the latest audited staff read. It must identify the same version as `expectedVersion`.
       requestBody:
         required: true
         content:
@@ -597,15 +793,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketCommandResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
-        '412': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The ticket no longer matches the supplied If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketVersionPreconditionProblem'
+        '422': *id001
   /api/v1/agent/tickets/{ticketNumber}/children:
     post:
       summary: Create an internal child ticket
       operationId: createChildTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M5
@@ -613,9 +818,16 @@ paths:
       - REQ-CHILD-001
       - REQ-CHILD-002
       - REQ-CHILD-003
+      - REQ-CHILD-004
+      - REQ-CHILD-006
+      - REQ-CHILD-007
+      - REQ-AUD-001
+      - REQ-AUD-007
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       - *id002
       - *id004
       requestBody:
@@ -627,15 +839,157 @@ paths:
       responses:
         '201':
           description: Child created
+          headers:
+            ETag:
+              description: Parent ticket ETag after the relation audit is committed.
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateChildTicketResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
-        '412': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The parent no longer matches the supplied If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TicketVersionPreconditionProblem'
+        '422': *id001
+  /api/v1/agent/tickets/{ticketNumber}/external-references:
+    get:
+      summary: Read safe external-reference context for an authorized staff ticket
+      description: >-
+        Returns stored-only reference context. This operation never fetches, resolves, or
+        redirects through an external URL. It records a required staff resource-read audit
+        and never emits semantic TICKET_VIEWED for background tab loading.
+      operationId: listAgentTicketExternalReferences
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - *id002
+      - *id005
+      responses:
+        '200':
+          description: Bounded staff-only reference context with currently usable links only.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReferenceContext' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503': *id001
+    post:
+      summary: Link a ticket to one validated external identity
+      description: >-
+        Validates an active registry system, exact allowed HTTPS hostname, bounded metadata,
+        ticket write scope, and ticket version before atomically storing one reference and
+        one TicketAudit. At most 100 references may be linked to one ticket; the next create
+        returns EXTERNAL_REFERENCE_LIMIT_REACHED without truncating the list. No external request is made.
+      operationId: createAgentTicketExternalReference
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004, REQ-AUD-001]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - *id002
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExternalReferenceCommand' }
+      responses:
+        '201':
+          description: Reference and ticket audit committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReferenceCommandResult' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The ticket no longer matches If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/TicketVersionPreconditionProblem' }
+        '422': *id001
+        '503': *id001
+  /api/v1/agent/tickets/{ticketNumber}/external-references/{referenceId}:
+    delete:
+      summary: Unlink an external reference without mutating the external system
+      description: >-
+        Removes only the Deskseed reference and atomically records one TicketAudit. No
+        external delete, fetch, or callback is performed.
+      operationId: deleteAgentTicketExternalReference
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004, REQ-AUD-001]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - *id002
+      - *id004
+      - $ref: '#/components/parameters/ExternalReferenceId'
+      responses:
+        '200':
+          description: Local reference removed and audit committed.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteExternalReferenceResult' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The ticket no longer matches If-Match.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/TicketVersionPreconditionProblem' }
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/audits:
     get:
       summary: Read ticket-local change history
@@ -671,55 +1025,50 @@ paths:
         '403': *id001
         '404': *id001
   /api/v1/agent/search:
-    get:
-      summary: Search accessible tickets and customers
+    post:
+      summary: Search accessible tickets without placing the raw query in the URL
       operationId: searchAgentWorkspace
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Search
       x-deskseed-phase: R1
       x-deskseed-requirements:
+      - REQ-AUD-003
       - REQ-AUD-004
+      - REQ-AUD-005
+      - REQ-AUD-008
+      - REQ-PERM-001
       - REQ-SRCH-001
       security:
       - staffSession: []
       parameters:
-      - name: q
-        in: query
-        required: true
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 500
-      - name: scope
-        in: query
-        schema:
-          type: string
-          enum:
-          - TICKETS
-          - CUSTOMERS
-          default: TICKETS
-      - name: cursor
-        in: query
-        schema:
-          type: string
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 25
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - *id005
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTicketSearchRequest'
       responses:
         '200':
-          description: Search result page
+          description: Authorized ticket search results returned only after the canonical SEARCH_EXECUTED event commits.
+          headers:
+            Cache-Control:
+              description: Always no-store because the result is a protected staff projection.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SearchResultPage'
-        '400': *id001
+                $ref: '#/components/schemas/AgentTicketSearchPage'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
   /api/v1/admin/staff:
     get:
@@ -733,17 +1082,34 @@ paths:
       - REQ-PERM-002
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
           description: Staff list
+          headers:
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/StaffAccount'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
     post:
       summary: Create a staff account
       operationId: createStaffAccount
@@ -757,6 +1123,7 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -770,10 +1137,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StaffAccount'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/staff/{staffId}:
     delete:
       summary: Disable a staff account
@@ -790,13 +1159,74 @@ paths:
       parameters:
       - $ref: '#/components/parameters/StaffId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Staff disabled and their sessions become unusable on the next protected request
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/staff/{staffId}/audit-authorities/{authority}:
+    put:
+      summary: Grant one high-risk audit authority to a Security Auditor
+      operationId: grantStaffAuditAuthority
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-AUD-002
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/GrantableAuditAuthorityParam'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '204':
+          description: Authority is present and an actual grant is atomically admin-audited
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+    delete:
+      summary: Revoke one high-risk audit authority from a Security Auditor
+      operationId: revokeStaffAuditAuthority
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-AUD-002
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/GrantableAuditAuthorityParam'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '204':
+          description: Authority is absent and an actual revocation is atomically admin-audited
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
   /api/v1/admin/groups:
     get:
       summary: List groups
@@ -810,17 +1240,34 @@ paths:
       - REQ-TKT-011
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
           description: Group list
+          headers:
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/Group'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
     post:
       summary: Create a group
       operationId: createGroup
@@ -835,6 +1282,7 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -848,10 +1296,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Group'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/groups/{groupId}:
     patch:
       summary: Rename a support group
@@ -868,6 +1318,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -881,11 +1332,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Group'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
     delete:
       summary: Disable an unused support group
       operationId: disableGroup
@@ -901,13 +1354,17 @@ paths:
       parameters:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Group disabled
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/groups/{groupId}/members:
     get:
       summary: List active members of a support group
@@ -923,18 +1380,34 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
           description: Active memberships
+          headers:
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/GroupMembership'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
     post:
       summary: Add an active staff member to a support group
       operationId: createGroupMembership
@@ -950,6 +1423,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -963,11 +1437,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupMembership'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/groups/{groupId}/members/{staffId}:
     delete:
       summary: Remove an active staff member from a support group
@@ -985,13 +1461,326 @@ paths:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/StaffId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Membership removed
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/integration-clients:
+    get:
+      summary: List integration machine principals without credential secrets
+      operationId: listIntegrationClients
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: Bounded client list. Credential hashes and secrets are absent.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: Create an integration client and show its first API key once
+      operationId: createIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIntegrationClient' }
+      responses:
+        '201':
+          description: Client created. The API key is returned by this response only.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationCredentialIssue' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}:
+    get:
+      summary: Read one integration client and credential metadata
+      operationId: getIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client detail without any credential verifier or secret.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/integration-clients/{clientId}/disable:
+    post:
+      summary: Disable an active integration client immediately
+      operationId: disableIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client disabled; all credentials fail authentication.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}/revoke:
+    post:
+      summary: Permanently revoke an integration client and every credential
+      operationId: revokeIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client and credentials permanently revoked.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}/rotate:
+    post:
+      summary: Rotate a client credential with at most 24 hours of overlap
+      operationId: rotateIntegrationClientCredential
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateIntegrationCredential' }
+      responses:
+        '200':
+          description: New API key returned once; the previous key follows the bounded overlap.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationCredentialIssue' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/external-systems:
+    get:
+      summary: List external-system registry entries
+      operationId: listAdminExternalSystems
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Bounded registry list without provider secrets or credentials.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: Register an external system and exact HTTPS hostname allowlist
+      description: >-
+        Registers one system while the bounded registry contains fewer than 100 entries.
+        The next create returns EXTERNAL_SYSTEM_LIMIT_REACHED; list responses are never silently truncated.
+      operationId: createExternalSystem
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExternalSystem' }
+      responses:
+        '201':
+          description: Registry entry and AdminSecurityAudit committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/external-systems/{systemId}:
+    put:
+      summary: Update external-system display, status, and hostname policy
+      operationId: updateExternalSystem
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExternalSystemId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExternalSystemIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateExternalSystem' }
+      responses:
+        '200':
+          description: Registry and AdminSecurityAudit update committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: External-system version no longer matches If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ExternalSystemVersionPreconditionProblem' }
+        '503': *id001
   /api/v1/admin/settings/{key}:
     get:
       summary: Read an allowed admin setting
@@ -1065,6 +1854,7 @@ paths:
     get:
       summary: Query the unified audit explorer projection
       operationId: listAuditActivities
+      x-deskseed-contract-status: FROZEN
       tags:
       - Audit
       x-deskseed-phase: R2
@@ -1074,24 +1864,34 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - name: from
         in: query
+        description: Inclusive instant at which the audit interval starts.
         schema:
           type: string
           format: date-time
       - name: to
         in: query
+        description: Exclusive instant at which the audit interval ends.
         schema:
           type: string
           format: date-time
       - name: ledger
         in: query
         schema:
-          type: string
+          $ref: '#/components/schemas/AuditLedgerType'
       - name: action
         in: query
         schema:
           type: string
+          minLength: 1
+          maxLength: 80
+      - name: actorType
+        in: query
+        schema:
+          type: string
+          enum: [CUSTOMER, STAFF, INTEGRATION_CLIENT, TRIGGER, AUTOMATION, SYSTEM]
       - name: actorId
         in: query
         schema:
@@ -1102,8 +1902,48 @@ paths:
         schema:
           type: integer
           format: int64
+          minimum: 1
+      - name: groupId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: field
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 60
+      - name: source
+        in: query
+        schema:
+          type: string
+          enum: [CUSTOMER_PORTAL, AGENT_UI, ADMIN_UI, PLATFORM_API, TRIGGER, AUTOMATION, SYSTEM_JOB]
+      - name: outcome
+        in: query
+        schema:
+          $ref: '#/components/schemas/AuditOutcome'
+      - name: requestId
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - name: correlationId
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - name: searchFingerprint
+        in: query
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
       - name: cursor
         in: query
+        description: HMAC-signed keyset cursor bound to normalized filters and the first-page snapshot.
         schema:
           type: string
       - name: limit
@@ -1113,22 +1953,66 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
-      - *id005
+      - $ref: '#/components/parameters/AuditInteractionHeader'
       responses:
         '200':
           description: Audit activity page
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditActivityPage'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
-  /api/v1/audit/activities/{activityId}/reveal:
+  /api/v1/audit/activities/{activityId}:
+    get:
+      summary: Read one normalized activity without opening the source ticket
+      operationId: getAuditActivity
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Audit
+      x-deskseed-phase: R2
+      x-deskseed-requirements: [REQ-AUD-002, REQ-AUD-004, REQ-AUD-006]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AuditActivityId'
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Allowlisted canonical detail. Comment bodies and raw search queries are absent.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditActivityDetail'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503': *id001
+  /api/v1/audit/activities/{activityId}/search-query-reveal:
     post:
-      summary: Reveal protected audit content with a reason
-      operationId: revealAuditActivityContent
+      summary: Reveal the exact query for one SEARCH_EXECUTED event
+      operationId: revealAuditSearchQuery
+      x-deskseed-contract-status: FROZEN
       tags:
       - Audit
       x-deskseed-phase: R2
@@ -1138,38 +2022,43 @@ paths:
       security:
       - staffSession: []
       parameters:
-      - name: activityId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+      - $ref: '#/components/parameters/AuditActivityId'
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProtectedRevealRequest'
+              $ref: '#/components/schemas/SearchQueryRevealRequest'
       responses:
         '200':
-          description: Protected content
+          description: One-event reveal or a structured retention/key-unavailable state.
           headers:
             Cache-Control:
               schema:
                 type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProtectedRevealResult'
-        '400': *id001
+                $ref: '#/components/schemas/SearchQueryRevealResult'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '422': *id001
         '503': *id001
   /api/v1/audit/exports:
     post:
       summary: Request an asynchronous audit export
       operationId: createAuditExport
+      x-deskseed-contract-status: FROZEN
+      description: Persists the authorized request, permission snapshot and NOT_CREATED artifact placeholder. File generation is a documented follow-up.
       tags:
       - Audit
       x-deskseed-phase: R2
@@ -1178,6 +2067,10 @@ paths:
       - REQ-EXP-001
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -1191,14 +2084,86 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExportJob'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '429': *id001
+        '503': *id001
+  /api/v1/audit/exports/{jobId}:
+    get:
+      summary: Read the requesting auditor's export skeleton
+      operationId: getAuditExport
+      x-deskseed-contract-status: FROZEN
+      tags: [Audit]
+      x-deskseed-phase: R2
+      x-deskseed-requirements: [REQ-AUD-006]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      responses:
+        '200':
+          description: Requester-bound job and placeholder artifact state.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJob'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503': *id001
+  /api/v1/audit/projection/rebuild:
+    post:
+      summary: Rebuild the derived activity projection from canonical ledgers
+      operationId: rebuildAuditActivityProjection
+      x-deskseed-contract-status: FROZEN
+      tags: [Audit]
+      x-deskseed-phase: R2
+      x-deskseed-requirements: [REQ-AUD-002, REQ-AUD-006]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Rebuild counts and projection health.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditProjectionRebuildResult'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
   /api/v1/customer/me:
     get:
       summary: Read the verified customer account
       operationId: getCurrentCustomer
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Auth
       x-deskseed-phase: P1
@@ -1213,6 +2178,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentCustomer'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -1232,6 +2198,7 @@ paths:
     get:
       summary: Read an authenticated customer-safe request projection
       operationId: getCustomerRequest
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -1242,6 +2209,11 @@ paths:
       responses:
         '200':
           description: Customer request detail
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
@@ -1264,6 +2236,13 @@ paths:
     post:
       summary: Add an authenticated PUBLIC customer follow-up
       operationId: addAuthenticatedCustomerComment
+      description: >-
+        Creates one PUBLIC customer comment, one canonical ticket audit, and one
+        durable request-received mail intent in the same transaction. An exact
+        requester/clientCommandId replay returns the original comment; reuse for a
+        different ticket or body returns 409. SOLVED and CLOSED requests are not
+        reopened by this operation.
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -1275,20 +2254,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddCustomerComment'
+              $ref: '#/components/schemas/AddAuthenticatedCustomerComment'
       responses:
         '201':
-          description: Public comment created
+          description: Public comment created, or the stable result of an exact replay
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicComment'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -1307,17 +2286,80 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /api/v1/admin/settings/customer-access-mode:
+    get:
+      summary: Read the customer request access mode
+      operationId: getCustomerAccessModeSetting
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Customer access mode setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeSetting'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+    put:
+      summary: Change the customer request access mode
+      operationId: updateCustomerAccessModeSetting
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerAccessMode'
+      responses:
+        '200':
+          description: Customer access mode updated and audited atomically
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeSetting'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/business-schedules:
     get:
-      summary: List business schedules and active versions
+      summary: List business schedules at their latest immutable versions
       operationId: listBusinessSchedules
-      tags:
-      - Admin Schedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: &id008
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Schedules
@@ -1325,214 +2367,196 @@ paths:
             application/json:
               schema:
                 type: array
-                items:
-                  $ref: '#/components/schemas/BusinessSchedule'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+                items: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
     post:
-      summary: Create a business schedule and first version
+      summary: Create a business schedule and inactive first version
       operationId: createBusinessSchedule
-      tags:
-      - Admin Schedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/BusinessScheduleInput'
+            schema: { $ref: '#/components/schemas/BusinessScheduleInput' }
       responses:
         '201':
           description: Schedule created
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessSchedule'
-        '400':
-          description: RFC 9457 Problem Details
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+  /api/v1/admin/business-schedules/preview:
+    post:
+      summary: Validate and preview an unsaved business schedule definition
+      operationId: previewBusinessSchedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-002]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessTimePreviewRequest' }
+      responses:
+        '200':
+          description: Deterministic preview result
           content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '409':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessTimePreviewResult' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
   /api/v1/admin/business-schedules/{scheduleId}:
     parameters:
     - &id009
       name: scheduleId
       in: path
       required: true
-      schema:
-        type: string
-        format: uuid
+      schema: { type: string, format: uuid }
     get:
-      summary: Read a business schedule
+      summary: Read the latest immutable version of a business schedule
       operationId: getBusinessSchedule
-      tags:
-      - Admin Schedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: Schedule
+          description: Latest schedule version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessSchedule'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '404':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-    patch:
-      summary: Create a new immutable schedule version
-      operationId: versionBusinessSchedule
-      tags:
-      - Admin Schedule
-      x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
-      security: *id008
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BusinessScheduleInput'
-      responses:
-        '200':
-          description: New version
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessSchedule'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '404':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '409':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-  /api/v1/admin/business-schedules/{scheduleId}/preview:
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+  /api/v1/admin/business-schedules/{scheduleId}/versions:
     parameters:
     - *id009
-    post:
-      summary: Preview business-time calculations
-      operationId: previewBusinessSchedule
-      tags:
-      - Admin Schedule
+    get:
+      summary: List immutable business schedule versions newest first
+      operationId: listBusinessScheduleVersions
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Schedule version history
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+    post:
+      summary: Create a new immutable version without activating it
+      operationId: createBusinessScheduleVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-002]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - &id010
+        name: If-Match
+        in: header
+        required: true
+        description: Quoted schedule aggregate version returned as ETag.
+        schema: { type: string, pattern: '^"[0-9]+"$' }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/BusinessTimePreviewRequest'
+            schema: { $ref: '#/components/schemas/BusinessScheduleInput' }
       responses:
-        '200':
-          description: Preview result
+        '201':
+          description: New immutable version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessTimePreviewResult'
-        '400':
-          description: RFC 9457 Problem Details
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '412': *id001
+  /api/v1/admin/business-schedules/{scheduleId}/versions/{version}/activation:
+    parameters:
+    - *id009
+    - name: version
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    put:
+      summary: Activate an immutable business schedule version
+      operationId: activateBusinessScheduleVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-002]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - *id010
+      responses:
+        '200':
+          description: Activated schedule version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '404':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+        '412': *id001
   /api/v1/admin/sla-policies:
     get:
-      summary: List First Reply SLA policies
+      summary: List First Reply SLA policies at their latest immutable versions
       operationId: listSlaPolicies
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin SLA
       x-deskseed-phase: P3
@@ -1540,6 +2564,8 @@ paths:
       - REQ-SLA-001
       - REQ-SLA-003
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Policies
@@ -1549,6 +2575,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/FirstReplySlaPolicy'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -1561,9 +2588,11 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
     post:
-      summary: Create a versioned First Reply SLA policy
+      summary: Create a First Reply SLA policy with an inactive immutable first version
       operationId: createSlaPolicy
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin SLA
       x-deskseed-phase: P3
@@ -1571,6 +2600,9 @@ paths:
       - REQ-SLA-001
       - REQ-SLA-003
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -1580,16 +2612,13 @@ paths:
       responses:
         '201':
           description: Policy created
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FirstReplySlaPolicy'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -1603,22 +2632,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409':
-          description: RFC 9457 Problem Details
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/sla-policies/preview:
+    post:
+      summary: Preview ordered policy selection and First Reply due time without mutation
+      operationId: previewFirstReplySlaPolicy
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FirstReplySlaPreviewRequest' }
+      responses:
+        '200':
+          description: Side-effect-free deterministic policy preview
           content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-  /api/v1/admin/sla-policies/{policyId}/activate:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaPreviewResult' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+  /api/v1/admin/sla-policies/{policyId}:
     parameters:
-    - name: policyId
+    - &slaPolicyId
+      name: policyId
       in: path
       required: true
       schema:
         type: string
         format: uuid
-    post:
-      summary: Activate a First Reply SLA policy version
-      operationId: activateSlaPolicy
+    get:
+      summary: Read the latest immutable First Reply SLA policy version
+      operationId: getSlaPolicy
+      x-deskseed-contract-status: FROZEN
       tags:
       - Admin SLA
       x-deskseed-phase: P3
@@ -1626,19 +2680,18 @@ paths:
       - REQ-SLA-001
       - REQ-SLA-003
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: Activated policy
+          description: Latest policy version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FirstReplySlaPolicy'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
         '401':
           description: RFC 9457 Problem Details
           content:
@@ -1658,17 +2711,142 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409':
-          description: RFC 9457 Problem Details
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/sla-policies/{policyId}/versions:
+    parameters:
+    - *slaPolicyId
+    get:
+      summary: List immutable First Reply SLA policy versions newest first
+      operationId: listSlaPolicyVersions
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Policy version history
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: '#/components/schemas/Problem'
+                type: array
+                items: { $ref: '#/components/schemas/FirstReplySlaPolicy' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+    post:
+      summary: Create a new immutable First Reply SLA policy version
+      operationId: createSlaPolicyVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: If-Match
+        in: header
+        required: true
+        description: Quoted policy aggregate version returned as ETag.
+        schema: { type: string, pattern: '^"[0-9]+"$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FirstReplySlaPolicyInput' }
+      responses:
+        '201':
+          description: New immutable policy version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaPolicy' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '412': *id001
+  /api/v1/admin/sla-policies/{policyId}/versions/{version}/activation:
+    parameters:
+    - *slaPolicyId
+    - name: version
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    put:
+      summary: Activate an immutable First Reply SLA policy version
+      operationId: activateSlaPolicyVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin SLA]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001, REQ-SLA-003]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: If-Match
+        in: header
+        required: true
+        description: Quoted policy aggregate version returned as ETag.
+        schema: { type: string, pattern: '^"[0-9]+"$' }
+      responses:
+        '200':
+          description: Activated policy version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted policy aggregate version. }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaPolicy' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '412': *id001
+  /api/v1/analytics/first-reply-sla:
+    get:
+      summary: Reconcile First Reply SLA outcomes from immutable target facts
+      operationId: getFirstReplySlaAnalytics
+      x-deskseed-contract-status: FROZEN
+      tags: [Analytics]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-001]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: policyId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: priority
+        in: query
+        schema: { $ref: '#/components/schemas/TicketPriority' }
+      responses:
+        '200':
+          description: Reconciled First Reply SLA counts and metric definition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FirstReplySlaAnalytics' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
 components:
   securitySchemes:
     staffSession:
       type: apiKey
       in: cookie
       name: DESKSEED_SESSION
+      description: >-
+        HttpOnly server session. Browser requests also use the optional
+        ExpectedStaffActorHeader consistency guard; that header is not a credential and
+        never supplies the authenticated actor.
     customerSession:
       type: apiKey
       in: cookie
@@ -1683,6 +2861,69 @@ components:
         type: string
         minLength: 16
         maxLength: 256
+    ExpectedStaffActorHeader:
+      name: X-Deskseed-Expected-Staff-Id
+      in: header
+      required: false
+      description: >-
+        Defense-in-depth browser consistency guard for staffSession operations. When
+        present it must be one canonical UUID equal to the already authenticated session
+        principal. Missing remains compatible; malformed/duplicate values return the
+        InvalidExpectedStaffActor response and a mismatch returns
+        StaffSessionActorMismatch before controller execution, audit success, mutation,
+        or session activity renewal. Login bootstrap and post-login identity verification
+        intentionally omit it.
+      schema:
+        type: string
+        format: uuid
+    AdminPageNumber:
+      name: page
+      in: query
+      required: false
+      description: Zero-based page number.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    AdminPageSize:
+      name: size
+      in: query
+      required: false
+      description: Bounded number of rows returned in one admin list response.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    IntegrationClientId:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalSystemId:
+      name: systemId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalReferenceId:
+      name: referenceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalSystemIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: External-system ETag; it must identify the same version as expectedVersion.
+      schema:
+        type: string
+        pattern: '^"?[0-9]+"?$'
     StaffId:
       name: staffId
       in: path
@@ -1690,6 +2931,12 @@ components:
       schema:
         type: string
         format: uuid
+    GrantableAuditAuthorityParam:
+      name: authority
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GrantableAuditAuthority'
     GroupId:
       name: groupId
       in: path
@@ -1697,6 +2944,125 @@ components:
       schema:
         type: string
         format: uuid
+    AuditActivityId:
+      name: activityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AuditInteractionHeader:
+      name: X-Interaction-Id
+      in: header
+      required: true
+      description: Auditor navigation/filter interaction. Cursor requests reuse the first-page value.
+      schema:
+        type: string
+        format: uuid
+  headers:
+    PageNumber:
+      description: Zero-based page number returned.
+      schema:
+        type: integer
+        minimum: 0
+    PageSize:
+      description: Maximum number of rows requested for this page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    TotalCount:
+      description: Total rows matching this list.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+    TotalPages:
+      description: Total pages at the requested page size.
+      schema:
+        type: integer
+        minimum: 0
+  responses:
+    InvalidExpectedStaffActor:
+      description: The optional expected staff actor header is present but is not one canonical UUID value.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/InvalidExpectedStaffActorProblem'
+          example:
+            type: /problems/invalid-staff-session-actor
+            title: Invalid staff session actor
+            status: 400
+            detail: The expected staff actor header is invalid.
+            requestId: req-actor-400
+    StaffSessionActorMismatch:
+      description: The browser's confirmed actor differs from the authenticated session principal.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+          example:
+            type: /problems/staff-session-actor-mismatch
+            title: Staff session actor changed
+            status: 409
+            detail: Refresh the staff session before continuing.
+            requestId: req-actor-409
+    InvalidExpectedStaffActorOrBadRequest:
+      description: >-
+        RFC 9457 request validation failure, including a present expected-actor header
+        that is not one canonical UUID value.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            anyOf:
+            - $ref: '#/components/schemas/InvalidExpectedStaffActorProblem'
+            - $ref: '#/components/schemas/Problem'
+          examples:
+            invalidExpectedStaffActor:
+              value:
+                type: /problems/invalid-staff-session-actor
+                title: Invalid staff session actor
+                status: 400
+                detail: The expected staff actor header is invalid.
+                requestId: req-actor-400
+    StaffSessionActorMismatchOrConflict:
+      description: >-
+        RFC 9457 business conflict, including a confirmed browser actor that differs
+        from the authenticated session principal.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            anyOf:
+            - $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+            - $ref: '#/components/schemas/Problem'
+          examples:
+            staffSessionActorMismatch:
+              value:
+                type: /problems/staff-session-actor-mismatch
+                title: Staff session actor changed
+                status: 409
+                detail: Refresh the staff session before continuing.
+                requestId: req-actor-409
   schemas:
     Problem:
       type: object
@@ -1733,6 +3099,91 @@ components:
           items:
             type: string
       additionalProperties: true
+    InvalidExpectedStaffActorProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required: [type, title, status]
+        properties:
+          type:
+            type: string
+            const: /problems/invalid-staff-session-actor
+          title:
+            type: string
+            const: Invalid staff session actor
+          status:
+            type: integer
+            const: 400
+    StaffSessionActorMismatchProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required: [type, title, status]
+        properties:
+          type:
+            type: string
+            const: /problems/staff-session-actor-mismatch
+          title:
+            type: string
+            const: Staff session actor changed
+          status:
+            type: integer
+            const: 409
+    TicketFieldConflictProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required:
+        - currentVersion
+        - conflictingFields
+        properties:
+          type:
+            type: string
+            const: /problems/ticket-field-conflict
+          status:
+            type: integer
+            const: 409
+          currentVersion:
+            type: integer
+            format: int64
+          conflictingFields:
+            type: array
+            minItems: 1
+            uniqueItems: true
+            items:
+              type: string
+              enum:
+              - status
+              - priority
+              - groupId
+              - assigneeId
+    ClientCommandIdReusedProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        properties:
+          type:
+            type: string
+            const: /problems/client-command-id-reused
+          status:
+            type: integer
+            const: 409
+    TicketVersionPreconditionProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required:
+        - currentVersion
+        properties:
+          type:
+            type: string
+            const: /problems/ticket-version-precondition-failed
+          status:
+            type: integer
+            const: 412
+          currentVersion:
+            type: integer
+            format: int64
     FieldError:
       type: object
       required:
@@ -1758,10 +3209,12 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+          description: Anonymous requester name; ignored when a valid customer session supplies the requester identity.
         email:
           type: string
           format: email
           maxLength: 254
+          description: Anonymous requester email; ignored when a valid customer session supplies the requester identity.
         subject:
           type: string
           minLength: 1
@@ -1788,7 +3241,9 @@ components:
           $ref: '#/components/schemas/TicketStatus'
         accessToken:
           type: string
-          description: Returned only at creation; server stores a hash.
+          description: >-
+            Returned only at creation in both anonymous and authenticated modes for ticket-scoped lookup/claim recovery;
+            server stores only a digest and revokes active tokens when ownership is explicitly claimed.
         createdAt:
           type: string
           format: date-time
@@ -1801,6 +3256,23 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
+    AddAuthenticatedCustomerComment:
+      type: object
+      additionalProperties: false
+      required:
+      - body
+      - clientCommandId
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        clientCommandId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9._:-]+$'
+          description: Stable customer command identifier retained across transport retries.
     PublicComment:
       type: object
       additionalProperties: false
@@ -1872,17 +3344,76 @@ components:
             $ref: '#/components/schemas/PublicComment'
     CustomerRequestPage:
       type: object
+      additionalProperties: false
       required:
       - items
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CustomerRequestDetail'
+            $ref: '#/components/schemas/CustomerRequestSummary'
         nextCursor:
           type:
           - string
           - 'null'
+    CustomerRequestSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - ticketNumber
+      - subject
+      - status
+      - createdAt
+      - updatedAt
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomerAccessMode:
+      type: string
+      enum: [ANONYMOUS_ALLOWED, REGISTRATION_OPTIONAL, REGISTRATION_REQUIRED]
+    CustomerAccessModeResponse:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+    CustomerAccessModeSetting:
+      type: object
+      additionalProperties: false
+      required: [mode, version, updatedAt]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateCustomerAccessMode:
+      type: object
+      additionalProperties: false
+      required: [mode, expectedVersion]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
     StaffLogin:
       type: object
       additionalProperties: false
@@ -2106,19 +3637,29 @@ components:
       type:
       - object
       - 'null'
+      additionalProperties: false
+      required: [metric, state, dueAt, targetMinutes, policyVersion, scheduleVersion]
       properties:
         metric:
           type: string
-        status:
-          type: string
-          enum:
-          - ACTIVE
-          - AT_RISK
-          - ACHIEVED
-          - BREACHED
+          const: FIRST_REPLY
+        state:
+          $ref: '#/components/schemas/FirstReplySlaDisplayState'
         dueAt:
-          type: string
+          type: [string, 'null']
           format: date-time
+        targetMinutes:
+          type: [integer, 'null']
+          minimum: 1
+        policyVersion:
+          type: [integer, 'null']
+          minimum: 1
+        scheduleVersion:
+          type: [integer, 'null']
+          minimum: 1
+    FirstReplySlaDisplayState:
+      type: string
+      enum: [ACTIVE, AT_RISK, PAUSED, ACHIEVED, BREACHED, CANCELLED, NO_POLICY]
     AgentComment:
       type: object
       required:
@@ -2156,8 +3697,10 @@ components:
       - ticket
       - comments
       - capabilities
+      - assignmentOptions
       - context
       - history
+      - warnings
       properties:
         ticket:
           $ref: '#/components/schemas/TicketSummary'
@@ -2169,6 +3712,9 @@ components:
           type: array
           items:
             type: string
+          description: "READ is always present for a successful staff detail; UPDATE is present only when the current actor may mutate the current ticket."
+        assignmentOptions:
+          $ref: '#/components/schemas/TicketAssignmentOptions'
         context:
           $ref: '#/components/schemas/TicketContext'
         history:
@@ -2179,14 +3725,64 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CommandWarning'
+    TicketAssignmentOptions:
+      type: object
+      additionalProperties: false
+      required:
+      - groups
+      properties:
+        groups:
+          type: array
+          description: Active groups and their active members, projected only on the audited staff detail surface.
+          items:
+            $ref: '#/components/schemas/TicketAssignmentGroupOption'
+    TicketAssignmentGroupOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - members
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketAssignmentStaffOption'
+    TicketAssignmentStaffOption:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - displayName
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
     TicketContext:
       type: object
       additionalProperties: false
+      required:
+      - customer
+      - parent
+      - children
+      - externalReferences
       properties:
         customer:
-          $ref: '#/components/schemas/TicketCustomer'
+          description: Null for requesterless INTERNAL_WORK_ITEM tickets.
+          oneOf:
+          - $ref: '#/components/schemas/TicketCustomer'
+          - type: 'null'
         parent:
-          $ref: '#/components/schemas/TicketSummary'
+          oneOf:
+          - $ref: '#/components/schemas/TicketSummary'
+          - type: 'null'
         children:
           type: array
           items:
@@ -2243,9 +3839,37 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
-    TicketPatch:
+    UpdateTicketCommand:
       type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - changedFields
+      anyOf:
+      - properties:
+          changedFields:
+            minItems: 1
+      - required:
+        - comment
+        properties:
+          comment:
+            $ref: '#/components/schemas/CommentDraft'
       properties:
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        changedFields:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - status
+            - priority
+            - groupId
+            - assigneeId
         status:
           $ref: '#/components/schemas/AgentTicketStatus'
         priority:
@@ -2260,40 +3884,19 @@ components:
           - string
           - 'null'
           format: uuid
-        subject:
-          type: string
-          minLength: 1
-          maxLength: 200
-    UpdateTicketCommand:
-      type: object
-      required:
-      - expectedVersion
-      - changedFields
-      properties:
-        expectedVersion:
-          type: integer
-          format: int64
-        changedFields:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            enum:
-            - subject
-            - status
-            - priority
-            - group
-            - assignee
-        patch:
-          $ref: '#/components/schemas/TicketPatch'
         comment:
-          $ref: '#/components/schemas/CommentDraft'
+          oneOf:
+          - $ref: '#/components/schemas/CommentDraft'
+          - type: 'null'
         clientCommandId:
           type: string
           format: uuid
+          description: >-
+            Identifies one canonical update request for the authenticated staff actor. An exact retry returns the original result;
+            reuse for a different payload, ticket, or staff ticket operation returns 409 without mutation.
     TransferTicketCommand:
       type: object
+      additionalProperties: false
       required:
       - expectedVersion
       - groupId
@@ -2319,6 +3922,7 @@ components:
           format: uuid
     CreateChildTicketCommand:
       type: object
+      additionalProperties: false
       required:
       - expectedVersion
       - subject
@@ -2352,16 +3956,23 @@ components:
           format: uuid
     CommandWarning:
       type: object
+      additionalProperties: false
       required:
       - code
       - message
+      - count
+      - relatedTicketNumbers
       properties:
         code:
           type: string
         message:
           type: string
+        count:
+          type: integer
+          minimum: 1
         relatedTicketNumbers:
           type: array
+          uniqueItems: true
           items:
             type: integer
             format: int64
@@ -2390,6 +4001,7 @@ components:
           $ref: '#/components/schemas/TicketSummary'
     CreateAgentTicket:
       type: object
+      additionalProperties: false
       required:
       - requester
       - subject
@@ -2398,15 +4010,19 @@ components:
       properties:
         requester:
           type: object
+          additionalProperties: false
           required:
           - name
           - email
           properties:
             name:
               type: string
+              minLength: 1
+              maxLength: 100
             email:
               type: string
               format: email
+              maxLength: 254
         subject:
           type: string
           minLength: 1
@@ -2425,20 +4041,31 @@ components:
           - string
           - 'null'
           format: uuid
+        clientCommandId:
+          type: string
+          format: uuid
     CreateChildTicketResult:
       type: object
       required:
       - parentTicketNumber
+      - parentVersion
       - childTicketNumber
-      - auditId
+      - parentAuditId
+      - childAuditId
       properties:
         parentTicketNumber:
+          type: integer
+          format: int64
+        parentVersion:
           type: integer
           format: int64
         childTicketNumber:
           type: integer
           format: int64
-        auditId:
+        parentAuditId:
+          type: string
+          format: uuid
+        childAuditId:
           type: string
           format: uuid
     TicketAuditEvent:
@@ -2468,6 +4095,11 @@ components:
       - actor
       - source
       - createdAt
+      - requestId
+      - correlationId
+      - commandId
+      - expectedVersion
+      - resultVersion
       - events
       properties:
         id:
@@ -2485,6 +4117,16 @@ components:
           format: date-time
         correlationId:
           type: string
+        requestId:
+          type: string
+        commandId:
+          type: string
+        expectedVersion:
+          type: integer
+          format: int64
+        resultVersion:
+          type: integer
+          format: int64
         events:
           type: array
           items:
@@ -2502,50 +4144,89 @@ components:
           type:
           - string
           - 'null'
-    SearchResult:
+    AgentTicketSearchFilters:
       type: object
-      required:
-      - type
-      - id
-      - title
+      additionalProperties: false
       properties:
-        type:
+        status:
           type: string
           enum:
-          - TICKET
-          - CUSTOMER
-        id:
+          - NEW
+          - OPEN
+          - PENDING
+          - ON_HOLD
+          - SOLVED
+          - CLOSED
+        priority:
           type: string
-        title:
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
+        groupId:
           type: string
-        snippet:
-          type: string
-        ticketNumber:
-          type:
-          - integer
-          - 'null'
-          format: int64
-    SearchResultPage:
+          format: uuid
+        assigneeId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: string
+            enum:
+            - me
+            - unassigned
+    AgentTicketSearchRequest:
       type: object
+      additionalProperties: false
       required:
+      - query
+      - filters
+      - sort
+      - limit
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+        filters:
+          $ref: '#/components/schemas/AgentTicketSearchFilters'
+        sort:
+          type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+    AgentTicketSearchPage:
+      type: object
+      additionalProperties: false
+      required:
+      - searchEventId
       - searchInteractionId
       - items
+      - resultCount
+      - sort
       properties:
+        searchEventId:
+          type: string
+          format: uuid
         searchInteractionId:
           type: string
           format: uuid
         items:
           type: array
           items:
-            $ref: '#/components/schemas/SearchResult'
-        nextCursor:
-          type:
-          - string
-          - 'null'
-        resultCountApproximate:
-          type:
-          - integer
-          - 'null'
+            $ref: '#/components/schemas/TicketSummary'
+        resultCount:
+          type: integer
+          format: int64
+          minimum: 0
+        sort:
+          type: string
+          enum:
+          - updatedAt:desc,ticketNumber:desc
     StaffAccount:
       type: object
       additionalProperties: false
@@ -2556,6 +4237,7 @@ components:
       - role
       - status
       - memberships
+      - auditAuthorities
       properties:
         id:
           type: string
@@ -2573,11 +4255,320 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GroupRef'
+        auditAuthorities:
+          type: array
+          uniqueItems: true
+          description: Explicit persisted high-risk audit grants; empty for non-auditors and new auditors.
+          items:
+            $ref: '#/components/schemas/GrantableAuditAuthority'
         lastLoginAt:
           type:
           - string
           - 'null'
           format: date-time
+    ExternalSystemStatus:
+      type: string
+      enum: [ACTIVE, DISABLED]
+    ExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [id, systemKey, displayName, status, allowedHostnames, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        systemKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$'
+          description: Immutable normalized registry identifier.
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/ExternalSystemStatus' }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: Exact canonical public DNS hostnames; wildcards, localhost, and IP literals are forbidden.
+          items: { type: string, minLength: 1, maxLength: 253 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [systemKey, displayName, allowedHostnames]
+      properties:
+        systemKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$'
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 253 }
+    UpdateExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [displayName, status, allowedHostnames, expectedVersion]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/ExternalSystemStatus' }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 253 }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    ExternalObjectType:
+      type: string
+      enum: [ORDER, PAYMENT, REFUND, USER, STORE, OPS_CASE, CUSTOM]
+    ExternalReferenceLinkState:
+      type: string
+      enum: [AVAILABLE, SYSTEM_DISABLED, HOST_NOT_ALLOWED]
+    ExternalReferenceMetadataValue:
+      oneOf:
+      - type: string
+        maxLength: 200
+      - type: number
+      - type: boolean
+    ExternalReferenceMetadataSnapshot:
+      type: object
+      additionalProperties: false
+      maxProperties: 8
+      properties:
+        status: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        storeName: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        amountDisplay: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        currency: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        occurredAt: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        ownerLabel: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        channel: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+    ExternalReferenceActor:
+      type: object
+      additionalProperties: false
+      required: [actorId, displayName]
+      properties:
+        actorId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+    ExternalReference:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - system
+      - objectType
+      - externalId
+      - displayLabel
+      - linkState
+      - metadata
+      - metadataObservedAt
+      - createdBy
+      - createdAt
+      properties:
+        id: { type: string, format: uuid }
+        system: { $ref: '#/components/schemas/ExternalSystem' }
+        objectType: { $ref: '#/components/schemas/ExternalObjectType' }
+        externalId: { type: string, minLength: 1, maxLength: 200 }
+        displayLabel: { type: string, minLength: 1, maxLength: 200 }
+        linkState: { $ref: '#/components/schemas/ExternalReferenceLinkState' }
+        safeDeepLink:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+          description: Present only while the system is active and the stored host remains allowed.
+        metadata: { $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot' }
+        metadataObservedAt: { type: string, format: date-time }
+        createdBy: { $ref: '#/components/schemas/ExternalReferenceActor' }
+        createdAt: { type: string, format: date-time }
+    ExternalReferenceContext:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, canManage, availableSystems, items]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        canManage: { type: boolean }
+        availableSystems:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ExternalSystem' }
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ExternalReference' }
+    CreateExternalReferenceCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - externalSystemId
+      - objectType
+      - externalId
+      - displayLabel
+      - safeDeepLink
+      - metadata
+      - metadataObservedAt
+      - expectedVersion
+      properties:
+        externalSystemId: { type: string, format: uuid }
+        objectType: { $ref: '#/components/schemas/ExternalObjectType' }
+        externalId: { type: string, minLength: 1, maxLength: 200 }
+        displayLabel: { type: string, minLength: 1, maxLength: 200 }
+        safeDeepLink:
+          type: string
+          format: uri
+          minLength: 9
+          maxLength: 2048
+          description: Exact-host HTTPS URL; userinfo and credential-like query keys are forbidden.
+        metadata: { $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot' }
+        metadataObservedAt: { type: string, format: date-time }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    ExternalReferenceCommandResult:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, reference]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        reference: { $ref: '#/components/schemas/ExternalReference' }
+    DeleteExternalReferenceResult:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, removedReferenceId]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        removedReferenceId: { type: string, format: uuid }
+    ExternalSystemVersionPreconditionProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        additionalProperties: true
+        required: [currentVersion]
+        properties:
+          currentVersion: { type: integer, format: int64, minimum: 0 }
+    IntegrationScope:
+      type: string
+      enum:
+      - tickets:create
+      - tickets:read
+      - tickets:update
+      - tickets:comment:internal
+    IntegrationClientStatus:
+      type: string
+      enum: [ACTIVE, DISABLED, REVOKED]
+    IntegrationCredentialStatus:
+      type: string
+      enum: [ACTIVE, RETIRING, EXPIRED, REVOKED]
+    IntegrationResourceConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        allowedGroupIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        allowedTicketKinds:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string, enum: [CUSTOMER_REQUEST, INTERNAL_TASK] }
+        allowedFields:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items: { type: string, enum: [status, priority, groupId, assigneeId] }
+        ipAllowlist:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          description: Optional literal IP or CIDR allowlist. Absence means no network restriction at this client seam.
+          items:
+            type: string
+            minLength: 2
+            maxLength: 64
+    IntegrationCredentialMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, publicKeyId, status, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        publicKeyId:
+          type: string
+          minLength: 16
+          maxLength: 32
+        status: { $ref: '#/components/schemas/IntegrationCredentialStatus' }
+        expiresAt: { type: string, format: date-time }
+        overlapExpiresAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        lastUsedIp: { type: [string, 'null'] }
+    IntegrationClient:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, status, scopes, resourceConstraints, credentials, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        status: { $ref: '#/components/schemas/IntegrationClientStatus' }
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/IntegrationScope' }
+        resourceConstraints: { $ref: '#/components/schemas/IntegrationResourceConstraints' }
+        credentials:
+          type: array
+          items: { $ref: '#/components/schemas/IntegrationCredentialMetadata' }
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: Latest effective credential expiry for list display.
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        lastUsedIp: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    CreateIntegrationClient:
+      type: object
+      additionalProperties: false
+      required: [name, description, scopes, resourceConstraints, expiresAt]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/IntegrationScope' }
+        resourceConstraints: { $ref: '#/components/schemas/IntegrationResourceConstraints' }
+        expiresAt: { type: string, format: date-time }
+    RotateIntegrationCredential:
+      type: object
+      additionalProperties: false
+      required: [expiresAt, overlapSeconds]
+      properties:
+        expiresAt: { type: string, format: date-time }
+        overlapSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+    IntegrationCredentialIssue:
+      type: object
+      additionalProperties: false
+      required: [client, credential, apiKey]
+      properties:
+        client: { $ref: '#/components/schemas/IntegrationClient' }
+        credential: { $ref: '#/components/schemas/IntegrationCredentialMetadata' }
+        apiKey:
+          type: string
+          pattern: '^dsk_live_[A-Za-z0-9_-]{16,32}\.[A-Za-z0-9_-]{43}$'
+          readOnly: true
+          x-deskseed-one-time-display: true
     CreateStaffAccount:
       type: object
       additionalProperties: false
@@ -2608,11 +4599,18 @@ components:
       enum:
       - ADMIN
       - AGENT
+      - SECURITY_AUDITOR
     StaffStatus:
       type: string
       enum:
       - ACTIVE
       - DISABLED
+    GrantableAuditAuthority:
+      type: string
+      enum:
+      - AUDIT_SEARCH_QUERY_REVEAL
+      - AUDIT_EXPORT
+      - AUDIT_PROJECTION_REBUILD
     Group:
       type: object
       additionalProperties: false
@@ -2714,8 +4712,24 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
+    AuditLedgerType:
+      type: string
+      enum: [TICKET_CHANGE, ACCESS_SEARCH, ADMIN_SECURITY]
+    AuditOutcome:
+      type: string
+      enum: [SUCCEEDED, DENIED, FAILED]
+    AuditFieldChange:
+      type: object
+      additionalProperties: false
+      required: [field, before, after]
+      properties:
+        field:
+          type: string
+        before: {}
+        after: {}
     AuditActivity:
       type: object
+      additionalProperties: false
       required:
       - id
       - ledger
@@ -2723,17 +4737,13 @@ components:
       - actor
       - occurredAt
       - outcome
+      - source
       properties:
         id:
           type: string
           format: uuid
         ledger:
-          type: string
-          enum:
-          - TICKET_CHANGE
-          - ACCESS_SEARCH
-          - ADMIN_SECURITY
-          - INTEGRATION_DELIVERY
+          $ref: '#/components/schemas/AuditLedgerType'
         action:
           type: string
         actor:
@@ -2746,6 +4756,11 @@ components:
           - integer
           - 'null'
           format: int64
+        groupId:
+          type: [string, 'null']
+          format: uuid
+        field:
+          type: [string, 'null']
         resourceType:
           type:
           - string
@@ -2754,12 +4769,12 @@ components:
           type:
           - string
           - 'null'
-        fieldChanges:
-          type: array
-          items:
-            $ref: '#/components/schemas/TicketAuditEvent'
-        outcome:
+        summary:
           type: string
+        source:
+          type: string
+        outcome:
+          $ref: '#/components/schemas/AuditOutcome'
         requestId:
           type:
           - string
@@ -2770,10 +4785,14 @@ components:
           - 'null'
         protectedContentAvailable:
           type: boolean
+        searchFingerprint:
+          type: [string, 'null']
     AuditActivityPage:
       type: object
       required:
       - items
+      - snapshotAt
+      - projection
       properties:
         items:
           type: array
@@ -2783,8 +4802,107 @@ components:
           type:
           - string
           - 'null'
-    ProtectedRevealRequest:
+        snapshotAt:
+          type: string
+          format: date-time
+        projection:
+          $ref: '#/components/schemas/AuditProjectionStatus'
+    AuditProjectionStatus:
       type: object
+      additionalProperties: false
+      required: [state, projectedCount, lastRebuiltAt]
+      properties:
+        state:
+          type: string
+          enum: [CURRENT, DEGRADED, REBUILDING]
+        projectedCount:
+          type: integer
+          format: int64
+          minimum: 0
+        lastRebuiltAt:
+          type: [string, 'null']
+          format: date-time
+    AuditSearchContext:
+      type: object
+      additionalProperties: false
+      required: [queryRedacted, queryFingerprint, filters, resultCount, openedActivityCount, openedActivitiesTruncated, openedActivities]
+      properties:
+        queryRedacted:
+          type: string
+          description: >
+            Legacy field name for the input-independent `[PROTECTED]` routine marker.
+            Exact query content is available only through the separately authorized,
+            reason-gated reveal operation.
+        queryFingerprint:
+          type: string
+        filters:
+          type: object
+          additionalProperties:
+            type: string
+        sort:
+          type: string
+        resultCount:
+          type: integer
+          format: int64
+          minimum: 0
+        originSearchActivityId:
+          type: [string, 'null']
+          format: uuid
+        openedActivityCount:
+          type: integer
+          format: int64
+          minimum: 0
+        openedActivitiesTruncated:
+          type: boolean
+          description: True when only the first 100 linked opens are returned.
+        openedActivities:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [activityId, ticketNumber, occurredAt]
+            properties:
+              activityId: { type: string, format: uuid }
+              ticketNumber: { type: integer, format: int64 }
+              occurredAt: { type: string, format: date-time }
+    AuditActivityDetail:
+      allOf:
+      - $ref: '#/components/schemas/AuditActivity'
+      - type: object
+        required: [canonicalEventId, metadata]
+        properties:
+          canonicalEventId:
+            type: string
+            format: uuid
+          canonicalParentId:
+            type: [string, 'null']
+            format: uuid
+          fieldChange:
+            oneOf:
+            - $ref: '#/components/schemas/AuditFieldChange'
+            - type: 'null'
+          interactionId:
+            type: [string, 'null']
+            format: uuid
+          sessionFingerprint:
+            type: [string, 'null']
+          authType:
+            type: [string, 'null']
+          ipAddress:
+            type: [string, 'null']
+          userAgent:
+            type: [string, 'null']
+          search:
+            oneOf:
+            - $ref: '#/components/schemas/AuditSearchContext'
+            - type: 'null'
+          metadata:
+            type: object
+            additionalProperties: true
+    SearchQueryRevealRequest:
+      type: object
+      additionalProperties: false
       required:
       - reason
       properties:
@@ -2792,28 +4910,29 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
-        contentTypes:
-          type: array
-          items:
-            type: string
-    ProtectedRevealResult:
+    SearchQueryRevealResult:
       type: object
+      additionalProperties: false
       required:
       - activityId
-      - revealedAt
-      - content
+      - state
       properties:
         activityId:
           type: string
           format: uuid
-        revealedAt:
+        state:
           type: string
+          enum: [AVAILABLE, RETENTION_EXPIRED, KEY_UNAVAILABLE]
+        rawQuery:
+          type: [string, 'null']
+        keyVersion:
+          type: [string, 'null']
+        revealedAt:
+          type: [string, 'null']
           format: date-time
-        content:
-          type: object
-          additionalProperties: true
     CreateAuditExport:
       type: object
+      additionalProperties: false
       required:
       - format
       - filters
@@ -2826,22 +4945,47 @@ components:
           - CSV
           - JSONL
         filters:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/AuditExportFilters'
         fields:
           type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
           items:
             type: string
+            enum: [occurredAt, ledger, action, actor, ticketNumber, groupId, field, source, outcome, requestId, correlationId, searchFingerprint]
         reason:
           type: string
           minLength: 1
           maxLength: 1000
+    AuditExportFilters:
+      type: object
+      additionalProperties: false
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        ledger: { $ref: '#/components/schemas/AuditLedgerType' }
+        action: { type: string, maxLength: 80 }
+        actorType: { type: string }
+        actorId: { type: string, format: uuid }
+        ticketNumber: { type: integer, format: int64, minimum: 1 }
+        groupId: { type: string, format: uuid }
+        field: { type: string, maxLength: 60 }
+        source: { type: string }
+        outcome: { $ref: '#/components/schemas/AuditOutcome' }
+        requestId: { type: string, maxLength: 100 }
+        correlationId: { type: string, maxLength: 100 }
+        searchFingerprint: { type: string, maxLength: 100 }
     ExportJob:
       type: object
+      additionalProperties: false
       required:
       - id
       - status
       - createdAt
+      - format
+      - fields
+      - artifact
       properties:
         id:
           type: string
@@ -2849,26 +4993,42 @@ components:
         status:
           type: string
           enum:
-          - QUEUED
-          - RUNNING
-          - SUCCEEDED
-          - FAILED
-          - EXPIRED
+          - REQUESTED
         createdAt:
           type: string
           format: date-time
-        downloadUrl:
-          type:
-          - string
-          - 'null'
-          format: uri
-        expiresAt:
-          type:
-          - string
-          - 'null'
-          format: date-time
+        format:
+          type: string
+          enum: [CSV, JSONL]
+        fields:
+          type: array
+          items: { type: string }
+        artifact:
+          type: object
+          additionalProperties: false
+          required: [state, generationAvailable]
+          properties:
+            state:
+              type: string
+              enum: [NOT_CREATED]
+            generationAvailable:
+              type: boolean
+              const: false
+    AuditProjectionRebuildResult:
+      type: object
+      additionalProperties: false
+      required: [ticketChangeCount, accessSearchCount, adminSecurityCount, totalCount, completedAt, projection]
+      properties:
+        ticketChangeCount: { type: integer, format: int64, minimum: 0 }
+        accessSearchCount: { type: integer, format: int64, minimum: 0 }
+        adminSecurityCount: { type: integer, format: int64, minimum: 0 }
+        totalCount: { type: integer, format: int64, minimum: 0 }
+        completedAt: { type: string, format: date-time }
+        projection:
+          $ref: '#/components/schemas/AuditProjectionStatus'
     CurrentCustomer:
       type: object
+      additionalProperties: false
       required:
       - id
       - email
@@ -2905,6 +5065,7 @@ components:
       additionalProperties: false
       required:
       - weekday
+      - enabled
       - intervals
       properties:
         weekday:
@@ -2917,8 +5078,11 @@ components:
           - FRIDAY
           - SATURDAY
           - SUNDAY
+        enabled:
+          type: boolean
         intervals:
           type: array
+          maxItems: 12
           items:
             $ref: '#/components/schemas/BusinessInterval'
     ScheduleException:
@@ -2938,6 +5102,7 @@ components:
           - OPEN
         intervals:
           type: array
+          maxItems: 12
           items:
             $ref: '#/components/schemas/BusinessInterval'
         label:
@@ -2969,6 +5134,7 @@ components:
             $ref: '#/components/schemas/WeekdaySchedule'
         exceptions:
           type: array
+          maxItems: 366
           items:
             $ref: '#/components/schemas/ScheduleException'
     BusinessSchedule:
@@ -2978,8 +5144,12 @@ components:
         required:
         - id
         - version
+        - activeVersion
+        - activeTimeZone
+        - aggregateVersion
         - active
         - createdAt
+        - createdBy
         properties:
           id:
             type: string
@@ -2987,34 +5157,69 @@ components:
           version:
             type: integer
             minimum: 1
+          activeVersion:
+            type: [integer, 'null']
+            minimum: 1
+            description: Current activated immutable version, independent of the returned version.
+          activeTimeZone:
+            type: [string, 'null']
+            description: IANA timezone of the current activated immutable schedule version.
+          aggregateVersion:
+            type: integer
+            format: int64
+            minimum: 0
           active:
             type: boolean
           createdAt:
             type: string
             format: date-time
+          createdBy:
+            type: object
+            additionalProperties: false
+            required: [actorType, displayName]
+            properties:
+              actorType:
+                type: string
+                enum: [STAFF, SYSTEM]
+              actorId:
+                type: [string, 'null']
+                format: uuid
+              displayName:
+                type: string
     BusinessTimePreviewRequest:
       type: object
       additionalProperties: false
       required:
+      - schedule
       - startAt
+      - endAt
       - businessMinutes
       properties:
+        schedule:
+          $ref: '#/components/schemas/BusinessScheduleInput'
         startAt:
           type: string
           format: date-time
+        endAt:
+          type: string
+          format: date-time
+          description: Must be no more than 366 days after startAt.
         businessMinutes:
           type: integer
           minimum: 0
           maximum: 525600
     BusinessTimePreviewResult:
       type: object
+      additionalProperties: false
       required:
       - dueAt
       - elapsedBusinessMinutes
       - nextOpenAt
+      - nextCloseAt
+      - dstPolicy
       properties:
         dueAt:
-          type: string
+          type: [string, 'null']
           format: date-time
         elapsedBusinessMinutes:
           type: integer
@@ -3024,6 +5229,12 @@ components:
           - string
           - 'null'
           format: date-time
+        nextCloseAt:
+          type: [string, 'null']
+          format: date-time
+        dstPolicy:
+          type: string
+          enum: [GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH]
     PriorityTargets:
       type: object
       additionalProperties: false
@@ -3048,12 +5259,25 @@ components:
           - integer
           - 'null'
           minimum: 1
+          maximum: 525600
+    FirstReplySlaPolicyConditions:
+      type: object
+      additionalProperties: false
+      properties:
+        groupId:
+          type: [string, 'null']
+          format: uuid
+        channel:
+          type: [string, 'null']
+          enum: [WEB, AGENT, EMAIL, CHAT, API, null]
     FirstReplySlaPolicyInput:
       type: object
       additionalProperties: false
       required:
       - name
+      - position
       - scheduleId
+      - conditions
       - targets
       - pauseStatuses
       properties:
@@ -3061,15 +5285,24 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        position:
+          type: integer
+          minimum: 1
+          maximum: 10000
         scheduleId:
           type: string
           format: uuid
+        conditions:
+          $ref: '#/components/schemas/FirstReplySlaPolicyConditions'
         targets:
           $ref: '#/components/schemas/PriorityTargets'
         pauseStatuses:
           type: array
           items:
-            $ref: '#/components/schemas/AgentTicketStatus'
+            type: string
+            enum: [NEW, OPEN, PENDING, ON_HOLD]
+          uniqueItems: true
+          maxItems: 4
           default:
           - PENDING
     FirstReplySlaPolicy:
@@ -3079,6 +5312,9 @@ components:
         required:
         - id
         - version
+        - activeVersion
+        - aggregateVersion
+        - scheduleVersion
         - active
         - createdAt
         properties:
@@ -3088,8 +5324,73 @@ components:
           version:
             type: integer
             minimum: 1
+          activeVersion:
+            type: [integer, 'null']
+            minimum: 1
+            description: Current activated immutable policy version, independent of the returned version.
+          aggregateVersion:
+            type: integer
+            format: int64
+            minimum: 0
+          scheduleVersion:
+            type: integer
+            minimum: 1
           active:
             type: boolean
           createdAt:
             type: string
             format: date-time
+    FirstReplySlaPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [ticket, startAt]
+      properties:
+        candidatePolicyId:
+          type: [string, 'null']
+          format: uuid
+          description: Existing policy replaced by candidate during ordered preview evaluation.
+        candidate:
+          oneOf:
+          - $ref: '#/components/schemas/FirstReplySlaPolicyInput'
+          - type: 'null'
+        ticket:
+          type: object
+          additionalProperties: false
+          required: [priority, channel]
+          properties:
+            priority: { $ref: '#/components/schemas/TicketPriority' }
+            groupId: { type: [string, 'null'], format: uuid }
+            channel: { type: string, enum: [WEB, AGENT, EMAIL, CHAT, API] }
+        startAt: { type: string, format: date-time }
+    FirstReplySlaPreviewResult:
+      type: object
+      additionalProperties: false
+      required: [matched, dueAt, targetMinutes, policyId, policyVersion, scheduleId, scheduleVersion, dstPolicy]
+      properties:
+        matched: { type: boolean }
+        dueAt: { type: [string, 'null'], format: date-time }
+        targetMinutes: { type: [integer, 'null'], minimum: 1 }
+        policyId: { type: [string, 'null'], format: uuid }
+        policyVersion: { type: [integer, 'null'], minimum: 1 }
+        scheduleId: { type: [string, 'null'], format: uuid }
+        scheduleVersion: { type: [integer, 'null'], minimum: 1 }
+        dstPolicy: { type: string, enum: [GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH] }
+    FirstReplySlaAnalytics:
+      type: object
+      additionalProperties: false
+      required: [metric, calculationVersion, active, paused, achieved, breached, cancelled, noPolicy, achievedRateDenominator, achievedRate]
+      properties:
+        metric: { type: string, const: FIRST_REPLY }
+        calculationVersion: { type: string }
+        active: { type: integer, format: int64, minimum: 0 }
+        paused: { type: integer, format: int64, minimum: 0 }
+        achieved: { type: integer, format: int64, minimum: 0 }
+        breached: { type: integer, format: int64, minimum: 0 }
+        cancelled: { type: integer, format: int64, minimum: 0 }
+        noPolicy: { type: integer, format: int64, minimum: 0 }
+        achievedRateDenominator: { type: integer, format: int64, minimum: 0 }
+        achievedRate:
+          type: [number, 'null']
+          format: double
+          minimum: 0
+          maximum: 1

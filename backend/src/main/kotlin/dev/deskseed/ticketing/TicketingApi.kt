@@ -9,6 +9,7 @@ enum class TicketKind {
     CUSTOMER_REQUEST,
     INTERNAL_CHILD,
     AGENT_CREATED,
+    INTERNAL_WORK_ITEM,
 }
 
 enum class TicketStatus {
@@ -43,6 +44,7 @@ enum class CommentVisibility {
 enum class CommentAuthorType {
     CUSTOMER,
     AGENT,
+    INTEGRATION_CLIENT,
     SYSTEM,
     AUTOMATION,
 }
@@ -102,5 +104,30 @@ data class TicketSubmitted(
     val ticketId: UUID,
     val ticketNumber: Long,
     val requesterId: UUID,
+    val kind: TicketKind,
+    val priority: TicketPriority,
+    val groupId: UUID?,
+    val channel: TicketChannel,
+    val status: TicketStatus,
+    val ticketAuditId: UUID,
+    val actorType: String,
+    val actorId: UUID?,
+    val source: String,
+    val requestId: String,
+    val correlationId: String,
+    val startsFirstReplySla: Boolean,
+    val occurredAt: Instant,
+)
+
+data class TicketSlaLifecycleChanged(
+    val ticketId: UUID,
+    val previousStatus: TicketStatus,
+    val currentStatus: TicketStatus,
+    val humanStaffPublicReply: Boolean,
+    val ticketAuditId: UUID,
+    val actorId: UUID,
+    val source: String,
+    val requestId: String,
+    val correlationId: String,
     val occurredAt: Instant,
 )

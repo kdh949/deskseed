@@ -2,6 +2,7 @@ package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.containsInAnyOrder
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -40,7 +41,9 @@ class AgentTicketReadIntegrationTest {
     @BeforeEach
     fun clearState() {
         if (jdbcTemplate.queryForObject("select to_regclass('access_audit_events') is not null", Boolean::class.java) == true) {
-            jdbcTemplate.execute("truncate table access_audit_events")
+            jdbcTemplate.execute(
+                "truncate table search_audit_query_ciphertexts, search_audit_result_items, search_audit_details, access_audit_events",
+            )
         }
         jdbcTemplate.execute("truncate table admin_security_audit_events")
         jdbcTemplate.update("delete from request_access_tokens")
@@ -80,6 +83,14 @@ class AgentTicketReadIntegrationTest {
             groupId = groupA,
             assigneeId = agentA,
         )
+        insertTicket(
+            number = 2003,
+            subject = "종료된 내 티켓",
+            status = "CLOSED",
+            priority = "NORMAL",
+            groupId = groupA,
+            assigneeId = agentA,
+        )
         val browser = login("agent-a@example.com", "Agent password 42")
 
         mockMvc.perform(get("/api/v1/agent/views").session(browser))
@@ -111,6 +122,26 @@ class AgentTicketReadIntegrationTest {
             .andExpect(jsonPath("$.comments.length()").value(2))
             .andExpect(jsonPath("$.comments[1].visibility").value("INTERNAL"))
             .andExpect(jsonPath("$.history[0].eventType").value("TICKET_CREATED"))
+            .andExpect(jsonPath("$.capabilities.length()").value(1))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
+            .andExpect(
+                jsonPath("$.assignmentOptions.groups[*].name")
+                    .value(containsInAnyOrder("고객 지원", "결제 지원")),
+            )
+            .andExpect(
+                jsonPath("$.assignmentOptions.groups[*].members[*].displayName")
+                    .value(containsInAnyOrder("상담사 A", "상담사 B")),
+            )
+
+        mockMvc.perform(ticketDetail(2002, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capabilities.length()").value(2))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
+            .andExpect(jsonPath("$.capabilities[1]").value("UPDATE"))
+
+        mockMvc.perform(ticketDetail(2003, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.capabilities.length()").value(1))
             .andExpect(jsonPath("$.capabilities[0]").value("READ"))
 
         mockMvc.perform(get("/api/v1/agent/tickets/2001"))
@@ -250,7 +281,13 @@ class AgentTicketReadIntegrationTest {
     fun `background read audit failure fails closed without returning protected detail`() {
         val agent = insertStaff("agent@example.com", "Agent password 42", "AGENT", "상담사")
         val group = insertGroup("보호 그룹", agent)
-        insertTicket(number = 5001, subject = "보호 티켓", groupId = group, assigneeId = agent)
+        val ticket = insertTicket(
+            number = 5001,
+            subject = "audit-failure-protected-subject",
+            groupId = group,
+            assigneeId = agent,
+        )
+        insertComment(ticket.id, "INTERNAL", "AGENT", agent, "audit-failure-protected-internal-note")
         val browser = login("agent@example.com", "Agent password 42")
         jdbcTemplate.execute(
             """
@@ -262,14 +299,57 @@ class AgentTicketReadIntegrationTest {
             "create trigger fail_access_audit before insert on access_audit_events for each row execute function fail_access_audit_insert()",
         )
         try {
-            mockMvc.perform(ticketDetail(5001, browser, UUID.randomUUID(), "BACKGROUND"))
+            val response = mockMvc.perform(ticketDetail(5001, browser, UUID.randomUUID(), "BACKGROUND"))
                 .andExpect(status().isServiceUnavailable)
-                .andExpect(jsonPath("$.type").value("/problems/access-audit-unavailable"))
+                .andExpect(jsonPath("$.type").value("/problems/audit-write-unavailable"))
                 .andExpect(jsonPath("$.ticket").doesNotExist())
+                .andExpect(jsonPath("$.comments").doesNotExist())
+                .andExpect(jsonPath("$.context").doesNotExist())
+                .andReturn().response.contentAsString
+            assertThat(response)
+                .doesNotContain("audit-failure-protected-subject")
+                .doesNotContain("audit-failure-protected-internal-note")
+                .doesNotContain("customer-5001@example.com")
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_access_audit on access_audit_events")
             jdbcTemplate.execute("drop function if exists fail_access_audit_insert()")
         }
+    }
+
+    @Test
+    fun `anonymous and inactive staff reads return no protected detail and create zero success audit rows`() {
+        val agent = insertStaff("denied@example.com", "Agent password 42", "AGENT", "차단 상담사")
+        val group = insertGroup("차단 그룹", agent)
+        val ticket = insertTicket(
+            number = 5101,
+            subject = "authorization-denied-protected-subject",
+            groupId = group,
+            assigneeId = agent,
+        )
+        insertComment(ticket.id, "INTERNAL", "AGENT", agent, "authorization-denied-protected-note")
+        val browser = login("denied@example.com", "Agent password 42")
+
+        val anonymousResponse = mockMvc.perform(
+            get("/api/v1/agent/tickets/5101")
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .header("X-Deskseed-Read-Intent", "NAVIGATION"),
+        ).andExpect(status().isUnauthorized).andReturn().response.contentAsString
+
+        jdbcTemplate.update("update staff_accounts set status = 'DISABLED' where id = ?", agent)
+        val inactiveResponse = mockMvc.perform(ticketDetail(5101, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isUnauthorized)
+            .andReturn().response.contentAsString
+
+        assertThat(anonymousResponse + inactiveResponse)
+            .doesNotContain("authorization-denied-protected-subject")
+            .doesNotContain("authorization-denied-protected-note")
+            .doesNotContain("customer-5101@example.com")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from access_audit_events where ticket_number = 5101 and outcome = 'SUCCEEDED'",
+                Long::class.java,
+            ),
+        ).isZero()
     }
 
     @Test
@@ -302,13 +382,14 @@ class AgentTicketReadIntegrationTest {
                 .header("Access-Control-Request-Method", "GET")
                 .header(
                     "Access-Control-Request-Headers",
-                    "X-Interaction-Id, X-Deskseed-Read-Intent",
+                    "X-Interaction-Id, X-Deskseed-Read-Intent, X-Origin-Search-Event-Id",
                 ),
         )
             .andExpect(status().isOk)
             .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
             .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Interaction-Id")))
             .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Deskseed-Read-Intent")))
+            .andExpect(header().string("Access-Control-Allow-Headers", containsString("X-Origin-Search-Event-Id")))
 
         mockMvc.perform(
             ticketDetail(7001, browser, UUID.randomUUID(), "BACKGROUND")
@@ -465,9 +546,9 @@ class AgentTicketReadIntegrationTest {
         jdbcTemplate.update(
             """
             insert into ticket_audits
-                (id, ticket_id, ticket_version, actor_type, actor_id, source,
+                (id, ticket_id, ticket_version, expected_version, actor_type, actor_id, source,
                  request_id, correlation_id, command_id, created_at)
-            values (?, ?, 0, 'STAFF', ?, 'AGENT_UI', 'fixture-request', 'fixture-correlation',
+            values (?, ?, 0, 0, 'STAFF', ?, 'AGENT_UI', 'fixture-request', 'fixture-correlation',
                     'fixture-command', now())
             """.trimIndent(),
             auditId,

@@ -12,6 +12,22 @@ routes:
     actor: anonymous_or_customer
     phase: m1
     screen: customer_request_detail
+  - path: "/customer/sign-in"
+    actor: anonymous_customer
+    phase: p1
+    screen: customer_magic_link_request
+  - path: "/customer/sign-in/consume"
+    actor: anonymous_customer
+    phase: p1
+    screen: customer_magic_link_consume
+  - path: "/account/requests"
+    actor: customer
+    phase: p1
+    screen: customer_my_requests
+  - path: "/account/requests/:ticketNumber"
+    actor: customer
+    phase: p1
+    screen: customer_request_detail_authenticated
   - path: "/agent/views/:viewKey"
     actor: agent
     phase: m2
@@ -20,6 +36,10 @@ routes:
     actor: agent
     phase: m2
     screen: ticket_workspace
+  - path: "/agent/search"
+    actor: agent
+    phase: r1
+    screen: agent_ticket_search
   - path: "/admin/people/staff"
     actor: admin
     phase: m6
@@ -28,14 +48,24 @@ routes:
     actor: admin
     phase: m6
     screen: groups_admin
+  - path: "/admin/access/customer-mode"
+    actor: admin
+    phase: p1
+    screen: customer_access_mode_admin
   - path: "/audit/activity"
     actor: security_auditor
     phase: r2
     screen: audit_explorer
   - path: "/integrations/clients"
     actor: admin
+    authority: integration:clients:manage
     phase: i1
     screen: integration_clients
+  - path: "/integrations/systems"
+    actor: admin
+    authority: integration:systems:manage
+    phase: i2
+    screen: external_systems
   - path: "/integrations/webhooks"
     actor: admin
     phase: i5

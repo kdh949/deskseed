@@ -48,6 +48,15 @@ const detail = {
     },
   ],
   capabilities: ['READ'],
+  assignmentOptions: {
+    groups: [
+      {
+        id: 'group-payments',
+        name: '결제 지원',
+        members: [{ id: 'agent-2', displayName: '다른 그룹 상담사' }],
+      },
+    ],
+  },
   context: {
     customer: {
       id: 'customer-1',

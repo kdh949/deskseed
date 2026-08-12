@@ -19,6 +19,9 @@ internal class TicketAuditEntity(
     @Column(name = "ticket_version", nullable = false)
     val ticketVersion: Long,
 
+    @Column(name = "expected_version", nullable = false)
+    val expectedVersion: Long,
+
     @Column(name = "actor_type", nullable = false, length = 30)
     val actorType: String,
 

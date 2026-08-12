@@ -7,18 +7,24 @@ import dev.deskseed.ticketing.StaffCommentView
 import dev.deskseed.ticketing.StaffTicketHistoryItem
 import dev.deskseed.ticketing.StaffTicketListFilter
 import dev.deskseed.ticketing.StaffTicketSummary
+import dev.deskseed.ticketing.StaffSlaDisplayState
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import jakarta.servlet.http.HttpServletRequest
+import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
+import jakarta.validation.constraints.Size
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -30,6 +36,7 @@ import java.util.UUID
 @Validated
 internal class AgentTicketReadController(
     private val applicationService: AgentTicketReadApplicationService,
+    private val searchApplicationService: AgentTicketSearchApplicationService,
 ) {
     @GetMapping("/views")
     fun views(@AuthenticationPrincipal principal: StaffPrincipal): List<SavedViewResponse> =
@@ -55,13 +62,14 @@ internal class AgentTicketReadController(
         @RequestParam(required = false) priority: TicketPriority?,
         @RequestParam(required = false) groupId: UUID?,
         @RequestParam(required = false) assigneeId: String?,
+        @RequestParam(required = false) slaState: StaffSlaDisplayState?,
     ): TicketSummaryPageResponse {
         require(sort == STABLE_SORT) { "Unsupported ticket sort" }
         val view = DefaultStaffView.fromKey(viewKey) ?: throw AgentTicketNotFoundException()
         val page = applicationService.listTickets(
             principal = principal,
             view = view,
-            filters = StaffTicketListFilter(status, priority, groupId, assigneeId),
+            filters = StaffTicketListFilter(status, priority, groupId, assigneeId, slaState),
             cursor = cursor,
             limit = limit,
         )
@@ -79,40 +87,98 @@ internal class AgentTicketReadController(
         @PathVariable @Positive ticketNumber: Long,
         @RequestHeader("X-Interaction-Id") interactionId: UUID,
         @RequestHeader("X-Deskseed-Read-Intent") readIntent: AgentReadIntent,
+        @RequestHeader("X-Origin-Search-Event-Id", required = false) originSearchEventId: UUID?,
         request: HttpServletRequest,
     ): ResponseEntity<AgentTicketDetailResponse> {
-        val detail = applicationService.readTicket(
+        val workspace = applicationService.readTicket(
             principal = principal,
             ticketNumber = ticketNumber,
             interactionId = interactionId,
             intent = readIntent,
+            originSearchEventId = originSearchEventId,
             context = AgentReadRequestContext(
                 requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
                 correlationId = request.getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+                sessionId = authenticatedSessionId(request),
                 ipAddress = request.remoteAddr,
                 userAgent = request.getHeader("User-Agent"),
             ),
         )
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())
-            .eTag(detail.ticket.version.toString())
+            .eTag(workspace.detail.ticket.version.toString())
             .body(
                 AgentTicketDetailResponse(
-                    ticket = ticketResponse(detail.ticket),
-                    comments = detail.comments.map(::commentResponse),
-                    capabilities = listOf("READ"),
+                    ticket = ticketResponse(workspace.detail.ticket),
+                    comments = workspace.detail.comments.map(::commentResponse),
+                    capabilities = workspace.capabilities,
+                    assignmentOptions = TicketAssignmentOptionsResponse(
+                        groups = workspace.assignmentOptions.map { group ->
+                            TicketAssignmentGroupOptionResponse(
+                                id = group.id,
+                                name = group.name,
+                                members = group.members.map { member ->
+                                    TicketAssignmentStaffOptionResponse(member.id, member.displayName)
+                                },
+                            )
+                        },
+                    ),
                     context = TicketContextResponse(
-                        customer = TicketCustomerResponse(
-                            id = detail.customer.id,
-                            displayName = detail.customer.displayName,
-                            email = detail.customer.email,
-                        ),
-                        parent = null,
-                        children = emptyList(),
+                        customer = workspace.detail.customer?.let {
+                            TicketCustomerResponse(
+                                id = it.id,
+                                displayName = it.displayName,
+                                email = it.email,
+                            )
+                        },
+                        parent = workspace.detail.parent?.let(::ticketResponse),
+                        children = workspace.detail.children.map(::ticketResponse),
                         externalReferences = emptyList(),
                     ),
-                    history = detail.history.map(::historyResponse),
+                    history = workspace.detail.history.map(::historyResponse),
                     warnings = emptyList(),
+                ),
+            )
+    }
+
+    @PostMapping("/search")
+    fun search(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @RequestHeader("X-Interaction-Id") interactionId: UUID,
+        @Valid @RequestBody body: AgentTicketSearchRequestBody,
+        request: HttpServletRequest,
+    ): ResponseEntity<AgentTicketSearchPageResponse> {
+        val page = searchApplicationService.search(
+            principal = principal,
+            interactionId = interactionId,
+            request = AgentTicketSearchRequest(
+                query = body.query,
+                filters = AgentTicketSearchFilter(
+                    status = body.filters.status,
+                    priority = body.filters.priority,
+                    groupId = body.filters.groupId,
+                    assigneeId = body.filters.assigneeId,
+                ),
+                sort = body.sort,
+                limit = body.limit,
+            ),
+            context = AgentReadRequestContext(
+                requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
+                correlationId = request.getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+                sessionId = authenticatedSessionId(request),
+                ipAddress = request.remoteAddr,
+                userAgent = request.getHeader("User-Agent"),
+            ),
+        )
+        return ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
+            .body(
+                AgentTicketSearchPageResponse(
+                    searchEventId = page.searchEventId,
+                    searchInteractionId = page.searchInteractionId,
+                    items = page.items.map(::ticketResponse),
+                    resultCount = page.resultCount,
+                    sort = page.sort,
                 ),
             )
     }
@@ -129,7 +195,16 @@ internal class AgentTicketReadController(
         version = ticket.version,
         isChild = ticket.isChild,
         openChildCount = ticket.openChildCount,
-        sla = null,
+        sla = ticket.sla?.let {
+            SlaBadgeResponse(
+                metric = it.metric,
+                state = it.state.name,
+                dueAt = it.dueAt?.toString(),
+                targetMinutes = it.targetMinutes,
+                policyVersion = it.policyVersion,
+                scheduleVersion = it.scheduleVersion,
+            )
+        },
     )
 
     private fun commentResponse(comment: StaffCommentView) = AgentCommentResponse(
@@ -152,10 +227,43 @@ internal class AgentTicketReadController(
     private fun actorResponse(actor: StaffActorSummary) =
         ActorSummaryResponse(actor.id, actor.type, actor.displayName)
 
+    private fun authenticatedSessionId(request: HttpServletRequest): String =
+        request.getSession(false)?.id
+            ?: throw AccessAuditUnavailableException(IllegalStateException("Authenticated staff session is unavailable"))
+
     private companion object {
         const val STABLE_SORT = "updatedAt:desc,ticketNumber:desc"
     }
 }
+
+internal data class AgentTicketSearchFiltersRequest(
+    val status: TicketStatus? = null,
+    val priority: TicketPriority? = null,
+    val groupId: UUID? = null,
+    @field:Size(max = 64)
+    val assigneeId: String? = null,
+)
+
+internal data class AgentTicketSearchRequestBody(
+    @field:NotBlank
+    @field:Size(max = 500)
+    val query: String,
+    @field:Valid
+    val filters: AgentTicketSearchFiltersRequest,
+    @field:NotBlank
+    val sort: String,
+    @field:Min(1)
+    @field:Max(100)
+    val limit: Int,
+)
+
+internal data class AgentTicketSearchPageResponse(
+    val searchEventId: UUID,
+    val searchInteractionId: UUID,
+    val items: List<TicketSummaryResponse>,
+    val resultCount: Long,
+    val sort: String,
+)
 
 internal data class SavedViewResponse(
     val key: String,
@@ -185,7 +293,16 @@ internal data class TicketSummaryResponse(
     val version: Long,
     val isChild: Boolean,
     val openChildCount: Int,
-    val sla: Any?,
+    val sla: SlaBadgeResponse?,
+)
+
+internal data class SlaBadgeResponse(
+    val metric: String,
+    val state: String,
+    val dueAt: String?,
+    val targetMinutes: Long?,
+    val policyVersion: Int?,
+    val scheduleVersion: Int?,
 )
 
 internal data class ActorSummaryResponse(val id: UUID?, val type: String, val displayName: String)
@@ -207,10 +324,25 @@ internal data class AgentCommentResponse(
 internal data class TicketCustomerResponse(val id: UUID, val displayName: String, val email: String)
 
 internal data class TicketContextResponse(
-    val customer: TicketCustomerResponse,
+    val customer: TicketCustomerResponse?,
     val parent: TicketSummaryResponse?,
     val children: List<TicketSummaryResponse>,
     val externalReferences: List<Any>,
+)
+
+internal data class TicketAssignmentStaffOptionResponse(
+    val id: UUID,
+    val displayName: String,
+)
+
+internal data class TicketAssignmentGroupOptionResponse(
+    val id: UUID,
+    val name: String,
+    val members: List<TicketAssignmentStaffOptionResponse>,
+)
+
+internal data class TicketAssignmentOptionsResponse(
+    val groups: List<TicketAssignmentGroupOptionResponse>,
 )
 
 internal data class TicketHistoryResponse(
@@ -224,6 +356,7 @@ internal data class AgentTicketDetailResponse(
     val ticket: TicketSummaryResponse,
     val comments: List<AgentCommentResponse>,
     val capabilities: List<String>,
+    val assignmentOptions: TicketAssignmentOptionsResponse,
     val context: TicketContextResponse,
     val history: List<TicketHistoryResponse>,
     val warnings: List<Any>,

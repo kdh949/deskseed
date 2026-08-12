@@ -1,7 +1,11 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.organization.OrganizationAdministration
+import dev.deskseed.organization.StaffRole
+import jakarta.persistence.EntityManagerFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.hibernate.SessionFactory
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -21,20 +25,25 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delet
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
-import dev.deskseed.organization.OrganizationAdministration
-import dev.deskseed.organization.StaffRole
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
+@SpringBootTest(
+    properties = [
+        "deskseed.staff-auth.bootstrap.enabled=false",
+        "spring.jpa.properties.hibernate.generate_statistics=true",
+    ],
+)
 @AutoConfigureMockMvc
 @Testcontainers
 class AdminOrganizationIntegrationTest {
@@ -47,9 +56,12 @@ class AdminOrganizationIntegrationTest {
     @Autowired
     private lateinit var administration: OrganizationAdministration
 
+    @Autowired
+    private lateinit var entityManagerFactory: EntityManagerFactory
+
     @BeforeEach
     fun clearState() {
-        jdbcTemplate.execute("truncate table admin_security_audit_events")
+        jdbcTemplate.execute("truncate table staff_authority_grants, admin_security_audit_events")
         jdbcTemplate.update("delete from request_access_tokens")
         jdbcTemplate.update("delete from ticket_comments")
         jdbcTemplate.update("delete from tickets")
@@ -58,6 +70,87 @@ class AdminOrganizationIntegrationTest {
         jdbcTemplate.update("delete from support_groups")
         jdbcTemplate.update("delete from staff_login_throttles")
         jdbcTemplate.update("delete from staff_accounts")
+        jdbcTemplate.update(
+            "update system_settings set customer_access_mode = 'ANONYMOUS_ALLOWED', version = 0, updated_at = now() where id = 1",
+        )
+    }
+
+    @Test
+    fun `admin changes customer access mode with optimistic version and atomic security audit`() {
+        insertStaff("access-admin@example.com", "Access admin password 42", "ADMIN")
+        val browser = login("access-admin@example.com", "Access admin password 42")
+
+        mockMvc.perform(get("/api/v1/admin/settings/customer-access-mode").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.mode").value("ANONYMOUS_ALLOWED"))
+            .andExpect(jsonPath("$.version").value(0))
+
+        mockMvc.perform(
+            put("/api/v1/admin/settings/customer-access-mode")
+                .session(browser.session)
+                .csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mode":"REGISTRATION_REQUIRED","expectedVersion":0}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.mode").value("REGISTRATION_REQUIRED"))
+            .andExpect(jsonPath("$.version").value(1))
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                """
+                select event_type, actor_type, source, metadata_json
+                from admin_security_audit_events
+                where event_type = 'CUSTOMER_ACCESS_MODE_CHANGED'
+                """.trimIndent(),
+            ),
+        ).containsEntry("event_type", "CUSTOMER_ACCESS_MODE_CHANGED")
+            .containsEntry("actor_type", "STAFF")
+            .containsEntry("source", "ADMIN_UI")
+
+        mockMvc.perform(
+            put("/api/v1/admin/settings/customer-access-mode")
+                .session(browser.session)
+                .csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mode":"REGISTRATION_OPTIONAL","expectedVersion":0}"""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("STALE_CUSTOMER_ACCESS_MODE"))
+            .andExpect(jsonPath("$.currentVersion").value(1))
+    }
+
+    @Test
+    fun `customer access mode audit failure rolls setting back`() {
+        insertStaff("access-rollback@example.com", "Access rollback password 42", "ADMIN")
+        val browser = login("access-rollback@example.com", "Access rollback password 42")
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_customer_access_mode_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected access mode audit failure'; end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_customer_access_mode_audit before insert on admin_security_audit_events for each row execute function fail_customer_access_mode_audit()",
+        )
+        try {
+            mockMvc.perform(
+                put("/api/v1/admin/settings/customer-access-mode")
+                    .session(browser.session)
+                    .csrf(browser)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"mode":"REGISTRATION_REQUIRED","expectedVersion":0}"""),
+            ).andExpect(status().isServiceUnavailable)
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_customer_access_mode_audit on admin_security_audit_events")
+            jdbcTemplate.execute("drop function if exists fail_customer_access_mode_audit()")
+        }
+
+        assertThat(
+            jdbcTemplate.queryForMap("select customer_access_mode, version from system_settings where id = 1"),
+        ).containsEntry("customer_access_mode", "ANONYMOUS_ALLOWED").containsEntry("version", 0L)
     }
 
     @Test
@@ -97,6 +190,99 @@ class AdminOrganizationIntegrationTest {
         } finally {
             SecurityContextHolder.clearContext()
         }
+    }
+
+    @Test
+    fun `admin list endpoints are bounded and expose page metadata`() {
+        insertStaff("paged-admin@example.com", "Paged admin password 42", "ADMIN")
+        val browser = login("paged-admin@example.com", "Paged admin password 42")
+        val staffIds = (1..6).map { index ->
+            insertStaff("paged-agent-$index@example.com", "Paged agent password 42", "AGENT")
+        }
+        val groupIds = (1..6).map { index -> insertGroup("페이지 그룹 $index") }
+        staffIds.forEach { staffId -> insertMembership(groupIds.first(), staffId) }
+
+        mockMvc.perform(get("/api/v1/admin/staff?page=0&size=3").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(3))
+            .andExpect(header().string("X-Page-Number", "0"))
+            .andExpect(header().string("X-Page-Size", "3"))
+            .andExpect(header().string("X-Total-Count", "7"))
+            .andExpect(header().string("X-Total-Pages", "3"))
+
+        mockMvc.perform(get("/api/v1/admin/groups?page=1&size=2").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(header().string("X-Page-Number", "1"))
+            .andExpect(header().string("X-Page-Size", "2"))
+            .andExpect(header().string("X-Total-Count", "6"))
+            .andExpect(header().string("X-Total-Pages", "3"))
+
+        mockMvc.perform(
+            get("/api/v1/admin/groups/{groupId}/members?page=0&size=4", groupIds.first())
+                .session(browser.session),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(4))
+            .andExpect(header().string("X-Total-Count", "6"))
+            .andExpect(header().string("X-Total-Pages", "2"))
+
+        mockMvc.perform(get("/api/v1/admin/staff?size=101").session(browser.session))
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `admin list query counts stay constant as rows grow`() {
+        val adminId = insertStaff("query-admin@example.com", "Query admin password 42", "ADMIN")
+        val browser = login("query-admin@example.com", "Query admin password 42")
+        val groupIds = (1..6).map { index -> insertGroup("쿼리 그룹 ${index.toString().padStart(2, '0')}") }
+        val staffIds = (1..6).map { index ->
+            insertStaff("query-agent-$index@example.com", "Query agent password 42", "AGENT")
+        }
+        (staffIds + adminId).forEach { staffId -> insertMembership(groupIds.first(), staffId) }
+
+        val initialStaffQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/staff?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val initialGroupQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/groups?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val initialMemberQueries = queryCount {
+            mockMvc.perform(
+                get("/api/v1/admin/groups/{groupId}/members?page=0&size=5", groupIds.first())
+                    .session(browser.session),
+            ).andExpect(status().isOk)
+        }
+
+        val addedStaffIds = (7..26).map { index ->
+            insertStaff("query-agent-$index@example.com", "Query agent password 42", "AGENT")
+        }
+        addedStaffIds.forEach { staffId -> insertMembership(groupIds.first(), staffId) }
+        (7..26).forEach { index -> insertGroup("쿼리 그룹 ${index.toString().padStart(2, '0')}") }
+
+        val expandedStaffQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/staff?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val expandedGroupQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/groups?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val expandedMemberQueries = queryCount {
+            mockMvc.perform(
+                get("/api/v1/admin/groups/{groupId}/members?page=0&size=5", groupIds.first())
+                    .session(browser.session),
+            ).andExpect(status().isOk)
+        }
+
+        assertThat(expandedStaffQueries).isEqualTo(initialStaffQueries)
+        assertThat(expandedGroupQueries).isEqualTo(initialGroupQueries)
+        assertThat(expandedMemberQueries).isEqualTo(initialMemberQueries)
+        assertThat(initialStaffQueries).isLessThanOrEqualTo(10)
+        assertThat(initialGroupQueries).isLessThanOrEqualTo(10)
+        assertThat(initialMemberQueries).isLessThanOrEqualTo(10)
     }
 
     @Test
@@ -352,6 +538,36 @@ class AdminOrganizationIntegrationTest {
             groupId,
             staffId,
         )
+    }
+
+    private fun insertGroup(name: String): UUID = UUID.randomUUID().also { id ->
+        jdbcTemplate.update(
+            """
+            insert into support_groups (id, name, status, created_at, updated_at)
+            values (?, ?, 'ACTIVE', now(), now())
+            """.trimIndent(),
+            id,
+            name,
+        )
+    }
+
+    private fun insertMembership(groupId: UUID, staffId: UUID) {
+        jdbcTemplate.update(
+            """
+            insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at)
+            values (?, ?, ?, 'ACTIVE', now(), now())
+            """.trimIndent(),
+            UUID.randomUUID(),
+            groupId,
+            staffId,
+        )
+    }
+
+    private fun queryCount(action: () -> Unit): Long {
+        val statistics = entityManagerFactory.unwrap(SessionFactory::class.java).statistics
+        statistics.clear()
+        action()
+        return statistics.prepareStatementCount
     }
 
     private fun login(email: String, password: String): Browser {

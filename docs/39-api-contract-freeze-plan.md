@@ -41,6 +41,11 @@ api/analytics-api-v1.yaml    (later)
 POST /api/v1/requests
 GET  /api/v1/requests/{ticketNumber}
 POST /api/v1/requests/{ticketNumber}/comments       later
+POST /api/v1/customer/auth/magic-link-requests
+POST /api/v1/customer/auth/magic-link-sessions
+GET  /api/v1/customer/csrf
+DELETE /api/v1/customer/session
+GET  /api/v1/customer/me
 GET  /api/v1/customer/requests                       account later
 GET  /api/v1/customer/requests/{ticketNumber}        account later
 ```
@@ -66,10 +71,23 @@ GET  /api/v1/agent/search
 
 ```text
 GET/POST/PATCH /api/v1/admin/staff...
+PUT/DELETE /api/v1/admin/staff/{staffId}/audit-authorities/{authority}
 GET/POST/PATCH /api/v1/admin/groups...
 PUT /api/v1/admin/settings/customer-access-mode
 GET/PUT /api/v1/admin/permissions...
+GET/POST /api/v1/admin/sla-policies
+POST /api/v1/admin/sla-policies/preview
+GET /api/v1/admin/sla-policies/{policyId}
+GET/POST /api/v1/admin/sla-policies/{policyId}/versions
+PUT /api/v1/admin/sla-policies/{policyId}/versions/{version}/activation
+GET/POST /api/v1/admin/integration-clients
+GET      /api/v1/admin/integration-clients/{clientId}
+POST     /api/v1/admin/integration-clients/{clientId}/disable
+POST     /api/v1/admin/integration-clients/{clientId}/revoke
+POST     /api/v1/admin/integration-clients/{clientId}/rotate
 ```
+
+Integration client create/rotate responses are `no-store` one-time secret envelopes. The I1 freeze adds management endpoints only; `/api/v1/platform/**` remains unexposed until the Platform Ticket API slice.
 
 ### Audit v1
 
@@ -80,6 +98,12 @@ POST /api/v1/audit/activities/{id}/reveal
 POST /api/v1/audit/exports
 GET  /api/v1/audit/exports/{jobId}
 GET  /api/v1/audit/exports/{jobId}/download
+```
+
+### Analytics v1
+
+```text
+GET /api/v1/analytics/first-reply-sla
 ```
 
 ### Platform v1
@@ -132,7 +156,8 @@ RFC Problem Details + extensions:
 - cursor opaque and signed/versioned.
 - response `nextCursor`.
 - sort tuple documented.
-- offset pagination은 small admin lists에만 선택적으로 사용.
+- small admin lists는 optional zero-based `page`와 bounded `size`를 사용한다.
+- 기존 array body 호환성을 유지하면서 `X-Page-Number`, `X-Page-Size`, `X-Total-Count`, `X-Total-Pages`로 navigation metadata를 반환한다.
 
 ## 8. Compatibility
 

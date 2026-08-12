@@ -1,0 +1,5 @@
+services:
+  backend:
+    # The Compose file secret is a host bind mount. Match the ephemeral
+    # test-file owner so its 0600 mode stays private and readable in CI.
+    user: "${DESKSEED_E2E_CONTAINER_UID:?set DESKSEED_E2E_CONTAINER_UID}:${DESKSEED_E2E_CONTAINER_GID:?set DESKSEED_E2E_CONTAINER_GID}"

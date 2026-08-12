@@ -416,7 +416,7 @@ class PublicRequestIntegrationTest {
             ticketId(expired.ticketNumber),
         )
         jdbcTemplate.update(
-            "update request_access_tokens set revoked_at = now() where ticket_id = ?",
+            "update request_access_tokens set revoked_at = created_at where ticket_id = ?",
             ticketId(revoked.ticketNumber),
         )
 
@@ -429,7 +429,7 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
-    fun `same unverified email reuses and refreshes customer without sharing ticket grants`() {
+    fun `same unverified email creates isolated customers without sharing ticket grants`() {
         val email = "Reuse-${UUID.randomUUID()}@Example.com"
         fun submit(name: String, subject: String) = service.submit(
             SubmitAnonymousRequest(
@@ -446,20 +446,16 @@ class PublicRequestIntegrationTest {
             ),
         )
         val first = submit("첫 이름", "첫 문의")
-        val second = submit("갱신 이름", "두 번째 문의")
+        val second = submit("두 번째 이름", "두 번째 문의")
 
-        val customer = jdbcTemplate.queryForMap(
-            "select id, name from customers where email_normalized = ?",
-            email.lowercase(),
-        )
-        assertThat(customer["name"]).isEqualTo("갱신 이름")
-        assertThat(
-            jdbcTemplate.queryForObject(
-                "select count(*) from tickets where requester_id = ?",
-                Long::class.java,
-                customer["id"],
-            ),
-        ).isEqualTo(2)
+        val firstCustomerId = ticketRequesterId(first.ticketNumber)
+        val secondCustomerId = ticketRequesterId(second.ticketNumber)
+        assertThat(firstCustomerId).isNotEqualTo(secondCustomerId)
+        assertThat(customerName(firstCustomerId)).isEqualTo("첫 이름")
+        assertThat(customerName(secondCustomerId)).isEqualTo("두 번째 이름")
+        assertThat(customerCount(email)).isEqualTo(2)
+        assertThat(ticketCount(firstCustomerId)).isEqualTo(1)
+        assertThat(ticketCount(secondCustomerId)).isEqualTo(1)
         assertThatThrownBy { service.view(first.ticketNumber, second.accessToken) }
             .isInstanceOf(RequestNotFoundException::class.java)
         assertThatThrownBy { service.view(second.ticketNumber, first.accessToken) }
@@ -494,7 +490,7 @@ class PublicRequestIntegrationTest {
             customerId,
         )
 
-        service.submit(
+        val second = service.submit(
             SubmitAnonymousRequest(
                 name = "덮어쓰면 안 되는 이름",
                 email = email.uppercase(),
@@ -510,10 +506,49 @@ class PublicRequestIntegrationTest {
         )
         assertThat(customer["name"]).isEqualTo("검증된 이름")
         assertThat(customer["email_display"]).isEqualTo("Verified.Display@example.com")
+        assertThat(ticketRequesterId(second.ticketNumber)).isNotEqualTo(customerId)
+        assertThat(customerCount(email)).isEqualTo(2)
     }
 
     @Test
-    fun `concurrent first submissions for one normalized email reuse one customer and both succeed`() {
+    fun `verified email remains unique while unverified contacts may repeat`() {
+        val email = "verified-unique-${UUID.randomUUID()}@example.com"
+        val first = service.submit(
+            SubmitAnonymousRequest(
+                name = "첫 고객",
+                email = email,
+                subject = "첫 문의",
+                message = "첫 문의 내용",
+                context = commandContext("verified-unique-first"),
+            ),
+        )
+        val second = service.submit(
+            SubmitAnonymousRequest(
+                name = "두 번째 고객",
+                email = email,
+                subject = "두 번째 문의",
+                message = "두 번째 문의 내용",
+                context = commandContext("verified-unique-second"),
+            ),
+        )
+        val firstCustomerId = ticketRequesterId(first.ticketNumber)
+        val secondCustomerId = ticketRequesterId(second.ticketNumber)
+
+        jdbcTemplate.update(
+            "update customers set verified_at = now(), updated_at = now() where id = ?",
+            firstCustomerId,
+        )
+        assertThatThrownBy {
+            jdbcTemplate.update(
+                "update customers set verified_at = now(), updated_at = now() where id = ?",
+                secondCustomerId,
+            )
+        }.isInstanceOf(DataAccessException::class.java)
+        assertThat(customerCount(email)).isEqualTo(2)
+    }
+
+    @Test
+    fun `concurrent first submissions for one normalized email create isolated customers and both succeed`() {
         val marker = UUID.randomUUID().toString()
         val email = "Concurrent-$marker@Example.com"
         val functionName = "test_delay_customer_insert"
@@ -555,25 +590,13 @@ class PublicRequestIntegrationTest {
             jdbcTemplate.execute("drop function if exists $functionName()")
         }
 
-        val customerId = jdbcTemplate.queryForObject(
-            "select id from customers where email_normalized = ?",
-            UUID::class.java,
+        val customerIds = jdbcTemplate.query(
+            "select id from customers where email_normalized = ? order by id",
+            { resultSet, _ -> resultSet.getObject("id", UUID::class.java) },
             email.lowercase(),
-        )!!
-        assertThat(
-            jdbcTemplate.queryForObject(
-                "select count(*) from customers where email_normalized = ?",
-                Long::class.java,
-                email.lowercase(),
-            ),
-        ).isEqualTo(1)
-        assertThat(
-            jdbcTemplate.queryForObject(
-                "select count(*) from tickets where requester_id = ?",
-                Long::class.java,
-                customerId,
-            ),
-        ).isEqualTo(2)
+        )
+        assertThat(customerIds).hasSize(2)
+        assertThat(customerIds.map(::ticketCount)).containsExactlyInAnyOrder(1, 1)
     }
 
     @Test
@@ -677,6 +700,37 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
+    fun `anonymous submission commits one provider neutral request received mail intent`() {
+        val submitted = submitUniqueRequest("request-received-mail")
+
+        val intent = jdbcTemplate.queryForMap(
+            """
+            select template_key, template_version, recipient_address, status,
+                   attempt_count, ticket_id, customer_id, request_id, correlation_id
+            from outbound_mail_intents
+            where ticket_id = ?
+            """.trimIndent(),
+            ticketId(submitted.ticketNumber),
+        )
+
+        assertThat(intent).containsEntry("template_key", "REQUEST_RECEIVED")
+        assertThat(intent).containsEntry("template_version", 1)
+        assertThat(intent["recipient_address"].toString()).contains("request-received-mail")
+        assertThat(intent).containsEntry("status", "QUEUED")
+        assertThat(intent).containsEntry("attempt_count", 0)
+        assertThat(intent["customer_id"]).isEqualTo(ticketRequesterId(submitted.ticketNumber))
+        assertThat(intent).containsEntry("request_id", "request-request-received-mail")
+        assertThat(intent).containsEntry("correlation_id", "correlation-request-received-mail")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_attempts where intent_id = (select id from outbound_mail_intents where ticket_id = ?)",
+                Long::class.java,
+                ticketId(submitted.ticketNumber),
+            ),
+        ).isZero()
+    }
+
+    @Test
     fun `comment insert failure rolls back customer ticket audit and access grant`() {
         assertCreationRollsBackWhenInsertFails("ticket_comments", "comment-insert-failure")
     }
@@ -694,6 +748,11 @@ class PublicRequestIntegrationTest {
     @Test
     fun `access grant insert failure rolls back the whole creation command`() {
         assertCreationRollsBackWhenInsertFails("request_access_tokens", "grant-insert-failure")
+    }
+
+    @Test
+    fun `mail outbox insert failure rolls back customer ticket comment audit and access grant`() {
+        assertCreationRollsBackWhenInsertFails("outbound_mail_intents", "mail-intent-insert-failure")
     }
 
     @Test
@@ -753,6 +812,30 @@ class PublicRequestIntegrationTest {
         UUID::class.java,
         ticketNumber,
     )!!
+
+    private fun ticketRequesterId(ticketNumber: Long): UUID = jdbcTemplate.queryForObject(
+        "select requester_id from tickets where ticket_number = ?",
+        UUID::class.java,
+        ticketNumber,
+    )!!
+
+    private fun customerName(customerId: UUID): String = jdbcTemplate.queryForObject(
+        "select name from customers where id = ?",
+        String::class.java,
+        customerId,
+    )!!
+
+    private fun customerCount(email: String): Long = jdbcTemplate.queryForObject(
+        "select count(*) from customers where email_normalized = ?",
+        Long::class.java,
+        email.lowercase(),
+    ) ?: 0
+
+    private fun ticketCount(customerId: UUID): Long = jdbcTemplate.queryForObject(
+        "select count(*) from tickets where requester_id = ?",
+        Long::class.java,
+        customerId,
+    ) ?: 0
 
     private fun requestJson(email: String, message: String, subject: String = "결제 오류"): String =
         """
@@ -853,7 +936,15 @@ class PublicRequestIntegrationTest {
     }
 
     private fun installFailingInsertTrigger(table: String, functionName: String, triggerName: String) {
-        require(table in setOf("ticket_comments", "ticket_audits", "ticket_audit_events", "request_access_tokens"))
+        require(
+            table in setOf(
+                "ticket_comments",
+                "ticket_audits",
+                "ticket_audit_events",
+                "request_access_tokens",
+                "outbound_mail_intents",
+            ),
+        )
         jdbcTemplate.execute(
             """
             create function $functionName()

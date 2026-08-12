@@ -5,7 +5,7 @@
 
 -- Main groups of tables:
 -- customers, customer_accounts, customer_access_tokens
--- staff_accounts, groups, group_memberships
+-- staff_accounts, staff_authority_grants, groups, group_memberships
 -- tickets, ticket_comments, ticket_relations
 -- ticket_audits, ticket_audit_events
 -- activity_audit_events, search_audit_details
@@ -13,6 +13,7 @@
 -- external_systems, external_references
 -- idempotency_records
 -- outbox_events, webhook_endpoints, webhook_deliveries, webhook_attempts
+-- outbound_mail_intents, outbound_mail_attempts, outbound_mail_delivery_events (implemented by Flyway V18)
 -- system_settings
 -- later: SLA, analytics, triggers, attachments, channel delivery
 
@@ -24,3 +25,4 @@
 -- 5. unique(client_id, idempotency_key)
 -- 6. ticket relation self-link check
 -- 7. assignee requires group; membership checked in application transaction
+-- 8. unique(customer.email_normalized) applies only where verified_at is not null

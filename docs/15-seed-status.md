@@ -2,7 +2,9 @@
 
 ## Purpose
 
-This repository combines the v0.6 documentation seed with an executable M0 backend bootstrap, M1 anonymous customer-request vertical slice, and M2 staff-authentication/organization vertical slice. Documentation status and implementation status are deliberately separate: a documented contract is not evidence that its runtime behavior exists.
+This repository combines the v0.6 documentation seed with executable Core MVP and Audit
+Explorer vertical slices. Documentation status and implementation status are deliberately
+separate: a documented contract is not evidence that its runtime behavior exists.
 
 ## Implemented baseline
 
@@ -14,11 +16,16 @@ This repository combines the v0.6 documentation seed with an executable M0 backe
 - production-profile seam for separate runtime and migration database credentials.
 - customer portal request submit and public-only lookup with an opaque stored-hash access token.
 - initial React customer portal and Docker Compose development setup.
-- Garden 9.15.7 primitives behind the canonical `frontend/src/design-system` API, one Deskseed Agent Shell, and keyboard-focus regression tests.
-- BCrypt staff login with bounded server sessions, CSRF, PostgreSQL throttling, active-account revalidation, and password-file first-ADMIN bootstrap.
+- Garden 9.15.7 primitives behind `shared/ui` wrappers, a standalone Deskseed Agent Shell route, and keyboard-focus regression tests.
+- BCrypt staff login with bounded server sessions, CSRF, PostgreSQL throttling, active-account revalidation, a realm-local expected-actor consistency guard, and password-file first-ADMIN bootstrap.
 - ADMIN-only staff/group/membership APIs and UI with API/method authorization, direct-route guards, current-assignment protection, and transactional admin/security audit.
+- Agent Views, PostgreSQL ticket search and a three-panel ticket workspace connected to the real API.
+- combined ticket commands with separate PUBLIC/INTERNAL drafts, typed change audit, field-aware optimistic concurrency, exact ambiguous-response command replay, and conflict recovery.
+- transfer, INTERNAL child-ticket collaboration and non-blocking parent-solve warnings with customer non-disclosure regression.
+- strict ticket-detail/search access audit, encrypted exact search query retention, search-result-open linkage and log-leakage regression.
+- read-only Audit Explorer list/detail over separate canonical ledgers, self-audited query reveal, export-request skeleton and rebuildable projection.
 - pinned frontend lockfile with Prettier, ESLint, Vitest, strict type checks, and production build gates.
-- CI parity for documentation validation, backend tests, frontend quality gates, and an isolated Docker Compose health smoke.
+- CI parity for documentation validation, backend tests, frontend quality/visual gates, isolated customer and Audit Explorer full-stack E2E, and Docker Compose health smoke.
 
 ## Implementation-ready core scope
 
@@ -28,7 +35,7 @@ The following v0.6 contracts are `IMPLEMENTATION_READY`: implementation can begi
 - staff accounts, groups, Agent Views/workspace, and PUBLIC/INTERNAL conversations.
 - atomic ticket command, change audit, field-aware concurrency, transfer, and internal child-ticket collaboration.
 - minimum admin settings, access/search audit, and Unified Audit Explorer.
-- IntegrationClient foundation, idempotency/ETag/external-reference semantics.
+- IntegrationClient foundation and its separate Platform API idempotency/ETag/external-reference semantics.
 - independently branded Zendesk-inspired frontend information architecture, interaction states, accessibility, and visual acceptance.
 
 ## Blueprint-ready later scope
@@ -44,12 +51,16 @@ Detailed implementation specifications exist for Platform API/webhooks/exports/S
 - `scripts/validate_documentation.py` verifies documentation structure and machine-readable contracts; it does not verify Kotlin/React runtime behavior.
 - `scripts/compose-smoke.sh` uses a unique Compose project name and removes only the disposable containers and volume it creates.
 
-## Not yet implemented
+## Not yet implemented or intentionally limited
 
-- ticket workspace queues, replies, internal notes, transfer, child-ticket collaboration, and field-aware concurrency.
-- Access/Search Audit, Audit Explorer, protected reveal, export, retention jobs, and Platform API runtime surfaces.
+- customer accounts/email ownership verification, magic links, My Requests and anonymous abuse controls.
+- customer-profile access audit and Platform API/integration-client runtime surfaces.
+- protected comment-content reveal.
+- Audit export artifact generation, download, expiry and deletion. The current code records
+  only an allowlisted export request and self-audit with `NOT_CREATED` artifact state.
 - scoped integration credentials, ETags, ExternalReference, webhook delivery, incremental export, generated SDKs, and extension SDKs.
-- production credential/KMS provisioning, backup/restore runbooks, and performance evidence.
+- production KMS/secret-provider integration and managed deployment automation.
+- SLA, trigger/automation, analytics, attachment/rich text and email-channel product features.
 
 ## Provisional production decisions
 

@@ -80,8 +80,12 @@ SettingValue
 | `authorization.agentTicketWriteScope` | enum | GROUP_OR_ASSIGNEE | M3 | unresolved product choice; conservative default |
 | `authorization.childParentRead` | bool | true | M5 | relationship permission |
 | `authorization.groupPolicyEnabled` | bool | false | P2 | NONE/READ/READ_WRITE |
-| `authorization.securityAuditorCanReveal` | bool | false | R2 | separate permission preferred |
-| `authorization.securityAuditorCanExport` | bool | false | R2 | separate permission |
+| `authorization.securityAuditorCanReveal` | bool | false | R2 | legacy catalog entry; runtime uses per-staff explicit grant |
+| `authorization.securityAuditorCanExport` | bool | false | R2 | legacy catalog entry; runtime uses per-staff explicit grant |
+
+감사 검색어 원문 공개, export 요청, projection rebuild 권한은 조직 전체 boolean 설정이 아니다.
+각 active `SECURITY_AUDITOR`에게 ADMIN이 별도로 부여하는 `staff_authority_grants`이며,
+부여·회수와 canonical admin/security audit가 같은 transaction에서 처리된다.
 
 ## 6. Access and security audit
 
@@ -108,20 +112,22 @@ SettingValue
 | `platformApi.defaultRateLimitPerMinute` | int | 60 | I2 | per client override |
 | `platformApi.idempotencyRetentionDays` | int | 7 | I3 | |
 | `platformApi.requireIpAllowlist` | bool | false | I1 | per client preferred |
-| `externalReference.allowedHosts` | host list | empty | I4 | HTTPS only |
 | `webhook.enabled` | bool | false | I5 | |
 | `webhook.maxAttempts` | int | 10 | I5 | |
 | `webhook.requestTimeoutSeconds` | int | 10 | I5 | |
 | `webhook.allowPrivateNetworkTargets` | bool | false | I5 | SSRF boundary |
 
+ExternalReference 허용 hostname은 전역 `externalReference.allowedHosts` 설정이 아니라 immutable `systemKey`, display name, active/disabled 상태, exact HTTPS hostname allowlist, optimistic version을 가진 typed `ExternalSystem` 레지스트리에서 관리한다. 레지스트리 변경은 `integration:systems:manage` 권한과 canonical admin/security audit가 필요하며, generic settings CRUD를 사용하지 않는다. 기존 reference는 현재 레지스트리 상태와 hostname 정책을 다시 적용해 link 제공 여부를 결정한다.
+
 Secrets such as API key values and webhook HMAC secret are credential objects, not ordinary settings.
+Integration client CRUD/disable/revoke/rotate is likewise a typed credential-management surface guarded by `integration:clients:manage`, not generic settings CRUD. Per-client IP/CIDR allowlists and required expiry are stored with the client/credential; rotation overlap is bounded to 24 hours. `platformApi.enabled=false` remains unchanged and no Platform endpoint is registered by the I1 management slice.
 
 ## 8. SLA and business time
 
 | Key | Type | Default | Phase | Notes |
 |---|---|---|---|---|
 | `time.defaultZone` | IANA zone | `Asia/Seoul` | P3 | operator selected |
-| `sla.defaultWeeklyHours` | schedule | Mon–Fri 09:00–18:00 | P3 | editable in schedule UI |
+| `sla.defaultWeeklyHours` | schedule seed | Mon–Fri 09:00–18:00 | P3 | materialized as immutable `Default Support Hours` v1 in `Asia/Seoul`; edit through schedule versions |
 | `sla.firstReplyPauseStatuses` | enum set | PENDING | P3 | versioned policy field |
 | `sla.enabled` | bool | false | P3 | |
 | `sla.atRiskThresholdMinutes` | int | 30 | P3 | display threshold |

@@ -111,7 +111,7 @@ def check_module_boundaries() -> None:
 
 
 def check_openapi_contract() -> None:
-    path = ROOT / "api/openapi-v1.yaml"
+    path = ROOT / "api/core-api-outline-v1.yaml"
     text = path.read_text(encoding="utf-8")
     required_markers = (
         "/api/v1/requests:",
@@ -160,10 +160,10 @@ def check_executable_scripts() -> None:
 
 
 def check_documentation_status() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    for label in ("Implemented", "Specified", "Planned"):
-        if label not in readme:
-            fail(f"README must explain status label: {label}")
+    traceability = (ROOT / "docs/26-requirement-traceability.md").read_text(encoding="utf-8")
+    for label in ("IMPLEMENTATION_READY", "BLUEPRINT_READY"):
+        if label not in traceability:
+            fail(f"traceability matrix must explain status label: {label}")
     adr_count = len(list((ROOT / "docs/adr").glob("*.md")))
     if adr_count < 10:
         fail(f"expected at least 10 ADRs, found {adr_count}")
@@ -174,13 +174,14 @@ def main() -> int:
         [
             "README.md",
             "compose.yaml",
-            "api/openapi-v1.yaml",
-            "api/mvp-target.yaml",
+            "api/core-api-outline-v1.yaml",
+            "api/api-surface-catalog-v0.6.yaml",
             "backend/build.gradle.kts",
             "backend/src/main/resources/db/migration/V1__initial_request_vertical_slice.sql",
             "frontend/package.json",
             "docs/01-prd-mvp.md",
             "docs/07-codebase-rules.md",
+            "docs/26-requirement-traceability.md",
         ]
     )
     parse_yaml_files()

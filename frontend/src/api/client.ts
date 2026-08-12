@@ -6,11 +6,62 @@ import type {
   AgentTicketDetail,
   AgentTicketFilters,
   AgentTicketPage,
+  AgentTicketSearchInput,
+  AgentTicketSearchPage,
   AgentTicketSummary,
+  AdminListPage,
+  AuditActivity,
+  AuditActivityDetail,
+  AuditActivityFilters,
+  AuditActivityPage,
+  AuditExportJob,
+  AuditProjectionRebuildResult,
+  AuditProjectionStatus,
+  AuditSearchContext,
+  BusinessInterval,
+  BusinessSchedule,
+  BusinessScheduleDefinition,
+  BusinessSchedulePreview,
+  BusinessSchedulePreviewInput,
+  BusinessWeekday,
+  CreateAuditExportInput,
+  CreateChildTicketCommand,
+  CreateChildTicketResult,
+  CustomerAccessModeSetting,
+  UpdateCustomerAccessModeInput,
   CreateStaffInput,
   CurrentStaff,
+  FirstReplySlaAnalytics,
+  FirstReplySlaBadge,
+  FirstReplySlaPolicy,
+  FirstReplySlaPolicyDefinition,
+  FirstReplySlaPreview,
+  FirstReplySlaPreviewInput,
+  GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
+  IntegrationClient,
+  IntegrationClientStatus,
+  IntegrationCredential,
+  IntegrationCredentialIssue,
+  IntegrationCredentialStatus,
+  IntegrationResourceConstraints,
+  IntegrationScope,
+  IntegrationTicketField,
+  IntegrationTicketKind,
+  CreateIntegrationClientInput,
+  RotateIntegrationCredentialInput,
+  CreateExternalReferenceInput,
+  CreateExternalSystemInput,
+  ExternalMetadataValue,
+  ExternalObjectType,
+  ExternalReference,
+  ExternalReferenceCommandResult,
+  ExternalReferenceContext,
+  ExternalReferenceLinkState,
+  ExternalSystem,
+  ExternalSystemStatus,
+  UpdateExternalSystemInput,
   ProblemDetails,
   PublicComment,
   PublicRequest,
@@ -20,14 +71,51 @@ import type {
   SubmittedRequest,
   SupportGroup,
   SavedAgentView,
+  SearchQueryRevealResult,
   TicketHistoryItem,
+  TicketAssignmentGroupOption,
+  TicketAssignmentOptions,
+  TicketCommandResult,
+  TicketFieldName,
   TicketPriority,
   TicketStatus,
   TicketVisibility,
+  TransferTicketCommand,
+  UpdateTicketCommand,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 export const STAFF_SESSION_INVALID_EVENT = 'deskseed:staff-session-invalid'
+export const STAFF_SESSION_ACTOR_MISMATCH_EVENT =
+  'deskseed:staff-session-actor-mismatch'
+const EXPECTED_STAFF_ACTOR_HEADER = 'X-Deskseed-Expected-Staff-Id'
+let staffSessionGeneration = 0
+let confirmedStaffActor: string | null = null
+
+export function setConfirmedStaffActor(staffId: string | null) {
+  confirmedStaffActor = isCanonicalUuid(staffId) ? staffId : null
+}
+
+export function advanceStaffSessionGeneration() {
+  staffSessionGeneration += 1
+}
+
+export function isCurrentStaffSessionInvalidation(event: Event) {
+  return isCurrentStaffSessionEvent(event)
+}
+
+export function isCurrentStaffSessionActorMismatch(event: Event) {
+  return isCurrentStaffSessionEvent(event)
+}
+
+function isCurrentStaffSessionEvent(event: Event) {
+  if (!(event instanceof CustomEvent)) return true
+  const detail = event.detail as { generation?: unknown } | null
+  return (
+    typeof detail?.generation !== 'number' ||
+    detail.generation === staffSessionGeneration
+  )
+}
 const TICKET_STATUSES = new Set<TicketStatus>([
   'NEW',
   'OPEN',
@@ -51,6 +139,15 @@ const TICKET_PRIORITIES = new Set<TicketPriority>([
   'URGENT',
 ])
 const TICKET_VISIBILITIES = new Set<TicketVisibility>(['PUBLIC', 'INTERNAL'])
+const FIRST_REPLY_SLA_STATES = new Set<FirstReplySlaBadge['state']>([
+  'ACTIVE',
+  'AT_RISK',
+  'PAUSED',
+  'ACHIEVED',
+  'BREACHED',
+  'CANCELLED',
+  'NO_POLICY',
+])
 const ACTOR_TYPES = new Set<ActorSummary['type']>([
   'CUSTOMER',
   'STAFF',
@@ -58,6 +155,57 @@ const ACTOR_TYPES = new Set<ActorSummary['type']>([
   'TRIGGER',
   'AUTOMATION',
   'SYSTEM',
+])
+const TICKET_FIELD_NAMES = new Set<TicketFieldName>([
+  'status',
+  'priority',
+  'groupId',
+  'assigneeId',
+])
+const INTEGRATION_SCOPES = new Set<IntegrationScope>([
+  'tickets:create',
+  'tickets:read',
+  'tickets:update',
+  'tickets:comment:internal',
+])
+const INTEGRATION_CLIENT_STATUSES = new Set<IntegrationClientStatus>([
+  'ACTIVE',
+  'DISABLED',
+  'REVOKED',
+])
+const INTEGRATION_CREDENTIAL_STATUSES = new Set<IntegrationCredentialStatus>([
+  'ACTIVE',
+  'RETIRING',
+  'EXPIRED',
+  'REVOKED',
+])
+const INTEGRATION_TICKET_KINDS = new Set<IntegrationTicketKind>([
+  'CUSTOMER_REQUEST',
+  'INTERNAL_TASK',
+])
+const INTEGRATION_TICKET_FIELDS = new Set<IntegrationTicketField>([
+  'status',
+  'priority',
+  'groupId',
+  'assigneeId',
+])
+const EXTERNAL_SYSTEM_STATUSES = new Set<ExternalSystemStatus>([
+  'ACTIVE',
+  'DISABLED',
+])
+const EXTERNAL_OBJECT_TYPES = new Set<ExternalObjectType>([
+  'ORDER',
+  'PAYMENT',
+  'REFUND',
+  'USER',
+  'STORE',
+  'OPS_CASE',
+  'CUSTOM',
+])
+const EXTERNAL_LINK_STATES = new Set<ExternalReferenceLinkState>([
+  'AVAILABLE',
+  'SYSTEM_DISABLED',
+  'HOST_NOT_ALLOWED',
 ])
 
 export class ApiError extends Error {
@@ -84,6 +232,24 @@ function isNonBlankString(value: unknown): value is string {
 
 function isTimestamp(value: unknown): value is string {
   return isNonBlankString(value) && Number.isFinite(Date.parse(value))
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
+}
+
+function isCanonicalUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
 }
 
 function isTicketStatus(value: unknown): value is TicketStatus {
@@ -139,6 +305,13 @@ function decodeFieldErrors(value: unknown): ProblemDetails['fieldErrors'] {
 function decodeProblem(value: unknown): ProblemDetails | undefined {
   if (!isRecord(value)) return undefined
   const fieldErrors = decodeFieldErrors(value.fieldErrors)
+  const conflictingFields = Array.isArray(value.conflictingFields)
+    ? value.conflictingFields.filter(
+        (field): field is TicketFieldName =>
+          typeof field === 'string' &&
+          TICKET_FIELD_NAMES.has(field as TicketFieldName),
+      )
+    : undefined
   return {
     ...(typeof value.type === 'string' ? { type: value.type } : {}),
     ...(typeof value.title === 'string' ? { title: value.title } : {}),
@@ -150,6 +323,18 @@ function decodeProblem(value: unknown): ProblemDetails | undefined {
       : {}),
     ...(typeof value.code === 'string' ? { code: value.code } : {}),
     ...(fieldErrors ? { fieldErrors } : {}),
+    ...(typeof value.currentVersion === 'number' &&
+    Number.isSafeInteger(value.currentVersion)
+      ? { currentVersion: value.currentVersion }
+      : {}),
+    ...(typeof value.currentAggregateVersion === 'number' &&
+    Number.isSafeInteger(value.currentAggregateVersion)
+      ? { currentAggregateVersion: value.currentAggregateVersion }
+      : {}),
+    ...(Array.isArray(value.conflictingFields) &&
+    conflictingFields?.length === value.conflictingFields.length
+      ? { conflictingFields }
+      : {}),
   }
 }
 
@@ -262,10 +447,27 @@ async function successfulResponseBody(response: Response): Promise<unknown> {
 
 export async function submitRequest(
   input: SubmitRequestInput,
+  authenticatedCustomer = false,
 ): Promise<SubmittedRequest> {
+  let csrfToken: string | undefined
+  if (authenticatedCustomer) {
+    const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+    const csrfBody = await successfulResponseBody(csrfResponse)
+    if (!isRecord(csrfBody) || !isNonBlankString(csrfBody.token)) {
+      throw malformedSuccess(csrfResponse)
+    }
+    csrfToken = csrfBody.token
+  }
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+    },
     cache: 'no-store',
     body: JSON.stringify(input),
   })
@@ -318,8 +520,304 @@ function decodeCurrentStaff(value: unknown): CurrentStaff | undefined {
   }
 }
 
+function decodeIntegrationStringSet<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  if (
+    !value.every(
+      (item): item is T => typeof item === 'string' && allowed.has(item as T),
+    )
+  ) {
+    return undefined
+  }
+  return value
+}
+
+function decodeNullableStringSet<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+): T[] | null | undefined {
+  if (value === null) return null
+  return decodeIntegrationStringSet(value, allowed)
+}
+
+function decodeNullableStringArray(
+  value: unknown,
+): string[] | null | undefined {
+  if (value === null) return null
+  if (!Array.isArray(value) || !value.every(isNonBlankString)) return undefined
+  return value
+}
+
+function decodeIntegrationConstraints(
+  value: unknown,
+): IntegrationResourceConstraints | undefined {
+  if (!isRecord(value)) return undefined
+  const allowedGroupIds = decodeNullableStringArray(value.allowedGroupIds)
+  const allowedTicketKinds = decodeNullableStringSet(
+    value.allowedTicketKinds,
+    INTEGRATION_TICKET_KINDS,
+  )
+  const allowedFields = decodeNullableStringSet(
+    value.allowedFields,
+    INTEGRATION_TICKET_FIELDS,
+  )
+  const ipAllowlist = decodeNullableStringArray(value.ipAllowlist)
+  if (
+    allowedGroupIds === undefined ||
+    allowedTicketKinds === undefined ||
+    allowedFields === undefined ||
+    ipAllowlist === undefined
+  ) {
+    return undefined
+  }
+  return { allowedGroupIds, allowedTicketKinds, allowedFields, ipAllowlist }
+}
+
+function decodeIntegrationCredential(
+  value: unknown,
+): IntegrationCredential | undefined {
+  if (!isRecord(value)) return undefined
+  if (
+    !isNonBlankString(value.id) ||
+    typeof value.sequence !== 'number' ||
+    !Number.isSafeInteger(value.sequence) ||
+    value.sequence < 1 ||
+    !isNonBlankString(value.publicKeyId) ||
+    typeof value.status !== 'string' ||
+    !INTEGRATION_CREDENTIAL_STATUSES.has(
+      value.status as IntegrationCredentialStatus,
+    ) ||
+    !isTimestamp(value.expiresAt) ||
+    (value.overlapExpiresAt !== null && !isTimestamp(value.overlapExpiresAt)) ||
+    !isTimestamp(value.createdAt) ||
+    (value.revokedAt !== null && !isTimestamp(value.revokedAt)) ||
+    (value.lastUsedAt !== null && !isTimestamp(value.lastUsedAt)) ||
+    (value.lastUsedIp !== null && typeof value.lastUsedIp !== 'string')
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    sequence: value.sequence,
+    publicKeyId: value.publicKeyId,
+    status: value.status as IntegrationCredentialStatus,
+    expiresAt: value.expiresAt,
+    overlapExpiresAt: value.overlapExpiresAt as string | null,
+    createdAt: value.createdAt,
+    revokedAt: value.revokedAt as string | null,
+    lastUsedAt: value.lastUsedAt as string | null,
+    lastUsedIp: value.lastUsedIp as string | null,
+  }
+}
+
+function decodeIntegrationClient(
+  value: unknown,
+): IntegrationClient | undefined {
+  if (!isRecord(value) || !Array.isArray(value.credentials)) return undefined
+  const scopes = decodeIntegrationStringSet(value.scopes, INTEGRATION_SCOPES)
+  const resourceConstraints = decodeIntegrationConstraints(
+    value.resourceConstraints,
+  )
+  const credentials = value.credentials.map(decodeIntegrationCredential)
+  if (
+    !isNonBlankString(value.id) ||
+    !isNonBlankString(value.name) ||
+    typeof value.description !== 'string' ||
+    typeof value.status !== 'string' ||
+    !INTEGRATION_CLIENT_STATUSES.has(value.status as IntegrationClientStatus) ||
+    !scopes ||
+    !resourceConstraints ||
+    credentials.some((credential) => !credential) ||
+    (value.expiresAt !== null && !isTimestamp(value.expiresAt)) ||
+    (value.lastUsedAt !== null && !isTimestamp(value.lastUsedAt)) ||
+    (value.lastUsedIp !== null && typeof value.lastUsedIp !== 'string') ||
+    !isTimestamp(value.createdAt)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    description: value.description,
+    status: value.status as IntegrationClientStatus,
+    scopes,
+    resourceConstraints,
+    credentials: credentials as IntegrationCredential[],
+    expiresAt: value.expiresAt as string | null,
+    lastUsedAt: value.lastUsedAt as string | null,
+    lastUsedIp: value.lastUsedIp as string | null,
+    createdAt: value.createdAt,
+  }
+}
+
+function decodeIntegrationCredentialIssue(
+  value: unknown,
+): IntegrationCredentialIssue | undefined {
+  if (!isRecord(value)) return undefined
+  const client = decodeIntegrationClient(value.client)
+  const credential = decodeIntegrationCredential(value.credential)
+  if (
+    !client ||
+    !credential ||
+    typeof value.apiKey !== 'string' ||
+    !/^dsk_live_[A-Za-z0-9_-]{16,32}\.[A-Za-z0-9_-]{43}$/.test(value.apiKey)
+  ) {
+    return undefined
+  }
+  return { client, credential, apiKey: value.apiKey }
+}
+
+function decodeExternalSystem(value: unknown): ExternalSystem | undefined {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.id) ||
+    !isNonBlankString(value.systemKey) ||
+    !isNonBlankString(value.displayName) ||
+    typeof value.status !== 'string' ||
+    !EXTERNAL_SYSTEM_STATUSES.has(value.status as ExternalSystemStatus) ||
+    !Array.isArray(value.allowedHostnames) ||
+    !value.allowedHostnames.every(isNonBlankString) ||
+    !isTimestamp(value.createdAt) ||
+    !isTimestamp(value.updatedAt) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    systemKey: value.systemKey,
+    displayName: value.displayName,
+    status: value.status as ExternalSystemStatus,
+    allowedHostnames: value.allowedHostnames,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    version: value.version,
+  }
+}
+
+function decodeExternalMetadata(
+  value: unknown,
+): Record<string, ExternalMetadataValue> | undefined {
+  if (!isRecord(value)) return undefined
+  const entries = Object.entries(value)
+  if (
+    entries.length > 8 ||
+    entries.some(
+      ([, item]) =>
+        !(
+          typeof item === 'string' ||
+          typeof item === 'boolean' ||
+          (typeof item === 'number' && Number.isFinite(item))
+        ),
+    )
+  ) {
+    return undefined
+  }
+  return Object.fromEntries(entries) as Record<string, ExternalMetadataValue>
+}
+
+function decodeExternalReference(
+  value: unknown,
+): ExternalReference | undefined {
+  if (!isRecord(value) || !isRecord(value.createdBy)) return undefined
+  const system = decodeExternalSystem(value.system)
+  const metadata = decodeExternalMetadata(value.metadata)
+  if (
+    !isUuid(value.id) ||
+    !system ||
+    typeof value.objectType !== 'string' ||
+    !EXTERNAL_OBJECT_TYPES.has(value.objectType as ExternalObjectType) ||
+    !isNonBlankString(value.externalId) ||
+    !isNonBlankString(value.displayLabel) ||
+    typeof value.linkState !== 'string' ||
+    !EXTERNAL_LINK_STATES.has(value.linkState as ExternalReferenceLinkState) ||
+    (value.safeDeepLink !== null && !isNonBlankString(value.safeDeepLink)) ||
+    (value.linkState === 'AVAILABLE' && value.safeDeepLink === null) ||
+    !metadata ||
+    !isTimestamp(value.metadataObservedAt) ||
+    !isUuid(value.createdBy.actorId) ||
+    !isNonBlankString(value.createdBy.displayName) ||
+    !isTimestamp(value.createdAt)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    system,
+    objectType: value.objectType as ExternalObjectType,
+    externalId: value.externalId,
+    displayLabel: value.displayLabel,
+    linkState: value.linkState as ExternalReferenceLinkState,
+    safeDeepLink: value.safeDeepLink as string | null,
+    metadata,
+    metadataObservedAt: value.metadataObservedAt,
+    createdBy: {
+      actorId: value.createdBy.actorId,
+      displayName: value.createdBy.displayName,
+    },
+    createdAt: value.createdAt,
+  }
+}
+
+function decodeExternalReferenceContext(
+  value: unknown,
+): ExternalReferenceContext | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.ticketVersion !== 'number' ||
+    !Number.isSafeInteger(value.ticketVersion) ||
+    value.ticketVersion < 0 ||
+    typeof value.canManage !== 'boolean' ||
+    !Array.isArray(value.availableSystems) ||
+    !Array.isArray(value.items)
+  ) {
+    return undefined
+  }
+  const availableSystems = value.availableSystems.map(decodeExternalSystem)
+  const items = value.items.map(decodeExternalReference)
+  if (
+    availableSystems.some((system) => !system) ||
+    items.some((reference) => !reference)
+  ) {
+    return undefined
+  }
+  return {
+    ticketVersion: value.ticketVersion,
+    canManage: value.canManage,
+    availableSystems: availableSystems as ExternalSystem[],
+    items: items as ExternalReference[],
+  }
+}
+
+function decodeExternalReferenceCommand(
+  value: unknown,
+): ExternalReferenceCommandResult | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.ticketVersion !== 'number' ||
+    !Number.isSafeInteger(value.ticketVersion) ||
+    value.ticketVersion < 0
+  ) {
+    return undefined
+  }
+  const reference = decodeExternalReference(value.reference)
+  return reference
+    ? { ticketVersion: value.ticketVersion, reference }
+    : undefined
+}
+
 function decodeStaffAccount(value: unknown): StaffAccount | undefined {
-  if (!isRecord(value) || !Array.isArray(value.memberships)) return undefined
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.memberships) ||
+    !Array.isArray(value.auditAuthorities)
+  )
+    return undefined
   if (
     !isNonBlankString(value.id) ||
     !isNonBlankString(value.email) ||
@@ -341,6 +839,19 @@ function decodeStaffAccount(value: unknown): StaffAccount | undefined {
     return [{ id: membership.id, name: membership.name }]
   })
   if (memberships.length !== value.memberships.length) return undefined
+  const grantableAuthorities = new Set<GrantableAuditAuthority>([
+    'AUDIT_SEARCH_QUERY_REVEAL',
+    'AUDIT_EXPORT',
+    'AUDIT_PROJECTION_REBUILD',
+  ])
+  if (
+    !value.auditAuthorities.every(
+      (authority): authority is GrantableAuditAuthority =>
+        typeof authority === 'string' &&
+        grantableAuthorities.has(authority as GrantableAuditAuthority),
+    )
+  )
+    return undefined
   return {
     id: value.id,
     email: value.email,
@@ -348,6 +859,7 @@ function decodeStaffAccount(value: unknown): StaffAccount | undefined {
     role: value.role,
     status: value.status,
     memberships,
+    auditAuthorities: value.auditAuthorities,
     lastLoginAt: value.lastLoginAt,
   }
 }
@@ -388,14 +900,88 @@ function decodeMembership(value: unknown): GroupMembership | undefined {
   }
 }
 
-async function staffFetch(path: string, init: RequestInit = {}) {
+interface StaffFetchOptions {
+  invalidateSessionOn401?: boolean
+  omitExpectedStaffActor?: boolean
+  onMutationRequestStart?: () => void
+}
+
+interface StaffRequestSnapshot {
+  generation: number
+  actor: string | null
+}
+
+function captureStaffRequestSnapshot(): StaffRequestSnapshot {
+  return {
+    generation: staffSessionGeneration,
+    actor: confirmedStaffActor,
+  }
+}
+
+function isCurrentStaffRequestSnapshot(snapshot: StaffRequestSnapshot) {
+  return (
+    snapshot.generation === staffSessionGeneration &&
+    snapshot.actor === confirmedStaffActor
+  )
+}
+
+async function staffFetch(
+  path: string,
+  init: RequestInit = {},
+  {
+    invalidateSessionOn401 = true,
+    omitExpectedStaffActor = false,
+  }: StaffFetchOptions = {},
+  requestSnapshot = captureStaffRequestSnapshot(),
+) {
+  const requestSessionGeneration = requestSnapshot.generation
+  let headers: Record<string, string>
+  if (init.headers instanceof Headers) {
+    headers = {}
+    init.headers.forEach((value, name) => {
+      headers[name] = value
+    })
+  } else if (Array.isArray(init.headers)) {
+    headers = Object.fromEntries(init.headers)
+  } else {
+    headers = { ...(init.headers ?? {}) }
+  }
+  for (const headerName of Object.keys(headers)) {
+    if (
+      headerName.toLowerCase() === EXPECTED_STAFF_ACTOR_HEADER.toLowerCase()
+    ) {
+      delete headers[headerName]
+    }
+  }
+  if (!omitExpectedStaffActor && requestSnapshot.actor !== null) {
+    headers[EXPECTED_STAFF_ACTOR_HEADER] = requestSnapshot.actor
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: 'include',
     cache: 'no-store',
     ...init,
+    headers,
   })
-  if (response.status === 401 && typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(STAFF_SESSION_INVALID_EVENT))
+  if (
+    invalidateSessionOn401 &&
+    response.status === 401 &&
+    typeof window !== 'undefined'
+  ) {
+    window.dispatchEvent(
+      new CustomEvent(STAFF_SESSION_INVALID_EVENT, {
+        detail: { generation: requestSessionGeneration },
+      }),
+    )
+  }
+  if (response.status === 409 && typeof window !== 'undefined') {
+    const problem = decodeProblem(await readJson(response.clone()))
+    if (problem?.type === '/problems/staff-session-actor-mismatch') {
+      window.dispatchEvent(
+        new CustomEvent(STAFF_SESSION_ACTOR_MISMATCH_EVENT, {
+          detail: { generation: requestSessionGeneration },
+        }),
+      )
+    }
   }
   return response
 }
@@ -409,8 +995,16 @@ async function checkedEmpty(response: Response): Promise<void> {
   throw failure(response, decodeProblem(await readJson(response)))
 }
 
-async function csrfHeaders(): Promise<Record<string, string>> {
-  const response = await staffFetch('/api/v1/agent/csrf')
+async function csrfHeaders(
+  options: StaffFetchOptions = {},
+  requestSnapshot = captureStaffRequestSnapshot(),
+): Promise<Record<string, string>> {
+  const response = await staffFetch(
+    '/api/v1/agent/csrf',
+    {},
+    options,
+    requestSnapshot,
+  )
   const body = await checkedBody(response)
   if (
     !isRecord(body) ||
@@ -424,50 +1018,212 @@ async function csrfHeaders(): Promise<Record<string, string>> {
 
 async function unsafeStaffFetch(
   path: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
+  additionalHeaders: Record<string, string> = {},
+  options: StaffFetchOptions = {},
 ) {
-  const csrf = await csrfHeaders()
-  return staffFetch(path, {
-    method,
-    headers: {
-      ...csrf,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+  const requestSnapshot = captureStaffRequestSnapshot()
+  const csrf = await csrfHeaders(options, requestSnapshot)
+  if (!isCurrentStaffRequestSnapshot(requestSnapshot)) {
+    throw new Error('Staff session changed before mutation')
+  }
+  options.onMutationRequestStart?.()
+  if (!isCurrentStaffRequestSnapshot(requestSnapshot)) {
+    throw new Error('Staff session changed before mutation')
+  }
+  return staffFetch(
+    path,
+    {
+      method,
+      headers: {
+        ...csrf,
+        ...additionalHeaders,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
+    options,
+    requestSnapshot,
+  )
 }
 
 export async function loginStaff(
   email: string,
   password: string,
+  onMutationRequestStart?: () => void,
 ): Promise<void> {
   await checkedEmpty(
-    await unsafeStaffFetch('/api/v1/agent/session', 'POST', {
-      email,
-      password,
-    }),
+    await unsafeStaffFetch(
+      '/api/v1/agent/session',
+      'POST',
+      {
+        email,
+        password,
+      },
+      {},
+      {
+        invalidateSessionOn401: false,
+        omitExpectedStaffActor: true,
+        onMutationRequestStart,
+      },
+    ),
   )
 }
 
-export async function logoutStaff(): Promise<void> {
-  await checkedEmpty(await unsafeStaffFetch('/api/v1/agent/session', 'DELETE'))
+export async function logoutStaff(
+  options: StaffFetchOptions = {},
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      '/api/v1/agent/session',
+      'DELETE',
+      undefined,
+      {},
+      options,
+    ),
+  )
 }
 
-export async function getCurrentStaff(): Promise<CurrentStaff> {
-  const response = await staffFetch('/api/v1/agent/me')
+export async function getCurrentStaff(
+  options: StaffFetchOptions = {},
+): Promise<CurrentStaff> {
+  const response = await staffFetch('/api/v1/agent/me', {}, options)
   const decoded = decodeCurrentStaff(await checkedBody(response))
   if (!decoded) throw malformedSuccess(response)
   return decoded
 }
 
-export async function listStaff(): Promise<StaffAccount[]> {
-  const response = await staffFetch('/api/v1/admin/staff')
+export async function listStaff(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<StaffAccount>> {
+  const response = await staffFetch(
+    `/api/v1/admin/staff?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeStaffAccount)
   if (decoded.some((staff) => !staff)) throw malformedSuccess(response)
-  return decoded as StaffAccount[]
+  return decodeAdminListPage(response, decoded as StaffAccount[], page, size)
+}
+
+export async function listIntegrationClients(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<IntegrationClient>> {
+  const response = await staffFetch(
+    `/api/v1/admin/integration-clients?page=${page}&size=${size}`,
+  )
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const decoded = body.map(decodeIntegrationClient)
+  if (decoded.some((client) => !client)) throw malformedSuccess(response)
+  return decodeAdminListPage(
+    response,
+    decoded as IntegrationClient[],
+    page,
+    size,
+  )
+}
+
+export async function getIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await staffFetch(
+    `/api/v1/admin/integration-clients/${clientId}`,
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createIntegrationClient(
+  input: CreateIntegrationClientInput,
+): Promise<IntegrationCredentialIssue> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/integration-clients',
+    'POST',
+    input,
+  )
+  const decoded = decodeIntegrationCredentialIssue(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function disableIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/disable`,
+    'POST',
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function revokeIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/revoke`,
+    'POST',
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function rotateIntegrationClientCredential(
+  clientId: string,
+  input: RotateIntegrationCredentialInput,
+): Promise<IntegrationCredentialIssue> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/rotate`,
+    'POST',
+    input,
+  )
+  const decoded = decodeIntegrationCredentialIssue(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function listExternalSystems(): Promise<ExternalSystem[]> {
+  const response = await staffFetch('/api/v1/admin/external-systems')
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const decoded = body.map(decodeExternalSystem)
+  if (decoded.some((system) => !system)) throw malformedSuccess(response)
+  return decoded as ExternalSystem[]
+}
+
+export async function createExternalSystem(
+  input: CreateExternalSystemInput,
+): Promise<ExternalSystem> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/external-systems',
+    'POST',
+    input,
+  )
+  const decoded = decodeExternalSystem(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function updateExternalSystem(
+  systemId: string,
+  input: UpdateExternalSystemInput,
+): Promise<ExternalSystem> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/external-systems/${systemId}`,
+    'PUT',
+    input,
+    { 'If-Match': `"${input.expectedVersion}"` },
+  )
+  const decoded = decodeExternalSystem(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
 }
 
 export async function createStaff(
@@ -485,13 +1241,42 @@ export async function disableStaff(staffId: string): Promise<void> {
   )
 }
 
-export async function listGroups(): Promise<SupportGroup[]> {
-  const response = await staffFetch('/api/v1/admin/groups')
+export async function grantStaffAuditAuthority(
+  staffId: string,
+  authority: GrantableAuditAuthority,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/admin/staff/${staffId}/audit-authorities/${authority}`,
+      'PUT',
+    ),
+  )
+}
+
+export async function revokeStaffAuditAuthority(
+  staffId: string,
+  authority: GrantableAuditAuthority,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/admin/staff/${staffId}/audit-authorities/${authority}`,
+      'DELETE',
+    ),
+  )
+}
+
+export async function listGroups(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<SupportGroup>> {
+  const response = await staffFetch(
+    `/api/v1/admin/groups?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeSupportGroup)
   if (decoded.some((group) => !group)) throw malformedSuccess(response)
-  return decoded as SupportGroup[]
+  return decodeAdminListPage(response, decoded as SupportGroup[], page, size)
 }
 
 export async function createGroup(name: string): Promise<SupportGroup> {
@@ -525,14 +1310,59 @@ export async function disableGroup(groupId: string): Promise<void> {
 
 export async function listGroupMembers(
   groupId: string,
-): Promise<GroupMembership[]> {
-  const response = await staffFetch(`/api/v1/admin/groups/${groupId}/members`)
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<GroupMembership>> {
+  const response = await staffFetch(
+    `/api/v1/admin/groups/${groupId}/members?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeMembership)
   if (decoded.some((membership) => !membership))
     throw malformedSuccess(response)
-  return decoded as GroupMembership[]
+  return decodeAdminListPage(response, decoded as GroupMembership[], page, size)
+}
+
+function decodeAdminListPage<T>(
+  response: Response,
+  items: T[],
+  requestedPage: number,
+  requestedSize: number,
+): AdminListPage<T> {
+  const headerValues = [
+    response.headers.get('X-Page-Number'),
+    response.headers.get('X-Page-Size'),
+    response.headers.get('X-Total-Count'),
+    response.headers.get('X-Total-Pages'),
+  ]
+  if (headerValues.every((value) => value === null)) {
+    return {
+      items,
+      page: requestedPage,
+      size: requestedSize,
+      totalCount: items.length,
+      totalPages: items.length === 0 ? 0 : requestedPage + 1,
+    }
+  }
+  const values = headerValues.map((value) =>
+    value !== null && /^\d+$/.test(value) ? Number(value) : Number.NaN,
+  )
+  const page = values[0]!
+  const size = values[1]!
+  const totalCount = values[2]!
+  const totalPages = values[3]!
+  if (
+    values.some((value) => !Number.isSafeInteger(value)) ||
+    page < 0 ||
+    size < 1 ||
+    size > 100 ||
+    totalCount < 0 ||
+    totalPages < 0
+  ) {
+    throw malformedSuccess(response)
+  }
+  return { items, page, size, totalCount, totalPages }
 }
 
 export async function addGroupMember(
@@ -559,6 +1389,477 @@ export async function removeGroupMember(
       'DELETE',
     ),
   )
+}
+
+const BUSINESS_WEEKDAYS = new Set<BusinessWeekday>([
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+])
+
+function decodeBusinessInterval(value: unknown): BusinessInterval | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.start !== 'string' ||
+    typeof value.end !== 'string' ||
+    !/^\d{2}:\d{2}$/.test(value.start) ||
+    !/^\d{2}:\d{2}$/.test(value.end)
+  ) {
+    return undefined
+  }
+  return { start: value.start, end: value.end }
+}
+
+function decodeBusinessSchedule(value: unknown): BusinessSchedule | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    !isNonBlankString(value.timeZone) ||
+    !Array.isArray(value.weekdays) ||
+    !Array.isArray(value.exceptions) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    (value.activeVersion !== null &&
+      (typeof value.activeVersion !== 'number' ||
+        !Number.isSafeInteger(value.activeVersion) ||
+        value.activeVersion < 1)) ||
+    (value.activeTimeZone !== null &&
+      !isNonBlankString(value.activeTimeZone)) ||
+    value.version < 1 ||
+    typeof value.aggregateVersion !== 'number' ||
+    !Number.isSafeInteger(value.aggregateVersion) ||
+    value.aggregateVersion < 0 ||
+    typeof value.active !== 'boolean' ||
+    !isTimestamp(value.createdAt) ||
+    !isRecord(value.createdBy) ||
+    !['STAFF', 'SYSTEM'].includes(String(value.createdBy.actorType)) ||
+    (value.createdBy.actorId !== null &&
+      !isCanonicalUuid(value.createdBy.actorId)) ||
+    !isNonBlankString(value.createdBy.displayName)
+  ) {
+    return undefined
+  }
+  const weekdays = value.weekdays.flatMap((weekday) => {
+    if (
+      !isRecord(weekday) ||
+      typeof weekday.weekday !== 'string' ||
+      !BUSINESS_WEEKDAYS.has(weekday.weekday as BusinessWeekday) ||
+      typeof weekday.enabled !== 'boolean' ||
+      !Array.isArray(weekday.intervals)
+    ) {
+      return []
+    }
+    const intervals = weekday.intervals.map(decodeBusinessInterval)
+    if (intervals.some((interval) => !interval)) return []
+    return [
+      {
+        weekday: weekday.weekday as BusinessWeekday,
+        enabled: weekday.enabled,
+        intervals: intervals as BusinessInterval[],
+      },
+    ]
+  })
+  const exceptions = value.exceptions.flatMap((exception) => {
+    if (
+      !isRecord(exception) ||
+      typeof exception.date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(exception.date) ||
+      !['CLOSED', 'OPEN'].includes(String(exception.mode)) ||
+      !Array.isArray(exception.intervals) ||
+      (exception.label !== null && typeof exception.label !== 'string')
+    ) {
+      return []
+    }
+    const intervals = exception.intervals.map(decodeBusinessInterval)
+    if (intervals.some((interval) => !interval)) return []
+    return [
+      {
+        date: exception.date,
+        mode: exception.mode as 'CLOSED' | 'OPEN',
+        intervals: intervals as BusinessInterval[],
+        label: exception.label as string | null,
+      },
+    ]
+  })
+  if (
+    weekdays.length !== value.weekdays.length ||
+    weekdays.length !== 7 ||
+    exceptions.length !== value.exceptions.length
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    timeZone: value.timeZone,
+    weekdays,
+    exceptions,
+    version: value.version,
+    activeVersion: value.activeVersion as number | null,
+    activeTimeZone: value.activeTimeZone as string | null,
+    aggregateVersion: value.aggregateVersion,
+    active: value.active,
+    createdAt: value.createdAt,
+    createdBy: {
+      actorType: value.createdBy.actorType as 'STAFF' | 'SYSTEM',
+      actorId: value.createdBy.actorId as string | null,
+      displayName: value.createdBy.displayName,
+    },
+  }
+}
+
+function decodedBusinessSchedules(response: Response, body: unknown) {
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const schedules = body.map(decodeBusinessSchedule)
+  if (schedules.some((schedule) => !schedule)) throw malformedSuccess(response)
+  return schedules as BusinessSchedule[]
+}
+
+export async function listBusinessSchedules(): Promise<BusinessSchedule[]> {
+  const response = await staffFetch('/api/v1/admin/business-schedules')
+  return decodedBusinessSchedules(response, await checkedBody(response))
+}
+
+export async function createBusinessSchedule(
+  definition: BusinessScheduleDefinition,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/business-schedules',
+    'POST',
+    definition,
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function listBusinessScheduleVersions(
+  scheduleId: string,
+): Promise<BusinessSchedule[]> {
+  const response = await staffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions`,
+  )
+  return decodedBusinessSchedules(response, await checkedBody(response))
+}
+
+export async function createBusinessScheduleVersion(
+  scheduleId: string,
+  aggregateVersion: number,
+  definition: BusinessScheduleDefinition,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions`,
+    'POST',
+    definition,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function activateBusinessScheduleVersion(
+  scheduleId: string,
+  version: number,
+  aggregateVersion: number,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions/${version}/activation`,
+    'PUT',
+    undefined,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function previewBusinessSchedule(
+  input: BusinessSchedulePreviewInput,
+): Promise<BusinessSchedulePreview> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/business-schedules/preview',
+    'POST',
+    input,
+  )
+  const body = await checkedBody(response)
+  if (
+    !isRecord(body) ||
+    (body.dueAt !== null && !isTimestamp(body.dueAt)) ||
+    typeof body.elapsedBusinessMinutes !== 'number' ||
+    !Number.isSafeInteger(body.elapsedBusinessMinutes) ||
+    (body.nextOpenAt !== null && !isTimestamp(body.nextOpenAt)) ||
+    (body.nextCloseAt !== null && !isTimestamp(body.nextCloseAt)) ||
+    body.dstPolicy !== 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    dueAt: body.dueAt,
+    elapsedBusinessMinutes: body.elapsedBusinessMinutes,
+    nextOpenAt: body.nextOpenAt,
+    nextCloseAt: body.nextCloseAt,
+    dstPolicy: body.dstPolicy,
+  }
+}
+
+function decodeFirstReplySlaPolicy(
+  value: unknown,
+): FirstReplySlaPolicy | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    typeof value.position !== 'number' ||
+    !Number.isSafeInteger(value.position) ||
+    !isCanonicalUuid(value.scheduleId) ||
+    typeof value.scheduleVersion !== 'number' ||
+    !Number.isSafeInteger(value.scheduleVersion) ||
+    !isRecord(value.conditions) ||
+    !isRecord(value.targets) ||
+    !Array.isArray(value.pauseStatuses) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    typeof value.aggregateVersion !== 'number' ||
+    !Number.isSafeInteger(value.aggregateVersion) ||
+    typeof value.active !== 'boolean' ||
+    !isTimestamp(value.createdAt) ||
+    !isRecord(value.createdBy) ||
+    value.createdBy.actorType !== 'STAFF' ||
+    !isCanonicalUuid(value.createdBy.actorId) ||
+    !isNonBlankString(value.createdBy.displayName)
+  ) {
+    return undefined
+  }
+  const targetRecord = value.targets as Record<string, unknown>
+  const target = (priority: TicketPriority): number | null | undefined => {
+    const minutes = targetRecord[priority]
+    return minutes === undefined || minutes === null
+      ? null
+      : typeof minutes === 'number' &&
+          Number.isSafeInteger(minutes) &&
+          minutes > 0
+        ? minutes
+        : undefined
+  }
+  const targets = {
+    LOW: target('LOW'),
+    NORMAL: target('NORMAL'),
+    HIGH: target('HIGH'),
+    URGENT: target('URGENT'),
+  }
+  if (
+    Object.values(targets).some((minutes) => minutes === undefined) ||
+    (value.conditions.groupId !== null &&
+      !isCanonicalUuid(value.conditions.groupId)) ||
+    (value.conditions.channel !== null &&
+      !['WEB', 'AGENT', 'EMAIL', 'CHAT', 'API'].includes(
+        String(value.conditions.channel),
+      )) ||
+    !value.pauseStatuses.every(
+      (status) =>
+        isAgentTicketStatus(status) &&
+        status !== 'SOLVED' &&
+        status !== 'CLOSED',
+    )
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    position: value.position,
+    scheduleId: value.scheduleId,
+    scheduleVersion: value.scheduleVersion,
+    conditions: {
+      groupId: value.conditions.groupId as string | null,
+      channel: value.conditions
+        .channel as FirstReplySlaPolicy['conditions']['channel'],
+    },
+    targets: targets as FirstReplySlaPolicy['targets'],
+    pauseStatuses: value.pauseStatuses as FirstReplySlaPolicy['pauseStatuses'],
+    version: value.version,
+    activeVersion: value.activeVersion as number | null,
+    aggregateVersion: value.aggregateVersion,
+    active: value.active,
+    createdAt: value.createdAt,
+    createdBy: {
+      actorType: 'STAFF',
+      actorId: value.createdBy.actorId,
+      displayName: value.createdBy.displayName,
+    },
+  }
+}
+
+function decodeFirstReplySlaPolicies(response: Response, body: unknown) {
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const policies = body.map(decodeFirstReplySlaPolicy)
+  if (policies.some((policy) => !policy)) throw malformedSuccess(response)
+  return policies as FirstReplySlaPolicy[]
+}
+
+export async function listFirstReplySlaPolicies(): Promise<
+  FirstReplySlaPolicy[]
+> {
+  const response = await staffFetch('/api/v1/admin/sla-policies')
+  return decodeFirstReplySlaPolicies(response, await checkedBody(response))
+}
+
+export async function listFirstReplySlaPolicyVersions(
+  policyId: string,
+): Promise<FirstReplySlaPolicy[]> {
+  const response = await staffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions`,
+  )
+  return decodeFirstReplySlaPolicies(response, await checkedBody(response))
+}
+
+export async function createFirstReplySlaPolicy(
+  definition: FirstReplySlaPolicyDefinition,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/sla-policies',
+    'POST',
+    definition,
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function createFirstReplySlaPolicyVersion(
+  policyId: string,
+  aggregateVersion: number,
+  definition: FirstReplySlaPolicyDefinition,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions`,
+    'POST',
+    definition,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function activateFirstReplySlaPolicyVersion(
+  policyId: string,
+  version: number,
+  aggregateVersion: number,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions/${version}/activation`,
+    'PUT',
+    undefined,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function previewFirstReplySlaPolicy(
+  input: FirstReplySlaPreviewInput,
+): Promise<FirstReplySlaPreview> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/sla-policies/preview',
+    'POST',
+    input,
+  )
+  const value = await checkedBody(response)
+  if (
+    !isRecord(value) ||
+    typeof value.matched !== 'boolean' ||
+    (value.dueAt !== null && !isTimestamp(value.dueAt)) ||
+    (value.targetMinutes !== null && typeof value.targetMinutes !== 'number') ||
+    (value.policyId !== null && !isCanonicalUuid(value.policyId)) ||
+    (value.policyVersion !== null && typeof value.policyVersion !== 'number') ||
+    (value.scheduleId !== null && !isCanonicalUuid(value.scheduleId)) ||
+    (value.scheduleVersion !== null &&
+      typeof value.scheduleVersion !== 'number') ||
+    value.dstPolicy !== 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return value as unknown as FirstReplySlaPreview
+}
+
+export async function getFirstReplySlaAnalytics(): Promise<FirstReplySlaAnalytics> {
+  const response = await staffFetch('/api/v1/analytics/first-reply-sla')
+  const value = await checkedBody(response)
+  const countFields = [
+    'active',
+    'paused',
+    'achieved',
+    'breached',
+    'cancelled',
+    'noPolicy',
+    'achievedRateDenominator',
+  ]
+  if (
+    !isRecord(value) ||
+    value.metric !== 'FIRST_REPLY' ||
+    !isNonBlankString(value.calculationVersion) ||
+    !countFields.every(
+      (field) =>
+        typeof value[field] === 'number' && Number.isSafeInteger(value[field]),
+    ) ||
+    (value.achievedRate !== null && typeof value.achievedRate !== 'number')
+  ) {
+    throw malformedSuccess(response)
+  }
+  return value as unknown as FirstReplySlaAnalytics
+}
+
+export async function getCustomerAccessModeSetting(): Promise<CustomerAccessModeSetting> {
+  const response = await staffFetch(
+    '/api/v1/admin/settings/customer-access-mode',
+  )
+  const decoded = decodeCustomerAccessModeSetting(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function updateCustomerAccessModeSetting(
+  input: UpdateCustomerAccessModeInput,
+): Promise<CustomerAccessModeSetting> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/settings/customer-access-mode',
+    'PUT',
+    input,
+  )
+  const decoded = decodeCustomerAccessModeSetting(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+function decodeCustomerAccessModeSetting(
+  value: unknown,
+): CustomerAccessModeSetting | undefined {
+  if (!isRecord(value)) return undefined
+  if (
+    ![
+      'ANONYMOUS_ALLOWED',
+      'REGISTRATION_OPTIONAL',
+      'REGISTRATION_REQUIRED',
+    ].includes(String(value.mode)) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0 ||
+    !isTimestamp(value.updatedAt)
+  )
+    return undefined
+  return {
+    mode: value.mode as CustomerAccessModeSetting['mode'],
+    version: value.version,
+    updatedAt: value.updatedAt,
+  }
 }
 
 function decodeActorSummary(value: unknown): ActorSummary | undefined {
@@ -602,6 +1903,37 @@ function decodeTicketReference(
   return { id: value.id, displayName: value.displayName }
 }
 
+function decodeFirstReplySlaBadge(
+  value: unknown,
+): FirstReplySlaBadge | undefined {
+  if (
+    !isRecord(value) ||
+    value.metric !== 'FIRST_REPLY' ||
+    typeof value.state !== 'string' ||
+    !FIRST_REPLY_SLA_STATES.has(value.state as FirstReplySlaBadge['state']) ||
+    (value.dueAt !== null && !isTimestamp(value.dueAt)) ||
+    (value.targetMinutes !== null &&
+      (typeof value.targetMinutes !== 'number' ||
+        !Number.isSafeInteger(value.targetMinutes))) ||
+    (value.policyVersion !== null &&
+      (typeof value.policyVersion !== 'number' ||
+        !Number.isSafeInteger(value.policyVersion))) ||
+    (value.scheduleVersion !== null &&
+      (typeof value.scheduleVersion !== 'number' ||
+        !Number.isSafeInteger(value.scheduleVersion)))
+  ) {
+    return undefined
+  }
+  return {
+    metric: 'FIRST_REPLY',
+    state: value.state as FirstReplySlaBadge['state'],
+    dueAt: value.dueAt,
+    targetMinutes: value.targetMinutes,
+    policyVersion: value.policyVersion,
+    scheduleVersion: value.scheduleVersion,
+  }
+}
+
 function decodeAgentTicketSummary(
   value: unknown,
 ): AgentTicketSummary | undefined {
@@ -610,6 +1942,7 @@ function decodeAgentTicketSummary(
   const group = value.group === null ? null : decodeGroupReference(value.group)
   const assignee =
     value.assignee === null ? null : decodeTicketReference(value.assignee)
+  const sla = value.sla === null ? null : decodeFirstReplySlaBadge(value.sla)
   if (
     !isTicketNumber(value.ticketNumber) ||
     !isNonBlankString(value.subject) ||
@@ -624,7 +1957,7 @@ function decodeAgentTicketSummary(
     typeof value.isChild !== 'boolean' ||
     typeof value.openChildCount !== 'number' ||
     !Number.isSafeInteger(value.openChildCount) ||
-    value.sla !== null
+    sla === undefined
   ) {
     return undefined
   }
@@ -640,7 +1973,7 @@ function decodeAgentTicketSummary(
     version: value.version,
     isChild: value.isChild,
     openChildCount: value.openChildCount,
-    sla: null,
+    sla,
   }
 }
 
@@ -716,6 +2049,7 @@ function decodeAgentTicketDetail(
     !isRecord(value) ||
     !Array.isArray(value.comments) ||
     !Array.isArray(value.capabilities) ||
+    !isRecord(value.assignmentOptions) ||
     !isRecord(value.context) ||
     !Array.isArray(value.history) ||
     !Array.isArray(value.warnings)
@@ -724,7 +2058,20 @@ function decodeAgentTicketDetail(
   }
   const ticket = decodeAgentTicketSummary(value.ticket)
   const comments = value.comments.map(decodeAgentComment)
-  const customer = value.context.customer
+  const customerValue = value.context.customer
+  const customer =
+    customerValue === null
+      ? null
+      : isRecord(customerValue) &&
+          isNonBlankString(customerValue.id) &&
+          isNonBlankString(customerValue.displayName) &&
+          isNonBlankString(customerValue.email)
+        ? {
+            id: customerValue.id,
+            displayName: customerValue.displayName,
+            email: customerValue.email,
+          }
+        : undefined
   const parent =
     value.context.parent === null
       ? null
@@ -733,18 +2080,19 @@ function decodeAgentTicketDetail(
     ? value.context.children.map(decodeAgentTicketSummary)
     : []
   const history = value.history.map(decodeHistory)
+  const assignmentOptions = decodeTicketAssignmentOptions(
+    value.assignmentOptions,
+  )
   if (
     !ticket ||
     comments.some((comment) => !comment) ||
-    !isRecord(customer) ||
-    !isNonBlankString(customer.id) ||
-    !isNonBlankString(customer.displayName) ||
-    !isNonBlankString(customer.email) ||
+    customer === undefined ||
     parent === undefined ||
     !Array.isArray(value.context.children) ||
     children.some((child) => !child) ||
     !Array.isArray(value.context.externalReferences) ||
     history.some((item) => !item) ||
+    !assignmentOptions ||
     !value.capabilities.every(isNonBlankString)
   ) {
     return undefined
@@ -753,18 +2101,119 @@ function decodeAgentTicketDetail(
     ticket,
     comments: comments as AgentComment[],
     capabilities: value.capabilities,
+    assignmentOptions,
     context: {
-      customer: {
-        id: customer.id,
-        displayName: customer.displayName,
-        email: customer.email,
-      },
+      customer,
       parent,
       children: children as AgentTicketSummary[],
       externalReferences: [...value.context.externalReferences],
     },
     history: history as TicketHistoryItem[],
     warnings: [...value.warnings],
+  }
+}
+
+function decodeTicketAssignmentOptions(
+  value: Record<string, unknown>,
+): TicketAssignmentOptions | undefined {
+  if (!Array.isArray(value.groups)) return undefined
+  const groups = value.groups.map(decodeTicketAssignmentGroupOption)
+  if (groups.some((group) => !group)) return undefined
+  return { groups: groups as TicketAssignmentGroupOption[] }
+}
+
+function decodeTicketAssignmentGroupOption(
+  value: unknown,
+): TicketAssignmentGroupOption | undefined {
+  if (
+    !isRecord(value) ||
+    !isNonBlankString(value.id) ||
+    !isNonBlankString(value.name) ||
+    !Array.isArray(value.members)
+  ) {
+    return undefined
+  }
+  const members = value.members.flatMap((member) => {
+    if (
+      !isRecord(member) ||
+      !isNonBlankString(member.id) ||
+      !isNonBlankString(member.displayName)
+    ) {
+      return []
+    }
+    return [{ id: member.id, displayName: member.displayName }]
+  })
+  if (members.length !== value.members.length) return undefined
+  return { id: value.id, name: value.name, members }
+}
+
+function decodeTicketCommandResult(
+  value: unknown,
+): TicketCommandResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isTicketNumber(value.ticketNumber) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0 ||
+    !isNonBlankString(value.auditId) ||
+    !Array.isArray(value.warnings)
+  ) {
+    return undefined
+  }
+  const warnings = value.warnings.flatMap((warning) => {
+    if (
+      !isRecord(warning) ||
+      !isNonBlankString(warning.code) ||
+      !isNonBlankString(warning.message) ||
+      typeof warning.count !== 'number' ||
+      !Number.isSafeInteger(warning.count) ||
+      warning.count < 1 ||
+      !Array.isArray(warning.relatedTicketNumbers) ||
+      !warning.relatedTicketNumbers.every(isTicketNumber) ||
+      warning.count !== warning.relatedTicketNumbers.length
+    ) {
+      return []
+    }
+    return [
+      {
+        code: warning.code,
+        message: warning.message,
+        count: warning.count,
+        relatedTicketNumbers: warning.relatedTicketNumbers,
+      },
+    ]
+  })
+  if (warnings.length !== value.warnings.length) return undefined
+  return {
+    ticketNumber: value.ticketNumber,
+    version: value.version,
+    auditId: value.auditId,
+    warnings,
+  }
+}
+
+function decodeCreateChildTicketResult(
+  value: unknown,
+): CreateChildTicketResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isTicketNumber(value.parentTicketNumber) ||
+    typeof value.parentVersion !== 'number' ||
+    !Number.isSafeInteger(value.parentVersion) ||
+    value.parentVersion < 0 ||
+    !isTicketNumber(value.childTicketNumber) ||
+    !isNonBlankString(value.parentAuditId) ||
+    !isNonBlankString(value.childAuditId)
+  ) {
+    return undefined
+  }
+  return {
+    parentTicketNumber: value.parentTicketNumber,
+    parentVersion: value.parentVersion,
+    childTicketNumber: value.childTicketNumber,
+    parentAuditId: value.parentAuditId,
+    childAuditId: value.childAuditId,
   }
 }
 
@@ -786,6 +2235,7 @@ export async function listTicketsInView(
   if (filters.priority) search.set('priority', filters.priority)
   if (filters.groupId) search.set('groupId', filters.groupId)
   if (filters.assigneeId) search.set('assigneeId', filters.assigneeId)
+  if (filters.slaState) search.set('slaState', filters.slaState)
   if (filters.cursor) search.set('cursor', filters.cursor)
   if (filters.limit) search.set('limit', String(filters.limit))
   const query = search.size ? `?${search.toString()}` : ''
@@ -813,18 +2263,514 @@ export async function listTicketsInView(
   }
 }
 
+export async function searchAgentTickets(
+  input: AgentTicketSearchInput,
+  interactionId: string,
+): Promise<AgentTicketSearchPage> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/search',
+    'POST',
+    input,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const body = await checkedBody(response)
+  if (!isRecord(body) || !Array.isArray(body.items)) {
+    throw malformedSuccess(response)
+  }
+  const items = body.items.map(decodeAgentTicketSummary)
+  if (
+    !isUuid(body.searchEventId) ||
+    !isUuid(body.searchInteractionId) ||
+    items.some((ticket) => !ticket) ||
+    typeof body.resultCount !== 'number' ||
+    !Number.isSafeInteger(body.resultCount) ||
+    body.resultCount < 0 ||
+    body.sort !== 'updatedAt:desc,ticketNumber:desc'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    searchEventId: body.searchEventId,
+    searchInteractionId: body.searchInteractionId,
+    items: items as AgentTicketSummary[],
+    resultCount: body.resultCount,
+    sort: body.sort,
+  }
+}
+
 export async function getAgentTicket(
   ticketNumber: number,
   interactionId: string,
   intent: AgentReadIntent,
+  originSearchEventId?: string,
 ): Promise<AgentTicketDetail> {
   const response = await staffFetch(`/api/v1/agent/tickets/${ticketNumber}`, {
     headers: {
       'X-Interaction-Id': interactionId,
       'X-Deskseed-Read-Intent': intent,
+      ...(originSearchEventId
+        ? { 'X-Origin-Search-Event-Id': originSearchEventId }
+        : {}),
     },
   })
   const detail = decodeAgentTicketDetail(await checkedBody(response))
   if (!detail) throw malformedSuccess(response)
   return detail
+}
+
+export async function updateAgentTicket(
+  ticketNumber: number,
+  command: UpdateTicketCommand,
+): Promise<TicketCommandResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/commands`,
+    'POST',
+    command,
+  )
+  const result = decodeTicketCommandResult(await checkedBody(response))
+  if (!result) throw malformedSuccess(response)
+  return result
+}
+
+export async function transferAgentTicket(
+  ticketNumber: number,
+  command: TransferTicketCommand,
+): Promise<TicketCommandResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/transfer`,
+    'POST',
+    command,
+    { 'If-Match': `"${command.expectedVersion}"` },
+  )
+  const result = decodeTicketCommandResult(await checkedBody(response))
+  if (!result) throw malformedSuccess(response)
+  return result
+}
+
+export async function createChildTicket(
+  ticketNumber: number,
+  command: CreateChildTicketCommand,
+): Promise<CreateChildTicketResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/children`,
+    'POST',
+    command,
+    { 'If-Match': `"${command.expectedVersion}"` },
+  )
+  const result = decodeCreateChildTicketResult(await checkedBody(response))
+  if (!result) throw malformedSuccess(response)
+  return result
+}
+
+export async function listTicketExternalReferences(
+  ticketNumber: number,
+  interactionId: string,
+): Promise<ExternalReferenceContext> {
+  const response = await staffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/external-references`,
+    { headers: { 'X-Interaction-Id': interactionId } },
+  )
+  const decoded = decodeExternalReferenceContext(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createTicketExternalReference(
+  ticketNumber: number,
+  input: CreateExternalReferenceInput,
+): Promise<ExternalReferenceCommandResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/external-references`,
+    'POST',
+    input,
+    { 'If-Match': `"${input.expectedVersion}"` },
+  )
+  const decoded = decodeExternalReferenceCommand(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function deleteTicketExternalReference(
+  ticketNumber: number,
+  referenceId: string,
+  expectedVersion: number,
+): Promise<{ ticketVersion: number; removedReferenceId: string }> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/external-references/${referenceId}`,
+    'DELETE',
+    undefined,
+    { 'If-Match': `"${expectedVersion}"` },
+  )
+  const body = await checkedBody(response)
+  if (
+    !isRecord(body) ||
+    typeof body.ticketVersion !== 'number' ||
+    !Number.isSafeInteger(body.ticketVersion) ||
+    body.ticketVersion < 0 ||
+    !isUuid(body.removedReferenceId)
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    ticketVersion: body.ticketVersion,
+    removedReferenceId: body.removedReferenceId,
+  }
+}
+
+const AUDIT_LEDGERS = new Set([
+  'TICKET_CHANGE',
+  'ACCESS_SEARCH',
+  'ADMIN_SECURITY',
+])
+const AUDIT_OUTCOMES = new Set(['SUCCEEDED', 'DENIED', 'FAILED'])
+const AUDIT_PROJECTION_STATES = new Set(['CURRENT', 'DEGRADED', 'REBUILDING'])
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function decodeAuditActivity(value: unknown): AuditActivity | undefined {
+  if (!isRecord(value)) return undefined
+  const actor = decodeActorSummary(value.actor)
+  if (
+    !isCanonicalUuid(value.id) ||
+    typeof value.ledger !== 'string' ||
+    !AUDIT_LEDGERS.has(value.ledger) ||
+    !isNonBlankString(value.action) ||
+    !actor ||
+    !isTimestamp(value.occurredAt) ||
+    (value.ticketNumber !== null && !isTicketNumber(value.ticketNumber)) ||
+    !isNullableString(value.groupId) ||
+    !isNullableString(value.field) ||
+    !isNullableString(value.resourceType) ||
+    !isNullableString(value.resourceId) ||
+    !isNonBlankString(value.summary) ||
+    !isNonBlankString(value.source) ||
+    typeof value.outcome !== 'string' ||
+    !AUDIT_OUTCOMES.has(value.outcome) ||
+    !isNullableString(value.requestId) ||
+    !isNullableString(value.correlationId) ||
+    typeof value.protectedContentAvailable !== 'boolean' ||
+    !isNullableString(value.searchFingerprint)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    ledger: value.ledger as AuditActivity['ledger'],
+    action: value.action,
+    actor,
+    occurredAt: value.occurredAt,
+    ticketNumber: value.ticketNumber,
+    groupId: value.groupId,
+    field: value.field,
+    resourceType: value.resourceType,
+    resourceId: value.resourceId,
+    summary: value.summary,
+    source: value.source,
+    outcome: value.outcome as AuditActivity['outcome'],
+    requestId: value.requestId,
+    correlationId: value.correlationId,
+    protectedContentAvailable: value.protectedContentAvailable,
+    searchFingerprint: value.searchFingerprint,
+  }
+}
+
+function decodeAuditProjectionStatus(
+  value: unknown,
+): AuditProjectionStatus | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.state !== 'string' ||
+    !AUDIT_PROJECTION_STATES.has(value.state) ||
+    typeof value.projectedCount !== 'number' ||
+    !Number.isSafeInteger(value.projectedCount) ||
+    value.projectedCount < 0 ||
+    (value.lastRebuiltAt !== null && !isTimestamp(value.lastRebuiltAt))
+  ) {
+    return undefined
+  }
+  return {
+    state: value.state as AuditProjectionStatus['state'],
+    projectedCount: value.projectedCount,
+    lastRebuiltAt: value.lastRebuiltAt,
+  }
+}
+
+function decodeAuditSearchContext(
+  value: unknown,
+): AuditSearchContext | null | undefined {
+  if (value === null) return null
+  if (
+    !isRecord(value) ||
+    !isNonBlankString(value.queryRedacted) ||
+    !isNonBlankString(value.queryFingerprint) ||
+    !isRecord(value.filters) ||
+    !Object.values(value.filters).every((item) => typeof item === 'string') ||
+    !isNullableString(value.sort) ||
+    typeof value.resultCount !== 'number' ||
+    !Number.isSafeInteger(value.resultCount) ||
+    value.resultCount < 0 ||
+    !isNullableString(value.originSearchActivityId) ||
+    typeof value.openedActivityCount !== 'number' ||
+    !Number.isSafeInteger(value.openedActivityCount) ||
+    value.openedActivityCount < 0 ||
+    typeof value.openedActivitiesTruncated !== 'boolean' ||
+    !Array.isArray(value.openedActivities)
+  ) {
+    return undefined
+  }
+  const openedActivities = value.openedActivities.flatMap((item) => {
+    if (
+      !isRecord(item) ||
+      !isCanonicalUuid(item.activityId) ||
+      !isTicketNumber(item.ticketNumber) ||
+      !isTimestamp(item.occurredAt)
+    ) {
+      return []
+    }
+    return [
+      {
+        activityId: item.activityId,
+        ticketNumber: item.ticketNumber,
+        occurredAt: item.occurredAt,
+      },
+    ]
+  })
+  if (openedActivities.length !== value.openedActivities.length)
+    return undefined
+  return {
+    queryRedacted: value.queryRedacted,
+    queryFingerprint: value.queryFingerprint,
+    filters: value.filters as Record<string, string>,
+    sort: value.sort,
+    resultCount: value.resultCount,
+    originSearchActivityId: value.originSearchActivityId,
+    openedActivityCount: value.openedActivityCount,
+    openedActivitiesTruncated: value.openedActivitiesTruncated,
+    openedActivities,
+  }
+}
+
+function decodeAuditActivityPage(
+  value: unknown,
+): AuditActivityPage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(decodeAuditActivity)
+  const projection = decodeAuditProjectionStatus(value.projection)
+  if (
+    items.some((item) => !item) ||
+    !isNullableString(value.nextCursor) ||
+    !isTimestamp(value.snapshotAt) ||
+    !projection
+  ) {
+    return undefined
+  }
+  return {
+    items: items as AuditActivity[],
+    nextCursor: value.nextCursor,
+    snapshotAt: value.snapshotAt,
+    projection,
+  }
+}
+
+function decodeAuditActivityDetail(
+  value: unknown,
+): AuditActivityDetail | undefined {
+  const activity = decodeAuditActivity(value)
+  if (!activity || !isRecord(value)) return undefined
+  const search = decodeAuditSearchContext(value.search)
+  const fieldChange = value.fieldChange
+  if (
+    !isCanonicalUuid(value.canonicalEventId) ||
+    !isNullableString(value.canonicalParentId) ||
+    (fieldChange !== null &&
+      (!isRecord(fieldChange) || !isNonBlankString(fieldChange.field))) ||
+    !isNullableString(value.interactionId) ||
+    !isNullableString(value.sessionFingerprint) ||
+    !isNullableString(value.authType) ||
+    !isNullableString(value.ipAddress) ||
+    !isNullableString(value.userAgent) ||
+    search === undefined ||
+    !isRecord(value.metadata)
+  ) {
+    return undefined
+  }
+  return {
+    ...activity,
+    canonicalEventId: value.canonicalEventId,
+    canonicalParentId: value.canonicalParentId,
+    fieldChange:
+      fieldChange === null
+        ? null
+        : {
+            field: fieldChange.field as string,
+            before: fieldChange.before,
+            after: fieldChange.after,
+          },
+    interactionId: value.interactionId,
+    sessionFingerprint: value.sessionFingerprint,
+    authType: value.authType,
+    ipAddress: value.ipAddress,
+    userAgent: value.userAgent,
+    search,
+    metadata: value.metadata,
+  }
+}
+
+function decodeSearchQueryRevealResult(
+  value: unknown,
+): SearchQueryRevealResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.activityId) ||
+    !['AVAILABLE', 'RETENTION_EXPIRED', 'KEY_UNAVAILABLE'].includes(
+      String(value.state),
+    ) ||
+    !isNullableString(value.rawQuery) ||
+    !isNullableString(value.keyVersion) ||
+    (value.revealedAt !== null && !isTimestamp(value.revealedAt))
+  ) {
+    return undefined
+  }
+  return {
+    activityId: value.activityId,
+    state: value.state as SearchQueryRevealResult['state'],
+    rawQuery: value.rawQuery,
+    keyVersion: value.keyVersion,
+    revealedAt: value.revealedAt,
+  }
+}
+
+function decodeAuditExportJob(value: unknown): AuditExportJob | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    value.status !== 'REQUESTED' ||
+    !isTimestamp(value.createdAt) ||
+    !['CSV', 'JSONL'].includes(String(value.format)) ||
+    !Array.isArray(value.fields) ||
+    !value.fields.every(isNonBlankString) ||
+    !isRecord(value.artifact) ||
+    value.artifact.state !== 'NOT_CREATED' ||
+    value.artifact.generationAvailable !== false
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    status: 'REQUESTED',
+    createdAt: value.createdAt,
+    format: value.format as AuditExportJob['format'],
+    fields: value.fields,
+    artifact: { state: 'NOT_CREATED', generationAvailable: false },
+  }
+}
+
+function appendAuditFilters(
+  search: URLSearchParams,
+  filters: AuditActivityFilters,
+) {
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') search.set(key, String(value))
+  })
+}
+
+export async function listAuditActivities(
+  filters: AuditActivityFilters,
+  cursor: string | null,
+  interactionId: string,
+): Promise<AuditActivityPage> {
+  const search = new URLSearchParams()
+  appendAuditFilters(search, filters)
+  if (cursor) search.set('cursor', cursor)
+  const response = await staffFetch(`/api/v1/audit/activities?${search}`, {
+    headers: { 'X-Interaction-Id': interactionId },
+  })
+  const decoded = decodeAuditActivityPage(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function getAuditActivity(
+  activityId: string,
+  interactionId: string,
+): Promise<AuditActivityDetail> {
+  const response = await staffFetch(
+    `/api/v1/audit/activities/${encodeURIComponent(activityId)}`,
+    { headers: { 'X-Interaction-Id': interactionId } },
+  )
+  const decoded = decodeAuditActivityDetail(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function revealAuditSearchQuery(
+  activityId: string,
+  reason: string,
+  interactionId: string,
+): Promise<SearchQueryRevealResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/audit/activities/${encodeURIComponent(activityId)}/search-query-reveal`,
+    'POST',
+    { reason },
+    { 'X-Interaction-Id': interactionId },
+  )
+  const decoded = decodeSearchQueryRevealResult(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createAuditExport(
+  input: CreateAuditExportInput,
+  interactionId: string,
+): Promise<AuditExportJob> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/audit/exports',
+    'POST',
+    input,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const decoded = decodeAuditExportJob(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function rebuildAuditProjection(
+  interactionId: string,
+): Promise<AuditProjectionRebuildResult> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/audit/projection/rebuild',
+    'POST',
+    undefined,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const body = await checkedBody(response)
+  if (!isRecord(body)) throw malformedSuccess(response)
+  const projection = decodeAuditProjectionStatus(body.projection)
+  if (
+    !projection ||
+    ![
+      'ticketChangeCount',
+      'accessSearchCount',
+      'adminSecurityCount',
+      'totalCount',
+    ].every(
+      (key) =>
+        typeof body[key] === 'number' &&
+        Number.isSafeInteger(body[key]) &&
+        (body[key] as number) >= 0,
+    ) ||
+    !isTimestamp(body.completedAt)
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    ticketChangeCount: body.ticketChangeCount as number,
+    accessSearchCount: body.accessSearchCount as number,
+    adminSecurityCount: body.adminSecurityCount as number,
+    totalCount: body.totalCount as number,
+    completedAt: body.completedAt,
+    projection,
+  }
 }

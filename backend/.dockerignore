@@ -1,4 +1,11 @@
 .gradle
+.gradle-user-home
+.kotlin
+.env
+.env.*
 build
+bin
 .idea
+.DS_Store
 *.iml
+*.local

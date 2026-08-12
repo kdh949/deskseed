@@ -27,6 +27,19 @@ data class StaffTicketListFilter(
     val priority: TicketPriority? = null,
     val groupId: UUID? = null,
     val assignee: String? = null,
+    val slaState: StaffSlaDisplayState? = null,
+)
+
+data class StaffTicketSearchFilter(
+    val status: TicketStatus? = null,
+    val priority: TicketPriority? = null,
+    val groupId: UUID? = null,
+    val assignee: String? = null,
+)
+
+data class StaffTicketSearchResult(
+    val items: List<StaffTicketSummary>,
+    val resultCount: Long,
 )
 
 data class StaffTicketCursor(
@@ -57,6 +70,26 @@ data class StaffTicketSummary(
     val version: Long,
     val isChild: Boolean,
     val openChildCount: Int = 0,
+    val sla: StaffSlaBadge? = null,
+)
+
+enum class StaffSlaDisplayState {
+    ACTIVE,
+    AT_RISK,
+    PAUSED,
+    ACHIEVED,
+    BREACHED,
+    CANCELLED,
+    NO_POLICY,
+}
+
+data class StaffSlaBadge(
+    val metric: String = "FIRST_REPLY",
+    val state: StaffSlaDisplayState,
+    val dueAt: Instant?,
+    val targetMinutes: Long?,
+    val policyVersion: Int?,
+    val scheduleVersion: Int?,
 )
 
 data class StaffCommentView(
@@ -84,8 +117,10 @@ data class StaffTicketHistoryItem(
 data class StaffTicketDetail(
     val ticket: StaffTicketSummary,
     val comments: List<StaffCommentView>,
-    val customer: StaffTicketCustomer,
+    val customer: StaffTicketCustomer?,
     val history: List<StaffTicketHistoryItem>,
+    val parent: StaffTicketSummary?,
+    val children: List<StaffTicketSummary>,
 )
 
 interface StaffTicketReadStore {
@@ -99,4 +134,14 @@ interface StaffTicketReadStore {
     ): List<StaffTicketSummary>
 
     fun findDetail(ticketNumber: Long): StaffTicketDetail?
+
+    fun search(
+        query: String,
+        scope: StaffTicketReadScope,
+        actorId: UUID,
+        filters: StaffTicketSearchFilter,
+        limit: Int,
+    ): StaffTicketSearchResult
+
+    fun hasRelationReadGrant(ticketId: UUID, actorId: UUID): Boolean
 }

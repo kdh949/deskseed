@@ -98,11 +98,28 @@ frontend/e2e/__screenshots__/
 
 baseline 변경 통제:
 
-1. fixture/mock browser suite는 Vite development server에서 `npm run test:e2e:dev`로 실행한다. production Compose suite는 `npm run test:e2e:stack`으로 `customer-request.full-stack.spec.ts`만 실행한다. 두 suite는 별도 CI job이며 snapshot을 쓰지 않는다.
-2. 의도한 UI 변경은 실패 diff와 실제 화면을 먼저 확인한 뒤에만 `npx playwright test e2e/frontend-system.spec.ts --update-snapshots=all`로 갱신한다.
-3. Darwin과 Linux 이미지는 각 플랫폼의 동일 Playwright 버전에서 생성한다. 한 플랫폼 이미지를 다른 플랫폼 폴더로 복사하지 않는다.
-4. PR은 변경 이유와 대표 before/after를 설명하고, 무관한 baseline 변경을 포함하지 않는다.
-5. 사람의 화면 검토 없이 대량 snapshot 갱신을 승인하지 않는다.
+1. clean checkout에서는 `cd frontend && npm ci && npx playwright install chromium firefox webkit`으로 세 browser binary를 설치한다. Linux가 system dependency까지 필요하면 Playwright가 지원하는 환경에서 `npx playwright install --with-deps chromium firefox webkit`을 사용한다.
+2. fixture/mock browser suite는 Vite development server에서 아래 세 명령으로 각각 실행한다. production Compose suite는 `npm run test:e2e:stack`으로 `customer-request.full-stack.spec.ts`만 실행한다. 두 suite는 별도 CI job이며 production Compose suite는 snapshot을 쓰지 않는다.
+
+   ```bash
+   PLAYWRIGHT_BROWSER=chromium npm run test:e2e:dev
+   PLAYWRIGHT_BROWSER=firefox npm run test:e2e:dev
+   PLAYWRIGHT_BROWSER=webkit npm run test:e2e:dev
+   ```
+
+3. 의도한 UI 변경은 실패 diff와 실제 화면을 먼저 확인한 뒤에만 `PLAYWRIGHT_BROWSER=chromium npm run test:e2e:update`로 전체 7-spec Chromium baseline을 갱신한다. 이 명령은 현재 platform의 42장을 모두 생성하며, 일부 spec만 갱신하는 명령을 release baseline 생성 명령으로 사용하지 않는다.
+4. Darwin과 Linux 이미지는 각 플랫폼의 동일 Playwright 버전에서 생성한다. 한 플랫폼 이미지를 다른 플랫폼 폴더로 복사하지 않는다.
+5. PR은 변경 이유와 대표 before/after를 설명하고, 무관한 baseline 변경을 포함하지 않는다.
+6. 사람의 화면 검토 없이 대량 snapshot 갱신을 승인하지 않는다.
+
+Firefox/WebKit release smoke는 동일한 기능·axe·keyboard assertions를 실행하지만 Chromium pixel baseline을 재사용하지 않는다. `playwright.config.ts`는 이 두 project에서 snapshot 비교를 명시적으로 비활성화하고, Chromium만 platform별 pixel baseline의 source of truth로 둔다.
+
+Playwright 1.62 WebKit은 이 저장소의 41개 test를 한 browser process에서 순서대로
+실행할 때 37개 이후 다음 navigation이 응답 없이 멈추는 engine-process lifetime
+문제가 재현된다. `scripts/run-frontend-browser-e2e.sh`는 WebKit에서만 동일한 41개를
+35개와 6개의 두 fresh Playwright process로 나눈다. retry와 skip은 여전히 0이며,
+두 process 중 하나라도 실패하면 명령 전체가 실패한다. Chromium과 Firefox는 한
+process에서 전체 suite를 실행한다.
 
 ## 8. Component stories
 

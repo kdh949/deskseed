@@ -109,6 +109,13 @@ scope/resource constraint summary
 last-used metadata
 ```
 
+Platform idempotency rows store a SHA-256 key representation and canonical request hash, never the raw `Idempotency-Key` or Authorization
+value. Exact replay requires a bounded response copy, which can contain ticket subject or an INTERNAL comment response; it receives the
+7-day default expiry and is not exposed through a retrieval/list endpoint. An expiry-indexed cleanup job deletes at most 500 rows per run by
+default. Final receipts are eligible at expiry; `IN_PROGRESS` rows are eligible only after a separate one-hour abandonment grace. Deleted
+count, oldest expired backlog age, and cleanup failures are metrics without request or response content. Canonical ticket/comment retention
+remains separately governed.
+
 ## 7. IP addresses and user agents
 
 These help security investigation but are personal/behavioral data.
@@ -133,6 +140,8 @@ Retention job:
 7. emits `RETENTION_JOB_EXECUTED`
 
 The normal application role cannot call arbitrary audit delete APIs.
+
+The first access/search slice realizes this policy for `search_audit_query_ciphertexts`: each row receives an immutable `expires_at` when it is written (30 days by default), and a bounded `FOR UPDATE SKIP LOCKED` job deletes only expired ciphertext rows. Canonical `AccessAuditEvent` and redacted/fingerprint metadata remain intact. Each batch appends `RETENTION_JOB_EXECUTED` to the existing admin/security ledger in the same transaction; if that audit insert fails, the deletion rolls back. No public or staff CRUD endpoint exposes ciphertext deletion.
 
 ## 9. Backup and replicas
 
@@ -174,8 +183,9 @@ Before adding a field to audit/event/export:
 
 ## 11.1 Required startup and failure behavior
 
-- `audit.access.enabled=true` requires a configured search-query encryption key.
+- `audit.access.enabled=true` requires both a configured search-query encryption key and a separate 32-byte session-fingerprint key.
 - key absence, invalid size, or unknown active key version fails startup/readiness.
+- session-fingerprint key rotation is independent from ciphertext key rotation; the stored fingerprint is fixed-size and contains neither the session ID nor encryption key version.
 - encryption failure fails the protected search request; it does not return results without the canonical audit.
 - decryption failure returns no plaintext and creates a security event.
 

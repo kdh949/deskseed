@@ -217,6 +217,9 @@ The following create events with actor/filter/resource/outcome:
 - delete/recreate test AuditActivityProjection.
 - rebuild from canonical ledgers.
 - counts and sampled records match.
+- staff display/ticket group mutation after canonical write does not change historical projection snapshots.
+- concurrent canonical writer and rebuild share a lock protocol and converge without duplicate or missing rows.
+- list status reads stored projection count rather than executing a full exact count per request.
 - canonical writes remain available while projection recovery policy is exercised.
 
 ### AUD-006 — Tamper evidence baseline
@@ -930,7 +933,8 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 
 ### SEARCH-AUD-001 — Required encrypted original query
 
-- every successful `SEARCH_EXECUTED` event stores redacted query, keyed fingerprint, authenticated ciphertext and key version.
+- every successful `SEARCH_EXECUTED` event stores the input-independent `[PROTECTED]` routine marker, keyed fingerprint, authenticated ciphertext and key version.
+- migration and DB constraints scrub/reject content-derived routine query representations in both canonical detail and rebuildable projection.
 - no plaintext query column, log, trace, metric, cache, ordinary export or webhook payload exists.
 - missing/invalid active encryption key fails startup/readiness when access audit is enabled.
 

@@ -74,7 +74,8 @@ Ticket이 책임지는 규칙:
 
 - 익명 Customer는 이메일이 검증되지 않은 프로필이다.
 - Customer와 인증 자격을 분리하여 나중에 계정·SSO·magic link를 추가한다.
-- 같은 이메일을 입력했다는 이유만으로 기존 티켓 접근권한을 주지 않는다.
+- 같은 미검증 이메일을 입력해도 문의마다 별도 Customer를 만들고 기존 프로필을 갱신하거나 자동 연결하지 않는다.
+- 검증된 이메일만 유일하며, 같은 이메일을 입력했다는 이유만으로 기존 티켓 접근권한을 주지 않는다.
 - 외부 회원 ID는 Customer 자체의 primary identity가 아니라 `ExternalIdentity` 또는 `ExternalReference`로 연결한다.
 
 ### Staff and Group aggregates

@@ -1,19 +1,24 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.audit.AccessAuditOutcome
+import dev.deskseed.audit.AccessAuditProtectionException
+import dev.deskseed.audit.AccessAuditSessionFingerprint
 import dev.deskseed.audit.AccessAuditWriter
+import dev.deskseed.audit.SearchResultOpenedAccessAudit
 import dev.deskseed.audit.TicketResourceReadAccessAudit
 import dev.deskseed.audit.TicketViewAccessAudit
-import dev.deskseed.foundation.ActorType
-import dev.deskseed.foundation.RequestSource
+import dev.deskseed.organization.TicketAssignmentCatalog
+import dev.deskseed.organization.TicketAssignmentGroupOption
 import dev.deskseed.ticketing.DefaultStaffView
 import dev.deskseed.ticketing.StaffTicketDetail
 import dev.deskseed.ticketing.StaffTicketListFilter
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSummary
+import dev.deskseed.ticketing.TicketStatus
 import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Duration
@@ -28,6 +33,7 @@ internal enum class AgentReadIntent {
 internal data class AgentReadRequestContext(
     val requestId: String,
     val correlationId: String,
+    val sessionId: String,
     val ipAddress: String?,
     val userAgent: String?,
 )
@@ -45,11 +51,30 @@ internal data class AgentTicketPage(
     val nextCursor: String?,
 )
 
+internal data class AgentTicketWorkspaceDetail(
+    val detail: StaffTicketDetail,
+    val capabilities: List<String>,
+    val assignmentOptions: List<TicketAssignmentGroupOption>,
+)
+
+@Component
+internal class AgentTicketReadAuthorizationPolicy {
+    fun canRead(
+        scope: StaffTicketReadScope,
+        directGrant: Boolean,
+        relationGrant: Boolean,
+    ): Boolean = scope == StaffTicketReadScope.ALL_TICKETS || directGrant || relationGrant
+}
+
 @Service
 internal class AgentTicketReadApplicationService(
     private val ticketStore: StaffTicketReadStore,
     private val accessAuditWriter: AccessAuditWriter,
+    private val sessionFingerprint: AccessAuditSessionFingerprint,
     private val cursorCodec: AgentTicketCursorCodec,
+    private val assignmentCatalog: TicketAssignmentCatalog,
+    private val writeAuthorizationPolicy: GroupOrAssigneeTicketWriteAuthorizationPolicy,
+    private val readAuthorizationPolicy: AgentTicketReadAuthorizationPolicy,
     private val clock: Clock,
 ) {
     val readScope: StaffTicketReadScope = StaffTicketReadScope.ALL_TICKETS
@@ -102,25 +127,45 @@ internal class AgentTicketReadApplicationService(
         ticketNumber: Long,
         interactionId: UUID,
         intent: AgentReadIntent,
+        originSearchEventId: UUID?,
         context: AgentReadRequestContext,
-    ): StaffTicketDetail {
+    ): AgentTicketWorkspaceDetail {
         requireActiveStaffRead(principal)
         val detail = ticketStore.findDetail(ticketNumber) ?: throw AgentTicketNotFoundException()
+        val directGrant = writeAuthorizationPolicy.canUpdate(
+            principal = principal,
+            currentGroupId = detail.ticket.group?.id,
+            currentAssigneeId = detail.ticket.assignee?.id,
+        )
+        val relationGrant = readScope != StaffTicketReadScope.ALL_TICKETS &&
+            ticketStore.hasRelationReadGrant(detail.ticket.id, principal.id)
+        if (!readAuthorizationPolicy.canRead(readScope, directGrant, relationGrant)) {
+            throw AgentTicketNotFoundException()
+        }
         try {
             val occurredAt = Instant.now(clock)
+            val auditContext = context.toAccessAuditContext(
+                principal,
+                sessionFingerprint.fingerprint(context.sessionId),
+            )
+            if (originSearchEventId != null && (
+                    intent != AgentReadIntent.NAVIGATION ||
+                        !accessAuditWriter.isValidSearchOrigin(
+                            originSearchEventId,
+                            principal.id,
+                            auditContext.sessionFingerprint!!,
+                            detail.ticket.id,
+                        )
+                    )
+            ) {
+                throw InvalidSearchOriginException()
+            }
             accessAuditWriter.appendTicketResourceRead(
                 TicketResourceReadAccessAudit(
-                    actorType = ActorType.STAFF,
-                    actorId = principal.id,
-                    actorDisplaySnapshot = principal.displayName,
-                    source = RequestSource.AGENT_UI,
+                    context = auditContext,
                     ticketId = detail.ticket.id,
                     ticketNumber = detail.ticket.ticketNumber,
                     interactionId = interactionId,
-                    requestId = context.requestId,
-                    correlationId = context.correlationId,
-                    ipAddress = context.ipAddress,
-                    userAgent = context.userAgent,
                     outcome = AccessAuditOutcome.SUCCEEDED,
                     httpStatus = 200,
                     occurredAt = occurredAt,
@@ -129,27 +174,42 @@ internal class AgentTicketReadApplicationService(
             if (intent == AgentReadIntent.NAVIGATION) {
                 accessAuditWriter.appendTicketViewed(
                     TicketViewAccessAudit(
-                        actorType = ActorType.STAFF,
-                        actorId = principal.id,
-                        actorDisplaySnapshot = principal.displayName,
-                        source = RequestSource.AGENT_UI,
+                        context = auditContext,
                         ticketId = detail.ticket.id,
                         ticketNumber = detail.ticket.ticketNumber,
                         interactionId = interactionId,
-                        requestId = context.requestId,
-                        correlationId = context.correlationId,
-                        ipAddress = context.ipAddress,
-                        userAgent = context.userAgent,
+                        originSearchEventId = originSearchEventId,
                         outcome = AccessAuditOutcome.SUCCEEDED,
                         httpStatus = 200,
                         occurredAt = occurredAt,
                     ),
                 )
+                if (originSearchEventId != null) {
+                    accessAuditWriter.appendSearchResultOpened(
+                        SearchResultOpenedAccessAudit(
+                            context = auditContext,
+                            ticketId = detail.ticket.id,
+                            ticketNumber = detail.ticket.ticketNumber,
+                            interactionId = interactionId,
+                            originSearchEventId = originSearchEventId,
+                            outcome = AccessAuditOutcome.SUCCEEDED,
+                            httpStatus = 200,
+                            occurredAt = occurredAt,
+                        ),
+                    )
+                }
             }
         } catch (exception: DataAccessException) {
             throw AccessAuditUnavailableException(exception)
+        } catch (exception: AccessAuditProtectionException) {
+            throw AccessAuditUnavailableException(exception)
         }
-        return detail
+        val canUpdate = detail.ticket.status != TicketStatus.CLOSED && directGrant
+        return AgentTicketWorkspaceDetail(
+            detail = detail,
+            capabilities = if (canUpdate) listOf("READ", "UPDATE") else listOf("READ"),
+            assignmentOptions = assignmentCatalog.listActiveGroups(),
+        )
     }
 
     private fun requireActiveStaffRead(principal: StaffPrincipal) {
@@ -165,5 +225,7 @@ internal class AgentTicketReadApplicationService(
 }
 
 internal class AgentTicketNotFoundException : RuntimeException()
+
+internal class InvalidSearchOriginException : RuntimeException()
 
 internal class AccessAuditUnavailableException(cause: Throwable) : RuntimeException(cause)
