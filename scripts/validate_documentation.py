@@ -51,7 +51,7 @@ REQUIRED_CHECKLISTS = {
 }
 EXPECTED_DOC_NUMBERS = set(range(0, 55))
 EXPECTED_TASK_NUMBERS = set(range(0, 26))
-EXPECTED_ADR_NUMBERS = set(range(1, 36))
+EXPECTED_ADR_NUMBERS = set(range(1, 37))
 # This is an onboarding brief that precedes the canonical 00-19 delivery
 # sequence. It intentionally shares the bootstrap number but is not a release
 # task in the contiguous task register.
@@ -196,7 +196,7 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
     if set(task_numbers) != EXPECTED_TASK_NUMBERS:
         errors.append(f"Task briefs must be contiguous 00-25; missing={sorted(EXPECTED_TASK_NUMBERS-set(task_numbers))}, extra={sorted(set(task_numbers)-EXPECTED_TASK_NUMBERS)}")
     if set(adr_numbers) != EXPECTED_ADR_NUMBERS:
-        errors.append(f"ADRs must be contiguous 0001-0034; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
+        errors.append(f"ADRs must be contiguous 0001-0036; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
     counts.update(canonical_docs=len(docs_numbers), task_briefs=len(task_numbers), adr_files=len(adr_numbers))
 
     md_files = all_files("**/*.md")
@@ -313,6 +313,130 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
         errors.append(f"Core OpenAPI references undefined requirement: {missing}")
     counts["core_api_requirement_links"] = len(api_req_refs)
 
+    actor_policy = core_api.get("x-deskseed-staff-actor-consistency") or {}
+    declared_blueprint_actor_operations = {
+        str(item) for item in actor_policy.get("blueprintOnlyOperationIds", [])
+    }
+    actual_blueprint_actor_operations: set[str] = set()
+    bound_actor_operations: set[str] = set()
+    csrf_bound_operations: set[str] = set()
+    dual_use_actor_operations: set[str] = set()
+
+    def local_refs(value: Any) -> set[str]:
+        refs: set[str] = set()
+        pending = [value]
+        resolved: set[str] = set()
+        while pending:
+            current = pending.pop()
+            for node in walk(current):
+                if not isinstance(node, dict):
+                    continue
+                pointer = node.get("$ref")
+                if not isinstance(pointer, str) or not pointer.startswith("#/"):
+                    continue
+                refs.add(pointer)
+                if pointer in resolved:
+                    continue
+                resolved.add(pointer)
+                try:
+                    pending.append(resolve_pointer(core_api, pointer))
+                except Exception:
+                    # The generic OpenAPI pass reports the unresolved reference.
+                    pass
+        return refs
+
+    for route, path_item in (core_api.get("paths") or {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            method_lower = str(method).lower()
+            if method_lower not in {"get", "post", "put", "patch", "delete", "head", "options", "trace"}:
+                continue
+            if not isinstance(operation, dict):
+                continue
+            security = operation.get("security") or []
+            uses_staff_session = any(
+                isinstance(requirement, dict) and "staffSession" in requirement
+                for requirement in security
+            )
+            operation_id = str(operation.get("operationId", ""))
+            is_dual_use_staff_csrf = operation_id == "getStaffCsrfToken"
+            if not uses_staff_session and not is_dual_use_staff_csrf:
+                continue
+            if operation_id in declared_blueprint_actor_operations:
+                actual_blueprint_actor_operations.add(operation_id)
+                if operation.get("x-deskseed-contract-status") == "FROZEN":
+                    errors.append(
+                        f"Blueprint-only staff operation is marked FROZEN: {operation_id}"
+                    )
+                continue
+
+            if operation.get("x-deskseed-contract-status") != "FROZEN":
+                errors.append(
+                    f"Implemented staff operation lacks FROZEN status: {operation_id}"
+                )
+
+            parameter_refs = [
+                parameter.get("$ref")
+                for parameter in operation.get("parameters", [])
+                if isinstance(parameter, dict)
+            ]
+            expected_actor_ref = "#/components/parameters/ExpectedStaffActorHeader"
+            if parameter_refs.count(expected_actor_ref) != 1:
+                errors.append(
+                    f"FROZEN staff operation must bind expected-actor header exactly once: "
+                    f"{method_lower.upper()} {route} ({operation_id})"
+                )
+
+            responses = operation.get("responses") or {}
+            invalid_actor_refs = local_refs(responses.get("400", {}))
+            mismatch_refs = local_refs(responses.get("409", {}))
+            if "#/components/schemas/InvalidExpectedStaffActorProblem" not in invalid_actor_refs:
+                errors.append(
+                    f"FROZEN staff operation lacks invalid-actor 400 contract: {operation_id}"
+                )
+            if "#/components/schemas/StaffSessionActorMismatchProblem" not in mismatch_refs:
+                errors.append(
+                    f"FROZEN staff operation lacks actor-mismatch 409 contract: {operation_id}"
+                )
+
+            if uses_staff_session and method_lower in {"post", "put", "patch", "delete"}:
+                csrf_ref = "#/components/parameters/CsrfHeader"
+                if parameter_refs.count(csrf_ref) != 1:
+                    errors.append(
+                        f"FROZEN unsafe staff operation must bind CSRF header exactly once: "
+                        f"{method_lower.upper()} {route} ({operation_id})"
+                    )
+                else:
+                    csrf_bound_operations.add(operation_id)
+            elif method_lower in {"get", "head", "options", "trace"}:
+                csrf_ref = "#/components/parameters/CsrfHeader"
+                if csrf_ref in parameter_refs:
+                    errors.append(
+                        f"Safe staff operation must not require CSRF header: "
+                        f"{method_lower.upper()} {route} ({operation_id})"
+                    )
+            if uses_staff_session:
+                bound_actor_operations.add(operation_id)
+            else:
+                dual_use_actor_operations.add(operation_id)
+
+    if actual_blueprint_actor_operations != declared_blueprint_actor_operations:
+        errors.append(
+            "Staff actor blueprint operation list mismatch: "
+            f"declared={sorted(declared_blueprint_actor_operations)}, "
+            f"actual={sorted(actual_blueprint_actor_operations)}"
+        )
+    counts["staff_actor_bound_operations"] = len(bound_actor_operations)
+    counts["staff_actor_blueprint_operations"] = len(actual_blueprint_actor_operations)
+    counts["staff_csrf_bound_operations"] = len(csrf_bound_operations)
+    counts["dual_use_actor_bound_operations"] = len(dual_use_actor_operations)
+    if dual_use_actor_operations != {"getStaffCsrfToken"}:
+        errors.append(
+            "Dual-use staff actor operation binding mismatch: "
+            f"{sorted(dual_use_actor_operations)}"
+        )
+
     schema_doc = (ROOT / "docs/32-database-schema-and-index-blueprint.md").read_text(encoding="utf-8")
     ticket_match = re.search(r"### tickets\n(?P<body>.*?)(?:\n### |\n## 4\.)", schema_doc, re.DOTALL)
     if not ticket_match:
@@ -392,10 +516,10 @@ def write_report(errors: list[str], warnings: list[str], counts: dict[str, int])
         "",
         "## Validated",
         "",
-        "- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0034 are present and unique.",
+        "- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0036 are present and unique.",
         "- Markdown fenced-code balance and relative Markdown links.",
         "- JSON/YAML parsing and Draft 2020-12 JSON Schema validity.",
-        "- OpenAPI 3.1 operation IDs and local `$ref` resolution.",
+        "- OpenAPI 3.1 operation IDs, local `$ref` resolution, and FROZEN staff expected-actor/CSRF/error bindings.",
         "- Requirement, decision, verification-gate, task, document, and ADR identifiers.",
         "- Requirement links from Core OpenAPI.",
         "- Ticket body as first PUBLIC comment and no Ticket.description field.",

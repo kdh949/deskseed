@@ -14,9 +14,10 @@ seed-verify:
 
 docs-check:
 	python3 scripts/validate_documentation.py --write
-	git diff --exit-code -- VALIDATION-REPORT.md
+	git diff --exit-code -- VALIDATION-REPORT.md FILE-MANIFEST.txt
 
 compose-smoke:
+	bash scripts/test-e2e-compose-ownership.sh
 	bash scripts/compose-smoke.sh
 
 demo:
