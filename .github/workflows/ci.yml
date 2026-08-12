@@ -56,6 +56,9 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint
+      - name: Design system boundaries
+        working-directory: frontend
+        run: npm run check:design-system-boundaries
       - name: Typecheck
         working-directory: frontend
         run: npm run typecheck

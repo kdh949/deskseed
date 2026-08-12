@@ -107,6 +107,7 @@
 - `docs/39-api-contract-freeze-plan.md`
 
 Frontend changes must also read `docs/28~31`, `docs/40`, and `docs/51`.
+Work under `frontend/` must also follow `frontend/AGENTS.md`.
 
 Post-MVP changes must read the matching detailed specification under `docs/44~49`, `docs/52`, and `docs/50-codex-implementation-runbook.md`.
 
@@ -118,6 +119,20 @@ Post-MVP changes must read the matching detailed specification under `docs/44~49
 - Every screen implements loading, empty, error, denied, and stale/conflict states as applicable.
 - No color-only state. Keyboard and focus behavior are release gates.
 - Do not invent API endpoints from UI code. Update/freeze the OpenAPI contract first.
+
+## Frontend Storybook MCP
+
+`frontend/` is the frontend package, Storybook working directory, and location of the `deskseed-design-proj` MCP configuration (`frontend/.mcp.json`). Run frontend and Storybook commands from this directory, and use it as the workspace root when project-local MCP discovery is required.
+
+For UI work, treat the `deskseed-design-proj` documentation tools as the source of truth for documented design-system contracts:
+
+1. Call `list-all-documentation` once at the start of each UI task.
+2. Before creating or editing components or stories, changing rendered UI, or running story tests, call `get-storybook-story-instructions` and follow its current output.
+3. Before relying on an existing design-system component's props, API, or usage, call `get-documentation` using an ID returned by `list-all-documentation`. Use `get-documentation-for-story` when a specific variant needs more detail. Never infer props from names, source code, or type definitions.
+4. If a required capability is undocumented, use a documented composition or, when authorized by the task, add a reusable public API under `frontend/src/design-system/` with Storybook documentation. Ask the user only when a product or visual-design decision remains unresolved.
+5. After component, story, or rendered-UI changes, run focused `run-story-tests`. After visual changes, also call `get-changed-stories` and preview relevant stories with `preview-stories`. Run the full story-test suite when impact is broad or unclear, and include returned preview URLs in the handoff. Package scripts do not substitute for `run-story-tests`.
+
+If the MCP tools are unavailable, do not guess component contracts or claim Storybook verification passed; report the verification gap.
 
 ## Requirement traceability
 

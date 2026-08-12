@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
+    "check:design-system-boundaries": "node scripts/check-design-system-boundaries.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:dev": "playwright test agent-views-workspace.spec.ts customer-request.spec.ts frontend-system.spec.ts staff-auth-admin.spec.ts ticket-workspace.spec.ts",
