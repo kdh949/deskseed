@@ -47,11 +47,54 @@ management:
       probes:
         enabled: true
 
+springdoc:
+  api-docs:
+    enabled: ${DESKSEED_API_DOCS_ENABLED:true}
+
+scalar:
+  enabled: ${DESKSEED_API_DOCS_ENABLED:true}
+  path: /docs/api
+  url: /api-docs/specs/core-api-outline-v1.yaml
+  page-title: Deskseed API 문서
+  layout: modern
+  show-sidebar: true
+  hide-models: false
+  hide-search: false
+  hide-test-request-button: false
+  hide-client-button: false
+  with-default-fonts: false
+  persist-auth: false
+  telemetry: false
+  show-operation-id: true
+  operation-title-source: summary
+  document-download-type: yaml
+  agent:
+    disabled: true
+  sources:
+    - url: /api-docs/specs/core-api-outline-v1.yaml
+      title: Deskseed Core API
+      slug: core
+      is-default: true
+      agent:
+        disabled: true
+    - url: /api-docs/specs/customer-identity-api-v1.yaml
+      title: Deskseed Customer Identity API
+      slug: customer-identity
+      agent:
+        disabled: true
+    - url: /api-docs/specs/platform-api-outline-v1.yaml
+      title: Deskseed Platform API
+      slug: platform
+      agent:
+        disabled: true
+
 logging:
   pattern:
     level: "%5p [requestId:%X{requestId:-}]"
 
 deskseed:
+  api-docs:
+    require-admin: false
   platform:
     network:
       # Production must set both values. Empty values use loopback/RFC1918 development defaults outside prod.
