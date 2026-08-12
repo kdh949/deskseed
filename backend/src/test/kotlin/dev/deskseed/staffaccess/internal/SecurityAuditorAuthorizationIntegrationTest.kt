@@ -14,8 +14,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.testcontainers.junit.jupiter.Container
@@ -43,6 +45,27 @@ class SecurityAuditorAuthorizationIntegrationTest {
         jdbcTemplate.update("delete from support_groups")
         jdbcTemplate.update("delete from staff_login_throttles")
         jdbcTemplate.update("delete from staff_accounts")
+    }
+
+    @Test
+    fun `allowed browser origin can preflight high risk audit authority grants`() {
+        mockMvc.perform(
+            options("/api/v1/admin/staff/${UUID.randomUUID()}/audit-authorities/AUDIT_SEARCH_QUERY_REVEAL")
+                .header("Origin", "http://localhost:5173")
+                .header("Access-Control-Request-Method", "PUT")
+                .header(
+                    "Access-Control-Request-Headers",
+                    "X-CSRF-TOKEN, X-Deskseed-Expected-Staff-Id",
+                ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
+            .andExpect(
+                header().string(
+                    "Access-Control-Allow-Methods",
+                    org.hamcrest.Matchers.containsString("PUT"),
+                ),
+            )
     }
 
     @Test
