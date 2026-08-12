@@ -11,6 +11,8 @@
 - `PROVISIONAL`: 운영·법률·보안 정책의 최종 결정이 필요하다.
 - `DEFERRED`: 의도적으로 뒤 단계에 배치했다.
 
+ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도를 뜻한다. 현재 React route 제공 여부는 별도이며, Customer/Admin/Audit/Search/Integration/SLA 및 ticket mutation 화면은 `docs/55-frontend-capability-recomposition-matrix.md`에서 `DEFERRED_UI` 또는 `FIXTURE_ONLY`로 추적한다. 이미 완료된 서버 요구사항을 UI가 없다는 이유로 미완료로 되돌리지 않는다.
+
 ## 2. 제품·배포·기술 요구사항
 
 | ID | 요구사항 | 상태 | 구현 단계 | 기준 문서 | 완료 증거 |
@@ -31,7 +33,7 @@
 | REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session 또는 browser expected-actor 불일치는 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 25, 30, 31, 33, 35 ADR, 39, 52 | `StaffAuthIntegrationTest`의 invalid/mismatch·activity/controller/mutation/audit 비진입, `client.test.ts`의 held-CSRF actor snapshot, `StaffSessionContext.test.tsx`의 교차 탭 owner 보존, `staff-auth-admin.spec.ts` |
 | REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
 | REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | `AgentTicketReadIntegrationTest`의 cross-group queue/direct URL 및 inactive/customer 거부; 검색은 후속 |
-| REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR | `AdminOrganizationIntegrationTest`, direct URL E2E |
+| REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR, 39 ADR, 55 | `AdminOrganizationIntegrationTest`; UI는 `DEFERRED_UI`, 제거 경로는 canonical 404 E2E |
 
 ## 3. 고객 문의와 티켓 처리
 
@@ -39,19 +41,19 @@
 |---|---|---:|---|---|---|
 | REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
 | REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부와 `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
-| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37 | `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection과 portal Playwright E2E |
-| REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | `CustomerAccessModeIntegrationTest` submit/view 행렬·optimistic conflict·감사 원자성 및 ADMIN UI E2E |
-| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox와 portal E2E |
+| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37, 39 ADR, 55 | `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection, `customerPortalClient.test.ts`; UI는 `DEFERRED_UI` |
+| REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53, 55 | `CustomerAccessModeIntegrationTest` submit/view 행렬·optimistic conflict·감사 원자성, `customerAuthClient.test.ts`; UI는 `DEFERRED_UI` |
+| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53, 55 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox, headless customer clients; UI는 `DEFERRED_UI` |
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
-| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`, `customer-request.full-stack.spec.ts`의 실제 PUBLIC/INTERNAL 저장 회귀 |
-| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002, `customer-request.full-stack.spec.ts`의 PUBLIC 노출·INTERNAL 비노출 E2E |
-| REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39 | Agent create E2E |
-| REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트, `AgentTicketWorkspacePage.test.tsx`의 통합 command body 회귀 |
+| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33, 55 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`, Workspace projection/Storybook의 PUBLIC/INTERNAL 구분 |
+| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37, 55 | 고객 API PUBLIC-only integration test와 `customerPortalClient.test.ts`; UI는 `DEFERRED_UI` |
+| REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39, 55 | `AgentTicketCommandIntegrationTest`; create UI는 `DEFERRED_UI` |
+| REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34, 55 | transition/permission integration tests, `ticketEditorModel.test.ts`; 운영 Workspace는 읽기 전용 |
 | REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34, ADR 0038 | `TransferChildTicketIntegrationTest`의 active group/member 거부·원자적 rollback 및 `OrganizationConcurrencyIntegrationTest`의 ticket assignment/group disable 공유 잠금 |
-| REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34 | `TransferChildTicketIntegrationTest`, `transfer-child-ticket.spec.ts`, full-stack transfer E2E |
+| REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34, 55 | `TransferChildTicketIntegrationTest`; UI는 `FIXTURE_ONLY`/후속 재조합 |
 | REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketCommandIntegrationTest`의 exact/misuse/concurrent replay와 `AgentTicketWorkspacePage.test.tsx`의 persisted command-ID retry·exact `changedFields`·comment 통합 요청 |
-| REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34 | TKT-006, `ticket-composer-conflict.spec.ts`의 두 browser context same-field/non-overlap E2E |
-| REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31 | `ticket-command-conflict-preserves-drafts.png`, banner focus·request ID·draft 보존 E2E |
+| REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34, 55 | `AgentTicketCommandIntegrationTest`, `ticketEditorModel.test.ts`, Workspace conflict Storybook; 운영 mutation UI는 `FIXTURE_ONLY` |
+| REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31, 55 | Workspace conflict Storybook·headless draft 보존 테스트; 운영 mutation UI는 `FIXTURE_ONLY` |
 
 ## 4. 부모·자식 티켓 협업
 
@@ -70,7 +72,7 @@
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
 | REQ-AUD-001 | 누가 언제 어떤 티켓 내용을 어떻게 수정했는지 기록한다 | IMPLEMENTATION_READY | M3 | 19, 32, 34 | CHG-001~005 |
-| REQ-AUD-002 | 티켓별 열람 없이 전역 화면에서 변경 전후를 조회한다 | IMPLEMENTATION_READY | R2 | 19, 30, 39 | `AuditExplorerIntegrationTest`, `audit-explorer.spec.ts`의 3개 desktop 폭 + Axe, 실제 Compose `audit-explorer.full-stack.spec.ts` before/after 직접 URL E2E |
+| REQ-AUD-002 | 티켓별 열람 없이 전역 화면에서 변경 전후를 조회한다 | IMPLEMENTATION_READY | R2 | 19, 30, 39, 55 | `AuditExplorerIntegrationTest`, `auditInteraction.test.ts`; UI는 `DEFERRED_UI` |
 | REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | `AgentTicketReadIntegrationTest`: 모든 성공 detail의 `API_RESOURCE_READ`, navigation 1건, 동일 interaction refetch의 추가 semantic view 0건, background semantic view 0건, audit 실패 fail-closed |
 | REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34, ADR 0037 | `AgentTicketSearchIntegrationTest`의 filter/count/context와 `SEARCH_RESULT_OPENED` linkage/dedupe 및 encryption-key rotation 후 same-session origin 검증; detail linked-open 100개 제한·full count; real-stack search→ticket DB-ledger E2E |
 | REQ-AUD-005 | 검색어 원문은 암호화 저장하고 routine audit에는 내용 비포함 marker·HMAC 지문만 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53, ADR 0036, ADR 0037 | `SearchQueryProtectionTest`의 content-free marker/exact round-trip/tamper/AAD/encryption rotation, fixed-size independent session fingerprint, V13 scrub·constraint, missing-key startup, DB plaintext-column 부재, 로그 캡처, 30일 expiry·retention rollback |
@@ -87,7 +89,7 @@
 | REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1/I2 | 18, 32~34, 39, ADR 0012/0016/0031 | 기존 IntegrationClient lifecycle suite + `PlatformTicketIntegrationTest`, `PlatformRateLimitIntegrationTest`; INT-AUTH-001~004·ARCH-001/002/004·ACC-006/007·AUD-001 |
 | REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20, 32 | `PlatformApiMigrationTest`, `PlatformTicketIntegrationTest`의 replay/key misuse/concurrent claim/audit·receipt crash rollback/final failure replay; IDEM-001~004 |
 | REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | `PlatformTicketIntegrationTest` matching/stale/final replay; CONC-001 |
-| REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 30, 32~34, 39, ADR 0015 | `ExternalReferenceValidationTest`, `ExternalReferenceMigrationTest`, `ExternalReferenceIntegrationTest`, `ExternalSystemsPage.test.tsx`, `TicketExternalReferences.test.tsx`, `external-reference.spec.ts`; EXT-001~004·ARCH-001/002/004·CHG-001·ACC-007·AUD-001·UI-002/004/005. Platform API·provider fetch·mirroring은 미구현 |
+| REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 30, 32~34, 39, 55, ADR 0015 | `ExternalReferenceValidationTest`, migration/integration tests, OpenAPI/API types; UI는 `DEFERRED_UI`. Platform API·provider fetch·mirroring은 미구현 |
 | REQ-INT-006 | 외부 시스템에 signed webhook을 보낸다 | BLUEPRINT_READY | I5 | 18, 20, 38 | WH-001~005 |
 | REQ-INT-007 | n8n/Workato에서 webhook으로 자동화할 수 있다 | BLUEPRINT_READY | I5/I7 | 18, 38 | 예제 workflow smoke test |
 | REQ-INT-008 | TypeScript·Python·JVM SDK를 생성한다 | BLUEPRINT_READY | I6 | 20, 39 | SDK-001~003 |
@@ -98,8 +100,8 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-SLA-001 | versioned First Reply SLA의 만족·위반 여부를 계산한다 | IMPLEMENTATION_READY | P3 | 12, 16, 44, 53 | `FirstReplySlaStateMachineTest`, `FirstReplySlaIntegrationTest`, `FirstReplySlaAdminIntegrationTest`, `AgentViewsPage.test.tsx`, SLA-001/002/004/005/006/008, ANA-004 |
-| REQ-SLA-002 | 관리자가 timezone·평일/주말·시간구간·휴일을 수정한다 | IMPLEMENTATION_READY | P3 | 44, 52, 53 | `BusinessTimeCalculatorTest`, `BusinessScheduleMigrationTest`, `BusinessScheduleAdminIntegrationTest`, `AdminBusinessSchedulesPage.test.tsx`, `business-schedule-admin.spec.ts` |
+| REQ-SLA-001 | versioned First Reply SLA의 만족·위반 여부를 계산한다 | IMPLEMENTATION_READY | P3 | 12, 16, 44, 53, 55 | `FirstReplySlaStateMachineTest`, `FirstReplySlaIntegrationTest`, `FirstReplySlaAdminIntegrationTest`, SLA-001/002/004/005/006/008, ANA-004; UI는 `DEFERRED_UI` |
+| REQ-SLA-002 | 관리자가 timezone·평일/주말·시간구간·휴일을 수정한다 | IMPLEMENTATION_READY | P3 | 44, 52, 53, 55 | `BusinessTimeCalculatorTest`, `BusinessScheduleMigrationTest`, `BusinessScheduleAdminIntegrationTest`; UI는 `DEFERRED_UI` |
 | REQ-SLA-003 | First Reply SLA는 기본적으로 PENDING 동안 정지한다 | IMPLEMENTATION_READY | P3 | 44, 53 | `FirstReplySlaIntegrationTest`의 PENDING pause/resume 및 canonical audit 기반 idempotent interval rebuild, SLA-004/009 |
 | REQ-ANL-001 | Zendesk Explore 유사 통계와 대시보드를 제공한다 | BLUEPRINT_READY | P5 | 12, 16, 30, 46 | ANA-001~008 |
 | REQ-AUT-001 | 티켓 이벤트 조건 기반 trigger를 제공한다 | BLUEPRINT_READY | P4 | 12, 34, 45 | AUT-001~008 |
@@ -128,12 +130,12 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | `frontend-system.spec.ts`의 Agent Home/View/Workspace 1280·1440·1920 Deskseed baseline |
-| REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | `AgentViewsPage.test.tsx`, `FrontendSystem.test.tsx`, keyboard row-open E2E |
-| REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | `frontend-system-workspace-{1280,1440,1920}.png` 및 keyboard separator E2E |
-| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/실제 parent-child/External projection과 dialog 구현; `TicketExternalReferences.test.tsx`, `external-reference.spec.ts`의 draft 보존·safe link·denied/read-only·desktop visual/Axe. Agent App SDK projection은 P7 후속 |
-| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `npm run test:e2e:dev`: 41/41, axe 0, dialog focus entry/trap/restore, child relation·solve warning 시각 회귀 |
-| REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | Deskseed fixture baseline, Garden import/notice 및 proprietary asset scan |
+| REQ-UI-001 | Deskseed Agent Workspace의 고밀도 Queue/Workspace UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30, 39 ADR, 55 | Queue/Workspace Darwin·Linux 1280·1440·1920 current-design baselines |
+| REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30, 55 | `AgentViewsPage.test.tsx`, Queue Storybook interaction, keyboard row-open E2E |
+| REQ-UI-003 | 좌측 속성·중앙 대화·선택 가능한 우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30, 39 ADR | `frontend-system-workspace-{1280,1440,1920}.png`, 1500px 이하 context toggle E2E |
+| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | DEFERRED | M5/I4/P7 | 28, 30, 55 | 현재 Customer context만 읽기 전용 제공; child/external/apps는 OpenAPI/headless 계약으로 보존 후 재조합 |
+| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | 전체 Storybook interaction+axe, 축소된 4-spec Playwright 24/24, Queue keyboard·Composer tab/draft·focus 검증 |
+| REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29, 39 ADR | Deskseed-only current baselines, design-system boundary 및 proprietary asset scan |
 
 ## 10. 추적 규칙
 

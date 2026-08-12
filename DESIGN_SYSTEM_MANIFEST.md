@@ -44,7 +44,7 @@ Compatibility exports, token aliases, fallback shells, duplicate wrappers, and f
 - Feedback: screen states and notifications
 - Status: `DsStatusIndicator`, `StatusBadge`
 - Patterns: `QueueTicketTable`, `ViewNavigation`, `DsDrawer`, conversation and ticket workspace styles
-- Shells: `AgentShell`, `CustomerPortalShell`
+- Shell: `AgentShell`
 - Agent workspace patterns: properties, conversation, composer, customer context
 
 ## Extension rule
@@ -60,4 +60,4 @@ Direct Garden imports are restricted to the design-system root. The boundary che
 
 ## Visual contract
 
-Agent Queue, Ticket Workspace, Agent Home, Customer, and Organization use the same Deskseed shell grammar: 64px white navigation rail with a dark-teal brand cell, dark-teal top chrome, actual Deskseed brand and icons, compact neutral workspaces, semantic tokens, 1px dividers, approximately 4px controls, and shared focus/hover/disabled behavior. Screen-specific information architecture may differ without creating another shell or token system.
+Agent Queue, read-only Ticket Workspace, minimum login, and common states use the same Deskseed grammar: 64px white navigation rail with a dark-teal brand cell, dark-teal top chrome, Deskseed brand and icons, compact neutral workspaces, semantic tokens, 1px dividers, and shared focus/hover/disabled behavior. Deferred capabilities must recompose from this current system without creating another shell or token root.

@@ -10,6 +10,10 @@
 
 각 화면 구현 PR은 이 ID와 상태표를 수용 기준에 인용한다.
 
+## 1.1 Current delivery overlay
+
+ADR 0039의 현재 운영 surface는 AGT-001, AGT-003, 읽기 전용 AGT-004, canonical denied/not-found뿐이다. 이 문서의 PUB/ADM/AUD/INT 화면과 Agent create/search/mutation 동작은 API·도메인 재조합 요구사항이며 현재 라우트나 React 화면이 아니다. 구현 상태와 UI 제공 상태는 `docs/55-frontend-capability-recomposition-matrix.md`에서 별도로 추적한다.
+
 # Public screens
 
 ## PUB-001 — Request form

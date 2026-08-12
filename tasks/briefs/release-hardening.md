@@ -49,8 +49,10 @@ Compose 선택을 재검토할 근거를 추가한다.
 
 ## Product and UX contract
 
-- 실제 `AgentShell`, ticket workspace, admin, customer portal, Audit Explorer를
-  사용하며 `shared/ui/system`과 Deskseed token을 재사용한다.
+- 실제 current `AgentShell`, Queue, 읽기 전용 Ticket Workspace를 사용하며
+  `frontend/src/design-system/` public contract와 canonical token만 재사용한다.
+- Admin, Customer portal, Audit Explorer의 UI 검증은 ADR 0039 이후 각 capability의
+  headless/API 계약 검증으로 대체하고, 화면이 재조합될 때 별도 visual gate를 추가한다.
 - OpenAPI/DTO가 request/response contract의 source of truth다. 이 작업에서 새
   interaction이나 endpoint를 발명하지 않는다.
 - PUBLIC/INTERNAL draft, stale/conflict banner, loading/empty/error/denied 상태,

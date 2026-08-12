@@ -12,26 +12,25 @@ Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시
 - 저장 결과와 충돌을 조용히 숨기지 않는다.
 - 고객 화면과 상담사 화면을 별도 projection으로 유지한다.
 
-## 2. 애플리케이션 표면
+## 2. 현재 제공 표면
 
 ```text
-/customer     고객 문의·조회·계정 포털
-/agent        상담사 Workspace
-/admin        관리자 설정
-/audit        보안 감사 센터
-/integrations 외부 연동 관리
-/analytics    통계·SLA 대시보드
+/                       → /agent/views/my-open
+/agent/login            최소 직원 로그인
+/agent/views/:viewKey   Agent Queue
+/agent/tickets/:number  읽기 전용 Ticket Workspace
+그 외 경로               canonical not-found
 ```
+
+Customer, Admin, Audit, Search, Integration, SLA 화면은 ADR 0039에 따라 `DEFERRED_UI`다. 서버 기능과 OpenAPI는 유지되며 재조합 계약은 `docs/55-frontend-capability-recomposition-matrix.md`가 소유한다. 이 문서 아래의 해당 정보 구조는 후속 재조합 시의 제품 의도이며 현재 라우트 제공을 뜻하지 않는다.
 
 ## 3. 역할별 홈
 
 | 역할 | 기본 진입 | 주요 목적 |
 |---|---|---|
-| Customer | `/requests` | 요청 제출·상태·공개 대화 |
 | Agent | `/agent/views/my-open` | 처리할 티켓 큐 |
-| Admin | `/admin/people` | 계정·그룹·설정 |
-| Security Auditor | `/audit/activity` | 변경·열람·검색 조사 |
-| Integration Admin | `/integrations/clients` | API key·webhook·외부 시스템 |
+| Admin + `AGENT_WORKSPACE` | `/agent/views/my-open` | Agent Queue와 읽기 전용 Workspace |
+| Security Auditor | denied | 이번 프론트 surface에서 접근 불가 |
 
 ## 4. Agent Workspace global shell
 
@@ -39,27 +38,21 @@ Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시
 ┌─ Global rail ─┬─ Work navigation ───────────────────────────────┐
 │ Home          │ Current view / ticket tabs / search / profile   │
 │ Views         ├──────────────────────────────────────────────────┤
-│ Customers     │ Page content                                     │
-│ Analytics     │                                                  │
-│ Audit*        │                                                  │
-│ Admin*        │                                                  │
+│ Queue         │ Page content                                     │
+│ Tickets       │                                                  │
 └───────────────┴──────────────────────────────────────────────────┘
 ```
 
 - Global rail: 48~56px, 아이콘 + tooltip.
 - Work navigation: Views일 때 카테고리·뷰 목록, ticket일 때 열린 티켓 탭.
-- Top chrome: 글로벌 검색, 새 티켓, 알림, 사용자 메뉴.
+- Top chrome: 열린 티켓 탭과 사용자 상태.
 - 권한 없는 메뉴는 숨기되 직접 URL 접근은 서버가 거부한다.
 
 ## 5. Agent route catalog
 
 ```text
-/agent/home
 /agent/views/:viewKey
-/agent/tickets/new
 /agent/tickets/:ticketNumber
-/agent/customers/:customerId
-/agent/search?q=...
 ```
 
 ### Views
@@ -85,10 +78,10 @@ Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시
 - Properties panel: 기본 300px, 240~420px resize.
 - Conversation: flexible, 최소 480px.
 - Context panel: 기본 320px, 240~520px resize, 접기 가능.
-- 패널 폭은 사용자별 local preference로 저장한다.
+- 1500px 이하에서는 context panel을 헤더의 접근 가능한 토글로 연다.
 - 신규 comment는 아래쪽에 쌓이며 composer는 대화 하단에 고정한다.
 
-## 6. Customer portal route catalog
+## 6. Deferred Customer portal intent
 
 ```text
 /requests/new
@@ -113,7 +106,7 @@ Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시
 - 추가 public comment
 - follow-up/reopen 정책
 
-## 7. Admin information architecture
+## 7. Deferred Admin information architecture
 
 ```text
 /admin
@@ -140,7 +133,7 @@ Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시
     └── audit-policy
 ```
 
-## 8. Audit Center IA
+## 8. Deferred Audit Center IA
 
 ```text
 /audit/activity
@@ -156,7 +149,7 @@ Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시
 - 우측 detail drawer.
 - 민감 원문 공개는 별도 action과 사유 입력.
 
-## 9. Analytics IA
+## 9. Deferred Analytics IA
 
 ```text
 /analytics/overview
@@ -173,9 +166,9 @@ MVP 이후에도 지표 정의는 `16-metric-glossary-draft.md`를 source of tru
 ## 10. 화면 크기 정책
 
 - Agent Workspace: desktop-first, 지원 최소 폭 1180px.
-- 1180px 미만: context panel을 drawer로 전환.
+- 1500px 이하: context panel을 overlay로 전환하고 헤더 아이콘 버튼으로 연다.
 - 960px 미만: Agent Workspace는 제한 모드 안내; 고객 포털은 정상 responsive.
-- 고객 포털: 360px부터 지원.
+- 고객 포털 responsive 기준은 UI가 재조합될 때 다시 동결한다.
 - 테이블은 중요 column을 고정하고 나머지는 horizontal scroll을 허용한다.
 
 ## 11. URL·탭·새로고침

@@ -29,6 +29,8 @@ Security context: short-lived authenticated session
 
 ## 3. Ticket edit model
 
+현재 운영 Ticket Workspace는 읽기 전용이다. 아래 edit model은 Storybook/개발 fixture와 headless 계약에서 유지되며 실제 mutation 연결은 별도 수직 슬라이스다.
+
 Ticket detail은 다음을 유지한다.
 
 ```ts
@@ -119,12 +121,12 @@ TTL과 관리자 정책을 둔다.
 사용자 click/open에서 client가 `interactionId`를 생성한다.
 
 ```text
-click row → navigate → ticket query with interactionId
-background refetch → same interactionId
+click row → navigate → ticket query with interactionId + NAVIGATION intent
+background/manual refetch → same interactionId + BACKGROUND intent
 new tab/refresh → new interactionId
 ```
 
-서버가 권한 검사와 성공 read 후 semantic view event를 기록한다. client 이벤트만 믿지 않는다.
+서버가 권한 검사와 성공 read 후 intent를 해석해 semantic view event를 기록한다. `NAVIGATION`만 한 interaction에서 semantic view를 만들고 `BACKGROUND`는 만들지 않는다. client 이벤트만 믿지 않는다.
 
 ## 8. Search session
 

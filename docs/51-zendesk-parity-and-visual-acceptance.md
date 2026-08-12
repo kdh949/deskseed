@@ -2,6 +2,8 @@
 
 Status: **Normative UX comparison v0.6**
 
+ADR 0039 overlay: 현재 visual acceptance 대상은 Agent Queue, 읽기 전용 Ticket Workspace, 최소 로그인, canonical 상태뿐이다. 아래의 Customer/Admin/SLA/Apps 항목은 미래 recomposition intent이며 shipped screen을 뜻하지 않는다.
+
 Deskseed의 목표는 Zendesk로 오인되는 복제품이 아니라, Zendesk 경험자가 즉시 사용할 수 있는 유사한 업무 정보 구조와 상호작용이다.
 
 ## 1. 비교 기준
@@ -62,9 +64,9 @@ Ticket properties | Conversation + fixed composer | Context panel
 | Context panel | customer, related work, apps | M2→P7 | children/external refs first | resize/tab/access tests |
 | Side work | internal child ticket | M5 | explicit TicketRelation model | ownership/customer-invisibility E2E |
 | Audit/events | ticket-local event view | M3 | security audit is separate ledger | audit reconciliation |
-| Customer portal | request submission/tracking/comment | M1/P1 | anonymous token first | public-only E2E |
-| Admin Center | staff/group/settings/integrations | M6/I1 | staged screens | admin permission/audit tests |
-| SLA | badges, views, policy admin | P3 | first/next reply first | clock/policy/UI gates |
+| Customer portal | request submission/tracking/comment | deferred UI | anonymous token first | API/headless contract tests |
+| Admin Center | staff/group/settings/integrations | deferred UI | staged recomposition | API permission/audit tests |
+| SLA | badges, views, policy admin | deferred UI | first reply first | clock/policy contract tests |
 | Explore | curated dashboards, drill-down | P5 | no arbitrary report builder first | metric reconciliation |
 | Triggers | ordered conditions/actions | P4 | no arbitrary scripts | version/loop/dry-run gates |
 | Apps | sidebar extension surface | P7 | sandboxed iframe later | origin/scope/secret tests |
@@ -83,10 +85,9 @@ min 480px conversation
 
 Panel widths are user preferences, not hard assumptions. Persist them per staff account or local preference after the core UI is stable.
 
-### 1280px
+### 1500px and below
 
-- work navigation can collapse.
-- context panel can close to icon rail.
+- context panel closes and is opened by an accessible header icon.
 - properties remains usable, minimum 248px.
 - composer action labels may compact but keep accessible names.
 

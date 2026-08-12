@@ -15,17 +15,17 @@ separate: a documented contract is not evidence that its runtime behavior exists
 - UTC Hibernate configuration, request/correlation identifiers, CORS allowlist, and actuator exposure allowlist.
 - production-profile seam for separate runtime and migration database credentials.
 - customer portal request submit and public-only lookup with an opaque stored-hash access token.
-- initial React customer portal and Docker Compose development setup.
-- Garden 9.15.7 primitives behind `shared/ui` wrappers, a standalone Deskseed Agent Shell route, and keyboard-focus regression tests.
+- one canonical React design system under `frontend/src/design-system/`, with no legacy token or compatibility wrapper roots.
+- Agent Queue, read-only Ticket Workspace, minimum staff login, canonical denied/not-found states, and keyboard/focus regression tests.
 - BCrypt staff login with bounded server sessions, CSRF, PostgreSQL throttling, active-account revalidation, a realm-local expected-actor consistency guard, and password-file first-ADMIN bootstrap.
-- ADMIN-only staff/group/membership APIs and UI with API/method authorization, direct-route guards, current-assignment protection, and transactional admin/security audit.
+- ADMIN-only staff/group/membership APIs with API/method authorization, current-assignment protection, and transactional admin/security audit; its React UI is deferred by ADR 0039.
 - Agent Views, PostgreSQL ticket search and a three-panel ticket workspace connected to the real API.
 - combined ticket commands with separate PUBLIC/INTERNAL drafts, typed change audit, field-aware optimistic concurrency, exact ambiguous-response command replay, and conflict recovery.
 - transfer, INTERNAL child-ticket collaboration and non-blocking parent-solve warnings with customer non-disclosure regression.
 - strict ticket-detail/search access audit, encrypted exact search query retention, search-result-open linkage and log-leakage regression.
-- read-only Audit Explorer list/detail over separate canonical ledgers, self-audited query reveal, export-request skeleton and rebuildable projection.
+- read-only Audit Explorer API/list-detail contracts over separate canonical ledgers, self-audited query reveal, export-request skeleton and rebuildable projection; its React UI is deferred by ADR 0039.
 - pinned frontend lockfile with Prettier, ESLint, Vitest, strict type checks, and production build gates.
-- CI parity for documentation validation, backend tests, frontend quality/visual gates, isolated customer and Audit Explorer full-stack E2E, and Docker Compose health smoke.
+- CI parity for documentation validation, backend tests, current frontend quality/Storybook/Queue-Workspace visual gates, and Docker Compose health smoke.
 
 ## Implementation-ready core scope
 
@@ -52,6 +52,9 @@ Detailed implementation specifications exist for Platform API/webhooks/exports/S
 - `scripts/compose-smoke.sh` uses a unique Compose project name and removes only the disposable containers and volume it creates.
 
 ## Not yet implemented or intentionally limited
+
+- Customer, Admin, Audit, Search, Integration, SLA, and auxiliary Workspace React screens are intentionally deferred; their server/OpenAPI/headless contracts are preserved in `docs/55-frontend-capability-recomposition-matrix.md`.
+- Production Ticket Workspace is read-only; mutation behavior remains headless/fixture-only until a dedicated API-wiring slice.
 
 - customer accounts/email ownership verification, magic links, My Requests and anonymous abuse controls.
 - customer-profile access audit and Platform API/integration-client runtime surfaces.
