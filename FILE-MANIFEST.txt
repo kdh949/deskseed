@@ -39,12 +39,12 @@ c9135bdbd123cfb7c118ef14fd6dccfb82bb9e9cb7a7630b99e68e36ece1498d        6279  do
 28d87313366508afb7e363acbce1c862ae2712fed57f03a62ab1e58e7a6ed636        6582  docs/15-seed-status.md
 19b7616dda936661aeb93a98081aac77f3cedf9c5457c027f9aa4c89a759621e        7275  docs/16-metric-glossary-draft.md
 1a234089ea1f791f0bb56e91215e11619cea6520ecd3259069625bb872a72760        7154  docs/17-open-source-study-guide.md
-3731350354c166392c8d3201a4bd20c7d451ad904f70bcbedb479f4f47d5b4ed       16099  docs/18-integration-platform.md
+622b473df877ee3f7a95f87fbc70b839b54bd5c590617c98aded45f315de940e       16494  docs/18-integration-platform.md
 5b7aee4d7ae31125f0b713f1cfb45712bdcd88807b6df411d7749e9367ecd38b       16553  docs/19-security-audit-center.md
 7412962184d0f03424a8e5e5e7d6c098fb8ba7a072e98052e52534766955099e        7662  docs/20-api-sdk-contract.md
 c264ae77c05e2f72c7ee848b294fb77fec0e1c036942e646d85f6d6e02f21141       37304  docs/21-minimum-verification-gates.md
 d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  docs/22-spring-initializr-and-dependencies.md
-8ac15bc65450fd7566905bc433446cdb8ad9e5587210fb509fc964d9b8b9124f        7757  docs/23-data-retention-and-privacy.md
+2e6e4d6394970b174231d5755a39041d7bda4b0529914061f0860e15e74af0b2        8066  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 5d8f72af4ffcfd6bf429615f5b32ee17a981a7e5fad6dc54f77c06f88bd11e79        8070  docs/25-implementation-decision-register.md
 a46ea3617c38198d4a225cf53d5a5f186788261bca0abda6265107c8d75d13f0       19377  docs/26-requirement-traceability.md
@@ -53,7 +53,7 @@ a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  do
 54f95cb71d8d951e208f3ed2e33d798e2b39e05bedd20402ef4b61ffa5f8d494        6900  docs/29-zendesk-inspired-design-system.md
 4b79559d473f086259047038496edc34d4d8f5839869bfbb734df507ba0127d7        8029  docs/30-screen-specifications.md
 eca28444ff21068f24bcf1119d55a5a40f5e1a39c443c9cacf6d97d0ce5842cf        7960  docs/31-frontend-state-and-interaction-contracts.md
-a3af7bc0f4196a737152736698f1ceb652d17a3332b5358e9e9f184fdbe52181       11019  docs/32-database-schema-and-index-blueprint.md
+fa0c0372652b1eaa5e2b1ce937941338fca8a855d75752ec3ea2e6b4a03ff40d       11212  docs/32-database-schema-and-index-blueprint.md
 d0611346c7eaecccc4da060bdf70686438b8e714d3dc6c1410d43a16891d4c5c        8636  docs/33-authorization-permission-matrix.md
 c259717ddd1ccd7b2f305bea607420e414f4bb0cefb36ae7dfa5a3403f4a476c        8087  docs/34-state-machines-command-event-catalog.md
 2d730576d81c24023b2d8a6c183303b56c3ecdf9fc5aaf464a69af607faefefb        4106  docs/35-test-quality-release-strategy.md
@@ -245,7 +245,7 @@ d7697f9899796328f6cc9faa95b512f75715bd56b91ab83eb17855ea2b863b69        1009  ta
 f6cba93ee3e0d7d57f1d1511cf3aad93928937e8fc1c3a8385141429792300e3        1006  tasks/23-secure-raw-search-query-storage.md
 cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  tasks/24-business-schedule-admin.md
 30b2fd9face7cbd9c37472c30136bd0931dec6871c4d5a51019ec1a250de5307         986  tasks/25-first-reply-sla-configurable-schedule.md
-780afbfe8a36cfcf616e3ce1f0534e0dcbc1eabf5f5823aebceab1b7417d67ae        9508  tasks/briefs/17-private-platform-api-v1.md
+eaf02487595d63c2f53e95587da80419751836543689fe0a317c12f5f0bf3927        9881  tasks/briefs/17-private-platform-api-v1.md
 6cfdcf472d76fcab1d6a76b59dc899b82cba97a5c5fcfa4865de45eaf032658c        6118  tasks/briefs/access-search-audit.md
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
 1facdae3c4be1b43efcbebdfb50ffabd8fd2599c0c78bcfcaa0d9558b50d6c9f        9086  tasks/briefs/audit-explorer-core.md

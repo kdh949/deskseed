@@ -26,6 +26,16 @@ data class CreatePlatformTicketCommand(
     val context: CommandContext,
 )
 
+data class ValidatePlatformTicketCreateCommand(
+    val kind: PlatformTicketKind,
+    val requesterProvided: Boolean,
+    val subject: String,
+    val message: String,
+    val groupId: UUID?,
+    val assigneeId: UUID?,
+    val source: dev.deskseed.foundation.RequestSource,
+)
+
 data class UpdatePlatformTicketCommand(
     val ticketNumber: Long,
     val expectedVersion: Long,
@@ -70,6 +80,7 @@ data class PlatformInternalCommentView(
 )
 
 interface PlatformTicketService {
+    fun validateCreate(command: ValidatePlatformTicketCreateCommand)
     fun create(command: CreatePlatformTicketCommand): PlatformTicketView
     fun find(ticketNumber: Long): PlatformTicketView?
     fun update(command: UpdatePlatformTicketCommand): PlatformTicketView
@@ -80,4 +91,3 @@ class PlatformTicketNotFoundException : RuntimeException()
 class PlatformTicketInvalidException(val code: String) : RuntimeException(code)
 class PlatformTicketVersionException(val currentVersion: Long) : RuntimeException()
 class PlatformTicketAuditUnavailableException(cause: Throwable) : RuntimeException(cause)
-

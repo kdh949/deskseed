@@ -59,8 +59,14 @@ deskseed:
       trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS:}
     rate-limit:
       requests-per-minute: ${DESKSEED_PLATFORM_RATE_LIMIT_PER_MINUTE:60}
+      max-clients: ${DESKSEED_PLATFORM_RATE_LIMIT_MAX_CLIENTS:10000}
+      stale-after: ${DESKSEED_PLATFORM_RATE_LIMIT_STALE_AFTER:2m}
     idempotency:
       retention: ${DESKSEED_PLATFORM_IDEMPOTENCY_RETENTION:7d}
+      in-progress-grace: ${DESKSEED_PLATFORM_IDEMPOTENCY_IN_PROGRESS_GRACE:1h}
+      cleanup-batch-size: ${DESKSEED_PLATFORM_IDEMPOTENCY_CLEANUP_BATCH_SIZE:500}
+      cleanup-interval: ${DESKSEED_PLATFORM_IDEMPOTENCY_CLEANUP_INTERVAL:1h}
+      cleanup-initial-delay: ${DESKSEED_PLATFORM_IDEMPOTENCY_CLEANUP_INITIAL_DELAY:10m}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}

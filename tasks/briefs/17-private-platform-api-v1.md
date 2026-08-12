@@ -42,7 +42,7 @@
 
 - OAuth, public-Internet deployment, PUBLIC follow-up comments, webhook, SDK, export, attachment, admin/settings API.
 - Arbitrary fields, transfer, child relation, ExternalReference mutation, customer profile projection.
-- Distributed rate-limit infrastructure; the v1 single-node private deployment uses a bounded in-memory window seam.
+- Distributed rate-limit infrastructure; the v1 single-node private deployment uses a max-client-cap, TTL-evicted in-memory window seam.
 
 ## Invariants and failure semantics
 
@@ -61,7 +61,9 @@
 - Writes: ticket, initial/internal comment, ticket audit/events, idempotency receipt; customer row only for `CUSTOMER_REQUEST`.
 - Secrets: Authorization/API-key material is never persisted in idempotency, ticket audit, access audit, security audit, application log, response body, or metric.
 - Request bodies and comment text are not stored in idempotency receipts beyond the already-authorized response/body necessary for exact replay; canonical request hashing is one-way SHA-256.
-- Retention: idempotency receipts expire after the configurable 7-day launch default; canonical ticket/audit retention is unchanged.
+- Retention: idempotency receipts expire after the configurable 7-day launch default. An expiry-indexed, bounded cleanup deletes final rows
+  at expiry and abandoned `IN_PROGRESS` rows after a separate grace while exposing deleted-count, backlog-age, and failure metrics;
+  canonical ticket/audit retention is unchanged.
 - No webhook/export exposure.
 
 ## Threats changed
@@ -81,6 +83,7 @@
 ## Acceptance scenarios
 
 - Given a valid private source and create scope, when a customer request is posted twice with one idempotency key, then one ticket and first PUBLIC comment exist and the original 201 response is replayed.
+- Given invalid group/assignee state, create records a final 400 before customer/ticket mutation and replays that response even if organization state later changes.
 - Given an internal-work-item create without requester, then it has no fabricated requester and its first comment is INTERNAL with IntegrationClient attribution.
 - Given a key lacking an operation scope or outside group/kind/field/IP constraints, then the request is denied without mutation.
 - Given a matching ETag, update succeeds and returns a new ETag; a stale ETag returns 412 with current ETag/version.

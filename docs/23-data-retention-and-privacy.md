@@ -111,7 +111,10 @@ last-used metadata
 
 Platform idempotency rows store a SHA-256 key representation and canonical request hash, never the raw `Idempotency-Key` or Authorization
 value. Exact replay requires a bounded response copy, which can contain ticket subject or an INTERNAL comment response; it receives the
-7-day default expiry and is not exposed through a retrieval/list endpoint. Canonical ticket/comment retention remains separately governed.
+7-day default expiry and is not exposed through a retrieval/list endpoint. An expiry-indexed cleanup job deletes at most 500 rows per run by
+default. Final receipts are eligible at expiry; `IN_PROGRESS` rows are eligible only after a separate one-hour abandonment grace. Deleted
+count, oldest expired backlog age, and cleanup failures are metrics without request or response content. Canonical ticket/comment retention
+remains separately governed.
 
 ## 7. IP addresses and user agents
 

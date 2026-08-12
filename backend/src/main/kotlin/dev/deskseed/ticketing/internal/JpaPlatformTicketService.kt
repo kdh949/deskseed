@@ -21,6 +21,7 @@ import dev.deskseed.ticketing.TicketKind
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.UpdatePlatformTicketCommand
+import dev.deskseed.ticketing.ValidatePlatformTicketCreateCommand
 import dev.deskseed.ticketing.internal.domain.TicketStatusTransitions
 import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Service
@@ -42,6 +43,18 @@ internal class JpaPlatformTicketService(
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
 ) : PlatformTicketService {
+    @Transactional(noRollbackFor = [PlatformTicketInvalidException::class])
+    override fun validateCreate(command: ValidatePlatformTicketCreateCommand) {
+        validateContext(command.source)
+        validateText(command.subject, "SUBJECT_INVALID", 200)
+        validateText(command.message, "MESSAGE_INVALID", 50_000)
+        if (command.kind == PlatformTicketKind.CUSTOMER_REQUEST && !command.requesterProvided) {
+            throw PlatformTicketInvalidException("REQUESTER_REQUIRED")
+        }
+        organizationConsistencyGuard.acquire()
+        validateAssignment(command.groupId, command.assigneeId)
+    }
+
     @Transactional
     override fun create(command: CreatePlatformTicketCommand): PlatformTicketView = translateStorageFailure {
         validateContext(command.context.source)

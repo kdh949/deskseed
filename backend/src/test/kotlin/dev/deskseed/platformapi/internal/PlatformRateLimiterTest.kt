@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.time.ZoneId
+import java.time.Duration
 import java.util.UUID
 
 class PlatformRateLimiterTest {
@@ -22,5 +24,38 @@ class PlatformRateLimiterTest {
         assertThat(denied.retryAfterSeconds).isEqualTo(30)
         assertThat(denied.resetAtEpochSecond).isEqualTo(Instant.parse("2026-08-12T00:01:00Z").epochSecond)
         assertThat(limiter.consume(secondClient).allowed).isTrue()
+    }
+
+    @Test
+    fun `client windows are capped fail closed and stale entries are evicted`() {
+        val clock = MutableClock(Instant.parse("2026-08-12T00:00:00Z"))
+        val limiter = PlatformRateLimiter(clock, limit = 2, maxClients = 2, staleAfter = Duration.ofMinutes(2))
+        val first = UUID.randomUUID()
+        val second = UUID.randomUUID()
+        val overflow = UUID.randomUUID()
+
+        assertThat(limiter.consume(first).allowed).isTrue()
+        assertThat(limiter.consume(second).allowed).isTrue()
+        val denied = limiter.consume(overflow)
+        assertThat(denied.allowed).isFalse()
+        assertThat(denied.remaining).isZero()
+
+        clock.advance(Duration.ofMinutes(2).plusSeconds(1))
+        assertThat(limiter.consume(overflow).allowed).isTrue()
+        assertThat(limiter.consume(first).allowed).isTrue()
+    }
+
+    private class MutableClock(
+        private var current: Instant,
+    ) : Clock() {
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+
+        override fun withZone(zone: ZoneId): Clock = this
+
+        override fun instant(): Instant = current
+
+        fun advance(duration: Duration) {
+            current = current.plus(duration)
+        }
     }
 }

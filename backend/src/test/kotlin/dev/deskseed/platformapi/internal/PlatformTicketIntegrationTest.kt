@@ -12,6 +12,7 @@ import dev.deskseed.ticketing.TicketingFacade
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSearchFilter
+import io.micrometer.core.instrument.MeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -44,6 +45,8 @@ import java.util.concurrent.Executors
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
         "deskseed.platform.rate-limit.requests-per-minute=100",
+        "deskseed.platform.idempotency.cleanup-batch-size=2",
+        "deskseed.platform.idempotency.in-progress-grace=1h",
     ],
 )
 @AutoConfigureMockMvc
@@ -55,6 +58,8 @@ class PlatformTicketIntegrationTest {
     @Autowired private lateinit var ticketingFacade: TicketingFacade
     @Autowired private lateinit var staffTicketReadStore: StaffTicketReadStore
     @Autowired private lateinit var objectMapper: ObjectMapper
+    @Autowired private lateinit var idempotencyRetentionJob: PlatformIdempotencyRetentionJob
+    @Autowired private lateinit var meterRegistry: MeterRegistry
 
     private lateinit var adminId: UUID
 
@@ -241,6 +246,105 @@ class PlatformTicketIntegrationTest {
         val audits = jdbcTemplate.queryForList("select metadata_json from admin_security_audit_events", String::class.java)
             .joinToString()
         assertThat(audits).doesNotContain("reuse-key-001").doesNotContain(key).doesNotContain(key.substringAfter('.'))
+    }
+
+    @Test
+    fun `deterministic create assignment failure is replayed after organization changes without orphans`() {
+        val key = issueClient(setOf(IntegrationScope.TICKETS_CREATE))
+        val groupId = UUID.randomUUID()
+        val body =
+            """{"kind":"CUSTOMER_REQUEST","subject":"Invalid assignment","message":"No orphan","requester":{"name":"Customer","email":"customer@example.com"},"groupId":"$groupId","assigneeId":"$adminId"}"""
+
+        val invalid = perform(post("/api/v1/platform/tickets"), key, "invalid-create-0001", body)
+        assertThat(invalid.response.status).isEqualTo(400)
+        assertThat(objectMapper.readTree(invalid.response.contentAsString).get("code").asText())
+            .isEqualTo("GROUP_NOT_ACTIVE")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select status from platform_idempotency_records",
+                String::class.java,
+            ),
+        ).isEqualTo("FAILED_FINAL")
+        assertThat(count("customers")).isZero()
+        assertThat(count("tickets")).isZero()
+        assertThat(count("ticket_comments")).isZero()
+        assertThat(count("ticket_audits")).isZero()
+
+        jdbcTemplate.update(
+            "insert into support_groups (id, name, status, created_at, updated_at, version) values (?, 'Recovered', 'ACTIVE', now(), now(), 0)",
+            groupId,
+        )
+        jdbcTemplate.update(
+            "insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at, version) values (?, ?, ?, 'ACTIVE', now(), now(), 0)",
+            UUID.randomUUID(),
+            groupId,
+            adminId,
+        )
+
+        val replay = perform(post("/api/v1/platform/tickets"), key, "invalid-create-0001", body)
+        assertThat(replay.response.status).isEqualTo(400)
+        assertThat(replay.response.contentAsString).isEqualTo(invalid.response.contentAsString)
+        assertThat(count("customers")).isZero()
+        assertThat(count("tickets")).isZero()
+        assertThat(count("ticket_comments")).isZero()
+        assertThat(count("ticket_audits")).isZero()
+
+        val memberGroupId = UUID.randomUUID()
+        jdbcTemplate.update(
+            "insert into support_groups (id, name, status, created_at, updated_at, version) values (?, 'Member check', 'ACTIVE', now(), now(), 0)",
+            memberGroupId,
+        )
+        val memberBody =
+            """{"kind":"CUSTOMER_REQUEST","subject":"Invalid member","message":"No orphan","requester":{"name":"Customer","email":"customer@example.com"},"groupId":"$memberGroupId","assigneeId":"$adminId"}"""
+        val invalidMember = perform(post("/api/v1/platform/tickets"), key, "invalid-create-0002", memberBody)
+        assertThat(invalidMember.response.status).isEqualTo(400)
+        assertThat(objectMapper.readTree(invalidMember.response.contentAsString).get("code").asText())
+            .isEqualTo("ASSIGNEE_NOT_ACTIVE_GROUP_MEMBER")
+        jdbcTemplate.update(
+            "insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at, version) values (?, ?, ?, 'ACTIVE', now(), now(), 0)",
+            UUID.randomUUID(),
+            memberGroupId,
+            adminId,
+        )
+        val memberReplay = perform(post("/api/v1/platform/tickets"), key, "invalid-create-0002", memberBody)
+        assertThat(memberReplay.response.status).isEqualTo(400)
+        assertThat(memberReplay.response.contentAsString).isEqualTo(invalidMember.response.contentAsString)
+        assertThat(count("customers")).isZero()
+        assertThat(count("tickets")).isZero()
+        assertThat(count("ticket_comments")).isZero()
+        assertThat(count("ticket_audits")).isZero()
+        assertThat(count("platform_idempotency_records")).isEqualTo(2)
+    }
+
+    @Test
+    fun `idempotency retention deletes bounded expired rows and preserves active and recent in progress rows`() {
+        issueClient(setOf(IntegrationScope.TICKETS_READ))
+        val clientId = jdbcTemplate.queryForObject("select id from integration_clients", UUID::class.java)!!
+        val now = Instant.parse("2026-08-13T00:00:00Z")
+        val deletedBefore = meterRegistry.counter("deskseed.platform.idempotency.cleanup.deleted").count()
+
+        insertIdempotencyRecord(clientId, "expired-success", "SUCCEEDED", now.minus(2, ChronoUnit.HOURS), 200)
+        insertIdempotencyRecord(clientId, "expired-failure", "FAILED_FINAL", now.minus(90, ChronoUnit.MINUTES), 400)
+        insertIdempotencyRecord(clientId, "stale-progress", "IN_PROGRESS", now.minus(2, ChronoUnit.HOURS), null)
+        insertIdempotencyRecord(clientId, "recent-progress", "IN_PROGRESS", now.minus(30, ChronoUnit.MINUTES), null)
+        insertIdempotencyRecord(clientId, "active-success", "SUCCEEDED", now.plus(1, ChronoUnit.HOURS), 200)
+
+        val first = idempotencyRetentionJob.purgeExpired(now)
+        assertThat(first.deletedCount).isEqualTo(2)
+        val second = idempotencyRetentionJob.purgeExpired(now)
+        assertThat(second.deletedCount).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForList(
+                "select operation_id from platform_idempotency_records order by operation_id",
+                String::class.java,
+            ),
+        ).containsExactly("active-success", "recent-progress")
+        assertThat(meterRegistry.counter("deskseed.platform.idempotency.cleanup.deleted").count() - deletedBefore)
+            .isEqualTo(3.0)
+        assertThat(meterRegistry.get("deskseed.platform.idempotency.cleanup.backlog.age").gauge().value())
+            .isGreaterThanOrEqualTo(1_800.0)
+        assertThat(meterRegistry.counter("deskseed.platform.idempotency.cleanup.failures").count())
+            .isGreaterThanOrEqualTo(0.0)
     }
 
     @Test
@@ -455,6 +559,39 @@ class PlatformTicketIntegrationTest {
 
     private fun countWhere(table: String, condition: String): Long =
         jdbcTemplate.queryForObject("select count(*) from $table where $condition", Long::class.java)!!
+
+    private fun insertIdempotencyRecord(
+        clientId: UUID,
+        operationId: String,
+        status: String,
+        expiresAt: Instant,
+        responseStatus: Int?,
+    ) {
+        val final = status != "IN_PROGRESS"
+        jdbcTemplate.update(
+            """
+            insert into platform_idempotency_records
+                (id, client_id, operation_id, idempotency_key_hash, request_hash, status,
+                 response_status, response_headers_json, response_body_json, created_at, expires_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            clientId,
+            operationId,
+            sha256("key-$operationId"),
+            sha256("request-$operationId"),
+            status,
+            responseStatus,
+            "{}".takeIf { final },
+            "{}".takeIf { final },
+            java.sql.Timestamp.from(expiresAt.minus(1, ChronoUnit.DAYS)),
+            java.sql.Timestamp.from(expiresAt),
+        )
+    }
+
+    private fun sha256(value: String): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 
     companion object {
         @Container

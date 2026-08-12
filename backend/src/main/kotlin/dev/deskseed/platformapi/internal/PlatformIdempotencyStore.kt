@@ -23,15 +23,24 @@ internal class PlatformIdempotencyKeyReusedException : RuntimeException()
 internal class PlatformIdempotencyInProgressException : RuntimeException()
 internal class PlatformIdempotencyKeyInvalidException : RuntimeException()
 
+internal data class PlatformIdempotencyCleanupResult(
+    val deletedCount: Int,
+    val backlogAgeSeconds: Long,
+)
+
 @Component
 internal class PlatformIdempotencyStore(
     private val jdbcTemplate: JdbcTemplate,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
-    @Value("\${deskseed.platform.idempotency.retention:24h}") private val retention: Duration,
+    @Value("\${deskseed.platform.idempotency.retention:7d}") private val retention: Duration,
+    @Value("\${deskseed.platform.idempotency.in-progress-grace:1h}") private val inProgressGrace: Duration,
 ) {
     init {
         require(!retention.isNegative && !retention.isZero) { "Platform idempotency retention must be positive" }
+        require(!inProgressGrace.isNegative && !inProgressGrace.isZero) {
+            "Platform idempotency in-progress grace must be positive"
+        }
     }
 
     fun execute(
@@ -128,13 +137,54 @@ internal class PlatformIdempotencyStore(
         jdbcTemplate.update(
             """
             delete from platform_idempotency_records
-            where client_id = ? and operation_id = ? and idempotency_key_hash = ? and expires_at <= ?
+            where client_id = ?
+              and operation_id = ?
+              and idempotency_key_hash = ?
+              and (
+                (status in ('SUCCEEDED', 'FAILED_FINAL') and expires_at <= ?)
+                or (status = 'IN_PROGRESS' and expires_at <= ?)
+              )
             """.trimIndent(),
             clientId,
             operationId,
             keyHash,
             Timestamp.from(now),
+            Timestamp.from(now.minus(inProgressGrace)),
         )
+    }
+
+    fun deleteExpiredBatch(now: Instant, batchSize: Int): PlatformIdempotencyCleanupResult {
+        require(batchSize > 0) { "Platform idempotency cleanup batch size must be positive" }
+        val deleted = jdbcTemplate.queryForObject(
+            """
+            with eligible as (
+                select id
+                from platform_idempotency_records
+                where (status in ('SUCCEEDED', 'FAILED_FINAL') and expires_at <= ?)
+                   or (status = 'IN_PROGRESS' and expires_at <= ?)
+                order by expires_at, id
+                limit ?
+                for update skip locked
+            ), deleted as (
+                delete from platform_idempotency_records record
+                using eligible
+                where record.id = eligible.id
+                returning record.id
+            )
+            select count(*) from deleted
+            """.trimIndent(),
+            Int::class.java,
+            Timestamp.from(now),
+            Timestamp.from(now.minus(inProgressGrace)),
+            batchSize,
+        ) ?: 0
+        val oldestExpired = jdbcTemplate.queryForObject(
+            "select min(expires_at) from platform_idempotency_records where expires_at <= ?",
+            Timestamp::class.java,
+            Timestamp.from(now),
+        )?.toInstant()
+        val backlogAge = oldestExpired?.let { Duration.between(it, now).seconds.coerceAtLeast(0) } ?: 0
+        return PlatformIdempotencyCleanupResult(deleted, backlogAge)
     }
 
     private fun validateKey(value: String) {

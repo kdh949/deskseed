@@ -42,5 +42,26 @@ class PlatformNetworkBoundaryTest {
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("Production Platform API requires")
     }
-}
 
+    @Test
+    fun `direct peer and forwarded chain reject hostnames legacy IPv4 and malformed IPv6`() {
+        val boundary = PlatformNetworkBoundary(
+            policy,
+            MockEnvironment(),
+            "10.0.0.0/8",
+            "192.0.2.0/24",
+        ).also { it.validate() }
+        val invalid = listOf("bad.de", "fade.de", "127.1", "2130706433", "2001:db8:::1")
+
+        invalid.forEach { candidate ->
+            val direct = MockHttpServletRequest().apply { remoteAddr = candidate }
+            assertThat(boundary.resolveAllowedClient(direct)).describedAs("direct $candidate").isNull()
+
+            val forwarded = MockHttpServletRequest().apply {
+                remoteAddr = "192.0.2.10"
+                addHeader("X-Forwarded-For", candidate)
+            }
+            assertThat(boundary.resolveAllowedClient(forwarded)).describedAs("forwarded $candidate").isNull()
+        }
+    }
+}

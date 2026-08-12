@@ -25,6 +25,7 @@ import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.UpdatePlatformTicketCommand
+import dev.deskseed.ticketing.ValidatePlatformTicketCreateCommand
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
@@ -93,6 +94,7 @@ internal class PlatformTicketApplicationService(
             idempotencyKey,
             mapOf("operationId" to operationId, "path" to "/tickets", "body" to input),
         ) {
+            createValidationFailure(input, context)?.let { return@execute it to null }
             val requesterId = when {
                 input.kind == PlatformTicketKind.CUSTOMER_REQUEST || input.requesterName != null -> customerDirectory.createUnverified(
                     input.requesterName ?: throw dev.deskseed.ticketing.PlatformTicketInvalidException("REQUESTER_REQUIRED"),
@@ -360,6 +362,33 @@ internal class PlatformTicketApplicationService(
             mapOf("currentVersion" to exception.currentVersion, "currentETag" to currentEtag),
             mapOf("ETag" to currentEtag),
         ) to null
+    }
+
+    private fun createValidationFailure(
+        input: PlatformCreateInput,
+        context: PlatformRequestContext,
+    ): PlatformStoredResponse? = try {
+        ticketService.validateCreate(
+            ValidatePlatformTicketCreateCommand(
+                kind = input.kind,
+                requesterProvided = input.requesterName != null && input.requesterEmail != null,
+                subject = input.subject,
+                message = input.message,
+                groupId = input.groupId,
+                assigneeId = input.assigneeId,
+                source = RequestSource.PLATFORM_API,
+            ),
+        )
+        null
+    } catch (exception: dev.deskseed.ticketing.PlatformTicketInvalidException) {
+        problemResponse(
+            400,
+            "/problems/platform-request-invalid",
+            "Invalid Platform API request",
+            "The request does not satisfy the Platform API contract.",
+            context,
+            mapOf("code" to exception.code),
+        )
     }
 
     private fun problemResponse(

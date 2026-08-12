@@ -281,7 +281,9 @@ The idempotency record and business mutation must not leave an ambiguous committ
 
 The implementation stores only SHA-256 representations of the idempotency key and canonical request. Successful responses and deterministic
 final 4xx validation responses are retained for replay; retryable persistence/audit failures roll back the reservation. The launch default
-retention is 7 days.
+retention is 7 days. A scheduled bounded-batch cleanup deletes expired final receipts through the expiry index. Expired `IN_PROGRESS`
+reservations receive a separate configurable grace period before global cleanup so an in-flight command is not mistaken for abandoned work;
+same-identity retries remain `IN_PROGRESS` conflicts during that grace. Cleanup exports deleted-row, oldest-backlog-age, and failure metrics.
 
 ## 7. External object links
 
