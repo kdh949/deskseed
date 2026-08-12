@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { ApiError, createStaff, disableStaff, listStaff } from '../api/client'
-import type { StaffAccount, StaffRole } from '../api/types'
+import {
+  ApiError,
+  createStaff,
+  disableStaff,
+  grantStaffAuditAuthority,
+  listStaff,
+  revokeStaffAuditAuthority,
+} from '../api/client'
+import type {
+  GrantableAuditAuthority,
+  StaffAccount,
+  StaffRole,
+} from '../api/types'
 import { Notification, ScreenState } from '../shared/ui/system'
 
 function adminError(error: unknown): string {
@@ -14,8 +25,22 @@ function adminError(error: unknown): string {
     return '마지막 활성 관리자는 비활성화할 수 없습니다.'
   if (error.problem?.code === 'STAFF_HAS_ASSIGNED_TICKETS')
     return '현재 배정된 티켓이 있어 비활성화할 수 없습니다.'
+  if (error.problem?.code === 'AUDIT_AUTHORITY_TARGET_INVALID')
+    return '활성 SECURITY_AUDITOR 계정에만 감사 권한을 부여할 수 있습니다.'
   return `${error.message}${error.requestId ? ` 요청 ID: ${error.requestId}` : ''}`
 }
+
+const AUDIT_AUTHORITY_OPTIONS: ReadonlyArray<{
+  authority: GrantableAuditAuthority
+  label: string
+}> = [
+  {
+    authority: 'AUDIT_SEARCH_QUERY_REVEAL',
+    label: '검색어 원문 공개',
+  },
+  { authority: 'AUDIT_EXPORT', label: '감사 내보내기' },
+  { authority: 'AUDIT_PROJECTION_REBUILD', label: '감사 투영 재구축' },
+]
 
 export function AdminStaffPage() {
   const [staff, setStaff] = useState<StaffAccount[]>([])
@@ -26,6 +51,9 @@ export function AdminStaffPage() {
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState<StaffRole>('AGENT')
   const [password, setPassword] = useState('')
+  const [authorityMutation, setAuthorityMutation] = useState<string | null>(
+    null,
+  )
   const errorRef = useRef<HTMLDivElement>(null)
 
   const reload = useCallback(async () => {
@@ -70,6 +98,27 @@ export function AdminStaffPage() {
       await reload()
     } catch (caught) {
       setError(adminError(caught))
+    }
+  }
+
+  async function toggleAuditAuthority(
+    item: StaffAccount,
+    authority: GrantableAuditAuthority,
+  ) {
+    const mutationKey = `${item.id}:${authority}`
+    setAuthorityMutation(mutationKey)
+    setError(null)
+    try {
+      if (item.auditAuthorities.includes(authority)) {
+        await revokeStaffAuditAuthority(item.id, authority)
+      } else {
+        await grantStaffAuditAuthority(item.id, authority)
+      }
+      await reload()
+    } catch (caught) {
+      setError(adminError(caught))
+    } finally {
+      setAuthorityMutation(null)
     }
   }
 
@@ -173,6 +222,7 @@ export function AdminStaffPage() {
                     <th>역할</th>
                     <th>상태</th>
                     <th>그룹</th>
+                    <th>감사 고위험 권한</th>
                     <th>
                       <span className="visually-hidden">작업</span>
                     </th>
@@ -191,6 +241,48 @@ export function AdminStaffPage() {
                         {item.memberships
                           .map((group) => group.name)
                           .join(', ') || '없음'}
+                      </td>
+                      <td>
+                        {item.role === 'SECURITY_AUDITOR' ? (
+                          <ul className="audit-authority-list">
+                            {AUDIT_AUTHORITY_OPTIONS.map(
+                              ({ authority, label }) => {
+                                const granted =
+                                  item.auditAuthorities.includes(authority)
+                                const mutationKey = `${item.id}:${authority}`
+                                return (
+                                  <li key={authority}>
+                                    <span>{label}</span>
+                                    <button
+                                      className="text-button"
+                                      type="button"
+                                      aria-pressed={granted}
+                                      aria-label={`${label} 권한 ${granted ? '회수' : '부여'}`}
+                                      disabled={
+                                        item.status !== 'ACTIVE' ||
+                                        authorityMutation === mutationKey
+                                      }
+                                      onClick={() =>
+                                        void toggleAuditAuthority(
+                                          item,
+                                          authority,
+                                        )
+                                      }
+                                    >
+                                      {authorityMutation === mutationKey
+                                        ? '처리 중…'
+                                        : granted
+                                          ? '부여됨 · 회수'
+                                          : '부여'}
+                                    </button>
+                                  </li>
+                                )
+                              },
+                            )}
+                          </ul>
+                        ) : (
+                          '해당 없음'
+                        )}
                       </td>
                       <td>
                         {item.status === 'ACTIVE' ? (

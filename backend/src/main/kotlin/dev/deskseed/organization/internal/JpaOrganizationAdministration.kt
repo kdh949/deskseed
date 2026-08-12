@@ -8,6 +8,7 @@ import dev.deskseed.organization.AdminActorContext
 import dev.deskseed.organization.CreateStaffAccountCommand
 import dev.deskseed.organization.GroupMembershipView
 import dev.deskseed.organization.GroupReference
+import dev.deskseed.organization.GrantableAuditAuthority
 import dev.deskseed.organization.OrganizationAdministration
 import dev.deskseed.organization.OrganizationConflictException
 import dev.deskseed.organization.OrganizationNotFoundException
@@ -30,6 +31,7 @@ internal class JpaOrganizationAdministration(
     private val staffRepository: StaffAccountRepository,
     private val groupRepository: SupportGroupRepository,
     private val membershipRepository: GroupMembershipRepository,
+    private val authorityGrantRepository: StaffAuthorityGrantRepository,
     private val ticketAssignmentUsage: TicketAssignmentUsage,
     private val passwordEncoder: PasswordEncoder,
     private val auditWriter: AdminSecurityAuditWriter,
@@ -114,6 +116,61 @@ internal class JpaOrganizationAdministration(
             targetType = "STAFF_ACCOUNT",
             targetId = staff.id,
             metadata = mapOf("role" to staff.role.name),
+            now = now,
+        )
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun grantAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    ) {
+        organizationMutationLock.acquire()
+        activeSecurityAuditor(staffId)
+        if (authorityGrantRepository.findByStaffIdAndAuthority(staffId, authority) != null) return
+
+        val now = Instant.now(clock)
+        authorityGrantRepository.saveAndFlush(
+            StaffAuthorityGrantEntity(
+                id = UUID.randomUUID(),
+                staffId = staffId,
+                authority = authority,
+                grantedByStaffId = actor.staffId,
+                grantedAt = now,
+            ),
+        )
+        audit(
+            eventType = "STAFF_AUTHORITY_GRANTED",
+            actor = actor,
+            targetType = "STAFF_ACCOUNT",
+            targetId = staffId,
+            metadata = mapOf("authority" to authority.name),
+            now = now,
+        )
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun revokeAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    ) {
+        organizationMutationLock.acquire()
+        activeSecurityAuditor(staffId)
+        val grant = authorityGrantRepository.findByStaffIdAndAuthority(staffId, authority) ?: return
+
+        val now = Instant.now(clock)
+        authorityGrantRepository.delete(grant)
+        authorityGrantRepository.flush()
+        audit(
+            eventType = "STAFF_AUTHORITY_REVOKED",
+            actor = actor,
+            targetType = "STAFF_ACCOUNT",
+            targetId = staffId,
+            metadata = mapOf("authority" to authority.name),
             now = now,
         )
     }
@@ -268,6 +325,8 @@ internal class JpaOrganizationAdministration(
             role = staff.role,
             status = staff.status,
             memberships = groupIds.mapNotNull { id -> groupNames[id]?.let { GroupReference(it.id, it.name) } },
+            auditAuthorities = authorityGrantRepository.findAllByStaffIdOrderByAuthorityAsc(staff.id)
+                .map(StaffAuthorityGrantEntity::authority),
             lastLoginAt = staff.lastLoginAt,
         )
     }
@@ -288,6 +347,10 @@ internal class JpaOrganizationAdministration(
     private fun activeGroup(groupId: UUID): SupportGroupEntity = groupRepository.findById(groupId)
         .filter { it.status == OrganizationStatus.ACTIVE }
         .orElseThrow { OrganizationNotFoundException("ACTIVE_GROUP_NOT_FOUND") }
+
+    private fun activeSecurityAuditor(staffId: UUID): StaffAccountEntity = staffRepository.findById(staffId)
+        .filter { it.status == StaffStatus.ACTIVE && it.role == StaffRole.SECURITY_AUDITOR }
+        .orElseThrow { OrganizationConflictException("AUDIT_AUTHORITY_TARGET_INVALID") }
 
     private fun validatedGroupName(name: String): String = name.trim().also {
         require(it.isNotEmpty() && it.length <= 100)

@@ -153,6 +153,7 @@ test('admin creates staff and manages a group membership through the UI with CSR
     role: 'ADMIN',
     status: 'ACTIVE',
     memberships: [],
+    auditAuthorities: [],
     lastLoginAt: null,
   }
   const staff = [admin]
@@ -209,6 +210,7 @@ test('admin creates staff and manages a group membership through the UI with CSR
         role: body.role,
         status: 'ACTIVE',
         memberships: [],
+        auditAuthorities: [],
         lastLoginAt: null,
       }
       staff.push(created)

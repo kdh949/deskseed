@@ -54,6 +54,8 @@ export interface FieldError {
 
 export type StaffRole = 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR'
 export type StaffStatus = 'ACTIVE' | 'DISABLED'
+export type GrantableAuditAuthority =
+  'AUDIT_SEARCH_QUERY_REVEAL' | 'AUDIT_EXPORT' | 'AUDIT_PROJECTION_REBUILD'
 export type OrganizationStatus = 'ACTIVE' | 'DISABLED'
 
 export interface CurrentStaff {
@@ -76,6 +78,7 @@ export interface StaffAccount {
   role: StaffRole
   status: StaffStatus
   memberships: GroupReference[]
+  auditAuthorities: GrantableAuditAuthority[]
   lastLoginAt: string | null
 }
 

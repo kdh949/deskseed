@@ -988,6 +988,63 @@ paths:
         '404': *id001
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/staff/{staffId}/audit-authorities/{authority}:
+    put:
+      summary: Grant one high-risk audit authority to a Security Auditor
+      operationId: grantStaffAuditAuthority
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-AUD-002
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/GrantableAuditAuthorityParam'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '204':
+          description: Authority is present and an actual grant is atomically admin-audited
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+    delete:
+      summary: Revoke one high-risk audit authority from a Security Auditor
+      operationId: revokeStaffAuditAuthority
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-AUD-002
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/GrantableAuditAuthorityParam'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '204':
+          description: Authority is absent and an actual revocation is atomically admin-audited
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
   /api/v1/admin/groups:
     get:
       summary: List groups
@@ -2103,6 +2160,12 @@ components:
       schema:
         type: string
         format: uuid
+    GrantableAuditAuthorityParam:
+      name: authority
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GrantableAuditAuthority'
     GroupId:
       name: groupId
       in: path
@@ -3287,6 +3350,7 @@ components:
       - role
       - status
       - memberships
+      - auditAuthorities
       properties:
         id:
           type: string
@@ -3304,6 +3368,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GroupRef'
+        auditAuthorities:
+          type: array
+          uniqueItems: true
+          description: Explicit persisted high-risk audit grants; empty for non-auditors and new auditors.
+          items:
+            $ref: '#/components/schemas/GrantableAuditAuthority'
         lastLoginAt:
           type:
           - string
@@ -3345,6 +3415,12 @@ components:
       enum:
       - ACTIVE
       - DISABLED
+    GrantableAuditAuthority:
+      type: string
+      enum:
+      - AUDIT_SEARCH_QUERY_REVEAL
+      - AUDIT_EXPORT
+      - AUDIT_PROJECTION_REBUILD
     Group:
       type: object
       additionalProperties: false

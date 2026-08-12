@@ -28,6 +28,7 @@ data class StaffAccountView(
     val role: StaffRole,
     val status: StaffStatus,
     val memberships: List<GroupReference>,
+    val auditAuthorities: List<GrantableAuditAuthority>,
     val lastLoginAt: Instant?,
 )
 
@@ -63,6 +64,18 @@ interface OrganizationAdministration {
     fun createStaff(command: CreateStaffAccountCommand, actor: AdminActorContext): StaffAccountView
 
     fun disableStaff(staffId: UUID, actor: AdminActorContext)
+
+    fun grantAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    )
+
+    fun revokeAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    )
 
     fun listGroups(): List<SupportGroupView>
 

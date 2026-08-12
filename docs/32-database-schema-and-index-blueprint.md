@@ -90,6 +90,21 @@ group_memberships(group_id, staff_id, status, created_at, updated_at, version)
 - `lower(btrim(groups.name))` is unique.
 - A membership pair has one mutable row and an optimistic version.
 
+### staff_authority_grants
+
+```text
+id
+staff_id
+authority             AUDIT_SEARCH_QUERY_REVEAL | AUDIT_EXPORT | AUDIT_PROJECTION_REBUILD
+granted_by_staff_id
+granted_at
+unique(staff_id, authority)
+```
+
+- only active `SECURITY_AUDITOR` targets are accepted by the application transaction.
+- this table stores current effective grants; canonical grant/revoke history is kept in `AdminSecurityAuditEvent`.
+- default Security Auditor identity contains routine read authorities only.
+
 ### tickets
 
 ```text

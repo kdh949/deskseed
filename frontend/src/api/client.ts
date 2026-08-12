@@ -22,6 +22,7 @@ import type {
   CreateChildTicketResult,
   CreateStaffInput,
   CurrentStaff,
+  GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
   ProblemDetails,
@@ -408,7 +409,12 @@ function decodeCurrentStaff(value: unknown): CurrentStaff | undefined {
 }
 
 function decodeStaffAccount(value: unknown): StaffAccount | undefined {
-  if (!isRecord(value) || !Array.isArray(value.memberships)) return undefined
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.memberships) ||
+    !Array.isArray(value.auditAuthorities)
+  )
+    return undefined
   if (
     !isNonBlankString(value.id) ||
     !isNonBlankString(value.email) ||
@@ -430,6 +436,19 @@ function decodeStaffAccount(value: unknown): StaffAccount | undefined {
     return [{ id: membership.id, name: membership.name }]
   })
   if (memberships.length !== value.memberships.length) return undefined
+  const grantableAuthorities = new Set<GrantableAuditAuthority>([
+    'AUDIT_SEARCH_QUERY_REVEAL',
+    'AUDIT_EXPORT',
+    'AUDIT_PROJECTION_REBUILD',
+  ])
+  if (
+    !value.auditAuthorities.every(
+      (authority): authority is GrantableAuditAuthority =>
+        typeof authority === 'string' &&
+        grantableAuthorities.has(authority as GrantableAuditAuthority),
+    )
+  )
+    return undefined
   return {
     id: value.id,
     email: value.email,
@@ -437,6 +456,7 @@ function decodeStaffAccount(value: unknown): StaffAccount | undefined {
     role: value.role,
     status: value.status,
     memberships,
+    auditAuthorities: value.auditAuthorities,
     lastLoginAt: value.lastLoginAt,
   }
 }
@@ -595,7 +615,7 @@ async function csrfHeaders(
 
 async function unsafeStaffFetch(
   path: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
   additionalHeaders: Record<string, string> = {},
   options: StaffFetchOptions = {},
@@ -692,6 +712,30 @@ export async function createStaff(
 export async function disableStaff(staffId: string): Promise<void> {
   await checkedEmpty(
     await unsafeStaffFetch(`/api/v1/admin/staff/${staffId}`, 'DELETE'),
+  )
+}
+
+export async function grantStaffAuditAuthority(
+  staffId: string,
+  authority: GrantableAuditAuthority,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/admin/staff/${staffId}/audit-authorities/${authority}`,
+      'PUT',
+    ),
+  )
+}
+
+export async function revokeStaffAuditAuthority(
+  staffId: string,
+  authority: GrantableAuditAuthority,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/admin/staff/${staffId}/audit-authorities/${authority}`,
+      'DELETE',
+    ),
   )
 }
 

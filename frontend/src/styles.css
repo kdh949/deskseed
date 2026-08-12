@@ -2714,6 +2714,26 @@ textarea[aria-invalid='true'] {
   color: var(--danger);
 }
 
+.audit-authority-list {
+  display: grid;
+  gap: 5px;
+  min-width: 170px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-authority-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.audit-authority-list .text-button[aria-pressed='true'] {
+  color: var(--danger);
+}
+
 .inline-admin-form {
   display: flex;
   align-items: end;

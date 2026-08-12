@@ -49,6 +49,8 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | manage staff/groups | D | D | D | A | D | D |
 | read Audit Explorer | D | D | D | explicit grant C | A | D |
 | reveal protected audit content | D | D | D | explicit C | separate grant C | D |
+| request audit export | D | D | D | explicit C | separate grant C | D |
+| rebuild audit projection | D | D | D | explicit C | separate grant C | D |
 | manage integration client | D | D | D | A | D | D |
 
 ## 4. Agent ticket scope
@@ -146,6 +148,14 @@ Protected reveal requires:
 - optional reauthentication/MFA per operator policy
 - no-store response
 - self-audit event
+
+`SECURITY_AUDITOR` receives routine activity/ticket-change/access/admin-security read
+authorities from the role. `audit:search-query:reveal`, `audit:export`, and
+`audit:projection:rebuild` are deny-by-default and become effective only from a current
+`staff_authority_grants` row. ADMIN-only grant/revoke commands are CSRF-protected,
+serialized with organization mutation, and commit `STAFF_AUTHORITY_GRANTED` or
+`STAFF_AUTHORITY_REVOKED` in the canonical admin/security ledger. A changed grant set
+invalidates an older staff session on its next protected request.
 
 ## 10. Integration scopes
 

@@ -111,7 +111,7 @@ harness and real customer, Audit Explorer and health runs left zero owner-labell
 | Finding | Baseline | Release disposition |
 |---|---:|---|
 | Routine audit stores plaintext-equivalent arbitrary search content (CWE-312) | Medium | **FIXED** — routine rows use only `[PROTECTED]`; V13 scrubs existing canonical/projection rows and prevents content-bearing replacements; keyed fingerprint and policy-gated ciphertext remain separate |
-| Baseline auditor automatically receives reveal/export/rebuild authorities (CWE-269) | Medium | OPEN DESIGN RISK — reason/recent-auth/no-store/self-audit and no export artifact reduce impact; explicit persisted grant model is not implemented |
+| Baseline auditor automatically receives reveal/export/rebuild authorities (CWE-269) | Medium | **FIXED in issue #24 remediation** — role defaults to routine read only; V16 persists three allowlisted high-risk grants; ADMIN grant/revoke is CSRF-protected, atomically self-audited and forces session revalidation |
 | PUBLIC/INTERNAL drafts outlive staff session without TTL (CWE-922) | Medium | **FIXED** — 12-hour recovery-validity TTL, authenticated-session expiry sweep, active-session owner marker, exact staff-namespace purge on logout/401/account change, stale-writer rejection and stale-401 generation checks are covered by regressions |
 
 | Anonymous email can reuse/mutate an unverified customer actor (CWE-287) | Low | KNOWN LIMITATION — no prior-ticket access; public deployment remains blocked until verified identity |
@@ -125,8 +125,9 @@ actor/group projection snapshots, serializes rebuild with canonical writers, bou
 opens, and records reveal-specific denied events. The current clean backend run covers
 134/134 tests; frontend covers 150/150 plus typecheck/lint/format/build. V1-V15 release
 performance and the V11→V15 full operations rehearsal match the current sources and clean
-up their exact owned resources. This delta changes no conclusion about the still-open
-auditor-grant/public-deployment limitations.
+up their exact owned resources. This historical delta predates issue #24. The later V16
+remediation closes the auditor-grant finding; the anonymous identity and public-deployment
+limitations remain.
 
 Deferred informational path: an Internet-exposed anonymous endpoint can amplify one
 request into several durable rows. This is real, but the supported release is local or
@@ -163,6 +164,18 @@ The CWE-922 remediation binds persistent draft recovery to the active staff mark
 - pending/stale writers cannot recreate a draft after the owner marker is cleared or
   changed;
 - protected in-memory staff state is cleared even when browser storage removal throws.
+
+The CWE-269 remediation separates routine investigation from exceptional authority:
+
+- `SECURITY_AUDITOR` role defaults to routine activity/change/access/admin-security read only;
+- V16 stores only the allowlisted reveal/export/rebuild grants and does not backfill an
+  implicit grant for existing auditors;
+- ADMIN-only PUT/DELETE commands validate an active auditor target and atomically write
+  `STAFF_AUTHORITY_GRANTED`/`STAFF_AUTHORITY_REVOKED` with the current grant mutation;
+- login and per-request active-identity lookup derive capabilities from current rows, so
+  an older session fails closed after either grant or revoke;
+- PostgreSQL-backed failure injection proves an admin-audit failure rolls back both grant
+  and revoke, and the Admin Staff UI exposes labeled keyboard-operable controls.
 
 Verification commands:
 

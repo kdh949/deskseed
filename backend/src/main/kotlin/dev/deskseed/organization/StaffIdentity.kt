@@ -9,6 +9,12 @@ enum class StaffRole {
     SECURITY_AUDITOR,
 }
 
+enum class GrantableAuditAuthority(val capability: String) {
+    AUDIT_SEARCH_QUERY_REVEAL("audit:search-query:reveal"),
+    AUDIT_EXPORT("audit:export"),
+    AUDIT_PROJECTION_REBUILD("audit:projection:rebuild"),
+}
+
 object StaffAuthorityCatalog {
     const val AGENT_WORKSPACE = "AGENT_WORKSPACE"
     const val ADMIN_MANAGE = "ADMIN_MANAGE"
@@ -28,10 +34,16 @@ object StaffAuthorityCatalog {
             AUDIT_TICKET_CHANGE_READ,
             AUDIT_ACCESS_READ,
             AUDIT_ADMIN_SECURITY_READ,
-            AUDIT_SEARCH_QUERY_REVEAL,
-            AUDIT_EXPORT,
-            AUDIT_PROJECTION_REBUILD,
         )
+    }
+
+    fun forIdentity(
+        role: StaffRole,
+        grantedAuditAuthorities: Set<GrantableAuditAuthority>,
+    ): Set<String> = forRole(role) + if (role == StaffRole.SECURITY_AUDITOR) {
+        grantedAuditAuthorities.map(GrantableAuditAuthority::capability)
+    } else {
+        emptyList()
     }
 }
 

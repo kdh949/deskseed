@@ -947,6 +947,24 @@ class AuditExplorerIntegrationTest {
             Timestamp.from(now),
             Timestamp.from(now),
         )
+        listOf(
+            "AUDIT_SEARCH_QUERY_REVEAL",
+            "AUDIT_EXPORT",
+            "AUDIT_PROJECTION_REBUILD",
+        ).forEach { authority ->
+            jdbcTemplate.update(
+                """
+                insert into staff_authority_grants
+                    (id, staff_id, authority, granted_by_staff_id, granted_at)
+                values (?, ?, ?, ?, ?)
+                """.trimIndent(),
+                UUID.randomUUID(),
+                id,
+                authority,
+                id,
+                Timestamp.from(now),
+            )
+        }
         return id
     }
 

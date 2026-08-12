@@ -5,6 +5,7 @@ import dev.deskseed.foundation.RequestSource
 import dev.deskseed.organization.AdminActorContext
 import dev.deskseed.organization.CreateStaffAccountCommand
 import dev.deskseed.organization.GroupMembershipView
+import dev.deskseed.organization.GrantableAuditAuthority
 import dev.deskseed.organization.OrganizationAdministration
 import dev.deskseed.organization.StaffAccountView
 import dev.deskseed.organization.StaffRole
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -62,6 +64,28 @@ internal class AdminOrganizationController(
         request: HttpServletRequest,
     ): ResponseEntity<Void> {
         administration.disableStaff(staffId, request.actor(principal))
+        return ResponseEntity.noContent().build()
+    }
+
+    @PutMapping("/staff/{staffId}/audit-authorities/{authority}")
+    fun grantAuditAuthority(
+        @PathVariable staffId: UUID,
+        @PathVariable authority: GrantableAuditAuthority,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<Void> {
+        administration.grantAuditAuthority(staffId, authority, request.actor(principal))
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/staff/{staffId}/audit-authorities/{authority}")
+    fun revokeAuditAuthority(
+        @PathVariable staffId: UUID,
+        @PathVariable authority: GrantableAuditAuthority,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<Void> {
+        administration.revokeAuditAuthority(staffId, authority, request.actor(principal))
         return ResponseEntity.noContent().build()
     }
 
