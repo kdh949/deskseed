@@ -1,4 +1,4 @@
-import type { CustomerAccessMode } from '../../api/types'
+import type { CustomerAccessMode } from '../../../api/types'
 
 export interface CurrentCustomer {
   id: string

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBeforeUnload, useBlocker } from 'react-router'
-import { ApiError, updateAgentTicket } from '../../api/client'
+import { ApiError, updateAgentTicket } from '../../../api/client'
 import type {
   AgentTicketDetail,
   TicketFieldName,
   TicketCommandWarning,
   TicketVisibility,
-} from '../../api/types'
+} from '../../../api/types'
 import {
   buildUpdateTicketCommand,
   changedTicketFields,

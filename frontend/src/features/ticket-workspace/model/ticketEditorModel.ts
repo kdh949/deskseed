@@ -5,7 +5,7 @@ import type {
   TicketPriority,
   TicketVisibility,
   UpdateTicketCommand,
-} from '../../api/types'
+} from '../../../api/types'
 
 export interface EditableTicketFields {
   status: AgentTicketStatus

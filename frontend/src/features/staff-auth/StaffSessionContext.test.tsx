@@ -12,7 +12,7 @@ import {
   STAFF_DRAFT_SESSION_OWNER_KEY,
   TICKET_DRAFT_TTL_MS,
   ticketDraftStorageKey,
-} from '../ticket-workspace/ticketEditorModel'
+} from '../ticket-workspace/model/ticketEditorModel'
 import { StaffSessionProvider, useStaffSession } from './StaffSessionContext'
 
 const staffA: CurrentStaff = {
