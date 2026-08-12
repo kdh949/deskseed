@@ -4,10 +4,14 @@ import dev.deskseed.sla.BusinessInterval
 import dev.deskseed.sla.BusinessScheduleDefinition
 import dev.deskseed.sla.FirstReplySlaStateMachine
 import dev.deskseed.sla.FirstReplySlaTargetClock
+import dev.deskseed.sla.FirstReplyPolicyConditions
+import dev.deskseed.sla.FirstReplySlaPolicyDefinition
 import dev.deskseed.sla.SlaTargetState
 import dev.deskseed.sla.WeekdaySchedule
+import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.time.DayOfWeek
 import java.time.Instant
@@ -147,6 +151,42 @@ class FirstReplySlaStateMachineTest {
         assertThat(cancelled.state).isEqualTo(SlaTargetState.CANCELLED)
         assertThat(cancelled.dueAt).isEqualTo(started.dueAt)
         assertThat(cancelled.cancelledAt).isEqualTo(Instant.parse("2026-08-17T00:30:00Z"))
+    }
+
+    @Test
+    fun `due instant wins over solve and close terminal cancellation`() {
+        val started = machine.start(Instant.parse("2026-08-17T00:00:00Z"), TicketStatus.NEW)
+
+        val solvedAtDue = machine.onStatusChanged(
+            started,
+            previousStatus = TicketStatus.NEW,
+            newStatus = TicketStatus.SOLVED,
+            occurredAt = checkNotNull(started.dueAt),
+        )
+        val closedAfterDue = machine.onStatusChanged(
+            started,
+            previousStatus = TicketStatus.NEW,
+            newStatus = TicketStatus.CLOSED,
+            occurredAt = checkNotNull(started.dueAt).plusSeconds(1),
+        )
+
+        assertThat(solvedAtDue.state).isEqualTo(SlaTargetState.BREACHED)
+        assertThat(closedAfterDue.state).isEqualTo(SlaTargetState.BREACHED)
+    }
+
+    @Test
+    fun `terminal ticket statuses cannot be configured as pause statuses`() {
+        assertThatThrownBy {
+            FirstReplySlaPolicyDefinition(
+                name = "Invalid pauses",
+                position = 1,
+                scheduleId = java.util.UUID.randomUUID(),
+                conditions = FirstReplyPolicyConditions(),
+                targets = mapOf(TicketPriority.NORMAL to 60),
+                pauseStatuses = setOf(TicketStatus.SOLVED, TicketStatus.CLOSED),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("terminal")
     }
 
     private fun seoulWeekdays(): BusinessScheduleDefinition = BusinessScheduleDefinition.create(

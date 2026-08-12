@@ -25,12 +25,15 @@ internal class JdbcFirstReplySlaBreachScanner(
         initialDelayString = "\${deskseed.sla.breach-scanner.initial-delay:30s}",
     )
     fun scheduledScan() {
-        scan("${InetAddress.getLocalHost().hostName}-${ProcessHandle.current().pid()}", scheduledBatchSize)
+        val processSuffix = "-${ProcessHandle.current().pid()}"
+        val hostName = InetAddress.getLocalHost().hostName
+            .take(MAX_OWNER_LENGTH - processSuffix.length)
+        scan("$hostName$processSuffix", scheduledBatchSize)
     }
 
     @Transactional
     override fun scan(owner: String, batchSize: Int): FirstReplySlaScanResult {
-        require(owner.isNotBlank() && owner.length <= 100)
+        require(owner.isNotBlank() && owner.length <= MAX_OWNER_LENGTH)
         require(batchSize in 1..1000)
         val now = Instant.now(clock)
         val lease = jdbc.queryForObject(
@@ -130,5 +133,6 @@ internal class JdbcFirstReplySlaBreachScanner(
 
     private companion object {
         val LEASE_DURATION: Duration = Duration.ofMinutes(2)
+        const val MAX_OWNER_LENGTH = 91
     }
 }

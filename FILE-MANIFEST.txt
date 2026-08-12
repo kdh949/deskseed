@@ -6,7 +6,7 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 607978a57219571ef2b32084db639c280a1844ad7f2a8545206bec7619b8963c        4016  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-e1368f651991f69f203136959e476288bf8b187fdb235ec9a8fe24d5cc4d01d8      127964  api/core-api-outline-v1.yaml
+0a12b8abcb7b91855841d02f463fe8cad016c3f64487ae9827f5e4bd1087f143      128549  api/core-api-outline-v1.yaml
 72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -65,7 +65,7 @@ d656e849bc6bdd8ea351c609e20a642bd6bd3306be5e638621722c8425a0c1ce        4936  do
 124ed38dfc46f153f2fefcaef669f79aa7072a24bf9029b4502943f8ab340e8f        2312  docs/41-feature-implementation-dependency-map.md
 5980d939e7a55e7d5173c46f79c59f8f873ba9bd14c4053b469030c0794ee44c        4603  docs/42-zendesk-frontend-research.md
 a6d391143e02939d415acb9cf13f788d928754db7ffcd7d5645f9629f6570795        3235  docs/43-coverage-assessment-v03-to-v05.md
-527d09d3f65070aa807ba7fb042904ed3c1c1819d68b5030665d03cfe8007c39        7029  docs/44-sla-ola-business-hours-implementation-spec.md
+51c016b28bc0c06781bec33e9474cedba3e6aef4572ae40f44464dcb619855a9        7581  docs/44-sla-ola-business-hours-implementation-spec.md
 68c7e8e5f1f040d2c27813625f05ae0440b340f5c7e9f615aef0312142d83fda        5702  docs/45-trigger-automation-engine-implementation-spec.md
 67a1ccc594e6aa2db072fa7498ee054e182cc4243417be912d3b2abd0423b78d        5350  docs/46-analytics-explore-reporting-implementation-spec.md
 a6b24c25dd329f0ed3bc43928de44a88bdef324a333ee92d3cfc0df852b57ca1        7649  docs/47-ticketing-depth-views-fields-macros-search.md
@@ -248,7 +248,7 @@ d7697f9899796328f6cc9faa95b512f75715bd56b91ab83eb17855ea2b863b69        1009  ta
 f6cba93ee3e0d7d57f1d1511cf3aad93928937e8fc1c3a8385141429792300e3        1006  tasks/23-secure-raw-search-query-storage.md
 cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  tasks/24-business-schedule-admin.md
 30b2fd9face7cbd9c37472c30136bd0931dec6871c4d5a51019ec1a250de5307         986  tasks/25-first-reply-sla-configurable-schedule.md
-04694c7a1b866ef129f5e8d43613818e7516aa86f56124fbb3759a198810b74f        7686  tasks/briefs/25-first-reply-sla.md
+731e32fe4363c038bd5469bba6ad160b6fa02f29158aab371bd3bdbeb1213b29        8567  tasks/briefs/25-first-reply-sla.md
 6cfdcf472d76fcab1d6a76b59dc899b82cba97a5c5fcfa4865de45eaf032658c        6118  tasks/briefs/access-search-audit.md
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
 1facdae3c4be1b43efcbebdfb50ffabd8fd2599c0c78bcfcaa0d9558b50d6c9f        9086  tasks/briefs/audit-explorer-core.md

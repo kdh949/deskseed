@@ -43,6 +43,7 @@ internal class FirstReplySlaLifecycleProjection(
             event.ticketAuditId,
         )
         if (!event.startsFirstReplySla || event.kind != TicketKind.CUSTOMER_REQUEST) return
+        if (projectionExists(event.ticketId)) return
 
         val policy = matcher.match(
             FirstReplySlaTicketSample(event.priority, event.groupId, event.channel),
@@ -58,7 +59,7 @@ internal class FirstReplySlaLifecycleProjection(
         )
         val clock = machine.start(event.occurredAt, event.status)
         val targetId = UUID.randomUUID()
-        jdbc.update(
+        val inserted = jdbc.update(
             """
             insert into sla_target_instances
                 (id, ticket_id, metric, policy_id, policy_version, schedule_id, schedule_version,
@@ -86,6 +87,7 @@ internal class FirstReplySlaLifecycleProjection(
             CALCULATION_VERSION,
             event.occurredAt.atOffset(ZoneOffset.UTC),
         )
+        if (inserted != 1) return
         appendEvent(
             targetId = targetId,
             eventType = "SLA_TARGET_STARTED",
@@ -102,6 +104,19 @@ internal class FirstReplySlaLifecycleProjection(
         upsertTargetFact(event.ticketId, targetId, event.priority.name, policy.policyId, policy.policyVersion,
             policy.schedule.id, policy.schedule.version, policy.targetMinutes, clock, event.occurredAt)
     }
+
+    private fun projectionExists(ticketId: UUID): Boolean = jdbc.queryForObject(
+        """
+        select exists (
+            select 1 from sla_target_instances where ticket_id = ? and metric = 'FIRST_REPLY'
+            union all
+            select 1 from analytics_first_reply_facts where ticket_id = ?
+        )
+        """.trimIndent(),
+        Boolean::class.java,
+        ticketId,
+        ticketId,
+    ) == true
 
     @EventListener
     @Transactional(propagation = Propagation.MANDATORY)

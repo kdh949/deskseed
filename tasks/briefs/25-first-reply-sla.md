@@ -27,7 +27,9 @@ An ADMIN versions, previews, orders, and activates First Reply SLA policies. A h
 - Metric is fixed to `FIRST_REPLY`; custom metrics and arbitrary condition expressions are rejected/absent.
 - Conditions are limited to optional exact `groupId` and optional exact ticket `channel`.
 - Active versions are evaluated by ascending `position`, then policy UUID as a stable tie-breaker.
+- Preview evaluates the candidate in that same ordering. Editing replaces the selected policy in the candidate set; sample ticket fields remain independent from candidate conditions.
 - A policy version with every priority target null cannot be activated.
+- A policy cannot be activated when its snapshotted schedule version has no recurring weekly capacity. Fully closed and exception-only schedules remain valid business schedules, but are not valid for an active SLA target that must always produce a due instant.
 - A matching policy with no target for the ticket's current priority is skipped; if no active version supplies a target, the ticket receives an analytics fact with `NO_POLICY` and no target instance.
 - A policy version resolves and stores the schedule's active immutable version at version creation. Later schedule/policy edits never rewrite an existing target.
 - Policy edits append a new immutable version. Roots and activation pointers are mutable; version, target event, and activation history rows cannot be updated or deleted by the runtime role.
@@ -47,8 +49,9 @@ ACTIVE ──enter pause status──> PAUSED ──leave pause status──> AC
 - Start instant is the persisted first PUBLIC CUSTOMER comment instant, including the first comment of a web request.
 - Business-time addition starts at the instant if open, otherwise at the next opening. Weekly intervals, exceptions, timezone, and DST use the recorded schedule version.
 - DST policy is `GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH`: nonexistent local boundaries shift forward by the gap; an overlap uses the earlier offset for opening and later offset for closing.
+- Policy pause statuses are limited to `NEW`, `OPEN`, `PENDING`, and `ON_HOLD`; `SOLVED` and `CLOSED` are terminal ticket statuses and cannot be configured as pauses.
 - Entering pause at `p` stores `targetMinutes - elapsedBusinessMinutes(start/resume, p)` (never below zero) and clears `dueAt`. Leaving at `r` sets `dueAt = addBusinessMinutes(r, remaining)`.
-- A target due at or before `now` is effectively BREACHED. Achievement and breach use a row lock and terminal-state predicate; the winner is final and replay-safe.
+- A target due at or before `now` is effectively BREACHED, including when the same event also solves or closes the ticket. Achievement and breach use a row lock and terminal-state predicate; the winner is final and replay-safe.
 - `ACHIEVED`, `BREACHED`, and `CANCELLED` are terminal. A later policy edit, priority change, internal note, or scanner restart does not rewrite them.
 
 ## API freeze
@@ -71,6 +74,7 @@ ACTIVE ──enter pause status──> PAUSED ──leave pause status──> AC
 - Policy version creation and activation history/admin audit commit or roll back together.
 - Policy activation uses root aggregate ETag. A stale version returns 412 without partial mutation.
 - Target uniqueness is `(ticket_id, metric)` for this first-reply slice. Creation uses a unique constraint and idempotent insert semantics.
+- Projection replay detects an existing target or `NO_POLICY` fact before matching current policy state; a replay never rematches a historical ticket or appends an event for a target that was not inserted.
 - Scanner claims a bounded indexed batch with `FOR UPDATE SKIP LOCKED`, transitions only ACTIVE rows, and records an observable checkpoint/run summary. Restart scans remaining ACTIVE overdue rows.
 - No outbound network call occurs in these transactions.
 

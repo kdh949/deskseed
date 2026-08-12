@@ -22,6 +22,8 @@ import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketChannel
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.TicketKind
+import dev.deskseed.ticketing.TicketSubmitted
 import dev.deskseed.ticketing.TicketingFacade
 import dev.deskseed.ticketing.UpdateAgentTicketCommand
 import org.assertj.core.api.Assertions.assertThat
@@ -52,6 +54,7 @@ class FirstReplySlaIntegrationTest {
     @Autowired private lateinit var commands: AgentTicketCommandService
     @Autowired private lateinit var scanner: FirstReplySlaBreachScanner
     @Autowired private lateinit var projectionRebuilder: FirstReplySlaProjectionRebuilder
+    @Autowired private lateinit var lifecycleProjection: FirstReplySlaLifecycleProjection
 
     private lateinit var adminId: UUID
     private lateinit var customerId: UUID
@@ -105,6 +108,7 @@ class FirstReplySlaIntegrationTest {
     fun `activation snapshots policy and schedule and public human reply achieves while internal note does not`() {
         val policy = activatePolicy()
         val urgentPreview = administration.preview(
+            null,
             null,
             FirstReplySlaTicketSample(TicketPriority.URGENT, null, TicketChannel.WEB),
             Instant.parse("2026-08-17T00:00:00Z"),
@@ -167,12 +171,73 @@ class FirstReplySlaIntegrationTest {
     }
 
     @Test
+    @Transactional
+    @WithMockUser(username = "admin", roles = ["ADMIN"])
+    fun `replayed submission does not rematch policy or append a duplicate target event`() {
+        val activeV1 = activatePolicy()
+        val submitted = submitRequest()
+        val v2 = administration.createVersion(
+            activeV1.id,
+            activeV1.aggregateVersion,
+            FirstReplySlaPolicyDefinition(
+                name = "Replay must not rematch",
+                position = 1,
+                scheduleId = DEFAULT_SCHEDULE_ID,
+                conditions = FirstReplyPolicyConditions(),
+                targets = mapOf(TicketPriority.NORMAL to 10),
+                pauseStatuses = setOf(TicketStatus.PENDING),
+            ),
+            adminActor(),
+        )
+        administration.activate(v2.id, v2.version, v2.aggregateVersion, adminActor())
+
+        val createdAt = jdbc.queryForObject(
+            "select created_at from tickets where id = ?",
+            java.time.OffsetDateTime::class.java,
+            submitted.ticketId,
+        )!!.toInstant()
+        val auditId = jdbc.queryForObject(
+            "select id from ticket_audits where ticket_id = ? order by created_at limit 1",
+            UUID::class.java,
+            submitted.ticketId,
+        )!!
+        lifecycleProjection.onTicketSubmitted(
+            TicketSubmitted(
+                ticketId = submitted.ticketId,
+                ticketNumber = submitted.ticketNumber,
+                requesterId = customerId,
+                kind = TicketKind.CUSTOMER_REQUEST,
+                priority = TicketPriority.NORMAL,
+                groupId = null,
+                channel = TicketChannel.WEB,
+                status = TicketStatus.NEW,
+                ticketAuditId = auditId,
+                actorType = "CUSTOMER",
+                actorId = customerId,
+                source = "CUSTOMER_PORTAL",
+                requestId = "replayed-request",
+                correlationId = "replayed-correlation",
+                startsFirstReplySla = true,
+                occurredAt = createdAt,
+            ),
+        )
+
+        assertThat(value("select policy_version from sla_target_instances where ticket_id = '${submitted.ticketId}'"))
+            .isEqualTo(1)
+        assertThat(count("select count(*) from sla_target_instances where ticket_id = '${submitted.ticketId}'"))
+            .isEqualTo(1)
+        assertThat(count("select count(*) from sla_target_events where target_id = (select id from sla_target_instances where ticket_id = '${submitted.ticketId}')"))
+            .isEqualTo(1)
+    }
+
+    @Test
     @WithMockUser(username = "admin", roles = ["ADMIN"])
     fun `active policies match by ascending position before creation order`() {
         val later = createAndActivatePolicy("낮은 우선순위 정책", 20, 60)
         val earlier = createAndActivatePolicy("높은 우선순위 정책", 10, 30)
 
         val matched = administration.preview(
+            null,
             null,
             FirstReplySlaTicketSample(TicketPriority.NORMAL, null, TicketChannel.WEB),
             Instant.parse("2026-08-17T00:00:00Z"),
@@ -297,6 +362,14 @@ class FirstReplySlaIntegrationTest {
             .isEqualTo("BREACHED")
         assertThat(value("select due_at is not null from sla_target_instances where ticket_id = '${submitted.ticketId}'"))
             .isEqualTo(true)
+    }
+
+    @Test
+    fun `scanner owner leaves room for the correlation prefix`() {
+        assertThat(scanner.scan("a".repeat(91), 1).claimed).isZero()
+        org.assertj.core.api.Assertions.assertThatThrownBy {
+            scanner.scan("a".repeat(92), 1)
+        }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
     @Test

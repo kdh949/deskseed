@@ -64,7 +64,7 @@ create table sla_policy_pause_statuses (
     foreign key (policy_id, policy_version)
         references sla_policy_versions(policy_id, version),
     constraint sla_policy_pause_status_valid check (
-        status in ('NEW', 'OPEN', 'PENDING', 'ON_HOLD', 'SOLVED', 'CLOSED')
+        status in ('NEW', 'OPEN', 'PENDING', 'ON_HOLD')
     )
 );
 

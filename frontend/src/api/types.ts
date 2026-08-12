@@ -143,6 +143,7 @@ export interface BusinessSchedule extends BusinessScheduleDefinition {
   id: string
   version: number
   activeVersion: number | null
+  activeTimeZone: string | null
   aggregateVersion: number
   active: boolean
   createdAt: string
@@ -204,6 +205,7 @@ export interface FirstReplySlaPolicy extends FirstReplySlaPolicyDefinition {
   id: string
   scheduleVersion: number
   version: number
+  activeVersion: number | null
   aggregateVersion: number
   active: boolean
   createdAt: string
@@ -215,6 +217,7 @@ export interface FirstReplySlaPolicy extends FirstReplySlaPolicyDefinition {
 }
 
 export interface FirstReplySlaPreviewInput {
+  candidatePolicyId: string | null
   candidate: FirstReplySlaPolicyDefinition | null
   ticket: {
     priority: TicketPriority

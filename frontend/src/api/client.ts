@@ -929,11 +929,13 @@ function decodeBusinessSchedule(value: unknown): BusinessSchedule | undefined {
     !Array.isArray(value.exceptions) ||
     typeof value.version !== 'number' ||
     !Number.isSafeInteger(value.version) ||
-    value.version < 1 ||
     (value.activeVersion !== null &&
       (typeof value.activeVersion !== 'number' ||
         !Number.isSafeInteger(value.activeVersion) ||
         value.activeVersion < 1)) ||
+    (value.activeTimeZone !== null &&
+      !isNonBlankString(value.activeTimeZone)) ||
+    value.version < 1 ||
     typeof value.aggregateVersion !== 'number' ||
     !Number.isSafeInteger(value.aggregateVersion) ||
     value.aggregateVersion < 0 ||
@@ -1004,6 +1006,7 @@ function decodeBusinessSchedule(value: unknown): BusinessSchedule | undefined {
     exceptions,
     version: value.version,
     activeVersion: value.activeVersion as number | null,
+    activeTimeZone: value.activeTimeZone as string | null,
     aggregateVersion: value.aggregateVersion,
     active: value.active,
     createdAt: value.createdAt,
@@ -1163,7 +1166,12 @@ function decodeFirstReplySlaPolicy(
       !['WEB', 'AGENT', 'EMAIL', 'CHAT', 'API'].includes(
         String(value.conditions.channel),
       )) ||
-    !value.pauseStatuses.every(isAgentTicketStatus)
+    !value.pauseStatuses.every(
+      (status) =>
+        isAgentTicketStatus(status) &&
+        status !== 'SOLVED' &&
+        status !== 'CLOSED',
+    )
   ) {
     return undefined
   }
@@ -1181,6 +1189,7 @@ function decodeFirstReplySlaPolicy(
     targets: targets as FirstReplySlaPolicy['targets'],
     pauseStatuses: value.pauseStatuses as FirstReplySlaPolicy['pauseStatuses'],
     version: value.version,
+    activeVersion: value.activeVersion as number | null,
     aggregateVersion: value.aggregateVersion,
     active: value.active,
     createdAt: value.createdAt,

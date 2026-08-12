@@ -138,6 +138,19 @@ internal class JdbcFirstReplySlaAdministration(
                 "At least one priority target is required before activation",
             )
         }
+        val schedule = schedules.exact(definition.scheduleId, definition.scheduleVersion)
+            ?: throw FirstReplySlaPolicyValidationException(
+                "scheduleId",
+                "SCHEDULE_VERSION_NOT_FOUND",
+                "The snapshotted business schedule version is unavailable",
+            )
+        if (!schedule.definition.hasRecurringCapacity()) {
+            throw FirstReplySlaPolicyValidationException(
+                "scheduleId",
+                "RECURRING_SCHEDULE_CAPACITY_REQUIRED",
+                "An active SLA policy requires recurring weekly business hours",
+            )
+        }
         if (root.activeVersion == policyVersion) return definition
         val now = Instant.now(clock)
         jdbc.update(
@@ -179,27 +192,42 @@ internal class JdbcFirstReplySlaAdministration(
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
     override fun preview(
+        candidatePolicyId: UUID?,
         candidate: FirstReplySlaPolicyDefinition?,
         ticket: FirstReplySlaTicketSample,
         startAt: Instant,
     ): FirstReplySlaPreview {
-        if (candidate != null && matches(candidate.conditions, ticket)) {
-            val target = candidate.targets[ticket.priority]
-            if (target != null) {
-                val schedule = activeSchedule(candidate.scheduleId)
-                return FirstReplySlaPreview(
-                    matched = true,
-                    dueAt = DeterministicBusinessTimeCalculator(schedule.definition)
-                        .addBusinessMinutes(startAt, target),
-                    targetMinutes = target,
-                    policyId = null,
-                    policyVersion = null,
-                    scheduleId = schedule.id,
-                    scheduleVersion = schedule.version,
-                )
-            }
+        require(candidate != null || candidatePolicyId == null) {
+            "candidatePolicyId requires a candidate definition"
         }
-        val matched = match(ticket) ?: return FirstReplySlaPreview(false, null, null, null, null, null, null)
+        val persisted = matchingRows(ticket)
+            .filterNot { it.policyId == candidatePolicyId }
+            .firstOrNull()
+        val candidateTarget = candidate
+            ?.takeIf { matches(it.conditions, ticket) }
+            ?.targets
+            ?.get(ticket.priority)
+        val candidateWins = candidate != null && candidateTarget != null && (
+            persisted == null ||
+                candidate.position < persisted.position ||
+                candidate.position == persisted.position &&
+                candidatePolicyId != null && candidatePolicyId.toString() < persisted.policyId.toString()
+            )
+        if (candidateWins) {
+            val schedule = activeSchedule(candidate.scheduleId)
+            return FirstReplySlaPreview(
+                matched = true,
+                dueAt = DeterministicBusinessTimeCalculator(schedule.definition)
+                    .addBusinessMinutes(startAt, checkNotNull(candidateTarget)),
+                targetMinutes = candidateTarget,
+                policyId = null,
+                policyVersion = null,
+                scheduleId = schedule.id,
+                scheduleVersion = schedule.version,
+            )
+        }
+        val matched = persisted?.let(::appliedPolicy)
+            ?: return FirstReplySlaPreview(false, null, null, null, null, null, null)
         return FirstReplySlaPreview(
             matched = true,
             dueAt = DeterministicBusinessTimeCalculator(matched.schedule.definition)
@@ -214,9 +242,13 @@ internal class JdbcFirstReplySlaAdministration(
 
     @Transactional(readOnly = true)
     override fun match(ticket: FirstReplySlaTicketSample): AppliedFirstReplySlaPolicy? {
-        val candidates = jdbc.query(
-            """
-            select v.policy_id, v.version, v.schedule_id, v.schedule_version,
+        val row = matchingRows(ticket).firstOrNull() ?: return null
+        return appliedPolicy(row)
+    }
+
+    private fun matchingRows(ticket: FirstReplySlaTicketSample): List<MatchRow> = jdbc.query(
+        """
+            select v.policy_id, v.version, v.position, v.schedule_id, v.schedule_version,
                    v.condition_group_id, v.condition_channel, target.target_minutes
               from sla_policies root
               join sla_policy_versions v
@@ -227,13 +259,14 @@ internal class JdbcFirstReplySlaAdministration(
              where (v.condition_group_id is null or v.condition_group_id = ?)
                and (v.condition_channel is null or v.condition_channel = ?)
              order by v.position, v.policy_id
-            """.trimIndent(),
-            { result, _ -> matchRow(result) },
-            ticket.priority.name,
-            ticket.groupId,
-            ticket.channel.name,
-        )
-        val row = candidates.firstOrNull() ?: return null
+        """.trimIndent(),
+        { result, _ -> matchRow(result) },
+        ticket.priority.name,
+        ticket.groupId,
+        ticket.channel.name,
+    )
+
+    private fun appliedPolicy(row: MatchRow): AppliedFirstReplySlaPolicy {
         val schedule = schedules.exact(row.scheduleId, row.scheduleVersion)
             ?: throw IllegalStateException("Snapshotted business schedule is unavailable")
         val pauses = jdbc.query(
@@ -315,6 +348,7 @@ internal class JdbcFirstReplySlaAdministration(
             targets = targets,
             pauseStatuses = pauses,
             version = version,
+            activeVersion = root.activeVersion,
             aggregateVersion = root.aggregateVersion,
             active = root.activeVersion == version,
             createdAt = metadata.createdAt,
@@ -396,6 +430,9 @@ internal class JdbcFirstReplySlaAdministration(
         (conditions.groupId == null || conditions.groupId == ticket.groupId) &&
             (conditions.channel == null || conditions.channel == ticket.channel)
 
+    private fun dev.deskseed.sla.BusinessScheduleDefinition.hasRecurringCapacity(): Boolean =
+        weekdays.values.any { it.enabled && it.intervals.isNotEmpty() }
+
     private fun audit(
         eventType: String,
         policyId: UUID,
@@ -436,6 +473,7 @@ internal class JdbcFirstReplySlaAdministration(
     private fun matchRow(result: ResultSet) = MatchRow(
         result.getObject("policy_id", UUID::class.java),
         result.getInt("version"),
+        result.getInt("position"),
         result.getObject("schedule_id", UUID::class.java),
         result.getInt("schedule_version"),
         result.getLong("target_minutes"),
@@ -463,6 +501,7 @@ internal class JdbcFirstReplySlaAdministration(
     private data class MatchRow(
         val policyId: UUID,
         val policyVersion: Int,
+        val position: Int,
         val scheduleId: UUID,
         val scheduleVersion: Int,
         val targetMinutes: Long,

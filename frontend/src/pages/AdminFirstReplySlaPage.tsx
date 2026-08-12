@@ -20,17 +20,11 @@ import type {
   TicketChannel,
   TicketPriority,
 } from '../api/types'
+import { localDateTimeToInstant } from '../shared/timeZone'
 import { Notification, ScreenState } from '../shared/ui/system'
 
 const PRIORITIES: TicketPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT']
-const STATUSES: AgentTicketStatus[] = [
-  'NEW',
-  'OPEN',
-  'PENDING',
-  'ON_HOLD',
-  'SOLVED',
-  'CLOSED',
-]
+const STATUSES: AgentTicketStatus[] = ['NEW', 'OPEN', 'PENDING', 'ON_HOLD']
 const CHANNELS: TicketChannel[] = ['WEB', 'AGENT', 'EMAIL', 'CHAT', 'API']
 
 function emptyPolicy(scheduleId = ''): FirstReplySlaPolicyDefinition {
@@ -90,7 +84,9 @@ export function AdminFirstReplySlaPage() {
   )
   const [samplePriority, setSamplePriority] = useState<TicketPriority>('NORMAL')
   const [sampleChannel, setSampleChannel] = useState<TicketChannel>('WEB')
+  const [sampleGroupId, setSampleGroupId] = useState('')
   const [sampleStart, setSampleStart] = useState('2026-08-14T18:30')
+  const [previewTimeZone, setPreviewTimeZone] = useState('UTC')
   const errorRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(
@@ -114,7 +110,7 @@ export function AdminFirstReplySlaPage() {
           setVersions([])
           setDraft(
             emptyPolicy(
-              nextSchedules.find((item) => item.active)?.id ??
+              nextSchedules.find((item) => item.activeVersion !== null)?.id ??
                 nextSchedules[0]?.id ??
                 '',
             ),
@@ -148,6 +144,11 @@ export function AdminFirstReplySlaPage() {
   }, [error])
 
   const selectedPolicy = policies.find((item) => item.id === selectedId)
+  const selectedSchedule = schedules.find(
+    (schedule) => schedule.id === draft.scheduleId,
+  )
+  const selectedScheduleTimeZone =
+    selectedSchedule?.activeTimeZone ?? selectedSchedule?.timeZone ?? 'UTC'
 
   async function selectPolicy(id: string) {
     setError(null)
@@ -220,15 +221,20 @@ export function AdminFirstReplySlaPage() {
     try {
       setPreview(
         await previewFirstReplySlaPolicy({
+          candidatePolicyId: creating ? null : selectedId,
           candidate: draft,
           ticket: {
             priority: samplePriority,
-            groupId: draft.conditions.groupId,
+            groupId: sampleGroupId || null,
             channel: sampleChannel,
           },
-          startAt: new Date(sampleStart).toISOString(),
+          startAt: localDateTimeToInstant(
+            sampleStart,
+            selectedScheduleTimeZone,
+          ),
         }),
       )
+      setPreviewTimeZone(selectedScheduleTimeZone)
     } catch (caught) {
       setError(message(caught))
     } finally {
@@ -267,7 +273,7 @@ export function AdminFirstReplySlaPage() {
             setVersions([])
             setDraft(
               emptyPolicy(
-                schedules.find((item) => item.active)?.id ??
+                schedules.find((item) => item.activeVersion !== null)?.id ??
                   schedules[0]?.id ??
                   '',
               ),
@@ -359,7 +365,13 @@ export function AdminFirstReplySlaPage() {
                   <span>
                     위치 {policy.position} · 최신 v{policy.version}
                   </span>
-                  <span>{policy.active ? '활성 버전' : '초안'}</span>
+                  <span>
+                    {policy.activeVersion === null
+                      ? `최신 v${policy.version} · 활성 버전 없음`
+                      : policy.activeVersion === policy.version
+                        ? `활성 v${policy.version} · 최신`
+                        : `활성 v${policy.activeVersion} · 최신 v${policy.version} 초안`}
+                  </span>
                 </button>
               ))
             )}
@@ -427,8 +439,12 @@ export function AdminFirstReplySlaPage() {
                     <option value="">일정 선택</option>
                     {schedules.map((schedule) => (
                       <option key={schedule.id} value={schedule.id}>
-                        {schedule.name} · active{' '}
-                        {schedule.active ? `v${schedule.version}` : '없음'}
+                        {schedule.name} ·{' '}
+                        {schedule.activeVersion === null
+                          ? `active 없음 · latest v${schedule.version}`
+                          : schedule.activeVersion === schedule.version
+                            ? `active v${schedule.version} · latest`
+                            : `active v${schedule.activeVersion} · latest v${schedule.version} draft`}
                       </option>
                     ))}
                   </select>
@@ -557,6 +573,14 @@ export function AdminFirstReplySlaPage() {
                   </select>
                 </label>
                 <label>
+                  Sample group ID
+                  <input
+                    value={sampleGroupId}
+                    onChange={(event) => setSampleGroupId(event.target.value)}
+                    placeholder="UUID 또는 비워 둠"
+                  />
+                </label>
+                <label>
                   고객 첫 공개 문의 시각
                   <input
                     type="datetime-local"
@@ -565,6 +589,7 @@ export function AdminFirstReplySlaPage() {
                   />
                 </label>
               </div>
+              <p>{selectedScheduleTimeZone} 기준</p>
               <button
                 className="button secondary"
                 type="button"
@@ -591,7 +616,14 @@ export function AdminFirstReplySlaPage() {
                     <dt>Due</dt>
                     <dd>
                       {preview.dueAt
-                        ? new Date(preview.dueAt).toLocaleString('ko-KR')
+                        ? new Intl.DateTimeFormat('ko-KR', {
+                            timeZone: previewTimeZone,
+                            year: 'numeric',
+                            month: 'numeric',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          }).format(new Date(preview.dueAt))
                         : '없음'}
                     </dd>
                   </div>

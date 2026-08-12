@@ -42,6 +42,7 @@ const schedule: BusinessSchedule = {
   exceptions: [],
   version: 1,
   activeVersion: 1,
+  activeTimeZone: 'Asia/Seoul',
   aggregateVersion: 0,
   active: true,
   createdAt: '2026-08-10T00:00:00Z',
@@ -62,6 +63,7 @@ const policy: FirstReplySlaPolicy = {
   targets: { LOW: 480, NORMAL: 240, HIGH: 120, URGENT: 60 },
   pauseStatuses: ['PENDING'],
   version: 1,
+  activeVersion: null,
   aggregateVersion: 0,
   active: false,
   createdAt: '2026-08-12T00:00:00Z',
@@ -118,6 +120,12 @@ describe('AdminFirstReplySlaPage', () => {
     expect(screen.getByText('NO_POLICY')).toBeVisible()
     expect(screen.getByDisplayValue('기본 First Reply')).toBeVisible()
     expect(screen.getByLabelText('PENDING')).toBeChecked()
+    expect(screen.queryByLabelText('SOLVED')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('CLOSED')).not.toBeInTheDocument()
+    await user.type(
+      screen.getByLabelText('Sample group ID'),
+      '71000000-0000-0000-0000-000000000001',
+    )
     await user.clear(screen.getByLabelText('NORMAL target minutes'))
     await user.type(screen.getByLabelText('NORMAL target minutes'), '180')
     await user.click(screen.getByRole('button', { name: '선택·기한 preview' }))
@@ -129,6 +137,16 @@ describe('AdminFirstReplySlaPage', () => {
       apiMocks.previewFirstReplySlaPolicy.mock.calls[0]![0].candidate.targets
         .NORMAL,
     ).toBe(180)
+    expect(apiMocks.previewFirstReplySlaPolicy.mock.calls[0]![0]).toEqual(
+      expect.objectContaining({
+        candidatePolicyId: policy.id,
+        startAt: '2026-08-14T09:30:00.000Z',
+        ticket: expect.objectContaining({
+          groupId: '71000000-0000-0000-0000-000000000001',
+        }),
+      }),
+    )
+    expect(screen.getByText('Asia/Seoul 기준')).toBeVisible()
     expect(await screen.findByText('180분')).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: '이 버전 활성화' }))
@@ -138,5 +156,35 @@ describe('AdminFirstReplySlaPage', () => {
       0,
     )
     expect(await screen.findByText('정책 v1이 활성화되었습니다.')).toBeVisible()
+  })
+
+  it('shows active policy and schedule versions separately from latest drafts', async () => {
+    const latestPolicy = {
+      ...policy,
+      version: 2,
+      activeVersion: 1,
+      active: false,
+    }
+    const latestSchedule = {
+      ...schedule,
+      version: 2,
+      activeVersion: 1,
+      active: false,
+    }
+    apiMocks.listFirstReplySlaPolicies.mockResolvedValue([latestPolicy])
+    apiMocks.listFirstReplySlaPolicyVersions.mockResolvedValue([
+      latestPolicy,
+      { ...policy, activeVersion: 1, active: true },
+    ])
+    apiMocks.listBusinessSchedules.mockResolvedValue([latestSchedule])
+
+    render(<AdminFirstReplySlaPage />)
+
+    expect(await screen.findByText('활성 v1 · 최신 v2 초안')).toBeVisible()
+    expect(
+      screen.getByRole('option', {
+        name: 'Default Support Hours · active v1 · latest v2 draft',
+      }),
+    ).toBeInTheDocument()
   })
 })

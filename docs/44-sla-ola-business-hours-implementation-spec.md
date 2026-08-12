@@ -165,6 +165,16 @@ Resolution: may or may not pause; explicit
 
 No hidden global pause rule.
 
+For the First Reply slice, configurable pause statuses are limited to non-terminal
+ticket statuses (`NEW`, `OPEN`, `PENDING`, `ON_HOLD`). `SOLVED` and `CLOSED` always
+terminate the target. A target that is already due is breached before terminal
+cancellation is considered.
+
+An SLA policy may reference only a snapshotted schedule version with recurring
+weekly capacity. Fully closed and exception-only schedules are valid schedule
+definitions, but policy activation rejects them because an active target must
+always have a deterministic due instant.
+
 ## 9. Recalculation
 
 Events that may require recalculation:

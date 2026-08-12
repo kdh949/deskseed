@@ -83,6 +83,17 @@ class FirstReplySlaMigrationTest {
                     ).use { result -> result.next(); result.getInt(1) },
                 ).isEqualTo(3)
 
+                val pauseStatusSavepoint = jdbc.setSavepoint()
+                assertThatThrownBy {
+                    statement.executeUpdate(
+                        """
+                        insert into sla_policy_pause_statuses (policy_id, policy_version, status)
+                        values ('62000000-0000-0000-0000-000000000001', 1, 'SOLVED')
+                        """.trimIndent(),
+                    )
+                }.isInstanceOf(SQLException::class.java)
+                jdbc.rollback(pauseStatusSavepoint)
+
                 assertThatThrownBy {
                     statement.executeUpdate(
                         """

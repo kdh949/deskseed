@@ -50,6 +50,8 @@ data class BusinessScheduleView(
     val version: Int,
     @get:JsonInclude(JsonInclude.Include.ALWAYS)
     val activeVersion: Int?,
+    @get:JsonInclude(JsonInclude.Include.ALWAYS)
+    val activeTimeZone: String?,
     val aggregateVersion: Long,
     val active: Boolean,
     val createdAt: Instant,

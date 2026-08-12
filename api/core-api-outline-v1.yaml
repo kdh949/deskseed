@@ -4166,6 +4166,7 @@ components:
         - id
         - version
         - activeVersion
+        - activeTimeZone
         - aggregateVersion
         - active
         - createdAt
@@ -4181,6 +4182,9 @@ components:
             type: [integer, 'null']
             minimum: 1
             description: Current activated immutable version, independent of the returned version.
+          activeTimeZone:
+            type: [string, 'null']
+            description: IANA timezone of the current activated immutable schedule version.
           aggregateVersion:
             type: integer
             format: int64
@@ -4316,9 +4320,10 @@ components:
         pauseStatuses:
           type: array
           items:
-            $ref: '#/components/schemas/AgentTicketStatus'
+            type: string
+            enum: [NEW, OPEN, PENDING, ON_HOLD]
           uniqueItems: true
-          maxItems: 6
+          maxItems: 4
           default:
           - PENDING
     FirstReplySlaPolicy:
@@ -4328,6 +4333,7 @@ components:
         required:
         - id
         - version
+        - activeVersion
         - aggregateVersion
         - scheduleVersion
         - active
@@ -4339,6 +4345,10 @@ components:
           version:
             type: integer
             minimum: 1
+          activeVersion:
+            type: [integer, 'null']
+            minimum: 1
+            description: Current activated immutable policy version, independent of the returned version.
           aggregateVersion:
             type: integer
             format: int64
@@ -4356,6 +4366,10 @@ components:
       additionalProperties: false
       required: [ticket, startAt]
       properties:
+        candidatePolicyId:
+          type: [string, 'null']
+          format: uuid
+          description: Existing policy replaced by candidate during ordered preview evaluation.
         candidate:
           oneOf:
           - $ref: '#/components/schemas/FirstReplySlaPolicyInput'

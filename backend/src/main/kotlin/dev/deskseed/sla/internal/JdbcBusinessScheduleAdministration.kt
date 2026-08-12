@@ -245,16 +245,24 @@ internal class JdbcBusinessScheduleAdministration(
 
     private fun root(scheduleId: UUID): ScheduleRoot = roots(
         """
-        select id, current_version, active_version, aggregate_version
-        from business_schedules where id = ?
+        select s.id, s.current_version, s.active_version, s.aggregate_version,
+               active.timezone as active_timezone
+        from business_schedules s
+        left join business_schedule_versions active
+          on active.schedule_id = s.id and active.version = s.active_version
+        where s.id = ?
         """.trimIndent(),
         scheduleId,
     ).singleOrNull() ?: throw BusinessScheduleNotFoundException()
 
     private fun lockedRoot(scheduleId: UUID): ScheduleRoot = roots(
         """
-        select id, current_version, active_version, aggregate_version
-        from business_schedules where id = ? for update
+        select s.id, s.current_version, s.active_version, s.aggregate_version,
+               active.timezone as active_timezone
+        from business_schedules s
+        left join business_schedule_versions active
+          on active.schedule_id = s.id and active.version = s.active_version
+        where s.id = ? for update of s
         """.trimIndent(),
         scheduleId,
     ).singleOrNull() ?: throw BusinessScheduleNotFoundException()
@@ -266,6 +274,7 @@ internal class JdbcBusinessScheduleAdministration(
                 id = result.getObject("id", UUID::class.java),
                 currentVersion = result.getInt("current_version"),
                 activeVersion = result.getInt("active_version").takeUnless { result.wasNull() },
+                activeTimeZone = result.getString("active_timezone"),
                 aggregateVersion = result.getLong("aggregate_version"),
             )
         },
@@ -375,6 +384,7 @@ internal class JdbcBusinessScheduleAdministration(
             },
             version = version,
             activeVersion = root.activeVersion,
+            activeTimeZone = root.activeTimeZone,
             aggregateVersion = root.aggregateVersion,
             active = root.activeVersion == version,
             createdAt = metadata.createdAt,
@@ -524,6 +534,7 @@ internal class JdbcBusinessScheduleAdministration(
         val id: UUID,
         val currentVersion: Int,
         val activeVersion: Int?,
+        val activeTimeZone: String?,
         val aggregateVersion: Long,
     )
 

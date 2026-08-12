@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
+import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -37,6 +38,12 @@ class FirstReplySlaAdminIntegrationTest {
 
     @BeforeEach
     fun clearAudit() {
+        jdbc.execute(
+            """
+            truncate table sla_policy_activations, sla_policy_pause_statuses,
+                sla_policy_priority_targets, sla_policy_versions, sla_policies cascade
+            """.trimIndent(),
+        )
         jdbc.execute("truncate table admin_security_audit_events")
     }
 
@@ -63,6 +70,7 @@ class FirstReplySlaAdminIntegrationTest {
         )
             .andExpect(status().isCreated)
             .andExpect(header().string("ETag", "\"0\""))
+            .andExpect(content().string(containsString("\"activeVersion\":null")))
             .andExpect(jsonPath("$.active").value(false))
             .andReturn().response.contentAsString
         val policyId = UUID.fromString(stringField(response, "id"))
@@ -91,11 +99,13 @@ class FirstReplySlaAdminIntegrationTest {
         )
             .andExpect(status().isOk)
             .andExpect(header().string("ETag", "\"2\""))
+            .andExpect(jsonPath("$.activeVersion").value(2))
             .andExpect(jsonPath("$.active").value(true))
 
         mockMvc.perform(get("/api/v1/admin/sla-policies/{id}/versions", policyId).session(browser.session))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].version").value(2))
+            .andExpect(jsonPath("$[0].activeVersion").value(2))
             .andExpect(jsonPath("$[0].targets.NORMAL").value(180))
             .andExpect(jsonPath("$[1].version").value(1))
             .andExpect(jsonPath("$[1].targets.NORMAL").value(240))
@@ -105,6 +115,66 @@ class FirstReplySlaAdminIntegrationTest {
             String::class.java,
             policyId,
         )).containsExactly("SLA_POLICY_CREATED", "SLA_POLICY_VERSION_CREATED", "SLA_POLICY_ACTIVATED")
+    }
+
+    @Test
+    fun `preview orders an unsaved candidate with active policies`() {
+        val browser = browser("ADMIN")
+        val activeResponse = mockMvc.perform(
+            post("/api/v1/admin/sla-policies")
+                .session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(policyJson("Higher priority", 30, position = 1)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val activePolicyId = UUID.fromString(stringField(activeResponse, "id"))
+        mockMvc.perform(
+            put("/api/v1/admin/sla-policies/{id}/versions/1/activation", activePolicyId)
+                .session(browser.session).csrf(browser).header("If-Match", "\"0\""),
+        ).andExpect(status().isOk)
+
+        mockMvc.perform(
+            post("/api/v1/admin/sla-policies/preview")
+                .session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(previewJson("Lower priority candidate", position = 100)),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.policyId").value(activePolicyId.toString()))
+            .andExpect(jsonPath("$.targetMinutes").value(30))
+    }
+
+    @Test
+    fun `policy activation rejects closed and expired exception only schedules`() {
+        val browser = browser("ADMIN")
+        listOf(false, true).forEach { expiredOpen ->
+            val scheduleResponse = mockMvc.perform(
+                post("/api/v1/admin/business-schedules")
+                    .session(browser.session).csrf(browser)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(closedScheduleJson("Closed ${UUID.randomUUID()}", expiredOpen)),
+            ).andExpect(status().isCreated).andReturn().response.contentAsString
+            val scheduleId = UUID.fromString(stringField(scheduleResponse, "id"))
+            mockMvc.perform(
+                put("/api/v1/admin/business-schedules/{id}/versions/1/activation", scheduleId)
+                    .session(browser.session).csrf(browser).header("If-Match", "\"0\""),
+            ).andExpect(status().isOk)
+
+            val policyResponse = mockMvc.perform(
+                post("/api/v1/admin/sla-policies")
+                    .session(browser.session).csrf(browser)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(policyJson("Closed schedule policy", 60, scheduleId = scheduleId)),
+            ).andExpect(status().isCreated).andReturn().response.contentAsString
+            val policyId = UUID.fromString(stringField(policyResponse, "id"))
+
+            mockMvc.perform(
+                put("/api/v1/admin/sla-policies/{id}/versions/1/activation", policyId)
+                    .session(browser.session).csrf(browser).header("If-Match", "\"0\""),
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("scheduleId"))
+                .andExpect(jsonPath("$.fieldErrors[0].code").value("RECURRING_SCHEDULE_CAPACITY_REQUIRED"))
+        }
     }
 
     @Test
@@ -118,6 +188,20 @@ class FirstReplySlaAdminIntegrationTest {
             "select count(*) from admin_security_audit_events where event_type = 'ACCESS_DENIED'",
             Long::class.java,
         )).isEqualTo(1)
+    }
+
+    @Test
+    fun `terminal statuses are rejected as pause configuration`() {
+        val browser = browser("ADMIN")
+        val invalid = policyJson("Invalid pause", 60)
+            .replace("\"pauseStatuses\":[\"PENDING\"]", "\"pauseStatuses\":[\"SOLVED\"]")
+
+        mockMvc.perform(
+            post("/api/v1/admin/sla-policies")
+                .session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalid),
+        ).andExpect(status().isBadRequest)
     }
 
     @Test
@@ -158,11 +242,27 @@ class FirstReplySlaAdminIntegrationTest {
         )).isZero()
     }
 
-    private fun previewJson(name: String) =
-        """{"candidate":${policyJson(name, 240)},"ticket":{"priority":"NORMAL","groupId":null,"channel":"WEB"},"startAt":"2026-08-14T09:30:00Z"}"""
+    private fun previewJson(name: String, position: Int = 10) =
+        """{"candidate":${policyJson(name, 240, position)},"ticket":{"priority":"NORMAL","groupId":null,"channel":"WEB"},"startAt":"2026-08-14T09:30:00Z"}"""
 
-    private fun policyJson(name: String, normalMinutes: Int) =
-        """{"name":"$name","position":10,"scheduleId":"51000000-0000-0000-0000-000000000001","conditions":{"groupId":null,"channel":"WEB"},"targets":{"LOW":480,"NORMAL":$normalMinutes,"HIGH":120,"URGENT":60},"pauseStatuses":["PENDING"]}"""
+    private fun policyJson(
+        name: String,
+        normalMinutes: Int,
+        position: Int = 10,
+        scheduleId: UUID = UUID.fromString("51000000-0000-0000-0000-000000000001"),
+    ) =
+        """{"name":"$name","position":$position,"scheduleId":"$scheduleId","conditions":{"groupId":null,"channel":"WEB"},"targets":{"LOW":480,"NORMAL":$normalMinutes,"HIGH":120,"URGENT":60},"pauseStatuses":["PENDING"]}"""
+
+    private fun closedScheduleJson(name: String, expiredOpen: Boolean): String {
+        val weekdays = listOf("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY")
+            .joinToString(",") { "{\"weekday\":\"$it\",\"enabled\":false,\"intervals\":[]}" }
+        val exceptions = if (expiredOpen) {
+            "[{\"date\":\"2020-01-01\",\"mode\":\"OPEN\",\"intervals\":[{\"start\":\"09:00\",\"end\":\"10:00\"}],\"label\":\"expired\"}]"
+        } else {
+            "[]"
+        }
+        return """{"name":"$name","timeZone":"Asia/Seoul","weekdays":[$weekdays],"exceptions":$exceptions}"""
+    }
 
     private fun browser(role: String): Browser {
         val email = "sla-${role.lowercase()}-${UUID.randomUUID()}@example.com"

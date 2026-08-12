@@ -1,5 +1,6 @@
 package dev.deskseed.sla
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.TicketChannel
 import dev.deskseed.ticketing.TicketPriority
@@ -36,6 +37,9 @@ data class FirstReplySlaPolicyDefinition(
         require(name.trim().isNotEmpty() && name.trim().length <= 100) { "Policy name must contain 1 to 100 characters" }
         require(position in 1..10_000) { "Policy position must be between 1 and 10000" }
         require(targets.values.all { it in 1..525_600 }) { "Priority targets must be between 1 and 525600 minutes" }
+        require(TicketStatus.SOLVED !in pauseStatuses && TicketStatus.CLOSED !in pauseStatuses) {
+            "SOLVED and CLOSED are terminal statuses and cannot pause First Reply SLA"
+        }
     }
 }
 
@@ -49,6 +53,8 @@ data class FirstReplySlaPolicyView(
     val targets: Map<TicketPriority, Long>,
     val pauseStatuses: Set<TicketStatus>,
     val version: Int,
+    @get:JsonInclude(JsonInclude.Include.ALWAYS)
+    val activeVersion: Int?,
     val aggregateVersion: Long,
     val active: Boolean,
     val createdAt: Instant,
@@ -96,6 +102,7 @@ interface FirstReplySlaAdministration {
     ): FirstReplySlaPolicyView
 
     fun preview(
+        candidatePolicyId: UUID?,
         candidate: FirstReplySlaPolicyDefinition?,
         ticket: FirstReplySlaTicketSample,
         startAt: Instant,

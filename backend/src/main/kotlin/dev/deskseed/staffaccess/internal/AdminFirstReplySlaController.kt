@@ -57,7 +57,12 @@ internal class AdminFirstReplySlaController(
 
     @PostMapping("/preview")
     fun preview(@Valid @RequestBody body: FirstReplySlaPreviewRequest): FirstReplySlaPreview =
-        administration.preview(body.candidate?.toDefinition(), body.ticket.toSample(), body.startAt)
+        administration.preview(
+            body.candidatePolicyId,
+            body.candidate?.toDefinition(),
+            body.ticket.toSample(),
+            body.startAt,
+        )
 
     @GetMapping("/{policyId}")
     fun get(@PathVariable policyId: UUID): ResponseEntity<FirstReplySlaPolicyView> {
@@ -134,7 +139,7 @@ internal data class FirstReplySlaPolicyRequest(
     val scheduleId: UUID,
     @field:Valid val conditions: FirstReplySlaPolicyConditionsRequest = FirstReplySlaPolicyConditionsRequest(),
     @field:Valid val targets: FirstReplySlaPriorityTargetsRequest,
-    @field:Size(max = 6) val pauseStatuses: Set<TicketStatus> = setOf(TicketStatus.PENDING),
+    @field:Size(max = 4) val pauseStatuses: Set<TicketStatus> = setOf(TicketStatus.PENDING),
 ) {
     fun toDefinition() = FirstReplySlaPolicyDefinition(
         name = name,
@@ -166,6 +171,7 @@ internal data class FirstReplySlaPriorityTargetsRequest(
 }
 
 internal data class FirstReplySlaPreviewRequest(
+    val candidatePolicyId: UUID? = null,
     @field:Valid val candidate: FirstReplySlaPolicyRequest? = null,
     @field:Valid val ticket: FirstReplySlaTicketSampleRequest,
     val startAt: Instant,

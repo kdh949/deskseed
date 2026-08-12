@@ -54,6 +54,7 @@ class BusinessScheduleAdminIntegrationTest {
             .andExpect(jsonPath("$[0].timeZone").value("Asia/Seoul"))
             .andExpect(jsonPath("$[0].version").value(1))
             .andExpect(jsonPath("$[0].activeVersion").value(1))
+            .andExpect(jsonPath("$[0].activeTimeZone").value("Asia/Seoul"))
             .andExpect(jsonPath("$[0].active").value(true))
             .andExpect(jsonPath("$[0].weekdays[0].weekday").value("MONDAY"))
             .andExpect(jsonPath("$[0].weekdays[0].intervals[0].start").value("09:00"))
@@ -123,6 +124,7 @@ class BusinessScheduleAdminIntegrationTest {
             .andExpect(header().string("ETag", "\"0\""))
             .andExpect(jsonPath("$.version").value(1))
             .andExpect(content().string(containsString("\"activeVersion\":null")))
+            .andExpect(content().string(containsString("\"activeTimeZone\":null")))
             .andExpect(jsonPath("$.active").value(false))
             .andReturn().response.contentAsString
         val scheduleId = UUID.fromString(stringField(created, "id"))

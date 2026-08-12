@@ -43,11 +43,14 @@ class FirstReplySlaStateMachine(
                 remainingBusinessMinutes = targetMinutes,
             )
         } else {
+            val dueAt = requireNotNull(calculator.addBusinessMinutes(startAt, targetMinutes)) {
+                "Active First Reply SLA requires recurring schedule capacity"
+            }
             FirstReplySlaTargetClock(
                 state = SlaTargetState.ACTIVE,
                 startedAt = startAt,
                 activeSegmentStartedAt = startAt,
-                dueAt = calculator.addBusinessMinutes(startAt, targetMinutes),
+                dueAt = dueAt,
                 remainingBusinessMinutes = targetMinutes,
             )
         }
@@ -59,15 +62,15 @@ class FirstReplySlaStateMachine(
         occurredAt: Instant,
     ): FirstReplySlaTargetClock {
         if (target.state.isTerminal()) return target
+        if (target.state == SlaTargetState.ACTIVE && target.isDueAtOrBefore(occurredAt)) {
+            return target.breached(occurredAt)
+        }
         if (newStatus == TicketStatus.SOLVED || newStatus == TicketStatus.CLOSED) {
             return target.copy(
                 state = SlaTargetState.CANCELLED,
                 activeSegmentStartedAt = null,
                 cancelledAt = occurredAt,
             )
-        }
-        if (target.state == SlaTargetState.ACTIVE && target.isDueAtOrBefore(occurredAt)) {
-            return target.breached(occurredAt)
         }
 
         val wasPaused = previousStatus in pauseStatuses
@@ -84,11 +87,16 @@ class FirstReplySlaStateMachine(
                 )
             }
 
-            target.state == SlaTargetState.PAUSED && wasPaused && !isPaused -> target.copy(
-                state = SlaTargetState.ACTIVE,
-                activeSegmentStartedAt = occurredAt,
-                dueAt = calculator.addBusinessMinutes(occurredAt, target.remainingBusinessMinutes),
-            )
+            target.state == SlaTargetState.PAUSED && wasPaused && !isPaused -> {
+                val dueAt = requireNotNull(
+                    calculator.addBusinessMinutes(occurredAt, target.remainingBusinessMinutes),
+                ) { "Active First Reply SLA requires recurring schedule capacity" }
+                target.copy(
+                    state = SlaTargetState.ACTIVE,
+                    activeSegmentStartedAt = occurredAt,
+                    dueAt = dueAt,
+                )
+            }
 
             else -> target
         }

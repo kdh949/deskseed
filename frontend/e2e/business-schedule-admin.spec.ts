@@ -51,6 +51,7 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
       ...definition,
       version,
       activeVersion,
+      activeTimeZone: definitions.get(activeVersion)?.timeZone ?? null,
       aggregateVersion,
       active: version === activeVersion,
       createdAt:
