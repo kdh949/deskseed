@@ -1,0 +1,143 @@
+:root {
+  /* Reference tokens: raw values only. */
+  --ds-ref-color-teal-50: #e7f6f5;
+  --ds-ref-color-teal-100: #cdecea;
+  --ds-ref-color-teal-300: #79c9c4;
+  --ds-ref-color-teal-500: #138a8b;
+  --ds-ref-color-teal-600: #0e7175;
+  --ds-ref-color-teal-800: #0b4651;
+  --ds-ref-color-teal-900: #07333d;
+  --ds-ref-color-brand-deep: #022d3d;
+  --ds-ref-color-blue-600: #1768a6;
+  --ds-ref-color-green-600: #1f7a4d;
+  --ds-ref-color-amber-50: #fffaf0;
+  --ds-ref-color-amber-100: #fff7e5;
+  --ds-ref-color-amber-400: #dfa544;
+  --ds-ref-color-amber-500: #a76500;
+  --ds-ref-color-red-50: #fff1f0;
+  --ds-ref-color-red-500: #bb3131;
+  --ds-ref-color-neutral-0: #ffffff;
+  --ds-ref-color-neutral-25: #fbfcfc;
+  --ds-ref-color-neutral-50: #f5f7f7;
+  --ds-ref-color-neutral-100: #edf1f2;
+  --ds-ref-color-neutral-200: #dce4e6;
+  --ds-ref-color-neutral-300: #c4d0d3;
+  --ds-ref-color-neutral-500: #596d73;
+  --ds-ref-color-neutral-700: #334950;
+  --ds-ref-color-neutral-900: #162b33;
+
+  --ds-ref-space-1: 4px;
+  --ds-ref-space-2: 8px;
+  --ds-ref-space-3: 12px;
+  --ds-ref-space-4: 16px;
+  --ds-ref-space-5: 20px;
+  --ds-ref-space-6: 24px;
+  --ds-ref-space-8: 32px;
+  --ds-ref-space-10: 40px;
+  --ds-ref-space-12: 48px;
+  --ds-ref-space-16: 64px;
+
+  --ds-ref-radius-control: 4px;
+  --ds-ref-radius-container: 8px;
+  --ds-ref-radius-full: 999px;
+  --ds-ref-radius-none: 0px;
+  --ds-ref-font-size-xs: 12px;
+  --ds-ref-font-size-sm: 14px;
+  --ds-ref-font-size-md: 16px;
+  --ds-ref-font-size-lg: 18px;
+  --ds-ref-font-size-xl: 22px;
+  --ds-ref-line-height-xs: 16px;
+  --ds-ref-line-height-sm: 20px;
+  --ds-ref-line-height-md: 24px;
+  --ds-ref-line-height-lg: 28px;
+  --ds-ref-font-weight-regular: 400;
+  --ds-ref-font-weight-semibold: 600;
+  --ds-ref-font-weight-bold: 700;
+  --ds-ref-border-width-default: 1px;
+  --ds-ref-control-compact: 32px;
+  --ds-ref-control-default: 36px;
+  --ds-ref-icon-sm: 12px;
+  --ds-ref-icon-md: 16px;
+  --ds-ref-icon-lg: 20px;
+
+  /* Semantic tokens: product intent. */
+  --ds-background-default: var(--ds-ref-color-neutral-0);
+  --ds-background-subtle: var(--ds-ref-color-neutral-25);
+  --ds-background-recessed: var(--ds-ref-color-neutral-50);
+  --ds-background-raised: var(--ds-ref-color-neutral-0);
+  --ds-background-chrome: var(--ds-ref-color-brand-deep);
+  --ds-background-selected: var(--ds-ref-color-teal-50);
+  --ds-background-hover: var(--ds-ref-color-neutral-100);
+  --ds-background-internal: var(--ds-ref-color-amber-50);
+  --ds-background-danger: var(--ds-ref-color-red-50);
+  --ds-background-disabled: var(--ds-ref-color-neutral-100);
+
+  --ds-foreground-default: var(--ds-ref-color-neutral-900);
+  --ds-foreground-subtle: var(--ds-ref-color-neutral-700);
+  --ds-foreground-muted: var(--ds-ref-color-neutral-500);
+  --ds-foreground-disabled: var(--ds-ref-color-neutral-500);
+  --ds-foreground-inverse: var(--ds-ref-color-neutral-0);
+  --ds-foreground-link: var(--ds-ref-color-blue-600);
+  --ds-foreground-primary: var(--ds-ref-color-teal-600);
+  --ds-foreground-success: var(--ds-ref-color-green-600);
+  --ds-foreground-warning: var(--ds-ref-color-amber-500);
+  --ds-foreground-danger: var(--ds-ref-color-red-500);
+  --ds-foreground-chrome-subtle: var(--ds-ref-color-teal-100);
+
+  --ds-border-default: var(--ds-ref-color-neutral-200);
+  --ds-border-subtle: var(--ds-ref-color-neutral-100);
+  --ds-border-emphasis: var(--ds-ref-color-neutral-300);
+  --ds-border-focus: var(--ds-ref-color-teal-500);
+  --ds-border-warning: var(--ds-ref-color-amber-400);
+  --ds-border-danger: var(--ds-ref-color-red-500);
+  --ds-border-chrome: var(--ds-ref-color-teal-800);
+  --ds-border-chrome-emphasis: var(--ds-ref-color-teal-600);
+
+  --ds-action-primary-default: var(--ds-ref-color-teal-600);
+  --ds-action-primary-hover: var(--ds-ref-color-teal-800);
+  --ds-action-primary-active: var(--ds-ref-color-teal-900);
+  --ds-action-primary-disabled: var(--ds-ref-color-teal-300);
+  --ds-action-secondary-hover: var(--ds-ref-color-neutral-100);
+  --ds-background-chrome-input: var(--ds-ref-color-teal-800);
+
+  --ds-status-new: var(--ds-ref-color-blue-600);
+  --ds-status-open: var(--ds-ref-color-green-600);
+  --ds-status-pending: var(--ds-ref-color-amber-500);
+  --ds-status-on-hold: var(--ds-ref-color-neutral-500);
+  --ds-status-solved: var(--ds-ref-color-neutral-500);
+  --ds-priority-high: var(--ds-ref-color-red-500);
+
+  --ds-focus-ring-color: var(--ds-ref-color-teal-500);
+  --ds-focus-ring-width: 3px;
+  --ds-focus-ring-offset: 2px;
+
+  /* Component tokens: stable visual contracts. */
+  --ds-button-primary-background-default: var(--ds-action-primary-default);
+  --ds-button-primary-background-hover: var(--ds-action-primary-hover);
+  --ds-button-primary-foreground: var(--ds-foreground-inverse);
+  --ds-button-secondary-background-hover: var(--ds-action-secondary-hover);
+  --ds-button-secondary-foreground: var(--ds-foreground-default);
+  --ds-input-background: var(--ds-background-raised);
+  --ds-input-border: var(--ds-border-emphasis);
+  --ds-input-border-focus: var(--ds-border-focus);
+  --ds-composer-public-background: var(--ds-background-raised);
+  --ds-composer-public-border: var(--ds-border-focus);
+  --ds-composer-internal-background: var(--ds-background-internal);
+  --ds-composer-internal-border: var(--ds-border-warning);
+  --ds-nav-rail-background: var(--ds-background-raised);
+  --ds-nav-rail-foreground: var(--ds-foreground-default);
+  --ds-nav-rail-selected-background: var(--ds-background-selected);
+  --ds-ticket-row-hover: var(--ds-background-hover);
+  --ds-ticket-row-selected: var(--ds-background-selected);
+
+  --ds-layout-top-chrome-height: 60px;
+  --ds-layout-nav-rail-width: 64px;
+  --ds-layout-property-panel-min-width: 248px;
+  --ds-layout-property-panel-width: 276px;
+  --ds-layout-context-panel-min-width: 300px;
+  --ds-layout-context-panel-width: 320px;
+  --ds-layout-conversation-min-width: 480px;
+  --ds-layout-composer-min-height: 168px;
+  --ds-layout-agent-min-width: 1180px;
+  --ds-layer-popover: 20;
+}

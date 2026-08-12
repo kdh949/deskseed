@@ -1,0 +1,4 @@
+@import './designSystem.css';
+@import './patterns/ticket-workspace.css';
+@import './patterns/application.css';
+@import './patterns/ticket-queue.css';

@@ -7,7 +7,7 @@ versions are pinned in `frontend/package-lock.json`.
 ## Zendesk Garden
 
 The frontend uses `@zendeskgarden/react-theming` and `@zendeskgarden/react-buttons` through
-Deskseed-owned wrappers in `frontend/src/shared/ui`. Copyright Zendesk, Inc. These packages are
+Deskseed-owned wrappers in `frontend/src/design-system`. Copyright Zendesk, Inc. These packages are
 licensed under the Apache License, Version 2.0. The license text is available at
 <https://www.apache.org/licenses/LICENSE-2.0>. This notice does not grant permission to use any
 Zendesk trademark, logo, or proprietary visual asset.
