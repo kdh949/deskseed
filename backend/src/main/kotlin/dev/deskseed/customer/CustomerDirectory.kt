@@ -10,4 +10,6 @@ data class CustomerRef(
 
 interface CustomerDirectory {
     fun createUnverified(name: String, email: String): CustomerRef
+
+    fun findById(customerId: UUID): CustomerRef?
 }

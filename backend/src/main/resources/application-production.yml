@@ -18,6 +18,10 @@ server:
         secure: true
 
 deskseed:
+  mail:
+    # A production provider is not selected in this slice. Operators must add a reviewed adapter/configuration.
+    delivery-enabled: false
+    transport: disabled
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}

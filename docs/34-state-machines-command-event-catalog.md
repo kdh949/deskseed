@@ -247,3 +247,22 @@ External event names include schema version in envelope, not topic name alone.
 - compatible fields may be added.
 - required field removal/type change creates new version.
 - consumer contract tests run before publish.
+
+## 13. Outbound mail delivery state
+
+```text
+QUEUED
+  → SENDING
+  → SENT
+  → RETRY_WAIT → SENDING
+  → FAILED
+
+FAILED --explicit manual retry--> QUEUED (same intent)
+```
+
+- business transaction은 `QUEUED` intent까지만 저장한다.
+- worker는 claim/lease transaction을 먼저 commit한 뒤 SMTP를 호출하고 별도 transaction으로 결과를 기록한다.
+- attempt는 `IN_PROGRESS | SUCCEEDED | RETRYABLE_FAILED | PERMANENT_FAILED | ABANDONED`다.
+- 기본 retry schedule은 immediate, 1m, 5m, 30m, 2h이며 exhaustion은 terminal `FAILED`다.
+- manual retry는 새 comment/intent가 아니라 기존 terminal intent의 새 retry cycle과 delivery event다.
+- Mailpit SMTP는 stable `Message-ID`를 전달하지만 SMTP accept 후 acknowledgement 유실을 원자적으로 판별하지 못한다. production adapter는 provider idempotency/reconciliation 계약을 별도로 동결해야 한다.

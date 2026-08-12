@@ -120,8 +120,8 @@
 | REQ-FILE-002 | rich text와 redaction은 안전한 canonical format과 별도 권한을 사용한다 | BLUEPRINT_READY | P8 | 48 | XSS/redaction/audit 테스트 |
 | REQ-CHAN-001 | 이메일 수신·발신을 Ticket/Comment channel adapter로 제공한다 | BLUEPRINT_READY | P8 | 38, 49 | threading/dedup/outbox/bounce 테스트 |
 | REQ-CHAN-002 | 채팅·메시징은 나중에 같은 conversation model 위에 추가한다 | DEFERRED | P8+ | 38, 49 | session/transcript/channel adapter 테스트 |
-| REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | Mailpit API delivery test |
-| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | retry/idempotency/delivery status 테스트 |
+| REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | `MailpitApiE2ETest`, Compose `mailpit:1025` + `localhost:8025`, production profile delivery 비활성 |
+| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | `OutboundMailDeliveryIntegrationTest`, PUBLIC/INTERNAL 회귀, V18 intent/attempt/event 상태 |
 | REQ-AI-001 | AI 요약·답변 제안은 검색·권한·감사·평가 기반이 준비된 뒤 선택적으로 추가한다 | DEFERRED | P10 | 38, 49 | 데이터 경계/평가/사람 승인 테스트 |
 
 ## 9. 프론트엔드 경험

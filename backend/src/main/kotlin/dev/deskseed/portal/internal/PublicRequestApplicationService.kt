@@ -5,6 +5,10 @@ import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.portal.RequestNotFoundException
+import dev.deskseed.outboundmail.MailRecipient
+import dev.deskseed.outboundmail.OutboundMailIntent
+import dev.deskseed.outboundmail.OutboundMailPort
+import dev.deskseed.outboundmail.RequestReceivedMail
 import dev.deskseed.settings.CustomerAccessPolicy
 import dev.deskseed.ticketing.CustomerRequestStatus
 import dev.deskseed.ticketing.PublicTicketView
@@ -20,6 +24,7 @@ internal class PublicRequestApplicationService(
     private val customerDirectory: CustomerDirectory,
     private val ticketingFacade: TicketingFacade,
     private val accessTokenStore: RequestAccessTokenStore,
+    private val outboundMailPort: OutboundMailPort,
 ) {
     @Transactional
     fun submit(command: SubmitAnonymousRequest): AnonymousRequestSubmitted {
@@ -41,6 +46,17 @@ internal class PublicRequestApplicationService(
             ),
         )
         val rawAccessToken = accessTokenStore.issue(ticket.ticketId)
+        outboundMailPort.enqueue(
+            OutboundMailIntent(
+                idempotencyKey = "request-received:${ticket.ticketId}",
+                recipient = MailRecipient(customer.email),
+                content = RequestReceivedMail(ticket.ticketNumber),
+                ticketId = ticket.ticketId,
+                customerId = customer.id,
+                actor = ActorRef(ActorType.CUSTOMER, customer.id),
+                context = command.context,
+            ),
+        )
 
         return AnonymousRequestSubmitted(
             ticketNumber = ticket.ticketNumber,

@@ -973,6 +973,21 @@ class AgentTicketCommandIntegrationTest {
             .andReturn().response.contentAsString
         assertThat(projection).contains("고객에게 보이는 상담사 답변")
         assertThat(projection).doesNotContain("고객에게 숨겨야 하는 내부 메모")
+        assertThat(
+            jdbcTemplate.queryForList(
+                "select template_key from outbound_mail_intents where ticket_id = ? order by queued_at, id",
+                String::class.java,
+                ticketId,
+            ).filterNotNull(),
+        ).containsExactly("REQUEST_RECEIVED", "PUBLIC_AGENT_REPLY")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_intents where ticket_id = ? and text_body like ?",
+                Long::class.java,
+                ticketId,
+                "%고객에게 숨겨야 하는 내부 메모%",
+            ),
+        ).isZero()
     }
 
     @Test

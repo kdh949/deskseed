@@ -38,4 +38,13 @@ internal class JpaCustomerDirectory(
             email = customer.emailDisplay,
         )
     }
+
+    @Transactional(readOnly = true)
+    override fun findById(customerId: UUID): CustomerRef? = repository.findById(customerId).orElse(null)?.let { customer ->
+        CustomerRef(
+            id = customer.id,
+            name = customer.name,
+            email = customer.emailDisplay,
+        )
+    }
 }

@@ -700,6 +700,37 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
+    fun `anonymous submission commits one provider neutral request received mail intent`() {
+        val submitted = submitUniqueRequest("request-received-mail")
+
+        val intent = jdbcTemplate.queryForMap(
+            """
+            select template_key, template_version, recipient_address, status,
+                   attempt_count, ticket_id, customer_id, request_id, correlation_id
+            from outbound_mail_intents
+            where ticket_id = ?
+            """.trimIndent(),
+            ticketId(submitted.ticketNumber),
+        )
+
+        assertThat(intent).containsEntry("template_key", "REQUEST_RECEIVED")
+        assertThat(intent).containsEntry("template_version", 1)
+        assertThat(intent["recipient_address"].toString()).contains("request-received-mail")
+        assertThat(intent).containsEntry("status", "QUEUED")
+        assertThat(intent).containsEntry("attempt_count", 0)
+        assertThat(intent["customer_id"]).isEqualTo(ticketRequesterId(submitted.ticketNumber))
+        assertThat(intent).containsEntry("request_id", "request-request-received-mail")
+        assertThat(intent).containsEntry("correlation_id", "correlation-request-received-mail")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_attempts where intent_id = (select id from outbound_mail_intents where ticket_id = ?)",
+                Long::class.java,
+                ticketId(submitted.ticketNumber),
+            ),
+        ).isZero()
+    }
+
+    @Test
     fun `comment insert failure rolls back customer ticket audit and access grant`() {
         assertCreationRollsBackWhenInsertFails("ticket_comments", "comment-insert-failure")
     }
@@ -717,6 +748,11 @@ class PublicRequestIntegrationTest {
     @Test
     fun `access grant insert failure rolls back the whole creation command`() {
         assertCreationRollsBackWhenInsertFails("request_access_tokens", "grant-insert-failure")
+    }
+
+    @Test
+    fun `mail outbox insert failure rolls back customer ticket comment audit and access grant`() {
+        assertCreationRollsBackWhenInsertFails("outbound_mail_intents", "mail-intent-insert-failure")
     }
 
     @Test
@@ -900,7 +936,15 @@ class PublicRequestIntegrationTest {
     }
 
     private fun installFailingInsertTrigger(table: String, functionName: String, triggerName: String) {
-        require(table in setOf("ticket_comments", "ticket_audits", "ticket_audit_events", "request_access_tokens"))
+        require(
+            table in setOf(
+                "ticket_comments",
+                "ticket_audits",
+                "ticket_audit_events",
+                "request_access_tokens",
+                "outbound_mail_intents",
+            ),
+        )
         jdbcTemplate.execute(
             """
             create function $functionName()

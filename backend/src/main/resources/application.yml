@@ -52,6 +52,18 @@ logging:
     level: "%5p [requestId:%X{requestId:-}]"
 
 deskseed:
+  mail:
+    # Delivery is opt-in. The local Compose topology enables the Mailpit SMTP adapter.
+    delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}
+    scheduling-enabled: ${DESKSEED_MAIL_SCHEDULING_ENABLED:true}
+    transport: ${DESKSEED_MAIL_TRANSPORT:disabled}
+    from-address: ${DESKSEED_MAIL_FROM_ADDRESS:no-reply@deskseed.local}
+    public-base-url: ${DESKSEED_MAIL_PUBLIC_BASE_URL:http://localhost:5173}
+    retry-backoff: ${DESKSEED_MAIL_RETRY_BACKOFF:0s,1m,5m,30m,2h}
+    worker-fixed-delay: ${DESKSEED_MAIL_WORKER_FIXED_DELAY:5s}
+    worker-initial-delay: ${DESKSEED_MAIL_WORKER_INITIAL_DELAY:5s}
+    lease-duration: ${DESKSEED_MAIL_LEASE_DURATION:2m}
+    batch-size: ${DESKSEED_MAIL_BATCH_SIZE:20}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
