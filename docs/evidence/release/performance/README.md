@@ -149,6 +149,14 @@ The current list-endpoint status query is separately captured as
 `audit_activity_projection_state` row plus advisory-lock state. It does not scan or count
 the 1.6-million-row projection.
 
+Admin organization lists are guarded separately at the PostgreSQL integration-test layer.
+Staff, group and active-member endpoints retain the frozen array body but accept zero-based
+`page` and a maximum `size` of 100, return total/page headers, and batch their related
+memberships, group labels, member counts and explicit audit grants. The regression fixture
+grows each relevant row family from more than one full page to 27 rows, asserts unchanged
+Hibernate prepared-statement counts, and caps every request at 10 statements. This is a
+query-amplification regression gate, not release-scale latency evidence or a production SLO.
+
 ## Required access-audit overhead (PERF-003)
 
 `release-performance-access-overhead.sql` runs a single-client database-component A/B.

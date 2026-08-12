@@ -8,12 +8,12 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 
 | 영역 | 구현된 동작 |
 | --- | --- |
-| 고객 포털 | 익명 문의 접수, 첫 `PUBLIC` comment 저장, 한 번만 반환되는 opaque 조회 토큰, 토큰으로 `PUBLIC` 대화만 조회 |
-| 직원 인증·관리 | BCrypt 비밀번호, 서버 세션, CSRF, DB 기반 로그인 제한, realm-local expected-actor 일관성 guard, 비밀번호 파일을 이용한 최초 ADMIN bootstrap, ADMIN 전용 직원·그룹·활성 멤버십 관리 |
+| 고객 포털 | 익명 문의별 격리된 미검증 고객, 첫 `PUBLIC` comment 저장, 한 번만 반환되는 opaque 조회 토큰, 토큰으로 `PUBLIC` 대화만 조회 |
+| 직원 인증·관리 | BCrypt 비밀번호, 서버 세션, CSRF, DB 기반 로그인 제한, realm-local expected-actor 일관성 guard, 비밀번호 파일을 이용한 최초 ADMIN bootstrap, bounded page와 batch projection을 쓰는 직원·그룹·활성 멤버십·감사자 고위험 권한 관리 |
 | 상담사 업무 | Views, PostgreSQL 검색, 3-panel 티켓 워크스페이스, `PUBLIC`/`INTERNAL` 별도 draft, 상태·우선순위·그룹·담당자 통합 저장 |
 | 정합성 | 담당자/그룹 invariant, field-aware optimistic concurrency, same-field `409`과 draft 복구, 응답 유실 시 exact UpdateTicket command replay, transfer와 child-ticket 명령 분리, 열린 child 경고 후 parent solve 허용 |
 | 감사 | 한 command/한 `TicketAudit`과 ordered events, semantic `TICKET_VIEWED`, 검색→티켓 열람 연결, strict audit failure, 분리된 change/access/admin 원장과 재생성 가능한 Audit Explorer projection |
-| 감사자 화면 | activity 목록·상세, 권한·이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
+| 감사자 화면 | 기본 routine activity 목록·상세, 명시적 영속 grant와 이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
 | 배포·검증 | Docker Compose, Flyway, PostgreSQL Testcontainers, 실제 브라우저 E2E, visual/axe/keyboard suite, 설치·upgrade·backup·restore rehearsal, 성능 fixture/query-plan harness |
 
 핵심 데이터 규칙은 다음과 같다.
@@ -38,7 +38,6 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 | Platform API, IntegrationClient, idempotency/ETag, ExternalReference, webhook, generated SDK (`ACC-006` 포함) | 계약·blueprint만 존재; runtime 미구현 |
 | Audit export artifact 생성·download·expiry·deletion (verification gate `AUD-004` 전체) | allowlisted request와 self-audit만 구현; artifact state는 `NOT_CREATED` |
 | 보호된 comment 본문 reveal | 미구현 |
-| SECURITY_AUDITOR의 고위험 reveal/export/rebuild 권한을 별도 영속 grant로 부여하는 모델 | 미구현; [security finding](docs/evidence/release/security/security-scan.md)에 공개된 설계 위험 |
 | SLA/OLA, trigger/automation, analytics, attachment/rich text, email channel, app/embed SDK | 후속 상세 명세만 존재; 미구현 |
 | 외부 signed audit checkpoint, production KMS/secret provider, managed deployment | 미구현 |
 
@@ -121,7 +120,7 @@ npm run dev
 
 | 목적 | 명령 |
 | --- | --- |
-| 문서 + backend + frontend 기본 gate | `make check` |
+| 시드 계약 + 문서 + backend + frontend 기본 gate | `make check` |
 | Docker Compose health smoke | `make compose-smoke` |
 | Core/Audit 실제 stack E2E | `bash scripts/run-release-e2e.sh` |
 | 1280/1440/1920 visual, axe, keyboard | `cd frontend && PLAYWRIGHT_BROWSER=chromium npm run test:e2e:dev` |
@@ -159,7 +158,7 @@ Backend는 Spring Modulith 기반 모듈러 모놀리스다. HTTP adapter, appli
 X-Request-Access-Token: <opaque-token>
 ```
 
-원문 token은 DB에 저장하지 않고 hash만 보존하며 기본 TTL은 30일이다. 이메일 소유권 검증, 재발급·폐기 UI와 고객 계정은 아직 제공하지 않는다.
+원문 token은 DB에 저장하지 않고 hash만 보존하며 기본 TTL은 30일이다. 같은 미검증 이메일도 문의마다 별도 고객으로 저장하며 이메일 소유권 검증 전에는 자동 병합하지 않는다. 이메일 소유권 검증, 재발급·폐기 UI와 고객 계정은 아직 제공하지 않는다.
 
 ## 보안·운영 경계
 

@@ -16,7 +16,7 @@ internal class CustomerEntity(
     @Column(name = "name", nullable = false, length = 100)
     var name: String,
 
-    @Column(name = "email_normalized", nullable = false, length = 320, unique = true)
+    @Column(name = "email_normalized", nullable = false, length = 320)
     val emailNormalized: String,
 
     @Column(name = "email_display", nullable = false, length = 320)

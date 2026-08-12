@@ -52,7 +52,7 @@ REQUIRED_CHECKLISTS = {
 }
 EXPECTED_DOC_NUMBERS = set(range(0, 55))
 EXPECTED_TASK_NUMBERS = set(range(0, 26))
-EXPECTED_ADR_NUMBERS = set(range(1, 38))
+EXPECTED_ADR_NUMBERS = set(range(1, 39))
 # This is an onboarding brief that precedes the canonical 00-19 delivery
 # sequence. It intentionally shares the bootstrap number but is not a release
 # task in the contiguous task register.
@@ -202,7 +202,7 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
     if set(task_numbers) != EXPECTED_TASK_NUMBERS:
         errors.append(f"Task briefs must be contiguous 00-25; missing={sorted(EXPECTED_TASK_NUMBERS-set(task_numbers))}, extra={sorted(set(task_numbers)-EXPECTED_TASK_NUMBERS)}")
     if set(adr_numbers) != EXPECTED_ADR_NUMBERS:
-        errors.append(f"ADRs must be contiguous 0001-0037; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
+        errors.append(f"ADRs must be contiguous 0001-0038; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
     counts.update(canonical_docs=len(docs_numbers), task_briefs=len(task_numbers), adr_files=len(adr_numbers))
 
     md_files = all_files("**/*.md")
@@ -522,7 +522,7 @@ def write_report(errors: list[str], warnings: list[str], counts: dict[str, int])
         "",
         "## Validated",
         "",
-        "- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0037 are present and unique.",
+        "- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0038 are present and unique.",
         "- Markdown fenced-code balance and relative Markdown links.",
         "- JSON/YAML parsing and Draft 2020-12 JSON Schema validity.",
         "- OpenAPI 3.1 operation IDs, local `$ref` resolution, and FROZEN staff expected-actor/CSRF/error bindings.",

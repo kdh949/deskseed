@@ -80,8 +80,12 @@ SettingValue
 | `authorization.agentTicketWriteScope` | enum | GROUP_OR_ASSIGNEE | M3 | unresolved product choice; conservative default |
 | `authorization.childParentRead` | bool | true | M5 | relationship permission |
 | `authorization.groupPolicyEnabled` | bool | false | P2 | NONE/READ/READ_WRITE |
-| `authorization.securityAuditorCanReveal` | bool | false | R2 | separate permission preferred |
-| `authorization.securityAuditorCanExport` | bool | false | R2 | separate permission |
+| `authorization.securityAuditorCanReveal` | bool | false | R2 | legacy catalog entry; runtime uses per-staff explicit grant |
+| `authorization.securityAuditorCanExport` | bool | false | R2 | legacy catalog entry; runtime uses per-staff explicit grant |
+
+감사 검색어 원문 공개, export 요청, projection rebuild 권한은 조직 전체 boolean 설정이 아니다.
+각 active `SECURITY_AUDITOR`에게 ADMIN이 별도로 부여하는 `staff_authority_grants`이며,
+부여·회수와 canonical admin/security audit가 같은 transaction에서 처리된다.
 
 ## 6. Access and security audit
 

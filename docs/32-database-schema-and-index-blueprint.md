@@ -32,7 +32,9 @@ version
 Constraints/indexes:
 
 - normalized email index.
-- 익명 중복 정책은 계정 연결 전 별도 decision.
+- 미검증 email은 identity proof가 아니므로 중복을 허용하고 문의마다 별도 Customer를 만든다.
+- `verified_at is not null`인 행만 normalized email partial unique index로 보호한다.
+- 익명 profile 자동 병합/claim은 금지하며 verified ownership을 확인하는 명시적 후속 흐름만 연결할 수 있다.
 
 ### customer_accounts
 
@@ -89,6 +91,21 @@ group_memberships(group_id, staff_id, status, created_at, updated_at, version)
 
 - `lower(btrim(groups.name))` is unique.
 - A membership pair has one mutable row and an optimistic version.
+
+### staff_authority_grants
+
+```text
+id
+staff_id
+authority             AUDIT_SEARCH_QUERY_REVEAL | AUDIT_EXPORT | AUDIT_PROJECTION_REBUILD
+granted_by_staff_id
+granted_at
+unique(staff_id, authority)
+```
+
+- only active `SECURITY_AUDITOR` targets are accepted by the application transaction.
+- this table stores current effective grants; canonical grant/revoke history is kept in `AdminSecurityAuditEvent`.
+- default Security Auditor identity contains routine read authorities only.
 
 ### tickets
 

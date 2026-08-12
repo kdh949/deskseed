@@ -14,5 +14,7 @@ Separate the customer profile from authentication credentials. The first slice a
 ## Consequences
 
 - Reusing the same unverified email does not prove identity and must not reveal prior tickets.
+- Each unverified submission creates a separate Customer; matching contact input never mutates or merges an earlier profile.
+- Only verified customer rows enforce normalized-email uniqueness before an explicit ownership/claim flow.
 - Production exposure requires verification, expiry/revocation, rate limits, abuse controls, and secure session exchange.
 - Historical request linking happens only after verified ownership.

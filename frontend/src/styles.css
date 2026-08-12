@@ -2714,6 +2714,26 @@ textarea[aria-invalid='true'] {
   color: var(--danger);
 }
 
+.audit-authority-list {
+  display: grid;
+  gap: 5px;
+  min-width: 170px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-authority-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.audit-authority-list .text-button[aria-pressed='true'] {
+  color: var(--danger);
+}
+
 .inline-admin-form {
   display: flex;
   align-items: end;
@@ -2723,6 +2743,20 @@ textarea[aria-invalid='true'] {
 
 .inline-admin-form label {
   flex: 1;
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.admin-pagination span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
 }
 
 .group-list,

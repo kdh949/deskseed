@@ -9,5 +9,5 @@ data class CustomerRef(
 )
 
 interface CustomerDirectory {
-    fun findOrCreateUnverified(name: String, email: String): CustomerRef
+    fun createUnverified(name: String, email: String): CustomerRef
 }

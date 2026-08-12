@@ -26,10 +26,23 @@ function groupError(error: unknown): string {
   return `${error.message}${error.requestId ? ` 요청 ID: ${error.requestId}` : ''}`
 }
 
+const GROUP_PAGE_SIZE = 20
+const STAFF_CANDIDATE_PAGE_SIZE = 50
+const MEMBER_PAGE_SIZE = 20
+
 export function AdminGroupsPage() {
   const [groups, setGroups] = useState<SupportGroup[]>([])
   const [staff, setStaff] = useState<StaffAccount[]>([])
   const [members, setMembers] = useState<GroupMembership[]>([])
+  const [groupPage, setGroupPage] = useState(0)
+  const [groupTotalCount, setGroupTotalCount] = useState(0)
+  const [groupTotalPages, setGroupTotalPages] = useState(0)
+  const [staffPage, setStaffPage] = useState(0)
+  const [staffTotalCount, setStaffTotalCount] = useState(0)
+  const [staffTotalPages, setStaffTotalPages] = useState(0)
+  const [memberPage, setMemberPage] = useState(0)
+  const [memberTotalCount, setMemberTotalCount] = useState(0)
+  const [memberTotalPages, setMemberTotalPages] = useState(0)
   const [selectedId, setSelectedId] = useState('')
   const [newName, setNewName] = useState('')
   const [renameValue, setRenameValue] = useState('')
@@ -44,15 +57,21 @@ export function AdminGroupsPage() {
     setError(null)
     try {
       const [nextGroups, nextStaff] = await Promise.all([
-        listGroups(),
-        listStaff(),
+        listGroups(groupPage, GROUP_PAGE_SIZE),
+        listStaff(staffPage, STAFF_CANDIDATE_PAGE_SIZE),
       ])
-      setGroups(nextGroups)
-      setStaff(nextStaff.filter((item) => item.status === 'ACTIVE'))
+      setGroups(nextGroups.items)
+      setGroupTotalCount(nextGroups.totalCount)
+      setGroupTotalPages(nextGroups.totalPages)
+      setStaff(nextStaff.items.filter((item) => item.status === 'ACTIVE'))
+      setStaffTotalCount(nextStaff.totalCount)
+      setStaffTotalPages(nextStaff.totalPages)
       setSelectedId(
         (current) =>
-          current ||
-          nextGroups.find((group) => group.status === 'ACTIVE')?.id ||
+          nextGroups.items.find(
+            (group) => group.id === current && group.status === 'ACTIVE',
+          )?.id ||
+          nextGroups.items.find((group) => group.status === 'ACTIVE')?.id ||
           '',
       )
     } catch (caught) {
@@ -60,7 +79,7 @@ export function AdminGroupsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [groupPage, staffPage])
 
   const reloadMembers = useCallback(async () => {
     if (!selectedId) {
@@ -69,13 +88,28 @@ export function AdminGroupsPage() {
     }
     setMembersLoading(true)
     try {
-      setMembers(await listGroupMembers(selectedId))
+      const result = await listGroupMembers(
+        selectedId,
+        memberPage,
+        MEMBER_PAGE_SIZE,
+      )
+      if (
+        result.items.length === 0 &&
+        memberPage > 0 &&
+        memberPage >= result.totalPages
+      ) {
+        setMemberPage(Math.max(0, result.totalPages - 1))
+        return
+      }
+      setMembers(result.items)
+      setMemberTotalCount(result.totalCount)
+      setMemberTotalPages(result.totalPages)
     } catch (caught) {
       setError(groupError(caught))
     } finally {
       setMembersLoading(false)
     }
-  }, [selectedId])
+  }, [memberPage, selectedId])
 
   useEffect(() => void reload(), [reload])
   useEffect(() => void reloadMembers(), [reloadMembers])
@@ -166,7 +200,10 @@ export function AdminGroupsPage() {
                       : 'group-select'
                   }
                   type="button"
-                  onClick={() => setSelectedId(group.id)}
+                  onClick={() => {
+                    setSelectedId(group.id)
+                    setMemberPage(0)
+                  }}
                   disabled={group.status === 'DISABLED'}
                 >
                   <span>{group.name}</span>
@@ -179,6 +216,32 @@ export function AdminGroupsPage() {
               </li>
             ))}
           </ul>
+          {!loading && groups.length > 0 ? (
+            <nav className="admin-pagination" aria-label="그룹 목록 페이지">
+              <button
+                className="button secondary small"
+                type="button"
+                disabled={groupPage === 0}
+                onClick={() =>
+                  setGroupPage((current) => Math.max(0, current - 1))
+                }
+              >
+                이전
+              </button>
+              <span>
+                전체 {groupTotalCount}개 · {groupPage + 1}/
+                {Math.max(groupTotalPages, 1)} 페이지
+              </span>
+              <button
+                className="button secondary small"
+                type="button"
+                disabled={groupPage + 1 >= groupTotalPages}
+                onClick={() => setGroupPage((current) => current + 1)}
+              >
+                다음
+              </button>
+            </nav>
+          ) : null}
         </section>
         <section
           className="admin-panel admin-list-panel"
@@ -262,6 +325,30 @@ export function AdminGroupsPage() {
                   멤버 추가
                 </button>
               </form>
+              <nav className="admin-pagination" aria-label="직원 후보 페이지">
+                <button
+                  className="button secondary small"
+                  type="button"
+                  disabled={staffPage === 0}
+                  onClick={() =>
+                    setStaffPage((current) => Math.max(0, current - 1))
+                  }
+                >
+                  이전 후보
+                </button>
+                <span>
+                  전체 {staffTotalCount}명 · {staffPage + 1}/
+                  {Math.max(staffTotalPages, 1)} 페이지
+                </span>
+                <button
+                  className="button secondary small"
+                  type="button"
+                  disabled={staffPage + 1 >= staffTotalPages}
+                  onClick={() => setStaffPage((current) => current + 1)}
+                >
+                  다음 후보
+                </button>
+              </nav>
               {membersLoading ? (
                 <ScreenState
                   kind="loading"
@@ -298,6 +385,32 @@ export function AdminGroupsPage() {
                   </li>
                 ))}
               </ul>
+              {!membersLoading && members.length > 0 ? (
+                <nav className="admin-pagination" aria-label="그룹 멤버 페이지">
+                  <button
+                    className="button secondary small"
+                    type="button"
+                    disabled={memberPage === 0}
+                    onClick={() =>
+                      setMemberPage((current) => Math.max(0, current - 1))
+                    }
+                  >
+                    이전
+                  </button>
+                  <span>
+                    전체 {memberTotalCount}명 · {memberPage + 1}/
+                    {Math.max(memberTotalPages, 1)} 페이지
+                  </span>
+                  <button
+                    className="button secondary small"
+                    type="button"
+                    disabled={memberPage + 1 >= memberTotalPages}
+                    onClick={() => setMemberPage((current) => current + 1)}
+                  >
+                    다음
+                  </button>
+                </nav>
+              ) : null}
             </>
           ) : null}
         </section>

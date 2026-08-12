@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 import java.util.Locale
+import java.util.UUID
 
 @Service
 internal class JpaCustomerDirectory(
@@ -14,18 +15,21 @@ internal class JpaCustomerDirectory(
     private val clock: Clock,
 ) : CustomerDirectory {
     @Transactional
-    override fun findOrCreateUnverified(name: String, email: String): CustomerRef {
+    override fun createUnverified(name: String, email: String): CustomerRef {
         val cleanName = name.trim()
         val displayEmail = email.trim()
         val normalizedEmail = displayEmail.lowercase(Locale.ROOT)
         val now = Instant.now(clock)
 
-        val customer = repository.upsertUnverified(
-            id = java.util.UUID.randomUUID(),
-            name = cleanName,
-            emailNormalized = normalizedEmail,
-            emailDisplay = displayEmail,
-            now = now,
+        val customer = repository.saveAndFlush(
+            CustomerEntity(
+                id = UUID.randomUUID(),
+                name = cleanName,
+                emailNormalized = normalizedEmail,
+                emailDisplay = displayEmail,
+                createdAt = now,
+                updatedAt = now,
+            ),
         )
 
         return CustomerRef(

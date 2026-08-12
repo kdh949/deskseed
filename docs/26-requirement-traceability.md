@@ -38,7 +38,7 @@
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
 | REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
-| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 37 | 생성·조회 토큰 테스트 |
+| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부와 `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
 | REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37 | 내부 메모 비노출 E2E |
 | REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | 설정별 계약 테스트 |
 | REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | single-use·claim·격리 테스트 |
@@ -47,7 +47,7 @@
 | REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002, `customer-request.full-stack.spec.ts`의 PUBLIC 노출·INTERNAL 비노출 E2E |
 | REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39 | Agent create E2E |
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트, `AgentTicketWorkspacePage.test.tsx`의 통합 command body 회귀 |
-| REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34 | `TransferChildTicketIntegrationTest`의 active group/member 거부 및 원자적 rollback |
+| REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34, ADR 0038 | `TransferChildTicketIntegrationTest`의 active group/member 거부·원자적 rollback 및 `OrganizationConcurrencyIntegrationTest`의 ticket assignment/group disable 공유 잠금 |
 | REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34 | `TransferChildTicketIntegrationTest`, `transfer-child-ticket.spec.ts`, full-stack transfer E2E |
 | REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketCommandIntegrationTest`의 exact/misuse/concurrent replay와 `AgentTicketWorkspacePage.test.tsx`의 persisted command-ID retry·exact `changedFields`·comment 통합 요청 |
 | REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34 | TKT-006, `ticket-composer-conflict.spec.ts`의 두 browser context same-field/non-overlap E2E |
@@ -74,7 +74,7 @@
 | REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | `AgentTicketReadIntegrationTest`: 모든 성공 detail의 `API_RESOURCE_READ`, navigation 1건, 동일 interaction refetch의 추가 semantic view 0건, background semantic view 0건, audit 실패 fail-closed |
 | REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34, ADR 0037 | `AgentTicketSearchIntegrationTest`의 filter/count/context와 `SEARCH_RESULT_OPENED` linkage/dedupe 및 encryption-key rotation 후 same-session origin 검증; detail linked-open 100개 제한·full count; real-stack search→ticket DB-ledger E2E |
 | REQ-AUD-005 | 검색어 원문은 암호화 저장하고 routine audit에는 내용 비포함 marker·HMAC 지문만 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53, ADR 0036, ADR 0037 | `SearchQueryProtectionTest`의 content-free marker/exact round-trip/tamper/AAD/encryption rotation, fixed-size independent session fingerprint, V13 scrub·constraint, missing-key startup, DB plaintext-column 부재, 로그 캡처, 30일 expiry·retention rollback |
-| REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | list/detail/reveal/export/rebuild self-audit 장애 주입 테스트, 실제 Compose DB self-audit 검증, export job/artifact placeholder 원자성 |
+| REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | `SecurityAuditorAuthorizationIntegrationTest`의 default-deny·명시 grant/revoke·session revalidation·audit rollback, `Issue24RemediationMigrationTest`의 V15→V17 무백필, list/detail/reveal/export/rebuild self-audit 장애 주입, 실제 Compose DB self-audit, export job/artifact placeholder 원자성 |
 | REQ-AUD-007 | Ticket change audit은 변경과 같은 트랜잭션에 기록한다 | IMPLEMENTATION_READY | M3 | 03, 19, 32 | CHG-001 |
 | REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ticket detail/search와 Explorer list/detail/reveal self-audit 장애 주입 시 503·민감 원문/projection 미반환, retention audit 장애 시 delete rollback |
 | REQ-AUD-009 | 감사 보존 기간·원문 공개 정책을 관리자 설정으로 관리한다 | PROVISIONAL | R2/P2 | 23, 36 | retention job·권한 테스트 |
@@ -106,7 +106,7 @@
 | REQ-AUT-002 | 시간 경과 기반 automation을 제공한다 | BLUEPRINT_READY | P4 | 12, 45 | AUT-009 |
 | REQ-EXP-001 | 티켓 상세·변경 이력·필터 결과를 추출한다 | BLUEPRINT_READY | P5 | 18, 20, 30, 46 | ANA-007, EXP-001/002 |
 | REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | IMPLEMENTATION_READY | P6/P9 | 03, 11, 47 | frozen POST search contract, parameterized PostgreSQL authorized query, exact count/stable sort, fixed 2-SQL query-count test, component+real-stack E2E |
-| REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35 | `docs/performance/audit-explorer-1m-query-plan.md`: PostgreSQL 100만 행 first/actor/ticket/action `EXPLAIN (ANALYZE, BUFFERS)` 및 index 저장 비용 |
+| REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35, 39 | release fixture/query-plan evidence와 `AdminOrganizationIntegrationTest`의 100-row max page, staff/group/member row 증가 전후 동일 SQL statement count(각 10 이하) |
 
 
 ## 8. 티켓 구성·파일·채널·확장 기능

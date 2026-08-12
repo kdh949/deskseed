@@ -9,6 +9,7 @@ import type {
   AgentTicketSearchInput,
   AgentTicketSearchPage,
   AgentTicketSummary,
+  AdminListPage,
   AuditActivity,
   AuditActivityDetail,
   AuditActivityFilters,
@@ -22,6 +23,7 @@ import type {
   CreateChildTicketResult,
   CreateStaffInput,
   CurrentStaff,
+  GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
   ProblemDetails,
@@ -408,7 +410,12 @@ function decodeCurrentStaff(value: unknown): CurrentStaff | undefined {
 }
 
 function decodeStaffAccount(value: unknown): StaffAccount | undefined {
-  if (!isRecord(value) || !Array.isArray(value.memberships)) return undefined
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.memberships) ||
+    !Array.isArray(value.auditAuthorities)
+  )
+    return undefined
   if (
     !isNonBlankString(value.id) ||
     !isNonBlankString(value.email) ||
@@ -430,6 +437,19 @@ function decodeStaffAccount(value: unknown): StaffAccount | undefined {
     return [{ id: membership.id, name: membership.name }]
   })
   if (memberships.length !== value.memberships.length) return undefined
+  const grantableAuthorities = new Set<GrantableAuditAuthority>([
+    'AUDIT_SEARCH_QUERY_REVEAL',
+    'AUDIT_EXPORT',
+    'AUDIT_PROJECTION_REBUILD',
+  ])
+  if (
+    !value.auditAuthorities.every(
+      (authority): authority is GrantableAuditAuthority =>
+        typeof authority === 'string' &&
+        grantableAuthorities.has(authority as GrantableAuditAuthority),
+    )
+  )
+    return undefined
   return {
     id: value.id,
     email: value.email,
@@ -437,6 +457,7 @@ function decodeStaffAccount(value: unknown): StaffAccount | undefined {
     role: value.role,
     status: value.status,
     memberships,
+    auditAuthorities: value.auditAuthorities,
     lastLoginAt: value.lastLoginAt,
   }
 }
@@ -595,7 +616,7 @@ async function csrfHeaders(
 
 async function unsafeStaffFetch(
   path: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: unknown,
   additionalHeaders: Record<string, string> = {},
   options: StaffFetchOptions = {},
@@ -671,13 +692,18 @@ export async function getCurrentStaff(
   return decoded
 }
 
-export async function listStaff(): Promise<StaffAccount[]> {
-  const response = await staffFetch('/api/v1/admin/staff')
+export async function listStaff(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<StaffAccount>> {
+  const response = await staffFetch(
+    `/api/v1/admin/staff?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeStaffAccount)
   if (decoded.some((staff) => !staff)) throw malformedSuccess(response)
-  return decoded as StaffAccount[]
+  return decodeAdminListPage(response, decoded as StaffAccount[], page, size)
 }
 
 export async function createStaff(
@@ -695,13 +721,42 @@ export async function disableStaff(staffId: string): Promise<void> {
   )
 }
 
-export async function listGroups(): Promise<SupportGroup[]> {
-  const response = await staffFetch('/api/v1/admin/groups')
+export async function grantStaffAuditAuthority(
+  staffId: string,
+  authority: GrantableAuditAuthority,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/admin/staff/${staffId}/audit-authorities/${authority}`,
+      'PUT',
+    ),
+  )
+}
+
+export async function revokeStaffAuditAuthority(
+  staffId: string,
+  authority: GrantableAuditAuthority,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/admin/staff/${staffId}/audit-authorities/${authority}`,
+      'DELETE',
+    ),
+  )
+}
+
+export async function listGroups(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<SupportGroup>> {
+  const response = await staffFetch(
+    `/api/v1/admin/groups?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeSupportGroup)
   if (decoded.some((group) => !group)) throw malformedSuccess(response)
-  return decoded as SupportGroup[]
+  return decodeAdminListPage(response, decoded as SupportGroup[], page, size)
 }
 
 export async function createGroup(name: string): Promise<SupportGroup> {
@@ -735,14 +790,59 @@ export async function disableGroup(groupId: string): Promise<void> {
 
 export async function listGroupMembers(
   groupId: string,
-): Promise<GroupMembership[]> {
-  const response = await staffFetch(`/api/v1/admin/groups/${groupId}/members`)
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<GroupMembership>> {
+  const response = await staffFetch(
+    `/api/v1/admin/groups/${groupId}/members?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeMembership)
   if (decoded.some((membership) => !membership))
     throw malformedSuccess(response)
-  return decoded as GroupMembership[]
+  return decodeAdminListPage(response, decoded as GroupMembership[], page, size)
+}
+
+function decodeAdminListPage<T>(
+  response: Response,
+  items: T[],
+  requestedPage: number,
+  requestedSize: number,
+): AdminListPage<T> {
+  const headerValues = [
+    response.headers.get('X-Page-Number'),
+    response.headers.get('X-Page-Size'),
+    response.headers.get('X-Total-Count'),
+    response.headers.get('X-Total-Pages'),
+  ]
+  if (headerValues.every((value) => value === null)) {
+    return {
+      items,
+      page: requestedPage,
+      size: requestedSize,
+      totalCount: items.length,
+      totalPages: items.length === 0 ? 0 : requestedPage + 1,
+    }
+  }
+  const values = headerValues.map((value) =>
+    value !== null && /^\d+$/.test(value) ? Number(value) : Number.NaN,
+  )
+  const page = values[0]!
+  const size = values[1]!
+  const totalCount = values[2]!
+  const totalPages = values[3]!
+  if (
+    values.some((value) => !Number.isSafeInteger(value)) ||
+    page < 0 ||
+    size < 1 ||
+    size > 100 ||
+    totalCount < 0 ||
+    totalPages < 0
+  ) {
+    throw malformedSuccess(response)
+  }
+  return { items, page, size, totalCount, totalPages }
 }
 
 export async function addGroupMember(

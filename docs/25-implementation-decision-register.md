@@ -57,6 +57,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-049 | Core staff UpdateTicket exact replay reuses immutable ticket audit metadata plus a database advisory lock; V14 adds a non-unique partial lookup index and multiple matches fail closed | accepted | command retention, multi-ticket audit shape, or measured lookup limits change |
 | D-050 | Staff browser requests carry a realm-local expected-actor consistency guard that is compared with, but never selects, the authenticated server-session principal | accepted | non-cookie session isolation or browser-context ownership model changes |
 | D-051 | Search-origin fingerprints use an encryption-independent fixed-format key; audit projection rebuild copies canonical event-time snapshots under a shared/exclusive PostgreSQL lock | accepted | session isolation or projection storage architecture changes |
+| D-052 | Organization mutations and membership-dependent staff ticket commands share one PostgreSQL transaction consistency guard | accepted | measured command contention justifies ordered keyed locks |
 
 D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
 IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.

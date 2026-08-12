@@ -8,15 +8,20 @@ import dev.deskseed.organization.AdminActorContext
 import dev.deskseed.organization.CreateStaffAccountCommand
 import dev.deskseed.organization.GroupMembershipView
 import dev.deskseed.organization.GroupReference
+import dev.deskseed.organization.GrantableAuditAuthority
 import dev.deskseed.organization.OrganizationAdministration
 import dev.deskseed.organization.OrganizationConflictException
 import dev.deskseed.organization.OrganizationNotFoundException
+import dev.deskseed.organization.OrganizationPage
 import dev.deskseed.organization.OrganizationStatus
 import dev.deskseed.organization.StaffAccountView
 import dev.deskseed.organization.StaffRole
 import dev.deskseed.organization.StaffStatus
 import dev.deskseed.organization.SupportGroupView
 import dev.deskseed.ticketing.TicketAssignmentUsage
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -30,6 +35,7 @@ internal class JpaOrganizationAdministration(
     private val staffRepository: StaffAccountRepository,
     private val groupRepository: SupportGroupRepository,
     private val membershipRepository: GroupMembershipRepository,
+    private val authorityGrantRepository: StaffAuthorityGrantRepository,
     private val ticketAssignmentUsage: TicketAssignmentUsage,
     private val passwordEncoder: PasswordEncoder,
     private val auditWriter: AdminSecurityAuditWriter,
@@ -38,8 +44,41 @@ internal class JpaOrganizationAdministration(
 ) : OrganizationAdministration {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
-    override fun listStaff(): List<StaffAccountView> = staffRepository.findAllByOrderByDisplayNameAscIdAsc()
-        .map(::staffView)
+    override fun listStaff(page: Int, size: Int): OrganizationPage<StaffAccountView> {
+        val staffPage = staffRepository.findAll(pageRequest(page, size, "displayName", "id"))
+        val staffIds = staffPage.content.map(StaffAccountEntity::id)
+        val memberships = if (staffIds.isEmpty()) {
+            emptyList()
+        } else {
+            membershipRepository.findAllByStaffIdInAndStatus(staffIds, GroupMembershipStatus.ACTIVE)
+        }
+        val groupIds = memberships.map(GroupMembershipEntity::groupId).distinct()
+        val groupNames = groupRepository.findAllById(groupIds).associateBy(SupportGroupEntity::id)
+        val membershipsByStaff = memberships.groupBy(GroupMembershipEntity::staffId)
+        val authoritiesByStaff = if (staffIds.isEmpty()) {
+            emptyMap()
+        } else {
+            authorityGrantRepository.findAllByStaffIdInOrderByStaffIdAscAuthorityAsc(staffIds)
+                .groupBy(StaffAuthorityGrantEntity::staffId)
+        }
+        return staffPage.toOrganizationPage { staff ->
+            StaffAccountView(
+                id = staff.id,
+                email = staff.emailDisplay,
+                displayName = staff.displayName,
+                role = staff.role,
+                status = staff.status,
+                memberships = membershipsByStaff[staff.id].orEmpty()
+                    .sortedBy(GroupMembershipEntity::groupId)
+                    .mapNotNull { membership ->
+                        groupNames[membership.groupId]?.let { group -> GroupReference(group.id, group.name) }
+                    },
+                auditAuthorities = authoritiesByStaff[staff.id].orEmpty()
+                    .map(StaffAuthorityGrantEntity::authority),
+                lastLoginAt = staff.lastLoginAt,
+            )
+        }
+    }
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
@@ -119,9 +158,80 @@ internal class JpaOrganizationAdministration(
     }
 
     @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun grantAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    ) {
+        organizationMutationLock.acquire()
+        activeSecurityAuditor(staffId)
+        if (authorityGrantRepository.findByStaffIdAndAuthority(staffId, authority) != null) return
+
+        val now = Instant.now(clock)
+        authorityGrantRepository.saveAndFlush(
+            StaffAuthorityGrantEntity(
+                id = UUID.randomUUID(),
+                staffId = staffId,
+                authority = authority,
+                grantedByStaffId = actor.staffId,
+                grantedAt = now,
+            ),
+        )
+        audit(
+            eventType = "STAFF_AUTHORITY_GRANTED",
+            actor = actor,
+            targetType = "STAFF_ACCOUNT",
+            targetId = staffId,
+            metadata = mapOf("authority" to authority.name),
+            now = now,
+        )
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun revokeAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    ) {
+        organizationMutationLock.acquire()
+        activeSecurityAuditor(staffId)
+        val grant = authorityGrantRepository.findByStaffIdAndAuthority(staffId, authority) ?: return
+
+        val now = Instant.now(clock)
+        authorityGrantRepository.delete(grant)
+        authorityGrantRepository.flush()
+        audit(
+            eventType = "STAFF_AUTHORITY_REVOKED",
+            actor = actor,
+            targetType = "STAFF_ACCOUNT",
+            targetId = staffId,
+            metadata = mapOf("authority" to authority.name),
+            now = now,
+        )
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
-    override fun listGroups(): List<SupportGroupView> = groupRepository.findAllByOrderByNameAscIdAsc()
-        .map(::groupView)
+    override fun listGroups(page: Int, size: Int): OrganizationPage<SupportGroupView> {
+        val groupPage = groupRepository.findAll(pageRequest(page, size, "name", "id"))
+        val groupIds = groupPage.content.map(SupportGroupEntity::id)
+        val memberCounts = if (groupIds.isEmpty()) {
+            emptyMap()
+        } else {
+            membershipRepository.countActiveMembersByGroupIds(groupIds, GroupMembershipStatus.ACTIVE)
+                .associate { it.groupId to it.memberCount }
+        }
+        return groupPage.toOrganizationPage { group ->
+            SupportGroupView(
+                id = group.id,
+                name = group.name,
+                status = group.status,
+                memberCount = memberCounts.getOrDefault(group.id, 0).toInt(),
+            )
+        }
+    }
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
@@ -193,12 +303,25 @@ internal class JpaOrganizationAdministration(
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
-    override fun listGroupMembers(groupId: UUID): List<GroupMembershipView> {
+    override fun listGroupMembers(
+        groupId: UUID,
+        page: Int,
+        size: Int,
+    ): OrganizationPage<GroupMembershipView> {
         activeGroup(groupId)
-        return membershipRepository.findAllByGroupIdAndStatusOrderByStaffIdAsc(
+        val membershipPage = membershipRepository.findAllByGroupIdAndStatus(
             groupId,
             GroupMembershipStatus.ACTIVE,
-        ).map(::membershipView)
+            pageRequest(page, size, "staffId"),
+        )
+        val staffById = staffRepository.findAllById(
+            membershipPage.content.map(GroupMembershipEntity::staffId),
+        ).associateBy(StaffAccountEntity::id)
+        return membershipPage.toOrganizationPage { membership ->
+            val staff = staffById[membership.staffId]
+                ?: throw OrganizationNotFoundException("STAFF_NOT_FOUND")
+            GroupMembershipView(membership.groupId, staff.id, staff.displayName, staff.role)
+        }
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -268,6 +391,8 @@ internal class JpaOrganizationAdministration(
             role = staff.role,
             status = staff.status,
             memberships = groupIds.mapNotNull { id -> groupNames[id]?.let { GroupReference(it.id, it.name) } },
+            auditAuthorities = authorityGrantRepository.findAllByStaffIdOrderByAuthorityAsc(staff.id)
+                .map(StaffAuthorityGrantEntity::authority),
             lastLoginAt = staff.lastLoginAt,
         )
     }
@@ -289,9 +414,27 @@ internal class JpaOrganizationAdministration(
         .filter { it.status == OrganizationStatus.ACTIVE }
         .orElseThrow { OrganizationNotFoundException("ACTIVE_GROUP_NOT_FOUND") }
 
+    private fun activeSecurityAuditor(staffId: UUID): StaffAccountEntity = staffRepository.findById(staffId)
+        .filter { it.status == StaffStatus.ACTIVE && it.role == StaffRole.SECURITY_AUDITOR }
+        .orElseThrow { OrganizationConflictException("AUDIT_AUTHORITY_TARGET_INVALID") }
+
     private fun validatedGroupName(name: String): String = name.trim().also {
         require(it.isNotEmpty() && it.length <= 100)
     }
+
+    private fun pageRequest(page: Int, size: Int, vararg properties: String): PageRequest {
+        require(page >= 0)
+        require(size in 1..MAX_ADMIN_PAGE_SIZE)
+        return PageRequest.of(page, size, Sort.by(properties.map(Sort.Order::asc)))
+    }
+
+    private fun <T : Any, R> Page<T>.toOrganizationPage(transform: (T) -> R): OrganizationPage<R> = OrganizationPage(
+        items = content.map(transform),
+        page = number,
+        size = size,
+        totalCount = totalElements,
+        totalPages = totalPages,
+    )
 
     private fun auditMembership(
         actor: AdminActorContext,
@@ -335,5 +478,9 @@ internal class JpaOrganizationAdministration(
                 occurredAt = now,
             ),
         )
+    }
+
+    private companion object {
+        const val MAX_ADMIN_PAGE_SIZE = 100
     }
 }

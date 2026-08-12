@@ -24,7 +24,7 @@ internal class PublicRequestApplicationService(
     @Transactional
     fun submit(command: SubmitAnonymousRequest): AnonymousRequestSubmitted {
         customerAccessPolicy.requireAnonymousSubmissionAllowed()
-        val customer = customerDirectory.findOrCreateUnverified(
+        val customer = customerDirectory.createUnverified(
             name = command.name,
             email = command.email,
         )

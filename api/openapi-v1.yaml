@@ -12,6 +12,7 @@ paths:
     post:
       operationId: submitAnonymousRequest
       summary: Submit an anonymous web request
+      description: Each submission creates an isolated unverified customer; matching email input never merges or claims an earlier profile.
       tags: [Customer Requests]
       parameters:
         - $ref: '#/components/parameters/RequestId'

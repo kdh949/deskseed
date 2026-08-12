@@ -69,6 +69,7 @@ paths:
   /api/v1/requests:
     post:
       summary: Submit an anonymous customer request
+      description: Each submission creates an isolated unverified customer; matching email input never merges or claims an earlier profile.
       operationId: createAnonymousRequest
       x-deskseed-contract-status: FROZEN
       tags:
@@ -913,9 +914,20 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
           description: Staff list
+          headers:
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
           content:
             application/json:
               schema:
@@ -923,7 +935,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/StaffAccount'
         '400':
-          $ref: '#/components/responses/InvalidExpectedStaffActor'
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '409':
@@ -988,6 +1000,63 @@ paths:
         '404': *id001
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/staff/{staffId}/audit-authorities/{authority}:
+    put:
+      summary: Grant one high-risk audit authority to a Security Auditor
+      operationId: grantStaffAuditAuthority
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-AUD-002
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/GrantableAuditAuthorityParam'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '204':
+          description: Authority is present and an actual grant is atomically admin-audited
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+    delete:
+      summary: Revoke one high-risk audit authority from a Security Auditor
+      operationId: revokeStaffAuditAuthority
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: M6
+      x-deskseed-requirements:
+      - REQ-AUD-002
+      - REQ-AUD-006
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/StaffId'
+      - $ref: '#/components/parameters/GrantableAuditAuthorityParam'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '204':
+          description: Authority is absent and an actual revocation is atomically admin-audited
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
   /api/v1/admin/groups:
     get:
       summary: List groups
@@ -1003,9 +1072,20 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
           description: Group list
+          headers:
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
           content:
             application/json:
               schema:
@@ -1013,7 +1093,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Group'
         '400':
-          $ref: '#/components/responses/InvalidExpectedStaffActor'
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '409':
@@ -1131,9 +1211,20 @@ paths:
       parameters:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
           description: Active memberships
+          headers:
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
           content:
             application/json:
               schema:
@@ -1141,7 +1232,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/GroupMembership'
         '400':
-          $ref: '#/components/responses/InvalidExpectedStaffActor'
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
@@ -2096,6 +2187,25 @@ components:
       schema:
         type: string
         format: uuid
+    AdminPageNumber:
+      name: page
+      in: query
+      required: false
+      description: Zero-based page number.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    AdminPageSize:
+      name: size
+      in: query
+      required: false
+      description: Bounded number of rows returned in one admin list response.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
     StaffId:
       name: staffId
       in: path
@@ -2103,6 +2213,12 @@ components:
       schema:
         type: string
         format: uuid
+    GrantableAuditAuthorityParam:
+      name: authority
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GrantableAuditAuthority'
     GroupId:
       name: groupId
       in: path
@@ -2125,6 +2241,29 @@ components:
       schema:
         type: string
         format: uuid
+  headers:
+    PageNumber:
+      description: Zero-based page number returned.
+      schema:
+        type: integer
+        minimum: 0
+    PageSize:
+      description: Maximum number of rows requested for this page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    TotalCount:
+      description: Total rows matching this list.
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+    TotalPages:
+      description: Total pages at the requested page size.
+      schema:
+        type: integer
+        minimum: 0
   responses:
     InvalidExpectedStaffActor:
       description: The optional expected staff actor header is present but is not one canonical UUID value.
@@ -3287,6 +3426,7 @@ components:
       - role
       - status
       - memberships
+      - auditAuthorities
       properties:
         id:
           type: string
@@ -3304,6 +3444,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GroupRef'
+        auditAuthorities:
+          type: array
+          uniqueItems: true
+          description: Explicit persisted high-risk audit grants; empty for non-auditors and new auditors.
+          items:
+            $ref: '#/components/schemas/GrantableAuditAuthority'
         lastLoginAt:
           type:
           - string
@@ -3345,6 +3491,12 @@ components:
       enum:
       - ACTIVE
       - DISABLED
+    GrantableAuditAuthority:
+      type: string
+      enum:
+      - AUDIT_SEARCH_QUERY_REVEAL
+      - AUDIT_EXPORT
+      - AUDIT_PROJECTION_REBUILD
     Group:
       type: object
       additionalProperties: false

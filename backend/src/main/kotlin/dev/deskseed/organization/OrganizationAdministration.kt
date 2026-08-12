@@ -28,6 +28,7 @@ data class StaffAccountView(
     val role: StaffRole,
     val status: StaffStatus,
     val memberships: List<GroupReference>,
+    val auditAuthorities: List<GrantableAuditAuthority>,
     val lastLoginAt: Instant?,
 )
 
@@ -45,6 +46,14 @@ data class GroupMembershipView(
     val role: StaffRole,
 )
 
+data class OrganizationPage<T>(
+    val items: List<T>,
+    val page: Int,
+    val size: Int,
+    val totalCount: Long,
+    val totalPages: Int,
+)
+
 enum class OrganizationStatus {
     ACTIVE,
     DISABLED,
@@ -58,13 +67,25 @@ data class CreateStaffAccountCommand(
 )
 
 interface OrganizationAdministration {
-    fun listStaff(): List<StaffAccountView>
+    fun listStaff(page: Int = 0, size: Int = 50): OrganizationPage<StaffAccountView>
 
     fun createStaff(command: CreateStaffAccountCommand, actor: AdminActorContext): StaffAccountView
 
     fun disableStaff(staffId: UUID, actor: AdminActorContext)
 
-    fun listGroups(): List<SupportGroupView>
+    fun grantAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    )
+
+    fun revokeAuditAuthority(
+        staffId: UUID,
+        authority: GrantableAuditAuthority,
+        actor: AdminActorContext,
+    )
+
+    fun listGroups(page: Int = 0, size: Int = 50): OrganizationPage<SupportGroupView>
 
     fun createGroup(name: String, actor: AdminActorContext): SupportGroupView
 
@@ -72,7 +93,11 @@ interface OrganizationAdministration {
 
     fun disableGroup(groupId: UUID, actor: AdminActorContext)
 
-    fun listGroupMembers(groupId: UUID): List<GroupMembershipView>
+    fun listGroupMembers(
+        groupId: UUID,
+        page: Int = 0,
+        size: Int = 50,
+    ): OrganizationPage<GroupMembershipView>
 
     fun addGroupMember(groupId: UUID, staffId: UUID, actor: AdminActorContext): GroupMembershipView
 
