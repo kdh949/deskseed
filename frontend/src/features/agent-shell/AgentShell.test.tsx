@@ -38,7 +38,7 @@ function renderShell() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const rendered = render(
     <DeskseedThemeProvider>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={['/agent/views/my-open']}>
@@ -56,6 +56,7 @@ function renderShell() {
       </QueryClientProvider>
     </DeskseedThemeProvider>,
   )
+  return { ...rendered, queryClient }
 }
 
 describe('AgentShell', () => {
@@ -66,22 +67,20 @@ describe('AgentShell', () => {
 
   it('renders fetched Views in the desktop frame and exposes keyboard focusable navigation', async () => {
     const user = userEvent.setup()
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation((url: string) =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify(url.endsWith('/api/v1/agent/me') ? staff : views),
-            {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            },
-          ),
+    const fetchMock = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(url.endsWith('/api/v1/agent/me') ? staff : views),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
         ),
       ),
     )
+    vi.stubGlobal('fetch', fetchMock)
 
-    renderShell()
+    const { queryClient } = renderShell()
 
     expect(await screen.findByText('View content')).toBeVisible()
     expect(
@@ -102,6 +101,9 @@ describe('AgentShell', () => {
     expect(
       screen.queryByRole('link', { name: '관리자 설정' }),
     ).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/api/v1/agent/me')
+    expect(queryClient.getQueryData(['agent-views', 'agent-id'])).toEqual(views)
+    expect(queryClient.getQueryData(['agent-views'])).toBeUndefined()
   })
 
   it('persists work navigation collapse per staff account', async () => {

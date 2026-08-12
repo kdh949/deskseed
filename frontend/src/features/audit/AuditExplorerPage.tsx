@@ -31,6 +31,7 @@ const LEDGER_TABS: Array<[AuditLedgerType | '', string]> = [
 
 export function AuditExplorerPage() {
   const session = useStaffSession()
+  const staffId = session.staff?.id
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [cursor, setCursor] = useState<string | null>(null)
@@ -41,12 +42,19 @@ export function AuditExplorerPage() {
   const filterKey = filterKeyFrom(searchParams)
   const listInteractionId = useMemo(
     () => createAuditInteractionId(),
-    [filterKey, refreshSequence],
+    [filterKey, refreshSequence, staffId],
   )
   const query = useQuery({
-    queryKey: ['audit-activities', listInteractionId, filterKey, cursor],
+    queryKey: [
+      'audit-activities',
+      staffId,
+      listInteractionId,
+      filterKey,
+      cursor,
+    ],
     queryFn: () =>
       listAuditActivities({ ...filters, limit: 50 }, cursor, listInteractionId),
+    enabled: session.status === 'authenticated' && staffId !== undefined,
   })
   const rebuild = useMutation({
     mutationFn: () => rebuildAuditProjection(createAuditInteractionId()),

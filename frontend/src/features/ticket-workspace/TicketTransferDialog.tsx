@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent, type RefObject } from 'react'
 import { ApiError, transferAgentTicket } from '../../api/client'
 import type { AgentTicketDetail } from '../../api/types'
 import { Notification } from '../../shared/ui/system'
@@ -11,10 +11,12 @@ const MAX_TRANSFER_REASON_LENGTH = 2_000
 
 export function TicketTransferDialog({
   detail,
+  returnFocusRef,
   onClose,
   onCompleted,
 }: {
   detail: AgentTicketDetail
+  returnFocusRef: RefObject<HTMLElement | null>
   onClose: () => void
   onCompleted: () => Promise<unknown>
 }) {
@@ -85,6 +87,8 @@ export function TicketTransferDialog({
       title="티켓 이관"
       description="현재 티켓의 그룹과 담당자를 변경합니다. 새 티켓은 생성되지 않으며 사유는 내부 메모로만 기록됩니다."
       initialFocusRef={groupRef}
+      returnFocusRef={returnFocusRef}
+      busy={submitting}
       onClose={close}
     >
       {error ? (

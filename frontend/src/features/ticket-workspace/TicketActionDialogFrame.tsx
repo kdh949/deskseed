@@ -12,6 +12,8 @@ export function TicketActionDialogFrame({
   description,
   eyebrow = 'OWNERSHIP & COLLABORATION',
   initialFocusRef,
+  returnFocusRef,
+  busy = false,
   onClose,
   children,
 }: {
@@ -19,6 +21,8 @@ export function TicketActionDialogFrame({
   description: string
   eyebrow?: string
   initialFocusRef: RefObject<HTMLElement | null>
+  returnFocusRef?: RefObject<HTMLElement | null>
+  busy?: boolean
   onClose: () => void
   children: ReactNode
 }) {
@@ -28,29 +32,64 @@ export function TicketActionDialogFrame({
 
   useEffect(() => {
     const restoreFocus =
-      document.activeElement instanceof HTMLElement
+      returnFocusRef?.current ??
+      (document.activeElement instanceof HTMLElement
         ? document.activeElement
-        : null
+        : null)
     initialFocusRef.current?.focus()
     return () => restoreFocus?.focus()
-  }, [initialFocusRef])
+  }, [initialFocusRef, returnFocusRef])
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const containFocus = (event: FocusEvent) => {
+      if (!(event.target instanceof Node) || dialog.contains(event.target)) {
+        return
+      }
+      if (busy) {
+        dialog.focus()
+        return
+      }
+      const first = focusableElements(dialog)[0]
+      if (first) first.focus()
+      else dialog.focus()
+    }
+    document.addEventListener('focusin', containFocus)
+
+    const activeElement = document.activeElement
+    if (
+      busy &&
+      (!dialog.contains(activeElement) ||
+        (activeElement instanceof HTMLElement &&
+          activeElement.matches(':disabled')))
+    ) {
+      dialog.focus()
+    }
+    return () => document.removeEventListener('focusin', containFocus)
+  }, [busy])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
-      onClose()
+      if (!busy) onClose()
       return
     }
     if (event.key !== 'Tab') return
-    const focusable = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]',
-      ) ?? [],
-    )
-    if (!focusable.length) return
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const focusable = focusableElements(dialog)
+    if (!focusable.length) {
+      event.preventDefault()
+      dialog.focus()
+      return
+    }
     const first = focusable[0]!
     const last = focusable[focusable.length - 1]!
-    if (event.shiftKey && document.activeElement === first) {
+    if (!focusable.includes(document.activeElement as HTMLElement)) {
+      event.preventDefault()
+      ;(event.shiftKey ? last : first).focus()
+    } else if (event.shiftKey && document.activeElement === first) {
       event.preventDefault()
       last.focus()
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -63,14 +102,16 @@ export function TicketActionDialogFrame({
     <div
       className="ticket-action-dialog-backdrop"
       onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose()
+        if (!busy && event.currentTarget === event.target) onClose()
       }}
     >
       <div
         ref={dialogRef}
         className="ticket-action-dialog"
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
+        aria-busy={busy || undefined}
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         onKeyDown={handleKeyDown}
@@ -84,6 +125,7 @@ export function TicketActionDialogFrame({
             className="compact-button"
             type="button"
             aria-label={`${title} 닫기`}
+            disabled={busy}
             onClick={onClose}
           >
             닫기
@@ -95,6 +137,14 @@ export function TicketActionDialogFrame({
         {children}
       </div>
     </div>
+  )
+}
+
+function focusableElements(dialog: HTMLElement) {
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]',
+    ),
   )
 }
 

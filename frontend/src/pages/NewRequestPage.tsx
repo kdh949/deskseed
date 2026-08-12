@@ -88,7 +88,6 @@ export function NewRequestPage() {
   const [summary, setSummary] = useState<ErrorSummary | null>(null)
   const [shouldFocusSummary, setShouldFocusSummary] = useState(false)
   const [navigationBlocked, setNavigationBlocked] = useState(false)
-  const submissionHistoryEntryRef = useRef(false)
   const summaryRef = useRef<HTMLDivElement>(null)
   const clientErrors = useMemo(() => validateRequestForm(form), [form])
   const isValid = Object.keys(clientErrors).length === 0
@@ -114,40 +113,6 @@ export function NewRequestPage() {
 
   useEffect(() => {
     if (!requestSubmission.isSubmitting) setNavigationBlocked(false)
-  }, [requestSubmission.isSubmitting])
-
-  useEffect(() => {
-    if (!requestSubmission.isSubmitting) {
-      submissionHistoryEntryRef.current = false
-      return
-    }
-    if (submissionHistoryEntryRef.current) return
-
-    window.history.pushState(
-      { ...window.history.state, deskseedSubmissionGuard: true },
-      '',
-      window.location.href,
-    )
-    submissionHistoryEntryRef.current = true
-  }, [requestSubmission.isSubmitting])
-
-  useEffect(() => {
-    if (!requestSubmission.isSubmitting) return
-    let restoringGuardEntry = false
-    const restorePendingSubmission = (event: PopStateEvent) => {
-      if (restoringGuardEntry) {
-        restoringGuardEntry = false
-        return
-      }
-      event.stopImmediatePropagation()
-      setNavigationBlocked(true)
-      restoringGuardEntry = true
-      window.history.go(1)
-    }
-    window.addEventListener('popstate', restorePendingSubmission, true)
-    return () => {
-      window.removeEventListener('popstate', restorePendingSubmission, true)
-    }
   }, [requestSubmission.isSubmitting])
 
   const visibleErrors: RequestFieldErrors = { ...serverErrors }

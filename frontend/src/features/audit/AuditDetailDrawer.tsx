@@ -30,26 +30,34 @@ export function AuditDetailDrawer({
   onSelectActivity: (activityId: string) => void
 }) {
   const session = useStaffSession()
+  const staffId = session.staff?.id
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const interactionRef = useRef({
     activityId,
+    staffId,
     interactionId: createAuditInteractionId(),
   })
-  if (interactionRef.current.activityId !== activityId) {
+  if (
+    interactionRef.current.activityId !== activityId ||
+    interactionRef.current.staffId !== staffId
+  ) {
     interactionRef.current = {
       activityId,
+      staffId,
       interactionId: createAuditInteractionId(),
     }
   }
   const detail = useQuery({
     queryKey: [
       'audit-activity-detail',
+      staffId,
       activityId,
       interactionRef.current.interactionId,
     ],
     queryFn: () =>
       getAuditActivity(activityId, interactionRef.current.interactionId),
+    enabled: session.status === 'authenticated' && staffId !== undefined,
   })
 
   useEffect(() => {
@@ -275,7 +283,7 @@ function SearchInvestigation({
     >
       <h3 id="search-context-title">검색 조사 경로</h3>
       <dl className="audit-detail-grid">
-        <DetailTerm label="redacted query" value={search.queryRedacted} />
+        <DetailTerm label="protected query" value={search.queryRedacted} />
         <DetailTerm label="fingerprint" value={search.queryFingerprint} mono />
         <DetailTerm label="result count" value={String(search.resultCount)} />
         <DetailTerm label="sort" value={search.sort} />

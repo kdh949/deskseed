@@ -15,6 +15,7 @@ import {
 } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentTicketWorkspacePage } from './AgentTicketWorkspacePage'
+import { STAFF_DRAFT_SESSION_OWNER_KEY } from './ticketEditorModel'
 
 vi.mock('../staff-auth/StaffSessionContext', () => ({
   useStaffSession: () => ({
@@ -118,6 +119,7 @@ function TestLayout() {
 }
 
 function renderPage(path = '/agent/tickets/1042') {
+  localStorage.setItem(STAFF_DRAFT_SESSION_OWNER_KEY, 'agent-id')
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -135,11 +137,12 @@ function renderPage(path = '/agent/tickets/1042') {
     ],
     { initialEntries: [path] },
   )
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  return { ...rendered, queryClient }
 }
 
 afterEach(() => {
@@ -181,7 +184,7 @@ describe('AgentTicketWorkspacePage', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    renderPage()
+    const { queryClient } = renderPage()
 
     expect(
       await screen.findByRole('heading', { name: '결제 승인 오류' }),
@@ -200,7 +203,45 @@ describe('AgentTicketWorkspacePage', () => {
     expect(request[0]).toBe('/api/v1/agent/tickets/1042')
     expect(requestOptions.headers['X-Deskseed-Read-Intent']).toBe('NAVIGATION')
     expect(requestOptions.headers['X-Interaction-Id']).toBeTruthy()
+    expect(
+      queryClient.getQueriesData({ queryKey: ['agent-ticket', 'agent-id'] }),
+    ).toHaveLength(1)
+    expect(
+      queryClient.getQueriesData({ queryKey: ['agent-ticket', 1042] }),
+    ).toHaveLength(0)
   })
+
+  it.each(['getItem', 'removeItem'] as const)(
+    'keeps the workspace available when draft storage %s throws',
+    async (operation) => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ ...detail, capabilities: ['READ', 'UPDATE'] }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const storageFailure = vi
+        .spyOn(localStorage, operation)
+        .mockImplementation(() => {
+          throw new DOMException('Storage access denied', 'SecurityError')
+        })
+
+      try {
+        renderPage()
+        expect(
+          await screen.findByRole('heading', { name: '결제 승인 오류' }),
+        ).toBeVisible()
+        expect(screen.getByRole('region', { name: '대화' })).toBeVisible()
+        expect(storageFailure).toHaveBeenCalled()
+      } finally {
+        storageFailure.mockRestore()
+      }
+    },
+  )
 
   it('reuses the navigation interaction for refetch and supports keyboard panel controls', async () => {
     const user = userEvent.setup()
@@ -449,6 +490,373 @@ describe('AgentTicketWorkspacePage', () => {
     )
   })
 
+  it('reuses one client command ID after an ambiguous failure and rotates it after success', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const commandBodies: Array<{ clientCommandId: string }> = []
+    let commandAttempt = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          commandAttempt += 1
+          commandBodies.push(JSON.parse(String(init?.body)))
+          if (commandAttempt === 1) {
+            return Promise.reject(new TypeError('connection reset'))
+          }
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 3 + commandAttempt,
+                auditId: `audit-${commandAttempt}`,
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    const firstRender = renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    let editor = screen.getByRole('textbox', { name: '공개 답변' })
+    let save = screen.getByRole('button', { name: '변경사항 저장' })
+    await user.type(editor, '응답 유실 후 재시도')
+
+    await user.click(save)
+    expect(
+      await screen.findByText(
+        '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.',
+      ),
+    ).toBeVisible()
+    firstRender.unmount()
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    editor = screen.getByRole('textbox', { name: '공개 답변' })
+    save = screen.getByRole('button', { name: '변경사항 저장' })
+    expect(editor).toHaveValue('응답 유실 후 재시도')
+    await user.click(save)
+    expect(await screen.findByText(/공개 답변과 변경사항/)).toBeVisible()
+
+    expect(commandBodies).toHaveLength(2)
+    expect(commandBodies[1]!.clientCommandId).toBe(
+      commandBodies[0]!.clientCommandId,
+    )
+
+    await user.type(editor, '새 논리 명령')
+    await user.click(save)
+    await waitFor(() => expect(commandBodies).toHaveLength(3))
+    expect(commandBodies[2]!.clientCommandId).not.toBe(
+      commandBodies[1]!.clientCommandId,
+    )
+  })
+
+  it('rotates the pending client command ID when the draft changes after an ambiguous failure', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const commandBodies: Array<{
+      clientCommandId: string
+      comment: { body: string }
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          commandBodies.push(JSON.parse(String(init?.body)))
+          if (commandBodies.length === 1) {
+            return Promise.reject(new TypeError('connection reset'))
+          }
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'audit-edited-retry',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    const editor = screen.getByRole('textbox', { name: '공개 답변' })
+    const save = screen.getByRole('button', { name: '변경사항 저장' })
+    await user.type(editor, '전송할 답변')
+    await user.click(save)
+    expect(
+      await screen.findByText(
+        '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.',
+      ),
+    ).toBeVisible()
+
+    await user.type(editor, ' 수정')
+    await user.click(save)
+    await waitFor(() => expect(commandBodies).toHaveLength(2))
+
+    expect(commandBodies[1]!.comment.body).toBe('전송할 답변 수정')
+    expect(commandBodies[1]!.clientCommandId).not.toBe(
+      commandBodies[0]!.clientCommandId,
+    )
+  })
+
+  it('keeps the pending client command ID when a manual refresh fails', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const commandBodies: Array<{ clientCommandId: string }> = []
+    let commandAttempts = 0
+    let detailReads = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          commandAttempts += 1
+          commandBodies.push(JSON.parse(String(init?.body)))
+          if (commandAttempts === 1) {
+            return Promise.reject(new TypeError('connection reset'))
+          }
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'audit-after-failed-refresh',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        detailReads += 1
+        if (detailReads === 2) {
+          return Promise.reject(new TypeError('refresh connection reset'))
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.type(
+      screen.getByRole('textbox', { name: '공개 답변' }),
+      '새로고침 실패 뒤 동일 재시도',
+    )
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    expect(
+      await screen.findByText(
+        '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.',
+      ),
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '티켓 새로고침' }))
+    expect(
+      await screen.findByText(
+        '최신 티켓 정보를 확인하지 못했습니다. 입력은 보존되었습니다.',
+      ),
+    ).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    await waitFor(() => expect(commandBodies).toHaveLength(2))
+
+    expect(commandBodies[1]!.clientCommandId).toBe(
+      commandBodies[0]!.clientCommandId,
+    )
+  })
+
+  it('keeps the exact pending command after a successful refresh cannot identify its outcome', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const committedDetail = {
+      ...editableDetail,
+      ticket: { ...editableDetail.ticket, version: 4 },
+      comments: [
+        ...editableDetail.comments,
+        {
+          id: 'possibly-committed-comment',
+          visibility: 'PUBLIC',
+          actor: { id: 'agent-id', type: 'STAFF', displayName: '상담사' },
+          body: '성공한 조회로도 결과를 단정하지 않음',
+          createdAt: '2026-08-12T01:00:00Z',
+          source: 'STAFF_WEB',
+          attachments: [],
+        },
+      ],
+    }
+    const commandBodies: Array<{
+      clientCommandId: string
+      expectedVersion: number
+    }> = []
+    let commandAttempts = 0
+    let detailReads = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          commandAttempts += 1
+          commandBodies.push(JSON.parse(String(init?.body)))
+          if (commandAttempts === 1) {
+            return Promise.reject(new TypeError('response lost after commit'))
+          }
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'original-audit-replayed',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        detailReads += 1
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              detailReads === 1 ? editableDetail : committedDetail,
+            ),
+            { status: 200 },
+          ),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    const editor = screen.getByRole('textbox', { name: '공개 답변' })
+    await user.type(editor, '성공한 조회로도 결과를 단정하지 않음')
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    expect(
+      await screen.findByText(
+        '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.',
+      ),
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '티켓 새로고침' }))
+    expect(
+      await screen.findByText(
+        '이전 저장 결과가 아직 확정되지 않았습니다. 같은 변경사항을 다시 저장해 확인해 주세요.',
+      ),
+    ).toBeVisible()
+    expect(editor).toHaveValue('성공한 조회로도 결과를 단정하지 않음')
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    await waitFor(() => expect(commandBodies).toHaveLength(2))
+
+    expect(commandBodies[1]).toEqual(commandBodies[0])
+  })
+
+  it('persists a confirmed command before the detail refresh so remount cannot resubmit it', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const latestDetail = {
+      ...editableDetail,
+      ticket: { ...editableDetail.ticket, version: 4 },
+    }
+    const commandBodies: Array<{ clientCommandId: string }> = []
+    let detailReads = 0
+    let resolvePendingRefresh!: (response: Response) => void
+    const pendingRefresh = new Promise<Response>((resolve) => {
+      resolvePendingRefresh = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          commandBodies.push(JSON.parse(String(init?.body)))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'audit-confirmed-before-refresh',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        detailReads += 1
+        if (detailReads === 2) return pendingRefresh
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(detailReads === 1 ? editableDetail : latestDetail),
+            { status: 200 },
+          ),
+        )
+      }),
+    )
+
+    const firstRender = renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    const editor = screen.getByRole('textbox', { name: '공개 답변' })
+    await user.type(editor, '응답 성공 후 새로고침 대기')
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    await waitFor(() => expect(commandBodies).toHaveLength(1))
+    await waitFor(() => expect(editor).toHaveValue(''))
+
+    firstRender.unmount()
+    resolvePendingRefresh(
+      new Response(JSON.stringify(latestDetail), { status: 200 }),
+    )
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    expect(screen.getByRole('textbox', { name: '공개 답변' })).toHaveValue('')
+    expect(screen.getByRole('button', { name: '변경사항 저장' })).toBeDisabled()
+    expect(commandBodies).toHaveLength(1)
+  })
+
   it('disables duplicate saves while the combined command is submitting', async () => {
     const user = userEvent.setup()
     const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
@@ -503,6 +911,82 @@ describe('AgentTicketWorkspacePage', () => {
     )
     expect(await screen.findByText(/공개 답변과 변경사항/)).toBeVisible()
     expect(save).toBeDisabled()
+  })
+
+  it('locks composer mode during an in-flight command and reuses its ID after an ambiguous failure', async () => {
+    const user = userEvent.setup()
+    const editableDetail = { ...detail, capabilities: ['READ', 'UPDATE'] }
+    const commandBodies: Array<{
+      clientCommandId: string
+      comment: { visibility: string; body: string }
+    }> = []
+    let rejectFirstCommand!: (reason: unknown) => void
+    const firstCommand = new Promise<Response>((_resolve, reject) => {
+      rejectFirstCommand = reject
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+        if (input === '/api/v1/agent/csrf') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+              { status: 200 },
+            ),
+          )
+        }
+        if (input.endsWith('/commands')) {
+          commandBodies.push(JSON.parse(String(init?.body)))
+          if (commandBodies.length === 1) return firstCommand
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                ticketNumber: 1042,
+                version: 4,
+                auditId: 'audit-after-mode-lock-retry',
+                warnings: [],
+              }),
+              { status: 200 },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(editableDetail), { status: 200 }),
+        )
+      }),
+    )
+
+    renderPage()
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.type(
+      screen.getByRole('textbox', { name: '공개 답변' }),
+      '전송 중 모드 전환으로 중복되면 안 됨',
+    )
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    await waitFor(() => expect(commandBodies).toHaveLength(1))
+
+    const publicTab = screen.getByRole('tab', { name: '공개 답변' })
+    const internalTab = screen.getByRole('tab', { name: '내부 메모' })
+    expect(publicTab).toBeDisabled()
+    expect(internalTab).toBeDisabled()
+    await user.click(internalTab)
+    expect(publicTab).toHaveAttribute('aria-selected', 'true')
+
+    rejectFirstCommand(new TypeError('response lost after commit'))
+    expect(
+      await screen.findByText(
+        '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.',
+      ),
+    ).toBeVisible()
+    expect(publicTab).toBeEnabled()
+    expect(internalTab).toBeEnabled()
+    expect(screen.getByRole('textbox', { name: '공개 답변' })).toHaveValue(
+      '전송 중 모드 전환으로 중복되면 안 됨',
+    )
+
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    await waitFor(() => expect(commandBodies).toHaveLength(2))
+    expect(commandBodies[1]).toEqual(commandBodies[0])
   })
 
   it('focuses the property conflict banner and preserves local fields and both drafts', async () => {
@@ -881,6 +1365,10 @@ describe('AgentTicketWorkspacePage', () => {
       },
     }
     const commandCalls: Array<[string, RequestInit | undefined]> = []
+    let resolveChildCommand!: (response: Response) => void
+    const childCommandResponse = new Promise<Response>((resolve) => {
+      resolveChildCommand = resolve
+    })
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((input: string, init?: RequestInit) => {
@@ -897,18 +1385,7 @@ describe('AgentTicketWorkspacePage', () => {
         }
         if (input.endsWith('/children')) {
           commandCalls.push([input, init])
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                parentTicketNumber: 1042,
-                parentVersion: 4,
-                childTicketNumber: 1044,
-                parentAuditId: 'parent-audit-id',
-                childAuditId: 'child-audit-id',
-              }),
-              { status: 201 },
-            ),
-          )
+          return childCommandResponse
         }
         return Promise.resolve(
           new Response(JSON.stringify(editableDetail), { status: 200 }),
@@ -927,7 +1404,7 @@ describe('AgentTicketWorkspacePage', () => {
     ).toBeVisible()
 
     const trigger = screen.getByRole('button', { name: '내부 child 만들기' })
-    await user.click(trigger)
+    fireEvent.click(trigger)
     const dialog = screen.getByRole('dialog', { name: '내부 child 만들기' })
     expect(dialog).toBeVisible()
     expect(document.activeElement).toBe(
@@ -969,6 +1446,28 @@ describe('AgentTicketWorkspacePage', () => {
       assigneeId: 'agent-id',
       priority: 'HIGH',
     })
+    await waitFor(() => expect(dialog).toHaveAttribute('aria-busy', 'true'))
+    expect(
+      within(dialog).getByRole('button', { name: '내부 child 만들기 닫기' }),
+    ).toBeDisabled()
+    await waitFor(() => expect(dialog).toHaveFocus())
+    trigger.focus()
+    expect(dialog).toHaveFocus()
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(dialog).toBeVisible()
+
+    resolveChildCommand(
+      new Response(
+        JSON.stringify({
+          parentTicketNumber: 1042,
+          parentVersion: 4,
+          childTicketNumber: 1044,
+          parentAuditId: 'parent-audit-id',
+          childAuditId: 'child-audit-id',
+        }),
+        { status: 201 },
+      ),
+    )
     await waitFor(() =>
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     )

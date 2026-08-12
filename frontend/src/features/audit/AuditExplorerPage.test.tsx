@@ -57,7 +57,7 @@ function renderExplorer(fetchMock: ReturnType<typeof vi.fn>) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(
+  const rendered = render(
     <DeskseedThemeProvider>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={['/audit/activity']}>
@@ -70,6 +70,7 @@ function renderExplorer(fetchMock: ReturnType<typeof vi.fn>) {
       </QueryClientProvider>
     </DeskseedThemeProvider>,
   )
+  return { ...rendered, queryClient }
 }
 
 function auditFetch() {
@@ -134,7 +135,7 @@ function auditFetch() {
         ipAddress: '192.0.2.4',
         userAgent: 'Deskseed test browser',
         search: {
-          queryRedacted: 'a***@example.com',
+          queryRedacted: '[PROTECTED]',
           queryFingerprint: 'fingerprint-v1',
           filters: { status: 'OPEN' },
           sort: 'updatedAt:desc,ticketNumber:desc',
@@ -176,7 +177,7 @@ describe('AuditExplorerPage', () => {
 
   it('shows canonical before after in a focus restoring drawer without default protected content', async () => {
     const user = userEvent.setup()
-    renderExplorer(auditFetch())
+    const { queryClient } = renderExplorer(auditFetch())
 
     const changeButton = await screen.findByRole('button', {
       name: 'STATUS_CHANGED',
@@ -193,6 +194,16 @@ describe('AuditExplorerPage', () => {
     expect(screen.getByText('PENDING')).toBeVisible()
     expect(screen.queryByText('private comment body')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '닫기' })).toHaveFocus()
+    expect(
+      queryClient.getQueriesData({
+        queryKey: ['audit-activities', actor.id],
+      }),
+    ).toHaveLength(1)
+    expect(
+      queryClient.getQueriesData({
+        queryKey: ['audit-activity-detail', actor.id, CHANGE_ID],
+      }),
+    ).toHaveLength(1)
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -206,7 +217,7 @@ describe('AuditExplorerPage', () => {
     await user.click(
       await screen.findByRole('button', { name: 'SEARCH_EXECUTED' }),
     )
-    expect(await screen.findByText('a***@example.com')).toBeVisible()
+    expect(await screen.findByText('[PROTECTED]')).toBeVisible()
     const revealButton = screen.getByRole('button', {
       name: '이 event의 raw query 공개',
     })

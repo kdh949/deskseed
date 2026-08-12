@@ -7,6 +7,7 @@ import type {
   TicketPriority,
 } from '../../api/types'
 import { ScreenState, TableSkeleton, TicketTable } from '../../shared/ui/system'
+import { useStaffSession } from '../staff-auth/StaffSessionContext'
 
 const VIEW_NAMES: Record<string, string> = {
   'my-open': '내 open',
@@ -27,12 +28,15 @@ const STATUSES: AgentTicketStatus[] = [
 const PRIORITIES: TicketPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT']
 
 export function AgentViewsPage() {
+  const session = useStaffSession()
+  const staffId = session.staff?.id
   const { viewKey = 'my-open' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = filtersFrom(searchParams)
   const query = useQuery({
-    queryKey: ['agent-view', viewKey, filters],
+    queryKey: ['agent-view', staffId, viewKey, filters],
     queryFn: () => listTicketsInView(viewKey, filters),
+    enabled: session.status === 'authenticated' && staffId !== undefined,
   })
   const viewName = VIEW_NAMES[viewKey] ?? viewKey
 

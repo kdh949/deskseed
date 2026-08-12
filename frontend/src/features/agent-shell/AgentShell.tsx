@@ -12,12 +12,16 @@ import { useStaffSession } from '../staff-auth/StaffSessionContext'
 
 export function AgentShell() {
   const session = useStaffSession()
-  const staffId = session.staff?.id ?? 'unknown'
-  const storageKey = `deskseed:agent:${staffId}:work-nav-collapsed:v1`
+  const staffId = session.staff?.id
+  const storageKey = `deskseed:agent:${staffId ?? 'unknown'}:work-nav-collapsed:v1`
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(storageKey) === 'true',
   )
-  const views = useQuery({ queryKey: ['agent-views'], queryFn: listAgentViews })
+  const views = useQuery({
+    queryKey: ['agent-views', staffId],
+    queryFn: listAgentViews,
+    enabled: session.status === 'authenticated' && staffId !== undefined,
+  })
   const navItems: NavRailItem[] = [
     { to: '/agent/views', label: 'Views', icon: 'V' },
     { to: '/agent/search', label: '검색', icon: 'S' },
