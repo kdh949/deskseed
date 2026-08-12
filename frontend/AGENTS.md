@@ -45,6 +45,21 @@ Feature and page code may own route state, data loading, permissions, and domain
 
 Do not broaden or break an existing public API merely to satisfy one screen. Keep one-off domain orchestration in the feature unless a reusable visual contract is demonstrated.
 
+## UI implementation preflight
+
+Before modifying rendered UI, briefly establish a Reuse Plan:
+
+- Reuse: documented design-system contracts usable as-is
+- Compose: documented contracts that can be composed
+- Extend: existing contracts that require a reusable compatible extension
+- Add: genuinely new reusable contracts, if any
+
+Prefer Reuse and Compose. "Add" should normally be empty.
+
+Do not wait for user approval after writing this plan unless a product,
+behavioral, or visual-design decision is genuinely unresolved.
+Continue directly with implementation.
+
 ## Story requirements
 
 - Every new UI component needs a Storybook story. When editing a component, update or add stories that demonstrate the changed behavior.
