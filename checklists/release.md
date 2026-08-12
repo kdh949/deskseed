@@ -4,7 +4,7 @@ Current portfolio-RC status is backed by
 [`docs/evidence/release/verification-summary.md`](../docs/evidence/release/verification-summary.md).
 An unchecked item is a release blocker or owner gate, not an implicit waiver.
 
-- [ ] Full CI green
+- [x] Full CI green
 - [x] Critical Playwright flows green
 - [ ] Visual diffs reviewed
 - [ ] Accessibility checks and manual keyboard pass

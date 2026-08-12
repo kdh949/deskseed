@@ -15,7 +15,7 @@ cd5a5ff69a16ae96d5e07b36238928cd3551aecfe516bad640ee2913d302b84c       10857  ap
 16b32b44fd438f6397ee3c33c63b85373451766afefe7995773ce025542c421e        1350  api/ui-route-catalog-v0.6.yaml
 9c020a4c12585495dc9f530e9805567afa79a8eef346d6fe757c661fdaa8d740         430  checklists/feature-readiness.md
 78ce0e4c5e256dca8d3783a357f1a422a8d59c16f01f6e726fc1f4ae38036ae3         807  checklists/pr-review.md
-4f30df908519abf2a027e9f69d1877f6d140c4b55ac28d5774010e20824cbca9         796  checklists/release.md
+da2fd2674c62fefc0db0ee0d2515863863fc2a07833836572b82edb91b8cd98e         796  checklists/release.md
 1bf4a7550f2ba7e6bafb9a7424fc56f466258288d683a26592354f648cf19346        1135  db/schema-blueprint-v0.6.sql
 d939fcf25a62203a44f43864f1ad7b59483c2b2cfe4007ac7f507419124fe5ce        1474  design/wireframes/admin-audit-integrations.md
 64f85f94afc4d41dcefb39f65dfa76cb6f76507c9af5a69bf70c67ad2207bb6a        2356  design/wireframes/agent-ticket-workspace.md
@@ -174,8 +174,8 @@ ee6dace509e9953144826b0986ea47e9772f4c4a865e5d150fe6164bb0466eca        4464  do
 d7e319d217bcdb0cc2c7b192614899893304bce8fc27ddc7123e51fd2d78e0c3        7237  docs/evidence/release/performance/smoke/summary.md
 1853209d22f5fcbf582089872ea0465f8cbc027e69e22700ed087f4ee87624ab       13274  docs/evidence/release/security/security-scan.md
 e89328904edd19f3f57e93b2265f823dacf8526bbbcb43e0a00f205c48a31249       11722  docs/evidence/release/supply-chain/baseline.md
-0329834a6b5980013c3e047ceed36a7d3959463738a9ca2101b75be53d4c3500        4296  docs/evidence/release/ui/automated-and-visual-review.md
-1f8082a5dfa4ce4e704d24efe63cbd0830a3467b93a90449f7d165ff1293e35d        5410  docs/evidence/release/verification-summary.md
+243c0744ffe50169236c5985c11e42afedaf53598607ecb9f31b3fd2ddd681df        5021  docs/evidence/release/ui/automated-and-visual-review.md
+a55b4e5bac81fd4adf666404c372ccc563c02cfa670f20cf8f9fe22c11cf14ff        5703  docs/evidence/release/verification-summary.md
 3e6c5e906d2cff61685b2e2a32e8a101eccb864108f2edba8329bba9b3a0f9f8        1826  docs/performance/README.md
 36074a179597e0ad5921635f7bf50437590b555bfaf138bfe55d59218b7d36dc        3109  docs/performance/agent-ticket-read-query-plan.md
 8ef07475f6afb2980072565e075e549a86f24743b2ce43d93c5dc21e7520de5d        4603  docs/performance/audit-explorer-1m-query-plan.md

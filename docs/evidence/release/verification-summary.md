@@ -10,14 +10,14 @@ unexecuted rows remain `NOT RUN` rather than inheriting status from older artifa
 
 | Area | Status | Command / evidence |
 |---|---|---|
-| GitHub PR CI | PASS | PR #21 run `31554070655`: documentation contracts, backend, frontend quality, Chromium browser, Compose ownership/health, anonymous-request real stack and Audit Explorer real stack all passed; no retry/skip or auto-merge |
+| GitHub PR CI | PASS | PR #22 code-bearing head run `31564637144`: documentation contracts, backend, frontend quality, Chromium browser, Compose ownership/health, anonymous-request real stack and Audit Explorer real stack all passed; no retry/skip or auto-merge. Later evidence-only commits must retain a green documentation contract check before merge |
 | Documentation/OpenAPI validator | PASS | `python3 scripts/validate_documentation.py`; 55 canonical docs, 26 briefs, 37 ADRs, 56 operations, 84 visual baselines; 26/26 implemented staff-session operations expose the expected-actor header and actor 400/409 contract |
 | Frontend format/lint/type/unit/build | PASS | `npm run format:check && npm run lint && npm run typecheck && npm test && npm run build`; 14 files, 150/150, 0 failed/skipped; JS 136.08 kB gzip, CSS 9.74 kB gzip |
 | Backend fresh suite | PASS | `cd backend && ./gradlew clean test`; 29 suites, 134/134, 0 failed/errors/skipped; BUILD SUCCESSFUL in 1m11s |
 | Customer real-stack E2E | PASS | current ownership-isolated wrapper, `bash scripts/run-release-e2e.sh`; Core 5/5 in 7.5s including Views/Workspace, real two-session conflict, transfer and child |
 | Audit Explorer real-stack E2E | PASS | same current wrapper, isolated second Compose stack; 1/1 list/detail/reveal/self-audit/projection/authorization scenario |
 | Compose ownership/health | PASS | ownership fault/config harness preserved preexisting and replacement container/network/volume/image sentinels, `bash scripts/compose-smoke.sh` passed, and all four owner-label resource classes were 0 at `2026-08-12T00:27:16Z` |
-| Visual/axe/keyboard automation | PASS | Chromium 41/41 in 26.7s, Firefox 41/41 in 34.1s, WebKit 35/35 + 6/6 in 27.2s + 8.3s; 0 retry/skip; see `ui/automated-and-visual-review.md` |
+| Visual/axe/keyboard automation | LIMITED | final frontend source passed Chromium 41/41 and Firefox 41/41 with 0 retry/skip. A current macOS WebKit launch succeeded but `browserContext.newPage()` timed out before application setup, so the earlier base-source 35/35 + 6/6 result is historical rather than final-source proof; see `ui/automated-and-visual-review.md` |
 | Human visual/screen-reader review | NOT RUN | full 84-image diff, VoiceOver/NVDA and human keyboard/zoom/reduced-motion sign-off remain open |
 | Strict audit/auth/conflict/idempotency regressions | PASS | included in the 134-test clean backend run: stable 503/non-leak, denied reveal self-audit, encryption-key-independent session origin, immutable projection snapshots/concurrent rebuild, actor mismatch command immutability, mixed-conflict atomicity, exact/concurrent replay and misuse 409 |
 | Security baseline | LIMITED | sealed scan plus current delta review; two findings fixed, auditor-grant and public-exposure controls remain risks, and IDEM-002 rejected-attempt observability is limited; see `security/security-scan.md` |
