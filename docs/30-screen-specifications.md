@@ -346,11 +346,12 @@ Integrations and deliveries
 
 ## INT-002 — External systems
 
-- system key/name
-- allowed HTTPS hosts
-- deep link template
-- object types
-- enabled state
+- immutable system key and display name
+- exact allowed HTTPS hosts
+- enabled/disabled state and optimistic version
+- loading/empty/error/denied/conflict states
+- create and policy-edit lifecycle audit
+- deep link template and per-system object-type policy are later contract changes, not I4 launch fields
 
 ## INT-003 — Webhook endpoints
 
