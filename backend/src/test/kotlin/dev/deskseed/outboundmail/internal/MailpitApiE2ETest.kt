@@ -8,6 +8,7 @@ import dev.deskseed.outboundmail.MagicLinkMail
 import dev.deskseed.outboundmail.MailRecipient
 import dev.deskseed.outboundmail.OutboundMailIntent
 import dev.deskseed.outboundmail.OutboundMailPort
+import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -35,7 +36,10 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.security.MessageDigest
+import java.sql.Timestamp
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 @SpringBootTest(
@@ -179,6 +183,131 @@ class MailpitApiE2ETest {
         ).isEqualTo(1)
     }
 
+    @Test
+    fun `customer PUBLIC follow-up replay delivers one request received message`() {
+        val recipient = "follow-up-mailpit-${UUID.randomUUID()}@example.com"
+        val session = customerSession(recipient)
+        val ticketNumber = insertOwnedTicket(session.customerId)
+        val commandId = "mailpit-follow-up-${UUID.randomUUID()}"
+        val csrfToken = csrf(session.cookie)
+        val payload = objectMapper.writeValueAsString(
+            mapOf("body" to "Mailpit으로 확인하는 고객 공개 후속 답변", "clientCommandId" to commandId),
+        )
+
+        repeat(2) {
+            mockMvc.perform(
+                post("/api/v1/customer/requests/{ticketNumber}/comments", ticketNumber)
+                    .cookie(session.cookie)
+                    .header("X-CSRF-TOKEN", csrfToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(payload),
+            ).andExpect(status().isCreated)
+        }
+
+        assertThat(worker.runDueBatch()).isEqualTo(1)
+        val summaries = messages()
+        assertThat(summaries).hasSize(1)
+        val summary = summaries.single()
+        assertThat(recipientAddresses(summary)).containsExactly(recipient)
+        assertThat(textField(summary, "Subject", "subject")).contains("요청 #$ticketNumber 접수 완료")
+        val detail = objectMapper.readTree(
+            request("GET", "/api/v1/message/${textField(summary, "ID", "id")}"),
+        )
+        assertThat(textField(detail, "Text", "text")).contains("/requests/$ticketNumber")
+
+        assertThat(worker.runDueBatch()).isZero()
+        assertThat(messages()).hasSize(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_intents where comment_id is not null",
+                Long::class.java,
+            ),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from outbound_mail_attempts", Long::class.java),
+        ).isEqualTo(1)
+    }
+
+    private fun csrf(cookie: Cookie): String {
+        val response = mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("/api/v1/customer/csrf")
+                .cookie(cookie),
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        return objectMapper.readTree(response).get("token").asText()
+    }
+
+    private fun customerSession(email: String): CustomerSessionFixture {
+        val now = Instant.now()
+        val customerId = UUID.randomUUID()
+        val accountId = UUID.randomUUID()
+        val rawSession = "mailpit-session-${UUID.randomUUID()}"
+        jdbcTemplate.update(
+            """
+            insert into customers (id, name, email_normalized, email_display, verified_at, created_at, updated_at)
+            values (?, 'Mailpit follow-up customer', ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            customerId,
+            email,
+            email,
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+        )
+        jdbcTemplate.update(
+            """
+            insert into customer_accounts
+                (id, customer_id, email_normalized, status, verified_at, last_login_at,
+                 created_at, updated_at, version)
+            values (?, ?, ?, 'ACTIVE', ?, ?, ?, ?, 0)
+            """.trimIndent(),
+            accountId,
+            customerId,
+            email,
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+        )
+        jdbcTemplate.update(
+            """
+            insert into customer_sessions
+                (id, account_id, session_token_digest, created_at, last_activity_at,
+                 expires_at, absolute_expires_at, revoked_at)
+            values (?, ?, ?, ?, ?, ?, ?, null)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            accountId,
+            sha256(rawSession),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now.plusSeconds(1_800)),
+            Timestamp.from(now.plusSeconds(3_600)),
+        )
+        return CustomerSessionFixture(customerId, Cookie(CUSTOMER_COOKIE, rawSession))
+    }
+
+    private fun insertOwnedTicket(customerId: UUID): Long {
+        val ticketNumber = jdbcTemplate.queryForObject("select nextval('ticket_number_seq')", Long::class.java)!!
+        jdbcTemplate.update(
+            """
+            insert into tickets
+                (id, ticket_number, requester_id, kind, subject, status, priority, group_id,
+                 assignee_id, channel, version, created_at, updated_at, solved_at)
+            values (?, ?, ?, 'CUSTOMER_REQUEST', 'Mailpit follow-up ticket', 'OPEN', 'NORMAL',
+                    null, null, 'WEB', 0, now(), now(), null)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            ticketNumber,
+            customerId,
+        )
+        return ticketNumber
+    }
+
+    private fun sha256(value: String): String = java.util.HexFormat.of().formatHex(
+        MessageDigest.getInstance("SHA-256").digest(value.toByteArray()),
+    )
+
     private fun messages(): List<JsonNode> {
         val root = objectMapper.readTree(request("GET", "/api/v1/messages?limit=50"))
         val messages = root.get("messages") ?: root.get("Messages") ?: error("Mailpit messages field is absent")
@@ -208,6 +337,8 @@ class MailpitApiE2ETest {
     }
 
     companion object {
+        private const val CUSTOMER_COOKIE = "DESKSEED_CUSTOMER_SESSION"
+
         @Container
         @ServiceConnection
         @JvmStatic
@@ -226,4 +357,6 @@ class MailpitApiE2ETest {
             registry.add("spring.mail.port") { mailpit.getMappedPort(1025) }
         }
     }
+
+    private data class CustomerSessionFixture(val customerId: UUID, val cookie: Cookie)
 }
