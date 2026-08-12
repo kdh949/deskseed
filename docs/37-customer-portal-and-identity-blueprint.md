@@ -68,6 +68,17 @@ sign in/verify email
 
 단순 email match 자동 claim 금지.
 
+Implemented Stack F contract:
+
+- an existing request-access token can be presented directly, or exchanged for a 15-minute
+  HMAC-signed ticket/email-bound grant whose database row stores only digest/fingerprint state;
+- the authenticated account, anonymous requester and proof email must all normalize to the same
+  address, but the proof—not the address—authorizes the transition;
+- success changes the current Ticket requester, revokes legacy request tokens, consumes the grant
+  when applicable, and commits ticket/security audit in the same transaction;
+- tamper, expiry and replay are generic not-found; a valid proof for a different verified account
+  is denied without consuming it.
+
 ## 6. Portal capabilities
 
 MVP:
@@ -82,6 +93,16 @@ Account release:
 - view open/solved.
 - follow-up/reopen policy.
 - notification preferences later.
+
+Implemented projection boundary: list and detail begin with the authenticated
+`customer_id` resource constraint and `CUSTOMER_REQUEST` kind. Responses contain ticket number,
+subject, customer status/timestamps and PUBLIC comments only. INTERNAL comments, child relations,
+staff/group/assignee fields, audit identifiers/events and mail delivery metadata are excluded
+server-side.
+
+PUBLIC follow-up uses a stable client command ID. Exact transport replay returns the original
+comment and does not duplicate its ticket audit or acknowledgement mail intent. PENDING reopens to
+OPEN; SOLVED/CLOSED require a later explicit reopen policy and currently return conflict.
 
 ## 7. Customer status projection
 
@@ -104,6 +125,11 @@ SOLVED/CLOSED → 해결됨
 - display public status mapping.
 - email verification provider.
 - brand/logo/colors.
+
+The implemented access-mode slice exposes only the typed three-mode setting. ADMIN writes carry
+an expected version and commit `CUSTOMER_ACCESS_MODE_CHANGED` in the admin/security ledger with the
+setting mutation. Registration-required blocks anonymous creation but intentionally preserves
+existing request-access-token detail capability.
 
 ## 9. Notification later
 

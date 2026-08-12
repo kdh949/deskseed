@@ -260,6 +260,7 @@ paths:
     get:
       summary: List requests for a verified customer account
       operationId: listCustomerRequests
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -287,11 +288,39 @@ paths:
       responses:
         '200':
           description: Request page
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerRequestPage'
         '401': *id001
+  /api/v1/customer/access-mode:
+    get:
+      summary: Read the effective customer request access mode
+      operationId: getCustomerAccessMode
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Customer Portal
+      security: []
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      responses:
+        '200':
+          description: Effective customer access mode
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeResponse'
   /api/v1/agent/csrf:
     get:
       summary: Issue a CSRF token bound to the browser session
@@ -1718,6 +1747,7 @@ paths:
     get:
       summary: Read an authenticated customer-safe request projection
       operationId: getCustomerRequest
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -1728,6 +1758,11 @@ paths:
       responses:
         '200':
           description: Customer request detail
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
@@ -1750,6 +1785,13 @@ paths:
     post:
       summary: Add an authenticated PUBLIC customer follow-up
       operationId: addAuthenticatedCustomerComment
+      description: >-
+        Creates one PUBLIC customer comment, one canonical ticket audit, and one
+        durable request-received mail intent in the same transaction. An exact
+        requester/clientCommandId replay returns the original comment; reuse for a
+        different ticket or body returns 409. SOLVED and CLOSED requests are not
+        reopened by this operation.
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Portal
       x-deskseed-phase: P1
@@ -1761,10 +1803,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddCustomerComment'
+              $ref: '#/components/schemas/AddAuthenticatedCustomerComment'
       responses:
         '201':
-          description: Public comment created
+          description: Public comment created, or the stable result of an exact replay
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
           content:
             application/json:
               schema:
@@ -1793,6 +1840,68 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /api/v1/admin/settings/customer-access-mode:
+    get:
+      summary: Read the customer request access mode
+      operationId: getCustomerAccessModeSetting
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Customer access mode setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeSetting'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+    put:
+      summary: Change the customer request access mode
+      operationId: updateCustomerAccessModeSetting
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P1
+      x-deskseed-requirements:
+      - REQ-TKT-004
+      - REQ-AUD-009
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerAccessMode'
+      responses:
+        '200':
+          description: Customer access mode updated and audited atomically
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAccessModeSetting'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/business-schedules:
     get:
       summary: List business schedules and active versions
@@ -2535,6 +2644,23 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
+    AddAuthenticatedCustomerComment:
+      type: object
+      additionalProperties: false
+      required:
+      - body
+      - clientCommandId
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        clientCommandId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^[A-Za-z0-9._:-]+$'
+          description: Stable customer command identifier retained across transport retries.
     PublicComment:
       type: object
       additionalProperties: false
@@ -2606,17 +2732,76 @@ components:
             $ref: '#/components/schemas/PublicComment'
     CustomerRequestPage:
       type: object
+      additionalProperties: false
       required:
       - items
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CustomerRequestDetail'
+            $ref: '#/components/schemas/CustomerRequestSummary'
         nextCursor:
           type:
           - string
           - 'null'
+    CustomerRequestSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - ticketNumber
+      - subject
+      - status
+      - createdAt
+      - updatedAt
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomerAccessMode:
+      type: string
+      enum: [ANONYMOUS_ALLOWED, REGISTRATION_OPTIONAL, REGISTRATION_REQUIRED]
+    CustomerAccessModeResponse:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+    CustomerAccessModeSetting:
+      type: object
+      additionalProperties: false
+      required: [mode, version, updatedAt]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+    UpdateCustomerAccessMode:
+      type: object
+      additionalProperties: false
+      required: [mode, expectedVersion]
+      properties:
+        mode:
+          $ref: '#/components/schemas/CustomerAccessMode'
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
     StaffLogin:
       type: object
       additionalProperties: false

@@ -417,6 +417,21 @@ setting_change_audits (canonical audit ledger와 연결)
 
 설정은 typed key registry를 통해 접근한다. 임의 string key를 코드 곳곳에서 사용하지 않는다.
 
+### 8.1 Implemented customer portal state (V20)
+
+- `system_settings.customer_access_mode` is the typed enum source for
+  `ANONYMOUS_ALLOWED | REGISTRATION_OPTIONAL | REGISTRATION_REQUIRED` and
+  `system_settings.version` provides optimistic concurrency for the audited ADMIN update.
+- `customer_request_claim_grants` stores a ticket FK, SHA-256 token digest, keyed email
+  fingerprint, expiry and single-use consume timestamp. Raw proof and raw email are absent.
+- `customer_request_claim_grants_cleanup_idx` supports bounded expired/consumed cleanup.
+- `tickets_customer_portal_idx (requester_id, updated_at desc, ticket_number desc)` is partial
+  to `CUSTOMER_REQUEST` and backs the authenticated ownership-first list projection.
+- `ticket_audits_customer_command_replay_idx` locates the canonical CUSTOMER command result;
+  the ticket audit remains the replay source rather than a second command-result table.
+- V20 does not rewrite existing ticket requester IDs. Ownership changes only through the
+  explicit, audited claim command.
+
 ## 9. Migration 순서
 
 1. foundation IDs/settings.

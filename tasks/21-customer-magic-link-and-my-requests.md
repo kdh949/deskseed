@@ -106,3 +106,43 @@ not implemented in this PR.
   requester. The explicit claim operation and its positive proof test remain excluded.
 - `MAIL-001`: Testcontainers Mailpit API verifies recipient, subject, fragment link,
   successful consume, replay denial and one-message/no-duplicate delivery.
+
+## Stack F PR 3/3 implementation slice
+
+This PR completes the account portal slice: authenticated My Requests, explicit anonymous
+request claim, PUBLIC follow-up, and the audited three-mode customer access setting.
+
+### Contract and invariants
+
+- Requirements: `REQ-AUTH-002`, `REQ-TKT-003`, `REQ-TKT-004`, `REQ-TKT-005`,
+  `REQ-TKT-008`; Decisions `D-002`, `D-005`, `D-012`, `D-014`, `D-021`, `D-028`,
+  `D-032`, `D-038`, `D-040`, `D-046`; ADRs 0029 and 0034.
+- Frozen operations: `getCustomerAccessMode`, `listCustomerRequests`, `getCustomerRequest`,
+  `addAuthenticatedCustomerComment`, `issueAnonymousRequestClaimGrant`,
+  `claimAnonymousCustomerRequest`, `getCustomerAccessModeSetting`, and
+  `updateCustomerAccessModeSetting`.
+- Customer reads are ownership-first, `CUSTOMER_REQUEST`-only and PUBLIC-only. Guessing and
+  cross-customer reads return the same not-found shape; INTERNAL/child/staff/audit/mail fields
+  never enter the response projection.
+- Claim requires a ticket-scoped request token or signed grant after authentication. Matching
+  email alone never searches for, lists or transfers a ticket.
+- Follow-up comment, optional PENDING→OPEN transition, one ticket audit and one stable outbound
+  mail intent commit atomically. Same `clientCommandId` replay returns the original result.
+- `ANONYMOUS_ALLOWED` and `REGISTRATION_OPTIONAL` accept anonymous creation;
+  `REGISTRATION_REQUIRED` requires a customer session while preserving an already-issued request
+  access capability. ADMIN settings use expected-version concurrency and atomic security audit.
+
+### Verification evidence
+
+- PostgreSQL integration tests cover A/B isolation, guessed IDs, PUBLIC-only projection, request
+  token and signed-grant success/tamper/expiry/replay/different-email, access modes, ADMIN conflict,
+  claim/follow-up audit and one-intent replay.
+- Mailpit Testcontainers verifies magic-link and customer follow-up recipient, subject, link and
+  one-message/one-attempt behavior through the actual SMTP adapter and Mailpit API.
+- React tests cover portal and access-mode behavior; Playwright/axe covers safe projection,
+  expired proof focus/input retention and failed follow-up draft/stable-command retry at 1280/1440.
+
+### Explicit exclusions
+
+Organization-shared requests, automatic SOLVED reopen, password/SSO/social login, production mail
+provider, inbound mail, bounce handling, attachments and rich text remain unimplemented.
