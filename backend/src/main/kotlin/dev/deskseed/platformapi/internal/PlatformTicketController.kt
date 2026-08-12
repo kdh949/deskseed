@@ -80,8 +80,9 @@ internal class PlatformTicketController(
     ).toResponseEntity()
 
     private fun PlatformStoredResponse.toResponseEntity(): ResponseEntity<String> {
-        val response = ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON)
-        headers.forEach(response::header)
+        val contentType = headers["Content-Type"]?.let(MediaType::parseMediaType) ?: MediaType.APPLICATION_JSON
+        val response = ResponseEntity.status(status).contentType(contentType)
+        headers.filterKeys { it != "Content-Type" }.forEach(response::header)
         return response.body(bodyJson)
     }
 
@@ -147,9 +148,6 @@ internal data class CreatePlatformTicketRequest(
         if (kind == PlatformTicketKind.CUSTOMER_REQUEST && requester == null) {
             throw PlatformTicketInvalidException("REQUESTER_REQUIRED")
         }
-        if (kind == PlatformTicketKind.INTERNAL_WORK_ITEM && requester != null) {
-            throw PlatformTicketInvalidException("REQUESTER_NOT_ALLOWED")
-        }
         return PlatformCreateInput(
             kind,
             subject,
@@ -173,4 +171,3 @@ internal data class AddInternalCommentRequest(
 )
 
 internal class PlatformIfMatchInvalidException : RuntimeException()
-

@@ -60,7 +60,7 @@ deskseed:
     rate-limit:
       requests-per-minute: ${DESKSEED_PLATFORM_RATE_LIMIT_PER_MINUTE:60}
     idempotency:
-      retention: ${DESKSEED_PLATFORM_IDEMPOTENCY_RETENTION:24h}
+      retention: ${DESKSEED_PLATFORM_IDEMPOTENCY_RETENTION:7d}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}

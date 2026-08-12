@@ -5,8 +5,7 @@ alter table tickets
         kind in ('CUSTOMER_REQUEST', 'INTERNAL_CHILD', 'AGENT_CREATED', 'INTERNAL_WORK_ITEM')
     ),
     add constraint ticket_requester_shape check (
-        (kind = 'INTERNAL_WORK_ITEM' and requester_id is null)
-        or (kind <> 'INTERNAL_WORK_ITEM' and requester_id is not null)
+        kind = 'INTERNAL_WORK_ITEM' or requester_id is not null
     );
 
 alter table ticket_comments
@@ -33,11 +32,14 @@ create table platform_idempotency_records (
     constraint platform_idempotency_hash_shape check (
         idempotency_key_hash ~ '^[0-9a-f]{64}$' and request_hash ~ '^[0-9a-f]{64}$'
     ),
-    constraint platform_idempotency_status_valid check (status in ('IN_PROGRESS', 'SUCCEEDED')),
+    constraint platform_idempotency_status_valid check (status in ('IN_PROGRESS', 'SUCCEEDED', 'FAILED_FINAL')),
     constraint platform_idempotency_response_shape check (
         (status = 'IN_PROGRESS' and response_status is null and response_headers_json is null and response_body_json is null)
         or
         (status = 'SUCCEEDED' and response_status between 200 and 299
+            and response_headers_json is json object and response_body_json is json)
+        or
+        (status = 'FAILED_FINAL' and response_status between 400 and 499
             and response_headers_json is json object and response_body_json is json)
     ),
     constraint platform_idempotency_expiry_after_creation check (expires_at > created_at)
@@ -49,4 +51,3 @@ create index platform_idempotency_expiry_idx
 create index platform_idempotency_resource_idx
     on platform_idempotency_records (client_id, resource_id)
     where resource_id is not null;
-

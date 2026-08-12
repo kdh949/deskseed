@@ -109,6 +109,10 @@ scope/resource constraint summary
 last-used metadata
 ```
 
+Platform idempotency rows store a SHA-256 key representation and canonical request hash, never the raw `Idempotency-Key` or Authorization
+value. Exact replay requires a bounded response copy, which can contain ticket subject or an INTERNAL comment response; it receives the
+7-day default expiry and is not exposed through a retrieval/list endpoint. Canonical ticket/comment retention remains separately governed.
+
 ## 7. IP addresses and user agents
 
 These help security investigation but are personal/behavioral data.

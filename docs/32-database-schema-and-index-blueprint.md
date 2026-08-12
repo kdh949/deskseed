@@ -112,7 +112,7 @@ unique(staff_id, authority)
 ```text
 id
 ticket_number
-kind                 CUSTOMER_REQUEST | INTERNAL_TASK
+kind                 CUSTOMER_REQUEST | INTERNAL_CHILD | AGENT_CREATED | INTERNAL_WORK_ITEM
 requester_customer_id nullable
 subject
 status
@@ -338,9 +338,10 @@ external_references(
 
 ```text
 client_id
-idempotency_key
+operation_id
+idempotency_key_hash
 request_hash
-status
+status                  IN_PROGRESS | SUCCEEDED | FAILED_FINAL
 response_status nullable
 response_headers_json nullable
 response_body_json nullable
@@ -349,7 +350,8 @@ created_at
 expires_at
 ```
 
-Unique `(client_id, idempotency_key)`.
+Unique `(client_id, operation_id, idempotency_key_hash)`. Raw idempotency keys and Authorization values are never stored. V20 adds the
+receipt table together with nullable `INTERNAL_WORK_ITEM` requester support and the `INTEGRATION_CLIENT` comment author.
 
 ### outbox_events / webhook tables
 

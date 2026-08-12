@@ -93,12 +93,12 @@ internal class PlatformTicketApplicationService(
             idempotencyKey,
             mapOf("operationId" to operationId, "path" to "/tickets", "body" to input),
         ) {
-            val requesterId = when (input.kind) {
-                PlatformTicketKind.CUSTOMER_REQUEST -> customerDirectory.createUnverified(
+            val requesterId = when {
+                input.kind == PlatformTicketKind.CUSTOMER_REQUEST || input.requesterName != null -> customerDirectory.createUnverified(
                     input.requesterName ?: throw dev.deskseed.ticketing.PlatformTicketInvalidException("REQUESTER_REQUIRED"),
                     input.requesterEmail ?: throw dev.deskseed.ticketing.PlatformTicketInvalidException("REQUESTER_REQUIRED"),
                 ).id
-                PlatformTicketKind.INTERNAL_WORK_ITEM -> null
+                else -> null
             }
             val view = ticketService.create(
                 CreatePlatformTicketCommand(
@@ -195,20 +195,22 @@ internal class PlatformTicketApplicationService(
                 ),
             ),
         ) {
-            val view = ticketService.update(
-                UpdatePlatformTicketCommand(
-                    ticketNumber,
-                    expectedVersion,
-                    input.changedFields,
-                    input.status,
-                    input.priority,
-                    input.groupId,
-                    input.assigneeId,
-                    PlatformTicketActor(principal.id, principal.name),
-                    commandContext(principal, operationId, idempotencyKey, context),
-                ),
-            )
-            platformResponse(200, view, view.version) to view.id
+            finalValidation(context) {
+                val view = ticketService.update(
+                    UpdatePlatformTicketCommand(
+                        ticketNumber,
+                        expectedVersion,
+                        input.changedFields,
+                        input.status,
+                        input.priority,
+                        input.groupId,
+                        input.assigneeId,
+                        PlatformTicketActor(principal.id, principal.name),
+                        commandContext(principal, operationId, idempotencyKey, context),
+                    ),
+                )
+                platformResponse(200, view, view.version) to view.id
+            }
         }
     }
 
@@ -332,6 +334,56 @@ internal class PlatformTicketApplicationService(
     )
 
     private fun etag(version: Long) = "\"ticket-v$version\""
+
+    private fun finalValidation(
+        context: PlatformRequestContext,
+        action: () -> Pair<PlatformStoredResponse, UUID?>,
+    ): Pair<PlatformStoredResponse, UUID?> = try {
+        action()
+    } catch (exception: dev.deskseed.ticketing.PlatformTicketInvalidException) {
+        problemResponse(
+            400,
+            "/problems/platform-request-invalid",
+            "Invalid Platform API request",
+            "The request does not satisfy the Platform API contract.",
+            context,
+            mapOf("code" to exception.code),
+        ) to null
+    } catch (exception: dev.deskseed.ticketing.PlatformTicketVersionException) {
+        val currentEtag = etag(exception.currentVersion)
+        problemResponse(
+            412,
+            "/problems/ticket-version-precondition-failed",
+            "Ticket version precondition failed",
+            "Refresh the ticket and retry with its current ETag.",
+            context,
+            mapOf("currentVersion" to exception.currentVersion, "currentETag" to currentEtag),
+            mapOf("ETag" to currentEtag),
+        ) to null
+    }
+
+    private fun problemResponse(
+        status: Int,
+        type: String,
+        title: String,
+        detail: String,
+        context: PlatformRequestContext,
+        extensions: Map<String, Any?> = emptyMap(),
+        headers: Map<String, String> = emptyMap(),
+    ) = PlatformStoredResponse(
+        status,
+        headers + mapOf("Content-Type" to "application/problem+json"),
+        objectMapper.writeValueAsString(
+            linkedMapOf<String, Any?>(
+                "type" to type,
+                "title" to title,
+                "status" to status,
+                "detail" to detail,
+                "requestId" to context.requestId,
+            ) + extensions,
+        ),
+        false,
+    )
 
     private fun PlatformTicketKind.toIntegrationKind() = when (this) {
         PlatformTicketKind.CUSTOMER_REQUEST -> IntegrationTicketKind.CUSTOMER_REQUEST

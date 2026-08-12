@@ -126,7 +126,9 @@ internal class JpaPlatformTicketService(
     override fun find(ticketNumber: Long): PlatformTicketView? =
         ticketRepository.findByTicketNumber(ticketNumber)?.toPlatformViewOrNull()
 
-    @Transactional
+    @Transactional(
+        noRollbackFor = [PlatformTicketInvalidException::class, PlatformTicketVersionException::class],
+    )
     override fun update(command: UpdatePlatformTicketCommand): PlatformTicketView = translateStorageFailure {
         validateContext(command.context.source)
         if (command.changedFields.isEmpty()) throw PlatformTicketInvalidException("UPDATE_FIELDS_REQUIRED")
@@ -142,21 +144,33 @@ internal class JpaPlatformTicketService(
         val nextGroup = if (TicketField.GROUP_ID in command.changedFields) command.groupId else oldGroupId
         val nextAssignee = if (TicketField.ASSIGNEE_ID in command.changedFields) command.assigneeId else oldAssigneeId
         validateAssignment(nextGroup, nextAssignee)
+        val nextStatus = if (TicketField.STATUS in command.changedFields) {
+            command.status ?: throw PlatformTicketInvalidException("STATUS_REQUIRED")
+        } else {
+            oldStatus
+        }
+        if (nextStatus == TicketStatus.CLOSED || !TicketStatusTransitions.isAllowed(oldStatus, nextStatus)) {
+            throw PlatformTicketInvalidException("STATUS_TRANSITION_INVALID")
+        }
+        val nextPriority = if (TicketField.PRIORITY in command.changedFields) {
+            command.priority ?: throw PlatformTicketInvalidException("PRIORITY_REQUIRED")
+        } else {
+            oldPriority
+        }
         val events = mutableListOf<NewEvent>()
 
         if (TicketField.STATUS in command.changedFields) {
-            val next = command.status ?: throw PlatformTicketInvalidException("STATUS_REQUIRED")
-            if (next == TicketStatus.CLOSED || !TicketStatusTransitions.isAllowed(oldStatus, next)) {
-                throw PlatformTicketInvalidException("STATUS_TRANSITION_INVALID")
+            ticket.status = nextStatus
+            ticket.solvedAt = if (nextStatus == TicketStatus.SOLVED) Instant.now(clock) else null
+            if (oldStatus != nextStatus) {
+                events += changed("STATUS_CHANGED", TicketField.STATUS, oldStatus.name, nextStatus.name)
             }
-            ticket.status = next
-            ticket.solvedAt = if (next == TicketStatus.SOLVED) Instant.now(clock) else null
-            if (oldStatus != next) events += changed("STATUS_CHANGED", TicketField.STATUS, oldStatus.name, next.name)
         }
         if (TicketField.PRIORITY in command.changedFields) {
-            val next = command.priority ?: throw PlatformTicketInvalidException("PRIORITY_REQUIRED")
-            ticket.priority = next
-            if (oldPriority != next) events += changed("PRIORITY_CHANGED", TicketField.PRIORITY, oldPriority.name, next.name)
+            ticket.priority = nextPriority
+            if (oldPriority != nextPriority) {
+                events += changed("PRIORITY_CHANGED", TicketField.PRIORITY, oldPriority.name, nextPriority.name)
+            }
         }
         if (TicketField.GROUP_ID in command.changedFields) {
             ticket.groupId = command.groupId
@@ -290,9 +304,6 @@ internal class JpaPlatformTicketService(
     private fun validateRequesterShape(command: CreatePlatformTicketCommand) {
         if (command.kind == PlatformTicketKind.CUSTOMER_REQUEST && command.requesterId == null) {
             throw PlatformTicketInvalidException("REQUESTER_REQUIRED")
-        }
-        if (command.kind == PlatformTicketKind.INTERNAL_WORK_ITEM && command.requesterId != null) {
-            throw PlatformTicketInvalidException("REQUESTER_NOT_ALLOWED")
         }
     }
 

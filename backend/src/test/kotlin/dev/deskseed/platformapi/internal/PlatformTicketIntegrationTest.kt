@@ -245,6 +245,14 @@ class PlatformTicketIntegrationTest {
         assertThat(stale.response.status).isEqualTo(412)
         assertThat(stale.response.getHeader("ETag")).isEqualTo("\"ticket-v1\"")
         assertThat(objectMapper.readTree(stale.response.contentAsString).get("currentVersion").asLong()).isEqualTo(1)
+        val staleReplay = perform(
+            patch("/api/v1/platform/tickets/{ticketNumber}", ticketNumber).header("If-Match", "\"ticket-v0\""),
+            key,
+            "etag-update-2",
+            """{"priority":"HIGH"}""",
+        )
+        assertThat(staleReplay.response.status).isEqualTo(412)
+        assertThat(staleReplay.response.contentAsString).isEqualTo(stale.response.contentAsString)
         assertThat(count("ticket_audits")).isEqualTo(2)
     }
 
@@ -268,6 +276,61 @@ class PlatformTicketIntegrationTest {
         } finally {
             executor.shutdownNow()
         }
+    }
+
+    @Test
+    fun `audit and response receipt failures roll back reservation and business mutation then retry converges`() {
+        val key = issueClient(setOf(IntegrationScope.TICKETS_CREATE))
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_platform_ticket_audit() returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected ticket audit failure'; end; ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_platform_ticket_audit before insert on ticket_audits " +
+                "for each row execute function fail_platform_ticket_audit()",
+        )
+        try {
+            val failed = perform(post("/api/v1/platform/tickets"), key, "crash-audit-1", customerRequest("audit crash"))
+            assertThat(failed.response.status).isEqualTo(503)
+            assertThat(count("tickets")).isZero()
+            assertThat(count("customers")).isZero()
+            assertThat(count("platform_idempotency_records")).isZero()
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_platform_ticket_audit on ticket_audits")
+            jdbcTemplate.execute("drop function if exists fail_platform_ticket_audit()")
+        }
+        val auditRetry = perform(post("/api/v1/platform/tickets"), key, "crash-audit-1", customerRequest("audit crash"))
+        assertThat(auditRetry.response.status).isEqualTo(201)
+
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_platform_receipt() returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if new.status = 'SUCCEEDED' then raise exception 'injected receipt failure'; end if;
+                return new;
+            end; ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_platform_receipt before update on platform_idempotency_records " +
+                "for each row execute function fail_platform_receipt()",
+        )
+        try {
+            val failed = perform(post("/api/v1/platform/tickets"), key, "crash-receipt-1", customerRequest("receipt crash"))
+            assertThat(failed.response.status).isEqualTo(503)
+            assertThat(countWhere("tickets", "subject = 'Need help'")).isEqualTo(1)
+            assertThat(countWhere("platform_idempotency_records", "idempotency_key_hash is not null")).isEqualTo(1)
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_platform_receipt on platform_idempotency_records")
+            jdbcTemplate.execute("drop function if exists fail_platform_receipt()")
+        }
+        val receiptRetry = perform(post("/api/v1/platform/tickets"), key, "crash-receipt-1", customerRequest("receipt crash"))
+        assertThat(receiptRetry.response.status).isEqualTo(201)
+        assertThat(count("tickets")).isEqualTo(2)
+        assertThat(count("ticket_audits")).isEqualTo(2)
+        assertThat(count("platform_idempotency_records")).isEqualTo(2)
     }
 
     @Test

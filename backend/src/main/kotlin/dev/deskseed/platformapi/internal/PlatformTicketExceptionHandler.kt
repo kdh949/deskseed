@@ -9,14 +9,12 @@ import dev.deskseed.ticketing.PlatformTicketVersionException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpHeaders
-import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
-import org.springframework.web.server.ResponseStatusException
 import org.springframework.http.converter.HttpMessageNotReadableException
 
 @RestControllerAdvice(assignableTypes = [PlatformTicketController::class])

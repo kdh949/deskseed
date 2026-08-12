@@ -65,13 +65,15 @@ internal class PlatformIdempotencyStore(
         if (inserted == 0) return replayExisting(clientId, operationId, keyHash, requestHash)
 
         val (response, resourceId) = action()
-        require(response.status in 200..299)
+        require(response.status in 200..299 || response.status in 400..499)
+        val finalStatus = if (response.status in 200..299) "SUCCEEDED" else "FAILED_FINAL"
         jdbcTemplate.update(
             """
             update platform_idempotency_records
-            set status = 'SUCCEEDED', response_status = ?, response_headers_json = ?, response_body_json = ?, resource_id = ?
+            set status = ?, response_status = ?, response_headers_json = ?, response_body_json = ?, resource_id = ?
             where id = ? and status = 'IN_PROGRESS'
             """.trimIndent(),
+            finalStatus,
             response.status,
             objectMapper.writeValueAsString(response.headers),
             response.bodyJson,
@@ -111,7 +113,7 @@ internal class PlatformIdempotencyStore(
         if (!MessageDigest.isEqual(existing.requestHash.toByteArray(), requestHash.toByteArray())) {
             throw PlatformIdempotencyKeyReusedException()
         }
-        if (existing.status != "SUCCEEDED") throw PlatformIdempotencyInProgressException()
+        if (existing.status !in setOf("SUCCEEDED", "FAILED_FINAL")) throw PlatformIdempotencyInProgressException()
         val headers = objectMapper.readValue(existing.headersJson, Map::class.java)
             .entries.associate { it.key.toString() to it.value.toString() }
         return PlatformStoredResponse(
@@ -154,4 +156,3 @@ internal class PlatformIdempotencyStore(
         val bodyJson: String?,
     )
 }
-

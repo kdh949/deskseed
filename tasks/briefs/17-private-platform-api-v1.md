@@ -33,7 +33,7 @@
 - PostgreSQL idempotency receipt and nullable requester/`INTERNAL_WORK_ITEM` ticket schema evolution.
 - Dedicated stateless Platform security chain, API-key principal, private/trusted-proxy network boundary, per-client rate limiting.
 - Customer request creation with a first PUBLIC customer comment.
-- Internal work item creation with a first INTERNAL IntegrationClient comment and no fabricated customer.
+- Internal work item creation with a first INTERNAL IntegrationClient comment; requester is optional and no customer is fabricated when omitted.
 - Integration-safe read, allowlisted exact-version update, INTERNAL comment.
 - Ticket change audit, Platform read access audit, authentication/rate-limit/security denial audit.
 - RFC 9457 errors, OpenAPI examples/contract checks, unit/PostgreSQL/HTTP integration tests.
@@ -61,7 +61,7 @@
 - Writes: ticket, initial/internal comment, ticket audit/events, idempotency receipt; customer row only for `CUSTOMER_REQUEST`.
 - Secrets: Authorization/API-key material is never persisted in idempotency, ticket audit, access audit, security audit, application log, response body, or metric.
 - Request bodies and comment text are not stored in idempotency receipts beyond the already-authorized response/body necessary for exact replay; canonical request hashing is one-way SHA-256.
-- Retention: idempotency receipts expire after the configured bounded retention; canonical ticket/audit retention is unchanged.
+- Retention: idempotency receipts expire after the configurable 7-day launch default; canonical ticket/audit retention is unchanged.
 - No webhook/export exposure.
 
 ## Threats changed
@@ -81,13 +81,29 @@
 ## Acceptance scenarios
 
 - Given a valid private source and create scope, when a customer request is posted twice with one idempotency key, then one ticket and first PUBLIC comment exist and the original 201 response is replayed.
-- Given an internal-work-item create, then it has no requester and its first comment is INTERNAL with IntegrationClient attribution.
+- Given an internal-work-item create without requester, then it has no fabricated requester and its first comment is INTERNAL with IntegrationClient attribution.
 - Given a key lacking an operation scope or outside group/kind/field/IP constraints, then the request is denied without mutation.
 - Given a matching ETag, update succeeds and returns a new ETag; a stale ETag returns 412 with current ETag/version.
 - Given two concurrent identical commands, exactly one ticket/comment/audit is committed.
 - Given the same key with a different canonical request, then 409 is returned and no second mutation occurs.
 - Given a trusted proxy, its forwarded client is evaluated; given an untrusted peer, forwarded headers cannot bypass the network boundary.
 - Given a customer ticket with INTERNAL comments, customer reads never return INTERNAL content.
+
+## Failure matrix
+
+| Failure | HTTP/result | Persistence semantics |
+|---|---|---|
+| network source outside allowlist | 403 | security denial only; no business read/write |
+| malformed/expired/revoked credential | generic 401 | authentication failure audit; no business read/write |
+| missing scope/resource constraint | 403 | security denial; no success access event |
+| per-client window exhausted | 429 + rate headers/Retry-After | rate denial audit; retry reuses the same idempotency key |
+| malformed request/header | RFC 9457 400 | no mutation |
+| same key, different canonical request | 409 | original receipt/mutation unchanged; misuse audit contains no raw key |
+| same key still IN_PROGRESS | 409 + Retry-After | no second mutation |
+| stale If-Match | 412 + current ETag/version | `FAILED_FINAL` receipt replays the same problem; no ticket audit |
+| deterministic command validation | 400 | `FAILED_FINAL` receipt when validation occurs inside the command boundary |
+| ticket/access/security audit failure | 503/fail closed | business mutation/read success and receipt roll back |
+| receipt persistence failure | 503 | business mutation and canonical audit roll back together |
 
 ## Validation
 
@@ -109,4 +125,3 @@
 - PostgreSQL transaction and unique identity are sufficient for exactly-one committed outcome in the supported single-database topology.
 - Network placement is defense in depth; it never grants identity or ticket permission.
 - A horizontally scaled deployment would require measured demand and a shared rate-limit implementation, not a change to the API contract.
-

@@ -190,15 +190,13 @@ It may invoke the same application commands but must have:
 ### 5.2 Minimum v1 operations
 
 ```text
-POST   /platform/tickets
-GET    /platform/tickets/{ticketNumber}
-PATCH  /platform/tickets/{ticketNumber}
-POST   /platform/tickets/{ticketNumber}/comments
-GET    /platform/tickets/{ticketNumber}/external-references
-POST   /platform/tickets/{ticketNumber}/external-references
-DELETE /platform/tickets/{ticketNumber}/external-references/{referenceId}
-GET    /platform/ticket-events?cursor=...
+POST   /api/v1/platform/tickets
+GET    /api/v1/platform/tickets/{ticketNumber}
+PATCH  /api/v1/platform/tickets/{ticketNumber}
+POST   /api/v1/platform/tickets/{ticketNumber}/internal-comments
 ```
+
+PUBLIC follow-up comment, ExternalReference CRUD, event feed, export, webhook, SDK, OAuth, and admin/settings routes are not part of v1.
 
 Integration-client management belongs under `/admin/integrations/**`, not the Platform API itself.
 
@@ -212,7 +210,7 @@ CUSTOMER_REQUEST
   first comment PUBLIC
 
 INTERNAL_WORK_ITEM
-  requester optional or system customer
+  requester optional; omit it instead of fabricating a customer
   first comment INTERNAL
   never exposed as a customer request by accident
 ```
@@ -280,6 +278,10 @@ Exclude volatile headers such as request ID.
 | final business validation failure | same hash | replay same final problem |
 
 The idempotency record and business mutation must not leave an ambiguous committed state. Use a documented transaction/state machine and test crash points.
+
+The implementation stores only SHA-256 representations of the idempotency key and canonical request. Successful responses and deterministic
+final 4xx validation responses are retained for replay; retryable persistence/audit failures roll back the reservation. The launch default
+retention is 7 days.
 
 ## 7. External object links
 

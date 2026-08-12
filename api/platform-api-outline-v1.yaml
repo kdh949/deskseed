@@ -280,6 +280,14 @@ components:
     CreateTicketRequest:
       type: object
       additionalProperties: false
+      example:
+        kind: CUSTOMER_REQUEST
+        subject: Order 42 needs assistance
+        message: The fulfillment status did not update.
+        requester:
+          name: Mina Kim
+          email: mina@example.com
+        priority: NORMAL
       required:
       - kind
       - subject
@@ -342,6 +350,9 @@ components:
       type: object
       additionalProperties: false
       minProperties: 1
+      example:
+        status: OPEN
+        priority: HIGH
       properties:
         status:
           type: string
@@ -371,6 +382,8 @@ components:
     AddInternalCommentRequest:
       type: object
       additionalProperties: false
+      example:
+        body: Warehouse reconciliation started.
       required:
       - body
       properties:
@@ -381,6 +394,17 @@ components:
     PlatformTicket:
       type: object
       additionalProperties: false
+      example:
+        ticketNumber: 1000
+        kind: CUSTOMER_REQUEST
+        subject: Order 42 needs assistance
+        status: OPEN
+        priority: HIGH
+        groupId: null
+        assigneeId: null
+        version: 1
+        createdAt: '2026-08-12T00:00:00Z'
+        updatedAt: '2026-08-12T00:01:00Z'
       required:
       - ticketNumber
       - kind
@@ -403,8 +427,20 @@ components:
           type: string
         status:
           type: string
+          enum:
+          - NEW
+          - OPEN
+          - PENDING
+          - ON_HOLD
+          - SOLVED
+          - CLOSED
         priority:
           type: string
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
         groupId:
           type:
           - string
@@ -428,6 +464,12 @@ components:
     InternalComment:
       type: object
       additionalProperties: false
+      example:
+        id: 4df6c6b5-3a31-4e8e-9d6c-49d6d12c5f80
+        ticketNumber: 1000
+        visibility: INTERNAL
+        body: Warehouse reconciliation started.
+        createdAt: '2026-08-12T00:02:00Z'
       required:
       - id
       - ticketNumber
@@ -452,6 +494,12 @@ components:
     Problem:
       type: object
       additionalProperties: true
+      example:
+        type: /problems/idempotency-key-reused
+        title: Idempotency key reused
+        status: 409
+        detail: The idempotency key was already used with a different request.
+        requestId: req-01
       required:
       - type
       - title
