@@ -75,6 +75,11 @@ PUT/DELETE /api/v1/admin/staff/{staffId}/audit-authorities/{authority}
 GET/POST/PATCH /api/v1/admin/groups...
 PUT /api/v1/admin/settings/customer-access-mode
 GET/PUT /api/v1/admin/permissions...
+GET/POST /api/v1/admin/sla-policies
+POST /api/v1/admin/sla-policies/preview
+GET /api/v1/admin/sla-policies/{policyId}
+GET/POST /api/v1/admin/sla-policies/{policyId}/versions
+PUT /api/v1/admin/sla-policies/{policyId}/versions/{version}/activation
 GET/POST /api/v1/admin/integration-clients
 GET      /api/v1/admin/integration-clients/{clientId}
 POST     /api/v1/admin/integration-clients/{clientId}/disable
@@ -93,6 +98,12 @@ POST /api/v1/audit/activities/{id}/reveal
 POST /api/v1/audit/exports
 GET  /api/v1/audit/exports/{jobId}
 GET  /api/v1/audit/exports/{jobId}/download
+```
+
+### Analytics v1
+
+```text
+GET /api/v1/analytics/first-reply-sla
 ```
 
 ### Platform v1

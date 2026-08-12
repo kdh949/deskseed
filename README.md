@@ -11,6 +11,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 | 고객 포털 | 익명 문의별 격리된 미검증 고객, 첫 `PUBLIC` comment 저장, 한 번만 반환되는 opaque 조회 토큰, 토큰으로 `PUBLIC` 대화만 조회 |
 | 직원 인증·관리 | BCrypt 비밀번호, 서버 세션, CSRF, DB 기반 로그인 제한, realm-local expected-actor 일관성 guard, 비밀번호 파일을 이용한 최초 ADMIN bootstrap, bounded page와 batch projection을 쓰는 직원·그룹·활성 멤버십·감사자 고위험 권한 관리 |
 | 상담사 업무 | Views, PostgreSQL 검색, 3-panel 티켓 워크스페이스, `PUBLIC`/`INTERNAL` 별도 draft, 상태·우선순위·그룹·담당자 통합 저장 |
+| 업무 시간·SLA | immutable 업무 시간 일정 버전, timezone/DST·주간 구간·휴일 예외 계산, ordered First Reply 정책·priority target·PENDING 정지, 티켓/Views 상태와 reconciled summary |
 | 정합성 | 담당자/그룹 invariant, field-aware optimistic concurrency, same-field `409`과 draft 복구, 응답 유실 시 exact UpdateTicket command replay, transfer와 child-ticket 명령 분리, 열린 child 경고 후 parent solve 허용 |
 | 감사 | 한 command/한 `TicketAudit`과 ordered events, semantic `TICKET_VIEWED`, 검색→티켓 열람 연결, strict audit failure, 분리된 change/access/admin 원장과 재생성 가능한 Audit Explorer projection |
 | 감사자 화면 | 기본 routine activity 목록·상세, 명시적 영속 grant와 이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
@@ -39,7 +40,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 | Platform API, IntegrationClient, idempotency/ETag, ExternalReference, webhook, generated SDK (`ACC-006` 포함) | 계약·blueprint만 존재; runtime 미구현 |
 | Audit export artifact 생성·download·expiry·deletion (verification gate `AUD-004` 전체) | allowlisted request와 self-audit만 구현; artifact state는 `NOT_CREATED` |
 | 보호된 comment 본문 reveal | 미구현 |
-| SLA/OLA, trigger/automation, analytics, attachment/rich text, inbound email/production mail provider, app/embed SDK | 후속 상세 명세만 존재; 미구현 |
+| Next Reply/Resolution SLA, OLA, trigger/automation, 범용 analytics dashboard, attachment/rich text, email channel, app/embed SDK | 후속 상세 명세만 존재; 미구현 |
 | 외부 signed audit checkpoint, production KMS/secret provider, managed deployment | 미구현 |
 
 `IMPLEMENTATION_READY`는 계약이 구현을 시작할 만큼 구체적이라는 뜻이지 완료 표시가 아니다. 현재/계획 구분은 [ADR index](docs/portfolio/adr-index.md)에도 함께 기록한다.

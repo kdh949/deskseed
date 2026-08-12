@@ -264,7 +264,22 @@ Later: fields, forms, views, macros. See doc 35.
 
 ## ADM-006 — SLA policies
 
-Later: see doc 38.
+The first vertical slice is the business schedule editor at
+`/admin/business-rules/schedules`; SLA priority targets remain later work.
+
+- schedule list with active/latest version state
+- exact IANA timezone and independent weekday/weekend enablement
+- zero or multiple local-time intervals per day
+- closed holiday and exceptional-open date rows
+- unsaved-definition preview for due time, elapsed business minutes, next open,
+  and next close
+- immutable version history with explicit activation and stale-version recovery
+- loading, empty, validation, denied, save, audit-unavailable, and conflict states
+- keyboard labels for every weekday, interval boundary, exception, version, and
+  activation control
+
+The screen uses Deskseed branding and the documented settings information
+architecture. It does not reproduce proprietary Zendesk pixels or assets.
 
 ## ADM-007 — Triggers and automations
 

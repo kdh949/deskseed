@@ -18,6 +18,12 @@ import type {
   AuditProjectionRebuildResult,
   AuditProjectionStatus,
   AuditSearchContext,
+  BusinessInterval,
+  BusinessSchedule,
+  BusinessScheduleDefinition,
+  BusinessSchedulePreview,
+  BusinessSchedulePreviewInput,
+  BusinessWeekday,
   CreateAuditExportInput,
   CreateChildTicketCommand,
   CreateChildTicketResult,
@@ -25,6 +31,12 @@ import type {
   UpdateCustomerAccessModeInput,
   CreateStaffInput,
   CurrentStaff,
+  FirstReplySlaAnalytics,
+  FirstReplySlaBadge,
+  FirstReplySlaPolicy,
+  FirstReplySlaPolicyDefinition,
+  FirstReplySlaPreview,
+  FirstReplySlaPreviewInput,
   GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
@@ -127,6 +139,15 @@ const TICKET_PRIORITIES = new Set<TicketPriority>([
   'URGENT',
 ])
 const TICKET_VISIBILITIES = new Set<TicketVisibility>(['PUBLIC', 'INTERNAL'])
+const FIRST_REPLY_SLA_STATES = new Set<FirstReplySlaBadge['state']>([
+  'ACTIVE',
+  'AT_RISK',
+  'PAUSED',
+  'ACHIEVED',
+  'BREACHED',
+  'CANCELLED',
+  'NO_POLICY',
+])
 const ACTOR_TYPES = new Set<ActorSummary['type']>([
   'CUSTOMER',
   'STAFF',
@@ -305,6 +326,10 @@ function decodeProblem(value: unknown): ProblemDetails | undefined {
     ...(typeof value.currentVersion === 'number' &&
     Number.isSafeInteger(value.currentVersion)
       ? { currentVersion: value.currentVersion }
+      : {}),
+    ...(typeof value.currentAggregateVersion === 'number' &&
+    Number.isSafeInteger(value.currentAggregateVersion)
+      ? { currentAggregateVersion: value.currentAggregateVersion }
       : {}),
     ...(Array.isArray(value.conflictingFields) &&
     conflictingFields?.length === value.conflictingFields.length
@@ -1366,6 +1391,432 @@ export async function removeGroupMember(
   )
 }
 
+const BUSINESS_WEEKDAYS = new Set<BusinessWeekday>([
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+])
+
+function decodeBusinessInterval(value: unknown): BusinessInterval | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.start !== 'string' ||
+    typeof value.end !== 'string' ||
+    !/^\d{2}:\d{2}$/.test(value.start) ||
+    !/^\d{2}:\d{2}$/.test(value.end)
+  ) {
+    return undefined
+  }
+  return { start: value.start, end: value.end }
+}
+
+function decodeBusinessSchedule(value: unknown): BusinessSchedule | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    !isNonBlankString(value.timeZone) ||
+    !Array.isArray(value.weekdays) ||
+    !Array.isArray(value.exceptions) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    (value.activeVersion !== null &&
+      (typeof value.activeVersion !== 'number' ||
+        !Number.isSafeInteger(value.activeVersion) ||
+        value.activeVersion < 1)) ||
+    (value.activeTimeZone !== null &&
+      !isNonBlankString(value.activeTimeZone)) ||
+    value.version < 1 ||
+    typeof value.aggregateVersion !== 'number' ||
+    !Number.isSafeInteger(value.aggregateVersion) ||
+    value.aggregateVersion < 0 ||
+    typeof value.active !== 'boolean' ||
+    !isTimestamp(value.createdAt) ||
+    !isRecord(value.createdBy) ||
+    !['STAFF', 'SYSTEM'].includes(String(value.createdBy.actorType)) ||
+    (value.createdBy.actorId !== null &&
+      !isCanonicalUuid(value.createdBy.actorId)) ||
+    !isNonBlankString(value.createdBy.displayName)
+  ) {
+    return undefined
+  }
+  const weekdays = value.weekdays.flatMap((weekday) => {
+    if (
+      !isRecord(weekday) ||
+      typeof weekday.weekday !== 'string' ||
+      !BUSINESS_WEEKDAYS.has(weekday.weekday as BusinessWeekday) ||
+      typeof weekday.enabled !== 'boolean' ||
+      !Array.isArray(weekday.intervals)
+    ) {
+      return []
+    }
+    const intervals = weekday.intervals.map(decodeBusinessInterval)
+    if (intervals.some((interval) => !interval)) return []
+    return [
+      {
+        weekday: weekday.weekday as BusinessWeekday,
+        enabled: weekday.enabled,
+        intervals: intervals as BusinessInterval[],
+      },
+    ]
+  })
+  const exceptions = value.exceptions.flatMap((exception) => {
+    if (
+      !isRecord(exception) ||
+      typeof exception.date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(exception.date) ||
+      !['CLOSED', 'OPEN'].includes(String(exception.mode)) ||
+      !Array.isArray(exception.intervals) ||
+      (exception.label !== null && typeof exception.label !== 'string')
+    ) {
+      return []
+    }
+    const intervals = exception.intervals.map(decodeBusinessInterval)
+    if (intervals.some((interval) => !interval)) return []
+    return [
+      {
+        date: exception.date,
+        mode: exception.mode as 'CLOSED' | 'OPEN',
+        intervals: intervals as BusinessInterval[],
+        label: exception.label as string | null,
+      },
+    ]
+  })
+  if (
+    weekdays.length !== value.weekdays.length ||
+    weekdays.length !== 7 ||
+    exceptions.length !== value.exceptions.length
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    timeZone: value.timeZone,
+    weekdays,
+    exceptions,
+    version: value.version,
+    activeVersion: value.activeVersion as number | null,
+    activeTimeZone: value.activeTimeZone as string | null,
+    aggregateVersion: value.aggregateVersion,
+    active: value.active,
+    createdAt: value.createdAt,
+    createdBy: {
+      actorType: value.createdBy.actorType as 'STAFF' | 'SYSTEM',
+      actorId: value.createdBy.actorId as string | null,
+      displayName: value.createdBy.displayName,
+    },
+  }
+}
+
+function decodedBusinessSchedules(response: Response, body: unknown) {
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const schedules = body.map(decodeBusinessSchedule)
+  if (schedules.some((schedule) => !schedule)) throw malformedSuccess(response)
+  return schedules as BusinessSchedule[]
+}
+
+export async function listBusinessSchedules(): Promise<BusinessSchedule[]> {
+  const response = await staffFetch('/api/v1/admin/business-schedules')
+  return decodedBusinessSchedules(response, await checkedBody(response))
+}
+
+export async function createBusinessSchedule(
+  definition: BusinessScheduleDefinition,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/business-schedules',
+    'POST',
+    definition,
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function listBusinessScheduleVersions(
+  scheduleId: string,
+): Promise<BusinessSchedule[]> {
+  const response = await staffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions`,
+  )
+  return decodedBusinessSchedules(response, await checkedBody(response))
+}
+
+export async function createBusinessScheduleVersion(
+  scheduleId: string,
+  aggregateVersion: number,
+  definition: BusinessScheduleDefinition,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions`,
+    'POST',
+    definition,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function activateBusinessScheduleVersion(
+  scheduleId: string,
+  version: number,
+  aggregateVersion: number,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions/${version}/activation`,
+    'PUT',
+    undefined,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function previewBusinessSchedule(
+  input: BusinessSchedulePreviewInput,
+): Promise<BusinessSchedulePreview> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/business-schedules/preview',
+    'POST',
+    input,
+  )
+  const body = await checkedBody(response)
+  if (
+    !isRecord(body) ||
+    (body.dueAt !== null && !isTimestamp(body.dueAt)) ||
+    typeof body.elapsedBusinessMinutes !== 'number' ||
+    !Number.isSafeInteger(body.elapsedBusinessMinutes) ||
+    (body.nextOpenAt !== null && !isTimestamp(body.nextOpenAt)) ||
+    (body.nextCloseAt !== null && !isTimestamp(body.nextCloseAt)) ||
+    body.dstPolicy !== 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    dueAt: body.dueAt,
+    elapsedBusinessMinutes: body.elapsedBusinessMinutes,
+    nextOpenAt: body.nextOpenAt,
+    nextCloseAt: body.nextCloseAt,
+    dstPolicy: body.dstPolicy,
+  }
+}
+
+function decodeFirstReplySlaPolicy(
+  value: unknown,
+): FirstReplySlaPolicy | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    typeof value.position !== 'number' ||
+    !Number.isSafeInteger(value.position) ||
+    !isCanonicalUuid(value.scheduleId) ||
+    typeof value.scheduleVersion !== 'number' ||
+    !Number.isSafeInteger(value.scheduleVersion) ||
+    !isRecord(value.conditions) ||
+    !isRecord(value.targets) ||
+    !Array.isArray(value.pauseStatuses) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    typeof value.aggregateVersion !== 'number' ||
+    !Number.isSafeInteger(value.aggregateVersion) ||
+    typeof value.active !== 'boolean' ||
+    !isTimestamp(value.createdAt) ||
+    !isRecord(value.createdBy) ||
+    value.createdBy.actorType !== 'STAFF' ||
+    !isCanonicalUuid(value.createdBy.actorId) ||
+    !isNonBlankString(value.createdBy.displayName)
+  ) {
+    return undefined
+  }
+  const targetRecord = value.targets as Record<string, unknown>
+  const target = (priority: TicketPriority): number | null | undefined => {
+    const minutes = targetRecord[priority]
+    return minutes === undefined || minutes === null
+      ? null
+      : typeof minutes === 'number' &&
+          Number.isSafeInteger(minutes) &&
+          minutes > 0
+        ? minutes
+        : undefined
+  }
+  const targets = {
+    LOW: target('LOW'),
+    NORMAL: target('NORMAL'),
+    HIGH: target('HIGH'),
+    URGENT: target('URGENT'),
+  }
+  if (
+    Object.values(targets).some((minutes) => minutes === undefined) ||
+    (value.conditions.groupId !== null &&
+      !isCanonicalUuid(value.conditions.groupId)) ||
+    (value.conditions.channel !== null &&
+      !['WEB', 'AGENT', 'EMAIL', 'CHAT', 'API'].includes(
+        String(value.conditions.channel),
+      )) ||
+    !value.pauseStatuses.every(
+      (status) =>
+        isAgentTicketStatus(status) &&
+        status !== 'SOLVED' &&
+        status !== 'CLOSED',
+    )
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    position: value.position,
+    scheduleId: value.scheduleId,
+    scheduleVersion: value.scheduleVersion,
+    conditions: {
+      groupId: value.conditions.groupId as string | null,
+      channel: value.conditions
+        .channel as FirstReplySlaPolicy['conditions']['channel'],
+    },
+    targets: targets as FirstReplySlaPolicy['targets'],
+    pauseStatuses: value.pauseStatuses as FirstReplySlaPolicy['pauseStatuses'],
+    version: value.version,
+    activeVersion: value.activeVersion as number | null,
+    aggregateVersion: value.aggregateVersion,
+    active: value.active,
+    createdAt: value.createdAt,
+    createdBy: {
+      actorType: 'STAFF',
+      actorId: value.createdBy.actorId,
+      displayName: value.createdBy.displayName,
+    },
+  }
+}
+
+function decodeFirstReplySlaPolicies(response: Response, body: unknown) {
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const policies = body.map(decodeFirstReplySlaPolicy)
+  if (policies.some((policy) => !policy)) throw malformedSuccess(response)
+  return policies as FirstReplySlaPolicy[]
+}
+
+export async function listFirstReplySlaPolicies(): Promise<
+  FirstReplySlaPolicy[]
+> {
+  const response = await staffFetch('/api/v1/admin/sla-policies')
+  return decodeFirstReplySlaPolicies(response, await checkedBody(response))
+}
+
+export async function listFirstReplySlaPolicyVersions(
+  policyId: string,
+): Promise<FirstReplySlaPolicy[]> {
+  const response = await staffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions`,
+  )
+  return decodeFirstReplySlaPolicies(response, await checkedBody(response))
+}
+
+export async function createFirstReplySlaPolicy(
+  definition: FirstReplySlaPolicyDefinition,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/sla-policies',
+    'POST',
+    definition,
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function createFirstReplySlaPolicyVersion(
+  policyId: string,
+  aggregateVersion: number,
+  definition: FirstReplySlaPolicyDefinition,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions`,
+    'POST',
+    definition,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function activateFirstReplySlaPolicyVersion(
+  policyId: string,
+  version: number,
+  aggregateVersion: number,
+): Promise<FirstReplySlaPolicy> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/sla-policies/${policyId}/versions/${version}/activation`,
+    'PUT',
+    undefined,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const policy = decodeFirstReplySlaPolicy(await checkedBody(response))
+  if (!policy) throw malformedSuccess(response)
+  return policy
+}
+
+export async function previewFirstReplySlaPolicy(
+  input: FirstReplySlaPreviewInput,
+): Promise<FirstReplySlaPreview> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/sla-policies/preview',
+    'POST',
+    input,
+  )
+  const value = await checkedBody(response)
+  if (
+    !isRecord(value) ||
+    typeof value.matched !== 'boolean' ||
+    (value.dueAt !== null && !isTimestamp(value.dueAt)) ||
+    (value.targetMinutes !== null && typeof value.targetMinutes !== 'number') ||
+    (value.policyId !== null && !isCanonicalUuid(value.policyId)) ||
+    (value.policyVersion !== null && typeof value.policyVersion !== 'number') ||
+    (value.scheduleId !== null && !isCanonicalUuid(value.scheduleId)) ||
+    (value.scheduleVersion !== null &&
+      typeof value.scheduleVersion !== 'number') ||
+    value.dstPolicy !== 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return value as unknown as FirstReplySlaPreview
+}
+
+export async function getFirstReplySlaAnalytics(): Promise<FirstReplySlaAnalytics> {
+  const response = await staffFetch('/api/v1/analytics/first-reply-sla')
+  const value = await checkedBody(response)
+  const countFields = [
+    'active',
+    'paused',
+    'achieved',
+    'breached',
+    'cancelled',
+    'noPolicy',
+    'achievedRateDenominator',
+  ]
+  if (
+    !isRecord(value) ||
+    value.metric !== 'FIRST_REPLY' ||
+    !isNonBlankString(value.calculationVersion) ||
+    !countFields.every(
+      (field) =>
+        typeof value[field] === 'number' && Number.isSafeInteger(value[field]),
+    ) ||
+    (value.achievedRate !== null && typeof value.achievedRate !== 'number')
+  ) {
+    throw malformedSuccess(response)
+  }
+  return value as unknown as FirstReplySlaAnalytics
+}
+
 export async function getCustomerAccessModeSetting(): Promise<CustomerAccessModeSetting> {
   const response = await staffFetch(
     '/api/v1/admin/settings/customer-access-mode',
@@ -1452,6 +1903,37 @@ function decodeTicketReference(
   return { id: value.id, displayName: value.displayName }
 }
 
+function decodeFirstReplySlaBadge(
+  value: unknown,
+): FirstReplySlaBadge | undefined {
+  if (
+    !isRecord(value) ||
+    value.metric !== 'FIRST_REPLY' ||
+    typeof value.state !== 'string' ||
+    !FIRST_REPLY_SLA_STATES.has(value.state as FirstReplySlaBadge['state']) ||
+    (value.dueAt !== null && !isTimestamp(value.dueAt)) ||
+    (value.targetMinutes !== null &&
+      (typeof value.targetMinutes !== 'number' ||
+        !Number.isSafeInteger(value.targetMinutes))) ||
+    (value.policyVersion !== null &&
+      (typeof value.policyVersion !== 'number' ||
+        !Number.isSafeInteger(value.policyVersion))) ||
+    (value.scheduleVersion !== null &&
+      (typeof value.scheduleVersion !== 'number' ||
+        !Number.isSafeInteger(value.scheduleVersion)))
+  ) {
+    return undefined
+  }
+  return {
+    metric: 'FIRST_REPLY',
+    state: value.state as FirstReplySlaBadge['state'],
+    dueAt: value.dueAt,
+    targetMinutes: value.targetMinutes,
+    policyVersion: value.policyVersion,
+    scheduleVersion: value.scheduleVersion,
+  }
+}
+
 function decodeAgentTicketSummary(
   value: unknown,
 ): AgentTicketSummary | undefined {
@@ -1460,6 +1942,7 @@ function decodeAgentTicketSummary(
   const group = value.group === null ? null : decodeGroupReference(value.group)
   const assignee =
     value.assignee === null ? null : decodeTicketReference(value.assignee)
+  const sla = value.sla === null ? null : decodeFirstReplySlaBadge(value.sla)
   if (
     !isTicketNumber(value.ticketNumber) ||
     !isNonBlankString(value.subject) ||
@@ -1474,7 +1957,7 @@ function decodeAgentTicketSummary(
     typeof value.isChild !== 'boolean' ||
     typeof value.openChildCount !== 'number' ||
     !Number.isSafeInteger(value.openChildCount) ||
-    value.sla !== null
+    sla === undefined
   ) {
     return undefined
   }
@@ -1490,7 +1973,7 @@ function decodeAgentTicketSummary(
     version: value.version,
     isChild: value.isChild,
     openChildCount: value.openChildCount,
-    sla: null,
+    sla,
   }
 }
 
@@ -1752,6 +2235,7 @@ export async function listTicketsInView(
   if (filters.priority) search.set('priority', filters.priority)
   if (filters.groupId) search.set('groupId', filters.groupId)
   if (filters.assigneeId) search.set('assigneeId', filters.assigneeId)
+  if (filters.slaState) search.set('slaState', filters.slaState)
   if (filters.cursor) search.set('cursor', filters.cursor)
   if (filters.limit) search.set('limit', String(filters.limit))
   const query = search.size ? `?${search.toString()}` : ''

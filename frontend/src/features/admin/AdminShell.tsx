@@ -18,6 +18,8 @@ export function AdminShell() {
         <nav aria-label="관리자 설정 메뉴">
           <NavLink to="/admin/staff">직원</NavLink>
           <NavLink to="/admin/groups">그룹</NavLink>
+          <NavLink to="/admin/business-rules/schedules">업무 시간</NavLink>
+          <NavLink to="/admin/business-rules/sla">First Reply SLA</NavLink>
           {session.staff?.capabilities.includes(
             'integration:clients:manage',
           ) ? (

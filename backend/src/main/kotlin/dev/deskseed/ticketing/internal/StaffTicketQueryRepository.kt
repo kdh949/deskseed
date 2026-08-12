@@ -16,11 +16,14 @@ import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketSearchFilter
 import dev.deskseed.ticketing.StaffTicketSearchResult
 import dev.deskseed.ticketing.StaffTicketSummary
+import dev.deskseed.ticketing.StaffSlaBadge
+import dev.deskseed.ticketing.StaffSlaDisplayState
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import java.time.Clock
 import java.time.Instant
 import java.sql.Timestamp
 import java.sql.ResultSet
@@ -29,6 +32,7 @@ import java.util.UUID
 @Repository
 internal class StaffTicketQueryRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate,
+    private val clock: Clock,
 ) : StaffTicketReadStore {
     override fun list(
         view: DefaultStaffView,
@@ -38,11 +42,15 @@ internal class StaffTicketQueryRepository(
         limit: Int,
         recentlySolvedAfter: Instant,
     ): List<StaffTicketSummary> {
+        val now = clock.instant()
+        val riskAt = now.plusSeconds(30 * 60)
         val conditions = mutableListOf<String>()
         val parameters = MapSqlParameterSource()
             .addValue("actorId", actorId)
             .addValue("recentlySolvedAfter", Timestamp.from(recentlySolvedAfter))
             .addValue("limit", limit)
+            .addValue("now", Timestamp.from(now))
+            .addValue("riskAt", Timestamp.from(riskAt))
 
         conditions += when (view) {
             DefaultStaffView.MY_OPEN -> "t.status = 'OPEN' and t.assignee_id = :actorId"
@@ -90,6 +98,17 @@ internal class StaffTicketQueryRepository(
                 }
             }
         }
+        filters.slaState?.let {
+            conditions += """
+                (case
+                    when fact.outcome = 'ACTIVE' and fact.due_at <= :now then 'BREACHED'
+                    when fact.outcome = 'ACTIVE' and fact.due_at <= :riskAt then 'AT_RISK'
+                    when fact.outcome is null and t.kind = 'CUSTOMER_REQUEST' then 'NO_POLICY'
+                    else fact.outcome
+                end) = :slaState
+            """.trimIndent()
+            parameters.addValue("slaState", it.name)
+        }
         cursor?.let {
             conditions += "(t.updated_at, t.ticket_number) < (:cursorUpdatedAt, :cursorTicketNumber)"
             parameters.addValue("cursorUpdatedAt", Timestamp.from(it.updatedAt))
@@ -109,10 +128,14 @@ internal class StaffTicketQueryRepository(
                    c.id as customer_id, c.name as customer_name,
                    g.id as group_id, g.name as group_name,
                    s.id as assignee_id, s.display_name as assignee_name
+                   , fact.outcome as sla_outcome, fact.due_at as sla_due_at,
+                   fact.target_minutes as sla_target_minutes, fact.policy_version as sla_policy_version,
+                   fact.schedule_version as sla_schedule_version
             from tickets t
             left join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
+            left join analytics_first_reply_facts fact on fact.ticket_id = t.id
             where ${conditions.joinToString("\n  and ")}
             order by t.updated_at desc, t.ticket_number desc
             limit :limit
@@ -136,6 +159,7 @@ internal class StaffTicketQueryRepository(
                 version = result.getLong("version"),
                 isChild = result.getString("kind") == "INTERNAL_CHILD",
                 openChildCount = result.getInt("open_child_count"),
+                sla = slaBadge(result, result.getString("kind"), now, riskAt),
             )
         }
     }
@@ -151,6 +175,8 @@ internal class StaffTicketQueryRepository(
         require(query.isNotBlank()) { "Search query is required" }
         require(limit in 1..100) { "Search limit must be between 1 and 100" }
 
+        val now = clock.instant()
+        val riskAt = now.plusSeconds(30 * 60)
         val conditions = mutableListOf<String>()
         val trimmedQuery = query.trim()
         val parameters = MapSqlParameterSource()
@@ -158,6 +184,8 @@ internal class StaffTicketQueryRepository(
             .addValue("ticketNumberQuery", trimmedQuery.toLongOrNull())
             .addValue("queryText", trimmedQuery)
             .addValue("limit", limit)
+            .addValue("now", Timestamp.from(now))
+            .addValue("riskAt", Timestamp.from(riskAt))
 
         conditions += """
             (
@@ -203,6 +231,7 @@ internal class StaffTicketQueryRepository(
             left join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
+            left join analytics_first_reply_facts fact on fact.ticket_id = t.id
             where $whereClause
         """.trimIndent()
 
@@ -224,6 +253,9 @@ internal class StaffTicketQueryRepository(
                    c.id as customer_id, c.name as customer_name,
                    g.id as group_id, g.name as group_name,
                    s.id as assignee_id, s.display_name as assignee_name
+                   , fact.outcome as sla_outcome, fact.due_at as sla_due_at,
+                   fact.target_minutes as sla_target_minutes, fact.policy_version as sla_policy_version,
+                   fact.schedule_version as sla_schedule_version
             $fromClause
             order by t.updated_at desc, t.ticket_number desc
             limit :limit
@@ -247,12 +279,15 @@ internal class StaffTicketQueryRepository(
                 version = result.getLong("version"),
                 isChild = result.getString("kind") == "INTERNAL_CHILD",
                 openChildCount = result.getInt("open_child_count"),
+                sla = slaBadge(result, result.getString("kind"), now, riskAt),
             )
         }
         return StaffTicketSearchResult(items, resultCount)
     }
 
     override fun findDetail(ticketNumber: Long): StaffTicketDetail? {
+        val now = clock.instant()
+        val riskAt = now.plusSeconds(30 * 60)
         val parameters = MapSqlParameterSource("ticketNumber", ticketNumber)
         val ticketRows = jdbcTemplate.query(
             """
@@ -267,6 +302,9 @@ internal class StaffTicketQueryRepository(
                    c.id as customer_id, c.name as customer_name, c.email_display,
                    g.id as group_id, g.name as group_name,
                    s.id as assignee_id, s.display_name as assignee_name,
+                   fact.outcome as sla_outcome, fact.due_at as sla_due_at,
+                   fact.target_minutes as sla_target_minutes, fact.policy_version as sla_policy_version,
+                   fact.schedule_version as sla_schedule_version,
                    linked.direction as related_direction,
                    rt.id as related_id, rt.ticket_number as related_ticket_number,
                    rt.subject as related_subject, rt.status as related_status,
@@ -285,6 +323,7 @@ internal class StaffTicketQueryRepository(
             left join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
+            left join analytics_first_reply_facts fact on fact.ticket_id = t.id
             left join lateral (
                 select 'PARENT' as direction, relation.source_ticket_id as related_ticket_id
                 from ticket_relations relation
@@ -324,6 +363,7 @@ internal class StaffTicketQueryRepository(
                     version = result.getLong("version"),
                     isChild = result.getString("kind") == "INTERNAL_CHILD",
                     openChildCount = result.getInt("open_child_count"),
+                    sla = slaBadge(result, result.getString("kind"), now, riskAt),
                 ),
                 customer = customerId?.let {
                     StaffTicketCustomer(
@@ -493,4 +533,35 @@ internal class StaffTicketQueryRepository(
         val direction: String,
         val ticket: StaffTicketSummary,
     )
+
+    private fun slaBadge(
+        result: java.sql.ResultSet,
+        kind: String,
+        now: Instant,
+        riskAt: Instant,
+    ): StaffSlaBadge? {
+        val outcome = result.getString("sla_outcome")
+        if (outcome == null && kind != "CUSTOMER_REQUEST") return null
+        val dueAt = result.getTimestamp("sla_due_at")?.toInstant()
+        val state = classifyFirstReplySlaState(outcome, dueAt, now, riskAt)
+        return StaffSlaBadge(
+            state = state,
+            dueAt = dueAt,
+            targetMinutes = result.getLong("sla_target_minutes").takeUnless { result.wasNull() },
+            policyVersion = result.getInt("sla_policy_version").takeUnless { result.wasNull() },
+            scheduleVersion = result.getInt("sla_schedule_version").takeUnless { result.wasNull() },
+        )
+    }
+}
+
+internal fun classifyFirstReplySlaState(
+    outcome: String?,
+    dueAt: Instant?,
+    now: Instant,
+    riskAt: Instant,
+): StaffSlaDisplayState = when {
+    outcome == null || outcome == "NO_POLICY" -> StaffSlaDisplayState.NO_POLICY
+    outcome == "ACTIVE" && dueAt?.let { !it.isAfter(now) } == true -> StaffSlaDisplayState.BREACHED
+    outcome == "ACTIVE" && dueAt?.let { !it.isAfter(riskAt) } == true -> StaffSlaDisplayState.AT_RISK
+    else -> StaffSlaDisplayState.valueOf(outcome)
 }

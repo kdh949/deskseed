@@ -128,6 +128,11 @@ deskseed:
       email: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:}
       display-name: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:}
       password-file: ${DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE:}
+  sla:
+    breach-scanner:
+      batch-size: ${DESKSEED_SLA_BREACH_SCAN_BATCH_SIZE:100}
+      interval: ${DESKSEED_SLA_BREACH_SCAN_INTERVAL:30s}
+      initial-delay: ${DESKSEED_SLA_BREACH_SCAN_INITIAL_DELAY:30s}
   customer-auth:
     magic-link-ttl: ${DESKSEED_CUSTOMER_MAGIC_LINK_TTL:15m}
     request-limit: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_LIMIT:5}

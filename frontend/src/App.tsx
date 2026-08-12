@@ -19,7 +19,9 @@ import {
 import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
+import { AdminBusinessSchedulesPage } from './pages/AdminBusinessSchedulesPage'
 import { AdminCustomerAccessPage } from './pages/AdminCustomerAccessPage'
+import { AdminFirstReplySlaPage } from './pages/AdminFirstReplySlaPage'
 import { AdminGroupsPage } from './pages/AdminGroupsPage'
 import { AdminStaffPage } from './pages/AdminStaffPage'
 import {
@@ -30,8 +32,8 @@ import {
   CustomerRequestDetailPage,
   CustomerRequestsPage,
 } from './pages/CustomerRequestsPage'
-import { HomePage } from './pages/HomePage'
 import { ExternalSystemsPage } from './pages/ExternalSystemsPage'
+import { HomePage } from './pages/HomePage'
 import { IntegrationClientsPage } from './pages/IntegrationClientsPage'
 import { LookupPage } from './pages/LookupPage'
 import { NewRequestPage } from './pages/NewRequestPage'
@@ -141,6 +143,14 @@ export function createAppRoutes(
                     },
                     { path: 'staff', element: <AdminStaffPage /> },
                     { path: 'groups', element: <AdminGroupsPage /> },
+                    {
+                      path: 'business-rules/schedules',
+                      element: <AdminBusinessSchedulesPage />,
+                    },
+                    {
+                      path: 'business-rules/sla',
+                      element: <AdminFirstReplySlaPage />,
+                    },
                     {
                       path: 'access/customer-mode',
                       element: <AdminCustomerAccessPage />,

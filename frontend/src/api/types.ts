@@ -43,6 +43,7 @@ export interface ProblemDetails {
   code?: string
   fieldErrors?: FieldError[]
   currentVersion?: number
+  currentAggregateVersion?: number
   conflictingFields?: TicketFieldName[]
 }
 
@@ -115,6 +116,152 @@ export interface GroupMembership {
   staffId: string
   staffDisplayName: string
   role: StaffRole
+}
+
+export type BusinessWeekday =
+  | 'MONDAY'
+  | 'TUESDAY'
+  | 'WEDNESDAY'
+  | 'THURSDAY'
+  | 'FRIDAY'
+  | 'SATURDAY'
+  | 'SUNDAY'
+
+export interface BusinessInterval {
+  start: string
+  end: string
+}
+
+export interface BusinessWeekdaySchedule {
+  weekday: BusinessWeekday
+  enabled: boolean
+  intervals: BusinessInterval[]
+}
+
+export interface BusinessScheduleException {
+  date: string
+  mode: 'CLOSED' | 'OPEN'
+  intervals: BusinessInterval[]
+  label: string | null
+}
+
+export interface BusinessScheduleDefinition {
+  name: string
+  timeZone: string
+  weekdays: BusinessWeekdaySchedule[]
+  exceptions: BusinessScheduleException[]
+}
+
+export interface BusinessSchedule extends BusinessScheduleDefinition {
+  id: string
+  version: number
+  activeVersion: number | null
+  activeTimeZone: string | null
+  aggregateVersion: number
+  active: boolean
+  createdAt: string
+  createdBy: {
+    actorType: 'STAFF' | 'SYSTEM'
+    actorId: string | null
+    displayName: string
+  }
+}
+
+export interface BusinessSchedulePreviewInput {
+  schedule: BusinessScheduleDefinition
+  startAt: string
+  endAt: string
+  businessMinutes: number
+}
+
+export interface BusinessSchedulePreview {
+  dueAt: string | null
+  elapsedBusinessMinutes: number
+  nextOpenAt: string | null
+  nextCloseAt: string | null
+  dstPolicy: 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+}
+
+export type FirstReplySlaState =
+  | 'ACTIVE'
+  | 'AT_RISK'
+  | 'PAUSED'
+  | 'ACHIEVED'
+  | 'BREACHED'
+  | 'CANCELLED'
+  | 'NO_POLICY'
+
+export interface FirstReplySlaBadge {
+  metric: 'FIRST_REPLY'
+  state: FirstReplySlaState
+  dueAt: string | null
+  targetMinutes: number | null
+  policyVersion: number | null
+  scheduleVersion: number | null
+}
+
+export type TicketChannel = 'WEB' | 'AGENT' | 'EMAIL' | 'CHAT' | 'API'
+
+export interface FirstReplySlaPolicyDefinition {
+  name: string
+  position: number
+  scheduleId: string
+  conditions: {
+    groupId: string | null
+    channel: TicketChannel | null
+  }
+  targets: Record<TicketPriority, number | null>
+  pauseStatuses: AgentTicketStatus[]
+}
+
+export interface FirstReplySlaPolicy extends FirstReplySlaPolicyDefinition {
+  id: string
+  scheduleVersion: number
+  version: number
+  activeVersion: number | null
+  aggregateVersion: number
+  active: boolean
+  createdAt: string
+  createdBy: {
+    actorType: 'STAFF'
+    actorId: string
+    displayName: string
+  }
+}
+
+export interface FirstReplySlaPreviewInput {
+  candidatePolicyId: string | null
+  candidate: FirstReplySlaPolicyDefinition | null
+  ticket: {
+    priority: TicketPriority
+    groupId: string | null
+    channel: TicketChannel
+  }
+  startAt: string
+}
+
+export interface FirstReplySlaPreview {
+  matched: boolean
+  dueAt: string | null
+  targetMinutes: number | null
+  policyId: string | null
+  policyVersion: number | null
+  scheduleId: string | null
+  scheduleVersion: number | null
+  dstPolicy: 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+}
+
+export interface FirstReplySlaAnalytics {
+  metric: 'FIRST_REPLY'
+  calculationVersion: string
+  active: number
+  paused: number
+  achieved: number
+  breached: number
+  cancelled: number
+  noPolicy: number
+  achievedRateDenominator: number
+  achievedRate: number | null
 }
 
 export interface CreateStaffInput {
@@ -300,7 +447,7 @@ export interface AgentTicketSummary {
   version: number
   isChild: boolean
   openChildCount: number
-  sla: null
+  sla: FirstReplySlaBadge | null
 }
 
 export interface AgentTicketPage {
@@ -375,6 +522,7 @@ export interface AgentTicketFilters {
   priority?: TicketPriority
   groupId?: string
   assigneeId?: string
+  slaState?: FirstReplySlaState
   cursor?: string
   limit?: number
 }

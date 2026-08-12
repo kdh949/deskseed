@@ -124,6 +124,29 @@ function TicketWorkspaceContent({
             TICKET #{ticket.ticketNumber} · ALL_TICKETS READ
           </p>
           <h1 id="ticket-workspace-title">{ticket.subject}</h1>
+          {ticket.sla ? (
+            <p
+              className={`workspace-sla sla-${ticket.sla.state.toLowerCase()}`}
+            >
+              <strong>First Reply · {ticket.sla.state}</strong>
+              {ticket.sla.dueAt ? (
+                <span>
+                  {' · 기한 '}
+                  {new Intl.DateTimeFormat('ko-KR', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  }).format(new Date(ticket.sla.dueAt))}
+                </span>
+              ) : null}
+              {ticket.sla.policyVersion ? (
+                <small>
+                  {' · 정책 v'}
+                  {ticket.sla.policyVersion} / 일정 v
+                  {ticket.sla.scheduleVersion}
+                </small>
+              ) : null}
+            </p>
+          ) : null}
         </div>
         {preferences.contextCollapsed ? (
           <button

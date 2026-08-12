@@ -1,5 +1,9 @@
 import { Link } from 'react-router'
-import type { AgentTicketStatus, TicketPriority } from '../../../api/types'
+import type {
+  AgentTicketStatus,
+  FirstReplySlaBadge,
+  TicketPriority,
+} from '../../../api/types'
 import { StatusBadge } from './StatusBadge'
 
 export interface TicketTableItem {
@@ -12,6 +16,7 @@ export interface TicketTableItem {
   assignee: string
   updatedLabel: string
   isChild?: boolean
+  sla?: FirstReplySlaBadge | null
 }
 
 interface TicketTableProps {
@@ -37,6 +42,7 @@ export function TicketTable({
             <th scope="col">우선순위</th>
             <th scope="col">그룹</th>
             <th scope="col">담당자</th>
+            <th scope="col">First Reply SLA</th>
             <th scope="col">업데이트</th>
           </tr>
         </thead>
@@ -73,11 +79,40 @@ export function TicketTable({
               </td>
               <td>{ticket.group}</td>
               <td>{ticket.assignee}</td>
+              <td>
+                {ticket.sla ? <SlaBadge value={ticket.sla} /> : '해당 없음'}
+              </td>
               <td>{ticket.updatedLabel}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  )
+}
+
+function SlaBadge({ value }: { value: FirstReplySlaBadge }) {
+  const labels: Record<FirstReplySlaBadge['state'], string> = {
+    ACTIVE: '진행 중',
+    AT_RISK: '위험',
+    PAUSED: '정지',
+    ACHIEVED: '달성',
+    BREACHED: '위반',
+    CANCELLED: '취소',
+    NO_POLICY: '정책 없음',
+  }
+  const due = value.dueAt
+    ? new Intl.DateTimeFormat('ko-KR', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(value.dueAt))
+    : null
+  return (
+    <span className={`sla-badge sla-${value.state.toLowerCase()}`}>
+      <strong>{labels[value.state]}</strong>
+      {due ? <small>기한 {due}</small> : null}
+    </span>
   )
 }

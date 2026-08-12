@@ -5,6 +5,7 @@ import type {
   AgentTicketFilters,
   AgentTicketStatus,
   TicketPriority,
+  FirstReplySlaState,
 } from '../../api/types'
 import { ScreenState, TableSkeleton, TicketTable } from '../../shared/ui/system'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
@@ -26,6 +27,15 @@ const STATUSES: AgentTicketStatus[] = [
   'CLOSED',
 ]
 const PRIORITIES: TicketPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT']
+const SLA_STATES: FirstReplySlaState[] = [
+  'ACTIVE',
+  'AT_RISK',
+  'PAUSED',
+  'ACHIEVED',
+  'BREACHED',
+  'CANCELLED',
+  'NO_POLICY',
+]
 
 export function AgentViewsPage() {
   const session = useStaffSession()
@@ -96,6 +106,21 @@ export function AgentViewsPage() {
             {STATUSES.map((status) => (
               <option key={status} value={status}>
                 {status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>First Reply SLA</span>
+          <select
+            aria-label="First Reply SLA 필터"
+            value={filters.slaState ?? ''}
+            onChange={(event) => updateFilter('slaState', event.target.value)}
+          >
+            <option value="">전체</option>
+            {SLA_STATES.map((state) => (
+              <option key={state} value={state}>
+                {state}
               </option>
             ))}
           </select>
@@ -181,6 +206,7 @@ export function AgentViewsPage() {
             assignee: ticket.assignee?.displayName ?? '미배정',
             updatedLabel: formatDate(ticket.updatedAt),
             isChild: ticket.isChild,
+            sla: ticket.sla,
           }))}
         />
       ) : null}
@@ -203,9 +229,11 @@ export function AgentViewsPage() {
 function filtersFrom(searchParams: URLSearchParams): AgentTicketFilters {
   const status = searchParams.get('status') as AgentTicketStatus | null
   const priority = searchParams.get('priority') as TicketPriority | null
+  const slaState = searchParams.get('slaState') as FirstReplySlaState | null
   return {
     ...(status ? { status } : {}),
     ...(priority ? { priority } : {}),
+    ...(slaState ? { slaState } : {}),
     ...(searchParams.get('groupId')
       ? { groupId: searchParams.get('groupId')! }
       : {}),

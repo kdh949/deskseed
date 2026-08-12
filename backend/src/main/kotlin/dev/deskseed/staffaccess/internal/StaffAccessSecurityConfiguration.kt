@@ -70,6 +70,7 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers("/api/v1/admin/external-systems/**")
                     .hasAuthority(EXTERNAL_SYSTEM_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                it.requestMatchers(HttpMethod.GET, "/api/v1/analytics/**").hasAnyRole("ADMIN", "AGENT")
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/activities/*/search-query-reveal")
                     .authenticated()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/exports")
