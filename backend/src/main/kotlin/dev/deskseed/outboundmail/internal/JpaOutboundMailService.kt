@@ -10,6 +10,7 @@ import dev.deskseed.outboundmail.OutboundMailIntentConflictException
 import dev.deskseed.outboundmail.OutboundMailOperations
 import dev.deskseed.outboundmail.OutboundMailPort
 import dev.deskseed.outboundmail.OutboundMailRetryInvalidException
+import dev.deskseed.outboundmail.MagicLinkMail
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -25,6 +26,7 @@ internal class JpaOutboundMailService(
     private val jdbcTemplate: JdbcTemplate,
     private val renderer: MailTemplateRenderer,
     private val retryPolicy: MailRetryPolicy,
+    private val protectedContentCipher: ProtectedMailContentCipher,
     private val clock: Clock,
 ) : OutboundMailPort, OutboundMailOperations {
     @Transactional(propagation = Propagation.MANDATORY)
@@ -42,6 +44,11 @@ internal class JpaOutboundMailService(
 
         val now = Instant.now(clock)
         val intentId = UUID.randomUUID()
+        val protectedBody = if (intent.content is MagicLinkMail) {
+            protectedContentCipher.encrypt(rendered.textBody, intentId)
+        } else {
+            null
+        }
         val entity = OutboundMailIntentEntity(
             id = intentId,
             idempotencyKey = intent.idempotencyKey,
@@ -51,7 +58,10 @@ internal class JpaOutboundMailService(
             senderAddress = rendered.fromAddress,
             recipientAddress = rendered.recipient,
             subject = rendered.subject,
-            textBody = rendered.textBody,
+            textBody = protectedBody?.let { PROTECTED_BODY_PLACEHOLDER } ?: rendered.textBody,
+            protectedBodyCiphertext = protectedBody?.ciphertext,
+            protectedBodyNonce = protectedBody?.nonce,
+            protectedBodyKeyVersion = protectedBody?.keyVersion,
             ticketId = intent.ticketId,
             commentId = intent.commentId,
             customerId = intent.customerId,
@@ -133,10 +143,29 @@ internal class JpaOutboundMailService(
             senderAddress == rendered.fromAddress &&
             recipientAddress == rendered.recipient &&
             subject == rendered.subject &&
-            textBody == rendered.textBody &&
+            resolvedBody() == rendered.textBody &&
             ticketId == intent.ticketId &&
             commentId == intent.commentId &&
             customerId == intent.customerId
+
+    private fun OutboundMailIntentEntity.resolvedBody(): String =
+        if (protectedBodyCiphertext == null) {
+            textBody
+        } else {
+            val ciphertext = requireNotNull(protectedBodyCiphertext)
+            protectedContentCipher.decrypt(
+                ProtectedMailContent(
+                    ciphertext = ciphertext,
+                    nonce = requireNotNull(protectedBodyNonce),
+                    keyVersion = requireNotNull(protectedBodyKeyVersion),
+                ),
+                id,
+            )
+        }
+
+    companion object {
+        const val PROTECTED_BODY_PLACEHOLDER = "[protected customer authentication content]"
+    }
 }
 
 internal fun deliveryEvent(

@@ -64,6 +64,11 @@ deskseed:
     worker-initial-delay: ${DESKSEED_MAIL_WORKER_INITIAL_DELAY:5s}
     lease-duration: ${DESKSEED_MAIL_LEASE_DURATION:2m}
     batch-size: ${DESKSEED_MAIL_BATCH_SIZE:20}
+    protected-content:
+      active-key-version: ${DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION:local-v1}
+      keys:
+        # Public local-development material only. Production must provision its own 32-byte key.
+        local-v1: ${DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1:AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
@@ -108,3 +113,14 @@ deskseed:
       email: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:}
       display-name: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:}
       password-file: ${DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE:}
+  customer-auth:
+    magic-link-ttl: ${DESKSEED_CUSTOMER_MAGIC_LINK_TTL:15m}
+    request-limit: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_LIMIT:5}
+    request-window: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_WINDOW:15m}
+    response-min-duration: ${DESKSEED_CUSTOMER_MAGIC_LINK_RESPONSE_MIN_DURATION:100ms}
+    session-idle: ${DESKSEED_CUSTOMER_SESSION_IDLE:30m}
+    session-absolute: ${DESKSEED_CUSTOMER_SESSION_ABSOLUTE:12h}
+    # Independent local-development keys. Production must provision unique secrets.
+    fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=}
+    csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY:AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=}
+    consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL:http://localhost:5173/customer/sign-in/consume}

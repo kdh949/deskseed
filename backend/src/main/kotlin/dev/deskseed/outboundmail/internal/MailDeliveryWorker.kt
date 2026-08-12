@@ -58,6 +58,7 @@ internal class MailDeliveryClaimService(
     private val attemptRepository: OutboundMailAttemptRepository,
     private val eventRepository: OutboundMailDeliveryEventRepository,
     private val properties: OutboundMailProperties,
+    private val protectedContentCipher: ProtectedMailContentCipher,
     private val clock: Clock,
 ) {
     @Transactional
@@ -112,7 +113,19 @@ internal class MailDeliveryClaimService(
                     fromAddress = intent.senderAddress,
                     recipientAddress = intent.recipientAddress,
                     subject = intent.subject,
-                    textBody = intent.textBody,
+                    textBody = if (intent.protectedBodyCiphertext == null) {
+                        intent.textBody
+                    } else {
+                        val ciphertext = requireNotNull(intent.protectedBodyCiphertext)
+                        protectedContentCipher.decrypt(
+                            ProtectedMailContent(
+                                ciphertext = ciphertext,
+                                nonce = requireNotNull(intent.protectedBodyNonce),
+                                keyVersion = requireNotNull(intent.protectedBodyKeyVersion),
+                            ),
+                            intent.id,
+                        )
+                    },
                 ),
             )
         }

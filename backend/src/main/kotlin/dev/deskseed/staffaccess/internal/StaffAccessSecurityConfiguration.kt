@@ -1,5 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.customerauth.CustomerCsrfFilter
+import dev.deskseed.customerauth.CustomerSessionAuthenticationFilter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -16,6 +18,8 @@ internal class StaffAccessSecurityConfiguration(
     private val authenticationEntryPoint: StaffAuthenticationEntryPoint,
     private val accessDeniedHandler: StaffAccessDeniedHandler,
     private val sessionValidationFilter: StaffSessionValidationFilter,
+    private val customerSessionAuthenticationFilter: CustomerSessionAuthenticationFilter,
+    private val customerCsrfFilter: CustomerCsrfFilter,
 ) {
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
@@ -25,7 +29,7 @@ internal class StaffAccessSecurityConfiguration(
         http
             .csrf {
                 it.csrfTokenRepository(csrfRepository)
-                it.ignoringRequestMatchers("/api/v1/requests/**")
+                it.ignoringRequestMatchers("/api/v1/requests/**", "/api/v1/customer/**")
             }
             .cors { }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED) }
@@ -49,6 +53,9 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.GET, "/api/v1/requests/*").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/csrf").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/agent/session").permitAll()
+                it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/magic-link-requests").permitAll()
+                it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/magic-link-sessions").permitAll()
+                it.requestMatchers("/api/v1/customer/**").hasRole("CUSTOMER")
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/me").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
@@ -68,6 +75,8 @@ internal class StaffAccessSecurityConfiguration(
                 it.anyRequest().denyAll()
             }
             .addFilterAfter(sessionValidationFilter, SecurityContextHolderFilter::class.java)
+            .addFilterAfter(customerSessionAuthenticationFilter, SecurityContextHolderFilter::class.java)
+            .addFilterAfter(customerCsrfFilter, CustomerSessionAuthenticationFilter::class.java)
 
         return http.build()
     }

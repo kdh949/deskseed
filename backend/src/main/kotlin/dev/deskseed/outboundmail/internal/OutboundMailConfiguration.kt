@@ -16,4 +16,8 @@ internal class OutboundMailConfiguration {
 
     @Bean
     fun mailRetryPolicy(properties: OutboundMailProperties) = MailRetryPolicy(properties)
+
+    @Bean
+    fun protectedMailContentCipher(properties: OutboundMailProperties) =
+        ProtectedMailContentCipher(properties.protectedContent)
 }

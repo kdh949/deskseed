@@ -28,6 +28,12 @@ internal data class OutboundMailProperties(
     var workerInitialDelay: Duration = Duration.ofSeconds(5),
     var leaseDuration: Duration = Duration.ofMinutes(2),
     var batchSize: Int = 20,
+    var protectedContent: ProtectedMailContentProperties = ProtectedMailContentProperties(),
+)
+
+internal data class ProtectedMailContentProperties(
+    var activeKeyVersion: String = "local-v1",
+    var keys: Map<String, String> = emptyMap(),
 )
 
 internal class OutboundMailSafety {

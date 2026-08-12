@@ -45,6 +45,38 @@ internal class JpaCustomerDirectory(
             id = customer.id,
             name = customer.name,
             email = customer.emailDisplay,
+            verifiedAt = customer.verifiedAt,
         )
     }
+
+    @Transactional(readOnly = true)
+    override fun existsByNormalizedEmail(email: String): Boolean =
+        repository.existsByEmailNormalized(email.lowercase(Locale.ROOT))
+
+    @Transactional(readOnly = true)
+    override fun findVerifiedByNormalizedEmail(email: String): CustomerRef? =
+        repository.findFirstByEmailNormalizedAndVerifiedAtIsNotNull(email.lowercase(Locale.ROOT))?.toRef()
+
+    @Transactional
+    override fun createVerified(name: String, email: String, verifiedAt: Instant): CustomerRef {
+        val now = Instant.now(clock)
+        return repository.saveAndFlush(
+            CustomerEntity(
+                id = UUID.randomUUID(),
+                name = name.trim(),
+                emailNormalized = email.lowercase(Locale.ROOT),
+                emailDisplay = email.trim(),
+                verifiedAt = verifiedAt,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        ).toRef()
+    }
+
+    private fun CustomerEntity.toRef() = CustomerRef(
+        id = id,
+        name = name,
+        email = emailDisplay,
+        verifiedAt = verifiedAt,
+    )
 }
