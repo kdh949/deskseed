@@ -863,7 +863,8 @@ paths:
       description: >-
         Validates an active registry system, exact allowed HTTPS hostname, bounded metadata,
         ticket write scope, and ticket version before atomically storing one reference and
-        one TicketAudit. No external request is made.
+        one TicketAudit. At most 100 references may be linked to one ticket; the next create
+        returns EXTERNAL_REFERENCE_LIMIT_REACHED without truncating the list. No external request is made.
       operationId: createAgentTicketExternalReference
       x-deskseed-contract-status: FROZEN
       tags: [Agent Tickets]
@@ -1662,6 +1663,9 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatch'
     post:
       summary: Register an external system and exact HTTPS hostname allowlist
+      description: >-
+        Registers one system while the bounded registry contains fewer than 100 entries.
+        The next create returns EXTERNAL_SYSTEM_LIMIT_REACHED; list responses are never silently truncated.
       operationId: createExternalSystem
       x-deskseed-contract-status: FROZEN
       tags: [Integration Admin]

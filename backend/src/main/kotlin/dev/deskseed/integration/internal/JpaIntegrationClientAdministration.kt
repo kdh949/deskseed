@@ -48,7 +48,7 @@ internal class JpaIntegrationClientAdministration(
         val result = clientRepository.findAll(
             PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))),
         )
-        val credentials = credentialRepository.findAllByClientIdIn(result.content.map { it.id })
+        val credentials = credentialRepository.findListSummariesByClientIdIn(result.content.map { it.id })
             .groupBy { it.clientId }
         return IntegrationClientPage(
             items = result.content.map { toView(it, credentials[it.id].orEmpty()) },

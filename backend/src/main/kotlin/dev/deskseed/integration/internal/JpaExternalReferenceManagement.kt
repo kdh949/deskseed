@@ -37,6 +37,7 @@ import java.util.UUID
 internal class JpaExternalReferenceManagement(
     private val systemRepository: ExternalSystemRepository,
     private val referenceRepository: ExternalReferenceRepository,
+    private val capacityGuard: ExternalReferenceCapacityGuard,
     private val validation: ExternalReferenceValidation,
     private val auditWriter: AdminSecurityAuditWriter,
     private val objectMapper: ObjectMapper,
@@ -45,7 +46,7 @@ internal class JpaExternalReferenceManagement(
     @PreAuthorize("hasAuthority('$EXTERNAL_SYSTEM_MANAGE_AUTHORITY')")
     @Transactional(readOnly = true)
     override fun list(): List<ExternalSystemView> =
-        systemRepository.findTop100ByOrderByDisplayNameAscIdAsc().map(::toSystemView)
+        systemRepository.findAllByOrderByDisplayNameAscIdAsc().map(::toSystemView)
 
     @PreAuthorize("hasAuthority('$EXTERNAL_SYSTEM_MANAGE_AUTHORITY')")
     @Transactional
@@ -54,6 +55,7 @@ internal class JpaExternalReferenceManagement(
         val systemKey = validation.normalizeSystemKey(command.systemKey)
         val displayName = validation.normalizeDisplayName(command.displayName)
         val hostnames = validation.normalizeHostnames(command.allowedHostnames)
+        capacityGuard.requireExternalSystemCapacity()
         val entity = ExternalSystemEntity(
             id = UUID.randomUUID(),
             systemKey = systemKey,
@@ -109,12 +111,12 @@ internal class JpaExternalReferenceManagement(
 
     @Transactional(readOnly = true)
     override fun listActiveSystems(): List<ExternalSystemView> =
-        systemRepository.findTop100ByStatusOrderByDisplayNameAscIdAsc(ExternalSystemStatus.ACTIVE.name)
+        systemRepository.findAllByStatusOrderByDisplayNameAscIdAsc(ExternalSystemStatus.ACTIVE.name)
             .map(::toSystemView)
 
     @Transactional(readOnly = true)
     override fun listForTicket(ticketId: UUID): List<ExternalReferenceView> {
-        val references = referenceRepository.findTop100ByTicketIdOrderByCreatedAtDescIdDesc(ticketId)
+        val references = referenceRepository.findAllByTicketIdOrderByCreatedAtDescIdDesc(ticketId)
         val systems = systemRepository.findAllById(references.map { it.externalSystemId }.distinct()).associateBy { it.id }
         return references.mapNotNull { reference -> systems[reference.externalSystemId]?.let { toReferenceView(reference, it) } }
     }
@@ -129,6 +131,7 @@ internal class JpaExternalReferenceManagement(
         val allowedHostnames = decodeHostnames(system.allowedHostnamesJson)
         val link = validation.validateLink(command.safeDeepLink, allowedHostnames)
         val metadata = validation.normalizeMetadata(command.metadata)
+        capacityGuard.requireTicketReferenceCapacity(command.ticketId)
         val entity = ExternalReferenceEntity(
             id = UUID.randomUUID(),
             ticketId = command.ticketId,

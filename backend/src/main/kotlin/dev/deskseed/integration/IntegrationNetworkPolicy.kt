@@ -1,7 +1,6 @@
 package dev.deskseed.integration
 
 import org.springframework.stereotype.Component
-import java.net.InetAddress
 
 @Component
 class IntegrationNetworkPolicy {
@@ -37,12 +36,7 @@ class IntegrationNetworkPolicy {
         return Cidr(address.address, prefix)
     }
 
-    private fun parseLiteral(value: String): InetAddress? {
-        val candidate = value.trim()
-        if (candidate.isEmpty() || candidate.any { !(it.isDigit() || it in "abcdefABCDEF:.") }) return null
-        return runCatching { InetAddress.getByName(candidate) }.getOrNull()
-    }
+    private fun parseLiteral(value: String) = StrictIpLiteralParser.parse(value)
 
     private data class Cidr(val address: ByteArray, val prefixLength: Int)
 }
-

@@ -56,6 +56,10 @@ class ExternalReferenceValidationTest {
             "127.0.0.1",
             "10.0.0.7",
             "169.254.169.254",
+            "00000000177.0.0.1",
+            "00177.0000.0000.0001",
+            "2130706433",
+            "0x7f000001",
             "localhost",
             "orders.localhost",
             "orders.internal",
@@ -64,6 +68,23 @@ class ExternalReferenceValidationTest {
         ).forEach { host ->
             assertThatThrownBy { subject.normalizeHostnames(setOf(host)) }
                 .describedAs(host)
+                .isInstanceOf(ExternalReferenceValidationException::class.java)
+        }
+    }
+
+    @Test
+    fun `rejects browser canonicalized numeric hosts in registry and links`() {
+        listOf(
+            "00000000177.0.0.1",
+            "00177.0000.0000.0001",
+            "2130706433",
+            "0x7f000001",
+        ).forEach { host ->
+            assertThatThrownBy { subject.normalizeHostnames(setOf(host)) }
+                .describedAs("registry $host")
+                .isInstanceOf(ExternalReferenceValidationException::class.java)
+            assertThatThrownBy { subject.validateLink("https://$host/orders/1", listOf(host)) }
+                .describedAs("link $host")
                 .isInstanceOf(ExternalReferenceValidationException::class.java)
         }
     }

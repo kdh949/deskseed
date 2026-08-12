@@ -18,7 +18,23 @@ internal interface IntegrationClientRepository : JpaRepository<IntegrationClient
 
 internal interface IntegrationCredentialRepository : JpaRepository<IntegrationCredentialEntity, UUID> {
     fun findAllByClientIdOrderBySequenceDesc(clientId: UUID): List<IntegrationCredentialEntity>
-    fun findAllByClientIdIn(clientIds: Collection<UUID>): List<IntegrationCredentialEntity>
+
+    @Query(
+        """
+        select credential
+        from IntegrationCredentialEntity credential
+        where credential.clientId in :clientIds
+          and (
+            credential.status in ('ACTIVE', 'RETIRING')
+            or credential.sequence = (
+              select max(latest.sequence)
+              from IntegrationCredentialEntity latest
+              where latest.clientId = credential.clientId
+            )
+          )
+        """,
+    )
+    fun findListSummariesByClientIdIn(clientIds: Collection<UUID>): List<IntegrationCredentialEntity>
 
     @Query("select credential.clientId from IntegrationCredentialEntity credential where credential.publicKeyId = :publicKeyId")
     fun findClientIdByPublicKeyId(publicKeyId: String): UUID?

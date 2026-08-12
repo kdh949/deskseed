@@ -6,7 +6,7 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 2237c4385694db59ce55172dedec325ca31d8560011946544419827fa3f9994c        6279  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-b1282db1dd4370cfd8ade935c0e765aad8eac87dfc9ca980c37b6ce695f6abe2      144654  api/core-api-outline-v1.yaml
+89ac58a01f578d6a6a978a6231b01e7b3f8f81e49df7114ebe674fe32ff62b88      145019  api/core-api-outline-v1.yaml
 72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -249,7 +249,7 @@ cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  ta
 6cfdcf472d76fcab1d6a76b59dc899b82cba97a5c5fcfa4865de45eaf032658c        6118  tasks/briefs/access-search-audit.md
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
 1facdae3c4be1b43efcbebdfb50ffabd8fd2599c0c78bcfcaa0d9558b50d6c9f        9086  tasks/briefs/audit-explorer-core.md
-f49942ba6d58607e6896c347b310d66b3829a773b510e257d26b2d8c29ddba3e        8237  tasks/briefs/external-reference.md
+b68fbc140c4e5cfdfd735d4d09f7b84b60f8b54e2582362d4a9e46d4323f4b0d        8422  tasks/briefs/external-reference.md
 9b1f9db9e4594effb46d9d4d331e2cba4dac8f253b280aae73a950c33204a8c3        6311  tasks/briefs/frontend-system-hardening.md
 8d1d83e24b7f4e5f28ff3cb6320fcd2f2be3943a2519e99ba19d8e08c38116db        4971  tasks/briefs/integration-client-management.md
 7928256db634523d0ae40396641fdc934e61edd7b0eb8e1948bc35aadf29fccd        6645  tasks/briefs/issue-24-review-remediation.md
