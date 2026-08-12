@@ -317,14 +317,22 @@ integration_credentials(
 ### external_systems / external_references
 
 ```text
-external_systems(id, system_key, name, status, allowed_hosts_json, ...)
+external_systems(
+ id, system_key, display_name, status, allowed_hostnames_json,
+ created_by_staff_id, created_at, updated_at, version
+)
 external_references(
  id, ticket_id, external_system_id, object_type, external_id,
- display_label, safe_deep_link, metadata_json, created_at, created_by...
+ display_label, safe_deep_link, metadata_snapshot_json, metadata_observed_at,
+ created_by_actor_type, created_by_actor_id, created_by_actor_display, created_at
 )
 ```
 
-Unique `(external_system_id, object_type, external_id, ticket_id)`.
+- Unique `(ticket_id, external_system_id, object_type, external_id)`; the same external identity may be linked to another ticket.
+- status is `ACTIVE/DISABLED`; object type is `ORDER/PAYMENT/REFUND/USER/STORE/OPS_CASE/CUSTOM`.
+- allowed hostnames and metadata remain bounded JSON text with DB shape/byte checks plus stricter application allowlists.
+- ticket/created and external identity indexes support bounded context reads and duplicate investigation.
+- V19 adds these tables without backfill or any provider credential/raw payload column.
 
 ### idempotency_records
 
