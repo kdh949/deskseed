@@ -1,0 +1,2 @@
+scripts/operations/configure-default-runtime-privileges.sql whitespace=-blank-at-eof
+scripts/operations/postgres-init-runtime-role.sh whitespace=-blank-at-eof
