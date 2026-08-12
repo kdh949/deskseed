@@ -41,4 +41,25 @@ class IntegrationCredentialSecurityTest {
             ipPolicy.validate(IntegrationResourceConstraints(ipAllowlist = setOf("10.0.0.0/99")))
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
+
+    @Test
+    fun `hostnames legacy IPv4 and malformed IPv6 are never accepted as IP literals`() {
+        val invalid = listOf(
+            "fade.de",
+            "bad.de",
+            "127.1",
+            "2130706433",
+            "01.2.3.4",
+            "2001:db8:::1",
+            "2001:db8::1::2",
+        )
+
+        invalid.forEach { candidate ->
+            assertThat(ipPolicy.normalize(candidate)).describedAs(candidate).isNull()
+            assertThat(ipPolicy.isAllowed(candidate, null)).describedAs(candidate).isFalse()
+            assertThatThrownBy {
+                ipPolicy.validate(IntegrationResourceConstraints(ipAllowlist = setOf(candidate)))
+            }.describedAs(candidate).isInstanceOf(IllegalArgumentException::class.java)
+        }
+    }
 }

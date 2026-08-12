@@ -1,9 +1,9 @@
 package dev.deskseed.integration.internal
 
 import dev.deskseed.integration.IntegrationResourceConstraints
+import dev.deskseed.integration.StrictIpLiteralParser
 import org.springframework.security.crypto.password.Pbkdf2PasswordEncoder
 import org.springframework.stereotype.Component
-import java.net.InetAddress
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -67,11 +67,7 @@ internal class IpAllowlistPolicy {
         return Cidr(address.address, prefix)
     }
 
-    private fun parseLiteral(value: String): InetAddress? {
-        val candidate = value.trim()
-        if (candidate.isEmpty() || candidate.any { !(it.isDigit() || it in "abcdefABCDEF:.") }) return null
-        return runCatching { InetAddress.getByName(candidate) }.getOrNull()
-    }
+    private fun parseLiteral(value: String) = StrictIpLiteralParser.parse(value)
 
     private data class Cidr(val address: ByteArray, val prefixLength: Int)
 }

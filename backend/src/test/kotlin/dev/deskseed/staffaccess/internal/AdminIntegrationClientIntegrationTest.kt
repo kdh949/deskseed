@@ -213,6 +213,31 @@ class AdminIntegrationClientIntegrationTest {
     }
 
     @Test
+    fun `client list returns bounded current credential summaries after many rotations`() {
+        insertStaff("admin@example.com", "Admin password 42", "ADMIN")
+        val browser = login("admin@example.com", "Admin password 42")
+        val clientId = clientId(createClient(browser, "bounded-history", null))
+
+        repeat(6) {
+            mockMvc.perform(
+                post("/api/v1/admin/integration-clients/{clientId}/rotate", clientId)
+                    .session(browser.session)
+                    .csrf(browser)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"expiresAt":"${futureExpiry()}","overlapSeconds":0}"""),
+            ).andExpect(status().isOk)
+        }
+
+        mockMvc.perform(get("/api/v1/admin/integration-clients").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].credentials.length()").value(1))
+            .andExpect(jsonPath("$[0].credentials[0].status").value("ACTIVE"))
+        mockMvc.perform(get("/api/v1/admin/integration-clients/{clientId}", clientId).session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.credentials.length()").value(7))
+    }
+
+    @Test
     fun `agent security auditor and admin missing the explicit authority cannot manage clients`() {
         insertStaff("agent@example.com", "Agent password 42", "AGENT")
         insertStaff("auditor@example.com", "Auditor password 42", "SECURITY_AUDITOR")
