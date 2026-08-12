@@ -821,6 +821,134 @@ paths:
               schema:
                 $ref: '#/components/schemas/TicketVersionPreconditionProblem'
         '422': *id001
+  /api/v1/agent/tickets/{ticketNumber}/external-references:
+    get:
+      summary: Read safe external-reference context for an authorized staff ticket
+      description: >-
+        Returns stored-only reference context. This operation never fetches, resolves, or
+        redirects through an external URL. It records a required staff resource-read audit
+        and never emits semantic TICKET_VIEWED for background tab loading.
+      operationId: listAgentTicketExternalReferences
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - *id002
+      - *id005
+      responses:
+        '200':
+          description: Bounded staff-only reference context with currently usable links only.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReferenceContext' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503': *id001
+    post:
+      summary: Link a ticket to one validated external identity
+      description: >-
+        Validates an active registry system, exact allowed HTTPS hostname, bounded metadata,
+        ticket write scope, and ticket version before atomically storing one reference and
+        one TicketAudit. No external request is made.
+      operationId: createAgentTicketExternalReference
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004, REQ-AUD-001]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - *id002
+      - *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExternalReferenceCommand' }
+      responses:
+        '201':
+          description: Reference and ticket audit committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReferenceCommandResult' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The ticket no longer matches If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/TicketVersionPreconditionProblem' }
+        '422': *id001
+        '503': *id001
+  /api/v1/agent/tickets/{ticketNumber}/external-references/{referenceId}:
+    delete:
+      summary: Unlink an external reference without mutating the external system
+      description: >-
+        Removes only the Deskseed reference and atomically records one TicketAudit. No
+        external delete, fetch, or callback is performed.
+      operationId: deleteAgentTicketExternalReference
+      x-deskseed-contract-status: FROZEN
+      tags: [Agent Tickets]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005, REQ-UI-004, REQ-AUD-001]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - *id002
+      - *id004
+      - $ref: '#/components/parameters/ExternalReferenceId'
+      responses:
+        '200':
+          description: Local reference removed and audit committed.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteExternalReferenceResult' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: The ticket no longer matches If-Match.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/TicketVersionPreconditionProblem' }
+        '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/audits:
     get:
       summary: Read ticket-local change history
@@ -1501,6 +1629,113 @@ paths:
         '404': *id001
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/external-systems:
+    get:
+      summary: List external-system registry entries
+      operationId: listAdminExternalSystems
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Bounded registry list without provider secrets or credentials.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: Register an external system and exact HTTPS hostname allowlist
+      operationId: createExternalSystem
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExternalSystem' }
+      responses:
+        '201':
+          description: Registry entry and AdminSecurityAudit committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/external-systems/{systemId}:
+    put:
+      summary: Update external-system display, status, and hostname policy
+      operationId: updateExternalSystem
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I2
+      x-deskseed-requirements: [REQ-INT-005]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExternalSystemId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExternalSystemIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateExternalSystem' }
+      responses:
+        '200':
+          description: Registry and AdminSecurityAudit update committed atomically.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalSystem' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          description: External-system version no longer matches If-Match and expectedVersion.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ExternalSystemVersionPreconditionProblem' }
         '503': *id001
   /api/v1/admin/settings/{key}:
     get:
@@ -2413,6 +2648,28 @@ components:
       schema:
         type: string
         format: uuid
+    ExternalSystemId:
+      name: systemId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalReferenceId:
+      name: referenceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExternalSystemIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: External-system ETag; it must identify the same version as expectedVersion.
+      schema:
+        type: string
+        pattern: '^"?[0-9]+"?$'
     StaffId:
       name: staffId
       in: path
@@ -3662,6 +3919,188 @@ components:
           - string
           - 'null'
           format: date-time
+    ExternalSystemStatus:
+      type: string
+      enum: [ACTIVE, DISABLED]
+    ExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [id, systemKey, displayName, status, allowedHostnames, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        systemKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$'
+          description: Immutable normalized registry identifier.
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/ExternalSystemStatus' }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: Exact canonical public DNS hostnames; wildcards, localhost, and IP literals are forbidden.
+          items: { type: string, minLength: 1, maxLength: 253 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 0 }
+    CreateExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [systemKey, displayName, allowedHostnames]
+      properties:
+        systemKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$'
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 253 }
+    UpdateExternalSystem:
+      type: object
+      additionalProperties: false
+      required: [displayName, status, allowedHostnames, expectedVersion]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/ExternalSystemStatus' }
+        allowedHostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 253 }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    ExternalObjectType:
+      type: string
+      enum: [ORDER, PAYMENT, REFUND, USER, STORE, OPS_CASE, CUSTOM]
+    ExternalReferenceLinkState:
+      type: string
+      enum: [AVAILABLE, SYSTEM_DISABLED, HOST_NOT_ALLOWED]
+    ExternalReferenceMetadataValue:
+      oneOf:
+      - type: string
+        maxLength: 200
+      - type: number
+      - type: boolean
+    ExternalReferenceMetadataSnapshot:
+      type: object
+      additionalProperties: false
+      maxProperties: 8
+      properties:
+        status: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        storeName: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        amountDisplay: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        currency: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        occurredAt: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        ownerLabel: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+        channel: { $ref: '#/components/schemas/ExternalReferenceMetadataValue' }
+    ExternalReferenceActor:
+      type: object
+      additionalProperties: false
+      required: [actorId, displayName]
+      properties:
+        actorId: { type: string, format: uuid }
+        displayName: { type: string, minLength: 1, maxLength: 100 }
+    ExternalReference:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - system
+      - objectType
+      - externalId
+      - displayLabel
+      - linkState
+      - metadata
+      - metadataObservedAt
+      - createdBy
+      - createdAt
+      properties:
+        id: { type: string, format: uuid }
+        system: { $ref: '#/components/schemas/ExternalSystem' }
+        objectType: { $ref: '#/components/schemas/ExternalObjectType' }
+        externalId: { type: string, minLength: 1, maxLength: 200 }
+        displayLabel: { type: string, minLength: 1, maxLength: 200 }
+        linkState: { $ref: '#/components/schemas/ExternalReferenceLinkState' }
+        safeDeepLink:
+          type: [string, 'null']
+          format: uri
+          maxLength: 2048
+          description: Present only while the system is active and the stored host remains allowed.
+        metadata: { $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot' }
+        metadataObservedAt: { type: string, format: date-time }
+        createdBy: { $ref: '#/components/schemas/ExternalReferenceActor' }
+        createdAt: { type: string, format: date-time }
+    ExternalReferenceContext:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, canManage, availableSystems, items]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        canManage: { type: boolean }
+        availableSystems:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ExternalSystem' }
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ExternalReference' }
+    CreateExternalReferenceCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - externalSystemId
+      - objectType
+      - externalId
+      - displayLabel
+      - safeDeepLink
+      - metadata
+      - metadataObservedAt
+      - expectedVersion
+      properties:
+        externalSystemId: { type: string, format: uuid }
+        objectType: { $ref: '#/components/schemas/ExternalObjectType' }
+        externalId: { type: string, minLength: 1, maxLength: 200 }
+        displayLabel: { type: string, minLength: 1, maxLength: 200 }
+        safeDeepLink:
+          type: string
+          format: uri
+          minLength: 9
+          maxLength: 2048
+          description: Exact-host HTTPS URL; userinfo and credential-like query keys are forbidden.
+        metadata: { $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot' }
+        metadataObservedAt: { type: string, format: date-time }
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    ExternalReferenceCommandResult:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, reference]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        reference: { $ref: '#/components/schemas/ExternalReference' }
+    DeleteExternalReferenceResult:
+      type: object
+      additionalProperties: false
+      required: [ticketVersion, removedReferenceId]
+      properties:
+        ticketVersion: { type: integer, format: int64, minimum: 0 }
+        removedReferenceId: { type: string, format: uuid }
+    ExternalSystemVersionPreconditionProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        additionalProperties: true
+        required: [currentVersion]
+        properties:
+          currentVersion: { type: integer, format: int64, minimum: 0 }
     IntegrationScope:
       type: string
       enum:

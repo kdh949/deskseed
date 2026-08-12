@@ -58,6 +58,21 @@ surfaces:
       - method: POST
         path: "/api/v1/agent/tickets/{ticketNumber}/children"
         command: CreateChildTicket
+      - method: GET
+        path: "/api/v1/agent/tickets/{ticketNumber}/external-references"
+        phase: integration_i2
+        query: ExternalReferenceContext
+        audit: API_RESOURCE_READ
+      - method: POST
+        path: "/api/v1/agent/tickets/{ticketNumber}/external-references"
+        phase: integration_i2
+        command: CreateExternalReference
+        audit: structured_ticket_audit
+      - method: DELETE
+        path: "/api/v1/agent/tickets/{ticketNumber}/external-references/{referenceId}"
+        phase: integration_i2
+        command: DeleteExternalReference
+        audit: structured_ticket_audit
       - method: POST
         path: "/api/v1/agent/search"
         query: AgentSearch
@@ -107,6 +122,23 @@ surfaces:
         path: "/api/v1/admin/integration-clients/{clientId}/rotate"
         command: RotateIntegrationClientCredential
         audit: INTEGRATION_CLIENT_ROTATED
+  external_system_admin:
+    source: api/core-api-outline-v1.yaml
+    actor: [admin]
+    authority: integration:systems:manage
+    phase: integration_i2
+    endpoints:
+      - method: GET
+        path: "/api/v1/admin/external-systems"
+        query: ExternalSystemList
+      - method: POST
+        path: "/api/v1/admin/external-systems"
+        command: CreateExternalSystem
+        audit: EXTERNAL_SYSTEM_CREATED
+      - method: PUT
+        path: "/api/v1/admin/external-systems/{systemId}"
+        command: UpdateExternalSystem
+        audit: EXTERNAL_SYSTEM_UPDATED
   admin_schedule_sla:
     source: api/core-api-outline-v1.yaml
     actor: [admin]
