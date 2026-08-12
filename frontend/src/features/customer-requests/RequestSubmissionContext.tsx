@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { submitRequest } from '../../api/client'
 import type { SubmitRequestInput, SubmittedRequest } from '../../api/types'
+import { useOptionalCustomerSession } from '../customer-auth/CustomerSessionContext'
 import { useRequestAccess } from './RequestAccessContext'
 
 interface RequestSubmissionValue {
@@ -25,6 +26,7 @@ const RequestSubmissionContext = createContext<RequestSubmissionValue | null>(
 
 export function RequestSubmissionProvider({ children }: PropsWithChildren) {
   const requestAccess = useRequestAccess()
+  const customerSession = useOptionalCustomerSession()
   const queryClient = useQueryClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState<SubmittedRequest | null>(null)
@@ -36,7 +38,10 @@ export function RequestSubmissionProvider({ children }: PropsWithChildren) {
       pendingRef.current = true
       setIsSubmitting(true)
       try {
-        const result = await submitRequest(input)
+        const result = await submitRequest(
+          input,
+          customerSession?.status === 'authenticated',
+        )
         queryClient.removeQueries({
           queryKey: ['public-request', result.ticketNumber],
         })
@@ -47,7 +52,7 @@ export function RequestSubmissionProvider({ children }: PropsWithChildren) {
         setIsSubmitting(false)
       }
     },
-    [queryClient, requestAccess],
+    [customerSession?.status, queryClient, requestAccess],
   )
 
   const value = useMemo<RequestSubmissionValue>(

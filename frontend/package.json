@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:dev": "bash ../scripts/run-frontend-browser-e2e.sh",
-    "test:e2e:update": "playwright test agent-views-workspace.spec.ts audit-explorer.spec.ts customer-request.spec.ts frontend-system.spec.ts integration-clients.spec.ts staff-auth-admin.spec.ts ticket-composer-conflict.spec.ts transfer-child-ticket.spec.ts --update-snapshots=all",
+    "test:e2e:update": "playwright test agent-views-workspace.spec.ts audit-explorer.spec.ts customer-portal.spec.ts customer-request.spec.ts frontend-system.spec.ts integration-clients.spec.ts staff-auth-admin.spec.ts ticket-composer-conflict.spec.ts transfer-child-ticket.spec.ts --update-snapshots=all",
     "test:e2e:stack": "bash ../scripts/run-customer-request-e2e.sh",
     "test:e2e:audit-stack": "bash ../scripts/run-audit-explorer-e2e.sh"
   },

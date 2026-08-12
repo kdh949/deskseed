@@ -23,6 +23,7 @@ export function AdminShell() {
           ) ? (
             <NavLink to="/integrations/clients">API 클라이언트</NavLink>
           ) : null}
+          <NavLink to="/admin/access/customer-mode">고객 접근</NavLink>
           <NavLink to="/agent/home">상담사 화면</NavLink>
         </nav>
         <div className="admin-identity">

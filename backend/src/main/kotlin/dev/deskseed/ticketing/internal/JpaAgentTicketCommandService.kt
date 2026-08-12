@@ -1,8 +1,14 @@
 package dev.deskseed.ticketing.internal
 
+import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.outboundmail.MailRecipient
+import dev.deskseed.outboundmail.OutboundMailIntent
+import dev.deskseed.outboundmail.OutboundMailPort
+import dev.deskseed.outboundmail.PublicAgentReplyMail
 import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
@@ -110,6 +116,8 @@ internal class AgentTicketCommandTransaction(
     private val organizationConsistencyGuard: TicketOrganizationConsistencyGuard,
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val authorizationPolicy: TicketWriteAuthorizationPolicy,
+    private val customerDirectory: CustomerDirectory,
+    private val outboundMailPort: OutboundMailPort,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
 ) {
@@ -165,6 +173,15 @@ internal class AgentTicketCommandTransaction(
                 createdAt = ticket.firstComment.createdAt,
             ),
         )
+        if (command.firstComment.visibility == CommentVisibility.PUBLIC) {
+            enqueuePublicReply(
+                ticket = ticketEntity,
+                commentId = ticket.firstComment.id,
+                publicBody = ticket.firstComment.body,
+                actorId = command.actor.id,
+                context = command.context,
+            )
+        }
 
         val auditId = appendAudit(
             ticket = ticketEntity,
@@ -269,6 +286,15 @@ internal class AgentTicketCommandTransaction(
                 ),
             )
             events += commentAuditEvent(commentId, draft, now)
+            if (draft.visibility == CommentVisibility.PUBLIC) {
+                enqueuePublicReply(
+                    ticket = ticket,
+                    commentId = commentId,
+                    publicBody = draft.body.trim(),
+                    actorId = command.actor.id,
+                    context = command.context,
+                )
+            }
         }
         if (newStatus != oldStatus) {
             events += fieldAuditEvent("STATUS_CHANGED", TicketField.STATUS, oldStatus.name, newStatus.name)
@@ -750,6 +776,32 @@ internal class AgentTicketCommandTransaction(
             ),
             occurredAt = now,
         )
+
+    private fun enqueuePublicReply(
+        ticket: TicketEntity,
+        commentId: UUID,
+        publicBody: String,
+        actorId: UUID,
+        context: CommandContext,
+    ) {
+        val customer = customerDirectory.findById(ticket.requesterId)
+            ?: throw TicketCommandInvalidException("Ticket requester is unavailable")
+        outboundMailPort.enqueue(
+            OutboundMailIntent(
+                idempotencyKey = "public-agent-reply:$commentId",
+                recipient = MailRecipient(customer.email),
+                content = PublicAgentReplyMail(
+                    ticketNumber = ticket.ticketNumber,
+                    publicBody = publicBody,
+                ),
+                ticketId = ticket.id,
+                commentId = commentId,
+                customerId = customer.id,
+                actor = ActorRef(ActorType.STAFF, actorId),
+                context = context,
+            ),
+        )
+    }
 
     private fun fieldAuditEvent(
         type: String,

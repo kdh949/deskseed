@@ -3,6 +3,7 @@ package dev.deskseed.staffaccess.internal
 import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.organization.OrganizationConflictException
 import dev.deskseed.organization.OrganizationNotFoundException
+import dev.deskseed.settings.CustomerAccessModeConflictException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.ConstraintViolationException
 import org.springframework.dao.DataAccessException
@@ -30,6 +31,23 @@ internal class AdminOrganizationExceptionHandler {
         "The requested organization change cannot be applied.",
         exception.code,
     )
+
+    @ExceptionHandler(CustomerAccessModeConflictException::class)
+    fun customerAccessModeConflict(
+        exception: CustomerAccessModeConflictException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ProblemDetail> {
+        val response = response(
+            request,
+            HttpStatus.CONFLICT,
+            "/problems/customer-access-mode-conflict",
+            "Customer access mode changed",
+            "Reload the current customer access mode before saving again.",
+            "STALE_CUSTOMER_ACCESS_MODE",
+        )
+        response.body?.setProperty("currentVersion", exception.currentVersion)
+        return response
+    }
 
     @ExceptionHandler(OrganizationNotFoundException::class)
     fun notFound(

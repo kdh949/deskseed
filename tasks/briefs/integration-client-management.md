@@ -82,5 +82,5 @@
 ## Compatibility and migration
 
 - Additive core admin API; no Platform API contract change.
-- Forward-only V18 migration; rollback is application rollback plus backup/restore or a reviewed forward fix.
+- Forward-only V21 migration; rollback is application rollback plus backup/restore or a reviewed forward fix.
 - No backfill and no existing client/UI behavior change.

@@ -26,8 +26,8 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | expiry/replay/enumeration/session 테스트 |
-| REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | explicit token/claim 테스트 |
+| REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | `CustomerMagicLinkAuthIntegrationTest`의 expiry/replay/race/enumeration/session/CSRF/rollback, `MailpitApiE2ETest`의 실제 전달·단일 소비 |
+| REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | `CustomerRequestPortalIntegrationTest`의 request-token/signed-grant 성공·tamper·expiry·replay·different-email 및 ownership/audit 원자성 |
 | REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session 또는 browser expected-actor 불일치는 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 25, 30, 31, 33, 35 ADR, 39, 52 | `StaffAuthIntegrationTest`의 invalid/mismatch·activity/controller/mutation/audit 비진입, `client.test.ts`의 held-CSRF actor snapshot, `StaffSessionContext.test.tsx`의 교차 탭 owner 보존, `staff-auth-admin.spec.ts` |
 | REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
 | REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | `AgentTicketReadIntegrationTest`의 cross-group queue/direct URL 및 inactive/customer 거부; 검색은 후속 |
@@ -39,9 +39,9 @@
 |---|---|---:|---|---|---|
 | REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
 | REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부와 `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
-| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37 | 내부 메모 비노출 E2E |
-| REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | 설정별 계약 테스트 |
-| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | single-use·claim·격리 테스트 |
+| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37 | `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection과 portal Playwright E2E |
+| REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | `CustomerAccessModeIntegrationTest` submit/view 행렬·optimistic conflict·감사 원자성 및 ADMIN UI E2E |
+| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox와 portal E2E |
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
 | REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`, `customer-request.full-stack.spec.ts`의 실제 PUBLIC/INTERNAL 저장 회귀 |
 | REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002, `customer-request.full-stack.spec.ts`의 PUBLIC 노출·INTERNAL 비노출 E2E |
@@ -120,8 +120,8 @@
 | REQ-FILE-002 | rich text와 redaction은 안전한 canonical format과 별도 권한을 사용한다 | BLUEPRINT_READY | P8 | 48 | XSS/redaction/audit 테스트 |
 | REQ-CHAN-001 | 이메일 수신·발신을 Ticket/Comment channel adapter로 제공한다 | BLUEPRINT_READY | P8 | 38, 49 | threading/dedup/outbox/bounce 테스트 |
 | REQ-CHAN-002 | 채팅·메시징은 나중에 같은 conversation model 위에 추가한다 | DEFERRED | P8+ | 38, 49 | session/transcript/channel adapter 테스트 |
-| REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | Mailpit API delivery test |
-| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | retry/idempotency/delivery status 테스트 |
+| REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | `MailpitApiE2ETest`, Compose `mailpit:1025` + `localhost:8025`, production profile delivery 비활성 |
+| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | `OutboundMailDeliveryIntegrationTest`, PUBLIC/INTERNAL 회귀, V18 intent/attempt/event 상태 |
 | REQ-AI-001 | AI 요약·답변 제안은 검색·권한·감사·평가 기반이 준비된 뒤 선택적으로 추가한다 | DEFERRED | P10 | 38, 49 | 데이터 경계/평가/사람 승인 테스트 |
 
 ## 9. 프론트엔드 경험

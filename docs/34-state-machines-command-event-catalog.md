@@ -252,3 +252,49 @@ External event names include schema version in envelope, not topic name alone.
 - compatible fields may be added.
 - required field removal/type change creates new version.
 - consumer contract tests run before publish.
+
+## 13. Outbound mail delivery state
+
+```text
+QUEUED
+  → SENDING
+  → SENT
+  → RETRY_WAIT → SENDING
+  → FAILED
+
+FAILED --explicit manual retry--> QUEUED (same intent)
+```
+
+- business transaction은 `QUEUED` intent까지만 저장한다.
+- worker는 claim/lease transaction을 먼저 commit한 뒤 SMTP를 호출하고 별도 transaction으로 결과를 기록한다.
+- attempt는 `IN_PROGRESS | SUCCEEDED | RETRYABLE_FAILED | PERMANENT_FAILED | ABANDONED`다.
+- 기본 retry schedule은 immediate, 1m, 5m, 30m, 2h이며 exhaustion은 terminal `FAILED`다.
+- manual retry는 새 comment/intent가 아니라 기존 terminal intent의 새 retry cycle과 delivery event다.
+- Mailpit SMTP는 stable `Message-ID`를 전달하지만 SMTP accept 후 acknowledgement 유실을 원자적으로 판별하지 못한다. production adapter는 provider idempotency/reconciliation 계약을 별도로 동결해야 한다.
+
+## 14. Customer request claim and follow-up state
+
+```text
+anonymous ticket + active request access token
+  → issue short-lived signed claim grant (optional exchange)
+
+unverified requester + verified customer + ticket-specific active proof
+  → CLAIMED: requester_id changed, request tokens revoked,
+             used grant consumed, REQUESTER_CHANGED audit + security audit
+
+invalid/tampered/expired/consumed proof → NOT_FOUND (no ownership change)
+valid proof + different verified email  → DENIED (proof remains unconsumed)
+already verified/non-customer ticket   → NOT_FOUND
+```
+
+- Email equality is only a necessary check after a ticket-scoped proof succeeds; it is never
+  an ownership lookup or automatic claim trigger.
+- Claim mutation, token revocation/consume, one canonical ticket audit and one admin/security
+  audit commit or roll back together.
+- A CUSTOMER follow-up command is keyed by `(requesterId, clientCommandId)`. Exact replay returns
+  the canonical comment; reuse with a different ticket/body returns conflict without mutation.
+- NEW/OPEN/HOLD/PENDING accept a PUBLIC follow-up; PENDING becomes OPEN. SOLVED/CLOSED return
+  conflict and are not automatically reopened.
+- Comment, optional state transition, one TicketAudit with ordered events, and the stable
+  `customer-follow-up-received:{commentId}` mail intent share the business transaction. SMTP
+  delivery remains post-commit under the outbound-mail state machine above.

@@ -31,6 +31,18 @@ const publicRequest = {
   assignee: { name: '담당 상담사' },
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/customer/me', (route) =>
+    route.fulfill({ status: 401 }),
+  )
+  await page.route('**/api/v1/customer/access-mode', (route) =>
+    route.fulfill({
+      status: 200,
+      json: { mode: 'ANONYMOUS_ALLOWED' },
+    }),
+  )
+})
+
 async function fillForm(page: Page) {
   await page.getByRole('textbox', { name: /이름/ }).fill('김고객')
   await page
