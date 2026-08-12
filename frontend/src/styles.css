@@ -262,6 +262,11 @@ footer {
   align-items: center;
 }
 
+.claim-form fieldset input[type='radio'] {
+  width: auto;
+  flex: 0 0 auto;
+}
+
 .customer-back-link {
   color: var(--brand);
   font-weight: 700;
