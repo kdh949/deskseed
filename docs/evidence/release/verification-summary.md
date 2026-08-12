@@ -10,7 +10,7 @@ unexecuted rows remain `NOT RUN` rather than inheriting status from older artifa
 
 | Area | Status | Command / evidence |
 |---|---|---|
-| GitHub PR CI | NOT RUN | No PR exists yet; local equivalents below pass, but they are not called hosted CI |
+| GitHub PR CI | PASS | PR #21 run `31554070655`: documentation contracts, backend, frontend quality, Chromium browser, Compose ownership/health, anonymous-request real stack and Audit Explorer real stack all passed; no retry/skip or auto-merge |
 | Documentation/OpenAPI validator | PASS | `python3 scripts/validate_documentation.py`; 55 canonical docs, 26 briefs, 36 ADRs, 56 operations, 84 visual baselines; 26/26 implemented staff-session operations expose the expected-actor header and actor 400/409 contract |
 | Frontend format/lint/type/unit/build | PASS | `npm run format:check && npm run lint && npm run typecheck && npm test -- --run && npm run build`; 14 files, 148/148, 0 failed/skipped; JS 135.84 kB gzip, CSS 9.74 kB gzip |
 | Backend fresh suite | PASS | `cd backend && ./gradlew clean check --rerun-tasks`; 29 suites, 127/127, 0 failed/errors/skipped; BUILD SUCCESSFUL in 1m15s |

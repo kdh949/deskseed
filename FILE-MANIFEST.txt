@@ -174,7 +174,7 @@ f6068757e4101c64149e8f96b43741be2d99264fead3c5b2c84cfc8a55f8faf2        6943  do
 3847334d7d6ab50056d4f6347c937d912ece24a7f15dd44f1da4cc31abfe41e5       12548  docs/evidence/release/security/security-scan.md
 15c748dcc0b187c0534309a5c4575f6df0a276eb9c568910080e6ce3a040d527       11722  docs/evidence/release/supply-chain/baseline.md
 0329834a6b5980013c3e047ceed36a7d3959463738a9ca2101b75be53d4c3500        4296  docs/evidence/release/ui/automated-and-visual-review.md
-acb1b31d4cc1623787ee9c42a1b660762ddf75501bc0c7cd2e37ab4237c3adcd        5181  docs/evidence/release/verification-summary.md
+87b64440c1c24bd8d85ab719de66883b6e87f6c12b311b2e03858cf2b3a9b40b        5317  docs/evidence/release/verification-summary.md
 3e6c5e906d2cff61685b2e2a32e8a101eccb864108f2edba8329bba9b3a0f9f8        1826  docs/performance/README.md
 36074a179597e0ad5921635f7bf50437590b555bfaf138bfe55d59218b7d36dc        3109  docs/performance/agent-ticket-read-query-plan.md
 21c1ba4ada8d4f9f50a736c2c720439c77249486db8736441e6ca2e43bbf517e        4204  docs/performance/audit-explorer-1m-query-plan.md
