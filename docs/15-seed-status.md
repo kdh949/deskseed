@@ -14,7 +14,7 @@ This repository combines the v0.6 documentation seed with an executable M0 backe
 - production-profile seam for separate runtime and migration database credentials.
 - customer portal request submit and public-only lookup with an opaque stored-hash access token.
 - initial React customer portal and Docker Compose development setup.
-- Garden 9.15.7 primitives behind `shared/ui` wrappers, a standalone Deskseed Agent Shell route, and keyboard-focus regression tests.
+- Garden 9.15.7 primitives behind the canonical `frontend/src/design-system` API, one Deskseed Agent Shell, and keyboard-focus regression tests.
 - BCrypt staff login with bounded server sessions, CSRF, PostgreSQL throttling, active-account revalidation, and password-file first-ADMIN bootstrap.
 - ADMIN-only staff/group/membership APIs and UI with API/method authorization, direct-route guards, current-assignment protection, and transactional admin/security audit.
 - pinned frontend lockfile with Prettier, ESLint, Vitest, strict type checks, and production build gates.

@@ -82,8 +82,10 @@ GENERATED_DIRECTORY_NAMES = {
     "node_modules",
     "playwright-report",
     "test-results",
+    # "artifacts",
 }
 E2E_VISUAL_BASELINE_DIRECTORY = ROOT / "frontend/e2e/__screenshots__"
+APPROVED_DESKSEED_ASSET_DIRECTORY = ROOT / "frontend/src/assets/deskseed"
 
 
 def rel(path: Path) -> str:
@@ -350,12 +352,13 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
         if path.is_file()
         and not is_generated(path)
         and not path.is_relative_to(E2E_VISUAL_BASELINE_DIRECTORY)
+        and not path.is_relative_to(APPROVED_DESKSEED_ASSET_DIRECTORY)
         and path.suffix.lower() in IMAGE_EXTENSIONS
     ]
     counts["e2e_visual_baselines"] = len(e2e_visual_baselines)
     counts["bundled_image_assets"] = len(image_assets)
     if image_assets:
-        errors.append("Documentation seed must not bundle copied Zendesk visual assets: " + ", ".join(rel(p) for p in image_assets))
+        errors.append("Repository must not bundle unapproved visual assets: " + ", ".join(rel(p) for p in image_assets))
 
     validation_heading = (ROOT / "VALIDATION-REPORT.md").read_text(encoding="utf-8").splitlines()[0] if (ROOT / "VALIDATION-REPORT.md").exists() else ""
     if validation_heading and "v0.6" not in validation_heading:

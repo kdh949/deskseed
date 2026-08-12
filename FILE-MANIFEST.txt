@@ -35,7 +35,7 @@ c9135bdbd123cfb7c118ef14fd6dccfb82bb9e9cb7a7630b99e68e36ece1498d        6279  do
 7c07f7114c8dc8994560e2042c70fa6c1a9ddee315c35863472ac9927dde2086        7343  docs/12-sla-analytics-automation-blueprint.md
 9b278279434e7cff57dbfd0ac97fde8dc7aeb29149296059cebaaa8d504b7f96        1874  docs/13-license-decision.md
 58e15742f455d37fb27fa5f090111d5b26207a72f596f13c5a9ee1d0c5108da5        8705  docs/14-execution-backlog.md
-d025ba8b14b91a67a87a97d5af72fd35058ec973c153a6a281f65f74ef9e2a98        5557  docs/15-seed-status.md
+2cf5ef6dcaed1a1793c1d70fc5c07df09cf9ad9d9f55bd40769416991e83b186        5568  docs/15-seed-status.md
 19b7616dda936661aeb93a98081aac77f3cedf9c5457c027f9aa4c89a759621e        7275  docs/16-metric-glossary-draft.md
 1a234089ea1f791f0bb56e91215e11619cea6520ecd3259069625bb872a72760        7154  docs/17-open-source-study-guide.md
 4855c94088a28419f10be938bbfcc3ce4296a71a13b8cf0e70ee7f9f7d917743       15313  docs/18-integration-platform.md
@@ -46,7 +46,7 @@ d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  do
 51287483d2ff1021d56614168cdaa47a88195e28cf18d7e6811f687a6f77b1da        6554  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 4cf4e0236b234de4f297c8402311e49a06b93795376216fcfb8f2f737d14158b        5444  docs/25-implementation-decision-register.md
-58d6aae18cf5d4408b68a9773c889d7958d3909a5db917a5ea20a313a9dc9064       15290  docs/26-requirement-traceability.md
+8147151a91858e3be0f311f36522b4b0e8a79ba1a659247b7b7fba30b62875ff       15295  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  docs/28-frontend-product-and-information-architecture.md
 54f95cb71d8d951e208f3ed2e33d798e2b39e05bedd20402ef4b61ffa5f8d494        6900  docs/29-zendesk-inspired-design-system.md
@@ -70,7 +70,7 @@ bf7626abe5cfeaeaf87f6d00f1cc73612647eeeee6b2c8f2079726cd95207103        5970  do
 a6b24c25dd329f0ed3bc43928de44a88bdef324a333ee92d3cfc0df852b57ca1        7649  docs/47-ticketing-depth-views-fields-macros-search.md
 b13e8b6a6de58afbd1475e01ad96d7aa7bad68f46d600c9f143a2be5585f89ed        4021  docs/48-attachments-rich-text-redaction-implementation-spec.md
 bb937eedf79d4f305fc64091872ab78ccad9b7ab3da24f116a3a663d23f35e00        5130  docs/49-email-notifications-and-channel-adapters.md
-a5a37f74c69d261606aea60ec71e32f02a7725ef60060e3d3af20a05c8b40241       10149  docs/50-codex-implementation-runbook.md
+bc5279f7b27c99f6ab0508d4475409f0c7a4a58c0508cfd528923cf404f268c2       10301  docs/50-codex-implementation-runbook.md
 cecb1b42be8f0be8d287d1fd2afe31eca92499027b1f59c0f6cbca8eb266385f        8342  docs/51-zendesk-parity-and-visual-acceptance.md
 f801e5392187f47c3ccedd2d7eb07e1ec9d08f25b2377436b51261939aa909db       10303  docs/52-admin-settings-catalog.md
 75a4338c3879f562cecb7c3d13a4c995daad9e9d8edb15f9f1cde7f08925229c        5879  docs/53-accepted-decisions-2026-08-10.md
@@ -117,7 +117,7 @@ ddb445dda6b94dc5f42a8d44a38b886daa7c6e235b8ce1f63eaea7a20eb70d90        1016  sc
 c16d522f6854b2f51ea3acbefd7d6b808eaecbd6757f37bc5adfa7d89f732682          35  scripts/requirements-docs.txt
 0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a          14  scripts/requirements.txt
 03f5969b91167758740ee87330d144eb68d833bac9aff1bb4c1f46a63c0406f4        1585  scripts/run-customer-request-e2e.sh
-9e1099a506dc760a4dff8c9d2da9892392e492d91d592010455512260e1de6c9       19981  scripts/validate_documentation.py
+ed905cf457e23f6335699ecec8c4c9886b45ac19c7c66333801c2ac5dab3a9e4       20131  scripts/validate_documentation.py
 d337270b000da9602956653c37190cab863c7b95c21ec2a1b91c4c142bceb298        7660  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
 6b43d795b99c525d4ac87a5ff23896fe0fccd2ca434173698a26374b3fbdd59e        3331  tasks/00-bootstrap.md
@@ -132,7 +132,7 @@ f1888ed4008c1e784526b3a9af6fa4a162326b1d8ec911e67217bbaaa72c5bb1        4330  ta
 244cdfe2b4d3c0f66867cf4a2cf028907a59e416c819c07c8927181ee12dff92         385  tasks/09-ticket-update-audit-concurrency.md
 93e27a547b23ad256a16968709b751a07393fd060924c6afef1f5206817ebcb8         402  tasks/10-transfer-and-child-tickets.md
 df29af1f97062cfb52db29bb31c0639f11e095c47834568f538e2318748f78e0         634  tasks/11-customer-portal-and-admin.md
-0aad64dae7124a288c54b0556cea786c08b7e1591992bb2924827bc14cc8b334         485  tasks/12-zendesk-inspired-frontend-system.md
+10f54263ad1cc4e3eddac6717334bc42c553c6717d8a458ac25570fabfa5cf48        1015  tasks/12-zendesk-inspired-frontend-system.md
 3913c8a4c665e50162bb68e7a4aac8ce6a406acb9a671aa7cf3a57411f5c1309         755  tasks/13-sla-analytics-automation-blueprints.md
 19387bfd8f395d2f4648cb631403a8c1425ed94df8db274c158d02ca458eb381         341  tasks/14-release-hardening.md
 1769634fef2cc08bb4415b85a7f63e05328ac5a2600716ccaffdf0fc4eb6ee9a        1141  tasks/15-ticketing-depth-views-fields-macros-search.md
@@ -147,4 +147,4 @@ f4970505b88b6b1988e1f5ef0ad72f2b1bfe1e3e92f2088cf029c8b78264c094         964  ta
 cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  tasks/24-business-schedule-admin.md
 30b2fd9face7cbd9c37472c30136bd0931dec6871c4d5a51019ec1a250de5307         986  tasks/25-first-reply-sla-configurable-schedule.md
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
-9b1f9db9e4594effb46d9d4d331e2cba4dac8f253b280aae73a950c33204a8c3        6311  tasks/briefs/frontend-system-hardening.md
+9cbf7da77d08a2ffe5603425112ebb23a6ac85ad88a388bebf2cecaa361e3f93        6445  tasks/briefs/frontend-system-hardening.md

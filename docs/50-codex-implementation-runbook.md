@@ -60,10 +60,14 @@ frontend/
     routes/
     features/
     entities/
-    shared/ui/
+    design-system/
     shared/api/
     shared/lib/
-    styles/
+      foundations/
+      primitives/
+      components/
+      patterns/
+      shells/
   tests/
 ```
 
@@ -71,7 +75,7 @@ frontend/
 - Vite.
 - React Router.
 - TanStack Query.
-- Garden components는 `shared/ui/garden` wrapper 뒤에서 사용한다.
+- Garden components는 `design-system`의 Deskseed-owned public API 뒤에서 사용한다. feature/page는 Garden을 직접 import하지 않는다.
 - API type은 committed OpenAPI에서 생성하거나 계약과 1:1로 관리한다.
 
 ### Local operations
