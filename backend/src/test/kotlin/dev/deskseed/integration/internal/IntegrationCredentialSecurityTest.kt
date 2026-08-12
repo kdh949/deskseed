@@ -1,13 +1,14 @@
 package dev.deskseed.integration.internal
 
 import dev.deskseed.integration.IntegrationResourceConstraints
+import dev.deskseed.integration.IntegrationNetworkPolicy
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class IntegrationCredentialSecurityTest {
     private val hasher = IntegrationSecretHasher()
-    private val ipPolicy = IpAllowlistPolicy()
+    private val ipPolicy = IpAllowlistPolicy(IntegrationNetworkPolicy())
 
     @Test
     fun `PBKDF2 verifier is salted and verifies without storing plaintext`() {

@@ -52,6 +52,13 @@ logging:
     level: "%5p [requestId:%X{requestId:-}]"
 
 deskseed:
+  platform:
+    network:
+      # Production must set both values. Empty values use loopback/RFC1918 development defaults outside prod.
+      allowed-client-cidrs: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS:}
+      trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS:}
+    rate-limit:
+      requests-per-minute: ${DESKSEED_PLATFORM_RATE_LIMIT_PER_MINUTE:60}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
