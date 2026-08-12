@@ -4165,6 +4165,7 @@ components:
         required:
         - id
         - version
+        - activeVersion
         - aggregateVersion
         - active
         - createdAt
@@ -4176,6 +4177,10 @@ components:
           version:
             type: integer
             minimum: 1
+          activeVersion:
+            type: [integer, 'null']
+            minimum: 1
+            description: Current activated immutable version, independent of the returned version.
           aggregateVersion:
             type: integer
             format: int64
@@ -4215,6 +4220,7 @@ components:
         endAt:
           type: string
           format: date-time
+          description: Must be no more than 366 days after startAt.
         businessMinutes:
           type: integer
           minimum: 0

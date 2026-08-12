@@ -99,6 +99,57 @@ class BusinessTimeCalculatorTest {
     }
 
     @Test
+    fun `effective intervals are ordered by instant and DST overlap is counted once`() {
+        val reversed = DeterministicBusinessTimeCalculator(
+            schedule(
+                zone = "Asia/Seoul",
+                intervals = mapOf(
+                    DayOfWeek.MONDAY to listOf(interval("13:00", "18:00"), interval("09:00", "12:00")),
+                ),
+            ),
+        )
+        assertThat(reversed.nextOpenInstant(Instant.parse("2026-08-16T22:00:00Z")))
+            .isEqualTo(Instant.parse("2026-08-17T00:00:00Z"))
+
+        val fall = DeterministicBusinessTimeCalculator(
+            schedule(
+                zone = "America/New_York",
+                intervals = mapOf(
+                    DayOfWeek.SUNDAY to listOf(interval("00:00", "01:30"), interval("01:30", "02:00")),
+                ),
+            ),
+        )
+        assertThat(
+            fall.elapsedBusinessMinutes(
+                Instant.parse("2026-11-01T04:00:00Z"),
+                Instant.parse("2026-11-01T08:00:00Z"),
+            ),
+        ).isEqualTo(180)
+    }
+
+    @Test
+    fun `next opening remains discoverable after consecutive weekly closed exceptions`() {
+        val firstClosedMonday = LocalDate.parse("2026-01-05")
+        val calculator = DeterministicBusinessTimeCalculator(
+            schedule(
+                zone = "Asia/Seoul",
+                intervals = mapOf(DayOfWeek.MONDAY to listOf(interval("09:00", "10:00"))),
+                exceptions = (0L until 30L).map { week ->
+                    ScheduleDateException(
+                        firstClosedMonday.plusWeeks(week),
+                        ExceptionMode.CLOSED,
+                        emptyList(),
+                        "closed $week",
+                    )
+                },
+            ),
+        )
+
+        assertThat(calculator.nextOpenInstant(Instant.parse("2026-01-04T00:00:00Z")))
+            .isEqualTo(Instant.parse("2026-08-03T00:00:00Z"))
+    }
+
+    @Test
     fun `server default timezone cannot change the schedule result`() {
         val original = TimeZone.getDefault()
         try {

@@ -41,6 +41,7 @@ const schedule: BusinessSchedule = {
   })),
   exceptions: [],
   version: 1,
+  activeVersion: 1,
   aggregateVersion: 0,
   active: true,
   createdAt: '2026-08-10T00:00:00Z',

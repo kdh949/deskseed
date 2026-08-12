@@ -142,6 +142,7 @@ export interface BusinessScheduleDefinition {
 export interface BusinessSchedule extends BusinessScheduleDefinition {
   id: string
   version: number
+  activeVersion: number | null
   aggregateVersion: number
   active: boolean
   createdAt: string
