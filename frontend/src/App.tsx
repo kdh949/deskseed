@@ -22,6 +22,10 @@ import { LookupPage } from './pages/LookupPage'
 import { NewRequestPage } from './pages/NewRequestPage'
 import { RequestDetailPage } from './pages/RequestDetailPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
+import {
+  CustomerMagicLinkConsumePage,
+  CustomerSignInPage,
+} from './pages/CustomerSignInPage'
 
 const FrontendSystemFixturePage = import.meta.env.DEV
   ? lazy(() =>
@@ -139,6 +143,11 @@ export const appRoutes: RouteObject[] = [
       { index: true, element: <HomePage /> },
       { path: '/requests/new', element: <NewRequestPage /> },
       { path: '/requests/lookup', element: <LookupPage /> },
+      { path: '/customer/sign-in', element: <CustomerSignInPage /> },
+      {
+        path: '/customer/sign-in/consume',
+        element: <CustomerMagicLinkConsumePage />,
+      },
       {
         path: '/requests/:ticketNumber',
         element: <RequestDetailPage />,

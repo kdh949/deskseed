@@ -41,8 +41,8 @@ api/analytics-api-v1.yaml    (later)
 POST /api/v1/requests
 GET  /api/v1/requests/{ticketNumber}
 POST /api/v1/requests/{ticketNumber}/comments       later
-POST /api/v1/customer/auth/magic-links
-POST /api/v1/customer/auth/magic-links/consume
+POST /api/v1/customer/auth/magic-link-requests
+POST /api/v1/customer/auth/magic-link-sessions
 GET  /api/v1/customer/csrf
 DELETE /api/v1/customer/session
 GET  /api/v1/customer/me
