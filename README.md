@@ -1,92 +1,115 @@
 # Deskseed
 
-> 작업명입니다. 제품명은 아직 확정하지 않았습니다.
+Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 구현한 포트폴리오 프로젝트다. 익명 문의부터 상담사 워크스페이스, 공개 답변과 내부 메모, 이관·자식 티켓, 변경·접근 감사와 Audit Explorer까지를 Kotlin/Spring, React, PostgreSQL로 연결한다. 일반적인 헬프데스크 업무 흐름을 참고하되 제품명, 화면, 코드와 자산은 독립적인 Deskseed 구현이다.
 
-설치형(self-hosted) 고객지원 티켓 시스템을 Kotlin/Spring과 React로 만드는 포트폴리오용 코드베이스 시드입니다. 제품 행동은 Zendesk를 참고하되, 구현은 도메인 규칙부터 다시 설계합니다.
+현재 상태는 **Core MVP + Security/Audit 포트폴리오 릴리스 후보**다. 지원 배포 경계는 단일 조직용 로컬 또는 사설망 Docker Compose이며, 공용 인터넷 production 배포를 승인하는 문서가 아니다. 실제 통과·미실행·제한 상태는 [릴리스 검증 요약](docs/evidence/release/verification-summary.md)이 유일한 기준이다.
 
-현재 저장소는 **M0 기반 구성 + M1 고객 웹 문의 + M2 직원 인증·조직 관리 세로 기능**과 v0.6 문서·계약 시드를 담고 있습니다. v0.6의 `IMPLEMENTATION_READY` 표기는 해당 기능의 계약이 구현을 시작하기에 충분하다는 뜻이며, 코드 구현 완료를 뜻하지는 않습니다.
+## 현재 구현 범위
 
-```text
-익명 고객이 이름/이메일/제목/문의 내용을 입력
-  → Customer 생성 또는 재사용
-  → Ticket 생성
-  → 문의 내용은 첫 PUBLIC Comment로 저장
-  → 한 번만 노출되는 조회 키 발급
-  → 조회 키로 고객이 PUBLIC 대화만 조회
-  → Ticket/Audit/AuditEvent가 같은 트랜잭션에서 기록
-```
+| 영역 | 구현된 동작 |
+| --- | --- |
+| 고객 포털 | 익명 문의 접수, 첫 `PUBLIC` comment 저장, 한 번만 반환되는 opaque 조회 토큰, 토큰으로 `PUBLIC` 대화만 조회 |
+| 직원 인증·관리 | BCrypt 비밀번호, 서버 세션, CSRF, DB 기반 로그인 제한, realm-local expected-actor 일관성 guard, 비밀번호 파일을 이용한 최초 ADMIN bootstrap, ADMIN 전용 직원·그룹·활성 멤버십 관리 |
+| 상담사 업무 | Views, PostgreSQL 검색, 3-panel 티켓 워크스페이스, `PUBLIC`/`INTERNAL` 별도 draft, 상태·우선순위·그룹·담당자 통합 저장 |
+| 정합성 | 담당자/그룹 invariant, field-aware optimistic concurrency, same-field `409`과 draft 복구, 응답 유실 시 exact UpdateTicket command replay, transfer와 child-ticket 명령 분리, 열린 child 경고 후 parent solve 허용 |
+| 감사 | 한 command/한 `TicketAudit`과 ordered events, semantic `TICKET_VIEWED`, 검색→티켓 열람 연결, strict audit failure, 분리된 change/access/admin 원장과 재생성 가능한 Audit Explorer projection |
+| 감사자 화면 | activity 목록·상세, 권한·이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
+| 배포·검증 | Docker Compose, Flyway, PostgreSQL Testcontainers, 실제 브라우저 E2E, visual/axe/keyboard suite, 설치·upgrade·backup·restore rehearsal, 성능 fixture/query-plan harness |
 
-티켓 작업용 상담사 워크스페이스, 공개 답변, 내부 메모, 이관, 자식 티켓과 후속 관리자 설정은 `docs/05-roadmap.md`의 M2~M6에 명세되어 있으며 아직 구현 완료로 간주하지 않습니다.
+핵심 데이터 규칙은 다음과 같다.
 
-## 핵심 결정
+- `Ticket`에 `description`을 두지 않는다. 최초 문의 본문은 첫 `PUBLIC` comment다.
+- `PUBLIC`/`INTERNAL`, child relation과 staff/audit 필드는 서버 authorization/projection에서 분리한다.
+- Transfer는 기존 티켓의 소유권을 이동한다. Child creation은 parent 소유권을 유지한다.
+- 현재 `Ticket` row가 현재 상태의 source of truth다. Audit은 Event Sourcing store가 아니다.
+- 티켓 mutation과 canonical change audit은 함께 commit/rollback한다. 필수 접근 감사가 실패하면 보호된 응답을 반환하지 않는다.
+- Kafka, Redis, Elasticsearch/OpenSearch, Kubernetes, microservices는 현재 runtime에 없다.
 
-- Backend: Kotlin 2.4, Spring Boot 4.1, Spring MVC, JPA/Hibernate, PostgreSQL
-- Frontend: React 19, TypeScript, Vite
-- Architecture: Spring Modulith 기반 모듈러 모놀리스
-- Deployment: Docker Compose 기반 단일 설치 인스턴스
-- Ticket에는 `description` 컬럼을 두지 않습니다. 문의 본문은 첫 번째 `PUBLIC` 코멘트입니다.
-- 이관은 기존 티켓의 소유권 이동이고, 자식 티켓은 부모 소유권을 유지한 내부 협업입니다.
-- Audit은 수정 불가능한 변경 이력이며 Event Sourcing은 아닙니다.
-- 고객에게 내부 메모가 노출되지 않는 규칙은 UI가 아닌 API/쿼리 경계에서 강제합니다.
-- Kafka, Redis, Elasticsearch, WebFlux, Kubernetes, MSA는 초기 MVP에 넣지 않습니다.
+구현 상태의 상세 근거는 [현재 구현 경계](docs/15-seed-status.md), 요구사항별 근거는 [traceability matrix](docs/26-requirement-traceability.md), 현재 코드 기준 구조는 [architecture/context/module/data-flow diagrams](docs/portfolio/architecture.md)에서 확인할 수 있다.
 
-## 문서 읽는 순서
+## 명시적으로 구현하지 않은 범위
 
-1. [`IMPLEMENTATION-START-HERE.md`](IMPLEMENTATION-START-HERE.md)
-2. [`docs/26-requirement-traceability.md`](docs/26-requirement-traceability.md)
-3. [`docs/27-implementation-handbook.md`](docs/27-implementation-handbook.md)
-4. [`docs/50-codex-implementation-runbook.md`](docs/50-codex-implementation-runbook.md)
-5. [`docs/00-product-charter.md`](docs/00-product-charter.md), [`docs/01-prd-mvp.md`](docs/01-prd-mvp.md), [`docs/02-domain-model.md`](docs/02-domain-model.md), [`docs/03-architecture.md`](docs/03-architecture.md)
-6. [`docs/14-execution-backlog.md`](docs/14-execution-backlog.md), [`docs/15-seed-status.md`](docs/15-seed-status.md), [`docs/21-minimum-verification-gates.md`](docs/21-minimum-verification-gates.md)
-7. [`AGENTS.md`](AGENTS.md)와 관련 task 문서
+문서나 Accepted ADR이 존재해도 아래 기능은 현재 릴리스 완료 기능이 아니다.
 
-## v0.6 문서·계약 시드
+| 범위 | 현재 상태 |
+| --- | --- |
+| 고객 계정, email ownership, magic link, My Requests, 익명 티켓 claim | 설계만 존재; 미구현 |
+| 고객 profile 상세 접근 감사 (`ACC-005`) | 미구현 |
+| Platform API, IntegrationClient, idempotency/ETag, ExternalReference, webhook, generated SDK (`ACC-006` 포함) | 계약·blueprint만 존재; runtime 미구현 |
+| Audit export artifact 생성·download·expiry·deletion (verification gate `AUD-004` 전체) | allowlisted request와 self-audit만 구현; artifact state는 `NOT_CREATED` |
+| 보호된 comment 본문 reveal | 미구현 |
+| SECURITY_AUDITOR의 고위험 reveal/export/rebuild 권한을 별도 영속 grant로 부여하는 모델 | 미구현; [security finding](docs/evidence/release/security/security-scan.md)에 공개된 설계 위험 |
+| SLA/OLA, trigger/automation, analytics, attachment/rich text, email channel, app/embed SDK | 후속 상세 명세만 존재; 미구현 |
+| 외부 signed audit checkpoint, production KMS/secret provider, managed deployment | 미구현 |
 
-- Core Customer/Agent/Admin/Audit API outline: [`api/core-api-outline-v1.yaml`](api/core-api-outline-v1.yaml)
-- Customer identity API outline: [`api/customer-identity-api-v1.yaml`](api/customer-identity-api-v1.yaml)
-- Platform API outline: [`api/platform-api-outline-v1.yaml`](api/platform-api-outline-v1.yaml)
-- UI·API surface catalog: [`api/api-surface-catalog-v0.6.yaml`](api/api-surface-catalog-v0.6.yaml), [`api/ui-route-catalog-v0.6.yaml`](api/ui-route-catalog-v0.6.yaml)
-- 화면·상태·권한·DB·검증 계약: [`docs/28-frontend-product-and-information-architecture.md`](docs/28-frontend-product-and-information-architecture.md)부터 [`docs/43-coverage-assessment-v03-to-v05.md`](docs/43-coverage-assessment-v03-to-v05.md)
-- 후속 기능의 상세 명세와 결정 게이트: [`docs/44-sla-ola-business-hours-implementation-spec.md`](docs/44-sla-ola-business-hours-implementation-spec.md)부터 [`docs/54-next-decision-gates.md`](docs/54-next-decision-gates.md)
+`IMPLEMENTATION_READY`는 계약이 구현을 시작할 만큼 구체적이라는 뜻이지 완료 표시가 아니다. 현재/계획 구분은 [ADR index](docs/portfolio/adr-index.md)에도 함께 기록한다.
 
-문서 구조와 machine-readable contract는 `python3 scripts/validate_documentation.py --write`로 검증합니다. 이 검증은 문서·계약 구조만 확인하며 애플리케이션 빌드나 런타임 동작을 보장하지 않습니다.
+## 가장 짧은 재현 경로
 
-## 빠른 실행
-
-### Docker Compose
+Docker Engine, Docker Compose v2, Node.js 22.12 이상, npm과 Chromium용 Playwright dependency가 필요하다. 다음 순서는 synthetic data만 사용해 실제 frontend, HTTP API, PostgreSQL과 감사 원장을 검증하고 disposable stack/volume을 종료 시 정리한다.
 
 ```bash
-cp .env.example .env
-python3 scripts/verify_seed.py
-docker compose up --build
+npm --prefix frontend ci
+npm --prefix frontend exec playwright install chromium
+bash scripts/run-release-e2e.sh
 ```
 
-- 고객 웹: `http://localhost:5173`
-- Backend API: `http://localhost:8080`
-- Health: `http://localhost:8080/actuator/health`
+정상 결과는 customer/staff 5개 시나리오와 Audit Explorer 1개 시나리오 통과다. 이 실행은 익명 접수·조회, staff login/Views/search/workspace, `PUBLIC`/`INTERNAL` 비노출, 실제 두 세션 conflict, transfer/child와 Audit Explorer 흐름을 포함한다. Strict audit failure injection은 별도 backend integration gate에서 검증한다. 상세 발표 순서는 [포트폴리오 demo scenario](docs/portfolio/demo-scenario.md)에 있다.
 
-기동과 health 응답만 재현하려면 다음을 사용합니다. 이 명령은 검증 후 컨테이너와 named volume을 정리합니다.
+## 대화형 로컬 데모
+
+Compose에 포함된 기본 DB password와 암호화/signing key는 **로컬 개발 전용 공개값**이다. 직원 화면까지 사용할 때는 저장소 밖의 mode `0600` 파일에 12~128자 임시 ADMIN 비밀번호를 넣고 최초 한 번만 bootstrap한다.
 
 ```bash
-bash scripts/compose-smoke.sh
+install -m 600 /dev/null /tmp/deskseed-first-admin.secret
+# /tmp/deskseed-first-admin.secret에 고유한 12~128자 비밀번호를 입력한다.
+
+DESKSEED_BOOTSTRAP_ADMIN_ENABLED=true \
+DESKSEED_BOOTSTRAP_ADMIN_EMAIL=admin@example.test \
+DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME='Deskseed Admin' \
+DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE=/tmp/deskseed-first-admin.secret \
+DESKSEED_RUNTIME_USER="$(id -u):$(id -g)" \
+  docker compose up --build --detach
+
+curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health
+curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 ```
 
-### 로컬 개발
+`DESKSEED_RUNTIME_USER`는 Linux의 file-backed Compose secret가 host의 `0600` 권한을 그대로 유지하기 때문에 필요하다. 이 bootstrap 명령은 root가 아닌 계정에서 실행해야 한다.
 
-PostgreSQL만 실행:
+- 고객: `http://127.0.0.1:5173/requests/new`
+- 직원 로그인: `http://127.0.0.1:5173/agent/login`
+- ADMIN: `http://127.0.0.1:5173/admin/staff`, `/admin/groups`
+- Agent: `http://127.0.0.1:5173/agent/views/my-open`, `/agent/search`
+- Audit Explorer: `http://127.0.0.1:5173/audit/activity`
+- Backend health: `http://127.0.0.1:8080/actuator/health`
+
+첫 로그인 후 bootstrap 환경 변수를 다시 주입하지 말고 backend를 재생성한 다음 임시 비밀번호 파일을 안전하게 삭제한다. 직원이 이미 있는 DB에서 bootstrap은 기존 계정을 변경하지 않는다.
 
 ```bash
-docker compose up -d db
+docker compose up --detach --force-recreate backend
 ```
 
-Backend:
+데모 데이터까지 삭제하려면 아래 명령을 사용한다. `--volumes`는 로컬 PostgreSQL named volume도 제거한다.
 
 ```bash
+docker compose down --volumes --remove-orphans
+```
+
+기본 `compose.yaml`은 로컬 개발 topology이며 TLS나 migration/runtime split-role 배포 wiring을 제공하지 않는다. 저장소의 실행 가능한 split-role 증거는 격리된 operations rehearsal overlay이고, 운영자별 production manifest는 이 릴리스에 포함되지 않는다. 장기 실행 경계와 정확한 한계는 [self-hosted operations runbook](docs/36-self-hosted-operations-runbook.md)을 먼저 확인한다.
+
+## 개발과 검증 명령
+
+PostgreSQL만 띄운 뒤 backend/frontend를 직접 실행할 수 있다.
+
+```bash
+docker compose up --detach db
+
 cd backend
 ./gradlew bootRun
 ```
 
-Frontend:
+별도 terminal:
 
 ```bash
 cd frontend
@@ -94,88 +117,87 @@ npm ci
 npm run dev
 ```
 
-### 최초 ADMIN bootstrap
+주요 검증은 저장소 root에서 실행한다.
 
-최초 관리자 비밀번호는 환경 변수나 저장소 파일에 넣지 않고, 저장소 밖의 접근 제한된 파일을 Compose secret으로 마운트해 전달합니다. 비어 있는 DB에서 한 번만 동작하며 직원 계정이 하나라도 있으면 기존 계정을 변경하지 않습니다.
+| 목적 | 명령 |
+| --- | --- |
+| 문서 + backend + frontend 기본 gate | `make check` |
+| Docker Compose health smoke | `make compose-smoke` |
+| Core/Audit 실제 stack E2E | `bash scripts/run-release-e2e.sh` |
+| 1280/1440/1920 visual, axe, keyboard | `cd frontend && PLAYWRIGHT_BROWSER=chromium npm run test:e2e:dev` |
+| Firefox/WebKit 기능·axe·keyboard smoke | `cd frontend && npx playwright install firefox webkit && PLAYWRIGHT_BROWSER=firefox npm run test:e2e:dev && PLAYWRIGHT_BROWSER=webkit npm run test:e2e:dev` |
+| fresh install, V11→latest, role, backup/restore | `./scripts/run-operations-rehearsal.sh --smoke` |
+| 무캐시 운영 rehearsal과 외부 evidence 파일 | `./scripts/run-operations-rehearsal.sh --evidence-file /tmp/deskseed-operations-evidence.md` |
+| 작은 성능 harness | `bash scripts/run-release-performance.sh --scale smoke` |
+| 100k Customer / 1M Ticket release fixture | `bash scripts/run-release-performance.sh --scale release` |
 
-```bash
-install -m 600 /dev/null /absolute/path/outside-repository/deskseed-first-admin.secret
-# 위 파일에 12~128자의 초기 비밀번호를 입력합니다.
+Release performance run의 host repository-filesystem guard는 최소 16 GiB 여유 공간을 요구한다. 별도 Docker data-root filesystem이나 Docker Desktop VM quota는 이 guard가 측정하지 않으므로 같은 headroom을 별도로 확인해야 한다. fixture는 100,000 Customers, 1,000,000 Tickets, 2,000,000 Comments와 별도 change/access/admin audit/projection rows를 생성한다. 실행 여부와 수치를 README 문구로 추정하지 말고 [성능 evidence](docs/evidence/release/performance/README.md)에서 확인한다.
+축소된 smoke profile은 harness 검증일 뿐 release-scale `PERF-001`/`PERF-002` 통과 근거가 아니다.
 
-# .env에는 비밀번호 값이 아니라 아래의 비밀 파일 경로만 둡니다.
-DESKSEED_BOOTSTRAP_ADMIN_ENABLED=true
-DESKSEED_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
-DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME=최초 관리자
-DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE=/absolute/path/outside-repository/deskseed-first-admin.secret
+## 기술과 구조
 
-docker compose up --build
-```
+- Backend: Java 21, Kotlin 2.4.10, Spring Boot 4.1.0, Spring MVC/Security/JPA/Modulith
+- Data: PostgreSQL 17, Flyway 12.4.0, Hibernate `ddl-auto=validate`
+- Frontend: React 18.3.1, TypeScript 5.9.3, Vite 8.2.1, TanStack Query, React Router
+- UI: Garden 9.15.7 primitives를 Deskseed-owned wrapper와 독립 branding 뒤에서 사용
+- Runtime: Java 21 JRE backend + Nginx frontend + PostgreSQL의 Docker Compose 단일 인스턴스
 
-첫 로그인 성공 후 `DESKSEED_BOOTSTRAP_ADMIN_ENABLED=false`로 되돌리고 비밀번호 파일을 안전하게 삭제합니다. 부분 설정, 잘못된 이메일, 일반 파일이 아닌 경로, 12자 미만 또는 128자 초과 비밀번호는 기동을 실패시킵니다. 비밀번호 원문은 API 응답·감사·애플리케이션 로그에 기록되지 않습니다.
+Backend는 Spring Modulith 기반 모듈러 모놀리스다. HTTP adapter, application transaction, domain invariant, persistence I/O의 책임을 분리하고 `ApplicationModules.verify()`로 경계를 검사한다. Flyway가 schema를 소유하며 application production profile은 migration/runtime credential을 분리해 받을 수 있다. 이를 배포하는 일반 production Compose manifest는 아직 제공하지 않는다.
 
-### Agent View cursor signing key
+주요 설계의 이유와 구현 상태는 [ADR index](docs/portfolio/adr-index.md), AI 제안과 인간 결정의 경계는 [AI assistance and human decisions](docs/portfolio/ai-and-human-decisions.md)에 있다.
 
-상담사 View cursor는 HMAC으로 서명합니다. production profile에서는 `DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY`에 32 bytes 이상인 별도 비밀값을 설정해야 기동합니다. 예를 들어 `openssl rand -base64 48`으로 생성한 값을 외부 secret manager에 보관하고 환경 변수로 주입합니다. `DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID`는 현재 발급 키를 식별하며, 키를 교체할 때 이전 key ID와 비밀값을 설정에 잠시 유지해 기존 cursor를 읽을 수 있게 합니다. 로컬 Compose의 기본값은 개발 전용이며 배포에 사용하면 안 됩니다.
+## API와 계약의 경계
 
-### Access/search audit encryption key
+- [`api/openapi-v1.yaml`](api/openapi-v1.yaml): 현재 구현된 고객 문의 접수/조회 API 계약
+- [`api/core-api-outline-v1.yaml`](api/core-api-outline-v1.yaml): Customer/Agent/Admin/Audit v0.6 계약 outline; runtime 완료 여부는 코드와 release evidence로 판단
+- [`api/platform-api-outline-v1.yaml`](api/platform-api-outline-v1.yaml): 후속 Platform API blueprint; 현재 endpoint가 아님
+- [`api/api-surface-catalog-v0.6.yaml`](api/api-surface-catalog-v0.6.yaml), [`api/ui-route-catalog-v0.6.yaml`](api/ui-route-catalog-v0.6.yaml): 전체 계획 surface와 상태 catalog
 
-상담사 검색 원문은 URL이나 평문 DB 열에 저장하지 않고, event ID와 목적을 associated data로 묶은 authenticated ciphertext로 저장합니다. production profile에서 access audit이 켜져 있으면 `DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION`과 그 버전의 32-byte base64 키(현재 `DESKSEED_ACCESS_AUDIT_KEY_V1`)가 필수이며, 누락·오형식은 startup/readiness를 실패시킵니다. `openssl rand -base64 32`로 생성한 값을 외부 secret manager에서 주입하고 저장소·로그에 넣지 마세요.
-
-원문 ciphertext의 기본 보존은 30일입니다. `DESKSEED_ACCESS_AUDIT_QUERY_CIPHERTEXT_RETENTION`으로 새 이벤트의 만료 시각을 설정하고, bounded retention job의 batch/interval은 `DESKSEED_ACCESS_AUDIT_RETENTION_BATCH_SIZE`와 `DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INTERVAL`로 조정합니다. 키 교체 시 active version을 올리되 아직 보존 중인 ciphertext의 이전 version key는 만료 전까지 keyring에 유지해야 합니다.
-
-## 검증
-
-```bash
-make docs-check
-make backend-test
-make frontend-check
-make compose-smoke
-```
-
-`make docs-check`는 `python3 scripts/validate_documentation.py --write`로 문서와 계약을 검사하고,
-생성된 보고서가 최신 상태인지 확인합니다.
-
-## 구현된 API
-
-```http
-POST /api/v1/requests
-GET  /api/v1/requests/{ticketNumber}
-GET  /api/v1/agent/csrf
-POST /api/v1/agent/session
-DELETE /api/v1/agent/session
-GET  /api/v1/agent/me
-GET/POST/DELETE  /api/v1/admin/staff[/{staffId}]
-GET/POST/PATCH/DELETE /api/v1/admin/groups[/{groupId}]
-GET/POST/DELETE /api/v1/admin/groups/{groupId}/members[/{staffId}]
-```
-
-조회 API에는 생성 응답에서 받은 키가 필요합니다.
+고객 조회는 생성 응답에서 한 번 반환된 token을 URL이 아닌 header로 보낸다.
 
 ```http
 X-Request-Access-Token: <opaque-token>
 ```
 
-명세는 [`api/openapi-v1.yaml`](api/openapi-v1.yaml)에 있습니다. 서버가 실행 중이면 `./scripts/demo-request.sh`로 첫 세로 기능을 확인할 수 있습니다.
+원문 token은 DB에 저장하지 않고 hash만 보존하며 기본 TTL은 30일이다. 이메일 소유권 검증, 재발급·폐기 UI와 고객 계정은 아직 제공하지 않는다.
 
-직원 변경 API는 ADMIN 세션과 CSRF 토큰을 모두 요구합니다. 관리자 UI는 `http://localhost:5173/admin/staff`와 `/admin/groups`, 직원 로그인은 `/agent/login`입니다.
+## 보안·운영 경계
 
-## 보안상 중요한 현재 한계
+- 직원 인증은 server-side password session, CSRF, idle/absolute expiry와 DB 기반 login throttle을 사용한다. password reset, MFA, SSO/OIDC는 없다.
+- 검색 원문은 authenticated ciphertext와 key version으로 보존하고 기본 30일 후 bounded retention job이 ciphertext만 삭제한다. routine audit UI에는 내용 비보존 표식과 keyed fingerprint를 사용한다.
+- runtime DB role은 canonical ledger의 `UPDATE`/`DELETE`와 schema DDL을 거부하도록 구성할 수 있다. DB owner/superuser까지 막거나 외부 변조를 증명하는 signed checkpoint는 없다.
+- Compose는 TLS reverse proxy, production secret manager, email ownership, CAPTCHA, 계층형 abuse control, 중앙 log/alert를 제공하지 않는다.
+- 공용 인터넷 배포는 위 통제와 [남은 security findings](docs/evidence/release/security/security-scan.md)를 운영 책임자가 해결·수용하기 전까지 지원하지 않는다.
+- application log/evidence에는 password, token, Authorization header, session cookie, comment body와 raw search query를 남기지 않는다.
 
-M1 조회 키는 학습과 세로 기능 검증을 위한 **opaque bearer token**입니다. 원문은 한 번만 반환되고 DB에는 SHA-256 해시만 저장하지만, 이메일 소유권 검증·만료·재발급·폐기 UI·rate limit·CAPTCHA는 아직 없습니다. 실제 공개 배포 전에는 `docs/05-roadmap.md`의 P1을 먼저 완료해야 합니다.
+운영 rehearsal의 정확한 upgrade/rollback 한계, RPO/RTO 해석과 복구 순서는 [operations runbook](docs/36-self-hosted-operations-runbook.md)에 있다. 자동화 결과만으로 인간 screen-reader/visual 승인이나 production readiness를 주장하지 않는다.
+Flyway migration은 forward-only이며 자동 down migration이 없다. 이번 릴리스는 이전 tagged binary와 최신 schema의 호환성을 검증하지 않았으므로 image만 되돌리는 rollback도 지원한다고 주장하지 않는다.
 
-직원 인증은 현재 단일 설치 인스턴스의 email/password 세션만 지원합니다. 비밀번호 재설정 메일, MFA, SSO/OIDC와 운영용 secret/KMS provisioning은 아직 제공하지 않습니다. 인터넷 공개 전에는 HTTPS reverse proxy, production profile의 `Secure` cookie, 좁은 CORS origin, 외부 secret 관리와 상위 계층 rate limit을 운영자가 구성해야 합니다.
+## 릴리스 근거
 
-## 저장소 상태 표기
+- [전체 gate 요약](docs/evidence/release/verification-summary.md)
+- [security scan과 finding disposition](docs/evidence/release/security/security-scan.md)
+- [dependency, advisory, license와 repository-security baseline](docs/evidence/release/supply-chain/baseline.md)
+- [performance fixture, raw plans와 측정 경계](docs/evidence/release/performance/README.md)
+- [install/upgrade/backup/restore evidence](docs/evidence/release/operations/README.md)
+- [visual/axe/keyboard 검토 기록](docs/evidence/release/ui/automated-and-visual-review.md)
+- [release evidence 생성·보존 규칙](docs/evidence/release/README.md)
 
-- `Implemented`: 현재 코드와 테스트가 존재함
-- `Specified`: 요구사항·API·도메인 규칙이 문서로 고정됨
-- `Planned`: 방향만 정했고 구현 시 ADR/PRD를 갱신해야 함
+Evidence에는 명령, 환경, 결과와 한계를 함께 남긴다. `NOT RUN`이나 `LIMITED`는 `PASS`가 아니며, flaky test를 재실행 횟수로 숨기지 않는다.
 
-현재 정확한 구현 경계는 [`docs/15-seed-status.md`](docs/15-seed-status.md)에, 첫 구현 순서는 [`docs/14-execution-backlog.md`](docs/14-execution-backlog.md)에 있습니다.
+## 문서 읽는 순서
 
-기능을 README 문구만으로 완료 처리하지 않습니다. 수용 기준, 테스트, API 명세, 마이그레이션이 함께 있어야 합니다.
+1. [현재 구현 경계](docs/15-seed-status.md)
+2. [요구사항 추적](docs/26-requirement-traceability.md)
+3. [현재 릴리스 architecture](docs/portfolio/architecture.md)와 [ADR index](docs/portfolio/adr-index.md)
+4. [minimum verification gates](docs/21-minimum-verification-gates.md)
+5. [release evidence](docs/evidence/release/README.md)
+6. [제품 charter](docs/00-product-charter.md), [MVP PRD](docs/01-prd-mvp.md), [domain model](docs/02-domain-model.md), [장기 architecture](docs/03-architecture.md)
+
+문서·계약 구조는 `make docs-check`로 검증한다. 이 validator는 runtime 동작을 대신하지 않는다.
 
 ## 라이선스
 
-아직 라이선스를 의도적으로 선택하지 않았습니다. 공개 저장소로 배포하기 전에 [`docs/13-license-decision.md`](docs/13-license-decision.md)를 검토하고 `LICENSE`를 추가해야 합니다.
-프런트에 포함되는 Garden과 직접 의존성의 고지는 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)에 남깁니다.
+Deskseed 자체 라이선스는 아직 선택되지 않았고 root `LICENSE`가 없다. 공개 열람이 곧 재사용·수정·재배포 허가를 뜻하지 않는다. 프로젝트 소유자가 배포 조건을 결정하기 전까지 오픈소스 또는 MIT/Apache 라이선스 프로젝트라고 주장하지 않는다.
+
+직접 frontend runtime 의존성과 Garden 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), 전체 dependency/license inventory와 알려진 한계는 [supply-chain baseline](docs/evidence/release/supply-chain/baseline.md)에 기록한다. 이는 법률 자문이 아니다.

@@ -27,6 +27,7 @@ REQUIRED_TOP = {
     "CHANGELOG-v0.6.md",
     "AGENTS.md",
     "CODEX_TASK_TEMPLATE.md",
+    "SECURITY.md",
 }
 REQUIRED_MACHINE = {
     "api/core-api-outline-v1.yaml",
@@ -65,6 +66,7 @@ MANIFEST_ROOT_FILES = {
     "CODEX_TASK_TEMPLATE.md",
     "IMPLEMENTATION-START-HERE.md",
     "README.md",
+    "SECURITY.md",
 }
 MANIFEST_DIRECTORIES = {"api", "checklists", "db", "design", "docs", "scripts", "tasks"}
 

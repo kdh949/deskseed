@@ -162,13 +162,20 @@ python3 -c \
 아래 명령은 base Compose로 확인할 수 있는 로컬 fresh-restore 패턴이다. Production에서는 기존 DB를 제자리에서 덮어쓰지 말고 operator-owned deployment manifest의 새 database/volume에 적용해야 하며, 그 manifest는 이 저장소에 포함되지 않는다.
 
 ```bash
-docker compose --project-name deskseed-restore up --detach db
+deskseed_restore_project="deskseed-restore-$(python3 -c \
+  'import secrets; print(secrets.token_hex(10))')"
 
-docker compose --project-name deskseed-restore exec -T db \
+docker compose --project-name "$deskseed_restore_project" \
+  up --detach --wait db
+
+docker compose --project-name "$deskseed_restore_project" exec -T db \
   sh -eu -c 'pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     --no-owner --no-privileges' \
   < /tmp/deskseed-pre-upgrade.dump
 ```
+
+매 rehearsal은 위처럼 새 cryptographic project 이름과 새 project-scoped volume을
+사용한다. 기존 project 이름을 재사용하거나 readiness 전에 restore하지 않는다.
 
 Rehearsal은 그 다음 default startup privilege와 runtime role 권한을 모두 다시 구성하고 `verify-runtime-role.sql`과 실제 Flyway history UPDATE denial을 통과한 뒤 application을 시작한다. `pg_dump --no-privileges`는 source의 ACL/default privilege 보존을 전제로 하지 않으므로 이 단계는 생략할 수 없다. Restore 검증 순서는 다음과 같다.
 
