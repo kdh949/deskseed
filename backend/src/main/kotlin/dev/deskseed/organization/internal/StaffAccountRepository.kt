@@ -10,5 +10,4 @@ internal interface StaffAccountRepository : JpaRepository<StaffAccountEntity, UU
 
     fun countByRoleAndStatus(role: StaffRole, status: StaffStatus): Long
 
-    fun findAllByOrderByDisplayNameAscIdAsc(): List<StaffAccountEntity>
 }

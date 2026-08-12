@@ -106,7 +106,7 @@
 | REQ-AUT-002 | 시간 경과 기반 automation을 제공한다 | BLUEPRINT_READY | P4 | 12, 45 | AUT-009 |
 | REQ-EXP-001 | 티켓 상세·변경 이력·필터 결과를 추출한다 | BLUEPRINT_READY | P5 | 18, 20, 30, 46 | ANA-007, EXP-001/002 |
 | REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | IMPLEMENTATION_READY | P6/P9 | 03, 11, 47 | frozen POST search contract, parameterized PostgreSQL authorized query, exact count/stable sort, fixed 2-SQL query-count test, component+real-stack E2E |
-| REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35 | `docs/performance/audit-explorer-1m-query-plan.md`: PostgreSQL 100만 행 first/actor/ticket/action `EXPLAIN (ANALYZE, BUFFERS)` 및 index 저장 비용 |
+| REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35, 39 | release fixture/query-plan evidence와 `AdminOrganizationIntegrationTest`의 100-row max page, staff/group/member row 증가 전후 동일 SQL statement count(각 10 이하) |
 
 
 ## 8. 티켓 구성·파일·채널·확장 기능

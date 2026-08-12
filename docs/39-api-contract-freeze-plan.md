@@ -133,7 +133,8 @@ RFC Problem Details + extensions:
 - cursor opaque and signed/versioned.
 - response `nextCursor`.
 - sort tuple documented.
-- offset pagination은 small admin lists에만 선택적으로 사용.
+- small admin lists는 optional zero-based `page`와 bounded `size`를 사용한다.
+- 기존 array body 호환성을 유지하면서 `X-Page-Number`, `X-Page-Size`, `X-Total-Count`, `X-Total-Pages`로 navigation metadata를 반환한다.
 
 ## 8. Compatibility
 

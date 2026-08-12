@@ -1,7 +1,11 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.organization.OrganizationAdministration
+import dev.deskseed.organization.StaffRole
+import jakarta.persistence.EntityManagerFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.hibernate.SessionFactory
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -22,19 +26,23 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
-import dev.deskseed.organization.OrganizationAdministration
-import dev.deskseed.organization.StaffRole
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
+@SpringBootTest(
+    properties = [
+        "deskseed.staff-auth.bootstrap.enabled=false",
+        "spring.jpa.properties.hibernate.generate_statistics=true",
+    ],
+)
 @AutoConfigureMockMvc
 @Testcontainers
 class AdminOrganizationIntegrationTest {
@@ -47,9 +55,12 @@ class AdminOrganizationIntegrationTest {
     @Autowired
     private lateinit var administration: OrganizationAdministration
 
+    @Autowired
+    private lateinit var entityManagerFactory: EntityManagerFactory
+
     @BeforeEach
     fun clearState() {
-        jdbcTemplate.execute("truncate table admin_security_audit_events")
+        jdbcTemplate.execute("truncate table staff_authority_grants, admin_security_audit_events")
         jdbcTemplate.update("delete from request_access_tokens")
         jdbcTemplate.update("delete from ticket_comments")
         jdbcTemplate.update("delete from tickets")
@@ -97,6 +108,99 @@ class AdminOrganizationIntegrationTest {
         } finally {
             SecurityContextHolder.clearContext()
         }
+    }
+
+    @Test
+    fun `admin list endpoints are bounded and expose page metadata`() {
+        insertStaff("paged-admin@example.com", "Paged admin password 42", "ADMIN")
+        val browser = login("paged-admin@example.com", "Paged admin password 42")
+        val staffIds = (1..6).map { index ->
+            insertStaff("paged-agent-$index@example.com", "Paged agent password 42", "AGENT")
+        }
+        val groupIds = (1..6).map { index -> insertGroup("페이지 그룹 $index") }
+        staffIds.forEach { staffId -> insertMembership(groupIds.first(), staffId) }
+
+        mockMvc.perform(get("/api/v1/admin/staff?page=0&size=3").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(3))
+            .andExpect(header().string("X-Page-Number", "0"))
+            .andExpect(header().string("X-Page-Size", "3"))
+            .andExpect(header().string("X-Total-Count", "7"))
+            .andExpect(header().string("X-Total-Pages", "3"))
+
+        mockMvc.perform(get("/api/v1/admin/groups?page=1&size=2").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(header().string("X-Page-Number", "1"))
+            .andExpect(header().string("X-Page-Size", "2"))
+            .andExpect(header().string("X-Total-Count", "6"))
+            .andExpect(header().string("X-Total-Pages", "3"))
+
+        mockMvc.perform(
+            get("/api/v1/admin/groups/{groupId}/members?page=0&size=4", groupIds.first())
+                .session(browser.session),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(4))
+            .andExpect(header().string("X-Total-Count", "6"))
+            .andExpect(header().string("X-Total-Pages", "2"))
+
+        mockMvc.perform(get("/api/v1/admin/staff?size=101").session(browser.session))
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `admin list query counts stay constant as rows grow`() {
+        val adminId = insertStaff("query-admin@example.com", "Query admin password 42", "ADMIN")
+        val browser = login("query-admin@example.com", "Query admin password 42")
+        val groupIds = (1..6).map { index -> insertGroup("쿼리 그룹 ${index.toString().padStart(2, '0')}") }
+        val staffIds = (1..6).map { index ->
+            insertStaff("query-agent-$index@example.com", "Query agent password 42", "AGENT")
+        }
+        (staffIds + adminId).forEach { staffId -> insertMembership(groupIds.first(), staffId) }
+
+        val initialStaffQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/staff?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val initialGroupQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/groups?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val initialMemberQueries = queryCount {
+            mockMvc.perform(
+                get("/api/v1/admin/groups/{groupId}/members?page=0&size=5", groupIds.first())
+                    .session(browser.session),
+            ).andExpect(status().isOk)
+        }
+
+        val addedStaffIds = (7..26).map { index ->
+            insertStaff("query-agent-$index@example.com", "Query agent password 42", "AGENT")
+        }
+        addedStaffIds.forEach { staffId -> insertMembership(groupIds.first(), staffId) }
+        (7..26).forEach { index -> insertGroup("쿼리 그룹 ${index.toString().padStart(2, '0')}") }
+
+        val expandedStaffQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/staff?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val expandedGroupQueries = queryCount {
+            mockMvc.perform(get("/api/v1/admin/groups?page=0&size=5").session(browser.session))
+                .andExpect(status().isOk)
+        }
+        val expandedMemberQueries = queryCount {
+            mockMvc.perform(
+                get("/api/v1/admin/groups/{groupId}/members?page=0&size=5", groupIds.first())
+                    .session(browser.session),
+            ).andExpect(status().isOk)
+        }
+
+        assertThat(expandedStaffQueries).isEqualTo(initialStaffQueries)
+        assertThat(expandedGroupQueries).isEqualTo(initialGroupQueries)
+        assertThat(expandedMemberQueries).isEqualTo(initialMemberQueries)
+        assertThat(initialStaffQueries).isLessThanOrEqualTo(10)
+        assertThat(initialGroupQueries).isLessThanOrEqualTo(10)
+        assertThat(initialMemberQueries).isLessThanOrEqualTo(10)
     }
 
     @Test
@@ -352,6 +456,36 @@ class AdminOrganizationIntegrationTest {
             groupId,
             staffId,
         )
+    }
+
+    private fun insertGroup(name: String): UUID = UUID.randomUUID().also { id ->
+        jdbcTemplate.update(
+            """
+            insert into support_groups (id, name, status, created_at, updated_at)
+            values (?, ?, 'ACTIVE', now(), now())
+            """.trimIndent(),
+            id,
+            name,
+        )
+    }
+
+    private fun insertMembership(groupId: UUID, staffId: UUID) {
+        jdbcTemplate.update(
+            """
+            insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at)
+            values (?, ?, ?, 'ACTIVE', now(), now())
+            """.trimIndent(),
+            UUID.randomUUID(),
+            groupId,
+            staffId,
+        )
+    }
+
+    private fun queryCount(action: () -> Unit): Long {
+        val statistics = entityManagerFactory.unwrap(SessionFactory::class.java).statistics
+        statistics.clear()
+        action()
+        return statistics.prepareStatementCount
     }
 
     private fun login(email: String, password: String): Browser {

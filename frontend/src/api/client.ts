@@ -9,6 +9,7 @@ import type {
   AgentTicketSearchInput,
   AgentTicketSearchPage,
   AgentTicketSummary,
+  AdminListPage,
   AuditActivity,
   AuditActivityDetail,
   AuditActivityFilters,
@@ -691,13 +692,18 @@ export async function getCurrentStaff(
   return decoded
 }
 
-export async function listStaff(): Promise<StaffAccount[]> {
-  const response = await staffFetch('/api/v1/admin/staff')
+export async function listStaff(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<StaffAccount>> {
+  const response = await staffFetch(
+    `/api/v1/admin/staff?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeStaffAccount)
   if (decoded.some((staff) => !staff)) throw malformedSuccess(response)
-  return decoded as StaffAccount[]
+  return decodeAdminListPage(response, decoded as StaffAccount[], page, size)
 }
 
 export async function createStaff(
@@ -739,13 +745,18 @@ export async function revokeStaffAuditAuthority(
   )
 }
 
-export async function listGroups(): Promise<SupportGroup[]> {
-  const response = await staffFetch('/api/v1/admin/groups')
+export async function listGroups(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<SupportGroup>> {
+  const response = await staffFetch(
+    `/api/v1/admin/groups?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeSupportGroup)
   if (decoded.some((group) => !group)) throw malformedSuccess(response)
-  return decoded as SupportGroup[]
+  return decodeAdminListPage(response, decoded as SupportGroup[], page, size)
 }
 
 export async function createGroup(name: string): Promise<SupportGroup> {
@@ -779,14 +790,59 @@ export async function disableGroup(groupId: string): Promise<void> {
 
 export async function listGroupMembers(
   groupId: string,
-): Promise<GroupMembership[]> {
-  const response = await staffFetch(`/api/v1/admin/groups/${groupId}/members`)
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<GroupMembership>> {
+  const response = await staffFetch(
+    `/api/v1/admin/groups/${groupId}/members?page=${page}&size=${size}`,
+  )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)
   const decoded = body.map(decodeMembership)
   if (decoded.some((membership) => !membership))
     throw malformedSuccess(response)
-  return decoded as GroupMembership[]
+  return decodeAdminListPage(response, decoded as GroupMembership[], page, size)
+}
+
+function decodeAdminListPage<T>(
+  response: Response,
+  items: T[],
+  requestedPage: number,
+  requestedSize: number,
+): AdminListPage<T> {
+  const headerValues = [
+    response.headers.get('X-Page-Number'),
+    response.headers.get('X-Page-Size'),
+    response.headers.get('X-Total-Count'),
+    response.headers.get('X-Total-Pages'),
+  ]
+  if (headerValues.every((value) => value === null)) {
+    return {
+      items,
+      page: requestedPage,
+      size: requestedSize,
+      totalCount: items.length,
+      totalPages: items.length === 0 ? 0 : requestedPage + 1,
+    }
+  }
+  const values = headerValues.map((value) =>
+    value !== null && /^\d+$/.test(value) ? Number(value) : Number.NaN,
+  )
+  const page = values[0]!
+  const size = values[1]!
+  const totalCount = values[2]!
+  const totalPages = values[3]!
+  if (
+    values.some((value) => !Number.isSafeInteger(value)) ||
+    page < 0 ||
+    size < 1 ||
+    size > 100 ||
+    totalCount < 0 ||
+    totalPages < 0
+  ) {
+    throw malformedSuccess(response)
+  }
+  return { items, page, size, totalCount, totalPages }
 }
 
 export async function addGroupMember(

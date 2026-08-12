@@ -2,11 +2,11 @@ eefc53d5785a737c0a188604c727d9724363866e2b49d7ab1ff2c88efd0a8403        7842  AG
 f956527caf42b43922c62be6666e67d07c2a46e7dbaa9987d0aa327e4321cb5a        6907  CHANGELOG-v0.6.md
 b75b745d628fc422bba128c48b7833fd6f79f94dfa5d47210248a1875f4560a4        2426  CODEX_TASK_TEMPLATE.md
 e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IMPLEMENTATION-START-HERE.md
-4a3551d4216a2e6176d8f0830cb8424484ce751ba00c0e88a39061971b7bb81e       15922  README.md
+9f3c3d24e67fc7680441e784052762489cd4e3ef64904120009baa1f80e216de       15952  README.md
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 607978a57219571ef2b32084db639c280a1844ad7f2a8545206bec7619b8963c        4016  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-7d2022ec7fa522b3e5d0967389a32c719753415064a427f5cfbc905fa325107c      113342  api/core-api-outline-v1.yaml
+f27a30753fd480d48766eea31cba4e8d1563ebee27ff7d9738f95067b690948f      115731  api/core-api-outline-v1.yaml
 72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -47,7 +47,7 @@ d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  do
 6b62524e1f8718a09bbd30a1e9696b0a288ddd02a679c68c114db626e4aee179        7343  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 5d8f72af4ffcfd6bf429615f5b32ee17a981a7e5fad6dc54f77c06f88bd11e79        8070  docs/25-implementation-decision-register.md
-c6ef224e53d428095d5bb311ff1286eec4d622079a7f20aeb8706ebb0b377bbf       18279  docs/26-requirement-traceability.md
+35e74b95d101e3215c85edd4fa233877b49435f5c05c8351a0f2ec4ec4067f5d       18304  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  docs/28-frontend-product-and-information-architecture.md
 54f95cb71d8d951e208f3ed2e33d798e2b39e05bedd20402ef4b61ffa5f8d494        6900  docs/29-zendesk-inspired-design-system.md
@@ -60,7 +60,7 @@ dd3b8fa4e2bd54d6d4ad24ddd0145b23c572349df9745413be3935d85451bfac        6640  do
 2b354a81041ebb5e4ec385225583167b8ae995d54df12551e1aeccba8d2a34d0       18580  docs/36-self-hosted-operations-runbook.md
 56f7811dc8d6966bdd485e03899eb12abc59a636d893961260ca7ce01f007b3a        3374  docs/37-customer-portal-and-identity-blueprint.md
 d656e849bc6bdd8ea351c609e20a642bd6bd3306be5e638621722c8425a0c1ce        4936  docs/38-post-mvp-capability-blueprints.md
-2364e1cecf2d645ffd5f8a661f04cf64f17fe8840402216bbe1f00a027ab8a34        4393  docs/39-api-contract-freeze-plan.md
+925b563caa03a23952ef26a088226a403c22e9397a938ad52d003cd0810f7fd4        4561  docs/39-api-contract-freeze-plan.md
 177d68c1096cda5f9de585f3ecf4fd04d464e1fab83869f2b5fd6385c831b2cc        6495  docs/40-frontend-visual-regression-and-accessibility.md
 124ed38dfc46f153f2fefcaef669f79aa7072a24bf9029b4502943f8ab340e8f        2312  docs/41-feature-implementation-dependency-map.md
 5980d939e7a55e7d5173c46f79c59f8f873ba9bd14c4053b469030c0794ee44c        4603  docs/42-zendesk-frontend-research.md
@@ -118,7 +118,7 @@ eb8fd5cb2d295e6e988b35fe88ad39a2f475b9e3357f7014556a3901eba656a9        2326  do
 35d6ff0b3a7790b15a4c71750b0397a0af139a32f66eb9b3abe8ad942d10e113        4379  docs/evidence/release/operations/2026-08-12-macos-arm64-cleanup-smoke.md
 b1db656e42be6f7677fa693047181f064b358a257540c7ffca592176f1120ebf       12229  docs/evidence/release/operations/2026-08-12-macos-arm64-full.md
 d48e5968feeb6c5972ca71bc5872e2450ac5ecd502e4492e195747063afc2772        2891  docs/evidence/release/operations/README.md
-4a890b06fb43a2e5e759f1cdadee685bccdd385f3fdf52065687ff456455215d       11316  docs/evidence/release/performance/README.md
+ecdc37567d812ce9ee9be808152efd76b046a17c37fbaffa185ad7bf35bfd2f7       11948  docs/evidence/release/performance/README.md
 5c3e0a9e488f9fc9d30520386b59ce15a3e5e9b72332732028c73619803c3dda         428  docs/evidence/release/performance/release/access-audit-overhead.csv
 48fdce82a986ea50727ac8e172327aa29de6728b36ad6210c6809512b9966b48         139  docs/evidence/release/performance/release/candidate-indexes-create.log
 63a826d2d61efc5e7fbade7780ea67852f01bbe599b65386ccc9300a735dbe6c         133  docs/evidence/release/performance/release/candidate-indexes-drop.log

@@ -82,6 +82,14 @@ export interface StaffAccount {
   lastLoginAt: string | null
 }
 
+export interface AdminListPage<T> {
+  items: T[]
+  page: number
+  size: number
+  totalCount: number
+  totalPages: number
+}
+
 export interface SupportGroup {
   id: string
   name: string

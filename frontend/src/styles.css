@@ -2745,6 +2745,20 @@ textarea[aria-invalid='true'] {
   flex: 1;
 }
 
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.admin-pagination span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
 .group-list,
 .membership-list {
   display: grid;

@@ -9,6 +9,7 @@ import {
   isCurrentStaffSessionActorMismatch,
   loginStaff,
   listAgentViews,
+  listStaff,
   listTicketsInView,
   searchAgentTickets,
   setConfirmedStaffActor,
@@ -30,6 +31,64 @@ afterEach(() => {
   setConfirmedStaffActor(null)
   localStorage.removeItem('deskseed:staff-session:last-authenticated-staff:v1')
   vi.unstubAllGlobals()
+})
+
+describe('admin list API client', () => {
+  const staffRow = {
+    id: '11111111-1111-4111-8111-111111111111',
+    email: 'admin@example.com',
+    displayName: '관리자',
+    role: 'ADMIN',
+    status: 'ACTIVE',
+    memberships: [],
+    auditAuthorities: [],
+    lastLoginAt: null,
+  }
+
+  it('decodes bounded page metadata from response headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([staffRow]), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Page-Number': '2',
+          'X-Page-Size': '3',
+          'X-Total-Count': '8',
+          'X-Total-Pages': '3',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(listStaff(2, 3)).resolves.toEqual({
+      items: [staffRow],
+      page: 2,
+      size: 3,
+      totalCount: 8,
+      totalPages: 3,
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/admin/staff?page=2&size=3',
+      expect.any(Object),
+    )
+  })
+
+  it('fails closed when only part of the page metadata is present', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([staffRow]), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Page-Number': '0',
+          },
+        }),
+      ),
+    )
+
+    await expect(listStaff()).rejects.toBeInstanceOf(ApiError)
+  })
 })
 
 describe('customer request API client', () => {

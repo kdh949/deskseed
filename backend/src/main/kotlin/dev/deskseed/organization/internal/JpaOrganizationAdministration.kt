@@ -12,12 +12,16 @@ import dev.deskseed.organization.GrantableAuditAuthority
 import dev.deskseed.organization.OrganizationAdministration
 import dev.deskseed.organization.OrganizationConflictException
 import dev.deskseed.organization.OrganizationNotFoundException
+import dev.deskseed.organization.OrganizationPage
 import dev.deskseed.organization.OrganizationStatus
 import dev.deskseed.organization.StaffAccountView
 import dev.deskseed.organization.StaffRole
 import dev.deskseed.organization.StaffStatus
 import dev.deskseed.organization.SupportGroupView
 import dev.deskseed.ticketing.TicketAssignmentUsage
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -40,8 +44,41 @@ internal class JpaOrganizationAdministration(
 ) : OrganizationAdministration {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
-    override fun listStaff(): List<StaffAccountView> = staffRepository.findAllByOrderByDisplayNameAscIdAsc()
-        .map(::staffView)
+    override fun listStaff(page: Int, size: Int): OrganizationPage<StaffAccountView> {
+        val staffPage = staffRepository.findAll(pageRequest(page, size, "displayName", "id"))
+        val staffIds = staffPage.content.map(StaffAccountEntity::id)
+        val memberships = if (staffIds.isEmpty()) {
+            emptyList()
+        } else {
+            membershipRepository.findAllByStaffIdInAndStatus(staffIds, GroupMembershipStatus.ACTIVE)
+        }
+        val groupIds = memberships.map(GroupMembershipEntity::groupId).distinct()
+        val groupNames = groupRepository.findAllById(groupIds).associateBy(SupportGroupEntity::id)
+        val membershipsByStaff = memberships.groupBy(GroupMembershipEntity::staffId)
+        val authoritiesByStaff = if (staffIds.isEmpty()) {
+            emptyMap()
+        } else {
+            authorityGrantRepository.findAllByStaffIdInOrderByStaffIdAscAuthorityAsc(staffIds)
+                .groupBy(StaffAuthorityGrantEntity::staffId)
+        }
+        return staffPage.toOrganizationPage { staff ->
+            StaffAccountView(
+                id = staff.id,
+                email = staff.emailDisplay,
+                displayName = staff.displayName,
+                role = staff.role,
+                status = staff.status,
+                memberships = membershipsByStaff[staff.id].orEmpty()
+                    .sortedBy(GroupMembershipEntity::groupId)
+                    .mapNotNull { membership ->
+                        groupNames[membership.groupId]?.let { group -> GroupReference(group.id, group.name) }
+                    },
+                auditAuthorities = authoritiesByStaff[staff.id].orEmpty()
+                    .map(StaffAuthorityGrantEntity::authority),
+                lastLoginAt = staff.lastLoginAt,
+            )
+        }
+    }
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
@@ -177,8 +214,24 @@ internal class JpaOrganizationAdministration(
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
-    override fun listGroups(): List<SupportGroupView> = groupRepository.findAllByOrderByNameAscIdAsc()
-        .map(::groupView)
+    override fun listGroups(page: Int, size: Int): OrganizationPage<SupportGroupView> {
+        val groupPage = groupRepository.findAll(pageRequest(page, size, "name", "id"))
+        val groupIds = groupPage.content.map(SupportGroupEntity::id)
+        val memberCounts = if (groupIds.isEmpty()) {
+            emptyMap()
+        } else {
+            membershipRepository.countActiveMembersByGroupIds(groupIds, GroupMembershipStatus.ACTIVE)
+                .associate { it.groupId to it.memberCount }
+        }
+        return groupPage.toOrganizationPage { group ->
+            SupportGroupView(
+                id = group.id,
+                name = group.name,
+                status = group.status,
+                memberCount = memberCounts.getOrDefault(group.id, 0).toInt(),
+            )
+        }
+    }
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
@@ -250,12 +303,25 @@ internal class JpaOrganizationAdministration(
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
-    override fun listGroupMembers(groupId: UUID): List<GroupMembershipView> {
+    override fun listGroupMembers(
+        groupId: UUID,
+        page: Int,
+        size: Int,
+    ): OrganizationPage<GroupMembershipView> {
         activeGroup(groupId)
-        return membershipRepository.findAllByGroupIdAndStatusOrderByStaffIdAsc(
+        val membershipPage = membershipRepository.findAllByGroupIdAndStatus(
             groupId,
             GroupMembershipStatus.ACTIVE,
-        ).map(::membershipView)
+            pageRequest(page, size, "staffId"),
+        )
+        val staffById = staffRepository.findAllById(
+            membershipPage.content.map(GroupMembershipEntity::staffId),
+        ).associateBy(StaffAccountEntity::id)
+        return membershipPage.toOrganizationPage { membership ->
+            val staff = staffById[membership.staffId]
+                ?: throw OrganizationNotFoundException("STAFF_NOT_FOUND")
+            GroupMembershipView(membership.groupId, staff.id, staff.displayName, staff.role)
+        }
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -356,6 +422,20 @@ internal class JpaOrganizationAdministration(
         require(it.isNotEmpty() && it.length <= 100)
     }
 
+    private fun pageRequest(page: Int, size: Int, vararg properties: String): PageRequest {
+        require(page >= 0)
+        require(size in 1..MAX_ADMIN_PAGE_SIZE)
+        return PageRequest.of(page, size, Sort.by(properties.map(Sort.Order::asc)))
+    }
+
+    private fun <T : Any, R> Page<T>.toOrganizationPage(transform: (T) -> R): OrganizationPage<R> = OrganizationPage(
+        items = content.map(transform),
+        page = number,
+        size = size,
+        totalCount = totalElements,
+        totalPages = totalPages,
+    )
+
     private fun auditMembership(
         actor: AdminActorContext,
         membership: GroupMembershipEntity,
@@ -398,5 +478,9 @@ internal class JpaOrganizationAdministration(
                 occurredAt = now,
             ),
         )
+    }
+
+    private companion object {
+        const val MAX_ADMIN_PAGE_SIZE = 100
     }
 }

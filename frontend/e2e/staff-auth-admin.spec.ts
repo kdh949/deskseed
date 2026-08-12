@@ -21,6 +21,18 @@ function requireCsrf(route: Route) {
   expect(route.request().headers()['x-csrf-token']).toBe(CSRF_TOKEN)
 }
 
+function paginationHeaders(route: Route, totalCount: number) {
+  const url = new URL(route.request().url())
+  const page = Number(url.searchParams.get('page') ?? '0')
+  const size = Number(url.searchParams.get('size') ?? '50')
+  return {
+    'X-Page-Number': page.toString(),
+    'X-Page-Size': size.toString(),
+    'X-Total-Count': totalCount.toString(),
+    'X-Total-Pages': Math.ceil(totalCount / size).toString(),
+  }
+}
+
 async function expectNoAxeViolations(page: Page) {
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 }
@@ -198,7 +210,11 @@ test('admin creates staff and manages a group membership through the UI with CSR
       csrfWriteCount += 1
     }
     if (path === '/api/v1/admin/staff' && method === 'GET') {
-      return route.fulfill({ status: 200, json: staff })
+      return route.fulfill({
+        status: 200,
+        headers: paginationHeaders(route, staff.length),
+        json: staff,
+      })
     }
     if (path === '/api/v1/admin/staff' && method === 'POST') {
       const body = request.postDataJSON()
@@ -217,7 +233,11 @@ test('admin creates staff and manages a group membership through the UI with CSR
       return route.fulfill({ status: 201, json: created })
     }
     if (path === '/api/v1/admin/groups' && method === 'GET') {
-      return route.fulfill({ status: 200, json: groups })
+      return route.fulfill({
+        status: 200,
+        headers: paginationHeaders(route, groups.length),
+        json: groups,
+      })
     }
     if (path === '/api/v1/admin/groups' && method === 'POST') {
       const created = {
@@ -238,7 +258,11 @@ test('admin creates staff and manages a group membership through the UI with CSR
       return route.fulfill({ status: 204, body: '' })
     }
     if (path === '/api/v1/admin/groups/group-id/members' && method === 'GET') {
-      return route.fulfill({ status: 200, json: memberships })
+      return route.fulfill({
+        status: 200,
+        headers: paginationHeaders(route, memberships.length),
+        json: memberships,
+      })
     }
     if (path === '/api/v1/admin/groups/group-id/members' && method === 'POST') {
       const member = {
@@ -271,6 +295,9 @@ test('admin creates staff and manages a group membership through the UI with CSR
   await page.getByLabel('초기 비밀번호').fill('Temporary 42!pass')
   await page.getByRole('button', { name: '직원 추가' }).click()
   await expect(page.getByText('new-agent@example.com')).toBeVisible()
+  await expect(
+    page.getByRole('navigation', { name: '직원 목록 페이지' }),
+  ).toContainText('전체 2명')
   await expectNoAxeViolations(page)
 
   await page.getByRole('link', { name: '그룹' }).click()
@@ -279,6 +306,9 @@ test('admin creates staff and manages a group membership through the UI with CSR
   await expect(
     page.getByRole('heading', { name: '고객 지원 멤버십' }),
   ).toBeVisible()
+  await expect(
+    page.getByRole('navigation', { name: '그룹 목록 페이지' }),
+  ).toContainText('전체 1개')
   await page.getByLabel('직원 추가').selectOption('agent-id')
   await page.getByRole('button', { name: '멤버 추가' }).click()
   await expect(

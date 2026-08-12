@@ -36,11 +36,29 @@ describe('AdminStaffPage audit authorities', () => {
   it('shows explicit high-risk grants and lets an admin grant then revoke one', async () => {
     const user = userEvent.setup()
     apiMocks.listStaff
-      .mockResolvedValueOnce([auditor])
-      .mockResolvedValueOnce([
-        { ...auditor, auditAuthorities: ['AUDIT_SEARCH_QUERY_REVEAL'] },
-      ])
-      .mockResolvedValueOnce([auditor])
+      .mockResolvedValueOnce({
+        items: [auditor],
+        page: 0,
+        size: 20,
+        totalCount: 1,
+        totalPages: 1,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          { ...auditor, auditAuthorities: ['AUDIT_SEARCH_QUERY_REVEAL'] },
+        ],
+        page: 0,
+        size: 20,
+        totalCount: 1,
+        totalPages: 1,
+      })
+      .mockResolvedValueOnce({
+        items: [auditor],
+        page: 0,
+        size: 20,
+        totalCount: 1,
+        totalPages: 1,
+      })
     apiMocks.grantStaffAuditAuthority.mockResolvedValue(undefined)
     apiMocks.revokeStaffAuditAuthority.mockResolvedValue(undefined)
 
@@ -66,5 +84,6 @@ describe('AdminStaffPage audit authorities', () => {
       'AUDIT_SEARCH_QUERY_REVEAL',
     )
     await waitFor(() => expect(apiMocks.listStaff).toHaveBeenCalledTimes(3))
+    expect(apiMocks.listStaff).toHaveBeenCalledWith(0, 20)
   })
 })
