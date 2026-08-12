@@ -71,7 +71,7 @@ create index integration_credentials_client_created_idx
 alter table admin_security_audit_events
     drop constraint admin_security_actor_type_valid,
     add constraint admin_security_actor_type_valid
-        check (actor_type in ('STAFF', 'INTEGRATION_CLIENT', 'SYSTEM')),
+        check (actor_type in ('CUSTOMER', 'STAFF', 'INTEGRATION_CLIENT', 'SYSTEM')),
     drop constraint admin_security_source_valid,
     add constraint admin_security_source_valid
-        check (source in ('AGENT_UI', 'ADMIN_UI', 'PLATFORM_API', 'SYSTEM_JOB'));
+        check (source in ('CUSTOMER_PORTAL', 'AGENT_UI', 'ADMIN_UI', 'PLATFORM_API', 'SYSTEM_JOB'));

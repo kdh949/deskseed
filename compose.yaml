@@ -13,6 +13,15 @@ services:
     volumes:
       - deskseed-postgres:/var/lib/postgresql/data
 
+  mailpit:
+    # Official Mailpit image/ports: https://mailpit.axllent.org/docs/install/docker/
+    image: axllent/mailpit:v1.27.4
+    restart: unless-stopped
+    ports:
+      - "${DESKSEED_MAILPIT_PORT:-8025}:8025"
+    expose:
+      - "1025"
+
   backend:
     build:
       context: ./backend
@@ -42,11 +51,27 @@ services:
       DESKSEED_BOOTSTRAP_ADMIN_EMAIL: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:-}
       DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:-}
       DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/deskseed-first-admin-password
+      DESKSEED_MAIL_DELIVERY_ENABLED: "true"
+      DESKSEED_MAIL_TRANSPORT: smtp
+      DESKSEED_MAIL_FROM_ADDRESS: ${DESKSEED_MAIL_FROM_ADDRESS:-no-reply@deskseed.local}
+      DESKSEED_MAIL_PUBLIC_BASE_URL: ${DESKSEED_MAIL_PUBLIC_BASE_URL:-http://localhost:5173}
+      DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION: ${DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION:-local-v1}
+      DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1: ${DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1:-AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=}
+      DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY:-AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=}
+      DESKSEED_CUSTOMER_AUTH_CSRF_KEY: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY:-AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=}
+      DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL:-http://localhost:5173/customer/sign-in/consume}
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: "1025"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_CONNECTIONTIMEOUT: "3000"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_TIMEOUT: "3000"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_WRITETIMEOUT: "3000"
     secrets:
       - deskseed-first-admin-password
     depends_on:
       db:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     ports:
       - "${DESKSEED_BACKEND_PORT:-8080}:8080"
 

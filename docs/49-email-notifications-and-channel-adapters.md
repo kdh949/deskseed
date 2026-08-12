@@ -172,3 +172,27 @@ A single ticket may contain multiple channel comments only after participant ide
 - `CHN-010`: real-time ordering/reconnect contract before chat
 - `CHN-011`: channel permission and identity mapping
 - `CHN-012`: load/backpressure evidence before WebSocket scale changes
+
+## 16. Implemented outbound foundation boundary
+
+The first outbound-only slice implements `REQ-NOTIF-001` and `REQ-CHAN-003`:
+
+- `OutboundMailPort` queues provider-neutral versioned intents in the caller's business transaction.
+- PostgreSQL stores intent, attempt and append-only delivery-event state; workers claim due rows with a lease and `SKIP LOCKED`.
+- development Compose enables the SMTP adapter against `mailpit:1025` and exposes Mailpit UI/API at `localhost:8025`.
+- the production profile does not activate this development adapter.
+- request received and PUBLIC agent reply are wired; INTERNAL comments have no mail intent path.
+- customer magic-link rendering is available for the customer-auth slice, but token issuance/consume is not implemented here.
+- plain text only; production provider, inbound, bounce, attachments and rich text remain unimplemented.
+
+Default retry table:
+
+| Attempt | Delay from failure | Exhausted result |
+|---:|---:|---|
+| 1 | immediate | retry if transient |
+| 2 | 1 minute | retry if transient |
+| 3 | 5 minutes | retry if transient |
+| 4 | 30 minutes | retry if transient |
+| 5 | 2 hours | terminal `FAILED` |
+
+SMTP has no atomic exactly-once handshake with the database. A stable intent ID and `Message-ID` prevent application/concurrent retry duplication and support reconciliation, but an SMTP server accepting a message immediately before an acknowledgement loss remains ambiguous. Production provider selection must freeze an idempotency or lookup/reconciliation contract.

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test, type APIRequestContext } from '@playwright/test'
 
 const fullStackEnabled = process.env.E2E_FULL_STACK === '1'
 const composeProject = process.env.DESKSEED_E2E_COMPOSE_PROJECT ?? ''
@@ -10,6 +10,38 @@ const internalBody = 'E2E_INTERNAL_COMMENT_DO_NOT_EXPOSE'
 const unrelatedInternalTicketSubject = 'E2E_INTERNAL_TICKET_DO_NOT_EXPOSE'
 const adminEmail = process.env.DESKSEED_E2E_ADMIN_EMAIL ?? ''
 const adminPassword = process.env.DESKSEED_E2E_ADMIN_PASSWORD ?? ''
+const mailpitUrl = process.env.DESKSEED_E2E_MAILPIT_URL ?? ''
+
+interface MailpitSummary {
+  ID?: string
+  id?: string
+  Subject?: string
+  subject?: string
+  To?: Array<{ Address?: string; address?: string }>
+  to?: Array<{ Address?: string; address?: string }>
+}
+
+async function mailpitMessages(
+  api: APIRequestContext,
+): Promise<MailpitSummary[]> {
+  const response = await api.get(`${mailpitUrl}/api/v1/messages?limit=50`)
+  expect(response.ok()).toBe(true)
+  const body = (await response.json()) as {
+    messages?: MailpitSummary[]
+    Messages?: MailpitSummary[]
+  }
+  return body.messages ?? body.Messages ?? []
+}
+
+function mailSubject(message: MailpitSummary): string {
+  return message.Subject ?? message.subject ?? ''
+}
+
+function mailRecipient(message: MailpitSummary): string[] {
+  return (message.To ?? message.to ?? []).map(
+    (recipient) => recipient.Address ?? recipient.address ?? '',
+  )
+}
 
 function addPrivateFixtures(ticketNumber: number) {
   if (!composeProject || !Number.isSafeInteger(ticketNumber)) {
@@ -186,6 +218,180 @@ function queryDatabaseJson(sql: string): Record<string, unknown> {
 }
 
 test.skip(!fullStackEnabled, 'Runs only against the isolated Compose stack')
+
+test('real magic link claim and PUBLIC follow-up deliver once through Mailpit', async ({
+  baseURL,
+  page,
+  request,
+}) => {
+  if (!baseURL || !mailpitUrl) {
+    throw new Error('Frontend and Mailpit URLs are required')
+  }
+  expect((await request.delete(`${mailpitUrl}/api/v1/messages`)).ok()).toBe(
+    true,
+  )
+  const unique = Date.now()
+  const email = `portal-${unique}@example.com`
+  const subject = `고객 포털 연결 ${unique}`
+
+  await page.goto('/requests/new')
+  await page.getByRole('textbox', { name: /이름/ }).fill('포털 연결 고객')
+  await page.getByRole('textbox', { name: /이메일/ }).fill(email)
+  await page.getByRole('textbox', { name: /제목/ }).fill(subject)
+  await page
+    .getByRole('textbox', { name: /문의 내용/ })
+    .fill('명시적 연결 전 공개 문의입니다.')
+  await page.getByRole('button', { name: '문의 접수' }).click()
+  const ticketHeading = page.getByRole('heading', { name: /문의 #\d+/ })
+  await expect(ticketHeading).toBeVisible()
+  const ticketNumber = Number(
+    (await ticketHeading.textContent())?.match(/\d+/)?.[0],
+  )
+  const accessToken = await page.getByLabel('문의 조회 키').textContent()
+  expect(Number.isSafeInteger(ticketNumber)).toBe(true)
+  expect(accessToken).toBeTruthy()
+
+  await expect
+    .poll(async () => {
+      const messages = await mailpitMessages(request)
+      return messages.filter(
+        (message) =>
+          mailSubject(message).includes(`요청 #${ticketNumber} 접수 완료`) &&
+          mailRecipient(message).includes(email),
+      ).length
+    })
+    .toBe(1)
+
+  await page.goto('/customer/sign-in')
+  await page.getByRole('textbox', { name: '이메일' }).fill(email)
+  await page.getByRole('button', { name: '로그인 링크 받기' }).click()
+  await expect(
+    page.getByRole('status', {
+      name: '입력한 이메일로 로그인 링크를 보냈습니다.',
+    }),
+  ).toBeVisible()
+
+  let loginMessage: MailpitSummary | undefined
+  await expect
+    .poll(async () => {
+      loginMessage = (await mailpitMessages(request)).find(
+        (message) =>
+          mailSubject(message).includes('로그인 링크') &&
+          mailRecipient(message).includes(email),
+      )
+      return Boolean(loginMessage)
+    })
+    .toBe(true)
+  const loginMessageId = loginMessage?.ID ?? loginMessage?.id
+  expect(loginMessageId).toBeTruthy()
+  const loginDetailResponse = await request.get(
+    `${mailpitUrl}/api/v1/message/${loginMessageId}`,
+  )
+  expect(loginDetailResponse.ok()).toBe(true)
+  const loginDetail = (await loginDetailResponse.json()) as {
+    Text?: string
+    text?: string
+  }
+  const rawToken = (loginDetail.Text ?? loginDetail.text ?? '').match(
+    /\/customer\/sign-in\/consume#token=([A-Za-z0-9_-]{43})/,
+  )?.[1]
+  expect(rawToken).toBeTruthy()
+
+  await page.goto(`/customer/sign-in/consume#token=${rawToken}`)
+  await expect(
+    page.getByRole('status', { name: '로그인되었습니다.' }),
+  ).toBeVisible()
+  await page.getByRole('link', { name: '내 문의로 이동' }).click()
+  await expect(
+    page.getByRole('heading', { name: '내 문의', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText('아직 연결된 문의가 없습니다.')).toBeVisible()
+
+  await page
+    .getByRole('spinbutton', { name: '접수 번호' })
+    .fill(String(ticketNumber))
+  await page.getByRole('textbox', { name: '연결 증명' }).fill(accessToken!)
+  await page.getByRole('button', { name: '문의 연결' }).click()
+  await expect(
+    page.getByRole('status', { name: '문의를 계정에 연결했습니다.' }),
+  ).toBeVisible()
+  const ownedRequest = page.getByRole('link', { name: new RegExp(subject) })
+  await expect(ownedRequest).toBeVisible()
+  await ownedRequest.click()
+  await expect(page.getByRole('heading', { name: subject })).toBeVisible()
+
+  const publicBody = `고객 공개 후속 답변 ${unique}`
+  const followUpRequestPromise = page.waitForRequest(
+    (candidate) =>
+      candidate.method() === 'POST' &&
+      candidate
+        .url()
+        .endsWith(`/api/v1/customer/requests/${ticketNumber}/comments`),
+  )
+  await page.getByRole('textbox', { name: '공개 후속 답변' }).fill(publicBody)
+  await page.getByRole('button', { name: '공개 답변 보내기' }).click()
+  const followUpRequest = await followUpRequestPromise
+  const followUpPayload = followUpRequest.postDataJSON() as {
+    body: string
+    clientCommandId: string
+  }
+  await expect(
+    page.getByRole('status', { name: '공개 후속 답변을 보냈습니다.' }),
+  ).toBeVisible()
+  expect(followUpPayload.body).toBe(publicBody)
+  expect(followUpPayload.clientCommandId).toBeTruthy()
+
+  const replayStatus = await page.evaluate(
+    async ({ path, csrfToken, payload }) => {
+      const response = await fetch(path, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+        },
+        body: JSON.stringify(payload),
+      })
+      return response.status
+    },
+    {
+      path: `/api/v1/customer/requests/${ticketNumber}/comments`,
+      csrfToken: followUpRequest.headers()['x-csrf-token'],
+      payload: followUpPayload,
+    },
+  )
+  expect(replayStatus).toBe(201)
+
+  await expect
+    .poll(async () => {
+      const messages = await mailpitMessages(request)
+      return messages.filter(
+        (message) =>
+          mailSubject(message).includes(`요청 #${ticketNumber} 접수 완료`) &&
+          mailRecipient(message).includes(email),
+      ).length
+    })
+    .toBe(2)
+  await page.waitForTimeout(6_000)
+  const receiptMessages = (await mailpitMessages(request)).filter(
+    (message) =>
+      mailSubject(message).includes(`요청 #${ticketNumber} 접수 완료`) &&
+      mailRecipient(message).includes(email),
+  )
+  expect(receiptMessages).toHaveLength(2)
+  const followUpState = queryDatabaseJson(`
+    select json_build_object(
+      'comments', (select count(*) from ticket_comments where body = '${publicBody}'),
+      'intents', (select count(*) from outbound_mail_intents where comment_id in
+        (select id from ticket_comments where body = '${publicBody}')),
+      'attempts', (select count(*) from outbound_mail_attempts where intent_id in
+        (select id from outbound_mail_intents where comment_id in
+          (select id from ticket_comments where body = '${publicBody}')))
+    )::text;
+  `)
+  expect(followUpState).toEqual({ comments: 1, intents: 1, attempts: 1 })
+})
 
 test('real search links one semantic navigation to its canonical audit event', async ({
   browser,

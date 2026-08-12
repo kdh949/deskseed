@@ -34,6 +34,17 @@ class IntegrationClientMigrationTest {
                 ).use { result -> buildList { while (result.next()) add(result.getString(1)) } }
                 assertThat(secretColumns).isEmpty()
 
+                val auditConstraints = statement.executeQuery(
+                    """
+                    select pg_get_constraintdef(oid)
+                    from pg_constraint
+                    where conname in ('admin_security_actor_type_valid', 'admin_security_source_valid')
+                    order by conname
+                    """.trimIndent(),
+                ).use { result -> buildList { while (result.next()) add(result.getString(1)) } }
+                assertThat(auditConstraints.joinToString(" "))
+                    .contains("CUSTOMER", "INTEGRATION_CLIENT", "CUSTOMER_PORTAL", "PLATFORM_API")
+
                 statement.executeUpdate(
                     """
                     insert into staff_accounts

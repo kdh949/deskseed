@@ -52,6 +52,23 @@ logging:
     level: "%5p [requestId:%X{requestId:-}]"
 
 deskseed:
+  mail:
+    # Delivery is opt-in. The local Compose topology enables the Mailpit SMTP adapter.
+    delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}
+    scheduling-enabled: ${DESKSEED_MAIL_SCHEDULING_ENABLED:true}
+    transport: ${DESKSEED_MAIL_TRANSPORT:disabled}
+    from-address: ${DESKSEED_MAIL_FROM_ADDRESS:no-reply@deskseed.local}
+    public-base-url: ${DESKSEED_MAIL_PUBLIC_BASE_URL:http://localhost:5173}
+    retry-backoff: ${DESKSEED_MAIL_RETRY_BACKOFF:0s,1m,5m,30m,2h}
+    worker-fixed-delay: ${DESKSEED_MAIL_WORKER_FIXED_DELAY:5s}
+    worker-initial-delay: ${DESKSEED_MAIL_WORKER_INITIAL_DELAY:5s}
+    lease-duration: ${DESKSEED_MAIL_LEASE_DURATION:2m}
+    batch-size: ${DESKSEED_MAIL_BATCH_SIZE:20}
+    protected-content:
+      active-key-version: ${DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION:local-v1}
+      keys:
+        # Public local-development material only. Production must provision its own 32-byte key.
+        local-v1: ${DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1:AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
@@ -96,3 +113,20 @@ deskseed:
       email: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:}
       display-name: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:}
       password-file: ${DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE:}
+  customer-auth:
+    magic-link-ttl: ${DESKSEED_CUSTOMER_MAGIC_LINK_TTL:15m}
+    request-limit: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_LIMIT:5}
+    request-window: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_WINDOW:15m}
+    response-min-duration: ${DESKSEED_CUSTOMER_MAGIC_LINK_RESPONSE_MIN_DURATION:100ms}
+    session-idle: ${DESKSEED_CUSTOMER_SESSION_IDLE:30m}
+    session-absolute: ${DESKSEED_CUSTOMER_SESSION_ABSOLUTE:12h}
+    # Independent local-development keys. Production must provision unique secrets.
+    fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=}
+    csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY:AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=}
+    consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL:http://localhost:5173/customer/sign-in/consume}
+  customer-portal:
+    claim-grant-ttl: ${DESKSEED_CUSTOMER_CLAIM_GRANT_TTL:15m}
+    # Independent public local-development keys. Production requires provisioned secrets.
+    claim-signing-key: ${DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY:BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=}
+    claim-fingerprint-key: ${DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY:BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=}
+    request-cursor-signing-key: ${DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY:BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=}

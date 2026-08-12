@@ -6,10 +6,13 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useBeforeUnload, useBlocker } from 'react-router'
+import { useQuery } from '@tanstack/react-query'
+import { Link, useBeforeUnload, useBlocker } from 'react-router'
 import { ApiError } from '../api/client'
 import type { SubmitRequestInput } from '../api/types'
 import { useRequestSubmission } from '../features/customer-requests/RequestSubmissionContext'
+import { getCustomerAccessMode } from '../features/customer-auth/customerAuthClient'
+import { useOptionalCustomerSession } from '../features/customer-auth/CustomerSessionContext'
 import {
   EMPTY_REQUEST_FORM,
   isRequestField,
@@ -19,7 +22,7 @@ import {
   validateRequestForm,
 } from '../features/customer-requests/requestForm'
 import { RequestSuccess } from '../features/customer-requests/RequestSuccess'
-import { Notification } from '../shared/ui/system'
+import { Notification, ScreenState } from '../shared/ui/system'
 
 type TouchedFields = Partial<Record<RequestField, boolean>>
 
@@ -82,6 +85,13 @@ function parseRetryAfterSeconds(value: string | undefined): number | undefined {
 
 export function NewRequestPage() {
   const requestSubmission = useRequestSubmission()
+  const customerSession = useOptionalCustomerSession()
+  const accessMode = useQuery({
+    queryKey: ['customer-access-mode'],
+    queryFn: getCustomerAccessMode,
+    enabled: customerSession !== null,
+    retry: false,
+  })
   const [form, setForm] = useState<SubmitRequestInput>(EMPTY_REQUEST_FORM)
   const [touched, setTouched] = useState<TouchedFields>({})
   const [serverErrors, setServerErrors] = useState<RequestFieldErrors>({})
@@ -114,6 +124,19 @@ export function NewRequestPage() {
   useEffect(() => {
     if (!requestSubmission.isSubmitting) setNavigationBlocked(false)
   }, [requestSubmission.isSubmitting])
+
+  useEffect(() => {
+    if (
+      customerSession?.status !== 'authenticated' ||
+      !customerSession.customer
+    )
+      return
+    setForm((current) => ({
+      ...current,
+      name: customerSession.customer?.displayName ?? current.name,
+      email: customerSession.customer?.email ?? current.email,
+    }))
+  }, [customerSession?.customer, customerSession?.status])
 
   const visibleErrors: RequestFieldErrors = { ...serverErrors }
   for (const field of Object.keys(touched) as RequestField[]) {
@@ -178,14 +201,57 @@ export function NewRequestPage() {
     )
   }
 
+  if (
+    customerSession &&
+    (customerSession.status === 'loading' || accessMode.isPending)
+  ) {
+    return (
+      <ScreenState kind="loading" title="문의 접수 권한을 확인하고 있습니다." />
+    )
+  }
+  if (customerSession?.status === 'error' || accessMode.isError) {
+    return (
+      <ScreenState
+        kind="error"
+        title="문의 접수 설정을 확인할 수 없습니다."
+        action={
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => {
+              customerSession?.retry()
+              void accessMode.refetch()
+            }}
+          >
+            다시 시도
+          </button>
+        }
+      />
+    )
+  }
+  if (
+    accessMode.data === 'REGISTRATION_REQUIRED' &&
+    customerSession?.status !== 'authenticated'
+  ) {
+    return (
+      <ScreenState
+        kind="denied"
+        title="로그인 후 문의를 접수할 수 있습니다."
+        description="이 고객 지원 공간은 가입된 고객의 문의만 받습니다."
+        action={<Link to="/customer/sign-in">이메일로 로그인</Link>}
+      />
+    )
+  }
+
   return (
     <section className="form-layout" aria-labelledby="new-request-title">
       <div>
         <p className="eyebrow">새 문의</p>
         <h1 id="new-request-title">무엇을 도와드릴까요?</h1>
         <p className="muted">
-          로그인 없이 접수할 수 있습니다. 답변 확인에 필요한 조회 키는 접수 직후
-          한 번만 표시됩니다.
+          {customerSession?.status === 'authenticated'
+            ? '로그인한 계정으로 문의를 접수합니다. 답변 확인에 필요한 조회 키는 접수 직후 한 번만 표시됩니다.'
+            : '로그인 없이 접수할 수 있습니다. 답변 확인에 필요한 조회 키는 접수 직후 한 번만 표시됩니다.'}
         </p>
       </div>
       <form className="support-form" onSubmit={submit} noValidate>
@@ -217,22 +283,32 @@ export function NewRequestPage() {
         <div className="field-grid two-columns">
           <RequestFieldControl
             field="name"
-            label="이름"
+            label={
+              customerSession?.status === 'authenticated'
+                ? '이름 (로그인 계정)'
+                : '이름'
+            }
             value={form.name}
             error={visibleErrors.name}
             maxLength={REQUEST_FIELD_LIMITS.name}
             autoComplete="name"
+            readOnly={customerSession?.status === 'authenticated'}
             onChange={updateField('name')}
             onBlur={() => blurField('name')}
           />
           <RequestFieldControl
             field="email"
-            label="이메일"
+            label={
+              customerSession?.status === 'authenticated'
+                ? '이메일 (로그인 계정)'
+                : '이메일'
+            }
             type="email"
             value={form.email}
             error={visibleErrors.email}
             maxLength={REQUEST_FIELD_LIMITS.email}
             autoComplete="email"
+            readOnly={customerSession?.status === 'authenticated'}
             onChange={updateField('email')}
             onBlur={() => blurField('email')}
           />
@@ -292,6 +368,7 @@ interface RequestFieldControlProps {
   maxLength: number
   type?: string
   autoComplete?: string
+  readOnly?: boolean
   onChange(event: ChangeEvent<HTMLInputElement>): void
   onBlur(): void
 }
@@ -304,6 +381,7 @@ function RequestFieldControl({
   maxLength,
   type = 'text',
   autoComplete,
+  readOnly = false,
   onChange,
   onBlur,
 }: RequestFieldControlProps) {
@@ -320,6 +398,7 @@ function RequestFieldControl({
         type={type}
         maxLength={maxLength}
         autoComplete={autoComplete}
+        readOnly={readOnly}
         value={value}
         aria-invalid={error ? 'true' : undefined}
         aria-describedby={error ? errorId : undefined}
