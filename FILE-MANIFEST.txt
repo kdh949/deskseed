@@ -6,8 +6,8 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 607978a57219571ef2b32084db639c280a1844ad7f2a8545206bec7619b8963c        4016  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-f27a30753fd480d48766eea31cba4e8d1563ebee27ff7d9738f95067b690948f      115731  api/core-api-outline-v1.yaml
-72ce73d70dc5e3343f61246d09c553172bc953c8600fa8fd21538a2198e2b851        4742  api/customer-identity-api-v1.yaml
+91c6a9ac7ce10f74da333c8136bb435c78cdc5138b6a128283cfc45188b7bbdf      115806  api/core-api-outline-v1.yaml
+2dc534d6f6320a1655aa5becfbc43c9dff271ac88b2a673b7f83986affb51de1        8408  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
 aa62e24c2ea979697aa8f378ec6f9d250902c26a7b71a51c67282e81a7a2aa5f        9399  api/openapi-v1.yaml
@@ -47,7 +47,7 @@ d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  do
 6b62524e1f8718a09bbd30a1e9696b0a288ddd02a679c68c114db626e4aee179        7343  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 5d8f72af4ffcfd6bf429615f5b32ee17a981a7e5fad6dc54f77c06f88bd11e79        8070  docs/25-implementation-decision-register.md
-8598dfab4b0a2f4d16ac1b12089e6baa036581b4fe617a088152e6a9bb435594       18536  docs/26-requirement-traceability.md
+955c4fb78e2a868adb270f85ed067a9389ee885348513a20ef4e851a2903da5e       18728  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  docs/28-frontend-product-and-information-architecture.md
 54f95cb71d8d951e208f3ed2e33d798e2b39e05bedd20402ef4b61ffa5f8d494        6900  docs/29-zendesk-inspired-design-system.md
@@ -60,7 +60,7 @@ b98cb50d41ece90f5f41fab23266df9da91e284ec584d1a9b23e7aadc70154ef        4406  do
 2b354a81041ebb5e4ec385225583167b8ae995d54df12551e1aeccba8d2a34d0       18580  docs/36-self-hosted-operations-runbook.md
 56f7811dc8d6966bdd485e03899eb12abc59a636d893961260ca7ce01f007b3a        3374  docs/37-customer-portal-and-identity-blueprint.md
 d656e849bc6bdd8ea351c609e20a642bd6bd3306be5e638621722c8425a0c1ce        4936  docs/38-post-mvp-capability-blueprints.md
-925b563caa03a23952ef26a088226a403c22e9397a938ad52d003cd0810f7fd4        4561  docs/39-api-contract-freeze-plan.md
+1602b87579e4da86237c009751a309dc235840a9df1e28650d056fd1bd1b30e1        4739  docs/39-api-contract-freeze-plan.md
 177d68c1096cda5f9de585f3ecf4fd04d464e1fab83869f2b5fd6385c831b2cc        6495  docs/40-frontend-visual-regression-and-accessibility.md
 124ed38dfc46f153f2fefcaef669f79aa7072a24bf9029b4502943f8ab340e8f        2312  docs/41-feature-implementation-dependency-map.md
 5980d939e7a55e7d5173c46f79c59f8f873ba9bd14c4053b469030c0794ee44c        4603  docs/42-zendesk-frontend-research.md
@@ -241,7 +241,7 @@ c135d3bb8808b29257bb73d86a2ec0cdab9696ce22819760d94f7484d933799b        1329  ta
 490cda812fa375cd8cfeb22a338c070a568a0c6992b91b7d89d272b96ad3b657         922  tasks/18-analytics-operations-overview.md
 3870272e2fb92f56d5834fe482039e1ed5517247aa3a33403765ecd75270679a        1336  tasks/19-attachments-and-email-channel.md
 d76b67c4a8047915f3ac8d04e214bf0ba9c1732d54985429c5c1f67b161f9f61        4572  tasks/20-outbound-email-mailpit-foundation.md
-d2f1cf920399dc1d3b4fce200c5c4e87fc225ae358088fc31ab8a96986cfd093        1144  tasks/21-customer-magic-link-and-my-requests.md
+4ff25774b1bc5c2600d873c1c94bde3b0ca4a3166005d0fe34431b8eaaab8cf1        5497  tasks/21-customer-magic-link-and-my-requests.md
 d7697f9899796328f6cc9faa95b512f75715bd56b91ab83eb17855ea2b863b69        1009  tasks/22-platform-api-v1-ticket-operations.md
 f6cba93ee3e0d7d57f1d1511cf3aad93928937e8fc1c3a8385141429792300e3        1006  tasks/23-secure-raw-search-query-storage.md
 cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  tasks/24-business-schedule-admin.md

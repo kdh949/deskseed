@@ -29,8 +29,8 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - E2E Visual Baselines: 84
 - Json Files: 8
 - Markdown Files: 173
-- Openapi Operations: 58
-- Openapi Paths: 47
+- Openapi Operations: 59
+- Openapi Paths: 48
 - Requirement Definitions: 78
 - Staff Actor Blueprint Operations: 11
 - Staff Actor Bound Operations: 28
