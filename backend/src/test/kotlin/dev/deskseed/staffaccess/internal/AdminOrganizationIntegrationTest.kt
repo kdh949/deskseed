@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delet
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -69,6 +70,87 @@ class AdminOrganizationIntegrationTest {
         jdbcTemplate.update("delete from support_groups")
         jdbcTemplate.update("delete from staff_login_throttles")
         jdbcTemplate.update("delete from staff_accounts")
+        jdbcTemplate.update(
+            "update system_settings set customer_access_mode = 'ANONYMOUS_ALLOWED', version = 0, updated_at = now() where id = 1",
+        )
+    }
+
+    @Test
+    fun `admin changes customer access mode with optimistic version and atomic security audit`() {
+        insertStaff("access-admin@example.com", "Access admin password 42", "ADMIN")
+        val browser = login("access-admin@example.com", "Access admin password 42")
+
+        mockMvc.perform(get("/api/v1/admin/settings/customer-access-mode").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.mode").value("ANONYMOUS_ALLOWED"))
+            .andExpect(jsonPath("$.version").value(0))
+
+        mockMvc.perform(
+            put("/api/v1/admin/settings/customer-access-mode")
+                .session(browser.session)
+                .csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mode":"REGISTRATION_REQUIRED","expectedVersion":0}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.mode").value("REGISTRATION_REQUIRED"))
+            .andExpect(jsonPath("$.version").value(1))
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                """
+                select event_type, actor_type, source, metadata_json
+                from admin_security_audit_events
+                where event_type = 'CUSTOMER_ACCESS_MODE_CHANGED'
+                """.trimIndent(),
+            ),
+        ).containsEntry("event_type", "CUSTOMER_ACCESS_MODE_CHANGED")
+            .containsEntry("actor_type", "STAFF")
+            .containsEntry("source", "ADMIN_UI")
+
+        mockMvc.perform(
+            put("/api/v1/admin/settings/customer-access-mode")
+                .session(browser.session)
+                .csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"mode":"REGISTRATION_OPTIONAL","expectedVersion":0}"""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("STALE_CUSTOMER_ACCESS_MODE"))
+            .andExpect(jsonPath("$.currentVersion").value(1))
+    }
+
+    @Test
+    fun `customer access mode audit failure rolls setting back`() {
+        insertStaff("access-rollback@example.com", "Access rollback password 42", "ADMIN")
+        val browser = login("access-rollback@example.com", "Access rollback password 42")
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_customer_access_mode_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected access mode audit failure'; end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_customer_access_mode_audit before insert on admin_security_audit_events for each row execute function fail_customer_access_mode_audit()",
+        )
+        try {
+            mockMvc.perform(
+                put("/api/v1/admin/settings/customer-access-mode")
+                    .session(browser.session)
+                    .csrf(browser)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"mode":"REGISTRATION_REQUIRED","expectedVersion":0}"""),
+            ).andExpect(status().isServiceUnavailable)
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_customer_access_mode_audit on admin_security_audit_events")
+            jdbcTemplate.execute("drop function if exists fail_customer_access_mode_audit()")
+        }
+
+        assertThat(
+            jdbcTemplate.queryForMap("select customer_access_mode, version from system_settings where id = 1"),
+        ).containsEntry("customer_access_mode", "ANONYMOUS_ALLOWED").containsEntry("version", 0L)
     }
 
     @Test

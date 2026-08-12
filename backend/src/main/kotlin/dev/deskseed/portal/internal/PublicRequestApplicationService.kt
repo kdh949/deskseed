@@ -17,6 +17,8 @@ import dev.deskseed.ticketing.TicketingFacade
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.util.Locale
+import java.util.UUID
 
 @Service
 internal class PublicRequestApplicationService(
@@ -28,11 +30,17 @@ internal class PublicRequestApplicationService(
 ) {
     @Transactional
     fun submit(command: SubmitAnonymousRequest): AnonymousRequestSubmitted {
-        customerAccessPolicy.requireAnonymousSubmissionAllowed()
-        val customer = customerDirectory.createUnverified(
-            name = command.name,
-            email = command.email,
-        )
+        val customer = if (command.authenticatedCustomerId == null) {
+            customerAccessPolicy.requireAnonymousSubmissionAllowed()
+            customerDirectory.createUnverified(name = command.name, email = command.email)
+        } else {
+            customerDirectory.findById(command.authenticatedCustomerId)
+                ?.takeIf {
+                    it.verifiedAt != null && it.email.trim().lowercase(Locale.ROOT) ==
+                        command.authenticatedEmail?.trim()?.lowercase(Locale.ROOT)
+                }
+                ?: throw IllegalArgumentException("Authenticated customer is unavailable")
+        }
         val ticket = ticketingFacade.submitPublicRequest(
             SubmitPublicRequestCommand(
                 requesterId = customer.id,
@@ -81,6 +89,8 @@ internal data class SubmitAnonymousRequest(
     val email: String,
     val subject: String,
     val message: String,
+    val authenticatedCustomerId: UUID? = null,
+    val authenticatedEmail: String? = null,
     val context: CommandContext,
 )
 

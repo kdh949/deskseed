@@ -63,6 +63,55 @@ class CustomerRequestPortalIntegrationTest {
             restart identity cascade
             """.trimIndent(),
         )
+        jdbcTemplate.update(
+            "update system_settings set customer_access_mode = 'ANONYMOUS_ALLOWED', version = 0, updated_at = now() where id = 1",
+        )
+    }
+
+    @Test
+    fun `customer access modes enforce anonymous and authenticated submission while preserving token view`() {
+        val existing = submitAnonymous("existing-token@example.com", "기존 토큰 문의")
+        val session = customerSession("required-account@example.com")
+        jdbcTemplate.update(
+            "update system_settings set customer_access_mode = 'REGISTRATION_REQUIRED', version = version + 1, updated_at = now()",
+        )
+
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("anonymous-required@example.com", "익명 거부 문의")),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .cookie(session.cookie)
+                .header("X-CSRF-TOKEN", csrf(session.cookie))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("spoofed@example.com", "인증 고객 문의")),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.ticketNumber").isNumber)
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select requester_id from tickets where subject = '인증 고객 문의'",
+                UUID::class.java,
+            ),
+        ).isEqualTo(session.customerId)
+
+        mockMvc.perform(
+            get("/api/v1/requests/{ticketNumber}", existing.ticketNumber)
+                .header("X-Request-Access-Token", existing.accessToken),
+        ).andExpect(status().isOk)
+
+        jdbcTemplate.update(
+            "update system_settings set customer_access_mode = 'REGISTRATION_OPTIONAL', version = version + 1, updated_at = now()",
+        )
+        mockMvc.perform(
+            post("/api/v1/requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("optional@example.com", "선택 가입 익명 문의")),
+        ).andExpect(status().isCreated)
     }
 
     @Test
@@ -150,6 +199,32 @@ class CustomerRequestPortalIntegrationTest {
         assertThat(requesterId(request.ticketNumber)).isEqualTo(matching.customerId)
         assertThat(ticketAuditEventCount(request.ticketNumber, "REQUESTER_CHANGED")).isEqualTo(1)
         assertThat(securityEventCount("CUSTOMER_REQUEST_CLAIMED")).isEqualTo(1)
+    }
+
+    @Test
+    fun `expired signed claim grant is rejected without storing or logging bearer plaintext`() {
+        val session = customerSession("grant-expired@example.com")
+        val request = submitAnonymous("grant-expired@example.com", "만료 claim 문의")
+        val originalRequester = requesterId(request.ticketNumber)
+        val claimToken = issueClaimGrant(request.ticketNumber, request.accessToken)
+        jdbcTemplate.update(
+            """
+            update customer_request_claim_grants
+            set created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute'
+            """.trimIndent(),
+        )
+
+        claimWithSignedGrant(session, request.ticketNumber, claimToken)
+            .andExpect(status().isNotFound)
+
+        assertThat(requesterId(request.ticketNumber)).isEqualTo(originalRequester)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select string_agg(token_digest || email_fingerprint, '') from customer_request_claim_grants",
+                String::class.java,
+            ),
+        ).doesNotContain(claimToken, "grant-expired@example.com")
+        assertThat(ticketAuditEventCount(request.ticketNumber, "REQUESTER_CHANGED")).isZero()
     }
 
     @Test
@@ -307,6 +382,15 @@ class CustomerRequestPortalIntegrationTest {
         val json = objectMapper.readTree(response)
         return AnonymousRequestFixture(json.get("ticketNumber").asLong(), json.get("accessToken").asText())
     }
+
+    private fun requestJson(email: String, subject: String): String = objectMapper.writeValueAsString(
+        mapOf(
+            "name" to "익명 고객",
+            "email" to email,
+            "subject" to subject,
+            "message" to "최초 공개 문의입니다.",
+        ),
+    )
 
     private fun claimOwnershipForFixture(ticketNumber: Long, customerId: UUID) {
         jdbcTemplate.update("update tickets set requester_id = ? where ticket_number = ?", customerId, ticketNumber)

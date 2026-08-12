@@ -20,7 +20,8 @@ internal class CustomerSessionAuthenticationFilter(
     private val sessionStore: CustomerAccountSessionStore,
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
-        !request.requestURI.startsWith("/api/v1/customer/") ||
+        (!request.requestURI.startsWith("/api/v1/customer/") &&
+            !(request.method == "POST" && request.requestURI == "/api/v1/requests")) ||
             request.requestURI.startsWith("/api/v1/customer/auth/")
 
     override fun doFilterInternal(
@@ -51,7 +52,8 @@ internal class CustomerCsrfFilter(
     private val problemWriter: CustomerSecurityProblemWriter,
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
-        !request.requestURI.startsWith("/api/v1/customer/") ||
+        ((!request.requestURI.startsWith("/api/v1/customer/") &&
+            !(request.method == "POST" && request.requestURI == "/api/v1/requests" && request.customerSessionCookie() != null))) ||
             request.requestURI.startsWith("/api/v1/customer/auth/") ||
             request.method in setOf("GET", "HEAD", "OPTIONS", "TRACE")
 

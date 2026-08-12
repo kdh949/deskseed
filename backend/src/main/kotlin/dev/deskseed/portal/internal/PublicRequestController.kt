@@ -2,6 +2,7 @@ package dev.deskseed.portal.internal
 
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.ticketing.CustomerRequestStatus
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import org.springframework.validation.annotation.Validated
+import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.http.ResponseEntity
 import org.springframework.http.CacheControl
 import org.springframework.web.bind.annotation.GetMapping
@@ -32,6 +34,7 @@ internal class PublicRequestController(
     @PostMapping
     fun submit(
         @Valid @RequestBody body: SubmitRequestBody,
+        @AuthenticationPrincipal principal: CustomerPrincipal?,
         request: HttpServletRequest,
     ): ResponseEntity<SubmittedRequestResponse> {
         val result = applicationService.submit(
@@ -40,6 +43,8 @@ internal class PublicRequestController(
                 email = body.email,
                 subject = body.subject,
                 message = body.message,
+                authenticatedCustomerId = principal?.customerId,
+                authenticatedEmail = principal?.email,
                 context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
             ),
         )
