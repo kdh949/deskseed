@@ -3,12 +3,22 @@ import { defineConfig, devices } from '@playwright/test'
 const devServerPort = process.env.PLAYWRIGHT_DEV_SERVER_PORT ?? '45173'
 const baseURL =
   process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${devServerPort}`
+const browserName = process.env.PLAYWRIGHT_BROWSER ?? 'chromium'
+if (!['chromium', 'firefox', 'webkit'].includes(browserName)) {
+  throw new Error(`Unsupported PLAYWRIGHT_BROWSER: ${browserName}`)
+}
+const browserDevice =
+  browserName === 'firefox'
+    ? devices['Desktop Firefox']
+    : browserName === 'webkit'
+      ? devices['Desktop Safari']
+      : devices['Desktop Chrome']
 
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  retries: 0,
   workers: 1,
   reporter: process.env.CI ? 'github' : 'list',
   outputDir: 'test-results',
@@ -36,5 +46,11 @@ export default defineConfig({
         url: baseURL,
         reuseExistingServer: !process.env.CI,
       },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: browserName,
+      ignoreSnapshots: browserName !== 'chromium',
+      use: { ...browserDevice },
+    },
+  ],
 })

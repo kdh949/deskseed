@@ -109,6 +109,8 @@ data class AuditSearchContext(
     val resultCount: Long,
     val originSearchActivityId: UUID?,
     val openedActivities: List<AuditOpenedActivity>,
+    val openedActivityCount: Long,
+    val openedActivitiesTruncated: Boolean,
 )
 
 data class AuditActivityDetail(

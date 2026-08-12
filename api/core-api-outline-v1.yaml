@@ -2,8 +2,54 @@ openapi: 3.1.0
 info:
   title: Deskseed Core API Outline
   version: 0.6.0-implementation-ready
-  description: Customer, staff, admin, audit, customer magic-link, and schedule/SLA contract. Blueprint-only operations remain
-    marked by phase and requirement status.
+  description: >-
+    Customer, staff, admin, audit, customer magic-link, and schedule/SLA contract.
+    Blueprint-only operations remain marked by phase and requirement status. Every
+    implemented operation secured by staffSession exposes the optional
+    X-Deskseed-Expected-Staff-Id consistency header defined below. The header never
+    selects or authenticates an actor: the server compares it with the validated
+    session principal before controller execution or session activity renewal.
+x-deskseed-staff-actor-consistency:
+  appliesTo: every operation whose security includes staffSession
+  implementedOperationBinding: >-
+    Implemented operations carry the parameter and 400/409 responses directly so
+    OpenAPI generators and contract checks can discover them without interpreting
+    this extension.
+  blueprintOnlyBinding: >-
+    Blueprint-only staffSession operations inherit this policy extension and receive
+    the standard operation-level bindings when their contracts are frozen for
+    implementation.
+  blueprintOnlyOperationIds:
+  - listTicketAudits
+  - getAdminSetting
+  - updateAdminSetting
+  - listBusinessSchedules
+  - createBusinessSchedule
+  - getBusinessSchedule
+  - versionBusinessSchedule
+  - previewBusinessSchedule
+  - listSlaPolicies
+  - createSlaPolicy
+  - activateSlaPolicy
+  parameter:
+    $ref: '#/components/parameters/ExpectedStaffActorHeader'
+  invalidHeaderResponse:
+    $ref: '#/components/responses/InvalidExpectedStaffActor'
+  actorMismatchResponse:
+    $ref: '#/components/responses/StaffSessionActorMismatch'
+  establishmentExceptions:
+  - getStaffCsrfToken before sign-in; authenticated token acquisition sends the guard
+  - createStaffSession
+  - getCurrentStaff when verifying a just-created session
+  description: >-
+    Browser clients omit the header only while establishing and verifying a new
+    session. The dual-use getStaffCsrfToken operation accepts the optional header:
+    pre-sign-in callers omit it, while an authenticated unsafe workflow sends the same
+    actor snapshot that will guard its mutation. Missing headers remain compatible with
+    non-browser clients. A present header must be one canonical UUID value. Mismatch
+    fails closed without selecting
+    the supplied actor, invalidating the server session, renewing last activity, or
+    entering the target controller.
 servers:
 - url: http://localhost:8080
   description: Local development
@@ -248,6 +294,10 @@ paths:
   /api/v1/agent/csrf:
     get:
       summary: Issue a CSRF token bound to the browser session
+      description: >-
+        Dual-use endpoint. A pre-sign-in caller omits the expected-actor header. An
+        authenticated unsafe workflow supplies its confirmed actor snapshot so a
+        cross-tab session change is rejected before the subsequent mutation.
       operationId: getStaffCsrfToken
       x-deskseed-contract-status: FROZEN
       tags:
@@ -256,6 +306,8 @@ paths:
       x-deskseed-phase: M2
       x-deskseed-requirements:
       - REQ-AUTH-005
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: CSRF token
@@ -272,6 +324,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CsrfToken'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/session:
     post:
       summary: Create a staff session
@@ -315,10 +371,15 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Session destroyed
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/me:
     get:
       summary: Read current staff identity and capabilities
@@ -331,6 +392,8 @@ paths:
       - REQ-AUTH-005
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Current staff
@@ -338,7 +401,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CurrentStaff'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/views:
     get:
       summary: List accessible saved views
@@ -352,6 +419,8 @@ paths:
       - REQ-PERM-001
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Views
@@ -361,8 +430,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SavedView'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/views/{viewKey}/tickets:
     get:
       summary: List tickets in a saved view
@@ -378,6 +451,7 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - name: viewKey
         in: path
         required: true
@@ -429,14 +503,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketSummaryPage'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/tickets:
     post:
       summary: Create a staff-originated ticket
       operationId: createAgentTicket
+      x-deskseed-contract-status: FROZEN
       tags:
       - Agent Tickets
       x-deskseed-phase: M3
@@ -445,6 +523,9 @@ paths:
       - REQ-TKT-006
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -465,10 +546,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketCommandResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '422': *id001
         '503': *id001
   /api/v1/agent/tickets/{ticketNumber}:
@@ -486,6 +569,7 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - *id002
       - &id005
         name: X-Interaction-Id
@@ -525,14 +609,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentTicketDetail'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/commands:
     post:
       summary: Apply one atomic ticket update command
-      description: INTERNAL_CHILD tickets accept INTERNAL comments only; attempts to add a PUBLIC comment are rejected without mutation or audit.
+      description: >-
+        INTERNAL_CHILD tickets accept INTERNAL comments only; attempts to add a PUBLIC comment are rejected without mutation or audit.
+        When clientCommandId is supplied, an exact retry by the same authenticated staff actor returns the original TicketCommandResult
+        without another comment, audit, or version mutation. Reusing that ID for another canonical payload, ticket, or staff ticket
+        operation returns /problems/client-command-id-reused.
       operationId: updateAgentTicket
       x-deskseed-contract-status: FROZEN
       tags:
@@ -547,6 +639,8 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       - *id002
       requestBody:
         required: true
@@ -556,7 +650,7 @@ paths:
               $ref: '#/components/schemas/UpdateTicketCommand'
       responses:
         '200':
-          description: Command applied
+          description: Command applied, or the stable original result of an exact clientCommandId replay.
           headers:
             ETag:
               schema:
@@ -565,24 +659,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketCommandResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '409':
-          description: Requested fields overlap changes committed after expectedVersion.
+          description: >-
+            Requested fields conflict with a newer version, clientCommandId was reused
+            for a different request, or the browser's confirmed actor differs from the
+            authenticated session principal.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/TicketFieldConflictProblem'
-              example:
-                type: /problems/ticket-field-conflict
-                title: Ticket fields changed concurrently
-                status: 409
-                detail: Some fields were changed by another actor.
-                requestId: req-123
-                currentVersion: 14
-                conflictingFields:
-                - assigneeId
+                oneOf:
+                - $ref: '#/components/schemas/TicketFieldConflictProblem'
+                - $ref: '#/components/schemas/ClientCommandIdReusedProblem'
+                - $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+              examples:
+                fieldConflict:
+                  value:
+                    type: /problems/ticket-field-conflict
+                    title: Ticket fields changed concurrently
+                    status: 409
+                    detail: Some fields were changed by another actor.
+                    requestId: req-123
+                    currentVersion: 14
+                    conflictingFields:
+                    - assigneeId
+                clientCommandIdReused:
+                  value:
+                    type: /problems/client-command-id-reused
+                    title: Client command ID was already used
+                    status: 409
+                    detail: The client command ID identifies a different ticket command.
+                    requestId: req-456
+                staffSessionActorMismatch:
+                  value:
+                    type: /problems/staff-session-actor-mismatch
+                    title: Staff session actor changed
+                    status: 409
+                    detail: Refresh the staff session before continuing.
+                    requestId: req-actor-409
         '422': *id001
         '503': *id001
   /api/v1/agent/tickets/{ticketNumber}/transfer:
@@ -601,6 +723,8 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       - *id002
       - &id004
         name: If-Match
@@ -627,10 +751,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketCommandResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '412':
           description: The ticket no longer matches the supplied If-Match and expectedVersion.
           content:
@@ -658,6 +784,8 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       - *id002
       - *id004
       requestBody:
@@ -678,10 +806,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateChildTicketResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '412':
           description: The parent no longer matches the supplied If-Match and expectedVersion.
           content:
@@ -741,6 +871,7 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - *id005
       - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
@@ -761,9 +892,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentTicketSearchPage'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
   /api/v1/admin/staff:
     get:
@@ -777,6 +911,8 @@ paths:
       - REQ-PERM-002
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Staff list
@@ -786,8 +922,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/StaffAccount'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
     post:
       summary: Create a staff account
       operationId: createStaffAccount
@@ -801,6 +941,7 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -814,10 +955,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StaffAccount'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/staff/{staffId}:
     delete:
       summary: Disable a staff account
@@ -834,13 +977,17 @@ paths:
       parameters:
       - $ref: '#/components/parameters/StaffId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Staff disabled and their sessions become unusable on the next protected request
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/groups:
     get:
       summary: List groups
@@ -854,6 +1001,8 @@ paths:
       - REQ-TKT-011
       security:
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Group list
@@ -863,8 +1012,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Group'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
     post:
       summary: Create a group
       operationId: createGroup
@@ -879,6 +1032,7 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -892,10 +1046,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Group'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/groups/{groupId}:
     patch:
       summary: Rename a support group
@@ -912,6 +1068,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -925,11 +1082,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Group'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
     delete:
       summary: Disable an unused support group
       operationId: disableGroup
@@ -945,13 +1104,17 @@ paths:
       parameters:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Group disabled
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/groups/{groupId}/members:
     get:
       summary: List active members of a support group
@@ -967,6 +1130,7 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/GroupId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Active memberships
@@ -976,9 +1140,13 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/GroupMembership'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
     post:
       summary: Add an active staff member to a support group
       operationId: createGroupMembership
@@ -994,6 +1162,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -1007,11 +1176,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupMembership'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/groups/{groupId}/members/{staffId}:
     delete:
       summary: Remove an active staff member from a support group
@@ -1029,13 +1200,17 @@ paths:
       - $ref: '#/components/parameters/GroupId'
       - $ref: '#/components/parameters/StaffId'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '204':
           description: Membership removed
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
   /api/v1/admin/settings/{key}:
     get:
       summary: Read an allowed admin setting
@@ -1119,13 +1294,16 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - name: from
         in: query
+        description: Inclusive instant at which the audit interval starts.
         schema:
           type: string
           format: date-time
       - name: to
         in: query
+        description: Exclusive instant at which the audit interval ends.
         schema:
           type: string
           format: date-time
@@ -1218,9 +1396,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditActivityPage'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
   /api/v1/audit/activities/{activityId}:
     get:
@@ -1236,6 +1417,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/AuditActivityId'
       - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Allowlisted canonical detail. Comment bodies and raw search queries are absent.
@@ -1248,9 +1430,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditActivityDetail'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
   /api/v1/audit/activities/{activityId}/search-query-reveal:
     post:
@@ -1268,6 +1454,8 @@ paths:
       parameters:
       - $ref: '#/components/parameters/AuditActivityId'
       - $ref: '#/components/parameters/AuditInteractionHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
       requestBody:
         required: true
         content:
@@ -1286,10 +1474,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SearchQueryRevealResult'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '422': *id001
         '503': *id001
   /api/v1/audit/exports:
@@ -1309,6 +1500,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/AuditInteractionHeader'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
@@ -1322,9 +1514,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExportJob'
-        '400': *id001
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id001
         '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '429': *id001
         '503': *id001
   /api/v1/audit/exports/{jobId}:
@@ -1338,6 +1533,7 @@ paths:
       security:
       - staffSession: []
       parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - name: jobId
         in: path
         required: true
@@ -1357,9 +1553,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExportJob'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
         '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id001
   /api/v1/audit/projection/rebuild:
     post:
@@ -1374,6 +1574,7 @@ paths:
       parameters:
       - $ref: '#/components/parameters/AuditInteractionHeader'
       - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Rebuild counts and projection health.
@@ -1381,9 +1582,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditProjectionRebuildResult'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id001
         '403': *id001
-        '409': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503': *id001
   /api/v1/customer/me:
     get:
@@ -1859,6 +2063,10 @@ components:
       type: apiKey
       in: cookie
       name: DESKSEED_SESSION
+      description: >-
+        HttpOnly server session. Browser requests also use the optional
+        ExpectedStaffActorHeader consistency guard; that header is not a credential and
+        never supplies the authenticated actor.
     customerSession:
       type: apiKey
       in: cookie
@@ -1873,6 +2081,21 @@ components:
         type: string
         minLength: 16
         maxLength: 256
+    ExpectedStaffActorHeader:
+      name: X-Deskseed-Expected-Staff-Id
+      in: header
+      required: false
+      description: >-
+        Defense-in-depth browser consistency guard for staffSession operations. When
+        present it must be one canonical UUID equal to the already authenticated session
+        principal. Missing remains compatible; malformed/duplicate values return the
+        InvalidExpectedStaffActor response and a mismatch returns
+        StaffSessionActorMismatch before controller execution, audit success, mutation,
+        or session activity renewal. Login bootstrap and post-login identity verification
+        intentionally omit it.
+      schema:
+        type: string
+        format: uuid
     StaffId:
       name: staffId
       in: path
@@ -1902,6 +2125,87 @@ components:
       schema:
         type: string
         format: uuid
+  responses:
+    InvalidExpectedStaffActor:
+      description: The optional expected staff actor header is present but is not one canonical UUID value.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/InvalidExpectedStaffActorProblem'
+          example:
+            type: /problems/invalid-staff-session-actor
+            title: Invalid staff session actor
+            status: 400
+            detail: The expected staff actor header is invalid.
+            requestId: req-actor-400
+    StaffSessionActorMismatch:
+      description: The browser's confirmed actor differs from the authenticated session principal.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+          example:
+            type: /problems/staff-session-actor-mismatch
+            title: Staff session actor changed
+            status: 409
+            detail: Refresh the staff session before continuing.
+            requestId: req-actor-409
+    InvalidExpectedStaffActorOrBadRequest:
+      description: >-
+        RFC 9457 request validation failure, including a present expected-actor header
+        that is not one canonical UUID value.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            anyOf:
+            - $ref: '#/components/schemas/InvalidExpectedStaffActorProblem'
+            - $ref: '#/components/schemas/Problem'
+          examples:
+            invalidExpectedStaffActor:
+              value:
+                type: /problems/invalid-staff-session-actor
+                title: Invalid staff session actor
+                status: 400
+                detail: The expected staff actor header is invalid.
+                requestId: req-actor-400
+    StaffSessionActorMismatchOrConflict:
+      description: >-
+        RFC 9457 business conflict, including a confirmed browser actor that differs
+        from the authenticated session principal.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            anyOf:
+            - $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+            - $ref: '#/components/schemas/Problem'
+          examples:
+            staffSessionActorMismatch:
+              value:
+                type: /problems/staff-session-actor-mismatch
+                title: Staff session actor changed
+                status: 409
+                detail: Refresh the staff session before continuing.
+                requestId: req-actor-409
   schemas:
     Problem:
       type: object
@@ -1938,6 +2242,36 @@ components:
           items:
             type: string
       additionalProperties: true
+    InvalidExpectedStaffActorProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required: [type, title, status]
+        properties:
+          type:
+            type: string
+            const: /problems/invalid-staff-session-actor
+          title:
+            type: string
+            const: Invalid staff session actor
+          status:
+            type: integer
+            const: 400
+    StaffSessionActorMismatchProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required: [type, title, status]
+        properties:
+          type:
+            type: string
+            const: /problems/staff-session-actor-mismatch
+          title:
+            type: string
+            const: Staff session actor changed
+          status:
+            type: integer
+            const: 409
     TicketFieldConflictProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -1966,6 +2300,17 @@ components:
               - priority
               - groupId
               - assigneeId
+    ClientCommandIdReusedProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        properties:
+          type:
+            type: string
+            const: /problems/client-command-id-reused
+          status:
+            type: integer
+            const: 409
     TicketVersionPreconditionProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -2596,6 +2941,9 @@ components:
         clientCommandId:
           type: string
           format: uuid
+          description: >-
+            Identifies one canonical update request for the authenticated staff actor. An exact retry returns the original result;
+            reuse for a different payload, ticket, or staff ticket operation returns 409 without mutation.
     TransferTicketCommand:
       type: object
       additionalProperties: false
@@ -3211,10 +3559,14 @@ components:
     AuditSearchContext:
       type: object
       additionalProperties: false
-      required: [queryRedacted, queryFingerprint, filters, resultCount, openedActivities]
+      required: [queryRedacted, queryFingerprint, filters, resultCount, openedActivityCount, openedActivitiesTruncated, openedActivities]
       properties:
         queryRedacted:
           type: string
+          description: >
+            Legacy field name for the input-independent `[PROTECTED]` routine marker.
+            Exact query content is available only through the separately authorized,
+            reason-gated reveal operation.
         queryFingerprint:
           type: string
         filters:
@@ -3230,8 +3582,16 @@ components:
         originSearchActivityId:
           type: [string, 'null']
           format: uuid
+        openedActivityCount:
+          type: integer
+          format: int64
+          minimum: 0
+        openedActivitiesTruncated:
+          type: boolean
+          description: True when only the first 100 linked opens are returned.
         openedActivities:
           type: array
+          maxItems: 100
           items:
             type: object
             additionalProperties: false

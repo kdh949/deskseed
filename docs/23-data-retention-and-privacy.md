@@ -176,8 +176,9 @@ Before adding a field to audit/event/export:
 
 ## 11.1 Required startup and failure behavior
 
-- `audit.access.enabled=true` requires a configured search-query encryption key.
+- `audit.access.enabled=true` requires both a configured search-query encryption key and a separate 32-byte session-fingerprint key.
 - key absence, invalid size, or unknown active key version fails startup/readiness.
+- session-fingerprint key rotation is independent from ciphertext key rotation; the stored fingerprint is fixed-size and contains neither the session ID nor encryption key version.
 - encryption failure fails the protected search request; it does not return results without the canonical audit.
 - decryption failure returns no plaintext and creates a security event.
 

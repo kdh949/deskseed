@@ -56,6 +56,8 @@ deskseed:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
       active-key-version: ${DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION:local-v1}
+      # Independent from raw-query encryption rotation. Public development-only material.
+      session-fingerprint-key: ${DESKSEED_ACCESS_AUDIT_SESSION_FINGERPRINT_KEY:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=}
       ciphertext-retention: ${DESKSEED_ACCESS_AUDIT_QUERY_CIPHERTEXT_RETENTION:30d}
       retention-batch-size: ${DESKSEED_ACCESS_AUDIT_RETENTION_BATCH_SIZE:1000}
       retention-job-interval: ${DESKSEED_ACCESS_AUDIT_RETENTION_JOB_INTERVAL:1h}

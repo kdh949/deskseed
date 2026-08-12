@@ -18,9 +18,15 @@ export function AgentTicketWorkspacePage() {
   const [searchParams] = useSearchParams()
   const originSearchEventId = validUuid(searchParams.get('originSearchEventId'))
   const session = useStaffSession()
-  const interactionId = useMemo(createInteractionId, [ticketNumber])
+  const staffId = session.staff?.id
+  const interactionId = useMemo(createInteractionId, [staffId, ticketNumber])
   const queryClient = useQueryClient()
-  const queryKey = ['agent-ticket', ticketNumber, interactionId] as const
+  const queryKey = [
+    'agent-ticket',
+    staffId,
+    ticketNumber,
+    interactionId,
+  ] as const
   const query = useQuery({
     queryKey,
     queryFn: () =>
@@ -30,7 +36,10 @@ export function AgentTicketWorkspacePage() {
         'NAVIGATION',
         originSearchEventId,
       ),
-    enabled: ticketNumber !== null,
+    enabled:
+      session.status === 'authenticated' &&
+      staffId !== undefined &&
+      ticketNumber !== null,
   })
 
   if (ticketNumber === null) {
@@ -59,7 +68,7 @@ export function AgentTicketWorkspacePage() {
     <TicketWorkspaceContent
       key={`${session.staff?.id ?? 'unknown'}:${ticketNumber}`}
       detail={detail}
-      staffId={session.staff?.id ?? 'unknown'}
+      staffId={staffId ?? 'unknown'}
       refreshLatest={refreshLatest}
     />
   )

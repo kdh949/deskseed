@@ -6,6 +6,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test'
+import { pressSequentialTab } from './keyboard'
 
 type EditableField = 'status' | 'priority' | 'groupId' | 'assigneeId'
 
@@ -258,6 +259,19 @@ async function openContext(
   return { context, page }
 }
 
+async function openFixturePage(
+  page: Page,
+  baseURL: string,
+  server: MockServer,
+) {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await installApi(page, server)
+  await page.goto(`${baseURL}/agent/tickets/1042`)
+  await expect(
+    page.getByRole('heading', { name: '결제 승인 오류' }),
+  ).toBeVisible()
+}
+
 async function closeContexts(contexts: BrowserContext[]) {
   await Promise.all(contexts.map((context) => context.close()))
 }
@@ -265,10 +279,12 @@ async function closeContexts(contexts: BrowserContext[]) {
 test('same-field 충돌은 banner로 복구하고 두 mode draft를 보존한다', async ({
   browser,
   baseURL,
+  page,
 }) => {
   if (!baseURL) throw new Error('Playwright baseURL is required')
   const server = createServer()
-  const first = await openContext(browser, baseURL, server)
+  await openFixturePage(page, baseURL, server)
+  const first = { page }
   const second = await openContext(browser, baseURL, server)
   try {
     await first.page
@@ -328,17 +344,19 @@ test('same-field 충돌은 banner로 복구하고 두 mode draft를 보존한다
       },
     })
   } finally {
-    await closeContexts([first.context, second.context])
+    await closeContexts([second.context])
   }
 })
 
 test('non-overlap 변경은 최신 version에 병합된다', async ({
   browser,
   baseURL,
+  page,
 }) => {
   if (!baseURL) throw new Error('Playwright baseURL is required')
   const server = createServer()
-  const first = await openContext(browser, baseURL, server)
+  await openFixturePage(page, baseURL, server)
+  const first = { page }
   const second = await openContext(browser, baseURL, server)
   try {
     await first.page
@@ -366,11 +384,12 @@ test('non-overlap 변경은 최신 version에 병합된다', async ({
       status: 'PENDING',
     })
   } finally {
-    await closeContexts([first.context, second.context])
+    await closeContexts([second.context])
   }
 })
 
 test('keyboard-only로 INTERNAL mode를 명시적으로 선택하고 저장한다', async ({
+  browserName,
   page,
 }) => {
   const server = createServer()
@@ -378,7 +397,7 @@ test('keyboard-only로 INTERNAL mode를 명시적으로 선택하고 저장한�
   await page.goto('/agent/tickets/1042')
   const publicTab = page.getByRole('tab', { name: '공개 답변' })
   for (let index = 0; index < 30; index += 1) {
-    await page.keyboard.press('Tab')
+    await pressSequentialTab(page, browserName)
     if (
       await publicTab.evaluate((element) => element === document.activeElement)
     ) {
@@ -388,10 +407,10 @@ test('keyboard-only로 INTERNAL mode를 명시적으로 선택하고 저장한�
   await expect(publicTab).toBeFocused()
   await page.keyboard.press('ArrowRight')
   await expect(page.getByRole('tab', { name: '내부 메모' })).toBeFocused()
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await expect(page.getByRole('textbox', { name: '내부 메모' })).toBeFocused()
   await page.keyboard.type('키보드로 작성한 내부 메모')
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await expect(
     page.getByRole('button', { name: '변경사항 저장' }),
   ).toBeFocused()

@@ -1,5 +1,6 @@
 package dev.deskseed.staffaccess.internal
 
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -91,6 +92,27 @@ class SecurityAuditorAuthorizationIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"reason":"direct URL attempt"}"""),
         ).andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.type").value("/problems/audit-reveal-forbidden"))
+
+        val deniedReveal = jdbcTemplate.queryForMap(
+            """
+            select outcome, metadata_json
+            from admin_security_audit_events
+            where event_type = 'AUDIT_SENSITIVE_CONTENT_REVEALED'
+              and actor_id = ?
+            order by occurred_at desc
+            limit 1
+            """.trimIndent(),
+            jdbcTemplate.queryForObject(
+                "select id from staff_accounts where email_normalized = ?",
+                UUID::class.java,
+                "agent-audit-denied@example.com",
+            ),
+        )
+        assertThat(deniedReveal["outcome"]).isEqualTo("DENIED")
+        assertThat(deniedReveal["metadata_json"].toString())
+            .contains("PERMISSION_DENIED")
+            .doesNotContain("direct URL attempt")
     }
 
     private fun insertStaff(email: String, role: String, name: String): UUID {

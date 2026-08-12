@@ -1,6 +1,8 @@
 package dev.deskseed.audit.internal
 
 import dev.deskseed.audit.AuditActivityFilter
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration
@@ -96,26 +98,40 @@ internal class AuditActivityCursorCodec(
     }
 
     fun filterFingerprint(filters: AuditActivityFilter): String {
-        val canonical = listOf(
-            filters.from?.toString().orEmpty(),
-            filters.to?.toString().orEmpty(),
-            filters.ledger?.name.orEmpty(),
-            filters.action.orEmpty(),
-            filters.actorType?.name.orEmpty(),
-            filters.actorId?.toString().orEmpty(),
-            filters.ticketNumber?.toString().orEmpty(),
-            filters.groupId?.toString().orEmpty(),
-            filters.field.orEmpty(),
-            filters.source.orEmpty(),
-            filters.outcome?.name.orEmpty(),
-            filters.requestId.orEmpty(),
-            filters.correlationId.orEmpty(),
-            filters.searchFingerprint.orEmpty(),
-        ).joinToString("|")
+        val canonical = ByteArrayOutputStream().use { bytes ->
+            DataOutputStream(bytes).use { output ->
+                writeCanonicalField(output, "version", FILTER_CANONICAL_VERSION)
+                writeCanonicalField(output, "from", filters.from?.toString())
+                writeCanonicalField(output, "to", filters.to?.toString())
+                writeCanonicalField(output, "ledger", filters.ledger?.name)
+                writeCanonicalField(output, "action", filters.action)
+                writeCanonicalField(output, "actorType", filters.actorType?.name)
+                writeCanonicalField(output, "actorId", filters.actorId?.toString())
+                writeCanonicalField(output, "ticketNumber", filters.ticketNumber?.toString())
+                writeCanonicalField(output, "groupId", filters.groupId?.toString())
+                writeCanonicalField(output, "field", filters.field)
+                writeCanonicalField(output, "source", filters.source)
+                writeCanonicalField(output, "outcome", filters.outcome?.name)
+                writeCanonicalField(output, "requestId", filters.requestId)
+                writeCanonicalField(output, "correlationId", filters.correlationId)
+                writeCanonicalField(output, "searchFingerprint", filters.searchFingerprint)
+            }
+            bytes.toByteArray()
+        }
         return MessageDigest.getInstance("SHA-256")
-            .digest(canonical.toByteArray(StandardCharsets.UTF_8))
+            .digest(canonical)
             .take(16)
             .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun writeCanonicalField(output: DataOutputStream, name: String, value: String?) {
+        writeCanonicalBytes(output, name.toByteArray(StandardCharsets.UTF_8))
+        if (value == null) output.writeInt(-1) else writeCanonicalBytes(output, value.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun writeCanonicalBytes(output: DataOutputStream, value: ByteArray) {
+        output.writeInt(value.size)
+        output.write(value)
     }
 
     private fun sign(
@@ -140,5 +156,6 @@ internal class AuditActivityCursorCodec(
         const val SEPARATOR = "~"
         const val ENVELOPE = "."
         const val HMAC = "HmacSHA256"
+        const val FILTER_CANONICAL_VERSION = "v1"
     }
 }

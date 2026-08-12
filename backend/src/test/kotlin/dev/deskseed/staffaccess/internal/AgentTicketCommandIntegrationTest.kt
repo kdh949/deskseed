@@ -136,7 +136,7 @@ class AgentTicketCommandIntegrationTest {
     }
 
     @Test
-    fun `comment field combined and no-op saves create one audit with actual ordered events only`() {
+    fun `comment field combined and no-op saves create one audit with ordered effects or receipt`() {
         val agentId = insertStaff("writer@example.com", "상담사 저장", "AGENT")
         val groupId = insertGroup("저장 그룹", agentId)
         val browser = login("writer@example.com")
@@ -218,26 +218,61 @@ class AgentTicketCommandIntegrationTest {
             String::class.java,
             combinedAuditId,
         ).filterNotNull()
-        assertThat(combinedMetadata.first()).contains("contentSha256", "contentLength", "INTERNAL")
+        assertThat(combinedMetadata.first()).contains(
+            "contentSha256",
+            "contentLength",
+            "INTERNAL",
+            "commandOperation",
+            "UPDATE_TICKET",
+            "commandRequestDescriptor",
+        )
         assertThat(combinedMetadata.joinToString()).doesNotContain("우선순위를 올리고 처리 시작")
 
-        val noOp = performCommand(
-            browser,
-            created.ticketNumber,
-            "request-no-op",
+        val noOpCommandId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val noOpBody =
             """
             {
               "expectedVersion": 3,
               "changedFields": ["status", "priority"],
               "status": "OPEN",
-              "priority": "URGENT"
+              "priority": "URGENT",
+              "clientCommandId": "$noOpCommandId"
             }
-            """.trimIndent(),
+            """.trimIndent()
+        val noOp = performCommand(
+            browser,
+            created.ticketNumber,
+            "request-no-op",
+            noOpBody,
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.version").value(3))
             .andReturn().response.contentAsString
-        assertThat(eventTypes(uuidField(noOp, "auditId"))).isEmpty()
+        assertThat(eventTypes(uuidField(noOp, "auditId"))).containsExactly("UPDATE_COMMAND_RECEIVED")
+        val noOpReplay = performCommand(
+            browser,
+            created.ticketNumber,
+            "request-no-op-replay",
+            noOpBody,
+        )
+            .andExpect(status().isOk)
+            .andReturn().response.contentAsString
+        assertThat(noOpReplay).isEqualTo(noOp)
+        performCommand(
+            browser,
+            created.ticketNumber,
+            "request-no-op-misuse",
+            """
+            {
+              "expectedVersion": 3,
+              "changedFields": ["status"],
+              "status": "OPEN",
+              "clientCommandId": "$noOpCommandId"
+            }
+            """.trimIndent(),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/client-command-id-reused"))
 
         assertThat(
             jdbcTemplate.queryForObject(
@@ -253,6 +288,195 @@ class AgentTicketCommandIntegrationTest {
                 created.ticketId,
             ),
         ).isEqualTo(3)
+    }
+
+    @Test
+    fun `same staff client command replay returns original comment result without duplicate mutation`() {
+        val agentId = insertStaff("idempotent-replay@example.com", "재시도 상담사", "AGENT")
+        val groupId = insertGroup("재시도 그룹", agentId)
+        val browser = login("idempotent-replay@example.com")
+        val created = createAssignedTicket(browser, agentId, groupId, "idempotent-replay-customer@example.com")
+        val clientCommandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val body =
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": [],
+              "comment": {"visibility": "PUBLIC", "body": "응답 유실 후 같은 명령 재시도"},
+              "clientCommandId": "$clientCommandId"
+            }
+            """.trimIndent()
+
+        val first = commandResponse(browser, created.ticketNumber, "request-idempotent-first", body)
+        val replay = commandResponse(browser, created.ticketNumber, "request-idempotent-replay", body)
+
+        assertThat(first.status).isEqualTo(200)
+        assertThat(replay.status).isEqualTo(200)
+        assertThat(replay.body).isEqualTo(first.body)
+        assertThat(commentCount(created.ticketId)).isEqualTo(2)
+        assertThat(auditCount(created.ticketId)).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_audits where actor_id = ? and command_id = ?",
+                Long::class.java,
+                agentId,
+                clientCommandId,
+            ),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                select string_agg(event.metadata_json, ' ' order by event.event_order)
+                from ticket_audit_events event
+                join ticket_audits audit on audit.id = event.audit_id
+                where audit.actor_id = ? and audit.command_id = ?
+                """.trimIndent(),
+                String::class.java,
+                agentId,
+                clientCommandId,
+            ),
+        )
+            .contains("commandRequestDescriptor", "contentSha256", "UPDATE_TICKET")
+            .doesNotContain("응답 유실 후 같은 명령 재시도")
+    }
+
+    @Test
+    fun `client command id replays original on same ticket and rejects reuse on another ticket`() {
+        val agentId = insertStaff("idempotent-misuse@example.com", "명령 재사용 상담사", "AGENT")
+        val groupId = insertGroup("명령 재사용 그룹", agentId)
+        val browser = login("idempotent-misuse@example.com")
+        val firstTicket = createAssignedTicket(browser, agentId, groupId, "idempotent-misuse-one@example.com")
+        val secondTicket = createAssignedTicket(browser, agentId, groupId, "idempotent-misuse-two@example.com")
+        val clientCommandId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val firstBody =
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": [],
+              "comment": {"visibility": "INTERNAL", "body": "원래 메모"},
+              "clientCommandId": "$clientCommandId"
+            }
+            """.trimIndent()
+
+        val original = performCommand(browser, firstTicket.ticketNumber, "request-idempotent-original", firstBody)
+            .andExpect(status().isOk)
+            .andReturn().response.contentAsString
+        val exactReplay = performCommand(
+            browser,
+            firstTicket.ticketNumber,
+            "request-idempotent-exact-replay",
+            firstBody,
+        )
+            .andExpect(status().isOk)
+            .andReturn().response.contentAsString
+        assertThat(exactReplay).isEqualTo(original)
+
+        performCommand(
+            browser,
+            firstTicket.ticketNumber,
+            "request-idempotent-payload-misuse",
+            firstBody.replace("원래 메모", "다른 메모"),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/client-command-id-reused"))
+
+        performCommand(
+            browser,
+            secondTicket.ticketNumber,
+            "request-idempotent-ticket-misuse",
+            firstBody,
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/client-command-id-reused"))
+
+        assertThat(commentCount(firstTicket.ticketId)).isEqualTo(2)
+        assertThat(auditCount(firstTicket.ticketId)).isEqualTo(2)
+        assertThat(commentCount(secondTicket.ticketId)).isEqualTo(1)
+        assertThat(auditCount(secondTicket.ticketId)).isEqualTo(1)
+    }
+
+    @Test
+    fun `client command id used by another staff ticket operation fails closed`() {
+        val agentId = insertStaff("idempotent-operation@example.com", "작업 재사용 상담사", "AGENT")
+        val groupId = insertGroup("작업 재사용 그룹", agentId)
+        val browser = login("idempotent-operation@example.com")
+        val clientCommandId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        val createdResponse = mockMvc.perform(
+            createTicketRequest(
+                browser,
+                "request-idempotent-operation-create",
+                "correlation-idempotent-operation",
+                """
+                {
+                  "requester": {"name": "작업 재사용 고객", "email": "idempotent-operation-customer@example.com"},
+                  "subject": "작업 ID 재사용 방지",
+                  "firstComment": {"visibility": "PUBLIC", "body": "최초 공개 문의"},
+                  "priority": "NORMAL",
+                  "groupId": "$groupId",
+                  "assigneeId": "$agentId",
+                  "clientCommandId": "$clientCommandId"
+                }
+                """.trimIndent(),
+            ),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val ticketNumber = longField(createdResponse, "ticketNumber")
+        val ticketId = jdbcTemplate.queryForObject(
+            "select id from tickets where ticket_number = ?",
+            UUID::class.java,
+            ticketNumber,
+        )!!
+
+        performCommand(
+            browser,
+            ticketNumber,
+            "request-idempotent-operation-update",
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": [],
+              "comment": {"visibility": "INTERNAL", "body": "다른 작업으로 재사용되면 안 됨"},
+              "clientCommandId": "$clientCommandId"
+            }
+            """.trimIndent(),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/client-command-id-reused"))
+
+        assertThat(commentCount(ticketId)).isEqualTo(1)
+        assertThat(auditCount(ticketId)).isEqualTo(1)
+    }
+
+    @Test
+    fun `concurrent duplicate client command commits one comment and replays one result`() {
+        val agentId = insertStaff("idempotent-concurrent@example.com", "동시 재시도 상담사", "AGENT")
+        val groupId = insertGroup("동시 재시도 그룹", agentId)
+        val browserA = login("idempotent-concurrent@example.com")
+        val browserB = login("idempotent-concurrent@example.com")
+        val created = createAssignedTicket(
+            browserA,
+            agentId,
+            groupId,
+            "idempotent-concurrent-customer@example.com",
+        )
+        val body =
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": [],
+              "comment": {"visibility": "PUBLIC", "body": "동시 재시도는 한 번만 저장"},
+              "clientCommandId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+            }
+            """.trimIndent()
+
+        val responses = concurrently(
+            Callable { commandResponse(browserA, created.ticketNumber, "request-idempotent-a", body) },
+            Callable { commandResponse(browserB, created.ticketNumber, "request-idempotent-b", body) },
+        )
+
+        assertThat(responses.map(HttpResult::status)).containsExactlyInAnyOrder(200, 200)
+        assertThat(responses.map(HttpResult::body).distinct()).hasSize(1)
+        assertThat(commentCount(created.ticketId)).isEqualTo(2)
+        assertThat(auditCount(created.ticketId)).isEqualTo(2)
     }
 
     @Test
@@ -522,6 +746,68 @@ class AgentTicketCommandIntegrationTest {
                 created.ticketId,
             ).filterNotNull(),
         ).containsExactly("priority", "status")
+    }
+
+    @Test
+    fun `stale command mixing a conflicting field with a disjoint field and comment persists nothing`() {
+        val agentId = insertStaff("mixed-conflict@example.com", "혼합 충돌 상담사", "AGENT")
+        val groupId = insertGroup("혼합 충돌 그룹", agentId)
+        val browser = login("mixed-conflict@example.com")
+        val created = createAssignedTicket(browser, agentId, groupId, "mixed-conflict-customer@example.com")
+
+        performCommand(
+            browser,
+            created.ticketNumber,
+            "request-mixed-conflict-winner",
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": ["status"],
+              "status": "OPEN"
+            }
+            """.trimIndent(),
+        ).andExpect(status().isOk)
+
+        val auditCountBefore = auditCount(created.ticketId)
+        val commentCountBefore = commentCount(created.ticketId)
+        performCommand(
+            browser,
+            created.ticketNumber,
+            "request-mixed-conflict-stale",
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": ["status", "priority"],
+              "status": "PENDING",
+              "priority": "URGENT",
+              "comment": {"visibility": "INTERNAL", "body": "conflicting-command-must-not-persist"}
+            }
+            """.trimIndent(),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/ticket-field-conflict"))
+            .andExpect(jsonPath("$.currentVersion").value(1))
+            .andExpect(jsonPath("$.conflictingFields[0]").value("status"))
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select status, priority, version from tickets where id = ?",
+                created.ticketId,
+            ),
+        )
+            .containsEntry("status", "OPEN")
+            .containsEntry("priority", "NORMAL")
+            .containsEntry("version", 1L)
+        assertThat(commentCount(created.ticketId)).isEqualTo(commentCountBefore)
+        assertThat(auditCount(created.ticketId)).isEqualTo(auditCountBefore)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ? and body = ?",
+                Long::class.java,
+                created.ticketId,
+                "conflicting-command-must-not-persist",
+            ),
+        ).isZero()
     }
 
     @Test

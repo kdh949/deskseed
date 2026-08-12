@@ -1,0 +1,9 @@
+name,setting,unit,source
+effective_cache_size,524288,8kB,default
+jit,on,,default
+maintenance_work_mem,65536,kB,default
+max_parallel_workers_per_gather,2,,default
+random_page_cost,4,,default
+seq_page_cost,1,,default
+shared_buffers,16384,8kB,configuration file
+work_mem,4096,kB,default

@@ -54,7 +54,7 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/activities/*/search-query-reveal")
-                    .hasAuthority("audit:search-query:reveal")
+                    .authenticated()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/exports")
                     .hasAuthority("audit:export")
                 it.requestMatchers(HttpMethod.GET, "/api/v1/audit/exports/*")

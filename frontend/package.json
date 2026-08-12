@@ -16,8 +16,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:dev": "playwright test agent-views-workspace.spec.ts audit-explorer.spec.ts customer-request.spec.ts frontend-system.spec.ts staff-auth-admin.spec.ts ticket-composer-conflict.spec.ts transfer-child-ticket.spec.ts",
-    "test:e2e:update": "playwright test --update-snapshots",
+    "test:e2e:dev": "bash ../scripts/run-frontend-browser-e2e.sh",
+    "test:e2e:update": "playwright test agent-views-workspace.spec.ts audit-explorer.spec.ts customer-request.spec.ts frontend-system.spec.ts staff-auth-admin.spec.ts ticket-composer-conflict.spec.ts transfer-child-ticket.spec.ts --update-snapshots=all",
     "test:e2e:stack": "bash ../scripts/run-customer-request-e2e.sh",
     "test:e2e:audit-stack": "bash ../scripts/run-audit-explorer-e2e.sh"
   },
@@ -27,8 +27,8 @@
     "@zendeskgarden/react-theming": "9.15.7",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-router": "7.9.6",
-    "styled-components": "6.1.19"
+    "react-router": "7.18.2",
+    "styled-components": "6.5.2"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",

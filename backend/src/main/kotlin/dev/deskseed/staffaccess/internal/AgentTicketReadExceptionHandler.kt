@@ -28,7 +28,7 @@ internal class AgentTicketReadExceptionHandler {
     fun auditUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
         request,
         HttpStatus.SERVICE_UNAVAILABLE,
-        "/problems/access-audit-unavailable",
+        "/problems/audit-write-unavailable",
         "Protected data unavailable",
         "The protected read or search could not be safely audited. Try again later.",
     )

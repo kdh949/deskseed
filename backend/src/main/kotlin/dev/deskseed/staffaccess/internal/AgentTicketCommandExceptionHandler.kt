@@ -5,6 +5,7 @@ import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.TicketAssignmentInvalidException
 import dev.deskseed.ticketing.TicketAuditUnavailableException
 import dev.deskseed.ticketing.TicketCommandInvalidException
+import dev.deskseed.ticketing.TicketCommandIdReusedException
 import dev.deskseed.ticketing.TicketFieldConflictException
 import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketTransitionInvalidException
@@ -80,6 +81,15 @@ internal class AgentTicketCommandExceptionHandler {
         }
         return response
     }
+
+    @ExceptionHandler(TicketCommandIdReusedException::class)
+    fun commandIdReused(request: HttpServletRequest) = problem(
+        request,
+        HttpStatus.CONFLICT,
+        "/problems/client-command-id-reused",
+        "Client command ID was already used",
+        "The client command ID identifies a different ticket command.",
+    )
 
     @ExceptionHandler(TicketVersionPreconditionFailedException::class)
     fun preconditionFailed(

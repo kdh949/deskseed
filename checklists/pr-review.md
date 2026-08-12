@@ -1,16 +1,20 @@
 # PR Review Checklist
 
-- [ ] Linked requirement and gate IDs
-- [ ] No Ticket.description
-- [ ] Customer projection cannot expose internal data
-- [ ] Assignment/group invariant preserved
-- [ ] Transfer and child semantics not mixed
-- [ ] Mutation and canonical audit atomic
-- [ ] Sensitive read audit policy applied
-- [ ] Permission checked server-side
-- [ ] Problem Details contract preserved
+Current local review status is backed by
+[`docs/evidence/release/verification-summary.md`](../docs/evidence/release/verification-summary.md).
+Hosted PR checks and human approval remain separate.
+
+- [x] Linked requirement and gate IDs
+- [x] No Ticket.description
+- [x] Customer projection cannot expose internal data
+- [x] Assignment/group invariant preserved
+- [x] Transfer and child semantics not mixed
+- [x] Mutation and canonical audit atomic
+- [x] Sensitive read audit policy applied
+- [x] Permission checked server-side
+- [x] Problem Details contract preserved
 - [ ] Migration tested from previous release
-- [ ] UI loading/empty/error/conflict states
-- [ ] Keyboard/accessibility/visual tests
-- [ ] No secret/token/body in logs
-- [ ] Docs and decision register updated
+- [x] UI loading/empty/error/conflict states
+- [x] Automated keyboard/accessibility/visual tests
+- [x] No secret/token/body in logs
+- [x] Docs and decision register updated

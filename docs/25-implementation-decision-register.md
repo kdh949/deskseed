@@ -17,7 +17,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-011 | generic signed webhooks before product-specific connectors | accepted | provider UX/auth requires connector |
 | D-012 | separate public Platform API adapter | accepted | no revisit planned |
 | D-013 | separate audit ledgers, unified read projection | accepted | evidence shows unmanageable complexity |
-| D-014 | search query redacted+HMAC+optional ciphertext | accepted | privacy/security review changes |
+| D-014 | search query HMAC + protected exact ciphertext | accepted; routine representation superseded by D-048 | privacy/security review changes |
 | D-015 | ExternalReference before external data mirroring | accepted | live data use case requires projection |
 | D-016 | scoped API key first, OAuth later | accepted | third-party/delegated app requirement |
 | D-017 | sandboxed Agent App SDK later, no backend plugin execution | accepted | isolated plugin runtime strategy approved |
@@ -53,6 +53,23 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-045 | exact search query is required authenticated ciphertext with 30-day default retention | accepted | legal/operator retention review |
 | D-046 | Mailpit is the development outbound-mail adapter; production provider later | accepted | production email rollout |
 | D-047 | staff auth uses server sessions, CSRF, PostgreSQL lockout, and password-file bootstrap | accepted | MFA/SSO or horizontally scaled session requirement |
+| D-048 | routine search audit stores a content-free marker; exact meaning requires protected reveal | accepted | investigation usability or privacy evidence changes |
+| D-049 | Core staff UpdateTicket exact replay reuses immutable ticket audit metadata plus a database advisory lock; V14 adds a non-unique partial lookup index and multiple matches fail closed | accepted | command retention, multi-ticket audit shape, or measured lookup limits change |
+| D-050 | Staff browser requests carry a realm-local expected-actor consistency guard that is compared with, but never selects, the authenticated server-session principal | accepted | non-cookie session isolation or browser-context ownership model changes |
+| D-051 | Search-origin fingerprints use an encryption-independent fixed-format key; audit projection rebuild copies canonical event-time snapshots under a shared/exclusive PostgreSQL lock | accepted | session isolation or projection storage architecture changes |
+
+D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
+IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.
+원 receipt의 actor/command ID는 추적 가능하나 gate 전체 평가는 `LIMITED`이며 별도 audit 요구가 승인될 때 재검토한다.
+
+D-050의 `X-Deskseed-Expected-Staff-Id`는 optional defense-in-depth header다. 일반 staff read/CSRF/write는
+한 logical operation 시작 시 confirmed actor와 generation을 한 번 snapshot해 끝까지 사용한다. 로그인 CSRF/POST와
+post-login `/me` verification은 새 identity를 아직 확인하지 않았으므로 생략한다. 서버는 session principal을 먼저
+검증하고 header가 있으면 canonical UUID·동일 actor인지 activity 갱신과 controller 실행 전에 비교한다. mismatch는
+server session이나 다른 탭 owner marker를 폐기하지 않고 stale tab UI만 fail-closed한다. 구현된 `staffSession`
+operation은 OpenAPI에 standard header parameter와 `400 /problems/invalid-staff-session-actor`,
+`409 /problems/staff-session-actor-mismatch`를 직접 노출한다. blueprint-only operation은 policy extension을 따르되
+구현 계약을 동결할 때 같은 operation-level binding을 추가한다.
 
 ## How to use this register
 

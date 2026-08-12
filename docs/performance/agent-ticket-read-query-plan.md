@@ -36,7 +36,14 @@ create index tickets_status_cursor_idx
     on tickets (status, updated_at desc, ticket_number desc);
 ```
 
-The test deliberately checks plan shape rather than committing machine-specific timing. Latency p50/p95 and `EXPLAIN (ANALYZE, BUFFERS)` on production-scale fixtures remain PERF-002/003 work; this slice establishes bounded query count and index eligibility without claiming a latency threshold.
+The focused integration test deliberately checks plan shape rather than machine-specific
+timing. For the release harness, the repository now prospectively declares a 50 ms
+warm-cache p95 ceiling on the documented PostgreSQL 17, 2 CPU / 6 GiB, 1M-ticket profile.
+All five exact `DefaultStaffView` queries must also remain one bounded joined statement,
+return at most the 51-row probe page, avoid row-by-row label lookups, and have
+representative fixture cardinality. There is no variance waiver for an over-budget View.
+This is a local database-component budget, not a production SLO; see the
+[PERF-001 release assessment](../evidence/release/performance/README.md#perf-001-gate-assessment).
 
 ## Verification command
 

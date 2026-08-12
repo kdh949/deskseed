@@ -133,12 +133,14 @@ async function installAuditApi(page: Page) {
         ipAddress: '192.0.2.42',
         userAgent: 'Deskseed approved browser metadata',
         search: {
-          queryRedacted: 'i***@example.com priority:u***',
+          queryRedacted: '[PROTECTED]',
           queryFingerprint: 'hmac-v2:08dd5f1cb5ad448b',
           filters: { status: 'OPEN', groupId: 'support-emea' },
           sort: 'updatedAt:desc,ticketNumber:desc',
           resultCount: 4,
           originSearchActivityId: null,
+          openedActivityCount: 1,
+          openedActivitiesTruncated: false,
           openedActivities: [
             {
               activityId: 'a0000000-0000-0000-0000-000000000004',
@@ -215,7 +217,7 @@ for (const width of [1280, 1440, 1920]) {
     await page.getByRole('button', { name: '닫기' }).click()
 
     await page.getByRole('button', { name: 'SEARCH_EXECUTED' }).click()
-    await expect(page.getByText('i***@example.com priority:u***')).toBeVisible()
+    await expect(page.getByText('[PROTECTED]')).toBeVisible()
     const revealButton = page.getByRole('button', {
       name: '이 event의 raw query 공개',
     })

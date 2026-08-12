@@ -5,6 +5,21 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentViewsPage } from './AgentViewsPage'
 
+const sessionState = vi.hoisted(() => ({ staffId: 'agent-a' }))
+
+vi.mock('../staff-auth/StaffSessionContext', () => ({
+  useStaffSession: () => ({
+    status: 'authenticated',
+    staff: {
+      id: sessionState.staffId,
+      email: `${sessionState.staffId}@example.com`,
+      displayName: sessionState.staffId,
+      role: 'AGENT',
+      capabilities: ['AGENT_WORKSPACE'],
+    },
+  }),
+}))
+
 function ticket(ticketNumber: number, subject: string) {
   return {
     ticketNumber,
@@ -27,10 +42,12 @@ function ticket(ticketNumber: number, subject: string) {
   }
 }
 
-function renderPage(path = '/agent/views/pending') {
-  const queryClient = new QueryClient({
+function renderPage(
+  path = '/agent/views/pending',
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
-  })
+  }),
+) {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
@@ -46,7 +63,10 @@ function renderPage(path = '/agent/views/pending') {
   )
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  sessionState.staffId = 'agent-a'
+  vi.unstubAllGlobals()
+})
 
 describe('AgentViewsPage', () => {
   it('renders a dense accessible queue and keeps filters in the URL', async () => {
@@ -166,5 +186,49 @@ describe('AgentViewsPage', () => {
       'safe-request-id',
     )
     expect(screen.getByRole('button', { name: '다시 시도' })).toBeVisible()
+  })
+
+  it('never reuses another staff account queue from the shared query cache', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+      },
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [ticket(1042, 'A 계정 전용 문의')],
+            nextCursor: null,
+            totalApproximate: null,
+            sort: 'updatedAt:desc,ticketNumber:desc',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [ticket(2042, 'B 계정 전용 문의')],
+            nextCursor: null,
+            totalApproximate: null,
+            sort: 'updatedAt:desc,ticketNumber:desc',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const accountA = renderPage('/agent/views/my-open', queryClient)
+    expect(await screen.findByText('A 계정 전용 문의')).toBeVisible()
+    accountA.unmount()
+
+    sessionState.staffId = 'agent-b'
+    renderPage('/agent/views/my-open', queryClient)
+
+    expect(await screen.findByText('B 계정 전용 문의')).toBeVisible()
+    expect(screen.queryByText('A 계정 전용 문의')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

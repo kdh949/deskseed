@@ -1,0 +1,13 @@
+entity,actual_count,expected_count,matches_expected
+access_audit_events,500000,500000,t
+admin_security_audit_events,100000,100000,t
+audit_activity_projection,1600000,1600000,t
+customers,100000,100000,t
+dangling_comment_ticket_refs,0,0,t
+dangling_ticket_audit_refs,0,0,t
+search_audit_details,50000,50000,t
+ticket_audit_events,1000000,1000000,t
+ticket_audits,1000000,1000000,t
+ticket_comments,2000000,2000000,t
+ticket_relations,10000,10000,t
+tickets,1000000,1000000,t

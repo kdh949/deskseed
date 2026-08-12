@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  STAFF_DRAFT_SESSION_OWNER_KEY,
   buildUpdateTicketCommand,
   clearSubmittedDraft,
   createEditableTicketFields,
   mergeLatestFields,
+  purgeStaffTicketDrafts,
   readTicketDraft,
   reconcileLatestFields,
   resolveConflictField,
@@ -128,6 +130,7 @@ describe('ticket editor model', () => {
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key),
     }
+    storage.set(STAFF_DRAFT_SESSION_OWNER_KEY, 'staff-1')
     const firstKey = ticketDraftStorageKey('staff-1', 1042)
     const secondKey = ticketDraftStorageKey('staff-1', 1043)
     expect(firstKey).not.toBe(secondKey)
@@ -165,5 +168,192 @@ describe('ticket editor model', () => {
     expect(readTicketDraft(adapter, secondKey)?.comments.PUBLIC).toBe(
       '다른 티켓',
     )
+  })
+
+  it('restores a draft only within the 12-hour active-session recovery window', () => {
+    const savedAt = Date.parse('2026-08-12T00:00:00.000Z')
+    const storage = new Map<string, string>()
+    const adapter = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    }
+    storage.set(STAFF_DRAFT_SESSION_OWNER_KEY, 'staff-1')
+    const key = ticketDraftStorageKey('staff-1', 1042)
+
+    writeTicketDraft(
+      adapter,
+      key,
+      {
+        mode: 'INTERNAL',
+        comments: { PUBLIC: '고객 답변', INTERNAL: '팀 메모' },
+        fields: serverFields,
+        baseVersion: 7,
+      },
+      savedAt,
+    )
+
+    expect(JSON.parse(storage.get(key) ?? '{}').savedAt).toBe(
+      '2026-08-12T00:00:00.000Z',
+    )
+    expect(
+      readTicketDraft(adapter, key, Date.parse('2026-08-12T11:59:59.999Z'))
+        ?.comments.INTERNAL,
+    ).toBe('팀 메모')
+
+    expect(
+      readTicketDraft(adapter, key, Date.parse('2026-08-12T12:00:00.001Z')),
+    ).toBeNull()
+    expect(storage.has(key)).toBe(false)
+  })
+
+  it('cannot recreate a departing staff draft after the session owner marker is cleared or changed', () => {
+    const storage = new Map<string, string>()
+    const adapter = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    }
+    const key = ticketDraftStorageKey('staff-1', 1042)
+    const snapshot = {
+      mode: 'INTERNAL' as const,
+      comments: { PUBLIC: '', INTERNAL: '세션 종료 직전 메모' },
+      fields: serverFields,
+      baseVersion: 7,
+    }
+
+    storage.set(STAFF_DRAFT_SESSION_OWNER_KEY, 'staff-1')
+    writeTicketDraft(adapter, key, snapshot)
+    expect(storage.has(key)).toBe(true)
+
+    storage.delete(STAFF_DRAFT_SESSION_OWNER_KEY)
+    writeTicketDraft(adapter, key, snapshot)
+    expect(storage.has(key)).toBe(false)
+
+    storage.set(STAFF_DRAFT_SESSION_OWNER_KEY, 'staff-2')
+    writeTicketDraft(adapter, key, snapshot)
+    expect(storage.has(key)).toBe(false)
+  })
+
+  it.each([
+    ['invalid JSON', '{'],
+    [
+      'invalid timestamp',
+      JSON.stringify({
+        formatVersion: 1,
+        savedAt: 'not-a-timestamp',
+        mode: 'PUBLIC',
+        comments: { PUBLIC: '고객 답변', INTERNAL: '' },
+        fields: serverFields,
+        serverFields,
+        baseVersion: 7,
+      }),
+    ],
+    [
+      'future timestamp',
+      JSON.stringify({
+        formatVersion: 1,
+        savedAt: '2026-08-12T00:00:00.001Z',
+        mode: 'PUBLIC',
+        comments: { PUBLIC: '고객 답변', INTERNAL: '' },
+        fields: serverFields,
+        serverFields,
+        baseVersion: 7,
+      }),
+    ],
+  ])('deletes a malformed stored draft with %s', (_label, raw) => {
+    const storage = new Map([['draft-key', raw]])
+    const adapter = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    }
+
+    expect(
+      readTicketDraft(
+        adapter,
+        'draft-key',
+        Date.parse('2026-08-12T00:00:00.000Z'),
+      ),
+    ).toBeNull()
+    expect(storage.has('draft-key')).toBe(false)
+  })
+
+  it('purges only ticket draft keys that belong to the exact staff namespace', () => {
+    const firstStaffDraft = ticketDraftStorageKey('staff-1', 1042)
+    const secondStaffDraft = ticketDraftStorageKey('staff-1', 1043)
+    const otherStaffDraft = ticketDraftStorageKey('staff-10', 1042)
+    const preferenceKey = 'deskseed:agent:staff-1:workspace-panels:v1'
+    const malformedDraftKey = 'deskseed:draft:ticket:not-a-number:staff-1:v1'
+    const unrelatedKey = 'unrelated-application-key'
+    const storage = new Map([
+      [firstStaffDraft, 'first'],
+      [secondStaffDraft, 'second'],
+      [otherStaffDraft, 'other staff'],
+      [preferenceKey, 'preference'],
+      [malformedDraftKey, 'malformed'],
+      [unrelatedKey, 'unrelated'],
+    ])
+    const adapter = {
+      get length() {
+        return storage.size
+      },
+      key: (index: number) => [...storage.keys()][index] ?? null,
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    }
+
+    purgeStaffTicketDrafts(adapter, 'staff-1')
+
+    expect([...storage.keys()]).toEqual([
+      otherStaffDraft,
+      preferenceKey,
+      malformedDraftKey,
+      unrelatedKey,
+    ])
+  })
+
+  it('treats unavailable draft storage as disabled recovery', () => {
+    const key = ticketDraftStorageKey('staff-1', 1042)
+    const unavailableRead = {
+      getItem: () => {
+        throw new DOMException('Storage access denied', 'SecurityError')
+      },
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    }
+    expect(() => readTicketDraft(unavailableRead, key)).not.toThrow()
+    expect(readTicketDraft(unavailableRead, key)).toBeNull()
+
+    const unavailableWrite = {
+      getItem: (storageKey: string) =>
+        storageKey === STAFF_DRAFT_SESSION_OWNER_KEY ? 'staff-1' : null,
+      setItem: () => {
+        throw new DOMException('Storage quota exceeded', 'QuotaExceededError')
+      },
+      removeItem: () => undefined,
+    }
+    expect(() =>
+      writeTicketDraft(unavailableWrite, key, {
+        mode: 'INTERNAL',
+        comments: { PUBLIC: '', INTERNAL: '브라우저 메모' },
+        fields: serverFields,
+        baseVersion: 7,
+      }),
+    ).not.toThrow()
+  })
+
+  it('does not fail the caller when an invalid draft cannot be deleted', () => {
+    const unavailableDelete = {
+      getItem: () => '{',
+      setItem: () => undefined,
+      removeItem: () => {
+        throw new DOMException('Storage access denied', 'SecurityError')
+      },
+    }
+
+    expect(() => readTicketDraft(unavailableDelete, 'draft-key')).not.toThrow()
+    expect(readTicketDraft(unavailableDelete, 'draft-key')).toBeNull()
   })
 })

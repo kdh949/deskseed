@@ -1,0 +1,90 @@
+Timing is on.
+Time: 0.244 ms
+SET
+Time: 0.017 ms
+SET
+Time: 0.007 ms
+FIXTURE_SUPPORT_GROUPS
+INSERT 0 100
+Time: 1.702 ms
+FIXTURE_STAFF
+INSERT 0 1000
+Time: 5.591 ms
+INSERT 0 1000
+Time: 17.828 ms
+FIXTURE_CUSTOMERS
+INSERT 0 100000
+Time: 402.403 ms
+FIXTURE_TICKETS
+INSERT 0 1000000
+Time: 29047.975 ms (00:29.048)
+ setval
+---------
+ 1001000
+(1 row)
+
+Time: 0.527 ms
+INSERT 0 10000
+Time: 284.408 ms
+FIXTURE_COMMENTS
+INSERT 0 2000000
+Time: 25202.148 ms (00:25.202)
+ALTER TABLE
+Time: 1.113 ms
+ALTER TABLE
+Time: 0.375 ms
+ALTER TABLE
+Time: 0.205 ms
+ALTER TABLE
+Time: 0.139 ms
+ALTER TABLE
+Time: 0.176 ms
+FIXTURE_TICKET_AUDITS
+INSERT 0 1000000
+Time: 27822.458 ms (00:27.822)
+INSERT 0 1000000
+Time: 12411.371 ms (00:12.411)
+FIXTURE_ACCESS_AUDITS
+INSERT 0 500000
+Time: 9732.916 ms (00:09.733)
+INSERT 0 50000
+Time: 489.336 ms
+FIXTURE_ADMIN_AUDITS
+INSERT 0 100000
+Time: 1505.812 ms (00:01.506)
+ALTER TABLE
+Time: 2.951 ms
+ALTER TABLE
+Time: 0.167 ms
+ALTER TABLE
+Time: 0.179 ms
+ALTER TABLE
+Time: 0.171 ms
+ALTER TABLE
+Time: 0.106 ms
+REBUILD_AUDIT_ACTIVITY_PROJECTION
+ ticket_change_count | access_search_count | admin_security_count | total_count
+---------------------+---------------------+----------------------+-------------
+             1000000 |              500000 |               100000 |     1600000
+(1 row)
+
+Time: 53541.204 ms (00:53.541)
+VACUUM_ANALYZE_RELEASE_FIXTURE
+VACUUM
+Time: 117.787 ms
+VACUUM
+Time: 337.545 ms
+VACUUM
+Time: 265.657 ms
+VACUUM
+Time: 275.262 ms
+VACUUM
+Time: 100.160 ms
+VACUUM
+Time: 1340.048 ms (00:01.340)
+VACUUM
+Time: 44.269 ms
+VACUUM
+Time: 165.941 ms
+VACUUM
+Time: 749.259 ms

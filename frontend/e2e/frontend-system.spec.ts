@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { pressSequentialTab } from './keyboard'
 
 const fixtures = [
   ['agent-home', /좋은 오후예요/],
@@ -71,6 +72,7 @@ for (const [fixture, heading] of stateFixtures) {
 }
 
 test('skip link, context tabs, composer modes, and resize handles preserve keyboard semantics', async ({
+  browserName,
   page,
 }) => {
   await page.goto('/__fixtures__/frontend-system/public-form')
@@ -82,7 +84,7 @@ test('skip link, context tabs, composer modes, and resize handles preserve keybo
       document.activeElement.blur()
     }
   })
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await expect(
     page.getByRole('link', { name: '본문으로 건너뛰기' }),
   ).toBeFocused()

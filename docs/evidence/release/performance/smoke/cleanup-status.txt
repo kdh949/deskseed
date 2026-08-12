@@ -1,0 +1,7 @@
+status=PASS
+container_name=deskseed-release-perf-smoke-zRMUq0-88805-23229
+container_id=9e34deb291b4f7afac6a456f30c2d6cc700265cd21d3332fa3bf449b5b96e982
+data_volume=8bd6c92fb51763bfd4d56a184ee4347568586f6525f22d33940b90caaf4778ea
+container_cleanup=REMOVED_AND_VERIFIED_ABSENT
+volume_cleanup=REMOVED_AND_VERIFIED_ABSENT
+scratch_cleanup=REMOVED_AND_VERIFIED_ABSENT

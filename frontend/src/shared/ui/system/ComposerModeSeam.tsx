@@ -57,6 +57,7 @@ export function ComposerModeSeam({
   const draftId = (nextMode: ComposerMode) => `${baseId}-draft-${nextMode}`
 
   const selectMode = (nextMode: ComposerMode) => {
+    if (busy) return
     if (controlledMode === undefined) setLocalMode(nextMode)
     onModeChange?.(nextMode)
   }
@@ -69,6 +70,7 @@ export function ComposerModeSeam({
   }
 
   const moveTab = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (busy) return
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
     const last = modes.length - 1
@@ -116,6 +118,7 @@ export function ComposerModeSeam({
                 aria-selected={selected}
                 aria-controls={panelId(option.value)}
                 tabIndex={selected ? 0 : -1}
+                disabled={busy}
                 onClick={() => selectMode(option.value)}
                 onKeyDown={(event) => moveTab(event, index)}
               >

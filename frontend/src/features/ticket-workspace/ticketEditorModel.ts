@@ -25,6 +25,7 @@ export interface TicketDraftSnapshot {
   fields: EditableTicketFields
   serverFields: EditableTicketFields
   baseVersion: number
+  pendingCommandId?: string
 }
 
 interface StoredTicketDraft extends TicketDraftSnapshot {
@@ -37,6 +38,18 @@ export interface StorageAdapter {
   setItem(key: string, value: string): unknown
   removeItem(key: string): unknown
 }
+
+export interface EnumerableStorageAdapter extends StorageAdapter {
+  readonly length: number
+  key(index: number): string | null
+}
+
+export const TICKET_DRAFT_TTL_MS = 12 * 60 * 60 * 1000
+export const STAFF_DRAFT_SESSION_OWNER_KEY =
+  'deskseed:staff-session:last-authenticated-staff:v1'
+
+const TICKET_DRAFT_KEY_PREFIX = 'deskseed:draft:ticket:'
+const TICKET_DRAFT_KEY_SUFFIX = ':v1'
 
 const FIELD_ORDER: TicketFieldName[] = [
   'status',
@@ -196,7 +209,7 @@ function assignField(
 }
 
 export function ticketDraftStorageKey(staffId: string, ticketNumber: number) {
-  return `deskseed:draft:ticket:${ticketNumber}:${staffId}:v1`
+  return `${TICKET_DRAFT_KEY_PREFIX}${ticketNumber}:${staffId}${TICKET_DRAFT_KEY_SUFFIX}`
 }
 
 export function writeTicketDraft(
@@ -205,24 +218,47 @@ export function writeTicketDraft(
   snapshot: Omit<TicketDraftSnapshot, 'serverFields'> & {
     serverFields?: EditableTicketFields
   },
+  now = Date.now(),
 ) {
-  const stored: StoredTicketDraft = {
-    ...snapshot,
-    serverFields: snapshot.serverFields ?? snapshot.fields,
-    formatVersion: 1,
-    savedAt: new Date().toISOString(),
+  try {
+    if (!isTicketDraftWriteAuthorized(storage, key)) {
+      return removeTicketDraft(storage, key)
+    }
+    const stored: StoredTicketDraft = {
+      ...snapshot,
+      serverFields: snapshot.serverFields ?? snapshot.fields,
+      formatVersion: 1,
+      savedAt: new Date(now).toISOString(),
+    }
+    storage.setItem(key, JSON.stringify(stored))
+    return true
+  } catch {
+    return false
   }
-  storage.setItem(key, JSON.stringify(stored))
 }
 
 export function readTicketDraft(
   storage: StorageAdapter,
   key: string,
+  now = Date.now(),
 ): StoredTicketDraft | null {
-  const raw = storage.getItem(key)
-  if (!raw) return null
+  let raw: string | null
+  try {
+    raw = storage.getItem(key)
+  } catch {
+    return null
+  }
+  if (raw === null) return null
+  try {
+    if (!isTicketDraftWriteAuthorized(storage, key)) {
+      return removeInvalidTicketDraft(storage, key)
+    }
+  } catch {
+    return null
+  }
   try {
     const value = JSON.parse(raw) as Partial<StoredTicketDraft>
+    const savedAt = Date.parse(value.savedAt ?? '')
     if (
       value.formatVersion !== 1 ||
       (value.mode !== 'PUBLIC' && value.mode !== 'INTERNAL') ||
@@ -231,13 +267,62 @@ export function readTicketDraft(
       !isEditableFields(value.serverFields) ||
       typeof value.baseVersion !== 'number' ||
       !Number.isSafeInteger(value.baseVersion) ||
-      typeof value.savedAt !== 'string'
+      typeof value.savedAt !== 'string' ||
+      !Number.isFinite(savedAt) ||
+      savedAt > now ||
+      now - savedAt > TICKET_DRAFT_TTL_MS ||
+      (value.pendingCommandId !== undefined &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          value.pendingCommandId,
+        ))
     ) {
-      return null
+      return removeInvalidTicketDraft(storage, key)
     }
     return value as StoredTicketDraft
   } catch {
-    return null
+    return removeInvalidTicketDraft(storage, key)
+  }
+}
+
+export function purgeStaffTicketDrafts(
+  storage: EnumerableStorageAdapter,
+  staffId: string,
+) {
+  const matchingKeys: string[] = []
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index)
+      if (key && isTicketDraftKeyForStaff(key, staffId)) matchingKeys.push(key)
+    }
+  } catch {
+    return
+  }
+  for (const key of matchingKeys) removeTicketDraft(storage, key)
+}
+
+export function sweepStaffTicketDrafts(
+  storage: EnumerableStorageAdapter,
+  staffId: string,
+  now = Date.now(),
+) {
+  const matchingKeys: string[] = []
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index)
+      if (key && isTicketDraftKeyForStaff(key, staffId)) matchingKeys.push(key)
+    }
+  } catch {
+    return
+  }
+  for (const key of matchingKeys) readTicketDraft(storage, key, now)
+}
+
+export function removeTicketDraft(storage: StorageAdapter, key: string) {
+  try {
+    storage.removeItem(key)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -254,12 +339,59 @@ export function clearSubmittedDraft(
   })
 }
 
+export function clearPendingTicketCommand(
+  storage: StorageAdapter,
+  key: string,
+) {
+  const current = readTicketDraft(storage, key)
+  if (!current?.pendingCommandId) return
+  const withoutPendingCommand = { ...current }
+  delete withoutPendingCommand.pendingCommandId
+  writeTicketDraft(storage, key, withoutPendingCommand)
+}
+
 function isCommentDrafts(value: unknown): value is TicketCommentDrafts {
   if (!value || typeof value !== 'object') return false
   const comments = value as Record<string, unknown>
   return (
     typeof comments.PUBLIC === 'string' && typeof comments.INTERNAL === 'string'
   )
+}
+
+function removeInvalidTicketDraft(storage: StorageAdapter, key: string) {
+  removeTicketDraft(storage, key)
+  return null
+}
+
+function isTicketDraftKeyForStaff(key: string, staffId: string) {
+  return ticketDraftStaffId(key) === staffId
+}
+
+function isTicketDraftWriteAuthorized(storage: StorageAdapter, key: string) {
+  const staffId = ticketDraftStaffId(key)
+  return (
+    staffId === null ||
+    storage.getItem(STAFF_DRAFT_SESSION_OWNER_KEY) === staffId
+  )
+}
+
+function ticketDraftStaffId(key: string) {
+  if (
+    !key.startsWith(TICKET_DRAFT_KEY_PREFIX) ||
+    !key.endsWith(TICKET_DRAFT_KEY_SUFFIX)
+  ) {
+    return null
+  }
+  const identity = key.slice(
+    TICKET_DRAFT_KEY_PREFIX.length,
+    -TICKET_DRAFT_KEY_SUFFIX.length,
+  )
+  const separator = identity.indexOf(':')
+  if (separator <= 0) return null
+  const ticketNumber = identity.slice(0, separator)
+  const keyStaffId = identity.slice(separator + 1)
+  if (!/^\d+$/.test(ticketNumber) || keyStaffId.length === 0) return null
+  return keyStaffId
 }
 
 function isEditableFields(value: unknown): value is EditableTicketFields {

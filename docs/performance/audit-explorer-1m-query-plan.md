@@ -4,6 +4,12 @@
 
 This evidence covers `REQ-AUD-002`, `REQ-AUD-006`, `REQ-PERF-001`, and gate `PERF-002` for Stack D PR 2/2. The Explorer reads the PostgreSQL `audit_activity_projection`; the three canonical ledgers remain unchanged and independently authoritative.
 
+The integrated V1-V15 release harness supersedes this original standalone page-query run
+for current release evidence. It measures the same four page shapes plus the exact
+`projectionStatus()` query at 1.6 million projection rows. The current stored-count status
+query has release p95 0.017 ms and no projection-table scan; raw plans and samples are in
+`docs/evidence/release/performance/release`.
+
 The release target for a warm 1,000,000-row projection is:
 
 - the first cursor page and actor/ticket/action + date pages use bounded index scans, never a sequential scan;

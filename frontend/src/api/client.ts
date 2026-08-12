@@ -48,6 +48,36 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 export const STAFF_SESSION_INVALID_EVENT = 'deskseed:staff-session-invalid'
+export const STAFF_SESSION_ACTOR_MISMATCH_EVENT =
+  'deskseed:staff-session-actor-mismatch'
+const EXPECTED_STAFF_ACTOR_HEADER = 'X-Deskseed-Expected-Staff-Id'
+let staffSessionGeneration = 0
+let confirmedStaffActor: string | null = null
+
+export function setConfirmedStaffActor(staffId: string | null) {
+  confirmedStaffActor = isCanonicalUuid(staffId) ? staffId : null
+}
+
+export function advanceStaffSessionGeneration() {
+  staffSessionGeneration += 1
+}
+
+export function isCurrentStaffSessionInvalidation(event: Event) {
+  return isCurrentStaffSessionEvent(event)
+}
+
+export function isCurrentStaffSessionActorMismatch(event: Event) {
+  return isCurrentStaffSessionEvent(event)
+}
+
+function isCurrentStaffSessionEvent(event: Event) {
+  if (!(event instanceof CustomEvent)) return true
+  const detail = event.detail as { generation?: unknown } | null
+  return (
+    typeof detail?.generation !== 'number' ||
+    detail.generation === staffSessionGeneration
+  )
+}
 const TICKET_STATUSES = new Set<TicketStatus>([
   'NEW',
   'OPEN',
@@ -447,14 +477,88 @@ function decodeMembership(value: unknown): GroupMembership | undefined {
   }
 }
 
-async function staffFetch(path: string, init: RequestInit = {}) {
+interface StaffFetchOptions {
+  invalidateSessionOn401?: boolean
+  omitExpectedStaffActor?: boolean
+  onMutationRequestStart?: () => void
+}
+
+interface StaffRequestSnapshot {
+  generation: number
+  actor: string | null
+}
+
+function captureStaffRequestSnapshot(): StaffRequestSnapshot {
+  return {
+    generation: staffSessionGeneration,
+    actor: confirmedStaffActor,
+  }
+}
+
+function isCurrentStaffRequestSnapshot(snapshot: StaffRequestSnapshot) {
+  return (
+    snapshot.generation === staffSessionGeneration &&
+    snapshot.actor === confirmedStaffActor
+  )
+}
+
+async function staffFetch(
+  path: string,
+  init: RequestInit = {},
+  {
+    invalidateSessionOn401 = true,
+    omitExpectedStaffActor = false,
+  }: StaffFetchOptions = {},
+  requestSnapshot = captureStaffRequestSnapshot(),
+) {
+  const requestSessionGeneration = requestSnapshot.generation
+  let headers: Record<string, string>
+  if (init.headers instanceof Headers) {
+    headers = {}
+    init.headers.forEach((value, name) => {
+      headers[name] = value
+    })
+  } else if (Array.isArray(init.headers)) {
+    headers = Object.fromEntries(init.headers)
+  } else {
+    headers = { ...(init.headers ?? {}) }
+  }
+  for (const headerName of Object.keys(headers)) {
+    if (
+      headerName.toLowerCase() === EXPECTED_STAFF_ACTOR_HEADER.toLowerCase()
+    ) {
+      delete headers[headerName]
+    }
+  }
+  if (!omitExpectedStaffActor && requestSnapshot.actor !== null) {
+    headers[EXPECTED_STAFF_ACTOR_HEADER] = requestSnapshot.actor
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: 'include',
     cache: 'no-store',
     ...init,
+    headers,
   })
-  if (response.status === 401 && typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(STAFF_SESSION_INVALID_EVENT))
+  if (
+    invalidateSessionOn401 &&
+    response.status === 401 &&
+    typeof window !== 'undefined'
+  ) {
+    window.dispatchEvent(
+      new CustomEvent(STAFF_SESSION_INVALID_EVENT, {
+        detail: { generation: requestSessionGeneration },
+      }),
+    )
+  }
+  if (response.status === 409 && typeof window !== 'undefined') {
+    const problem = decodeProblem(await readJson(response.clone()))
+    if (problem?.type === '/problems/staff-session-actor-mismatch') {
+      window.dispatchEvent(
+        new CustomEvent(STAFF_SESSION_ACTOR_MISMATCH_EVENT, {
+          detail: { generation: requestSessionGeneration },
+        }),
+      )
+    }
   }
   return response
 }
@@ -468,8 +572,16 @@ async function checkedEmpty(response: Response): Promise<void> {
   throw failure(response, decodeProblem(await readJson(response)))
 }
 
-async function csrfHeaders(): Promise<Record<string, string>> {
-  const response = await staffFetch('/api/v1/agent/csrf')
+async function csrfHeaders(
+  options: StaffFetchOptions = {},
+  requestSnapshot = captureStaffRequestSnapshot(),
+): Promise<Record<string, string>> {
+  const response = await staffFetch(
+    '/api/v1/agent/csrf',
+    {},
+    options,
+    requestSnapshot,
+  )
   const body = await checkedBody(response)
   if (
     !isRecord(body) ||
@@ -486,37 +598,74 @@ async function unsafeStaffFetch(
   method: 'POST' | 'PATCH' | 'DELETE',
   body?: unknown,
   additionalHeaders: Record<string, string> = {},
+  options: StaffFetchOptions = {},
 ) {
-  const csrf = await csrfHeaders()
-  return staffFetch(path, {
-    method,
-    headers: {
-      ...csrf,
-      ...additionalHeaders,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+  const requestSnapshot = captureStaffRequestSnapshot()
+  const csrf = await csrfHeaders(options, requestSnapshot)
+  if (!isCurrentStaffRequestSnapshot(requestSnapshot)) {
+    throw new Error('Staff session changed before mutation')
+  }
+  options.onMutationRequestStart?.()
+  if (!isCurrentStaffRequestSnapshot(requestSnapshot)) {
+    throw new Error('Staff session changed before mutation')
+  }
+  return staffFetch(
+    path,
+    {
+      method,
+      headers: {
+        ...csrf,
+        ...additionalHeaders,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
+    options,
+    requestSnapshot,
+  )
 }
 
 export async function loginStaff(
   email: string,
   password: string,
+  onMutationRequestStart?: () => void,
 ): Promise<void> {
   await checkedEmpty(
-    await unsafeStaffFetch('/api/v1/agent/session', 'POST', {
-      email,
-      password,
-    }),
+    await unsafeStaffFetch(
+      '/api/v1/agent/session',
+      'POST',
+      {
+        email,
+        password,
+      },
+      {},
+      {
+        invalidateSessionOn401: false,
+        omitExpectedStaffActor: true,
+        onMutationRequestStart,
+      },
+    ),
   )
 }
 
-export async function logoutStaff(): Promise<void> {
-  await checkedEmpty(await unsafeStaffFetch('/api/v1/agent/session', 'DELETE'))
+export async function logoutStaff(
+  options: StaffFetchOptions = {},
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      '/api/v1/agent/session',
+      'DELETE',
+      undefined,
+      {},
+      options,
+    ),
+  )
 }
 
-export async function getCurrentStaff(): Promise<CurrentStaff> {
-  const response = await staffFetch('/api/v1/agent/me')
+export async function getCurrentStaff(
+  options: StaffFetchOptions = {},
+): Promise<CurrentStaff> {
+  const response = await staffFetch('/api/v1/agent/me', {}, options)
   const decoded = decodeCurrentStaff(await checkedBody(response))
   if (!decoded) throw malformedSuccess(response)
   return decoded
@@ -1178,6 +1327,10 @@ function decodeAuditSearchContext(
     !Number.isSafeInteger(value.resultCount) ||
     value.resultCount < 0 ||
     !isNullableString(value.originSearchActivityId) ||
+    typeof value.openedActivityCount !== 'number' ||
+    !Number.isSafeInteger(value.openedActivityCount) ||
+    value.openedActivityCount < 0 ||
+    typeof value.openedActivitiesTruncated !== 'boolean' ||
     !Array.isArray(value.openedActivities)
   ) {
     return undefined
@@ -1208,6 +1361,8 @@ function decodeAuditSearchContext(
     sort: value.sort,
     resultCount: value.resultCount,
     originSearchActivityId: value.originSearchActivityId,
+    openedActivityCount: value.openedActivityCount,
+    openedActivitiesTruncated: value.openedActivitiesTruncated,
     openedActivities,
   }
 }

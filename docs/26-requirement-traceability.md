@@ -28,7 +28,7 @@
 |---|---|---:|---|---|---|
 | REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | expiry/replay/enumeration/session 테스트 |
 | REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | explicit token/claim 테스트 |
-| REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session은 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 30, 33, 35 ADR, 52 | `StaffAuthIntegrationTest`, `staff-auth-admin.spec.ts` |
+| REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session 또는 browser expected-actor 불일치는 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 25, 30, 31, 33, 35 ADR, 39, 52 | `StaffAuthIntegrationTest`의 invalid/mismatch·activity/controller/mutation/audit 비진입, `client.test.ts`의 held-CSRF actor snapshot, `StaffSessionContext.test.tsx`의 교차 탭 owner 보존, `staff-auth-admin.spec.ts` |
 | REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
 | REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | `AgentTicketReadIntegrationTest`의 cross-group queue/direct URL 및 inactive/customer 거부; 검색은 후속 |
 | REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR | `AdminOrganizationIntegrationTest`, direct URL E2E |
@@ -49,7 +49,7 @@
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트, `AgentTicketWorkspacePage.test.tsx`의 통합 command body 회귀 |
 | REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34 | `TransferChildTicketIntegrationTest`의 active group/member 거부 및 원자적 rollback |
 | REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34 | `TransferChildTicketIntegrationTest`, `transfer-child-ticket.spec.ts`, full-stack transfer E2E |
-| REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketWorkspacePage.test.tsx`의 exact `changedFields`·comment 통합 요청 |
+| REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketCommandIntegrationTest`의 exact/misuse/concurrent replay와 `AgentTicketWorkspacePage.test.tsx`의 persisted command-ID retry·exact `changedFields`·comment 통합 요청 |
 | REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34 | TKT-006, `ticket-composer-conflict.spec.ts`의 두 browser context same-field/non-overlap E2E |
 | REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31 | `ticket-command-conflict-preserves-drafts.png`, banner focus·request ID·draft 보존 E2E |
 
@@ -72,8 +72,8 @@
 | REQ-AUD-001 | 누가 언제 어떤 티켓 내용을 어떻게 수정했는지 기록한다 | IMPLEMENTATION_READY | M3 | 19, 32, 34 | CHG-001~005 |
 | REQ-AUD-002 | 티켓별 열람 없이 전역 화면에서 변경 전후를 조회한다 | IMPLEMENTATION_READY | R2 | 19, 30, 39 | `AuditExplorerIntegrationTest`, `audit-explorer.spec.ts`의 3개 desktop 폭 + Axe, 실제 Compose `audit-explorer.full-stack.spec.ts` before/after 직접 URL E2E |
 | REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | `AgentTicketReadIntegrationTest`: 모든 성공 detail의 `API_RESOURCE_READ`, navigation 1건, 동일 interaction refetch의 추가 semantic view 0건, background semantic view 0건, audit 실패 fail-closed |
-| REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34 | `AgentTicketSearchIntegrationTest`의 filter/count/context와 `SEARCH_RESULT_OPENED` linkage/dedupe; real-stack search→ticket DB-ledger E2E |
-| REQ-AUD-005 | 검색어 원문을 암호화 저장하고 마스킹본·HMAC 지문도 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53 | `SearchQueryProtectionTest`의 exact round-trip/tamper/AAD/rotation, missing-key startup, DB plaintext-column 부재, 로그 캡처, 30일 expiry·retention rollback |
+| REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34, ADR 0037 | `AgentTicketSearchIntegrationTest`의 filter/count/context와 `SEARCH_RESULT_OPENED` linkage/dedupe 및 encryption-key rotation 후 same-session origin 검증; detail linked-open 100개 제한·full count; real-stack search→ticket DB-ledger E2E |
+| REQ-AUD-005 | 검색어 원문은 암호화 저장하고 routine audit에는 내용 비포함 marker·HMAC 지문만 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53, ADR 0036, ADR 0037 | `SearchQueryProtectionTest`의 content-free marker/exact round-trip/tamper/AAD/encryption rotation, fixed-size independent session fingerprint, V13 scrub·constraint, missing-key startup, DB plaintext-column 부재, 로그 캡처, 30일 expiry·retention rollback |
 | REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | list/detail/reveal/export/rebuild self-audit 장애 주입 테스트, 실제 Compose DB self-audit 검증, export job/artifact placeholder 원자성 |
 | REQ-AUD-007 | Ticket change audit은 변경과 같은 트랜잭션에 기록한다 | IMPLEMENTATION_READY | M3 | 03, 19, 32 | CHG-001 |
 | REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ticket detail/search와 Explorer list/detail/reveal self-audit 장애 주입 시 503·민감 원문/projection 미반환, retention audit 장애 시 delete rollback |
@@ -132,7 +132,7 @@
 | REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | `AgentViewsPage.test.tsx`, `FrontendSystem.test.tsx`, keyboard row-open E2E |
 | REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | `frontend-system-workspace-{1280,1440,1920}.png` 및 keyboard separator E2E |
 | REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/실제 parent-child projection·dialog 구현; 앱·external projection은 후속 |
-| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `npm run test:e2e:dev`: 38/38, axe 0, dialog focus entry/trap/restore, child relation·solve warning 시각 회귀 |
+| REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `npm run test:e2e:dev`: 41/41, axe 0, dialog focus entry/trap/restore, child relation·solve warning 시각 회귀 |
 | REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | Deskseed fixture baseline, Garden import/notice 및 proprietary asset scan |
 
 ## 10. 추적 규칙

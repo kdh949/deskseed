@@ -41,7 +41,7 @@ internal class JpaAccessAuditWriter(
             event.ticketId,
             event.ticketNumber,
             event.interactionId,
-            event.context.sessionFingerprint?.take(100),
+            event.context.sessionFingerprint,
             event.context.authType.name,
             event.context.requestId.take(100),
             event.context.correlationId.take(100),
@@ -76,7 +76,7 @@ internal class JpaAccessAuditWriter(
             event.ticketId,
             event.ticketNumber,
             event.interactionId,
-            event.context.sessionFingerprint?.take(100),
+            event.context.sessionFingerprint,
             event.context.authType.name,
             event.context.requestId.take(100),
             event.context.correlationId.take(100),
@@ -118,7 +118,7 @@ internal class JpaAccessAuditWriter(
             actorSnapshot(event.context.actorDisplaySnapshot),
             event.context.source.name,
             event.interactionId,
-            event.context.sessionFingerprint?.take(100),
+            event.context.sessionFingerprint,
             event.context.authType.name,
             event.context.requestId.take(100),
             event.context.correlationId.take(100),
@@ -221,7 +221,7 @@ internal class JpaAccessAuditWriter(
             event.ticketId,
             event.ticketNumber,
             event.interactionId,
-            event.context.sessionFingerprint?.take(100),
+            event.context.sessionFingerprint,
             event.context.authType.name,
             event.context.requestId.take(100),
             event.context.correlationId.take(100),
@@ -236,7 +236,9 @@ internal class JpaAccessAuditWriter(
     private fun validateStaffContext(context: AccessAuditContext) {
         require(context.actorType == ActorType.STAFF) { "Staff access audit requires a staff actor" }
         require(context.source == RequestSource.AGENT_UI) { "Staff access audit requires AGENT_UI source" }
-        require(context.sessionFingerprint?.isNotBlank() == true) { "Staff access audit requires session context" }
+        require(context.sessionFingerprint?.matches(SESSION_FINGERPRINT) == true) {
+            "Staff access audit requires a valid session fingerprint"
+        }
     }
 
     private fun sanitize(value: String?, maxLength: Int): String? = value
@@ -256,4 +258,8 @@ internal class JpaAccessAuditWriter(
     private fun jsonEscape(value: String): String = value
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
+
+    private companion object {
+        val SESSION_FINGERPRINT = Regex("v1:[A-Za-z0-9_-]{43}")
+    }
 }

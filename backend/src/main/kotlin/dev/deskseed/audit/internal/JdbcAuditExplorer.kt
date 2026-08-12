@@ -90,7 +90,7 @@ internal class JdbcAuditExplorer(
             .addValue("limit", limit + 1)
         val conditions = mutableListOf(
             "occurred_at >= :from",
-            "occurred_at <= :to",
+            "occurred_at < :to",
             "(occurred_at, id) <= (:snapshotAt, :snapshotId)",
         )
         position?.let {
@@ -557,8 +557,14 @@ internal class JdbcAuditExplorer(
 
     private fun projectionStatus(): AuditProjectionStatus = jdbcTemplate.queryForObject(
         """
-        select state, last_rebuilt_at,
-               (select count(*) from audit_activity_projection) as projected_count
+        select
+               case
+                   when pg_try_advisory_xact_lock_shared(hashtext('deskseed:audit-activity-projection:rebuild'))
+                       then state
+                   else 'REBUILDING'
+               end as state,
+               last_rebuilt_at,
+               projected_count
         from audit_activity_projection_state where id = 1
         """.trimIndent(),
         emptyMap<String, Any>(),
@@ -593,8 +599,9 @@ internal class JdbcAuditExplorer(
               and action = 'SEARCH_RESULT_OPENED'
               and ticket_number is not null
             order by occurred_at, id
+            limit :openedLimit
             """.trimIndent(),
-            mapOf("sourceEventId" to search.sourceEventId),
+            mapOf("sourceEventId" to search.sourceEventId, "openedLimit" to MAX_OPENED_ACTIVITIES + 1),
         ) { result, _ ->
             AuditOpenedActivity(
                 activityId = result.getObject("id", UUID::class.java),
@@ -602,6 +609,18 @@ internal class JdbcAuditExplorer(
                 occurredAt = result.getTimestamp("occurred_at").toInstant(),
             )
         }
+        val openedActivityCount = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from audit_activity_projection
+            where ledger_type = 'ACCESS_SEARCH'
+              and origin_search_event_id = :sourceEventId
+              and action = 'SEARCH_RESULT_OPENED'
+              and ticket_number is not null
+            """.trimIndent(),
+            mapOf("sourceEventId" to search.sourceEventId),
+            Long::class.java,
+        ) ?: 0
         return AuditSearchContext(
             queryRedacted = redacted,
             queryFingerprint = fingerprint,
@@ -609,7 +628,9 @@ internal class JdbcAuditExplorer(
             sort = search.searchSort,
             resultCount = search.searchResultCount ?: 0,
             originSearchActivityId = search.id.takeIf { row.originSearchEventId != null },
-            openedActivities = opened,
+            openedActivities = opened.take(MAX_OPENED_ACTIVITIES),
+            openedActivityCount = openedActivityCount,
+            openedActivitiesTruncated = openedActivityCount > MAX_OPENED_ACTIVITIES,
         )
     }
 
@@ -840,6 +861,7 @@ internal class JdbcAuditExplorer(
         val DEFAULT_RANGE: Duration = Duration.ofDays(7)
         val MAXIMUM_RANGE: Duration = Duration.ofDays(366)
         val MAX_UUID: UUID = UUID(-1, -1)
+        const val MAX_OPENED_ACTIVITIES = 100
         val PROTECTED_FIELD = Regex("comment|body|description", RegexOption.IGNORE_CASE)
         val ALLOWED_METADATA_KEYS = setOf(
             "action",

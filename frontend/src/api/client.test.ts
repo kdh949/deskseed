@@ -1,12 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  advanceStaffSessionGeneration,
   ApiError,
   createChildTicket,
   getAgentTicket,
+  getCurrentStaff,
   getPublicRequest,
+  isCurrentStaffSessionActorMismatch,
+  loginStaff,
   listAgentViews,
   listTicketsInView,
   searchAgentTickets,
+  setConfirmedStaffActor,
+  STAFF_SESSION_ACTOR_MISMATCH_EVENT,
+  STAFF_SESSION_INVALID_EVENT,
   submitRequest,
   transferAgentTicket,
   updateAgentTicket,
@@ -20,6 +27,8 @@ const submitInput = {
 }
 
 afterEach(() => {
+  setConfirmedStaffActor(null)
+  localStorage.removeItem('deskseed:staff-session:last-authenticated-staff:v1')
   vi.unstubAllGlobals()
 })
 
@@ -270,6 +279,279 @@ describe('customer request API client', () => {
 })
 
 describe('agent ticket read API client', () => {
+  it('sends the tab-local confirmed actor on ordinary staff reads and writes', async () => {
+    const confirmedActor = '11111111-1111-4111-8111-111111111111'
+    setConfirmedStaffActor(confirmedActor)
+    localStorage.setItem(
+      'deskseed:staff-session:last-authenticated-staff:v1',
+      '22222222-2222-4222-8222-222222222222',
+    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 8,
+            auditId: '33333333-3333-4333-8333-333333333333',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await listAgentViews()
+    await updateAgentTicket(1042, {
+      expectedVersion: 7,
+      changedFields: ['priority'],
+      priority: 'HIGH',
+      comment: null,
+      clientCommandId: '44444444-4444-4444-8444-444444444444',
+    })
+
+    for (const call of fetchMock.mock.calls) {
+      expect(
+        new Headers((call[1] as RequestInit | undefined)?.headers).get(
+          'X-Deskseed-Expected-Staff-Id',
+        ),
+      ).toBe(confirmedActor)
+    }
+  })
+
+  it('omits the confirmed actor only for login mutation and post-login verification', async () => {
+    setConfirmedStaffActor('11111111-1111-4111-8111-111111111111')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: '22222222-2222-4222-8222-222222222222',
+            email: 'actor-b@example.com',
+            displayName: 'Actor B',
+            role: 'AGENT',
+            capabilities: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await loginStaff('actor-b@example.com', 'Correct horse 42')
+    await getCurrentStaff({ omitExpectedStaffActor: true })
+
+    for (const call of fetchMock.mock.calls) {
+      expect(
+        new Headers((call[1] as RequestInit | undefined)?.headers).has(
+          'X-Deskseed-Expected-Staff-Id',
+        ),
+      ).toBe(false)
+    }
+  })
+
+  it('emits a distinct actor-mismatch event only for the request generation that received the exact problem', async () => {
+    setConfirmedStaffActor('11111111-1111-4111-8111-111111111111')
+    const mismatches: Event[] = []
+    const invalidations: Event[] = []
+    const mismatchListener = (event: Event) => mismatches.push(event)
+    const invalidationListener = (event: Event) => invalidations.push(event)
+    window.addEventListener(
+      STAFF_SESSION_ACTOR_MISMATCH_EVENT,
+      mismatchListener,
+    )
+    window.addEventListener(STAFF_SESSION_INVALID_EVENT, invalidationListener)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            type: '/problems/staff-session-actor-mismatch',
+            title: 'Staff session actor changed',
+            status: 409,
+            detail: 'Refresh the staff session before continuing.',
+          }),
+          {
+            status: 409,
+            headers: { 'Content-Type': 'application/problem+json' },
+          },
+        ),
+      ),
+    )
+
+    try {
+      await expect(listAgentViews()).rejects.toBeInstanceOf(ApiError)
+      expect(mismatches).toHaveLength(1)
+      expect(invalidations).toEqual([])
+      advanceStaffSessionGeneration()
+      expect(isCurrentStaffSessionActorMismatch(mismatches[0]!)).toBe(false)
+    } finally {
+      window.removeEventListener(
+        STAFF_SESSION_ACTOR_MISMATCH_EVENT,
+        mismatchListener,
+      )
+      window.removeEventListener(
+        STAFF_SESSION_INVALID_EVENT,
+        invalidationListener,
+      )
+    }
+  })
+
+  it('does not invalidate the staff session for an ordinary conflict response', async () => {
+    setConfirmedStaffActor('11111111-1111-4111-8111-111111111111')
+    const mismatches: Event[] = []
+    const invalidations: Event[] = []
+    const mismatchListener = (event: Event) => mismatches.push(event)
+    const invalidationListener = (event: Event) => invalidations.push(event)
+    window.addEventListener(
+      STAFF_SESSION_ACTOR_MISMATCH_EVENT,
+      mismatchListener,
+    )
+    window.addEventListener(STAFF_SESSION_INVALID_EVENT, invalidationListener)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            type: '/problems/ticket-field-conflict',
+            title: 'Ticket fields changed concurrently',
+            status: 409,
+            currentVersion: 9,
+            conflictingFields: ['priority'],
+          }),
+          {
+            status: 409,
+            headers: { 'Content-Type': 'application/problem+json' },
+          },
+        ),
+      ),
+    )
+
+    try {
+      await expect(listAgentViews()).rejects.toBeInstanceOf(ApiError)
+      expect(mismatches).toEqual([])
+      expect(invalidations).toEqual([])
+    } finally {
+      window.removeEventListener(
+        STAFF_SESSION_ACTOR_MISMATCH_EVENT,
+        mismatchListener,
+      )
+      window.removeEventListener(
+        STAFF_SESSION_INVALID_EVENT,
+        invalidationListener,
+      )
+    }
+  })
+
+  it('keeps the confirmed actor as the final reserved header when a CSRF header name collides', async () => {
+    const confirmedActor = '11111111-1111-4111-8111-111111111111'
+    setConfirmedStaffActor(confirmedActor)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            token: 'must-not-override-the-actor',
+            headerName: 'X-Deskseed-Expected-Staff-Id',
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 8,
+            auditId: '33333333-3333-4333-8333-333333333333',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await updateAgentTicket(1042, {
+      expectedVersion: 7,
+      changedFields: ['priority'],
+      priority: 'HIGH',
+      comment: null,
+      clientCommandId: '44444444-4444-4444-8444-444444444444',
+    })
+
+    expect(
+      new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).get(
+        'X-Deskseed-Expected-Staff-Id',
+      ),
+    ).toBe(confirmedActor)
+  })
+
+  it('does not upgrade a held A mutation to B after the CSRF request starts', async () => {
+    const actorA = '11111111-1111-4111-8111-111111111111'
+    const actorB = '22222222-2222-4222-8222-222222222222'
+    let resolveCsrf!: (response: Response) => void
+    const heldCsrf = new Promise<Response>((resolve) => {
+      resolveCsrf = resolve
+    })
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => heldCsrf)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 8,
+            auditId: '33333333-3333-4333-8333-333333333333',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    setConfirmedStaffActor(actorA)
+
+    const pendingMutation = updateAgentTicket(1042, {
+      expectedVersion: 7,
+      changedFields: ['priority'],
+      priority: 'HIGH',
+      comment: null,
+      clientCommandId: '44444444-4444-4444-8444-444444444444',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(
+      new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get(
+        'X-Deskseed-Expected-Staff-Id',
+      ),
+    ).toBe(actorA)
+
+    advanceStaffSessionGeneration()
+    setConfirmedStaffActor(actorB)
+    resolveCsrf(
+      new Response(
+        JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+        { status: 200 },
+      ),
+    )
+
+    await expect(pendingMutation).rejects.toThrow(
+      'Staff session changed before mutation',
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('posts the raw search query outside the URL and decodes its canonical audit linkage', async () => {
     const fetchMock = vi
       .fn()

@@ -10,9 +10,11 @@ import type {
 import {
   buildUpdateTicketCommand,
   changedTicketFields,
+  clearPendingTicketCommand,
   createEditableTicketFields,
   readTicketDraft,
   reconcileLatestFields,
+  removeTicketDraft,
   resolveConflictField,
   ticketDraftStorageKey,
   writeTicketDraft,
@@ -60,6 +62,9 @@ export function useTicketEditor({
   const [error, setError] = useState<TicketEditorError | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [warnings, setWarnings] = useState<TicketCommandWarning[]>([])
+  const [pendingCommandId, setPendingCommandId] = useState<string | null>(
+    initial.pendingCommandId ?? null,
+  )
   const conflictRef = useRef<HTMLDivElement>(null)
   const storageKey = ticketDraftStorageKey(staffId, detail.ticket.ticketNumber)
   const dirtyFields = useMemo(
@@ -82,7 +87,7 @@ export function useTicketEditor({
 
   useEffect(() => {
     if (!isUnsaved) {
-      localStorage.removeItem(storageKey)
+      removeTicketDraft(localStorage, storageKey)
       return
     }
     writeTicketDraft(localStorage, storageKey, {
@@ -91,6 +96,7 @@ export function useTicketEditor({
       fields: localFields,
       serverFields,
       baseVersion,
+      ...(pendingCommandId ? { pendingCommandId } : {}),
     })
   }, [
     baseVersion,
@@ -98,6 +104,7 @@ export function useTicketEditor({
     isUnsaved,
     localFields,
     mode,
+    pendingCommandId,
     serverFields,
     storageKey,
   ])
@@ -108,7 +115,9 @@ export function useTicketEditor({
   }, [conflict?.currentVersion])
 
   const updateDraft = (visibility: TicketVisibility, value: string) => {
-    setComments((current) => ({ ...current, [visibility]: value }))
+    const nextComments = { ...comments, [visibility]: value }
+    invalidatePendingCommand({ comments: nextComments })
+    setComments(nextComments)
     setError(null)
     setSuccess(null)
   }
@@ -117,20 +126,19 @@ export function useTicketEditor({
     field: TicketFieldName,
     value: EditableTicketFields[TicketFieldName],
   ) => {
-    setLocalFields((current) => {
-      const next = { ...current }
-      assignEditableField(next, field, value)
-      if (field === 'groupId') {
-        const group = detail.assignmentOptions.groups.find(
-          (option) => option.id === value,
-        )
-        const assigneeStillValid = group?.members.some(
-          (member) => member.id === next.assigneeId,
-        )
-        if (!assigneeStillValid) next.assigneeId = null
-      }
-      return next
-    })
+    const nextFields = { ...localFields }
+    assignEditableField(nextFields, field, value)
+    if (field === 'groupId') {
+      const group = detail.assignmentOptions.groups.find(
+        (option) => option.id === value,
+      )
+      const assigneeStillValid = group?.members.some(
+        (member) => member.id === nextFields.assigneeId,
+      )
+      if (!assigneeStillValid) nextFields.assigneeId = null
+    }
+    invalidatePendingCommand({ fields: nextFields })
+    setLocalFields(nextFields)
     setError(null)
     setSuccess(null)
   }
@@ -197,6 +205,7 @@ export function useTicketEditor({
       dirtyFields,
       unresolvedFields: conflict.fields,
     })
+    invalidatePendingCommand({ fields: resolved.localFields })
     setLocalFields(resolved.localFields)
     setConflict(
       resolved.unresolvedFields.size === 0
@@ -208,6 +217,14 @@ export function useTicketEditor({
   const refreshEditor = async () => {
     try {
       const latest = await refreshLatest()
+      if (pendingCommandId) {
+        setError({
+          message:
+            '이전 저장 결과가 아직 확정되지 않았습니다. 같은 변경사항을 다시 저장해 확인해 주세요.',
+        })
+        setSuccess(null)
+        return latest
+      }
       const latestFields = createEditableTicketFields(latest.ticket)
       const reconciled = reconcileLatestFields({
         confirmedFields: serverFields,
@@ -257,20 +274,44 @@ export function useTicketEditor({
     setWarnings([])
     const submittedMode = mode
     const submittedComment = comments[submittedMode].trim().length > 0
+    const clientCommandId = pendingCommandId ?? createClientCommandId()
+    if (pendingCommandId === null) {
+      setPendingCommandId(clientCommandId)
+      writeTicketDraft(localStorage, storageKey, {
+        mode,
+        comments,
+        fields: localFields,
+        serverFields,
+        baseVersion,
+        pendingCommandId: clientCommandId,
+      })
+    }
     const command = buildUpdateTicketCommand({
       expectedVersion: baseVersion,
       serverFields,
       localFields,
       comment: { visibility: submittedMode, body: comments[submittedMode] },
-      clientCommandId: createClientCommandId(),
+      clientCommandId,
     })
     try {
       const result = await updateAgentTicket(
         detail.ticket.ticketNumber,
         command,
       )
+      const confirmedComments = { ...comments, [submittedMode]: '' }
+      writeTicketDraft(localStorage, storageKey, {
+        mode,
+        comments: confirmedComments,
+        fields: localFields,
+        serverFields: localFields,
+        baseVersion: result.version,
+      })
+      setPendingCommandId(null)
       setWarnings(result.warnings)
-      setComments((current) => ({ ...current, [submittedMode]: '' }))
+      setComments(confirmedComments)
+      setServerFields(localFields)
+      setLocalFields(localFields)
+      setBaseVersion(result.version)
       try {
         const latest = await refreshLatest()
         const latestFields = createEditableTicketFields(latest.ticket)
@@ -303,6 +344,7 @@ export function useTicketEditor({
         apiError.problem?.conflictingFields?.length &&
         typeof apiError.problem.currentVersion === 'number'
       ) {
+        invalidatePendingCommand()
         setConflict({
           fields: new Set(apiError.problem.conflictingFields),
           currentVersion: apiError.problem.currentVersion,
@@ -312,6 +354,7 @@ export function useTicketEditor({
         })
         await loadLatestForConflict(new Set(apiError.problem.conflictingFields))
       } else {
+        if (!isAmbiguousCommandFailure(cause)) invalidatePendingCommand()
         setError({
           message:
             apiError?.message ??
@@ -326,7 +369,11 @@ export function useTicketEditor({
 
   return {
     mode,
-    setMode,
+    setMode: (nextMode: TicketVisibility) => {
+      if (submitting) return
+      if (nextMode !== mode) invalidatePendingCommand({ mode: nextMode })
+      setMode(nextMode)
+    },
     comments,
     updateDraft,
     serverFields,
@@ -347,6 +394,27 @@ export function useTicketEditor({
     blocker,
     canSubmit: hasActiveSubmit && !submitting && !unresolvedConflict,
   }
+
+  function invalidatePendingCommand(
+    next: {
+      mode?: TicketVisibility
+      comments?: TicketCommentDrafts
+      fields?: EditableTicketFields
+    } = {},
+  ) {
+    if (pendingCommandId) {
+      writeTicketDraft(localStorage, storageKey, {
+        mode: next.mode ?? mode,
+        comments: next.comments ?? comments,
+        fields: next.fields ?? localFields,
+        serverFields,
+        baseVersion,
+      })
+    } else {
+      clearPendingTicketCommand(localStorage, storageKey)
+    }
+    setPendingCommandId(null)
+  }
 }
 
 function initialEditorState(detail: AgentTicketDetail, staffId: string) {
@@ -362,7 +430,17 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
       fields: freshFields,
       serverFields: freshFields,
       baseVersion: detail.ticket.version,
+      pendingCommandId: undefined,
     }
+  }
+  if (stored.pendingCommandId) {
+    return detail.ticket.isChild
+      ? {
+          ...stored,
+          mode: 'INTERNAL' as const,
+          comments: { ...stored.comments, PUBLIC: '' },
+        }
+      : stored
   }
   const storedDirty = changedTicketFields(stored.serverFields, stored.fields)
   if (storedDirty.length === 0) {
@@ -384,6 +462,11 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
         comments: { ...stored.comments, PUBLIC: '' },
       }
     : stored
+}
+
+function isAmbiguousCommandFailure(cause: unknown) {
+  if (!(cause instanceof ApiError)) return true
+  return cause.status >= 500 || (cause.status >= 200 && cause.status < 300)
 }
 
 function assignEditableField(

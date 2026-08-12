@@ -3,8 +3,11 @@ package dev.deskseed.staffaccess.internal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
@@ -18,6 +21,7 @@ import org.springframework.test.web.servlet.MvcResult
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
@@ -40,6 +44,7 @@ import java.util.UUID
 )
 @AutoConfigureMockMvc
 @Testcontainers
+@ExtendWith(OutputCaptureExtension::class)
 class StaffAuthIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -52,11 +57,24 @@ class StaffAuthIntegrationTest {
 
     @BeforeEach
     fun clearOrganizationState() {
-        jdbcTemplate.execute("truncate table admin_security_audit_events")
-        jdbcTemplate.update("delete from group_memberships")
-        jdbcTemplate.update("delete from support_groups")
-        jdbcTemplate.update("delete from staff_login_throttles")
-        jdbcTemplate.update("delete from staff_accounts")
+        jdbcTemplate.execute(
+            """
+            truncate table
+                access_audit_events,
+                admin_security_audit_events,
+                ticket_audit_events,
+                ticket_audits,
+                ticket_comments,
+                request_access_tokens,
+                tickets,
+                customers,
+                group_memberships,
+                support_groups,
+                staff_login_throttles,
+                staff_accounts
+            restart identity cascade
+            """.trimIndent(),
+        )
     }
 
     @Test
@@ -101,6 +119,252 @@ class StaffAuthIntegrationTest {
     }
 
     @Test
+    fun `confirmed tab actor mismatch is rejected before staff surfaces without invalidating the server session`() {
+        val adminId = insertStaff("actor-a@example.com", "Correct horse 42", "ADMIN")
+        val browser = newBrowser()
+        val session = performLogin(browser, "actor-a@example.com", "Correct horse 42")
+            .andExpect(status().isNoContent)
+            .andReturn().request.session as MockHttpSession
+        val mismatchedActorId = UUID.randomUUID()
+        val accessAuditCountBefore = jdbcTemplate.queryForObject(
+            "select count(*) from access_audit_events",
+            Long::class.java,
+        )
+        val auditExplorerReadCountBefore = jdbcTemplate.queryForObject(
+            "select count(*) from admin_security_audit_events where event_type = 'AUDIT_LOG_VIEWED'",
+            Long::class.java,
+        )
+        val lastActivityBefore = session.getAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT)
+
+        listOf(
+            "/api/v1/agent/me",
+            "/api/v1/agent/tickets/999999",
+            "/api/v1/admin/staff",
+            "/api/v1/audit/activities",
+        ).forEach { path ->
+            mockMvc.perform(
+                get(path)
+                    .session(session)
+                    .header("X-Deskseed-Expected-Staff-Id", mismatchedActorId.toString()),
+            )
+                .andExpect(status().isConflict)
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.type").value("/problems/staff-session-actor-mismatch"))
+                .andExpect(jsonPath("$.status").value(409))
+        }
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from access_audit_events", Long::class.java))
+            .isEqualTo(accessAuditCountBefore)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from admin_security_audit_events where event_type = 'AUDIT_LOG_VIEWED'",
+                Long::class.java,
+            ),
+        ).isEqualTo(auditExplorerReadCountBefore)
+        assertThat(session.getAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT))
+            .isEqualTo(lastActivityBefore)
+
+        listOf("", " ", "not-a-uuid").forEach { malformedActor ->
+            mockMvc.perform(
+                get("/api/v1/agent/me")
+                    .session(session)
+                    .header("X-Deskseed-Expected-Staff-Id", malformedActor),
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.type").value("/problems/invalid-staff-session-actor"))
+                .andExpect(jsonPath("$.status").value(400))
+        }
+        mockMvc.perform(
+            get("/api/v1/agent/me")
+                .session(session)
+                .header(
+                    "X-Deskseed-Expected-Staff-Id",
+                    adminId.toString(),
+                    mismatchedActorId.toString(),
+                ),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/invalid-staff-session-actor"))
+        assertThat(session.getAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT))
+            .isEqualTo(lastActivityBefore)
+
+        mockMvc.perform(
+            delete("/api/v1/agent/session")
+                .session(session)
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("X-Deskseed-Expected-Staff-Id", mismatchedActorId.toString()),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/staff-session-actor-mismatch"))
+        assertThat(session.getAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT))
+            .isEqualTo(lastActivityBefore)
+
+        mockMvc.perform(
+            get("/api/v1/agent/me")
+                .session(session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(adminId.toString()))
+
+        mockMvc.perform(get("/api/v1/agent/me").session(session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(adminId.toString()))
+    }
+
+    @Test
+    fun `confirmed tab actor mismatch blocks a real ticket command before mutation audit or activity`() {
+        val actorA = insertStaff("command-actor-a@example.com", "Correct horse 42", "AGENT")
+        val groupId = insertGroup("actor guard command group", actorA)
+        val browser = newBrowser()
+        val session = performLogin(browser, "command-actor-a@example.com", "Correct horse 42")
+            .andExpect(status().isNoContent)
+            .andReturn().request.session as MockHttpSession
+
+        val created = mockMvc.perform(
+            post("/api/v1/agent/tickets")
+                .session(session)
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("X-Deskseed-Expected-Staff-Id", actorA.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "requester": {
+                        "name": "Actor guard customer",
+                        "email": "actor-guard-customer@example.com"
+                      },
+                      "subject": "Actor guard mutation boundary",
+                      "firstComment": {
+                        "visibility": "PUBLIC",
+                        "body": "Initial public request"
+                      },
+                      "priority": "NORMAL",
+                      "groupId": "$groupId",
+                      "assigneeId": "$actorA"
+                    }
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isCreated)
+            .andReturn().response.contentAsString
+        val ticketNumber = Regex("\"ticketNumber\":(\\d+)")
+            .find(created)!!.groupValues[1].toLong()
+        val ticketId = jdbcTemplate.queryForObject(
+            "select id from tickets where ticket_number = ?",
+            UUID::class.java,
+            ticketNumber,
+        )!!
+        val versionBefore = jdbcTemplate.queryForObject(
+            "select version from tickets where id = ?",
+            Long::class.java,
+            ticketId,
+        )
+        val commentCountBefore = jdbcTemplate.queryForObject(
+            "select count(*) from ticket_comments where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )
+        val auditCountBefore = jdbcTemplate.queryForObject(
+            "select count(*) from ticket_audits where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )
+        val auditEventCountBefore = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from ticket_audit_events event
+            join ticket_audits audit on audit.id = event.audit_id
+            where audit.ticket_id = ?
+            """.trimIndent(),
+            Long::class.java,
+            ticketId,
+        )
+        val lastActivityBefore = session.getAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT)
+
+        mockMvc.perform(
+            post("/api/v1/agent/tickets/{ticketNumber}/commands", ticketNumber)
+                .session(session)
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("X-Deskseed-Expected-Staff-Id", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "expectedVersion": $versionBefore,
+                      "changedFields": ["priority"],
+                      "priority": "HIGH",
+                      "comment": {
+                        "visibility": "INTERNAL",
+                        "body": "This must not be persisted"
+                      },
+                      "clientCommandId": "11111111-1111-4111-8111-111111111111"
+                    }
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.type").value("/problems/staff-session-actor-mismatch"))
+            .andExpect(jsonPath("$.status").value(409))
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select version, priority from tickets where id = ?",
+                ticketId,
+            ),
+        )
+            .containsEntry("version", versionBefore)
+            .containsEntry("priority", "NORMAL")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ?",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(commentCountBefore)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_audits where ticket_id = ?",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(auditCountBefore)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from ticket_audit_events event
+                join ticket_audits audit on audit.id = event.audit_id
+                where audit.ticket_id = ?
+                """.trimIndent(),
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(auditEventCountBefore)
+        assertThat(session.getAttribute(StaffSessionValidationFilter.LAST_ACTIVITY_AT))
+            .isEqualTo(lastActivityBefore)
+    }
+
+    @Test
+    fun `cors preflight allows the reserved expected staff actor header`() {
+        mockMvc.perform(
+            options("/api/v1/agent/me")
+                .header("Origin", "http://localhost:5173")
+                .header("Access-Control-Request-Method", "GET")
+                .header("Access-Control-Request-Headers", "X-Deskseed-Expected-Staff-Id"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(
+                header().string(
+                    "Access-Control-Allow-Headers",
+                    org.hamcrest.Matchers.containsStringIgnoringCase("X-Deskseed-Expected-Staff-Id"),
+                ),
+            )
+    }
+
+    @Test
     fun `production profile requires secure session cookies`() {
         val production = YamlPropertiesFactoryBean().apply {
             setResources(ClassPathResource("application-production.yml"))
@@ -141,6 +405,43 @@ class StaffAuthIntegrationTest {
         )
         assertThat(failedAudits).hasSize(3)
         assertThat(failedAudits.joinToString()).doesNotContain("Wrong password 42", "Correct horse 42")
+    }
+
+    @Test
+    fun `staff credentials session headers and forged identifiers never appear in application output`(
+        output: CapturedOutput,
+    ) {
+        val marker = UUID.randomUUID().toString()
+        val password = "staff-credential-$marker"
+        val authorization = "Bearer authorization-$marker"
+        val forgedRequestId = "request-$marker\nforged-log-$marker"
+        insertStaff("log-safety@example.com", password, "AGENT")
+
+        val browser = newBrowser()
+        val login = performLogin(browser, "log-safety@example.com", password)
+            .andExpect(status().isNoContent)
+            .andReturn()
+        val session = login.request.session as MockHttpSession
+        val sessionCookie = "DESKSEED_SESSION=session-cookie-$marker"
+
+        mockMvc.perform(
+            get("/api/v1/agent/me")
+                .session(session)
+                .header("Authorization", authorization)
+                .header("Cookie", sessionCookie)
+                .header("X-Request-Id", forgedRequestId),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("X-Request-Id", org.hamcrest.Matchers.not(forgedRequestId)))
+
+        assertThat(output.all)
+            .doesNotContain(password)
+            .doesNotContain(authorization)
+            .doesNotContain(sessionCookie)
+            .doesNotContain("session-cookie-$marker")
+            .doesNotContain(forgedRequestId)
+            .doesNotContain("forged-log-$marker")
+            .doesNotContain("Using generated security password:")
     }
 
     @Test
@@ -249,6 +550,31 @@ class StaffAuthIntegrationTest {
             Timestamp.from(Instant.parse("2026-08-10T00:00:00Z")),
             Timestamp.from(Instant.parse("2026-08-10T00:00:00Z")),
         )
+        return id
+    }
+
+    private fun insertGroup(name: String, vararg members: UUID): UUID {
+        val id = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into support_groups (id, name, status, created_at, updated_at, version)
+            values (?, ?, 'ACTIVE', now(), now(), 0)
+            """.trimIndent(),
+            id,
+            "$name-${UUID.randomUUID()}",
+        )
+        members.forEach { staffId ->
+            jdbcTemplate.update(
+                """
+                insert into group_memberships
+                    (id, group_id, staff_id, status, created_at, updated_at, version)
+                values (?, ?, ?, 'ACTIVE', now(), now(), 0)
+                """.trimIndent(),
+                UUID.randomUUID(),
+                id,
+                staffId,
+            )
+        }
         return id
     }
 

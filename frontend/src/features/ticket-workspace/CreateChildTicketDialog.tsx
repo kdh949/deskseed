@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent, type RefObject } from 'react'
 import { ApiError, createChildTicket } from '../../api/client'
 import type { AgentTicketDetail, TicketPriority } from '../../api/types'
 import { Notification } from '../../shared/ui/system'
@@ -9,10 +9,12 @@ import {
 
 export function CreateChildTicketDialog({
   detail,
+  returnFocusRef,
   onClose,
   onCompleted,
 }: {
   detail: AgentTicketDetail
+  returnFocusRef: RefObject<HTMLElement | null>
   onClose: () => void
   onCompleted: () => Promise<unknown>
 }) {
@@ -79,6 +81,8 @@ export function CreateChildTicketDialog({
       title="내부 child 만들기"
       description="별도 내부 ticket을 생성합니다. 첫 comment는 INTERNAL이며 고객에게 노출되지 않고 parent의 소유권은 그대로 유지됩니다."
       initialFocusRef={subjectRef}
+      returnFocusRef={returnFocusRef}
+      busy={submitting}
       onClose={close}
     >
       {error ? (

@@ -23,7 +23,7 @@ TICKET_NUMBER="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["ticket
 ACCESS_TOKEN="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])' < "$TEMP_DIR/submitted.json")"
 
 printf 'Created ticket #%s\n' "$TICKET_NUMBER"
-printf 'Access token is shown once: %s\n\n' "$ACCESS_TOKEN"
+printf 'Verifying the ticket-scoped lookup without printing its bearer token.\n\n'
 
 curl --fail --silent --show-error \
   -H "X-Request-Access-Token: $ACCESS_TOKEN" \

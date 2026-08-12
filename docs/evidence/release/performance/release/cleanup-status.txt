@@ -1,0 +1,7 @@
+status=PASS
+container_name=deskseed-release-perf-release-edHgPC-90328-10537
+container_id=bca5ab74e835bbd508943ac5c46389fdaf19ae5db4b5e0629647dc358b5dc19e
+data_volume=5e6cae77a2119bbe13263a312b709bae839d229a407ce0c4bc93e57655a40c26
+container_cleanup=REMOVED_AND_VERIFIED_ABSENT
+volume_cleanup=REMOVED_AND_VERIFIED_ABSENT
+scratch_cleanup=REMOVED_AND_VERIFIED_ABSENT

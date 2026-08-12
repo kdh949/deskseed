@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { pressSequentialTab } from './keyboard'
 
 const ACCESS_TOKEN = 'browser-memory-only-token-1234567890'
 const INVALID_ACCESS_TOKEN = 'browser-invalid-token-123456789012345'
@@ -47,6 +48,7 @@ async function expectNoAxeViolations(page: Page) {
 }
 
 test('keyboard-only create to public detail keeps the token out of browser storage and URL', async ({
+  browserName,
   page,
 }) => {
   let observedTokenHeader = ''
@@ -62,13 +64,13 @@ test('keyboard-only create to public detail keeps the token out of browser stora
 
   await page.getByRole('textbox', { name: /이름/ }).focus()
   await page.keyboard.type('김고객')
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await page.keyboard.type('customer@example.com')
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await page.keyboard.type('결제 오류 문의')
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await page.keyboard.type('결제 버튼을 누르면 오류가 납니다.')
-  await page.keyboard.press('Tab')
+  await pressSequentialTab(page, browserName)
   await expect(page.getByRole('button', { name: '문의 접수' })).toBeFocused()
   await page.keyboard.press('Enter')
 
@@ -155,6 +157,7 @@ test('server validation and temporary failure preserve the form and move focus',
 })
 
 test('duplicate form submission retains the one-time result while navigation is blocked', async ({
+  browserName,
   page,
 }) => {
   let requestCount = 0
@@ -184,8 +187,32 @@ test('duplicate form submission retains the one-time result while navigation is 
   await expect(
     page.getByText('접수 결과를 안전하게 표시한 뒤 이동할 수 있습니다.'),
   ).toBeVisible()
-  await page.evaluate(() => window.history.back())
+  if (browserName === 'chromium') {
+    const beforeUnload = page.waitForEvent('dialog')
+    await page.evaluate(() => window.history.back())
+    const unloadDialog = await beforeUnload
+    expect(unloadDialog.type()).toBe('beforeunload')
+    await unloadDialog.dismiss()
+  } else {
+    const unloadBoundary = await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true })
+      return {
+        dispatched: window.dispatchEvent(event),
+        defaultPrevented: event.defaultPrevented,
+      }
+    })
+    expect(unloadBoundary).toEqual({
+      dispatched: false,
+      defaultPrevented: true,
+    })
+  }
   await expect(page).toHaveURL(new RegExp('/requests/new$'))
+  await expect(page.getByRole('textbox', { name: /제목/ })).toHaveValue(
+    '결제 오류 문의',
+  )
+  await expect(
+    page.getByRole('button', { name: /안전하게 접수하는 중/ }),
+  ).toBeDisabled()
 
   releaseResponse?.()
   await expect(page.getByRole('heading', { name: '문의 #1042' })).toBeVisible()

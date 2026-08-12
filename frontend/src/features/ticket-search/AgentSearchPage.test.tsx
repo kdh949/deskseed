@@ -125,7 +125,7 @@ describe('AgentSearchPage', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            type: '/problems/access-audit-unavailable',
+            type: '/problems/audit-write-unavailable',
             title: 'Protected search unavailable',
             status: 503,
             requestId: 'safe-request-id',

@@ -23,7 +23,7 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install --disable-pip-version-check -r scripts/requirements-docs.txt
       - run: python scripts/validate_documentation.py --write
-      - run: git diff --exit-code -- VALIDATION-REPORT.md
+      - run: git diff --exit-code -- VALIDATION-REPORT.md FILE-MANIFEST.txt
 
   backend:
     name: Backend tests
@@ -84,6 +84,41 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify browser flow against isolated stack
         run: bash scripts/run-customer-request-e2e.sh
+      - name: Preserve Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-request-e2e-failure
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  audit-explorer-e2e:
+    name: Audit Explorer browser E2E
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.16.0'
+          package-manager-cache: false
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Verify Audit Explorer against isolated stack
+        run: bash scripts/run-audit-explorer-e2e.sh
+      - name: Preserve Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-explorer-e2e-failure
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
   frontend-browser-e2e:
     name: Frontend browser E2E
@@ -104,11 +139,21 @@ jobs:
       - name: Verify development-only browser fixtures and mocked flows
         working-directory: frontend
         run: npm run test:e2e:dev
+      - name: Preserve Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-browser-e2e-failure
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
   compose-smoke:
     name: Compose health smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Verify run-owned Docker cleanup boundary
+        run: bash scripts/test-e2e-compose-ownership.sh
       - name: Start stack and check backend health
         run: bash scripts/compose-smoke.sh

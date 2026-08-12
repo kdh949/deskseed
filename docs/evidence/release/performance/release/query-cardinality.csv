@@ -1,0 +1,6 @@
+query_name,eligible_rows,returned_first_page_rows,representative
+queue_my_child_tasks_first_page,8000,51,t
+queue_my_open_first_page,2200,51,t
+queue_pending_first_page,200000,51,t
+queue_recently_solved_first_page,2200,51,t
+queue_unassigned_my_groups_first_page,1600,51,t

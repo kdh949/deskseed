@@ -70,6 +70,7 @@ clock
 
 ```text
 TICKET_CREATED
+UPDATE_COMMAND_RECEIVED
 COMMENT_CREATED
 STATUS_CHANGED
 PRIORITY_CHANGED
@@ -90,6 +91,13 @@ ATTACHMENT_ADDED
 ```
 
 Audit event는 사람이 읽는 문자열 대신 구조화된 old/new 값을 가진다.
+
+`UPDATE_COMMAND_RECEIVED`는 `UpdateTicket`이 유효하지만 current row, comment, version에 실제 변경이 없는 경우에만
+남기는 content-free receipt event다. 첫 ordered event는 `commandOperation=UPDATE_TICKET`, canonical request descriptor,
+original warnings를 metadata로 가진다. Descriptor는 ticket/version/정렬된 declared field와 요청 field 값, comment visibility,
+기존 `COMMENT_CREATED.contentSha256` 값만 사용하며 comment raw body나 별도 full-payload digest를 저장하지 않는다.
+같은 authenticated staff actor의 동일 `clientCommandId`와 exact descriptor 재시도는 원래 결과를 반환하고 새 audit/event를
+만들지 않는다. 동일 ID의 다른 payload, ticket, operation 또는 둘 이상의 legacy audit match는 409로 fail closed한다.
 
 ## 6. Access & Search event catalog
 

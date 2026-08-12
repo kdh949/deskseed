@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { AgentTicketDetail } from '../../api/types'
 import { ContextPanel, type ContextPanelTab } from '../../shared/ui/system'
@@ -18,6 +18,8 @@ export function TicketContextPanel({
 }) {
   const [activeTab, setActiveTab] = useState<ContextTab>('customer')
   const [dialog, setDialog] = useState<'transfer' | 'child' | null>(null)
+  const transferTriggerRef = useRef<HTMLButtonElement>(null)
+  const childTriggerRef = useRef<HTMLButtonElement>(null)
   const tabs: ContextPanelTab[] = [
     { id: 'customer', label: '고객' },
     { id: 'history', label: '기록' },
@@ -92,6 +94,7 @@ export function TicketContextPanel({
           {canUpdate ? (
             <div className="related-ticket-actions">
               <button
+                ref={transferTriggerRef}
                 className="button secondary"
                 type="button"
                 onClick={() => setDialog('transfer')}
@@ -100,6 +103,7 @@ export function TicketContextPanel({
               </button>
               {!detail.ticket.isChild ? (
                 <button
+                  ref={childTriggerRef}
                   className="button primary"
                   type="button"
                   onClick={() => setDialog('child')}
@@ -124,6 +128,7 @@ export function TicketContextPanel({
       {dialog === 'transfer' ? (
         <TicketTransferDialog
           detail={detail}
+          returnFocusRef={transferTriggerRef}
           onClose={() => setDialog(null)}
           onCompleted={onCommandCompleted}
         />
@@ -131,6 +136,7 @@ export function TicketContextPanel({
       {dialog === 'child' ? (
         <CreateChildTicketDialog
           detail={detail}
+          returnFocusRef={childTriggerRef}
           onClose={() => setDialog(null)}
           onCompleted={onCommandCompleted}
         />
