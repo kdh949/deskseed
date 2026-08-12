@@ -1,6 +1,9 @@
 package dev.deskseed.ticketing
 
 import dev.deskseed.foundation.CommandContext
+import dev.deskseed.integration.ExternalObjectType
+import dev.deskseed.integration.ExternalReferenceView
+import java.time.Instant
 import java.util.UUID
 
 enum class TicketField(val externalName: String) {
@@ -94,6 +97,35 @@ data class CreateChildTicketResult(
     val childAuditId: UUID,
 )
 
+data class CreateTicketExternalReferenceCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val externalSystemId: UUID,
+    val objectType: ExternalObjectType,
+    val externalId: String,
+    val displayLabel: String,
+    val safeDeepLink: String,
+    val metadata: Map<String, Any>,
+    val metadataObservedAt: Instant,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class DeleteTicketExternalReferenceCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val referenceId: UUID,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class TicketExternalReferenceCommandResult(
+    val ticketNumber: Long,
+    val version: Long,
+    val auditId: UUID,
+    val reference: ExternalReferenceView,
+)
+
 interface AgentTicketCommandService {
     fun create(command: CreateAgentTicketCommand): TicketCommandResult
 
@@ -102,6 +134,10 @@ interface AgentTicketCommandService {
     fun transfer(command: TransferTicketCommand): TicketCommandResult
 
     fun createChild(command: CreateChildTicketCommand): CreateChildTicketResult
+
+    fun createExternalReference(command: CreateTicketExternalReferenceCommand): TicketExternalReferenceCommandResult
+
+    fun deleteExternalReference(command: DeleteTicketExternalReferenceCommand): TicketExternalReferenceCommandResult
 }
 
 interface TicketWriteAuthorizationPolicy {

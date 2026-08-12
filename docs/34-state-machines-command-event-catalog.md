@@ -131,8 +131,13 @@ GROUP_MEMBERSHIP_CHANGED
 SETTING_CHANGED
 CUSTOMER_ACCESS_MODE_CHANGED
 INTEGRATION_CLIENT_CREATED
+INTEGRATION_CLIENT_DISABLED
 INTEGRATION_CLIENT_ROTATED
 INTEGRATION_CLIENT_REVOKED
+INTEGRATION_AUTHENTICATION_FAILED
+INTEGRATION_CLIENT_LAST_USED
+EXTERNAL_SYSTEM_CREATED
+EXTERNAL_SYSTEM_UPDATED
 WEBHOOK_CREATED
 WEBHOOK_SECRET_ROTATED
 WEBHOOK_DISABLED
@@ -147,6 +152,10 @@ RETENTION_JOB_EXECUTED
 `GrantStaffAuditAuthority`와 `RevokeStaffAuditAuthority`는 ADMIN actor만 실행하며,
 `AUDIT_SEARCH_QUERY_REVEAL`, `AUDIT_EXPORT`, `AUDIT_PROJECTION_REBUILD`만 허용한다.
 grant row 변경과 대응하는 admin/security event는 같은 transaction에서 commit/rollback한다.
+
+Integration client lifecycle mutation and its event also commit/rollback together. Authentication returns one generic failure externally while `INTEGRATION_AUTHENTICATION_FAILED` stores only a bounded reason code, public key ID, and normalized remote IP. Successful verification updates credential/client last-used metadata and appends `INTEGRATION_CLIENT_LAST_USED` in one transaction; required audit failure prevents authentication success. Neither event contains the API key secret, hash, or Authorization value.
+
+ExternalSystem create/update and its admin/security event commit or roll back together. Ticket ExternalReference create/remove increments the ticket version and produces exactly one TicketAudit with one ordered `EXTERNAL_REFERENCE_CREATED` or `EXTERNAL_REFERENCE_REMOVED` event. The event contains only stable reference identity, system key, object type, external ID, current hostname, and metadata key names; it excludes metadata values and URL path/query.
 
 ## 8. Domain/application event catalog
 
@@ -197,6 +206,8 @@ An overlap is rejected with `409`; a disjoint change is applied to the latest ro
 still race at commit, the losing optimistic transaction is fully rolled back and retried from the latest
 row with authorization and conflict checks repeated. Group changes that would invalidate the current
 assignee require the request to include an explicit compatible `assigneeId` or `null` clear.
+
+ExternalReference create/remove follows the same ticket transaction and exact-version rule. Integration owns URL/metadata validation and reference persistence through its root API, while Ticketing owns write authorization, current ticket version, and canonical audit. Registry/reference changes never perform external network I/O.
 
 ### Sensitive read
 
@@ -259,3 +270,49 @@ External event names include schema version in envelope, not topic name alone.
 - compatible fields may be added.
 - required field removal/type change creates new version.
 - consumer contract tests run before publish.
+
+## 13. Outbound mail delivery state
+
+```text
+QUEUED
+  → SENDING
+  → SENT
+  → RETRY_WAIT → SENDING
+  → FAILED
+
+FAILED --explicit manual retry--> QUEUED (same intent)
+```
+
+- business transaction은 `QUEUED` intent까지만 저장한다.
+- worker는 claim/lease transaction을 먼저 commit한 뒤 SMTP를 호출하고 별도 transaction으로 결과를 기록한다.
+- attempt는 `IN_PROGRESS | SUCCEEDED | RETRYABLE_FAILED | PERMANENT_FAILED | ABANDONED`다.
+- 기본 retry schedule은 immediate, 1m, 5m, 30m, 2h이며 exhaustion은 terminal `FAILED`다.
+- manual retry는 새 comment/intent가 아니라 기존 terminal intent의 새 retry cycle과 delivery event다.
+- Mailpit SMTP는 stable `Message-ID`를 전달하지만 SMTP accept 후 acknowledgement 유실을 원자적으로 판별하지 못한다. production adapter는 provider idempotency/reconciliation 계약을 별도로 동결해야 한다.
+
+## 14. Customer request claim and follow-up state
+
+```text
+anonymous ticket + active request access token
+  → issue short-lived signed claim grant (optional exchange)
+
+unverified requester + verified customer + ticket-specific active proof
+  → CLAIMED: requester_id changed, request tokens revoked,
+             used grant consumed, REQUESTER_CHANGED audit + security audit
+
+invalid/tampered/expired/consumed proof → NOT_FOUND (no ownership change)
+valid proof + different verified email  → DENIED (proof remains unconsumed)
+already verified/non-customer ticket   → NOT_FOUND
+```
+
+- Email equality is only a necessary check after a ticket-scoped proof succeeds; it is never
+  an ownership lookup or automatic claim trigger.
+- Claim mutation, token revocation/consume, one canonical ticket audit and one admin/security
+  audit commit or roll back together.
+- A CUSTOMER follow-up command is keyed by `(requesterId, clientCommandId)`. Exact replay returns
+  the canonical comment; reuse with a different ticket/body returns conflict without mutation.
+- NEW/OPEN/HOLD/PENDING accept a PUBLIC follow-up; PENDING becomes OPEN. SOLVED/CLOSED return
+  conflict and are not automatically reopened.
+- Comment, optional state transition, one TicketAudit with ordered events, and the stable
+  `customer-follow-up-received:{commentId}` mail intent share the business transaction. SMTP
+  delivery remains post-commit under the outbound-mail state machine above.

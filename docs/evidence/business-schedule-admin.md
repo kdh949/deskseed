@@ -121,7 +121,7 @@ Body:
 
 ## 배포와 호환성
 
-- V18 additive Flyway migration
+- V24 additive Flyway migration
 - rollback은 애플리케이션 롤백 후 forward-fix migration으로 수행
 - 기존 Customer/Agent/Admin/Audit API에는 breaking change 없음
 ```

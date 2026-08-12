@@ -23,18 +23,18 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Adr Files: 38
 - Bundled Image Assets: 0
 - Canonical Docs: 55
-- Core Api Requirement Links: 41
+- Core Api Requirement Links: 44
 - Decision Definitions: 52
 - Dual Use Actor Bound Operations: 1
-- E2E Visual Baselines: 86
+- E2E Visual Baselines: 98
 - Json Files: 8
-- Markdown Files: 174
-- Openapi Operations: 60
-- Openapi Paths: 49
+- Markdown Files: 180
+- Openapi Operations: 77
+- Openapi Paths: 62
 - Requirement Definitions: 78
 - Staff Actor Blueprint Operations: 6
-- Staff Actor Bound Operations: 35
-- Staff Csrf Bound Operations: 22
+- Staff Actor Bound Operations: 49
+- Staff Csrf Bound Operations: 31
 - Task Briefs: 26
 - Verification Gate Definitions: 127
 - Yaml Files: 16

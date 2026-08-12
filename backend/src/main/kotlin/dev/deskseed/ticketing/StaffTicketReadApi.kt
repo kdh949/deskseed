@@ -96,7 +96,7 @@ data class StaffTicketHistoryItem(
 data class StaffTicketDetail(
     val ticket: StaffTicketSummary,
     val comments: List<StaffCommentView>,
-    val customer: StaffTicketCustomer,
+    val customer: StaffTicketCustomer?,
     val history: List<StaffTicketHistoryItem>,
     val parent: StaffTicketSummary?,
     val children: List<StaffTicketSummary>,

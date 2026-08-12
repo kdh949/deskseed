@@ -1,6 +1,9 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.foundation.RequestIdFilter
+import dev.deskseed.integration.ExternalReferenceConflictException
+import dev.deskseed.integration.ExternalReferenceNotFoundException
+import dev.deskseed.integration.ExternalSystemNotFoundException
 import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.TicketAssignmentInvalidException
 import dev.deskseed.ticketing.TicketAuditUnavailableException
@@ -25,7 +28,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.net.URI
 
-@RestControllerAdvice(assignableTypes = [AgentTicketCommandController::class])
+@RestControllerAdvice(assignableTypes = [AgentTicketCommandController::class, AgentExternalReferenceController::class])
 internal class AgentTicketCommandExceptionHandler {
     @ExceptionHandler(AgentTicketNotFoundException::class)
     fun notFound(request: HttpServletRequest) = problem(
@@ -35,6 +38,31 @@ internal class AgentTicketCommandExceptionHandler {
         "Ticket not found",
         "The requested ticket was not found.",
     )
+
+    @ExceptionHandler(ExternalReferenceNotFoundException::class, ExternalSystemNotFoundException::class)
+    fun externalNotFound(request: HttpServletRequest) = problem(
+        request,
+        HttpStatus.NOT_FOUND,
+        "/problems/external-reference-not-found",
+        "External reference resource not found",
+        "The requested external reference resource was not found.",
+    )
+
+    @ExceptionHandler(ExternalReferenceConflictException::class)
+    fun externalConflict(
+        exception: ExternalReferenceConflictException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ProblemDetail> {
+        val response = problem(
+            request,
+            HttpStatus.CONFLICT,
+            "/problems/external-reference-conflict",
+            "External reference change conflicted",
+            "The requested external reference change cannot be applied.",
+        )
+        response.body?.setProperty("code", exception.code)
+        return response
+    }
 
     @ExceptionHandler(TicketWriteForbiddenException::class)
     fun forbidden(request: HttpServletRequest) = problem(

@@ -157,6 +157,14 @@ describe('RequestDetailPage', () => {
           group: { name: '보안 그룹' },
           assignee: { name: '담당 상담사' },
           audit: [{ metadata: '감사 비밀' }],
+          externalReferences: [
+            {
+              externalId: 'order-private-100',
+              displayLabel: '외부 주문 비밀',
+              deepLinkUrl: 'https://admin.shop.example/orders/private-100',
+              metadataSnapshot: { status: '환불 검토 비밀' },
+            },
+          ],
         }),
       ),
     )
@@ -173,6 +181,10 @@ describe('RequestDetailPage', () => {
       '보안 그룹',
       '담당 상담사',
       '감사 비밀',
+      'order-private-100',
+      '외부 주문 비밀',
+      'https://admin.shop.example/orders/private-100',
+      '환불 검토 비밀',
     ]) {
       expect(screen.queryByText(privateText)).not.toBeInTheDocument()
     }
@@ -187,6 +199,10 @@ describe('RequestDetailPage', () => {
     expect(cachedPublicData).not.toContain('보안 그룹')
     expect(cachedPublicData).not.toContain('담당 상담사')
     expect(cachedPublicData).not.toContain('감사 비밀')
+    expect(cachedPublicData).not.toContain('order-private-100')
+    expect(cachedPublicData).not.toContain('외부 주문 비밀')
+    expect(cachedPublicData).not.toContain('admin.shop.example')
+    expect(cachedPublicData).not.toContain('환불 검토 비밀')
   })
 
   it('shows an explicit empty conversation state', async () => {

@@ -41,6 +41,11 @@ api/analytics-api-v1.yaml    (later)
 POST /api/v1/requests
 GET  /api/v1/requests/{ticketNumber}
 POST /api/v1/requests/{ticketNumber}/comments       later
+POST /api/v1/customer/auth/magic-link-requests
+POST /api/v1/customer/auth/magic-link-sessions
+GET  /api/v1/customer/csrf
+DELETE /api/v1/customer/session
+GET  /api/v1/customer/me
 GET  /api/v1/customer/requests                       account later
 GET  /api/v1/customer/requests/{ticketNumber}        account later
 ```
@@ -70,7 +75,14 @@ PUT/DELETE /api/v1/admin/staff/{staffId}/audit-authorities/{authority}
 GET/POST/PATCH /api/v1/admin/groups...
 PUT /api/v1/admin/settings/customer-access-mode
 GET/PUT /api/v1/admin/permissions...
+GET/POST /api/v1/admin/integration-clients
+GET      /api/v1/admin/integration-clients/{clientId}
+POST     /api/v1/admin/integration-clients/{clientId}/disable
+POST     /api/v1/admin/integration-clients/{clientId}/revoke
+POST     /api/v1/admin/integration-clients/{clientId}/rotate
 ```
+
+Integration client create/rotate responses are `no-store` one-time secret envelopes. The I1 freeze adds management endpoints only; `/api/v1/platform/**` remains unexposed until the Platform Ticket API slice.
 
 ### Audit v1
 

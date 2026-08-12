@@ -9,9 +9,12 @@ import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
 import dev.deskseed.ticketing.CreateChildTicketCommand
 import dev.deskseed.ticketing.CreateChildTicketResult
+import dev.deskseed.ticketing.CreateTicketExternalReferenceCommand
+import dev.deskseed.ticketing.DeleteTicketExternalReferenceCommand
 import dev.deskseed.ticketing.StaffTicketCommandActor
 import dev.deskseed.ticketing.TicketCommandResult
 import dev.deskseed.ticketing.TicketField
+import dev.deskseed.ticketing.TicketExternalReferenceCommandResult
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.TransferTicketCommand
@@ -19,6 +22,8 @@ import dev.deskseed.ticketing.UpdateAgentTicketCommand
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
+import java.time.Instant
+import dev.deskseed.integration.ExternalObjectType
 
 internal data class CreateAgentTicketInput(
     val requesterName: String,
@@ -54,6 +59,17 @@ internal data class CreateChildTicketInput(
     val groupId: UUID,
     val assigneeId: UUID?,
     val priority: TicketPriority,
+)
+
+internal data class CreateTicketExternalReferenceInput(
+    val expectedVersion: Long,
+    val externalSystemId: UUID,
+    val objectType: ExternalObjectType,
+    val externalId: String,
+    val displayLabel: String,
+    val safeDeepLink: String,
+    val metadata: Map<String, Any>,
+    val metadataObservedAt: Instant,
 )
 
 @Service
@@ -133,6 +149,43 @@ internal class AgentTicketCommandApplicationService(
             groupId = input.groupId,
             assigneeId = input.assigneeId,
             priority = input.priority,
+            actor = principal.commandActor(),
+            context = context,
+        ),
+    )
+
+    fun createExternalReference(
+        principal: StaffPrincipal,
+        ticketNumber: Long,
+        input: CreateTicketExternalReferenceInput,
+        context: CommandContext,
+    ): TicketExternalReferenceCommandResult = ticketCommandService.createExternalReference(
+        CreateTicketExternalReferenceCommand(
+            ticketNumber = ticketNumber,
+            expectedVersion = input.expectedVersion,
+            externalSystemId = input.externalSystemId,
+            objectType = input.objectType,
+            externalId = input.externalId,
+            displayLabel = input.displayLabel,
+            safeDeepLink = input.safeDeepLink,
+            metadata = input.metadata,
+            metadataObservedAt = input.metadataObservedAt,
+            actor = principal.commandActor(),
+            context = context,
+        ),
+    )
+
+    fun deleteExternalReference(
+        principal: StaffPrincipal,
+        ticketNumber: Long,
+        referenceId: UUID,
+        expectedVersion: Long,
+        context: CommandContext,
+    ): TicketExternalReferenceCommandResult = ticketCommandService.deleteExternalReference(
+        DeleteTicketExternalReferenceCommand(
+            ticketNumber = ticketNumber,
+            expectedVersion = expectedVersion,
+            referenceId = referenceId,
             actor = principal.commandActor(),
             context = context,
         ),

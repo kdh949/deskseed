@@ -211,6 +211,41 @@ describe('AgentTicketWorkspacePage', () => {
     ).toHaveLength(0)
   })
 
+  it('renders a requesterless Platform internal work item without fabricating customer context', async () => {
+    const internalWorkItem = {
+      ...detail,
+      ticket: {
+        ...detail.ticket,
+        subject: '재고 대사 내부 작업',
+        requester: {
+          id: null,
+          type: 'INTEGRATION_CLIENT',
+          displayName: '내부 작업',
+        },
+      },
+      context: { ...detail.context, customer: null },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(internalWorkItem), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    )
+
+    renderPage()
+
+    expect(
+      await screen.findByRole('heading', { name: '재고 대사 내부 작업' }),
+    ).toBeVisible()
+    expect(
+      screen.getByText('연결된 고객이 없는 내부 작업입니다.'),
+    ).toBeVisible()
+    expect(screen.queryByRole('link', { name: /@/ })).not.toBeInTheDocument()
+  })
+
   it.each(['getItem', 'removeItem'] as const)(
     'keeps the workspace available when draft storage %s throws',
     async (operation) => {

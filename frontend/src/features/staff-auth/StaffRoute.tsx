@@ -82,6 +82,65 @@ export function AdminRoute() {
   return <Outlet />
 }
 
+export function IntegrationAdminRoute() {
+  return (
+    <IntegrationCapabilityRoute
+      capability="integration:clients:manage"
+      title="연동 클라이언트 관리 권한이 필요합니다."
+      description="보안 감사자와 상담사 계정은 API key를 발급하거나 변경할 수 없습니다."
+    />
+  )
+}
+
+export function ExternalSystemAdminRoute() {
+  return (
+    <IntegrationCapabilityRoute
+      capability="integration:systems:manage"
+      title="외부 시스템 관리 권한이 필요합니다."
+      description="보안 감사자와 상담사 계정은 외부 시스템과 허용 hostname을 변경할 수 없습니다."
+    />
+  )
+}
+
+function IntegrationCapabilityRoute({
+  capability,
+  title,
+  description,
+}: {
+  capability: string
+  title: string
+  description: string
+}) {
+  const session = useStaffSession()
+  const allowed =
+    session.staff?.role === 'ADMIN' &&
+    session.staff.capabilities.includes(capability)
+  if (!allowed) {
+    return (
+      <main className="staff-gate">
+        <ScreenState
+          kind="denied"
+          title={title}
+          description={description}
+          action={
+            <Link
+              className="button primary"
+              to={
+                session.staff?.role === 'SECURITY_AUDITOR'
+                  ? '/audit/activity'
+                  : '/agent/home'
+              }
+            >
+              허용된 작업 공간으로 이동
+            </Link>
+          }
+        />
+      </main>
+    )
+  }
+  return <Outlet />
+}
+
 export function AgentRoute() {
   const session = useStaffSession()
   const allowed =

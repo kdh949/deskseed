@@ -31,6 +31,7 @@
 - canonical audit atomicity.
 - permission queries.
 - Spring Modulith module boundaries/events.
+- outbound mail business/outbox atomicity, worker claim lease, retry/manual retry and delivery-event persistence.
 
 ### API contract tests
 
@@ -57,6 +58,7 @@
 - CSRF/session.
 - XSS in comment/subject/metadata.
 - log injection.
+- mail recipient/header injection and body/link/recipient log non-exposure.
 - secret/token leak.
 - SSRF in webhook/deep links.
 - rate limit.
@@ -111,6 +113,7 @@ Large performance fixture targets:
 11. search → result open 추적.
 12. API retry에도 ticket 1개.
 13. webhook duplicate receiver idempotency.
+14. request/public reply outbox → Mailpit recipient/subject/link inspection; INTERNAL note has no delivery.
 
 ## 5. Frontend quality gates
 

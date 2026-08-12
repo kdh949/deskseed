@@ -64,13 +64,16 @@ if [[ "$capture_status" -ne 0 ]] || ! e2e_assert_expected_stack_captured; then
   exit 1
 fi
 
+backend_port="${DESKSEED_BACKEND_PORT:-8080}"
+mailpit_port="${DESKSEED_MAILPIT_PORT:-8025}"
 for _attempt in $(seq 1 30); do
-  if curl --fail --silent --show-error http://localhost:8080/actuator/health >/dev/null; then
+  if curl --fail --silent --show-error "http://localhost:$backend_port/actuator/health" >/dev/null \
+    && curl --fail --silent --show-error "http://localhost:$mailpit_port/readyz" >/dev/null; then
     exit 0
   fi
   sleep 2
 done
 
 docker compose --project-name "$e2e_project" "${compose_files[@]}" logs --no-color
-echo "Backend health endpoint did not return HTTP 200 within 60 seconds." >&2
+echo "Backend health or Mailpit ready endpoint did not return HTTP 200 within 60 seconds." >&2
 exit 1

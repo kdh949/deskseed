@@ -1,8 +1,17 @@
 package dev.deskseed.ticketing.internal
 
+import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.integration.CreateExternalReference
+import dev.deskseed.integration.ExternalReferenceMutation
+import dev.deskseed.integration.ExternalReferenceStore
+import dev.deskseed.outboundmail.MailRecipient
+import dev.deskseed.outboundmail.OutboundMailIntent
+import dev.deskseed.outboundmail.OutboundMailPort
+import dev.deskseed.outboundmail.PublicAgentReplyMail
 import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
@@ -11,6 +20,8 @@ import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
 import dev.deskseed.ticketing.CreateChildTicketCommand
 import dev.deskseed.ticketing.CreateChildTicketResult
+import dev.deskseed.ticketing.CreateTicketExternalReferenceCommand
+import dev.deskseed.ticketing.DeleteTicketExternalReferenceCommand
 import dev.deskseed.ticketing.TicketAssignmentInvalidException
 import dev.deskseed.ticketing.TicketAssignmentPolicy
 import dev.deskseed.ticketing.TicketAuditUnavailableException
@@ -20,6 +31,7 @@ import dev.deskseed.ticketing.TicketCommandResult
 import dev.deskseed.ticketing.TicketCommandWarning
 import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketFieldConflictException
+import dev.deskseed.ticketing.TicketExternalReferenceCommandResult
 import dev.deskseed.ticketing.TicketKind
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.TicketRelationInvalidException
@@ -66,6 +78,18 @@ internal class JpaAgentTicketCommandService(
         transaction.createChild(command)
     }
 
+    override fun createExternalReference(
+        command: CreateTicketExternalReferenceCommand,
+    ): TicketExternalReferenceCommandResult = executeRetriable {
+        transaction.createExternalReference(command)
+    }
+
+    override fun deleteExternalReference(
+        command: DeleteTicketExternalReferenceCommand,
+    ): TicketExternalReferenceCommandResult = executeRetriable {
+        transaction.deleteExternalReference(command)
+    }
+
     private fun <T> executeRetriable(block: () -> T): T {
         var optimisticFailure: RuntimeException? = null
         repeat(MAX_OPTIMISTIC_ATTEMPTS) {
@@ -110,6 +134,9 @@ internal class AgentTicketCommandTransaction(
     private val organizationConsistencyGuard: TicketOrganizationConsistencyGuard,
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val authorizationPolicy: TicketWriteAuthorizationPolicy,
+    private val externalReferenceStore: ExternalReferenceStore,
+    private val customerDirectory: CustomerDirectory,
+    private val outboundMailPort: OutboundMailPort,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
 ) {
@@ -165,6 +192,15 @@ internal class AgentTicketCommandTransaction(
                 createdAt = ticket.firstComment.createdAt,
             ),
         )
+        if (command.firstComment.visibility == CommentVisibility.PUBLIC) {
+            enqueuePublicReply(
+                ticket = ticketEntity,
+                commentId = ticket.firstComment.id,
+                publicBody = ticket.firstComment.body,
+                actorId = command.actor.id,
+                context = command.context,
+            )
+        }
 
         val auditId = appendAudit(
             ticket = ticketEntity,
@@ -269,6 +305,15 @@ internal class AgentTicketCommandTransaction(
                 ),
             )
             events += commentAuditEvent(commentId, draft, now)
+            if (draft.visibility == CommentVisibility.PUBLIC) {
+                enqueuePublicReply(
+                    ticket = ticket,
+                    commentId = commentId,
+                    publicBody = draft.body.trim(),
+                    actorId = command.actor.id,
+                    context = command.context,
+                )
+            }
         }
         if (newStatus != oldStatus) {
             events += fieldAuditEvent("STATUS_CHANGED", TicketField.STATUS, oldStatus.name, newStatus.name)
@@ -445,7 +490,8 @@ internal class AgentTicketCommandTransaction(
         val now = Instant.now(clock)
         val child = Ticket.createInternalChild(
             ticketNumber = ticketNumberGenerator.next(),
-            requesterId = parent.requesterId,
+            requesterId = parent.requesterId
+                ?: throw TicketRelationInvalidException("Requesterless work items cannot create child tickets"),
             subject = command.subject,
             firstCommentBody = command.body,
             priority = command.priority,
@@ -575,6 +621,119 @@ internal class AgentTicketCommandTransaction(
             childTicketNumber = child.ticketNumber,
             parentAuditId = parentAuditId,
             childAuditId = childAuditId,
+        )
+    }
+
+    @Transactional
+    fun createExternalReference(
+        command: CreateTicketExternalReferenceCommand,
+    ): TicketExternalReferenceCommandResult {
+        validateStaffContext(command.actor.id, command.context.source)
+        if (command.expectedVersion < 0) throw TicketCommandInvalidException("expectedVersion must be non-negative")
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
+            throw TicketWriteForbiddenException()
+        }
+        requireExactVersion(command.expectedVersion, ticket.version)
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets cannot change external references")
+        }
+        val now = Instant.now(clock)
+        val mutation = externalReferenceStore.create(
+            CreateExternalReference(
+                ticketId = ticket.id,
+                externalSystemId = command.externalSystemId,
+                objectType = command.objectType,
+                externalId = command.externalId,
+                displayLabel = command.displayLabel,
+                safeDeepLink = command.safeDeepLink,
+                metadata = command.metadata,
+                metadataObservedAt = command.metadataObservedAt,
+                actorId = command.actor.id,
+                actorDisplayName = command.actor.displayName,
+            ),
+        )
+        ticket.updatedAt = now
+        ticketRepository.saveAndFlush(ticket)
+        val auditId = appendExternalReferenceAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            actorId = command.actor.id,
+            context = command.context,
+            mutation = mutation,
+            eventType = "EXTERNAL_REFERENCE_CREATED",
+            isCreate = true,
+            now = now,
+        )
+        return TicketExternalReferenceCommandResult(ticket.ticketNumber, ticket.version, auditId, mutation.reference)
+    }
+
+    @Transactional
+    fun deleteExternalReference(
+        command: DeleteTicketExternalReferenceCommand,
+    ): TicketExternalReferenceCommandResult {
+        validateStaffContext(command.actor.id, command.context.source)
+        if (command.expectedVersion < 0) throw TicketCommandInvalidException("expectedVersion must be non-negative")
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
+            throw TicketWriteForbiddenException()
+        }
+        requireExactVersion(command.expectedVersion, ticket.version)
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets cannot change external references")
+        }
+        val now = Instant.now(clock)
+        val mutation = externalReferenceStore.delete(ticket.id, command.referenceId)
+        ticket.updatedAt = now
+        ticketRepository.saveAndFlush(ticket)
+        val auditId = appendExternalReferenceAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            actorId = command.actor.id,
+            context = command.context,
+            mutation = mutation,
+            eventType = "EXTERNAL_REFERENCE_REMOVED",
+            isCreate = false,
+            now = now,
+        )
+        return TicketExternalReferenceCommandResult(ticket.ticketNumber, ticket.version, auditId, mutation.reference)
+    }
+
+    private fun appendExternalReferenceAudit(
+        ticket: TicketEntity,
+        expectedVersion: Long,
+        actorId: UUID,
+        context: CommandContext,
+        mutation: ExternalReferenceMutation,
+        eventType: String,
+        isCreate: Boolean,
+        now: Instant,
+    ): UUID {
+        val referenceIdentity = objectMapper.writeValueAsString(mapOf("id" to mutation.reference.id.toString()))
+        return appendAudit(
+            ticket = ticket,
+            expectedVersion = expectedVersion,
+            resultVersion = ticket.version,
+            actorId = actorId,
+            context = context.toAuditContext(),
+            now = now,
+            events = listOf(
+                NewAuditEvent(
+                    type = eventType,
+                    before = referenceIdentity.takeUnless { isCreate },
+                    after = referenceIdentity.takeIf { isCreate },
+                    metadata = mapOf(
+                        "externalSystemId" to mutation.reference.system.id.toString(),
+                        "systemKey" to mutation.reference.system.systemKey,
+                        "objectType" to mutation.reference.objectType.name,
+                        "externalId" to mutation.reference.externalId,
+                        "hostname" to mutation.auditHostname,
+                        "metadataKeys" to mutation.auditMetadataKeys.sorted(),
+                    ),
+                ),
+            ),
         )
     }
 
@@ -750,6 +909,34 @@ internal class AgentTicketCommandTransaction(
             ),
             occurredAt = now,
         )
+
+    private fun enqueuePublicReply(
+        ticket: TicketEntity,
+        commentId: UUID,
+        publicBody: String,
+        actorId: UUID,
+        context: CommandContext,
+    ) {
+        val requesterId = ticket.requesterId
+            ?: throw TicketCommandInvalidException("Ticket requester is unavailable")
+        val customer = customerDirectory.findById(requesterId)
+            ?: throw TicketCommandInvalidException("Ticket requester is unavailable")
+        outboundMailPort.enqueue(
+            OutboundMailIntent(
+                idempotencyKey = "public-agent-reply:$commentId",
+                recipient = MailRecipient(customer.email),
+                content = PublicAgentReplyMail(
+                    ticketNumber = ticket.ticketNumber,
+                    publicBody = publicBody,
+                ),
+                ticketId = ticket.id,
+                commentId = commentId,
+                customerId = customer.id,
+                actor = ActorRef(ActorType.STAFF, actorId),
+                context = context,
+            ),
+        )
+    }
 
     private fun fieldAuditEvent(
         type: String,
