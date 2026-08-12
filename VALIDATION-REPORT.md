@@ -26,7 +26,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Core Api Requirement Links: 44
 - Decision Definitions: 52
 - Dual Use Actor Bound Operations: 1
-- E2E Visual Baselines: 88
+- E2E Visual Baselines: 92
 - Json Files: 8
 - Markdown Files: 175
 - Openapi Operations: 70
