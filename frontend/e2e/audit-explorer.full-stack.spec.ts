@@ -106,6 +106,7 @@ function backendLogs(): string {
 }
 
 test.skip(!fullStackEnabled, 'Runs only against the isolated Compose stack')
+test.setTimeout(90_000)
 
 test('real ledger, session, API, projection, reveal, and mutation boundaries work together', async ({
   browser,
@@ -158,6 +159,17 @@ test('real ledger, session, API, projection, reveal, and mutation boundaries wor
     await expect(adminPage.getByText(auditorEmail)).toBeVisible()
     await expect(
       adminPage.getByRole('cell', { name: 'SECURITY_AUDITOR' }),
+    ).toBeVisible()
+    const auditorRow = adminPage
+      .getByRole('row')
+      .filter({ hasText: auditorEmail })
+    await auditorRow
+      .getByRole('button', { name: '검색어 원문 공개 권한 부여' })
+      .click()
+    await expect(
+      auditorRow.getByRole('button', {
+        name: '검색어 원문 공개 권한 회수',
+      }),
     ).toBeVisible()
 
     await adminPage.goto(`${baseURL}/agent/search`)
