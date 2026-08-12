@@ -214,7 +214,7 @@ f1e62e561aeb3870b8ba2adac532be223503e5c9a40cbbc35c7e2d4c93cdcc56        4073  sc
 a50805122269887fe6456379c1fda2357a8b483003cc2c7289b6ba06479a2fdc         489  scripts/run-release-e2e.sh
 4990c5fde47dd394d1e8ca85c21b249f407a27d1049fc66f1999f759830f1eea       54647  scripts/run-release-performance.sh
 86039df10acf707d5941485169b22bd6ef5e8709afbeb9d456a87b7b3e6d1ea4       10278  scripts/test-e2e-compose-ownership.sh
-6e8b42b8b4efd3f6b4e7569f71b7e2e971eaf5143a594928b05122389e52d3b0       25962  scripts/validate_documentation.py
+01bed8a921e3dba2e69c194f3a4272b871496e813f33b5a026c9ed5c0f2a7494       26148  scripts/validate_documentation.py
 d337270b000da9602956653c37190cab863c7b95c21ec2a1b91c4c142bceb298        7660  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
 6b43d795b99c525d4ac87a5ff23896fe0fccd2ca434173698a26374b3fbdd59e        3331  tasks/00-bootstrap.md

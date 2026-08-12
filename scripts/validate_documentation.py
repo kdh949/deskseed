@@ -85,6 +85,7 @@ GENERATED_DIRECTORY_NAMES = {
     "playwright-report",
     "test-results",
 }
+GENERATED_PATH_PREFIXES = {Path("backend/bin")}
 E2E_VISUAL_BASELINE_DIRECTORY = ROOT / "frontend/e2e/__screenshots__"
 
 
@@ -93,7 +94,10 @@ def rel(path: Path) -> str:
 
 
 def is_generated(path: Path) -> bool:
-    return any(part in GENERATED_DIRECTORY_NAMES for part in path.relative_to(ROOT).parts)
+    relative = path.relative_to(ROOT)
+    return any(part in GENERATED_DIRECTORY_NAMES for part in relative.parts) or any(
+        relative == prefix or relative.is_relative_to(prefix) for prefix in GENERATED_PATH_PREFIXES
+    )
 
 
 def all_files(pattern: str) -> list[Path]:

@@ -37,7 +37,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Staff Csrf Bound Operations: 16
 - Task Briefs: 26
 - Verification Gate Definitions: 127
-- Yaml Files: 18
+- Yaml Files: 16
 
 ## Errors
 
