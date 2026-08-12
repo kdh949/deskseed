@@ -4,8 +4,9 @@ import type { AgentTicketDetail } from '../../api/types'
 import { ContextPanel, type ContextPanelTab } from '../../shared/ui/system'
 import { CreateChildTicketDialog } from './CreateChildTicketDialog'
 import { TicketTransferDialog } from './TicketTransferDialog'
+import { TicketExternalReferences } from './TicketExternalReferences'
 
-type ContextTab = 'customer' | 'history' | 'related'
+type ContextTab = 'customer' | 'history' | 'related' | 'external'
 
 export function TicketContextPanel({
   detail,
@@ -24,6 +25,7 @@ export function TicketContextPanel({
     { id: 'customer', label: '고객' },
     { id: 'history', label: '기록' },
     { id: 'related', label: '관련' },
+    { id: 'external', label: 'External' },
   ]
 
   return (
@@ -117,14 +119,16 @@ export function TicketContextPanel({
               관계에 의한 읽기는 parent 쓰기 권한을 부여하지 않습니다.
             </p>
           )}
-          <h2>외부 참조</h2>
-          <p>
-            {detail.context.externalReferences.length
-              ? `${detail.context.externalReferences.length}개`
-              : '연결된 외부 참조가 없습니다.'}
-          </p>
         </div>
       ) : null}
+      <div hidden={activeTab !== 'external'}>
+        <TicketExternalReferences
+          ticketNumber={detail.ticket.ticketNumber}
+          canUpdate={canUpdate}
+          active={activeTab === 'external'}
+          onCommandCompleted={onCommandCompleted}
+        />
+      </div>
       {dialog === 'transfer' ? (
         <TicketTransferDialog
           detail={detail}

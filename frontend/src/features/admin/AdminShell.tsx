@@ -23,6 +23,11 @@ export function AdminShell() {
           ) ? (
             <NavLink to="/integrations/clients">API 클라이언트</NavLink>
           ) : null}
+          {session.staff?.capabilities.includes(
+            'integration:systems:manage',
+          ) ? (
+            <NavLink to="/integrations/systems">외부 시스템</NavLink>
+          ) : null}
           <NavLink to="/agent/home">상담사 화면</NavLink>
         </nav>
         <div className="admin-identity">

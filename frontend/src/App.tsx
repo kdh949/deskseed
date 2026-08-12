@@ -12,6 +12,8 @@ import {
   AgentRoute,
   AdminRoute,
   AuditRoute,
+  ExternalSystemAdminRoute,
+  IntegrationAreaRoute,
   IntegrationAdminRoute,
   StaffRoute,
   StaffSessionLayout,
@@ -24,6 +26,7 @@ import { NewRequestPage } from './pages/NewRequestPage'
 import { RequestDetailPage } from './pages/RequestDetailPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
 import { IntegrationClientsPage } from './pages/IntegrationClientsPage'
+import { ExternalSystemsPage } from './pages/ExternalSystemsPage'
 
 const FrontendSystemFixturePage = import.meta.env.DEV
   ? lazy(() =>
@@ -87,7 +90,7 @@ export const appRoutes: RouteObject[] = [
             ],
           },
           {
-            element: <IntegrationAdminRoute />,
+            element: <IntegrationAreaRoute />,
             children: [
               {
                 path: '/integrations',
@@ -97,7 +100,18 @@ export const appRoutes: RouteObject[] = [
                     index: true,
                     element: <Navigate to="/integrations/clients" replace />,
                   },
-                  { path: 'clients', element: <IntegrationClientsPage /> },
+                  {
+                    element: <IntegrationAdminRoute />,
+                    children: [
+                      { path: 'clients', element: <IntegrationClientsPage /> },
+                    ],
+                  },
+                  {
+                    element: <ExternalSystemAdminRoute />,
+                    children: [
+                      { path: 'systems', element: <ExternalSystemsPage /> },
+                    ],
+                  },
                   {
                     path: '*',
                     element: <Navigate to="/integrations/clients" replace />,

@@ -17,6 +17,7 @@ core_specs=(
   agent-views-workspace.spec.ts
   audit-explorer.spec.ts
   customer-request.spec.ts
+  external-reference.spec.ts
   frontend-system.spec.ts
 )
 remaining_specs=(
