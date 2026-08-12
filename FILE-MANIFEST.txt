@@ -174,8 +174,8 @@ ee6dace509e9953144826b0986ea47e9772f4c4a865e5d150fe6164bb0466eca        4464  do
 d7e319d217bcdb0cc2c7b192614899893304bce8fc27ddc7123e51fd2d78e0c3        7237  docs/evidence/release/performance/smoke/summary.md
 1853209d22f5fcbf582089872ea0465f8cbc027e69e22700ed087f4ee87624ab       13274  docs/evidence/release/security/security-scan.md
 e89328904edd19f3f57e93b2265f823dacf8526bbbcb43e0a00f205c48a31249       11722  docs/evidence/release/supply-chain/baseline.md
-243c0744ffe50169236c5985c11e42afedaf53598607ecb9f31b3fd2ddd681df        5021  docs/evidence/release/ui/automated-and-visual-review.md
-a55b4e5bac81fd4adf666404c372ccc563c02cfa670f20cf8f9fe22c11cf14ff        5703  docs/evidence/release/verification-summary.md
+70397f5bab115f8456e7c182877690b5a8572adee396826fe535c6f3810a2eee        5409  docs/evidence/release/ui/automated-and-visual-review.md
+9984000bd7505691f38d801e87ace729bfa72704806a85322c75b601ae4a3ecc        5662  docs/evidence/release/verification-summary.md
 3e6c5e906d2cff61685b2e2a32e8a101eccb864108f2edba8329bba9b3a0f9f8        1826  docs/performance/README.md
 36074a179597e0ad5921635f7bf50437590b555bfaf138bfe55d59218b7d36dc        3109  docs/performance/agent-ticket-read-query-plan.md
 8ef07475f6afb2980072565e075e549a86f24743b2ce43d93c5dc21e7520de5d        4603  docs/performance/audit-explorer-1m-query-plan.md
