@@ -118,6 +118,10 @@ interface TicketAssignmentPolicy {
     fun isActiveMember(groupId: UUID, staffId: UUID): Boolean
 }
 
+interface TicketOrganizationConsistencyGuard {
+    fun acquire()
+}
+
 class AgentTicketNotFoundException : RuntimeException()
 
 class TicketWriteForbiddenException : RuntimeException()

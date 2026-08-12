@@ -1,10 +1,18 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.organization.AdminActorContext
 import dev.deskseed.organization.OrganizationConflictException
 import dev.deskseed.organization.OrganizationAdministration
 import dev.deskseed.organization.StaffRole
+import dev.deskseed.ticketing.AgentCommentDraft
+import dev.deskseed.ticketing.AgentTicketCommandService
+import dev.deskseed.ticketing.CommentVisibility
+import dev.deskseed.ticketing.CreateAgentTicketCommand
+import dev.deskseed.ticketing.StaffTicketCommandActor
+import dev.deskseed.ticketing.TicketCommandResult
+import dev.deskseed.ticketing.TicketPriority
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -26,6 +34,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
 @SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
 @Testcontainers
@@ -34,19 +43,34 @@ class OrganizationConcurrencyIntegrationTest {
     private lateinit var administration: OrganizationAdministration
 
     @Autowired
+    private lateinit var ticketCommands: AgentTicketCommandService
+
+    @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
+
+    @Autowired
+    private lateinit var dataSource: DataSource
 
     @BeforeEach
     fun clearState() {
-        jdbcTemplate.execute("truncate table admin_security_audit_events")
-        jdbcTemplate.update("delete from request_access_tokens")
-        jdbcTemplate.update("delete from ticket_comments")
-        jdbcTemplate.update("delete from tickets")
-        jdbcTemplate.update("delete from customers")
-        jdbcTemplate.update("delete from group_memberships")
-        jdbcTemplate.update("delete from support_groups")
-        jdbcTemplate.update("delete from staff_login_throttles")
-        jdbcTemplate.update("delete from staff_accounts")
+        jdbcTemplate.execute(
+            """
+            truncate table
+                access_audit_events,
+                admin_security_audit_events,
+                ticket_audit_events,
+                ticket_audits,
+                ticket_comments,
+                request_access_tokens,
+                tickets,
+                customers,
+                group_memberships,
+                support_groups,
+                staff_login_throttles,
+                staff_accounts
+            restart identity cascade
+            """.trimIndent(),
+        )
     }
 
     @Test
@@ -224,6 +248,95 @@ class OrganizationConcurrencyIntegrationTest {
         }
     }
 
+    @Test
+    fun `ticket assignment and group disable share one organization consistency lock`() {
+        val admin = insertStaff("assignment-admin@example.com", "ADMIN")
+        val agent = insertStaff("assignment-agent@example.com", "AGENT")
+        val groupId = insertGroup("동시 배정 그룹")
+        insertMembership(groupId, agent.id, "ACTIVE")
+        val customerId = insertCustomer("assignment-customer@example.com")
+        val executor = Executors.newFixedThreadPool(2)
+
+        installBlockingTicketInsertTrigger()
+        try {
+            dataSource.connection.use { blocker ->
+                blocker.prepareStatement("select pg_advisory_lock(?, ?)").use { statement ->
+                    statement.setInt(1, TEST_LOCK_NAMESPACE)
+                    statement.setInt(2, TEST_LOCK_RESOURCE)
+                    statement.execute()
+                }
+                var triggerReleased = false
+                try {
+                    val ticketFuture = executor.submit<TicketCommandResult> {
+                        ticketCommands.create(
+                            CreateAgentTicketCommand(
+                                requesterId = customerId,
+                                subject = "동시 배정 문의",
+                                firstComment = AgentCommentDraft(CommentVisibility.INTERNAL, "동시성 검증"),
+                                priority = TicketPriority.NORMAL,
+                                groupId = groupId,
+                                assigneeId = agent.id,
+                                actor = StaffTicketCommandActor(agent.id, agent.displayName, false),
+                                context = CommandContext(
+                                    source = RequestSource.AGENT_UI,
+                                    requestId = "assignment-race-ticket",
+                                    correlationId = "assignment-race",
+                                    commandId = "assignment-race-ticket",
+                                ),
+                            ),
+                        )
+                    }
+                    assertThat(awaitAdvisoryWaiter(TEST_LOCK_NAMESPACE, TEST_LOCK_RESOURCE)).isTrue()
+
+                    val adminStarted = CountDownLatch(1)
+                    val disableFuture = executor.submit<Throwable?> {
+                        adminStarted.countDown()
+                        runCatching {
+                            asAdmin(admin) {
+                                administration.disableGroup(groupId, admin.actor())
+                            }
+                        }.exceptionOrNull()
+                    }
+                    assertThat(adminStarted.await(5, TimeUnit.SECONDS)).isTrue()
+                    val waitedOnSharedLock = awaitAdvisoryWaiter(
+                        ORGANIZATION_LOCK_NAMESPACE,
+                        ORGANIZATION_LOCK_RESOURCE,
+                    )
+
+                    releaseTestLock(blocker)
+                    triggerReleased = true
+
+                    assertThat(ticketFuture.get(10, TimeUnit.SECONDS).ticketNumber).isGreaterThan(0)
+                    assertThat(waitedOnSharedLock).isTrue()
+                    assertThat(rootCause(checkNotNull(disableFuture.get(10, TimeUnit.SECONDS))))
+                        .isInstanceOf(OrganizationConflictException::class.java)
+                } finally {
+                    if (!triggerReleased) releaseTestLock(blocker)
+                    executor.shutdownNow()
+                    executor.awaitTermination(5, TimeUnit.SECONDS)
+                }
+            }
+        } finally {
+            removeBlockingTicketInsertTrigger()
+        }
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select status from support_groups where id = ?",
+                String::class.java,
+                groupId,
+            ),
+        ).isEqualTo("ACTIVE")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from tickets where group_id = ? and assignee_id = ?",
+                Long::class.java,
+                groupId,
+                agent.id,
+            ),
+        ).isEqualTo(1)
+    }
+
     private fun insertStaff(email: String, role: String): AdminFixture {
         val id = UUID.randomUUID()
         jdbcTemplate.update(
@@ -269,6 +382,74 @@ class OrganizationConcurrencyIntegrationTest {
             staffId,
             status,
         )
+    }
+
+    private fun insertCustomer(email: String): UUID {
+        val id = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into customers (id, name, email_normalized, email_display, created_at, updated_at)
+            values (?, '동시성 고객', ?, ?, now(), now())
+            """.trimIndent(),
+            id,
+            email.lowercase(),
+            email,
+        )
+        return id
+    }
+
+    private fun installBlockingTicketInsertTrigger() {
+        jdbcTemplate.execute(
+            """
+            create or replace function block_ticket_assignment_test() returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                perform pg_advisory_xact_lock($TEST_LOCK_NAMESPACE, $TEST_LOCK_RESOURCE);
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create trigger block_ticket_assignment_test
+            before insert on tickets
+            for each row execute function block_ticket_assignment_test()
+            """.trimIndent(),
+        )
+    }
+
+    private fun removeBlockingTicketInsertTrigger() {
+        jdbcTemplate.execute("drop trigger if exists block_ticket_assignment_test on tickets")
+        jdbcTemplate.execute("drop function if exists block_ticket_assignment_test()")
+    }
+
+    private fun awaitAdvisoryWaiter(namespace: Int, resource: Int): Boolean {
+        repeat(200) {
+            val waiting = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from pg_locks
+                where locktype = 'advisory'
+                  and classid = ?
+                  and objid = ?
+                  and not granted
+                """.trimIndent(),
+                Long::class.java,
+                namespace,
+                resource,
+            ) ?: 0
+            if (waiting > 0) return true
+            Thread.sleep(10)
+        }
+        return false
+    }
+
+    private fun releaseTestLock(blocker: java.sql.Connection) {
+        blocker.prepareStatement("select pg_advisory_unlock(?, ?)").use { statement ->
+            statement.setInt(1, TEST_LOCK_NAMESPACE)
+            statement.setInt(2, TEST_LOCK_RESOURCE)
+            statement.execute()
+        }
     }
 
     private fun asAdmin(admin: AdminFixture, command: () -> Unit) {
@@ -346,6 +527,11 @@ class OrganizationConcurrencyIntegrationTest {
     }
 
     companion object {
+        private const val ORGANIZATION_LOCK_NAMESPACE = 1_146_309_957
+        private const val ORGANIZATION_LOCK_RESOURCE = 1_330_797_127
+        private const val TEST_LOCK_NAMESPACE = 1_146_309_958
+        private const val TEST_LOCK_RESOURCE = 1_330_797_128
+
         @Container
         @ServiceConnection
         @JvmStatic

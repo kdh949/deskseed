@@ -21,6 +21,7 @@ import dev.deskseed.ticketing.TicketCommandWarning
 import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketFieldConflictException
 import dev.deskseed.ticketing.TicketKind
+import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.TicketTransitionInvalidException
@@ -106,6 +107,7 @@ internal class AgentTicketCommandTransaction(
     private val auditEventRepository: TicketAuditEventRepository,
     private val commandReplayStore: StaffTicketCommandReplayStore,
     private val ticketNumberGenerator: TicketNumberGenerator,
+    private val organizationConsistencyGuard: TicketOrganizationConsistencyGuard,
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val authorizationPolicy: TicketWriteAuthorizationPolicy,
     private val objectMapper: ObjectMapper,
@@ -116,6 +118,7 @@ internal class AgentTicketCommandTransaction(
         validateStaffContext(command.actor.id, command.context.source)
         validateText(command.subject, "subject", 200)
         validateComment(command.firstComment)
+        organizationConsistencyGuard.acquire()
         validateAssignment(command.groupId, command.assigneeId)
         commandReplayStore.lock(command.actor.id, command.context.commandId)
         if (commandReplayStore.find(command.actor.id, command.context.commandId) != null) {
@@ -196,6 +199,7 @@ internal class AgentTicketCommandTransaction(
     fun update(command: UpdateAgentTicketCommand): TicketCommandResult {
         validateUpdateCommand(command)
         val requestDescriptor = updateRequestDescriptor(command)
+        organizationConsistencyGuard.acquire()
         commandReplayStore.lock(command.actor.id, command.context.commandId)
         commandReplayStore.find(command.actor.id, command.context.commandId)?.let { original ->
             if (
@@ -347,6 +351,7 @@ internal class AgentTicketCommandTransaction(
         command.reason?.let { reason ->
             if (reason.length > 2_000) throw TicketCommandInvalidException("reason must not exceed 2000 characters")
         }
+        organizationConsistencyGuard.acquire()
         commandReplayStore.lock(command.actor.id, command.context.commandId)
         if (commandReplayStore.find(command.actor.id, command.context.commandId) != null) {
             throw TicketCommandIdReusedException()
@@ -420,6 +425,7 @@ internal class AgentTicketCommandTransaction(
         if (command.expectedVersion < 0) throw TicketCommandInvalidException("expectedVersion must be non-negative")
         validateText(command.subject, "subject", 200)
         validateText(command.body, "body", 20_000)
+        organizationConsistencyGuard.acquire()
         validateAssignment(command.groupId, command.assigneeId)
         commandReplayStore.lock(command.actor.id, command.context.commandId)
         if (commandReplayStore.find(command.actor.id, command.context.commandId) != null) {

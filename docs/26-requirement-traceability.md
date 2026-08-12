@@ -47,7 +47,7 @@
 | REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37 | TKT-002, `customer-request.full-stack.spec.ts`의 PUBLIC 노출·INTERNAL 비노출 E2E |
 | REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39 | Agent create E2E |
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34 | transition/permission 테스트, `AgentTicketWorkspacePage.test.tsx`의 통합 command body 회귀 |
-| REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34 | `TransferChildTicketIntegrationTest`의 active group/member 거부 및 원자적 rollback |
+| REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34, ADR 0038 | `TransferChildTicketIntegrationTest`의 active group/member 거부·원자적 rollback 및 `OrganizationConcurrencyIntegrationTest`의 ticket assignment/group disable 공유 잠금 |
 | REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34 | `TransferChildTicketIntegrationTest`, `transfer-child-ticket.spec.ts`, full-stack transfer E2E |
 | REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketCommandIntegrationTest`의 exact/misuse/concurrent replay와 `AgentTicketWorkspacePage.test.tsx`의 persisted command-ID retry·exact `changedFields`·comment 통합 요청 |
 | REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34 | TKT-006, `ticket-composer-conflict.spec.ts`의 두 browser context same-field/non-overlap E2E |

@@ -46,8 +46,8 @@ c264ae77c05e2f72c7ee848b294fb77fec0e1c036942e646d85f6d6e02f21141       37304  do
 d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  docs/22-spring-initializr-and-dependencies.md
 6b62524e1f8718a09bbd30a1e9696b0a288ddd02a679c68c114db626e4aee179        7343  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
-73fef7a8772b559bd25a5c89d5c4b7bf6d721500873a59656c7054c3be5dc532        7866  docs/25-implementation-decision-register.md
-ecc68dd0746a824e5bb341ad4aaca2781bfe24cf873c139868d7fbf450fef0d4       17928  docs/26-requirement-traceability.md
+5d8f72af4ffcfd6bf429615f5b32ee17a981a7e5fad6dc54f77c06f88bd11e79        8070  docs/25-implementation-decision-register.md
+a530e683d8e96ace1743202fafcf0e7be9a2b02ce49bfcda560b9e9f4393d5a5       18029  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  docs/28-frontend-product-and-information-architecture.md
 54f95cb71d8d951e208f3ed2e33d798e2b39e05bedd20402ef4b61ffa5f8d494        6900  docs/29-zendesk-inspired-design-system.md
@@ -113,6 +113,7 @@ b97b83d95d2dd7e034db2cb4b194473e40f2dc8b1389f1edbd8b2f264140d32d         749  do
 c0f853d3ed6181f5808ee891e33bb0a0ec6e7d17be9f73a600f8de53bd94f7a2        3223  docs/adr/0035-staff-password-session-bootstrap.md
 cc4718cdd5abce6617215fe3862124940dc5e968d06b519d14e28ebcb6862806        3131  docs/adr/0036-content-free-routine-search-audit.md
 f4c69b8146e22a1af8f2be4a97e7a00d30ae9e717b121cb26fe1a899b3c276cc        2209  docs/adr/0037-stable-audit-origin-and-projection-snapshots.md
+eb8fd5cb2d295e6e988b35fe88ad39a2f475b9e3357f7014556a3901eba656a9        2326  docs/adr/0038-shared-organization-ticket-consistency-guard.md
 4d249184a8ab250e1e5366c3327f7febad7c6152b63a70c4293a3aea05b2b779        2173  docs/evidence/release/README.md
 35d6ff0b3a7790b15a4c71750b0397a0af139a32f66eb9b3abe8ad942d10e113        4379  docs/evidence/release/operations/2026-08-12-macos-arm64-cleanup-smoke.md
 b1db656e42be6f7677fa693047181f064b358a257540c7ffca592176f1120ebf       12229  docs/evidence/release/operations/2026-08-12-macos-arm64-full.md
@@ -179,7 +180,7 @@ ae62b492d11c8ca99a44cc951608fe319d8d21740614cee95d83aaf14aca0f56        6413  do
 3e6c5e906d2cff61685b2e2a32e8a101eccb864108f2edba8329bba9b3a0f9f8        1826  docs/performance/README.md
 36074a179597e0ad5921635f7bf50437590b555bfaf138bfe55d59218b7d36dc        3109  docs/performance/agent-ticket-read-query-plan.md
 8ef07475f6afb2980072565e075e549a86f24743b2ce43d93c5dc21e7520de5d        4603  docs/performance/audit-explorer-1m-query-plan.md
-28f89f97979dd528243be73e5689282f5280ac3be4ace9ebd3463d8ef8759fe3        5157  docs/portfolio/adr-index.md
+d7c5f44f172cb85df36857292e98566c474bc4ba86c69d5358d62b150fdf0946        5340  docs/portfolio/adr-index.md
 13c051f2d63a8459ef7252a23f656f6d49e5bf20114d9a919f17a9ed9344d20f        4971  docs/portfolio/ai-and-human-decisions.md
 91fa6b856bd8b0a8b4323d17402b33d85e813b5cb1bbda9e6cef6903f6186b34        7084  docs/portfolio/architecture.md
 cfce573b08218932920462d46c02caadb3136293752df677fd0ce72123fc38a1        4100  docs/portfolio/demo-scenario.md
@@ -215,7 +216,7 @@ f1e62e561aeb3870b8ba2adac532be223503e5c9a40cbbc35c7e2d4c93cdcc56        4073  sc
 a50805122269887fe6456379c1fda2357a8b483003cc2c7289b6ba06479a2fdc         489  scripts/run-release-e2e.sh
 bef82d42d8736a98eccff5bd3e4739538566655825d702ac870069768e38d2b9       54933  scripts/run-release-performance.sh
 86039df10acf707d5941485169b22bd6ef5e8709afbeb9d456a87b7b3e6d1ea4       10278  scripts/test-e2e-compose-ownership.sh
-c040607dd896a9807b6aa9dbfd8b592d01f04f7efc6c7263926f791fb6a073aa       26148  scripts/validate_documentation.py
+184c459eb7deb37537ff5227cf6d0e2e8aa7b7d225f34c4f1f00c18560262a1f       26148  scripts/validate_documentation.py
 d337270b000da9602956653c37190cab863c7b95c21ec2a1b91c4c142bceb298        7660  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
 6b43d795b99c525d4ac87a5ff23896fe0fccd2ca434173698a26374b3fbdd59e        3331  tasks/00-bootstrap.md
@@ -248,6 +249,7 @@ cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  ta
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
 1facdae3c4be1b43efcbebdfb50ffabd8fd2599c0c78bcfcaa0d9558b50d6c9f        9086  tasks/briefs/audit-explorer-core.md
 9b1f9db9e4594effb46d9d4d331e2cba4dac8f253b280aae73a950c33204a8c3        6311  tasks/briefs/frontend-system-hardening.md
+fd99a645288949feb0ad8d38e5b1ca2376bfd00ae0feac15e97796d52841a935        6573  tasks/briefs/issue-24-review-remediation.md
 8bf4a7fd763175bb6ad4f745aec5a115d823c16b81acf820b0c137836d86cb93        6017  tasks/briefs/pr17-pr18-review-followup.md
 61ff0d84d05f8d92b589e48a0e26552600ad6056eca8f5eb5b7ecba83826f1af       12249  tasks/briefs/release-hardening.md
 3b869e69ab417aa64154989cd6436b1add4ab385bb4d4c9e32e0447a38256f43        8715  tasks/briefs/ticket-composer-conflict-ui.md

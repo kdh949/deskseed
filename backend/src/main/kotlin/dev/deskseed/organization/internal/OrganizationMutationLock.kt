@@ -1,5 +1,6 @@
 package dev.deskseed.organization.internal
 
+import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Propagation
@@ -14,9 +15,9 @@ import org.springframework.transaction.annotation.Transactional
 @Component
 internal class OrganizationMutationLock(
     private val jdbcTemplate: JdbcTemplate,
-) {
+) : TicketOrganizationConsistencyGuard {
     @Transactional(propagation = Propagation.MANDATORY)
-    fun acquire() {
+    override fun acquire() {
         jdbcTemplate.queryForObject<Boolean>(
             "select pg_advisory_xact_lock(?, ?)",
             { _, _ -> true },
