@@ -8,7 +8,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 
 | 영역 | 구현된 동작 |
 | --- | --- |
-| 고객 포털 | 익명 문의 접수, 첫 `PUBLIC` comment 저장, 한 번만 반환되는 opaque 조회 토큰, 토큰으로 `PUBLIC` 대화만 조회 |
+| 고객 포털 | 익명 문의별 격리된 미검증 고객, 첫 `PUBLIC` comment 저장, 한 번만 반환되는 opaque 조회 토큰, 토큰으로 `PUBLIC` 대화만 조회 |
 | 직원 인증·관리 | BCrypt 비밀번호, 서버 세션, CSRF, DB 기반 로그인 제한, realm-local expected-actor 일관성 guard, 비밀번호 파일을 이용한 최초 ADMIN bootstrap, ADMIN 전용 직원·그룹·활성 멤버십·감사자 고위험 권한 관리 |
 | 상담사 업무 | Views, PostgreSQL 검색, 3-panel 티켓 워크스페이스, `PUBLIC`/`INTERNAL` 별도 draft, 상태·우선순위·그룹·담당자 통합 저장 |
 | 정합성 | 담당자/그룹 invariant, field-aware optimistic concurrency, same-field `409`과 draft 복구, 응답 유실 시 exact UpdateTicket command replay, transfer와 child-ticket 명령 분리, 열린 child 경고 후 parent solve 허용 |
@@ -158,7 +158,7 @@ Backend는 Spring Modulith 기반 모듈러 모놀리스다. HTTP adapter, appli
 X-Request-Access-Token: <opaque-token>
 ```
 
-원문 token은 DB에 저장하지 않고 hash만 보존하며 기본 TTL은 30일이다. 이메일 소유권 검증, 재발급·폐기 UI와 고객 계정은 아직 제공하지 않는다.
+원문 token은 DB에 저장하지 않고 hash만 보존하며 기본 TTL은 30일이다. 같은 미검증 이메일도 문의마다 별도 고객으로 저장하며 이메일 소유권 검증 전에는 자동 병합하지 않는다. 이메일 소유권 검증, 재발급·폐기 UI와 고객 계정은 아직 제공하지 않는다.
 
 ## 보안·운영 경계
 

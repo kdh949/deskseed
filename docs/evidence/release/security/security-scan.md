@@ -114,7 +114,7 @@ harness and real customer, Audit Explorer and health runs left zero owner-labell
 | Baseline auditor automatically receives reveal/export/rebuild authorities (CWE-269) | Medium | **FIXED in issue #24 remediation** — role defaults to routine read only; V16 persists three allowlisted high-risk grants; ADMIN grant/revoke is CSRF-protected, atomically self-audited and forces session revalidation |
 | PUBLIC/INTERNAL drafts outlive staff session without TTL (CWE-922) | Medium | **FIXED** — 12-hour recovery-validity TTL, authenticated-session expiry sweep, active-session owner marker, exact staff-namespace purge on logout/401/account change, stale-writer rejection and stale-401 generation checks are covered by regressions |
 
-| Anonymous email can reuse/mutate an unverified customer actor (CWE-287) | Low | KNOWN LIMITATION — no prior-ticket access; public deployment remains blocked until verified identity |
+| Anonymous email can reuse/mutate an unverified customer actor (CWE-287) | Low | **FIXED in issue #24 remediation** — V17 permits duplicate unverified contact emails but preserves verified-only uniqueness; every submission gets a new Customer and ticket-scoped token |
 | Login throttle pair permits identity rotation/shared-proxy contention (CWE-307) | Low | KNOWN LIMITATION — per-pair control exists; layered ingress/account/global admission remains required before public exposure |
 
 ### PR #17/#18 post-scan delta
@@ -126,8 +126,9 @@ opens, and records reveal-specific denied events. The current clean backend run 
 134/134 tests; frontend covers 150/150 plus typecheck/lint/format/build. V1-V15 release
 performance and the V11→V15 full operations rehearsal match the current sources and clean
 up their exact owned resources. This historical delta predates issue #24. The later V16
-remediation closes the auditor-grant finding; the anonymous identity and public-deployment
-limitations remain.
+remediation closes the auditor-grant finding, and V17 closes unverified-profile reuse. The
+public-deployment limitation remains because layered abuse controls and verified identity
+flows are still absent.
 
 Deferred informational path: an Internet-exposed anonymous endpoint can amplify one
 request into several durable rows. This is real, but the supported release is local or
@@ -176,6 +177,15 @@ The CWE-269 remediation separates routine investigation from exceptional authori
   an older session fails closed after either grant or revoke;
 - PostgreSQL-backed failure injection proves an admin-audit failure rolls back both grant
   and revoke, and the Admin Staff UI exposes labeled keyboard-operable controls.
+
+The CWE-287 remediation treats anonymous email as unverified contact input:
+
+- V17 removes global email uniqueness and replaces it with verified-row-only uniqueness;
+- each anonymous or staff-created unverified requester is inserted as a new Customer;
+- same-email sequential and concurrent submissions retain distinct names/requester IDs,
+  one ticket each and ticket-scoped tokens that cannot be crossed;
+- a verified profile remains unchanged while a same-email unverified contact can coexist,
+  and a second row cannot be promoted to the same verified email.
 
 Verification commands:
 

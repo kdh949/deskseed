@@ -69,6 +69,7 @@ paths:
   /api/v1/requests:
     post:
       summary: Submit an anonymous customer request
+      description: Each submission creates an isolated unverified customer; matching email input never merges or claims an earlier profile.
       operationId: createAnonymousRequest
       x-deskseed-contract-status: FROZEN
       tags:

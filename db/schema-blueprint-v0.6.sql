@@ -24,3 +24,4 @@
 -- 5. unique(client_id, idempotency_key)
 -- 6. ticket relation self-link check
 -- 7. assignee requires group; membership checked in application transaction
+-- 8. unique(customer.email_normalized) applies only where verified_at is not null

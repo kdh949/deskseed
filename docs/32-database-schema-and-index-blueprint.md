@@ -32,7 +32,9 @@ version
 Constraints/indexes:
 
 - normalized email index.
-- 익명 중복 정책은 계정 연결 전 별도 decision.
+- 미검증 email은 identity proof가 아니므로 중복을 허용하고 문의마다 별도 Customer를 만든다.
+- `verified_at is not null`인 행만 normalized email partial unique index로 보호한다.
+- 익명 profile 자동 병합/claim은 금지하며 verified ownership을 확인하는 명시적 후속 흐름만 연결할 수 있다.
 
 ### customer_accounts
 

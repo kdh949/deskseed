@@ -67,7 +67,7 @@ internal class AgentTicketCommandApplicationService(
         input: CreateAgentTicketInput,
         context: CommandContext,
     ): TicketCommandResult {
-        val requester = customerDirectory.findOrCreateUnverified(input.requesterName, input.requesterEmail)
+        val requester = customerDirectory.createUnverified(input.requesterName, input.requesterEmail)
         return ticketCommandService.create(
             CreateAgentTicketCommand(
                 requesterId = requester.id,
