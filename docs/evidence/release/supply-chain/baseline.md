@@ -266,8 +266,9 @@ migration, audit and cursor secrets.
 
 ## Project license and distribution
 
-The project itself has no `LICENSE`. A public repository does not grant an open-source
-reuse license by implication. Dependency notices remain in `THIRD_PARTY_NOTICES.md`, but
-the copyright owner must choose distribution terms before an open-source release. The
-portfolio release must not claim to be MIT, Apache-licensed or open source until that human
-decision is made.
+The owner selected the MIT License on 2026-08-12. Root `LICENSE` governs Deskseed's own
+code. Third-party dependencies and Garden assets retain their respective terms and notices
+in `THIRD_PARTY_NOTICES.md`; the deterministic dependency inventory above remains the
+evidence for those separate obligations. The MIT source-license decision does not change
+the repository's local/private-network deployment boundary or turn the `LIMITED / verdict
+UNKNOWN` container-vulnerability status into a production-readiness claim.

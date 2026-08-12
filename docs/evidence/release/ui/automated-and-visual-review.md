@@ -1,10 +1,11 @@
 # UI, Visual and Accessibility Evidence
 
 - Date: 2026-08-12 (Asia/Seoul)
-- Final source: `feature/pr17-pr18-review-followup` at `06a0f8b1b2dacc68589d14b5bd88857da3978ffe`
+- Final frontend tree: `724ffe9d47cc8e26f933881ba4643473b6dae6b4` at PR #22 head `ca3b910c3107dd86b2df6e7f0a727f899c5b2db8` (subsequent working-tree changes were documentation and root license only)
 - Pixel baseline: Playwright 1.62.1 Chromium, 42 images on each of Darwin and Linux
 - Automated result: **PASS — final-source Chromium 41/41, Firefox 41/41 and WebKit 35/35 + 6/6; 0 retry/skip**
-- Human visual/screen-reader sign-off: **NOT RUN**
+- Browser-assisted direct visual/keyboard review: **PASS**
+- VoiceOver/NVDA screen-reader sign-off: **NOT RUN** (owner decision)
 
 ## Commands and results
 
@@ -77,22 +78,31 @@ WebKit execute the same functional, axe and keyboard assertions but intentionall
 reuse Chromium pixel baselines. Both did so on the final source; the macOS-only WebKit
 page-fixture limitation and the pinned Noble replacement run are recorded above.
 
-## Visual inspection performed
+## Direct browser inspection performed
 
-AI-assisted inspection after force regeneration reviewed the Darwin and Linux
-1280/1440/1920 Audit Explorer reveal images and representative Views/Workspace layouts.
-The routine value is consistently labelled `protected query` and rendered as
-`[PROTECTED]`; the raw value appears only in the visibly separated, reason-gated reveal
-panel. No clipping, overlap, hidden action, Zendesk logo/screenshot or color-only
-PUBLIC/INTERNAL distinction was observed in those samples.
+At 2026-08-12 15:58 KST, Codex's in-app browser loaded a local read-only gallery of every
+committed Darwin and Linux baseline. The page reported 84 figures and 84 complete images
+with non-zero natural dimensions; the complete gallery was inspected, including all
+1280/1440/1920 layouts, modal states, conflict states, mobile request detail and protected
+Audit Explorer reveal states. The routine value is consistently labelled `protected
+query` and rendered as `[PROTECTED]`; the raw value appears only in the visibly separated,
+reason-gated reveal panel. No clipping, overlap, hidden primary action, Zendesk
+logo/screenshot or color-only PUBLIC/INTERNAL distinction was observed.
 
-This inspection is not the human approval required by `checklists/release.md`.
+The live development-only fixture was also exercised directly in the in-app browser:
+
+- the workspace property separator moved from `aria-valuenow=300` to `316` with
+  `ArrowRight`;
+- right-arrow navigation selected the `기록` tab and Home selected `공개 답변`;
+- 200% page scale preserved the workspace content boundary;
+- a 390×844 viewport with `prefers-reduced-motion: reduce` produced a single-column public
+  form with `scrollWidth == clientWidth == 390` and no horizontal overflow.
+
+This is an AI-assisted direct browser review, not a claim that VoiceOver/NVDA was run.
 
 ## Open human gates
 
-- VoiceOver or NVDA reading order and announcement smoke;
-- keyboard-only human walkthrough at zoom/reflow and reduced-motion settings;
-- human review of the complete 84-image final diff.
+- VoiceOver or NVDA reading order and announcement smoke.
 
-These remain `NOT RUN`; automated axe, keyboard and image assertions are not presented as
-a substitute.
+The screen-reader smoke remains `NOT RUN` by explicit owner decision; automated axe, DOM
+semantics and the direct browser checks above are not presented as a substitute.

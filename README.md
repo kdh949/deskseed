@@ -198,6 +198,6 @@ Evidence에는 명령, 환경, 결과와 한계를 함께 남긴다. `NOT RUN`�
 
 ## 라이선스
 
-Deskseed 자체 라이선스는 아직 선택되지 않았고 root `LICENSE`가 없다. 공개 열람이 곧 재사용·수정·재배포 허가를 뜻하지 않는다. 프로젝트 소유자가 배포 조건을 결정하기 전까지 오픈소스 또는 MIT/Apache 라이선스 프로젝트라고 주장하지 않는다.
+Deskseed 자체 코드는 root [`LICENSE`](LICENSE)의 MIT License로 배포한다.
 
-직접 frontend runtime 의존성과 Garden 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), 전체 dependency/license inventory와 알려진 한계는 [supply-chain baseline](docs/evidence/release/supply-chain/baseline.md)에 기록한다. 이는 법률 자문이 아니다.
+직접 frontend runtime 의존성과 Garden 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), 전체 dependency/license inventory와 알려진 한계는 [supply-chain baseline](docs/evidence/release/supply-chain/baseline.md)에 기록한다. 제3자 구성요소에는 각 구성요소의 라이선스가 적용되며, 이 안내는 법률 자문이 아니다.

@@ -22,12 +22,13 @@ command. “The agent said it passed” is not release evidence.
 | Decision | Current release choice | Why it remains human-owned |
 |---|---|---|
 | Public deployment | Not approved | Anonymous email ownership and abuse controls are incomplete; exposure and risk appetite belong to the operator |
-| Repository license | Not selected | Copyright and redistribution terms require an owner decision; absence of a license is disclosed, not guessed |
+| Repository license | MIT selected on 2026-08-12 | The owner explicitly approved MIT; root `LICENSE` governs Deskseed code while third-party notices retain their own terms |
 | Security risk acceptance | No silent acceptance | Remaining findings need an accountable owner, remediation target and deployment boundary |
 | Production secret/KMS provider | Not selected | The repository validates required secret inputs but does not choose an operator's trust provider |
 | Backup RPO/RTO | Rehearsal measurement only | Actual targets depend on data value, storage and staffing |
-| Visual acceptance | Human review required | Screenshot equality and axe cannot judge all information hierarchy, motion or screen-reader quality |
-| Release/merge | Normal PR, no auto merge | A reviewer must compare evidence, risks and claims before merge |
+| Visual acceptance | In-app-browser direct review approved; screen reader not run | All 84 baselines plus keyboard/zoom/reflow/reduced-motion fixtures were reviewed directly; VoiceOver/NVDA remains an explicit limitation |
+| OPS-004 production observability | Deferred | Readiness endpoints, alerts and central logging will be handled when the owner starts a public-production operations release |
+| Release/merge | PR #22 manual merge approved | The owner compared the recorded evidence and limitations and explicitly authorized a non-automatic merge |
 
 ## Release hardening decisions
 
@@ -49,7 +50,7 @@ Before merge, the human reviewer should:
 1. inspect every `FAIL`, `LIMITED`, `N/A` and `NOT RUN` row in the release evidence;
 2. review security findings and confirm that fixed findings have regression evidence;
 3. review the 1280/1440/1920 visual diff and keyboard/screen-reader notes;
-4. confirm the license/public-distribution decision;
+4. confirm the MIT project license and the separate public-production deployment boundary;
 5. reproduce at least the quick start and one restore smoke on a clean machine;
 6. confirm that README feature claims match the actual routes, migrations and tests;
 7. merge manually only after required CI checks and review are complete.
