@@ -3,6 +3,10 @@ package dev.deskseed.portal.internal
 import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.portal.RequestNotFoundException
 import dev.deskseed.settings.AnonymousSubmissionDisabledException
+import dev.deskseed.ticketing.CustomerCommandIdReusedException
+import dev.deskseed.ticketing.CustomerFollowUpConflictException
+import dev.deskseed.ticketing.CustomerTicketClaimDeniedException
+import dev.deskseed.ticketing.CustomerTicketNotFoundException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.ConstraintViolationException
 import org.springframework.http.HttpStatus
@@ -19,7 +23,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
 
-@RestControllerAdvice(assignableTypes = [PublicRequestController::class])
+@RestControllerAdvice(assignableTypes = [PublicRequestController::class, CustomerRequestPortalController::class])
 internal class PublicRequestExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(
@@ -113,6 +117,50 @@ internal class PublicRequestExceptionHandler {
             title = "Request not found",
             detail = "The ticket number and access token do not identify a visible request.",
             type = "/problems/request-not-found",
+            request = request,
+        ),
+    )
+
+    @ExceptionHandler(CustomerTicketNotFoundException::class)
+    fun handleCustomerTicketNotFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.NOT_FOUND,
+            title = "Request not found",
+            detail = "The request is not available to this customer.",
+            type = "/problems/customer-request-not-found",
+            request = request,
+        ),
+    )
+
+    @ExceptionHandler(CustomerTicketClaimDeniedException::class)
+    fun handleCustomerClaimDenied(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.FORBIDDEN,
+            title = "Request claim denied",
+            detail = "The request cannot be linked with this proof and customer session.",
+            type = "/problems/customer-request-claim-denied",
+            request = request,
+        ),
+    )
+
+    @ExceptionHandler(CustomerFollowUpConflictException::class, CustomerCommandIdReusedException::class)
+    fun handleCustomerConflict(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.CONFLICT,
+            title = "Customer request conflict",
+            detail = "The request cannot accept this follow-up in its current state.",
+            type = "/problems/customer-request-conflict",
+            request = request,
+        ),
+    )
+
+    @ExceptionHandler(IllegalArgumentException::class)
+    fun handleIllegalArgument(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.BAD_REQUEST,
+            title = "Request validation failed",
+            detail = "One or more request fields are invalid.",
+            type = "/problems/validation",
             request = request,
         ),
     )

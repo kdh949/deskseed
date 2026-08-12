@@ -11,6 +11,10 @@ import dev.deskseed.organization.OrganizationPage
 import dev.deskseed.organization.StaffAccountView
 import dev.deskseed.organization.StaffRole
 import dev.deskseed.organization.SupportGroupView
+import dev.deskseed.settings.CustomerAccessAdministration
+import dev.deskseed.settings.CustomerAccessMode
+import dev.deskseed.settings.CustomerAccessSetting
+import dev.deskseed.settings.UpdateCustomerAccessModeCommand
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
@@ -39,7 +43,29 @@ import java.util.UUID
 @Validated
 internal class AdminOrganizationController(
     private val administration: OrganizationAdministration,
+    private val customerAccessAdministration: CustomerAccessAdministration,
 ) {
+    @GetMapping("/settings/customer-access-mode")
+    fun getCustomerAccessMode(): CustomerAccessSetting = customerAccessAdministration.get()
+
+    @PutMapping("/settings/customer-access-mode")
+    fun updateCustomerAccessMode(
+        @Valid @RequestBody body: CustomerAccessModeRequest,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): CustomerAccessSetting {
+        val context = CommandContexts.from(request, RequestSource.ADMIN_UI)
+        return customerAccessAdministration.update(
+            UpdateCustomerAccessModeCommand(
+                mode = body.mode,
+                expectedVersion = body.expectedVersion,
+                actorId = principal.id,
+                actorDisplayName = principal.displayName,
+                context = context,
+            ),
+        )
+    }
+
     @GetMapping("/staff")
     fun listStaff(
         @RequestParam(defaultValue = "0") @Min(0) page: Int,
@@ -204,4 +230,9 @@ internal data class GroupNameRequest(
 
 internal data class GroupMembershipRequest(
     val staffId: UUID,
+)
+
+internal data class CustomerAccessModeRequest(
+    val mode: CustomerAccessMode,
+    @field:Min(0) val expectedVersion: Long,
 )

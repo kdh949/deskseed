@@ -21,6 +21,8 @@ import type {
   CreateAuditExportInput,
   CreateChildTicketCommand,
   CreateChildTicketResult,
+  CustomerAccessModeSetting,
+  UpdateCustomerAccessModeInput,
   CreateStaffInput,
   CurrentStaff,
   GrantableAuditAuthority,
@@ -420,10 +422,27 @@ async function successfulResponseBody(response: Response): Promise<unknown> {
 
 export async function submitRequest(
   input: SubmitRequestInput,
+  authenticatedCustomer = false,
 ): Promise<SubmittedRequest> {
+  let csrfToken: string | undefined
+  if (authenticatedCustomer) {
+    const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+    const csrfBody = await successfulResponseBody(csrfResponse)
+    if (!isRecord(csrfBody) || !isNonBlankString(csrfBody.token)) {
+      throw malformedSuccess(csrfResponse)
+    }
+    csrfToken = csrfBody.token
+  }
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+    },
     cache: 'no-store',
     body: JSON.stringify(input),
   })
@@ -1345,6 +1364,51 @@ export async function removeGroupMember(
       'DELETE',
     ),
   )
+}
+
+export async function getCustomerAccessModeSetting(): Promise<CustomerAccessModeSetting> {
+  const response = await staffFetch(
+    '/api/v1/admin/settings/customer-access-mode',
+  )
+  const decoded = decodeCustomerAccessModeSetting(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function updateCustomerAccessModeSetting(
+  input: UpdateCustomerAccessModeInput,
+): Promise<CustomerAccessModeSetting> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/settings/customer-access-mode',
+    'PUT',
+    input,
+  )
+  const decoded = decodeCustomerAccessModeSetting(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+function decodeCustomerAccessModeSetting(
+  value: unknown,
+): CustomerAccessModeSetting | undefined {
+  if (!isRecord(value)) return undefined
+  if (
+    ![
+      'ANONYMOUS_ALLOWED',
+      'REGISTRATION_OPTIONAL',
+      'REGISTRATION_REQUIRED',
+    ].includes(String(value.mode)) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0 ||
+    !isTimestamp(value.updatedAt)
+  )
+    return undefined
+  return {
+    mode: value.mode as CustomerAccessModeSetting['mode'],
+    version: value.version,
+    updatedAt: value.updatedAt,
+  }
 }
 
 function decodeActorSummary(value: unknown): ActorSummary | undefined {

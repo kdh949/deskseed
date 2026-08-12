@@ -31,3 +31,118 @@ Single-use/expiry/replay tests, email enumeration tests, cross-customer isolatio
 ## Required verification IDs
 
 `AUTH-001`, `AUTH-002`, `AUTH-003`, `AUTH-004`, `TKT-002`, `ACC-007`, `MAIL-001`.
+
+## Stack F PR 2/3 implementation slice
+
+This PR implements only the authentication foundation from this broader brief.
+My Requests, public follow-up, access-mode administration and explicit ticket claim
+remain later slices and must not be inferred from email equality.
+
+### Decision and contract references
+
+- Requirements: `REQ-AUTH-001`, `REQ-AUTH-002` authentication foundation.
+- Decision IDs: `D-002`, `D-005`, `D-038`, `D-039`, `D-046`.
+- Accepted ADR: `0029-email-magic-link-customer-authentication.md`.
+- OpenAPI operations: `requestCustomerMagicLink`, `consumeCustomerMagicLink`,
+  `getCustomerCsrfToken`, `deleteCustomerSession`, `getCurrentCustomer`.
+- Verification gates: `AUTH-001`, `AUTH-002`, `AUTH-003`, `MAIL-001`.
+
+### Actors and data boundaries
+
+- Request/failure/rate-limit: `SYSTEM` actor, `CUSTOMER_PORTAL` source and bounded
+  request/correlation context; destination appears only as a keyed fingerprint in
+  security audit/throttle state.
+- Consume success/account link/logout: verified `CUSTOMER` actor and account/customer
+  identifiers; token, cookie and CSRF values are absent from audit and logs.
+- The canonical admin/security ledger is extended for customer-auth security events;
+  it remains separate from ticket change, access/search and mail-delivery ledgers.
+
+### Invariants and failure semantics
+
+- A syntactically valid request returns the same 202 shape for known, unknown and
+  rate-limited destinations and is paced into the same timing class.
+- Rate limiting intersects normalized-destination and requester-network fingerprints.
+- The Spring Security `OneTimeTokenService` contract is implemented by a PostgreSQL
+  adapter that stores only a SHA-256 verifier for a 256-bit random token.
+- Atomic consume changes one unexpired row from unused to consumed; replay, expiry,
+  malformed input and a concurrent loser create no session.
+- Token consume, CustomerAccount creation/link, new session digest and required
+  security audit commit or roll back together.
+- A successful login always rotates any presented customer session. Logout requires
+  a customer-session-bound CSRF header and revokes server state.
+- Existing anonymous tickets remain owned by their original unverified Customer row.
+  Creating a verified CustomerAccount never rewrites ticket requester ownership.
+- Outbound mail is a durable intent in the same token-request transaction; SMTP stays
+  post-commit through the Stack F PR 1/3 worker.
+
+### Privacy, retention and threats
+
+- Magic-link TTL defaults to 15 minutes and is configurable only within 5–60 minutes.
+- Token/cookie/CSRF plaintext is never stored, logged, audited, placed in analytics or
+  sent as a URL query. The email uses a frontend fragment; the consume page removes it
+  from history before calling the JSON-body consume endpoint.
+- Token and throttle rows are short-lived authentication/security data. This slice
+  supplies bounded cleanup indexes/seams but not a general retention administration UI.
+  Magic-link mail bodies are AES-GCM protected with a versioned key until post-commit
+  delivery; the ordinary outbox body contains only a non-secret marker.
+- Changed threats: email enumeration, token replay/race, session fixation, CSRF,
+  cross-customer principal confusion, Referer/log leakage and audit bypass.
+
+### Explicit exclusions
+
+Password/social login, historical ticket auto-claim, My Requests, public follow-up,
+claim endpoint, production mail provider, inbound mail and URL-query token handling are
+not implemented in this PR.
+
+### Implemented verification evidence
+
+- `AUTH-001`: same 202/body, response padding, destination+network HMAC rate limiting,
+  and known/unknown log/audit non-disclosure integration tests.
+- `AUTH-002`: 5–60 minute configuration boundary, digest-only storage, expiry,
+  malformed input, atomic race and replay integration tests.
+- `AUTH-003`: opaque digest-only session, fixation rotation, HttpOnly/Secure/Lax cookie,
+  cross-customer isolation, session-bound CSRF logout and revocation tests.
+- `AUTH-004` partial safety regression: matching email never rewrites the historical
+  requester. The explicit claim operation and its positive proof test remain excluded.
+- `MAIL-001`: Testcontainers Mailpit API verifies recipient, subject, fragment link,
+  successful consume, replay denial and one-message/no-duplicate delivery.
+
+## Stack F PR 3/3 implementation slice
+
+This PR completes the account portal slice: authenticated My Requests, explicit anonymous
+request claim, PUBLIC follow-up, and the audited three-mode customer access setting.
+
+### Contract and invariants
+
+- Requirements: `REQ-AUTH-002`, `REQ-TKT-003`, `REQ-TKT-004`, `REQ-TKT-005`,
+  `REQ-TKT-008`; Decisions `D-002`, `D-005`, `D-012`, `D-014`, `D-021`, `D-028`,
+  `D-032`, `D-038`, `D-040`, `D-046`; ADRs 0029 and 0034.
+- Frozen operations: `getCustomerAccessMode`, `listCustomerRequests`, `getCustomerRequest`,
+  `addAuthenticatedCustomerComment`, `issueAnonymousRequestClaimGrant`,
+  `claimAnonymousCustomerRequest`, `getCustomerAccessModeSetting`, and
+  `updateCustomerAccessModeSetting`.
+- Customer reads are ownership-first, `CUSTOMER_REQUEST`-only and PUBLIC-only. Guessing and
+  cross-customer reads return the same not-found shape; INTERNAL/child/staff/audit/mail fields
+  never enter the response projection.
+- Claim requires a ticket-scoped request token or signed grant after authentication. Matching
+  email alone never searches for, lists or transfers a ticket.
+- Follow-up comment, optional PENDING→OPEN transition, one ticket audit and one stable outbound
+  mail intent commit atomically. Same `clientCommandId` replay returns the original result.
+- `ANONYMOUS_ALLOWED` and `REGISTRATION_OPTIONAL` accept anonymous creation;
+  `REGISTRATION_REQUIRED` requires a customer session while preserving an already-issued request
+  access capability. ADMIN settings use expected-version concurrency and atomic security audit.
+
+### Verification evidence
+
+- PostgreSQL integration tests cover A/B isolation, guessed IDs, PUBLIC-only projection, request
+  token and signed-grant success/tamper/expiry/replay/different-email, access modes, ADMIN conflict,
+  claim/follow-up audit and one-intent replay.
+- Mailpit Testcontainers verifies magic-link and customer follow-up recipient, subject, link and
+  one-message/one-attempt behavior through the actual SMTP adapter and Mailpit API.
+- React tests cover portal and access-mode behavior; Playwright/axe covers safe projection,
+  expired proof focus/input retention and failed follow-up draft/stable-command retry at 1280/1440.
+
+### Explicit exclusions
+
+Organization-shared requests, automatic SOLVED reopen, password/SSO/social login, production mail
+provider, inbound mail, bounce handling, attachments and rich text remain unimplemented.

@@ -26,15 +26,15 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Core Api Requirement Links: 44
 - Decision Definitions: 52
 - Dual Use Actor Bound Operations: 1
-- E2E Visual Baselines: 92
+- E2E Visual Baselines: 96
 - Json Files: 8
-- Markdown Files: 175
-- Openapi Operations: 70
-- Openapi Paths: 56
+- Markdown Files: 178
+- Openapi Operations: 75
+- Openapi Paths: 60
 - Requirement Definitions: 78
 - Staff Actor Blueprint Operations: 11
-- Staff Actor Bound Operations: 40
-- Staff Csrf Bound Operations: 26
+- Staff Actor Bound Operations: 42
+- Staff Csrf Bound Operations: 27
 - Task Briefs: 26
 - Verification Gate Definitions: 127
 - Yaml Files: 16

@@ -14,11 +14,11 @@ import java.sql.SQLException
 @Testcontainers
 class ExternalReferenceMigrationTest {
     @Test
-    fun `version nineteen upgrades version eighteen and enforces bounded unique external references`() {
-        migrateTo("18")
-        insertVersionEighteenTicket()
+    fun `version twenty two upgrades version twenty one and enforces bounded unique external references`() {
+        migrateTo("21")
+        insertBaseTicket()
 
-        migrateTo("19")
+        migrateTo("22")
 
         connection().use { jdbc ->
             jdbc.createStatement().use { statement ->
@@ -72,7 +72,7 @@ class ExternalReferenceMigrationTest {
             .migrate()
     }
 
-    private fun insertVersionEighteenTicket() {
+    private fun insertBaseTicket() {
         connection().use { jdbc ->
             jdbc.createStatement().use { statement ->
                 statement.executeUpdate(

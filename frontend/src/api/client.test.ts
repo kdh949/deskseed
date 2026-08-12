@@ -92,6 +92,48 @@ describe('admin list API client', () => {
 })
 
 describe('customer request API client', () => {
+  it('uses the customer CSRF contract for authenticated submission', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'customer-csrf-token' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            status: 'NEW',
+            accessToken: 'one-time-access-token-that-is-long-enough',
+            createdAt: '2026-08-10T00:00:00Z',
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await submitRequest(submitInput, true)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/customer/csrf', {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/requests',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': 'customer-csrf-token',
+        },
+      }),
+    )
+  })
+
   it('preserves RFC 9457 field errors and the safe response request ID', async () => {
     vi.stubGlobal(
       'fetch',

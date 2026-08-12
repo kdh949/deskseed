@@ -54,4 +54,14 @@ internal class RequestAccessTokenStore(
             now = Instant.now(clock),
         )
         ?.ticketId
+
+    @Transactional
+    fun lockTicketIdForClaim(rawToken: String): UUID? = repository
+        .lockActiveByHash(codec.hash(rawToken), Instant.now(clock))
+        ?.ticketId
+
+    @Transactional
+    fun revokeAll(ticketId: UUID) {
+        repository.revokeAllForTicket(ticketId, Instant.now(clock))
+    }
 }

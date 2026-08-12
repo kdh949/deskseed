@@ -29,7 +29,7 @@
 
 ## In scope
 
-- V19 ExternalSystem and ExternalReference tables, constraints, and indexes.
+- V22 ExternalSystem and ExternalReference tables, constraints, and indexes.
 - Typed registry and staff reference management application APIs.
 - Core admin/staff OpenAPI and UI/surface route catalog updates.
 - URL/hostname and bounded metadata validation with no network fetch path.
@@ -89,7 +89,7 @@
 ## Validation
 
 - Backend unit/integration/full tests and Spring Modulith verification.
-- Flyway clean PostgreSQL migration and V18→V19 upgrade.
+- Flyway clean PostgreSQL migration and V21→V22 upgrade.
 - Core OpenAPI/documentation validators.
 - Frontend format/lint/typecheck/component tests/build.
 - Chromium full browser suite and External Context visual snapshots; focused Firefox/WebKit smoke with Axe.
@@ -97,7 +97,7 @@
 ## Compatibility and migration
 
 - Additive staff/admin API and additive agent detail behavior; customer and Platform contracts are unchanged.
-- Forward-only V19 with no backfill. Rollback is application rollback plus backup restore or reviewed forward fix.
+- Forward-only V22 with no backfill. Rollback is application rollback plus backup restore or reviewed forward fix.
 - Removing the feature leaves new tables unused; no existing ticket/comment/customer row is rewritten.
 
 ## Human explanation

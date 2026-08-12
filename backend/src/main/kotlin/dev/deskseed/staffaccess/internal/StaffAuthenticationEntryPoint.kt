@@ -15,13 +15,14 @@ internal class StaffAuthenticationEntryPoint(
         response: HttpServletResponse,
         authException: AuthenticationException,
     ) {
+        val customerRoute = request.requestURI.startsWith("/api/v1/customer/")
         problemWriter.write(
             response = response,
             request = request,
             status = 401,
-            type = "/problems/staff-authentication-required",
-            title = "Staff authentication required",
-            detail = "Sign in to continue.",
+            type = if (customerRoute) "/problems/customer-authentication-required" else "/problems/staff-authentication-required",
+            title = if (customerRoute) "Customer authentication required" else "Staff authentication required",
+            detail = if (customerRoute) "Request a new sign-in link to continue." else "Sign in to continue.",
         )
     }
 }

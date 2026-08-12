@@ -18,6 +18,7 @@ core_specs=(
   audit-explorer.spec.ts
   customer-request.spec.ts
   external-reference.spec.ts
+  customer-portal.spec.ts
   frontend-system.spec.ts
 )
 remaining_specs=(

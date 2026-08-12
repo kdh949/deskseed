@@ -17,6 +17,8 @@ export function AppShell({ children }: PropsWithChildren) {
           <nav aria-label="주요 메뉴">
             <NavLink to="/requests/new">문의 접수</NavLink>
             <NavLink to="/requests/lookup">문의 조회</NavLink>
+            <NavLink to="/account/requests">내 문의</NavLink>
+            <NavLink to="/customer/sign-in">로그인</NavLink>
           </nav>
         </div>
       </header>
@@ -24,7 +26,7 @@ export function AppShell({ children }: PropsWithChildren) {
         {children}
       </main>
       <footer>
-        <p>Deskseed · 익명 문의 접수와 공개 대화 조회</p>
+        <p>Deskseed · 안전한 문의 접수와 고객 공개 대화</p>
       </footer>
     </AppShellFrame>
   )
