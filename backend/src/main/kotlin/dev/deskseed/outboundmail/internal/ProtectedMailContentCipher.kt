@@ -21,6 +21,10 @@ internal class ProtectedMailContentCipher(
     private val properties: ProtectedMailContentProperties,
     private val secureRandom: SecureRandom = SecureRandom(),
 ) {
+    init {
+        key(properties.activeKeyVersion)
+    }
+
     fun encrypt(plaintext: String, intentId: UUID): ProtectedMailContent {
         val keyVersion = properties.activeKeyVersion
         val key = key(keyVersion)

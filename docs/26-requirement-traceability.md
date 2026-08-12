@@ -26,8 +26,8 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | expiry/replay/enumeration/session 테스트 |
-| REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | explicit token/claim 테스트 |
+| REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | `CustomerMagicLinkAuthIntegrationTest`의 expiry/replay/race/enumeration/session/CSRF/rollback, `MailpitApiE2ETest`의 실제 전달·단일 소비 |
+| REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | `CustomerMagicLinkAuthIntegrationTest`의 미검증 requester·ticket ownership 불변; explicit claim은 후속 slice |
 | REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session 또는 browser expected-actor 불일치는 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 25, 30, 31, 33, 35 ADR, 39, 52 | `StaffAuthIntegrationTest`의 invalid/mismatch·activity/controller/mutation/audit 비진입, `client.test.ts`의 held-CSRF actor snapshot, `StaffSessionContext.test.tsx`의 교차 탭 owner 보존, `staff-auth-admin.spec.ts` |
 | REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
 | REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | `AgentTicketReadIntegrationTest`의 cross-group queue/direct URL 및 inactive/customer 거부; 검색은 후속 |

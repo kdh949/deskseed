@@ -69,7 +69,9 @@ describe('customer magic-link pages', () => {
 
     expect(await screen.findByText('로그인되었습니다.')).toBeInTheDocument()
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
-    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual({
+    expect(
+      JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)),
+    ).toEqual({
       token: rawToken,
     })
   })
@@ -81,7 +83,9 @@ describe('customer magic-link pages', () => {
         <CustomerMagicLinkConsumePage />
       </MemoryRouter>,
     )
-    expect(screen.getByText('로그인 링크를 사용할 수 없습니다.')).toBeInTheDocument()
+    expect(
+      screen.getByText('로그인 링크를 사용할 수 없습니다.'),
+    ).toBeInTheDocument()
     expect(fetch).not.toHaveBeenCalled()
   })
 })

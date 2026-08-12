@@ -37,9 +37,9 @@ internal class CustomerMagicLinkRateLimiter(
             destination,
             network,
         ).singleOrNull()
-        val inWindow = current != null && current.second.plus(properties.requestWindow).isAfter(now)
-        val nextCount = if (inWindow) current!!.first + 1 else 1
-        val windowStartedAt = if (inWindow) current!!.second else now
+        val activeWindow = current?.takeIf { it.second.plus(properties.requestWindow).isAfter(now) }
+        val nextCount = activeWindow?.first?.plus(1) ?: 1
+        val windowStartedAt = activeWindow?.second ?: now
         val allowed = nextCount <= properties.requestLimit
         jdbcTemplate.update(
             """

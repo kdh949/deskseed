@@ -83,6 +83,8 @@ remain later slices and must not be inferred from email equality.
   from history before calling the JSON-body consume endpoint.
 - Token and throttle rows are short-lived authentication/security data. This slice
   supplies bounded cleanup indexes/seams but not a general retention administration UI.
+  Magic-link mail bodies are AES-GCM protected with a versioned key until post-commit
+  delivery; the ordinary outbox body contains only a non-secret marker.
 - Changed threats: email enumeration, token replay/race, session fixation, CSRF,
   cross-customer principal confusion, Referer/log leakage and audit bypass.
 
@@ -91,3 +93,16 @@ remain later slices and must not be inferred from email equality.
 Password/social login, historical ticket auto-claim, My Requests, public follow-up,
 claim endpoint, production mail provider, inbound mail and URL-query token handling are
 not implemented in this PR.
+
+### Implemented verification evidence
+
+- `AUTH-001`: same 202/body, response padding, destination+network HMAC rate limiting,
+  and known/unknown log/audit non-disclosure integration tests.
+- `AUTH-002`: 5–60 minute configuration boundary, digest-only storage, expiry,
+  malformed input, atomic race and replay integration tests.
+- `AUTH-003`: opaque digest-only session, fixation rotation, HttpOnly/Secure/Lax cookie,
+  cross-customer isolation, session-bound CSRF logout and revocation tests.
+- `AUTH-004` partial safety regression: matching email never rewrites the historical
+  requester. The explicit claim operation and its positive proof test remain excluded.
+- `MAIL-001`: Testcontainers Mailpit API verifies recipient, subject, fragment link,
+  successful consume, replay denial and one-message/no-duplicate delivery.

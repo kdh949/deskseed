@@ -301,7 +301,7 @@ class CustomerMagicLinkAuthIntegrationTest {
 
     private fun generateToken(email: String): String = transactionTemplate.execute {
         oneTimeTokenService.generate(GenerateOneTimeTokenRequest(email, Duration.ofMinutes(15))).tokenValue
-    }!!
+    }
 
     private fun consume(token: String, cookie: Cookie? = null) = mockMvc.perform(
         post("/api/v1/customer/auth/magic-link-sessions")

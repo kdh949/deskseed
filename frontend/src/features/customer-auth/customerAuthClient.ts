@@ -43,7 +43,8 @@ export async function consumeCustomerMagicLink(
 }
 
 function isCurrentCustomer(value: unknown): value is CurrentCustomer {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    return false
   const candidate = value as Record<string, unknown>
   return (
     typeof candidate.id === 'string' &&

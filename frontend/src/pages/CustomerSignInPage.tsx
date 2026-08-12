@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { requestCustomerMagicLink } from '../features/customer-auth/customerAuthClient'
+import {
+  consumeCustomerMagicLink,
+  requestCustomerMagicLink,
+} from '../features/customer-auth/customerAuthClient'
 import { Notification, ScreenState } from '../shared/ui/system'
 
 export function CustomerSignInPage() {
@@ -30,7 +33,10 @@ export function CustomerSignInPage() {
 
   return (
     <main className="page customer-auth-page">
-      <section className="customer-auth-card" aria-labelledby="customer-sign-in-title">
+      <section
+        className="customer-auth-card"
+        aria-labelledby="customer-sign-in-title"
+      >
         <p className="eyebrow">DESKSEED CUSTOMER</p>
         <h1 id="customer-sign-in-title">이메일로 로그인</h1>
         <p className="muted">
@@ -43,7 +49,8 @@ export function CustomerSignInPage() {
             tone="success"
             title="입력한 이메일로 로그인 링크를 보냈습니다."
           >
-            계정이 없거나 요청이 제한된 경우에도 보안을 위해 같은 안내가 표시됩니다.
+            계정이 없거나 요청이 제한된 경우에도 보안을 위해 같은 안내가
+            표시됩니다.
           </Notification>
         ) : null}
         {error ? (
@@ -69,7 +76,11 @@ export function CustomerSignInPage() {
                 onChange={(event) => setEmail(event.target.value)}
               />
             </label>
-            <button className="button primary" type="submit" disabled={submitting}>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={submitting}
+            >
               {submitting ? '요청 중…' : '로그인 링크 받기'}
             </button>
           </form>
@@ -84,7 +95,8 @@ export function CustomerSignInPage() {
 
 export function CustomerMagicLinkConsumePage() {
   const tokenRef = useRef<string | null | undefined>(undefined)
-  if (tokenRef.current === undefined) tokenRef.current = takeAndClearMagicLinkToken()
+  if (tokenRef.current === undefined)
+    tokenRef.current = takeAndClearMagicLinkToken()
   const startedRef = useRef(false)
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
     tokenRef.current ? 'loading' : 'error',
@@ -94,19 +106,19 @@ export function CustomerMagicLinkConsumePage() {
     const token = tokenRef.current
     if (!token || startedRef.current) return
     startedRef.current = true
-    void import('../features/customer-auth/customerAuthClient').then(
-      ({ consumeCustomerMagicLink }) =>
-        consumeCustomerMagicLink(token)
-          .then(() => setState('success'))
-          .catch(() => setState('error')),
-    )
+    void consumeCustomerMagicLink(token)
+      .then(() => setState('success'))
+      .catch(() => setState('error'))
   }, [])
 
   return (
     <main className="page customer-auth-page">
       <section className="customer-auth-card" aria-live="polite">
         {state === 'loading' ? (
-          <ScreenState kind="loading" title="로그인 링크를 확인하고 있습니다." />
+          <ScreenState
+            kind="loading"
+            title="로그인 링크를 확인하고 있습니다."
+          />
         ) : state === 'success' ? (
           <div>
             <Notification tone="success" title="로그인되었습니다.">
@@ -133,6 +145,10 @@ export function takeAndClearMagicLinkToken(): string | null {
   const parameters = new URLSearchParams(window.location.hash.replace(/^#/, ''))
   const token = parameters.get('token')
   // Clear both fragment and any accidental query before the bearer value is sent over the network.
-  window.history.replaceState(window.history.state, '', window.location.pathname)
+  window.history.replaceState(
+    window.history.state,
+    '',
+    window.location.pathname,
+  )
   return token && /^[A-Za-z0-9_-]{1,256}$/.test(token) ? token : null
 }
