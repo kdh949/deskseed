@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { SubmittedRequest } from '../../api/types'
-import { StatusBadge } from '../../components/StatusBadge'
+import { StatusBadge } from '../../design-system'
 
 interface RequestSuccessProps {
   submitted: SubmittedRequest

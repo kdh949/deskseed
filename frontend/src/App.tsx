@@ -1,15 +1,15 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Outlet, useRoutes, type RouteObject } from 'react-router'
-import { AppShell } from './components/AppShell'
-import { AgentShell } from './features/agent-shell/AgentShell'
-import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
-import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
+import { CustomerPortalShell } from './design-system'
 import { AdminShell } from './features/admin/AdminShell'
+import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
 import {
   AdminRoute,
   StaffRoute,
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
+import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
+import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { AdminGroupsPage } from './pages/AdminGroupsPage'
 import { AdminStaffPage } from './pages/AdminStaffPage'
 import { HomePage } from './pages/HomePage'
@@ -25,6 +25,15 @@ const FrontendSystemFixturePage = import.meta.env.DEV
       ),
     )
   : null
+
+const agentChildren: RouteObject[] = [
+  { index: true, element: <Navigate to="/agent/views/my-open" replace /> },
+  { path: 'home', element: <Navigate to="/agent/views/my-open" replace /> },
+  { path: 'views', element: <Navigate to="/agent/views/my-open" replace /> },
+  { path: 'views/:viewKey', element: <AgentViewsPage /> },
+  { path: 'tickets/:ticketNumber', element: <AgentTicketWorkspacePage /> },
+  { path: '*', element: <Navigate to="/agent/views/my-open" replace /> },
+]
 
 export const appRoutes: RouteObject[] = [
   ...(import.meta.env.DEV
@@ -48,30 +57,8 @@ export const appRoutes: RouteObject[] = [
         children: [
           {
             path: '/agent',
-            element: <AgentShell />,
-            children: [
-              {
-                index: true,
-                element: <Navigate to="/agent/views/my-open" replace />,
-              },
-              {
-                path: 'home',
-                element: <Navigate to="/agent/views/my-open" replace />,
-              },
-              {
-                path: 'views',
-                element: <Navigate to="/agent/views/my-open" replace />,
-              },
-              { path: 'views/:viewKey', element: <AgentViewsPage /> },
-              {
-                path: 'tickets/:ticketNumber',
-                element: <AgentTicketWorkspacePage />,
-              },
-              {
-                path: '*',
-                element: <Navigate to="/agent/views/my-open" replace />,
-              },
-            ],
+            element: <AgentShellLayout />,
+            children: agentChildren,
           },
           {
             element: <AdminRoute />,
@@ -100,18 +87,15 @@ export const appRoutes: RouteObject[] = [
   },
   {
     element: (
-      <AppShell>
+      <CustomerPortalShell>
         <Outlet />
-      </AppShell>
+      </CustomerPortalShell>
     ),
     children: [
       { index: true, element: <HomePage /> },
       { path: '/requests/new', element: <NewRequestPage /> },
       { path: '/requests/lookup', element: <LookupPage /> },
-      {
-        path: '/requests/:ticketNumber',
-        element: <RequestDetailPage />,
-      },
+      { path: '/requests/:ticketNumber', element: <RequestDetailPage /> },
       { path: '/lookup', element: <Navigate to="/requests/lookup" replace /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],

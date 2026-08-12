@@ -1,18 +1,14 @@
 import { NavLink, Outlet } from 'react-router'
-import { AppShell, BrandMark } from '../../shared/ui/system'
+import { DeskseedBrandMark } from '../../design-system/primitives/DeskseedPrimitives'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
 
 export function AdminShell() {
   const session = useStaffSession()
   return (
-    <AppShell
-      className="admin-shell"
-      contentId="admin-main"
-      skipLabel="관리자 설정 내용으로 건너뛰기"
-    >
+    <div className="admin-shell">
       <header className="admin-header">
         <NavLink className="admin-brand" to="/admin/staff">
-          <BrandMark compact />
+          <DeskseedBrandMark size="sm" />
           <strong>Deskseed 설정</strong>
         </NavLink>
         <nav aria-label="관리자 설정 메뉴">
@@ -31,9 +27,9 @@ export function AdminShell() {
           </button>
         </div>
       </header>
-      <main className="admin-main" id="admin-main" tabIndex={-1}>
+      <main className="admin-main">
         <Outlet />
       </main>
-    </AppShell>
+    </div>
   )
 }

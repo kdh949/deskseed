@@ -19,7 +19,7 @@ import {
   validateRequestForm,
 } from '../features/customer-requests/requestForm'
 import { RequestSuccess } from '../features/customer-requests/RequestSuccess'
-import { Notification } from '../shared/ui/system'
+import { Notification } from '../design-system'
 
 type TouchedFields = Partial<Record<RequestField, boolean>>
 

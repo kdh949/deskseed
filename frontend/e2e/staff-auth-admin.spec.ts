@@ -117,7 +117,8 @@ test('agent direct admin URL is guarded, admin API returns 403, and logout clear
 
   await page.getByRole('button', { name: '로그인' }).click()
   await expect(page).toHaveURL(/\/agent\/views\/my-open$/)
-  await expect(page.getByRole('main', { name: '내 open' })).toBeVisible()
+  await expect(page.getByRole('main', { name: '티켓 큐' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '내 티켓' })).toBeVisible()
   await expect(page.getByRole('link', { name: '관리자 설정' })).toHaveCount(0)
   await expectNoAxeViolations(page)
   expect(adminApiCalls).toBe(0)

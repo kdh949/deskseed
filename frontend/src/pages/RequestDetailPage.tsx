@@ -2,9 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { type FormEvent, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getPublicRequest } from '../api/client'
-import { StatusBadge } from '../components/StatusBadge'
+import { ScreenState, StatusBadge } from '../design-system'
 import { useRequestAccess } from '../features/customer-requests/RequestAccessContext'
-import { ScreenState } from '../shared/ui/system'
 
 const TOKEN_MIN_LENGTH = 32
 const TOKEN_MAX_LENGTH = 256

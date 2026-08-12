@@ -1,8 +1,9 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { DeskseedThemeProvider } from './shared/ui/DeskseedThemeProvider'
+import { DeskseedThemeProvider } from './design-system'
 
 function TestApp() {
   const queryClient = new QueryClient({
@@ -82,7 +83,11 @@ describe('App', () => {
       </DeskseedThemeProvider>,
     )
 
-    expect(await screen.findByRole('main', { name: '내 open' })).toBeVisible()
+    expect(await screen.findByRole('main', { name: '티켓 큐' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '내 티켓' })).toBeVisible()
+    expect(
+      screen.getByRole('navigation', { name: '상담사 전역 탐색' }),
+    ).toBeVisible()
     expect(
       screen.queryByRole('navigation', { name: '주요 메뉴' }),
     ).not.toBeInTheDocument()
@@ -166,4 +171,3 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 })
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

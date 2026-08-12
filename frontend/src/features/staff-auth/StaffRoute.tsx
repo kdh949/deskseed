@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, useLocation } from 'react-router'
-import { ScreenState } from '../../shared/ui/system'
+import { DsButton, ScreenState } from '../../design-system'
 import { StaffSessionProvider, useStaffSession } from './StaffSessionContext'
 
 export function StaffSessionLayout() {
@@ -32,13 +32,9 @@ export function StaffRoute() {
           kind="error"
           title="세션을 확인할 수 없습니다."
           action={
-            <button
-              className="button primary"
-              type="button"
-              onClick={session.retry}
-            >
+            <DsButton onClick={session.retry} tone="primary">
               다시 시도
-            </button>
+            </DsButton>
           }
         />
       </main>
@@ -61,11 +57,7 @@ export function AdminRoute() {
           kind="denied"
           title="관리자 권한이 필요합니다."
           description="이 계정은 관리자 설정을 열 수 없습니다."
-          action={
-            <Link className="button primary" to="/agent/home">
-              상담사 작업 공간으로 이동
-            </Link>
-          }
+          action={<Link to="/agent/home">상담사 작업 공간으로 이동</Link>}
         />
       </main>
     )

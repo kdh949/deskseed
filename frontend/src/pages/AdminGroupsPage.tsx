@@ -11,7 +11,7 @@ import {
   renameGroup,
 } from '../api/client'
 import type { GroupMembership, StaffAccount, SupportGroup } from '../api/types'
-import { Notification, ScreenState } from '../shared/ui/system'
+import { Notification, ScreenState } from '../design-system'
 
 function groupError(error: unknown): string {
   if (!(error instanceof ApiError)) return '요청을 처리할 수 없습니다.'

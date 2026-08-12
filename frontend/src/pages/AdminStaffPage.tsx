@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError, createStaff, disableStaff, listStaff } from '../api/client'
 import type { StaffAccount, StaffRole } from '../api/types'
-import { Notification, ScreenState } from '../shared/ui/system'
+import { Notification, ScreenState } from '../design-system'
 
 function adminError(error: unknown): string {
   if (!(error instanceof ApiError)) return '요청을 처리할 수 없습니다.'

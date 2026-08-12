@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useStaffSession } from '../features/staff-auth/StaffSessionContext'
-import { Notification, ScreenState } from '../shared/ui/system'
+import { Notification, ScreenState } from '../design-system'
 
 function safeDestination(value: unknown, isAdmin: boolean): string {
   if (
