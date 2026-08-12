@@ -23,11 +23,6 @@ x-deskseed-staff-actor-consistency:
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting
-  - listBusinessSchedules
-  - createBusinessSchedule
-  - getBusinessSchedule
-  - versionBusinessSchedule
-  - previewBusinessSchedule
   - listSlaPolicies
   - createSlaPolicy
   - activateSlaPolicy
@@ -1794,15 +1789,16 @@ paths:
                 $ref: '#/components/schemas/Problem'
   /api/v1/admin/business-schedules:
     get:
-      summary: List business schedules and active versions
+      summary: List business schedules at their latest immutable versions
       operationId: listBusinessSchedules
-      tags:
-      - Admin Schedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: &id008
       - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
           description: Schedules
@@ -1810,210 +1806,191 @@ paths:
             application/json:
               schema:
                 type: array
-                items:
-                  $ref: '#/components/schemas/BusinessSchedule'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+                items: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
     post:
-      summary: Create a business schedule and first version
+      summary: Create a business schedule and inactive first version
       operationId: createBusinessSchedule
-      tags:
-      - Admin Schedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/BusinessScheduleInput'
+            schema: { $ref: '#/components/schemas/BusinessScheduleInput' }
       responses:
         '201':
           description: Schedule created
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessSchedule'
-        '400':
-          description: RFC 9457 Problem Details
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+  /api/v1/admin/business-schedules/preview:
+    post:
+      summary: Validate and preview an unsaved business schedule definition
+      operationId: previewBusinessSchedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-002]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessTimePreviewRequest' }
+      responses:
+        '200':
+          description: Deterministic preview result
           content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '409':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessTimePreviewResult' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
   /api/v1/admin/business-schedules/{scheduleId}:
     parameters:
     - &id009
       name: scheduleId
       in: path
       required: true
-      schema:
-        type: string
-        format: uuid
+      schema: { type: string, format: uuid }
     get:
-      summary: Read a business schedule
+      summary: Read the latest immutable version of a business schedule
       operationId: getBusinessSchedule
-      tags:
-      - Admin Schedule
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: Schedule
+          description: Latest schedule version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessSchedule'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '404':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-    patch:
-      summary: Create a new immutable schedule version
-      operationId: versionBusinessSchedule
-      tags:
-      - Admin Schedule
-      x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
-      security: *id008
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BusinessScheduleInput'
-      responses:
-        '200':
-          description: New version
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessSchedule'
-        '400':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '404':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '409':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-  /api/v1/admin/business-schedules/{scheduleId}/preview:
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+  /api/v1/admin/business-schedules/{scheduleId}/versions:
     parameters:
     - *id009
-    post:
-      summary: Preview business-time calculations
-      operationId: previewBusinessSchedule
-      tags:
-      - Admin Schedule
+    get:
+      summary: List immutable business schedule versions newest first
+      operationId: listBusinessScheduleVersions
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
       x-deskseed-phase: P3
-      x-deskseed-requirements:
-      - REQ-SLA-002
+      x-deskseed-requirements: [REQ-SLA-002]
       security: *id008
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Schedule version history
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActor' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+    post:
+      summary: Create a new immutable version without activating it
+      operationId: createBusinessScheduleVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-002]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - &id010
+        name: If-Match
+        in: header
+        required: true
+        description: Quoted schedule aggregate version returned as ETag.
+        schema: { type: string, pattern: '^"[0-9]+"$' }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/BusinessTimePreviewRequest'
+            schema: { $ref: '#/components/schemas/BusinessScheduleInput' }
       responses:
-        '200':
-          description: Preview result
+        '201':
+          description: New immutable version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/BusinessTimePreviewResult'
-        '400':
-          description: RFC 9457 Problem Details
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '412': *id001
+  /api/v1/admin/business-schedules/{scheduleId}/versions/{version}/activation:
+    parameters:
+    - *id009
+    - name: version
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    put:
+      summary: Activate an immutable business schedule version
+      operationId: activateBusinessScheduleVersion
+      x-deskseed-contract-status: FROZEN
+      tags: [Admin Schedule]
+      x-deskseed-phase: P3
+      x-deskseed-requirements: [REQ-SLA-002]
+      security: *id008
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - *id010
+      responses:
+        '200':
+          description: Activated schedule version
+          headers:
+            ETag: { schema: { type: string }, description: Quoted schedule aggregate version. }
           content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '401':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '404':
-          description: RFC 9457 Problem Details
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessSchedule' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatch' }
+        '412': *id001
   /api/v1/admin/sla-policies:
     get:
       summary: List First Reply SLA policies
@@ -3950,6 +3927,7 @@ components:
       additionalProperties: false
       required:
       - weekday
+      - enabled
       - intervals
       properties:
         weekday:
@@ -3962,8 +3940,11 @@ components:
           - FRIDAY
           - SATURDAY
           - SUNDAY
+        enabled:
+          type: boolean
         intervals:
           type: array
+          maxItems: 12
           items:
             $ref: '#/components/schemas/BusinessInterval'
     ScheduleException:
@@ -3983,6 +3964,7 @@ components:
           - OPEN
         intervals:
           type: array
+          maxItems: 12
           items:
             $ref: '#/components/schemas/BusinessInterval'
         label:
@@ -4014,6 +3996,7 @@ components:
             $ref: '#/components/schemas/WeekdaySchedule'
         exceptions:
           type: array
+          maxItems: 366
           items:
             $ref: '#/components/schemas/ScheduleException'
     BusinessSchedule:
@@ -4023,8 +4006,10 @@ components:
         required:
         - id
         - version
+        - aggregateVersion
         - active
         - createdAt
+        - createdBy
         properties:
           id:
             type: string
@@ -4032,19 +4017,43 @@ components:
           version:
             type: integer
             minimum: 1
+          aggregateVersion:
+            type: integer
+            format: int64
+            minimum: 0
           active:
             type: boolean
           createdAt:
             type: string
             format: date-time
+          createdBy:
+            type: object
+            additionalProperties: false
+            required: [actorType, displayName]
+            properties:
+              actorType:
+                type: string
+                enum: [STAFF, SYSTEM]
+              actorId:
+                type: [string, 'null']
+                format: uuid
+              displayName:
+                type: string
     BusinessTimePreviewRequest:
       type: object
       additionalProperties: false
       required:
+      - schedule
       - startAt
+      - endAt
       - businessMinutes
       properties:
+        schedule:
+          $ref: '#/components/schemas/BusinessScheduleInput'
         startAt:
+          type: string
+          format: date-time
+        endAt:
           type: string
           format: date-time
         businessMinutes:
@@ -4053,13 +4062,16 @@ components:
           maximum: 525600
     BusinessTimePreviewResult:
       type: object
+      additionalProperties: false
       required:
       - dueAt
       - elapsedBusinessMinutes
       - nextOpenAt
+      - nextCloseAt
+      - dstPolicy
       properties:
         dueAt:
-          type: string
+          type: [string, 'null']
           format: date-time
         elapsedBusinessMinutes:
           type: integer
@@ -4069,6 +4081,12 @@ components:
           - string
           - 'null'
           format: date-time
+        nextCloseAt:
+          type: [string, 'null']
+          format: date-time
+        dstPolicy:
+          type: string
+          enum: [GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH]
     PriorityTargets:
       type: object
       additionalProperties: false
