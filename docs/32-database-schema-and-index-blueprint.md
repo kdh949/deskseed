@@ -112,7 +112,7 @@ unique(staff_id, authority)
 ```text
 id
 ticket_number
-kind                 CUSTOMER_REQUEST | INTERNAL_TASK
+kind                 CUSTOMER_REQUEST | INTERNAL_CHILD | AGENT_CREATED | INTERNAL_WORK_ITEM
 requester_customer_id nullable
 subject
 status
@@ -295,31 +295,53 @@ expires_at
 ### integration_clients / credentials
 
 ```text
-integration_clients(id, name, status, scopes_json, constraints_json, ...)
-integration_credentials(id, client_id, public_key_id, secret_hash, status, expires_at, last_used_at, last_used_ip, ...)
+integration_clients(
+ id, name, description, status, scopes_json, constraints_json,
+ created_by_staff_id, created_at, updated_at, last_used_at, last_used_ip, version
+)
+integration_credentials(
+ id, client_id, sequence, public_key_id, secret_hash, status,
+ expires_at, overlap_expires_at, rotated_from_credential_id,
+ created_by_staff_id, created_at, revoked_at, last_used_at, last_used_ip, version
+)
 ```
 
-원문 secret 저장 금지.
+- 원문 secret column은 두지 않고 발급/회전 응답에서만 한 번 반환한다.
+- `public_key_id`는 unique locator이고 `secret_hash`는 salt가 포함된 slow verifier다.
+- status는 client `ACTIVE/DISABLED/REVOKED`, credential `ACTIVE/RETIRING/REVOKED`로 제한한다. `EXPIRED`는 시간에서 계산하는 projection 상태다.
+- client마다 ACTIVE credential은 최대 1개, RETIRING credential은 최대 1개인 partial unique index로 bounded-overlap rotation을 보장한다.
+- `expires_at > created_at`, RETIRING에만 `overlap_expires_at` 존재, revoke metadata 정합성을 check constraint로 보호한다.
+- scopes/constraints JSON shape를 DB constraint로 검증하고 지원 scope vocabulary는 application/OpenAPI enum으로 고정한다.
+- V18 migration이 이 구조와 actor/source audit enum 확장을 소유한다.
 
 ### external_systems / external_references
 
 ```text
-external_systems(id, system_key, name, status, allowed_hosts_json, ...)
+external_systems(
+ id, system_key, display_name, status, allowed_hostnames_json,
+ created_by_staff_id, created_at, updated_at, version
+)
 external_references(
  id, ticket_id, external_system_id, object_type, external_id,
- display_label, safe_deep_link, metadata_json, created_at, created_by...
+ display_label, safe_deep_link, metadata_snapshot_json, metadata_observed_at,
+ created_by_actor_type, created_by_actor_id, created_by_actor_display, created_at
 )
 ```
 
-Unique `(external_system_id, object_type, external_id, ticket_id)`.
+- Unique `(ticket_id, external_system_id, object_type, external_id)`; the same external identity may be linked to another ticket.
+- status is `ACTIVE/DISABLED`; object type is `ORDER/PAYMENT/REFUND/USER/STORE/OPS_CASE/CUSTOM`.
+- allowed hostnames and metadata remain bounded JSON text with DB shape/byte checks plus stricter application allowlists.
+- ticket/created and external identity indexes support bounded context reads and duplicate investigation.
+- V22 adds these tables without backfill or any provider credential/raw payload column.
 
 ### idempotency_records
 
 ```text
 client_id
-idempotency_key
+operation_id
+idempotency_key_hash
 request_hash
-status
+status                  IN_PROGRESS | SUCCEEDED | FAILED_FINAL
 response_status nullable
 response_headers_json nullable
 response_body_json nullable
@@ -328,7 +350,10 @@ created_at
 expires_at
 ```
 
-Unique `(client_id, idempotency_key)`.
+Unique `(client_id, operation_id, idempotency_key_hash)`. Raw idempotency keys and Authorization values are never stored. V23 adds the
+receipt table together with nullable `INTERNAL_WORK_ITEM` requester support and the `INTEGRATION_CLIENT` comment author. The
+`(expires_at, id)` index drives `FOR UPDATE SKIP LOCKED` bounded cleanup; final receipts expire immediately while stale `IN_PROGRESS` rows
+use a distinct abandonment grace before deletion.
 
 ### outbox_events / webhook tables
 

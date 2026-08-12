@@ -7,16 +7,18 @@ import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
 import { AuditShell } from './features/audit/AuditShell'
 import { CustomerRoute } from './features/customer-auth/CustomerRoute'
 import { CustomerSessionProvider } from './features/customer-auth/CustomerSessionContext'
-import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
-import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
-import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
 import {
   AdminRoute,
   AgentRoute,
   AuditRoute,
+  ExternalSystemAdminRoute,
+  IntegrationAdminRoute,
   StaffRoute,
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
+import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
+import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
+import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
 import { AdminCustomerAccessPage } from './pages/AdminCustomerAccessPage'
 import { AdminGroupsPage } from './pages/AdminGroupsPage'
 import { AdminStaffPage } from './pages/AdminStaffPage'
@@ -29,6 +31,8 @@ import {
   CustomerRequestsPage,
 } from './pages/CustomerRequestsPage'
 import { HomePage } from './pages/HomePage'
+import { ExternalSystemsPage } from './pages/ExternalSystemsPage'
+import { IntegrationClientsPage } from './pages/IntegrationClientsPage'
 import { LookupPage } from './pages/LookupPage'
 import { NewRequestPage } from './pages/NewRequestPage'
 import { RequestDetailPage } from './pages/RequestDetailPage'
@@ -95,6 +99,32 @@ export function createAppRoutes(
                       element: <Navigate to="/agent/views/my-open" replace />,
                     },
                   ],
+                },
+              ],
+            },
+            {
+              path: '/integrations',
+              element: <AdminShell />,
+              children: [
+                {
+                  index: true,
+                  element: <Navigate to="/integrations/clients" replace />,
+                },
+                {
+                  element: <IntegrationAdminRoute />,
+                  children: [
+                    { path: 'clients', element: <IntegrationClientsPage /> },
+                  ],
+                },
+                {
+                  element: <ExternalSystemAdminRoute />,
+                  children: [
+                    { path: 'systems', element: <ExternalSystemsPage /> },
+                  ],
+                },
+                {
+                  path: '*',
+                  element: <Navigate to="/integrations/clients" replace />,
                 },
               ],
             },

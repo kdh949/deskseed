@@ -130,14 +130,23 @@ The platform must not accept arbitrary actor IDs in headers or request bodies.
 
 ### 4.4 Scopes and resource constraints
 
-Scopes describe operations:
+The I1 management/authentication slice freezes the v1 credential vocabulary to exactly:
+
+```text
+tickets:create
+tickets:read
+tickets:update
+tickets:comment:internal
+```
+
+No Platform Ticket API is exposed by this slice. The broader candidate vocabulary below is reserved for a later contract-freeze decision and must not be accepted by the I1 client-management API:
 
 ```text
 tickets:read
 tickets:create
 tickets:update
-comments:internal:write
-comments:public:write
+tickets:comment:internal
+tickets:comment:public
 customers:read
 customers:write
 external-references:read
@@ -158,6 +167,7 @@ customerPiiFieldSet
 ```
 
 Authorization is the intersection of scope and constraint. A broad scope with a narrow constraint remains narrow.
+When a configured resource dimension is missing from an authorization request, authorization fails closed; callers cannot omit group or ticket kind to bypass a configured constraint.
 
 ## 5. Platform API design
 
@@ -180,15 +190,13 @@ It may invoke the same application commands but must have:
 ### 5.2 Minimum v1 operations
 
 ```text
-POST   /platform/tickets
-GET    /platform/tickets/{ticketNumber}
-PATCH  /platform/tickets/{ticketNumber}
-POST   /platform/tickets/{ticketNumber}/comments
-GET    /platform/tickets/{ticketNumber}/external-references
-POST   /platform/tickets/{ticketNumber}/external-references
-DELETE /platform/tickets/{ticketNumber}/external-references/{referenceId}
-GET    /platform/ticket-events?cursor=...
+POST   /api/v1/platform/tickets
+GET    /api/v1/platform/tickets/{ticketNumber}
+PATCH  /api/v1/platform/tickets/{ticketNumber}
+POST   /api/v1/platform/tickets/{ticketNumber}/internal-comments
 ```
+
+PUBLIC follow-up comment, ExternalReference CRUD, event feed, export, webhook, SDK, OAuth, and admin/settings routes are not part of v1.
 
 Integration-client management belongs under `/admin/integrations/**`, not the Platform API itself.
 
@@ -202,7 +210,7 @@ CUSTOMER_REQUEST
   first comment PUBLIC
 
 INTERNAL_WORK_ITEM
-  requester optional or system customer
+  requester optional; omit it instead of fabricating a customer
   first comment INTERNAL
   never exposed as a customer request by accident
 ```
@@ -270,6 +278,12 @@ Exclude volatile headers such as request ID.
 | final business validation failure | same hash | replay same final problem |
 
 The idempotency record and business mutation must not leave an ambiguous committed state. Use a documented transaction/state machine and test crash points.
+
+The implementation stores only SHA-256 representations of the idempotency key and canonical request. Successful responses and deterministic
+final 4xx validation responses are retained for replay; retryable persistence/audit failures roll back the reservation. The launch default
+retention is 7 days. A scheduled bounded-batch cleanup deletes expired final receipts through the expiry index. Expired `IN_PROGRESS`
+reservations receive a separate configurable grace period before global cleanup so an in-flight command is not mistaken for abandoned work;
+same-identity retries remain `IN_PROGRESS` conflicts during that grace. Cleanup exports deleted-row, oldest-backlog-age, and failure metrics.
 
 ## 7. External object links
 

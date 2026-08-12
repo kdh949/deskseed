@@ -28,6 +28,28 @@ import type {
   GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
+  IntegrationClient,
+  IntegrationClientStatus,
+  IntegrationCredential,
+  IntegrationCredentialIssue,
+  IntegrationCredentialStatus,
+  IntegrationResourceConstraints,
+  IntegrationScope,
+  IntegrationTicketField,
+  IntegrationTicketKind,
+  CreateIntegrationClientInput,
+  RotateIntegrationCredentialInput,
+  CreateExternalReferenceInput,
+  CreateExternalSystemInput,
+  ExternalMetadataValue,
+  ExternalObjectType,
+  ExternalReference,
+  ExternalReferenceCommandResult,
+  ExternalReferenceContext,
+  ExternalReferenceLinkState,
+  ExternalSystem,
+  ExternalSystemStatus,
+  UpdateExternalSystemInput,
   ProblemDetails,
   PublicComment,
   PublicRequest,
@@ -118,6 +140,51 @@ const TICKET_FIELD_NAMES = new Set<TicketFieldName>([
   'priority',
   'groupId',
   'assigneeId',
+])
+const INTEGRATION_SCOPES = new Set<IntegrationScope>([
+  'tickets:create',
+  'tickets:read',
+  'tickets:update',
+  'tickets:comment:internal',
+])
+const INTEGRATION_CLIENT_STATUSES = new Set<IntegrationClientStatus>([
+  'ACTIVE',
+  'DISABLED',
+  'REVOKED',
+])
+const INTEGRATION_CREDENTIAL_STATUSES = new Set<IntegrationCredentialStatus>([
+  'ACTIVE',
+  'RETIRING',
+  'EXPIRED',
+  'REVOKED',
+])
+const INTEGRATION_TICKET_KINDS = new Set<IntegrationTicketKind>([
+  'CUSTOMER_REQUEST',
+  'INTERNAL_TASK',
+])
+const INTEGRATION_TICKET_FIELDS = new Set<IntegrationTicketField>([
+  'status',
+  'priority',
+  'groupId',
+  'assigneeId',
+])
+const EXTERNAL_SYSTEM_STATUSES = new Set<ExternalSystemStatus>([
+  'ACTIVE',
+  'DISABLED',
+])
+const EXTERNAL_OBJECT_TYPES = new Set<ExternalObjectType>([
+  'ORDER',
+  'PAYMENT',
+  'REFUND',
+  'USER',
+  'STORE',
+  'OPS_CASE',
+  'CUSTOM',
+])
+const EXTERNAL_LINK_STATES = new Set<ExternalReferenceLinkState>([
+  'AVAILABLE',
+  'SYSTEM_DISABLED',
+  'HOST_NOT_ALLOWED',
 ])
 
 export class ApiError extends Error {
@@ -428,6 +495,297 @@ function decodeCurrentStaff(value: unknown): CurrentStaff | undefined {
   }
 }
 
+function decodeIntegrationStringSet<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  if (
+    !value.every(
+      (item): item is T => typeof item === 'string' && allowed.has(item as T),
+    )
+  ) {
+    return undefined
+  }
+  return value
+}
+
+function decodeNullableStringSet<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+): T[] | null | undefined {
+  if (value === null) return null
+  return decodeIntegrationStringSet(value, allowed)
+}
+
+function decodeNullableStringArray(
+  value: unknown,
+): string[] | null | undefined {
+  if (value === null) return null
+  if (!Array.isArray(value) || !value.every(isNonBlankString)) return undefined
+  return value
+}
+
+function decodeIntegrationConstraints(
+  value: unknown,
+): IntegrationResourceConstraints | undefined {
+  if (!isRecord(value)) return undefined
+  const allowedGroupIds = decodeNullableStringArray(value.allowedGroupIds)
+  const allowedTicketKinds = decodeNullableStringSet(
+    value.allowedTicketKinds,
+    INTEGRATION_TICKET_KINDS,
+  )
+  const allowedFields = decodeNullableStringSet(
+    value.allowedFields,
+    INTEGRATION_TICKET_FIELDS,
+  )
+  const ipAllowlist = decodeNullableStringArray(value.ipAllowlist)
+  if (
+    allowedGroupIds === undefined ||
+    allowedTicketKinds === undefined ||
+    allowedFields === undefined ||
+    ipAllowlist === undefined
+  ) {
+    return undefined
+  }
+  return { allowedGroupIds, allowedTicketKinds, allowedFields, ipAllowlist }
+}
+
+function decodeIntegrationCredential(
+  value: unknown,
+): IntegrationCredential | undefined {
+  if (!isRecord(value)) return undefined
+  if (
+    !isNonBlankString(value.id) ||
+    typeof value.sequence !== 'number' ||
+    !Number.isSafeInteger(value.sequence) ||
+    value.sequence < 1 ||
+    !isNonBlankString(value.publicKeyId) ||
+    typeof value.status !== 'string' ||
+    !INTEGRATION_CREDENTIAL_STATUSES.has(
+      value.status as IntegrationCredentialStatus,
+    ) ||
+    !isTimestamp(value.expiresAt) ||
+    (value.overlapExpiresAt !== null && !isTimestamp(value.overlapExpiresAt)) ||
+    !isTimestamp(value.createdAt) ||
+    (value.revokedAt !== null && !isTimestamp(value.revokedAt)) ||
+    (value.lastUsedAt !== null && !isTimestamp(value.lastUsedAt)) ||
+    (value.lastUsedIp !== null && typeof value.lastUsedIp !== 'string')
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    sequence: value.sequence,
+    publicKeyId: value.publicKeyId,
+    status: value.status as IntegrationCredentialStatus,
+    expiresAt: value.expiresAt,
+    overlapExpiresAt: value.overlapExpiresAt as string | null,
+    createdAt: value.createdAt,
+    revokedAt: value.revokedAt as string | null,
+    lastUsedAt: value.lastUsedAt as string | null,
+    lastUsedIp: value.lastUsedIp as string | null,
+  }
+}
+
+function decodeIntegrationClient(
+  value: unknown,
+): IntegrationClient | undefined {
+  if (!isRecord(value) || !Array.isArray(value.credentials)) return undefined
+  const scopes = decodeIntegrationStringSet(value.scopes, INTEGRATION_SCOPES)
+  const resourceConstraints = decodeIntegrationConstraints(
+    value.resourceConstraints,
+  )
+  const credentials = value.credentials.map(decodeIntegrationCredential)
+  if (
+    !isNonBlankString(value.id) ||
+    !isNonBlankString(value.name) ||
+    typeof value.description !== 'string' ||
+    typeof value.status !== 'string' ||
+    !INTEGRATION_CLIENT_STATUSES.has(value.status as IntegrationClientStatus) ||
+    !scopes ||
+    !resourceConstraints ||
+    credentials.some((credential) => !credential) ||
+    (value.expiresAt !== null && !isTimestamp(value.expiresAt)) ||
+    (value.lastUsedAt !== null && !isTimestamp(value.lastUsedAt)) ||
+    (value.lastUsedIp !== null && typeof value.lastUsedIp !== 'string') ||
+    !isTimestamp(value.createdAt)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    description: value.description,
+    status: value.status as IntegrationClientStatus,
+    scopes,
+    resourceConstraints,
+    credentials: credentials as IntegrationCredential[],
+    expiresAt: value.expiresAt as string | null,
+    lastUsedAt: value.lastUsedAt as string | null,
+    lastUsedIp: value.lastUsedIp as string | null,
+    createdAt: value.createdAt,
+  }
+}
+
+function decodeIntegrationCredentialIssue(
+  value: unknown,
+): IntegrationCredentialIssue | undefined {
+  if (!isRecord(value)) return undefined
+  const client = decodeIntegrationClient(value.client)
+  const credential = decodeIntegrationCredential(value.credential)
+  if (
+    !client ||
+    !credential ||
+    typeof value.apiKey !== 'string' ||
+    !/^dsk_live_[A-Za-z0-9_-]{16,32}\.[A-Za-z0-9_-]{43}$/.test(value.apiKey)
+  ) {
+    return undefined
+  }
+  return { client, credential, apiKey: value.apiKey }
+}
+
+function decodeExternalSystem(value: unknown): ExternalSystem | undefined {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.id) ||
+    !isNonBlankString(value.systemKey) ||
+    !isNonBlankString(value.displayName) ||
+    typeof value.status !== 'string' ||
+    !EXTERNAL_SYSTEM_STATUSES.has(value.status as ExternalSystemStatus) ||
+    !Array.isArray(value.allowedHostnames) ||
+    !value.allowedHostnames.every(isNonBlankString) ||
+    !isTimestamp(value.createdAt) ||
+    !isTimestamp(value.updatedAt) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    systemKey: value.systemKey,
+    displayName: value.displayName,
+    status: value.status as ExternalSystemStatus,
+    allowedHostnames: value.allowedHostnames,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    version: value.version,
+  }
+}
+
+function decodeExternalMetadata(
+  value: unknown,
+): Record<string, ExternalMetadataValue> | undefined {
+  if (!isRecord(value)) return undefined
+  const entries = Object.entries(value)
+  if (
+    entries.length > 8 ||
+    entries.some(
+      ([, item]) =>
+        !(
+          typeof item === 'string' ||
+          typeof item === 'boolean' ||
+          (typeof item === 'number' && Number.isFinite(item))
+        ),
+    )
+  ) {
+    return undefined
+  }
+  return Object.fromEntries(entries) as Record<string, ExternalMetadataValue>
+}
+
+function decodeExternalReference(
+  value: unknown,
+): ExternalReference | undefined {
+  if (!isRecord(value) || !isRecord(value.createdBy)) return undefined
+  const system = decodeExternalSystem(value.system)
+  const metadata = decodeExternalMetadata(value.metadata)
+  if (
+    !isUuid(value.id) ||
+    !system ||
+    typeof value.objectType !== 'string' ||
+    !EXTERNAL_OBJECT_TYPES.has(value.objectType as ExternalObjectType) ||
+    !isNonBlankString(value.externalId) ||
+    !isNonBlankString(value.displayLabel) ||
+    typeof value.linkState !== 'string' ||
+    !EXTERNAL_LINK_STATES.has(value.linkState as ExternalReferenceLinkState) ||
+    (value.safeDeepLink !== null && !isNonBlankString(value.safeDeepLink)) ||
+    (value.linkState === 'AVAILABLE' && value.safeDeepLink === null) ||
+    !metadata ||
+    !isTimestamp(value.metadataObservedAt) ||
+    !isUuid(value.createdBy.actorId) ||
+    !isNonBlankString(value.createdBy.displayName) ||
+    !isTimestamp(value.createdAt)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    system,
+    objectType: value.objectType as ExternalObjectType,
+    externalId: value.externalId,
+    displayLabel: value.displayLabel,
+    linkState: value.linkState as ExternalReferenceLinkState,
+    safeDeepLink: value.safeDeepLink as string | null,
+    metadata,
+    metadataObservedAt: value.metadataObservedAt,
+    createdBy: {
+      actorId: value.createdBy.actorId,
+      displayName: value.createdBy.displayName,
+    },
+    createdAt: value.createdAt,
+  }
+}
+
+function decodeExternalReferenceContext(
+  value: unknown,
+): ExternalReferenceContext | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.ticketVersion !== 'number' ||
+    !Number.isSafeInteger(value.ticketVersion) ||
+    value.ticketVersion < 0 ||
+    typeof value.canManage !== 'boolean' ||
+    !Array.isArray(value.availableSystems) ||
+    !Array.isArray(value.items)
+  ) {
+    return undefined
+  }
+  const availableSystems = value.availableSystems.map(decodeExternalSystem)
+  const items = value.items.map(decodeExternalReference)
+  if (
+    availableSystems.some((system) => !system) ||
+    items.some((reference) => !reference)
+  ) {
+    return undefined
+  }
+  return {
+    ticketVersion: value.ticketVersion,
+    canManage: value.canManage,
+    availableSystems: availableSystems as ExternalSystem[],
+    items: items as ExternalReference[],
+  }
+}
+
+function decodeExternalReferenceCommand(
+  value: unknown,
+): ExternalReferenceCommandResult | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.ticketVersion !== 'number' ||
+    !Number.isSafeInteger(value.ticketVersion) ||
+    value.ticketVersion < 0
+  ) {
+    return undefined
+  }
+  const reference = decodeExternalReference(value.reference)
+  return reference
+    ? { ticketVersion: value.ticketVersion, reference }
+    : undefined
+}
+
 function decodeStaffAccount(value: unknown): StaffAccount | undefined {
   if (
     !isRecord(value) ||
@@ -723,6 +1081,124 @@ export async function listStaff(
   const decoded = body.map(decodeStaffAccount)
   if (decoded.some((staff) => !staff)) throw malformedSuccess(response)
   return decodeAdminListPage(response, decoded as StaffAccount[], page, size)
+}
+
+export async function listIntegrationClients(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<IntegrationClient>> {
+  const response = await staffFetch(
+    `/api/v1/admin/integration-clients?page=${page}&size=${size}`,
+  )
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const decoded = body.map(decodeIntegrationClient)
+  if (decoded.some((client) => !client)) throw malformedSuccess(response)
+  return decodeAdminListPage(
+    response,
+    decoded as IntegrationClient[],
+    page,
+    size,
+  )
+}
+
+export async function getIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await staffFetch(
+    `/api/v1/admin/integration-clients/${clientId}`,
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createIntegrationClient(
+  input: CreateIntegrationClientInput,
+): Promise<IntegrationCredentialIssue> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/integration-clients',
+    'POST',
+    input,
+  )
+  const decoded = decodeIntegrationCredentialIssue(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function disableIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/disable`,
+    'POST',
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function revokeIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/revoke`,
+    'POST',
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function rotateIntegrationClientCredential(
+  clientId: string,
+  input: RotateIntegrationCredentialInput,
+): Promise<IntegrationCredentialIssue> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/rotate`,
+    'POST',
+    input,
+  )
+  const decoded = decodeIntegrationCredentialIssue(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function listExternalSystems(): Promise<ExternalSystem[]> {
+  const response = await staffFetch('/api/v1/admin/external-systems')
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const decoded = body.map(decodeExternalSystem)
+  if (decoded.some((system) => !system)) throw malformedSuccess(response)
+  return decoded as ExternalSystem[]
+}
+
+export async function createExternalSystem(
+  input: CreateExternalSystemInput,
+): Promise<ExternalSystem> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/external-systems',
+    'POST',
+    input,
+  )
+  const decoded = decodeExternalSystem(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function updateExternalSystem(
+  systemId: string,
+  input: UpdateExternalSystemInput,
+): Promise<ExternalSystem> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/external-systems/${systemId}`,
+    'PUT',
+    input,
+    { 'If-Match': `"${input.expectedVersion}"` },
+  )
+  const decoded = decodeExternalSystem(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
 }
 
 export async function createStaff(
@@ -1099,7 +1575,20 @@ function decodeAgentTicketDetail(
   }
   const ticket = decodeAgentTicketSummary(value.ticket)
   const comments = value.comments.map(decodeAgentComment)
-  const customer = value.context.customer
+  const customerValue = value.context.customer
+  const customer =
+    customerValue === null
+      ? null
+      : isRecord(customerValue) &&
+          isNonBlankString(customerValue.id) &&
+          isNonBlankString(customerValue.displayName) &&
+          isNonBlankString(customerValue.email)
+        ? {
+            id: customerValue.id,
+            displayName: customerValue.displayName,
+            email: customerValue.email,
+          }
+        : undefined
   const parent =
     value.context.parent === null
       ? null
@@ -1114,10 +1603,7 @@ function decodeAgentTicketDetail(
   if (
     !ticket ||
     comments.some((comment) => !comment) ||
-    !isRecord(customer) ||
-    !isNonBlankString(customer.id) ||
-    !isNonBlankString(customer.displayName) ||
-    !isNonBlankString(customer.email) ||
+    customer === undefined ||
     parent === undefined ||
     !Array.isArray(value.context.children) ||
     children.some((child) => !child) ||
@@ -1134,11 +1620,7 @@ function decodeAgentTicketDetail(
     capabilities: value.capabilities,
     assignmentOptions,
     context: {
-      customer: {
-        id: customer.id,
-        displayName: customer.displayName,
-        email: customer.email,
-      },
+      customer,
       parent,
       children: children as AgentTicketSummary[],
       externalReferences: [...value.context.externalReferences],
@@ -1394,6 +1876,61 @@ export async function createChildTicket(
   const result = decodeCreateChildTicketResult(await checkedBody(response))
   if (!result) throw malformedSuccess(response)
   return result
+}
+
+export async function listTicketExternalReferences(
+  ticketNumber: number,
+  interactionId: string,
+): Promise<ExternalReferenceContext> {
+  const response = await staffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/external-references`,
+    { headers: { 'X-Interaction-Id': interactionId } },
+  )
+  const decoded = decodeExternalReferenceContext(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createTicketExternalReference(
+  ticketNumber: number,
+  input: CreateExternalReferenceInput,
+): Promise<ExternalReferenceCommandResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/external-references`,
+    'POST',
+    input,
+    { 'If-Match': `"${input.expectedVersion}"` },
+  )
+  const decoded = decodeExternalReferenceCommand(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function deleteTicketExternalReference(
+  ticketNumber: number,
+  referenceId: string,
+  expectedVersion: number,
+): Promise<{ ticketVersion: number; removedReferenceId: string }> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/external-references/${referenceId}`,
+    'DELETE',
+    undefined,
+    { 'If-Match': `"${expectedVersion}"` },
+  )
+  const body = await checkedBody(response)
+  if (
+    !isRecord(body) ||
+    typeof body.ticketVersion !== 'number' ||
+    !Number.isSafeInteger(body.ticketVersion) ||
+    body.ticketVersion < 0 ||
+    !isUuid(body.removedReferenceId)
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    ticketVersion: body.ticketVersion,
+    removedReferenceId: body.removedReferenceId,
+  }
 }
 
 const AUDIT_LEDGERS = new Set([

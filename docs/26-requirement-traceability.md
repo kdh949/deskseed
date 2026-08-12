@@ -83,11 +83,11 @@
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53 | OpenAPI·scope·idempotency test |
-| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1 | 18, 33 | INT-AUTH-001~004 |
-| REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20 | IDEM-001~004 |
-| REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | CONC-001 |
-| REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 32 | EXT-001~004 |
+| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53, ADR 0031 | `PlatformOpenApiContractTest`, `PlatformNetworkBoundaryTest`, `PlatformTicketIntegrationTest`; PLAT-001/002 |
+| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1/I2 | 18, 32~34, 39, ADR 0012/0016/0031 | 기존 IntegrationClient lifecycle suite + `PlatformTicketIntegrationTest`, `PlatformRateLimitIntegrationTest`; INT-AUTH-001~004·ARCH-001/002/004·ACC-006/007·AUD-001 |
+| REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20, 32 | `PlatformApiMigrationTest`, `PlatformTicketIntegrationTest`의 replay/key misuse/concurrent claim/audit·receipt crash rollback/final failure replay; IDEM-001~004 |
+| REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | `PlatformTicketIntegrationTest` matching/stale/final replay; CONC-001 |
+| REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 30, 32~34, 39, ADR 0015 | `ExternalReferenceValidationTest`, `ExternalReferenceMigrationTest`, `ExternalReferenceIntegrationTest`, `ExternalSystemsPage.test.tsx`, `TicketExternalReferences.test.tsx`, `external-reference.spec.ts`; EXT-001~004·ARCH-001/002/004·CHG-001·ACC-007·AUD-001·UI-002/004/005. Platform API·provider fetch·mirroring은 미구현 |
 | REQ-INT-006 | 외부 시스템에 signed webhook을 보낸다 | BLUEPRINT_READY | I5 | 18, 20, 38 | WH-001~005 |
 | REQ-INT-007 | n8n/Workato에서 webhook으로 자동화할 수 있다 | BLUEPRINT_READY | I5/I7 | 18, 38 | 예제 workflow smoke test |
 | REQ-INT-008 | TypeScript·Python·JVM SDK를 생성한다 | BLUEPRINT_READY | I6 | 20, 39 | SDK-001~003 |
@@ -131,7 +131,7 @@
 | REQ-UI-001 | Zendesk Agent Workspace와 유사한 고밀도 업무 UI를 제공한다 | IMPLEMENTATION_READY | M2~ | 28, 29, 30 | `frontend-system.spec.ts`의 Agent Home/View/Workspace 1280·1440·1920 Deskseed baseline |
 | REQ-UI-002 | Views 목록과 티켓 테이블을 제공한다 | IMPLEMENTATION_READY | M2 | 28, 30 | `AgentViewsPage.test.tsx`, `FrontendSystem.test.tsx`, keyboard row-open E2E |
 | REQ-UI-003 | 좌측 속성·중앙 대화·우측 context panel 구조를 제공한다 | IMPLEMENTATION_READY | M2 | 29, 30 | `frontend-system-workspace-{1280,1440,1920}.png` 및 keyboard separator E2E |
-| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/실제 parent-child projection·dialog 구현; 앱·external projection은 후속 |
+| REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | BLUEPRINT_READY | M5/I4/P7 | 28, 30 | 고객/로컬 기록/실제 parent-child/External projection과 dialog 구현; `TicketExternalReferences.test.tsx`, `external-reference.spec.ts`의 draft 보존·safe link·denied/read-only·desktop visual/Axe. Agent App SDK projection은 P7 후속 |
 | REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | `npm run test:e2e:dev`: 41/41, axe 0, dialog focus entry/trap/restore, child relation·solve warning 시각 회귀 |
 | REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29 | Deskseed fixture baseline, Garden import/notice 및 proprietary asset scan |
 

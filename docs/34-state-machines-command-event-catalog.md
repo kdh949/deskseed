@@ -131,8 +131,13 @@ GROUP_MEMBERSHIP_CHANGED
 SETTING_CHANGED
 CUSTOMER_ACCESS_MODE_CHANGED
 INTEGRATION_CLIENT_CREATED
+INTEGRATION_CLIENT_DISABLED
 INTEGRATION_CLIENT_ROTATED
 INTEGRATION_CLIENT_REVOKED
+INTEGRATION_AUTHENTICATION_FAILED
+INTEGRATION_CLIENT_LAST_USED
+EXTERNAL_SYSTEM_CREATED
+EXTERNAL_SYSTEM_UPDATED
 WEBHOOK_CREATED
 WEBHOOK_SECRET_ROTATED
 WEBHOOK_DISABLED
@@ -147,6 +152,10 @@ RETENTION_JOB_EXECUTED
 `GrantStaffAuditAuthority`와 `RevokeStaffAuditAuthority`는 ADMIN actor만 실행하며,
 `AUDIT_SEARCH_QUERY_REVEAL`, `AUDIT_EXPORT`, `AUDIT_PROJECTION_REBUILD`만 허용한다.
 grant row 변경과 대응하는 admin/security event는 같은 transaction에서 commit/rollback한다.
+
+Integration client lifecycle mutation and its event also commit/rollback together. Authentication returns one generic failure externally while `INTEGRATION_AUTHENTICATION_FAILED` stores only a bounded reason code, public key ID, and normalized remote IP. Successful verification updates credential/client last-used metadata and appends `INTEGRATION_CLIENT_LAST_USED` in one transaction; required audit failure prevents authentication success. Neither event contains the API key secret, hash, or Authorization value.
+
+ExternalSystem create/update and its admin/security event commit or roll back together. Ticket ExternalReference create/remove increments the ticket version and produces exactly one TicketAudit with one ordered `EXTERNAL_REFERENCE_CREATED` or `EXTERNAL_REFERENCE_REMOVED` event. The event contains only stable reference identity, system key, object type, external ID, current hostname, and metadata key names; it excludes metadata values and URL path/query.
 
 ## 8. Domain/application event catalog
 
@@ -197,6 +206,8 @@ An overlap is rejected with `409`; a disjoint change is applied to the latest ro
 still race at commit, the losing optimistic transaction is fully rolled back and retried from the latest
 row with authorization and conflict checks repeated. Group changes that would invalidate the current
 assignee require the request to include an explicit compatible `assigneeId` or `null` clear.
+
+ExternalReference create/remove follows the same ticket transaction and exact-version rule. Integration owns URL/metadata validation and reference persistence through its root API, while Ticketing owns write authorization, current ticket version, and canonical audit. Registry/reference changes never perform external network I/O.
 
 ### Sensitive read
 

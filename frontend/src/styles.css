@@ -2661,6 +2661,135 @@ textarea[aria-invalid='true'] {
   font-size: 0.72rem;
   line-height: 1.45;
 }
+
+.external-reference-context {
+  display: grid;
+  gap: var(--ds-space-4);
+}
+
+.external-reference-context > header,
+.external-reference-card-title,
+.external-reference-actions,
+.external-reference-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+}
+
+.external-reference-context > header h2,
+.external-reference-context > header p,
+.external-reference-list p,
+.external-reference-confirm p {
+  margin: 0;
+}
+
+.external-reference-context > header p,
+.external-reference-list small,
+.external-reference-list > li > p,
+.external-link-disabled {
+  color: var(--ds-color-text-subtle);
+  font-size: var(--ds-type-body-size);
+}
+
+.external-reference-list {
+  display: grid;
+  gap: var(--ds-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.external-reference-list > li {
+  display: grid;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-2);
+  background: var(--ds-color-surface-raised);
+}
+
+.external-object-type {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ds-color-info-surface);
+  color: var(--ds-color-info);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.external-metadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ds-space-1) var(--ds-space-3);
+  margin: 0;
+  padding: var(--ds-space-2);
+  border-radius: var(--ds-radius-1);
+  background: var(--ds-color-surface-subtle);
+}
+
+.external-metadata div {
+  min-width: 0;
+}
+
+.external-metadata dt {
+  color: var(--ds-color-text-subtle);
+  font-size: 0.7rem;
+}
+
+.external-metadata dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-size: var(--ds-type-body-size);
+}
+
+.external-reference-actions {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.external-link-disabled {
+  padding-block: var(--ds-space-2);
+}
+
+.external-reference-confirm {
+  flex-wrap: wrap;
+  padding: var(--ds-space-2);
+  border-left: 3px solid var(--ds-color-danger);
+  background: var(--ds-color-danger-surface);
+}
+
+.external-reference-create {
+  border-top: 1px solid var(--ds-color-border);
+  padding-top: var(--ds-space-3);
+}
+
+.external-reference-create summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.external-reference-create form,
+.external-reference-create fieldset {
+  display: grid;
+  gap: var(--ds-space-3);
+  margin-top: var(--ds-space-3);
+}
+
+.external-reference-create label {
+  display: grid;
+  gap: var(--ds-space-1);
+  font-size: var(--ds-type-body-size);
+  font-weight: 600;
+}
+
+.external-reference-create fieldset {
+  margin-inline: 0;
+  padding: var(--ds-space-3);
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-2);
+}
 .ticket-action-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -2968,6 +3097,212 @@ textarea[aria-invalid='true'] {
 .admin-panel h2 {
   margin: 0 0 20px;
   font-size: 1.1rem;
+}
+
+.integration-admin-grid {
+  grid-template-columns: minmax(340px, 0.42fr) minmax(0, 0.58fr);
+}
+
+.admin-form fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.admin-form legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.admin-form .choice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.choice-row code {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.integration-client-list {
+  display: grid;
+  gap: 12px;
+}
+
+.external-system-list {
+  display: grid;
+  gap: var(--ds-space-3);
+}
+
+.external-system-card {
+  display: grid;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-4);
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-3);
+  background: var(--ds-color-surface-raised);
+}
+
+.external-system-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+}
+
+.external-system-card header div {
+  display: grid;
+  gap: var(--ds-space-1);
+}
+
+.external-system-card dl {
+  display: grid;
+  gap: var(--ds-space-2);
+  margin: 0;
+}
+
+.external-system-card dl div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: var(--ds-space-2);
+}
+
+.external-system-card dt {
+  color: var(--ds-color-text-subtle);
+  font-size: var(--ds-type-body-size);
+}
+
+.external-system-card dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-size: var(--ds-type-body-size);
+}
+
+.integration-client-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfc;
+}
+
+.integration-client-card > header,
+.integration-actions,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.integration-client-card header div {
+  min-width: 0;
+}
+
+.integration-client-card header small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.integration-status {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.integration-status.status-active {
+  border-color: #79aaa3;
+  color: #195f59;
+  background: #e7f4f1;
+}
+
+.integration-status.status-disabled,
+.integration-status.status-revoked {
+  color: #7a3333;
+  background: #f9ecec;
+}
+
+.integration-client-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.integration-client-card dl div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.integration-client-card dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.integration-client-card dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}
+
+.integration-actions {
+  justify-content: flex-end;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 28, 36, 0.55);
+}
+
+.integration-dialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 28px;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 22px 70px rgba(12, 28, 36, 0.3);
+}
+
+.integration-dialog h2 {
+  margin: 0 0 12px;
+}
+
+.integration-dialog > p {
+  color: var(--muted);
+}
+
+.secret-dialog label {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  font-weight: 700;
+}
+
+.secret-dialog input {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 20px;
 }
 
 .admin-form small,

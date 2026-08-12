@@ -4,6 +4,7 @@ import dev.deskseed.customerauth.CustomerCsrfFilter
 import dev.deskseed.customerauth.CustomerSessionAuthenticationFilter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.annotation.Order
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -11,6 +12,8 @@ import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.context.SecurityContextHolderFilter
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository
+import dev.deskseed.integration.INTEGRATION_CLIENT_MANAGE_AUTHORITY
+import dev.deskseed.integration.EXTERNAL_SYSTEM_MANAGE_AUTHORITY
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
@@ -22,6 +25,7 @@ internal class StaffAccessSecurityConfiguration(
     private val customerCsrfFilter: CustomerCsrfFilter,
 ) {
     @Bean
+    @Order(2)
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         val csrfRepository = HttpSessionCsrfTokenRepository().apply {
             setHeaderName("X-CSRF-TOKEN")
@@ -61,6 +65,10 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/me").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                it.requestMatchers("/api/v1/admin/integration-clients/**")
+                    .hasAuthority(INTEGRATION_CLIENT_MANAGE_AUTHORITY)
+                it.requestMatchers("/api/v1/admin/external-systems/**")
+                    .hasAuthority(EXTERNAL_SYSTEM_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/activities/*/search-query-reveal")
                     .authenticated()

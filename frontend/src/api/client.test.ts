@@ -856,7 +856,7 @@ describe('agent ticket read API client', () => {
       },
     })
     expect(detail.comments[0]?.visibility).toBe('INTERNAL')
-    expect(detail.context.customer.email).toBe('customer@example.com')
+    expect(detail.context.customer?.email).toBe('customer@example.com')
     expect(detail.ticket.status).toBe('ON_HOLD')
     expect(detail.assignmentOptions.groups[0]?.members[0]?.displayName).toBe(
       '상담사',

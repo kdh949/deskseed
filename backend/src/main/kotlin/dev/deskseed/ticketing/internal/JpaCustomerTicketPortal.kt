@@ -164,7 +164,8 @@ internal class JpaCustomerTicketPortal(
         val ticket = ticketRepository.lockByTicketNumber(command.ticketNumber)
             ?.takeIf { it.id == command.ticketId && it.kind == TicketKind.CUSTOMER_REQUEST }
             ?: return CustomerTicketClaimResult.NotFound
-        val oldRequester = customerDirectory.findById(ticket.requesterId)
+        val oldRequesterId = ticket.requesterId ?: return CustomerTicketClaimResult.NotFound
+        val oldRequester = customerDirectory.findById(oldRequesterId)
             ?.takeIf { it.verifiedAt == null }
             ?: return CustomerTicketClaimResult.NotFound
         val newRequester = customerDirectory.findById(command.accountCustomerId)

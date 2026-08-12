@@ -58,8 +58,14 @@ routes:
     screen: audit_explorer
   - path: "/integrations/clients"
     actor: admin
+    authority: integration:clients:manage
     phase: i1
     screen: integration_clients
+  - path: "/integrations/systems"
+    actor: admin
+    authority: integration:systems:manage
+    phase: i2
+    screen: external_systems
   - path: "/integrations/webhooks"
     actor: admin
     phase: i5

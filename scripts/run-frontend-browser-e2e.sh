@@ -17,10 +17,12 @@ core_specs=(
   agent-views-workspace.spec.ts
   audit-explorer.spec.ts
   customer-request.spec.ts
+  external-reference.spec.ts
   customer-portal.spec.ts
   frontend-system.spec.ts
 )
 remaining_specs=(
+  integration-clients.spec.ts
   staff-auth-admin.spec.ts
   ticket-composer-conflict.spec.ts
   transfer-child-ticket.spec.ts
@@ -28,7 +30,7 @@ remaining_specs=(
 
 if [[ "$browser" == "webkit" ]]; then
   printf '%s\n' \
-    "WebKit gate uses two fresh browser processes (35 + 6 tests)." \
+    "WebKit gate uses two fresh browser processes (core + remaining specs)." \
     "This isolates a documented Playwright 1.62 WebKit process-lifetime hang; no test is retried or skipped."
   "$playwright" test "${core_specs[@]}"
   "$playwright" test "${remaining_specs[@]}"

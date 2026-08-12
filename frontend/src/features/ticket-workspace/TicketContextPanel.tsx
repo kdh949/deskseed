@@ -4,8 +4,9 @@ import type { AgentTicketDetail } from '../../api/types'
 import { ContextPanel, type ContextPanelTab } from '../../shared/ui/system'
 import { CreateChildTicketDialog } from './CreateChildTicketDialog'
 import { TicketTransferDialog } from './TicketTransferDialog'
+import { TicketExternalReferences } from './TicketExternalReferences'
 
-type ContextTab = 'customer' | 'history' | 'related'
+type ContextTab = 'customer' | 'history' | 'related' | 'external'
 
 export function TicketContextPanel({
   detail,
@@ -24,6 +25,7 @@ export function TicketContextPanel({
     { id: 'customer', label: '고객' },
     { id: 'history', label: '기록' },
     { id: 'related', label: '관련' },
+    { id: 'external', label: 'External' },
   ]
 
   return (
@@ -34,25 +36,29 @@ export function TicketContextPanel({
       onTabChange={(id) => setActiveTab(id as ContextTab)}
     >
       {activeTab === 'customer' ? (
-        <div className="customer-context-card">
-          <span className="customer-avatar" aria-hidden="true">
-            {detail.context.customer.displayName.slice(0, 1)}
-          </span>
-          <h2>{detail.context.customer.displayName}</h2>
-          <a href={`mailto:${detail.context.customer.email}`}>
-            {detail.context.customer.email}
-          </a>
-          <dl>
-            <div>
-              <dt>고객 ID</dt>
-              <dd>{detail.context.customer.id}</dd>
-            </div>
-            <div>
-              <dt>최근 티켓</dt>
-              <dd>현재 projection에서 제공하지 않음</dd>
-            </div>
-          </dl>
-        </div>
+        detail.context.customer ? (
+          <div className="customer-context-card">
+            <span className="customer-avatar" aria-hidden="true">
+              {detail.context.customer.displayName.slice(0, 1)}
+            </span>
+            <h2>{detail.context.customer.displayName}</h2>
+            <a href={`mailto:${detail.context.customer.email}`}>
+              {detail.context.customer.email}
+            </a>
+            <dl>
+              <div>
+                <dt>고객 ID</dt>
+                <dd>{detail.context.customer.id}</dd>
+              </div>
+              <div>
+                <dt>최근 티켓</dt>
+                <dd>현재 projection에서 제공하지 않음</dd>
+              </div>
+            </dl>
+          </div>
+        ) : (
+          <p className="context-empty">연결된 고객이 없는 내부 작업입니다.</p>
+        )
       ) : null}
       {activeTab === 'history' ? (
         detail.history.length ? (
@@ -117,14 +123,16 @@ export function TicketContextPanel({
               관계에 의한 읽기는 parent 쓰기 권한을 부여하지 않습니다.
             </p>
           )}
-          <h2>외부 참조</h2>
-          <p>
-            {detail.context.externalReferences.length
-              ? `${detail.context.externalReferences.length}개`
-              : '연결된 외부 참조가 없습니다.'}
-          </p>
         </div>
       ) : null}
+      <div hidden={activeTab !== 'external'}>
+        <TicketExternalReferences
+          ticketNumber={detail.ticket.ticketNumber}
+          canUpdate={canUpdate}
+          active={activeTab === 'external'}
+          onCommandCompleted={onCommandCompleted}
+        />
+      </div>
       {dialog === 'transfer' ? (
         <TicketTransferDialog
           detail={detail}
