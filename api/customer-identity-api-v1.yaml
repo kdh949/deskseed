@@ -121,7 +121,12 @@ paths:
       tags: [Customer Identity]
       operationId: claimAnonymousCustomerRequest
       summary: Claim one anonymous request using a request-specific proof
-      x-deskseed-contract-status: BLUEPRINT
+      description: >-
+        Matching email is necessary but never sufficient. Exactly one ticket-specific
+        request access token or signed claim token must be supplied. Success consumes
+        or revokes the proof and transfers the existing ticket requester to the current
+        customer account atomically with ticket and security audit.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-AUTH-002, REQ-TKT-005]
       security: [{ customerSession: [] }]
       parameters:
@@ -129,18 +134,54 @@ paths:
           in: path
           required: true
           schema: { type: integer, format: int64, minimum: 1 }
+        - $ref: '#/components/parameters/CustomerCsrfHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ClaimRequest' }
       responses:
-        '204': { description: Request linked to the signed-in customer }
+        '204':
+          description: Request linked to the signed-in customer; proof is no longer reusable
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /api/v1/requests/{ticketNumber}/claim-grants:
+    post:
+      tags: [Customer Identity]
+      operationId: issueAnonymousRequestClaimGrant
+      summary: Exchange an active request-access capability for a short-lived claim grant
+      description: >-
+        The existing request access token is supplied only in the header. The returned
+        signed token is ticket-bound, email-fingerprint-bound, short-lived and single use.
+        No email or bearer token plaintext is persisted or audited.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-AUTH-002, REQ-TKT-005]
+      parameters:
+        - name: ticketNumber
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+        - name: X-Request-Access-Token
+          in: header
+          required: true
+          schema: { type: string, minLength: 32, maxLength: 256 }
+      responses:
+        '201':
+          description: Short-lived signed claim grant issued
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimGrant' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
 components:
   securitySchemes:
     customerSession:
@@ -204,6 +245,13 @@ components:
       properties:
         requestAccessToken: { type: string, minLength: 32, maxLength: 1000 }
         claimToken: { type: string, minLength: 32, maxLength: 1000 }
+    ClaimGrant:
+      type: object
+      additionalProperties: false
+      required: [claimToken, expiresAt]
+      properties:
+        claimToken: { type: string, minLength: 32, maxLength: 1000 }
+        expiresAt: { type: string, format: date-time }
     GenericAccepted:
       type: object
       additionalProperties: false
