@@ -237,8 +237,20 @@ Safety:
 
 - state interval rows are opened/closed from ticket status events.
 - policy version snapshot on target creation.
-- business calendar calculates dueAt.
+- business schedule versions calculate dueAt without consulting server default timezone.
 - clock progression tests use deterministic Clock.
+
+Business schedule administration emits canonical AdminSecurityAudit events:
+
+```text
+BUSINESS_SCHEDULE_CREATED
+BUSINESS_SCHEDULE_VERSION_CREATED
+BUSINESS_SCHEDULE_ACTIVATED
+```
+
+Create/version/activation and its audit commit or roll back together. Repeating
+activation of the already-active version is a no-op. Version definitions and
+activation facts are never update/delete events.
 
 ## 12. Event versioning
 

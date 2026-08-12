@@ -342,11 +342,16 @@ webhook_attempts
 
 Event와 delivery를 분리해 동일 event의 여러 endpoint 전달을 지원한다.
 
-## 6. SLA and analytics later
+## 6. Business schedule foundation and later SLA/analytics
 
 ```text
-business_calendars
-business_calendar_intervals
+business_schedules
+business_schedule_versions
+business_schedule_weekdays
+business_schedule_weekday_intervals
+business_schedule_exceptions
+business_schedule_exception_intervals
+business_schedule_activations
 sla_policies
 sla_policy_versions
 sla_target_instances
@@ -357,7 +362,14 @@ backlog_snapshots
 automation_execution_facts
 ```
 
+`business_schedules`는 `current_version`, nullable `active_version`,
+`aggregate_version` 포인터만 변경한다. 정의는 복합 키 `(schedule_id, version)`의
+하위 표에 저장하고 PostgreSQL trigger로 update/delete를 거부한다. 활성화 이력도
+append-only이며 관리자 보안 감사와 한 transaction에서 기록한다. 이름은 정규화한
+unique index로 충돌을 막고 version/activation/exception date 조회 index를 둔다.
+
 정책은 mutable row를 덮어쓰기보다 version을 만들고 ticket 적용 시 snapshot한다.
+SLA policy/target과 ticket-to-schedule assignment는 이 기반 slice에 포함하지 않는다.
 
 ## 7. Trigger/automation later
 

@@ -125,7 +125,7 @@ Secrets such as API key values and webhook HMAC secret are credential objects, n
 | Key | Type | Default | Phase | Notes |
 |---|---|---|---|---|
 | `time.defaultZone` | IANA zone | `Asia/Seoul` | P3 | operator selected |
-| `sla.defaultWeeklyHours` | schedule | Mon–Fri 09:00–18:00 | P3 | editable in schedule UI |
+| `sla.defaultWeeklyHours` | schedule seed | Mon–Fri 09:00–18:00 | P3 | materialized as immutable `Default Support Hours` v1 in `Asia/Seoul`; edit through schedule versions |
 | `sla.firstReplyPauseStatuses` | enum set | PENDING | P3 | versioned policy field |
 | `sla.enabled` | bool | false | P3 | |
 | `sla.atRiskThresholdMinutes` | int | 30 | P3 | display threshold |

@@ -35,9 +35,15 @@ Rules:
 
 - timezone is part of schedule, not server default
 - overlapping intervals rejected
-- holiday can close or add exceptional hours
+- intervals are local-time half-open ranges `[start, end)`; overnight ranges are rejected
+- adjacent ranges are allowed; zero or multiple ranges may be configured per enabled day
+- holiday `CLOSED` has no ranges; `OPEN` has one or more ranges and replaces that date's weekly rule
 - version applied to target is immutable snapshot/reference
-- daylight saving behavior tested with timezone fixtures even if initial locale is Korea
+- a DST gap boundary shifts forward by the transition duration
+- a DST overlap uses the earlier offset at the start and later offset at the end, including both repeated wall-clock occurrences
+- effective intervals collapsed by DST resolution contribute zero time
+- elapsed business minutes truncate a final partial minute; adding zero minutes returns the input instant
+- daylight saving behavior is tested with `America/New_York` fixtures even if initial locale is Korea
 
 
 ## 3.1 Accepted launch defaults and admin controls
@@ -52,6 +58,14 @@ Saturday/Sunday: closed
 ```
 
 Administrators can edit the timezone, enable or disable every weekday including weekends, add multiple non-overlapping intervals per day, and manage holiday/exception dates. Each save creates a new schedule version. First Reply SLA pauses in `PENDING` by default, but pause statuses are policy data and editable. No SLA policy is active until priority targets are entered and activated.
+
+The schedule administration slice is exposed at
+`/admin/business-rules/schedules` and the matching Core Admin API. Creating a
+version does not activate it. Version creation and activation require the
+schedule aggregate `If-Match` value; stale writes fail with `412`. Definition
+rows and activation history are immutable, while the root row only advances
+latest/active pointers. Admin audit persistence is required for a successful
+mutation.
 
 ## 4. SLA policy
 
