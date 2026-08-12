@@ -57,6 +57,19 @@ export type StaffStatus = 'ACTIVE' | 'DISABLED'
 export type GrantableAuditAuthority =
   'AUDIT_SEARCH_QUERY_REVEAL' | 'AUDIT_EXPORT' | 'AUDIT_PROJECTION_REBUILD'
 export type OrganizationStatus = 'ACTIVE' | 'DISABLED'
+export type CustomerAccessMode =
+  'ANONYMOUS_ALLOWED' | 'REGISTRATION_OPTIONAL' | 'REGISTRATION_REQUIRED'
+
+export interface CustomerAccessModeSetting {
+  mode: CustomerAccessMode
+  version: number
+  updatedAt: string
+}
+
+export interface UpdateCustomerAccessModeInput {
+  mode: CustomerAccessMode
+  expectedVersion: number
+}
 
 export interface CurrentStaff {
   id: string

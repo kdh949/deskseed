@@ -342,6 +342,42 @@ webhook_attempts
 
 Event와 delivery를 분리해 동일 event의 여러 endpoint 전달을 지원한다.
 
+### outbound_mail_intents / attempts / delivery events
+
+```text
+outbound_mail_intents(
+ id, idempotency_key, stable_message_id,
+ template_key, template_version,
+ sender_address, recipient_address, subject, text_body,
+ ticket_id, comment_id, customer_id,
+ actor/source/request/correlation/command,
+ status, attempt_count, cycle_attempt_count, max_attempts,
+ retry_cycle, manual_retry_count,
+ next_attempt_at, lease_expires_at, last_error_code,
+ queued_at, sent_at, failed_at, version
+)
+
+outbound_mail_attempts(
+ id, intent_id, attempt_number, retry_cycle, cycle_attempt_number,
+ provider, status, provider_message_id,
+ failure_class, failure_code,
+ started_at, finished_at, next_retry_at
+)
+
+outbound_mail_delivery_events(
+ id, intent_id, attempt_id, event_type,
+ actor/source/request/correlation,
+ reason_code, bounded_reason_text, occurred_at
+)
+```
+
+- unique `idempotency_key`가 같은 business notification의 중복 intent를 막는다.
+- `stable_message_id`는 모든 attempt에서 유지한다.
+- due/expired-lease partial index와 `FOR UPDATE SKIP LOCKED`가 bounded worker claim을 지원한다.
+- recipient/template/version/rendered plain-text snapshot은 delivery 조사에 보존한다.
+- attempt/event에는 provider response body나 exception message를 저장하지 않는다.
+- delivery event는 append-only이며 Ticket Change, Access/Search, Admin/Security ledger와 합치지 않는다.
+
 ## 6. SLA and analytics later
 
 ```text
@@ -380,6 +416,21 @@ setting_change_audits (canonical audit ledger와 연결)
 ```
 
 설정은 typed key registry를 통해 접근한다. 임의 string key를 코드 곳곳에서 사용하지 않는다.
+
+### 8.1 Implemented customer portal state (V20)
+
+- `system_settings.customer_access_mode` is the typed enum source for
+  `ANONYMOUS_ALLOWED | REGISTRATION_OPTIONAL | REGISTRATION_REQUIRED` and
+  `system_settings.version` provides optimistic concurrency for the audited ADMIN update.
+- `customer_request_claim_grants` stores a ticket FK, SHA-256 token digest, keyed email
+  fingerprint, expiry and single-use consume timestamp. Raw proof and raw email are absent.
+- `customer_request_claim_grants_cleanup_idx` supports bounded expired/consumed cleanup.
+- `tickets_customer_portal_idx (requester_id, updated_at desc, ticket_number desc)` is partial
+  to `CUSTOMER_REQUEST` and backs the authenticated ownership-first list projection.
+- `ticket_audits_customer_command_replay_idx` locates the canonical CUSTOMER command result;
+  the ticket audit remains the replay source rather than a second command-result table.
+- V20 does not rewrite existing ticket requester IDs. Ownership changes only through the
+  explicit, audited claim command.
 
 ## 9. Migration 순서
 
