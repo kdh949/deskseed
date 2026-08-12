@@ -1,6 +1,7 @@
 package dev.deskseed.outboundmail.internal
 
 import java.nio.charset.StandardCharsets
+import java.security.GeneralSecurityException
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.UUID
@@ -13,6 +14,8 @@ internal data class ProtectedMailContent(
     val nonce: ByteArray,
     val keyVersion: String,
 )
+
+internal class ProtectedMailContentUnreadableException : RuntimeException(null, null, false, false)
 
 /**
  * Keeps bearer links out of plaintext outbox storage. Key rotation is versioned so queued mail remains deliverable.
@@ -40,10 +43,18 @@ internal class ProtectedMailContentCipher(
     }
 
     fun decrypt(content: ProtectedMailContent, intentId: UUID): String {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key(content.keyVersion), GCMParameterSpec(128, content.nonce))
-        cipher.updateAAD(intentId.toString().toByteArray(StandardCharsets.UTF_8))
-        return String(cipher.doFinal(content.ciphertext), StandardCharsets.UTF_8)
+        try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, key(content.keyVersion), GCMParameterSpec(128, content.nonce))
+            cipher.updateAAD(intentId.toString().toByteArray(StandardCharsets.UTF_8))
+            return String(cipher.doFinal(content.ciphertext), StandardCharsets.UTF_8)
+        } catch (_: GeneralSecurityException) {
+            throw ProtectedMailContentUnreadableException()
+        } catch (_: IllegalArgumentException) {
+            throw ProtectedMailContentUnreadableException()
+        } catch (_: IllegalStateException) {
+            throw ProtectedMailContentUnreadableException()
+        }
     }
 
     private fun key(version: String): SecretKeySpec {

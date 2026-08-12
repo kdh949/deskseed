@@ -93,23 +93,23 @@ export function CustomerSignInPage() {
   )
 }
 
-export function CustomerMagicLinkConsumePage() {
-  const tokenRef = useRef<string | null | undefined>(undefined)
-  if (tokenRef.current === undefined)
-    tokenRef.current = takeAndClearMagicLinkToken()
+export function CustomerMagicLinkConsumePage({
+  token,
+}: {
+  token: string | null
+}) {
   const startedRef = useRef(false)
   const [state, setState] = useState<'loading' | 'success' | 'error'>(
-    tokenRef.current ? 'loading' : 'error',
+    token ? 'loading' : 'error',
   )
 
   useEffect(() => {
-    const token = tokenRef.current
     if (!token || startedRef.current) return
     startedRef.current = true
     void consumeCustomerMagicLink(token)
       .then(() => setState('success'))
       .catch(() => setState('error'))
-  }, [])
+  }, [token])
 
   return (
     <main className="page customer-auth-page">

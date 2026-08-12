@@ -236,6 +236,59 @@ class OutboundMailDeliveryIntegrationTest {
     }
 
     @Test
+    fun `unreadable protected content becomes terminal and does not block the next due mail`(output: CapturedOutput) {
+        val secretLink = "https://deskseed.example/magic/unreadable-${UUID.randomUUID()}"
+        val intentIds = transactionTemplate.execute {
+            listOf(
+                mailPort.enqueue(
+                    magicIntent("magic-link:unreadable-${UUID.randomUUID()}", "first@example.com", secretLink),
+                ),
+                mailPort.enqueue(
+                    magicIntent("magic-link:healthy-${UUID.randomUUID()}", "second@example.com"),
+                ),
+            )
+        }
+        jdbcTemplate.update(
+            "update outbound_mail_intents set protected_body_ciphertext = ?, next_attempt_at = now() - interval '2 seconds' where id = ?",
+            byteArrayOf(1, 2, 3),
+            intentIds[0],
+        )
+        jdbcTemplate.update(
+            "update outbound_mail_intents set next_attempt_at = now() - interval '1 second' where id = ?",
+            intentIds[1],
+        )
+
+        assertThat(worker.runDueBatch()).isEqualTo(2)
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select status, last_error_code from outbound_mail_intents where id = ?",
+                intentIds[0],
+            ),
+        ).containsEntry("status", "FAILED")
+            .containsEntry("last_error_code", "PROTECTED_CONTENT_UNREADABLE")
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select status, failure_class, failure_code from outbound_mail_attempts where intent_id = ?",
+                intentIds[0],
+            ),
+        ).containsEntry("status", "PERMANENT_FAILED")
+            .containsEntry("failure_class", "PROTECTED_CONTENT")
+            .containsEntry("failure_code", "PROTECTED_CONTENT_UNREADABLE")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_delivery_events where intent_id = ? and event_type = 'MAIL_TERMINAL_FAILED'",
+                Long::class.java,
+                intentIds[0],
+            ),
+        ).isEqualTo(1)
+        assertThat(transport.deliveredMessages.map { it.intentId }).containsExactly(intentIds[1])
+        assertThat(output.all).contains("code=PROTECTED_CONTENT_UNREADABLE")
+        assertThat(output.all).doesNotContain(secretLink)
+        assertThat(worker.runDueBatch()).isZero()
+    }
+
+    @Test
     fun `delivery events are append only and carry business correlation`() {
         val submitted = submitRequest("delivery-event-ledger")
         val intentId = intentId(ticketId(submitted.ticketNumber))

@@ -1,9 +1,11 @@
+import { StrictMode } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CustomerMagicLinkConsumePage,
   CustomerSignInPage,
+  takeAndClearMagicLinkToken,
 } from './CustomerSignInPage'
 
 describe('customer magic-link pages', () => {
@@ -61,10 +63,13 @@ describe('customer magic-link pages', () => {
       )
     })
 
+    const token = takeAndClearMagicLinkToken()
     render(
-      <MemoryRouter>
-        <CustomerMagicLinkConsumePage />
-      </MemoryRouter>,
+      <StrictMode>
+        <MemoryRouter>
+          <CustomerMagicLinkConsumePage token={token} />
+        </MemoryRouter>
+      </StrictMode>,
     )
 
     expect(await screen.findByText('로그인되었습니다.')).toBeInTheDocument()
@@ -80,7 +85,7 @@ describe('customer magic-link pages', () => {
     window.history.replaceState(null, '', '/customer/sign-in/consume')
     render(
       <MemoryRouter>
-        <CustomerMagicLinkConsumePage />
+        <CustomerMagicLinkConsumePage token={takeAndClearMagicLinkToken()} />
       </MemoryRouter>,
     )
     expect(

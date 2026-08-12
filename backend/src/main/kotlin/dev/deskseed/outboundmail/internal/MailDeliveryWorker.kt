@@ -52,6 +52,15 @@ internal data class ClaimedMail(
     val message: MailTransportMessage,
 )
 
+internal sealed interface MailClaimResult {
+    data class Deliverable(val claim: ClaimedMail) : MailClaimResult
+
+    data class ProtectedContentUnreadable(
+        val intentId: UUID,
+        val attemptNumber: Int,
+    ) : MailClaimResult
+}
+
 @Service
 internal class MailDeliveryClaimService(
     private val intentRepository: OutboundMailIntentRepository,
@@ -62,7 +71,7 @@ internal class MailDeliveryClaimService(
     private val clock: Clock,
 ) {
     @Transactional
-    fun claimNext(): ClaimedMail? {
+    fun claimNext(): MailClaimResult? {
         while (true) {
             val now = Instant.now(clock)
             val intent = intentRepository.lockNextDue(now) ?: return null
@@ -82,53 +91,88 @@ internal class MailDeliveryClaimService(
             intent.leaseExpiresAt = now.plus(properties.leaseDuration)
             intent.lastErrorCode = null
             intentRepository.saveAndFlush(intent)
-            attemptRepository.saveAndFlush(
-                OutboundMailAttemptEntity(
-                    id = attemptId,
-                    intentId = intent.id,
-                    attemptNumber = intent.attemptCount,
-                    retryCycle = intent.retryCycle,
-                    cycleAttemptNumber = intent.cycleAttemptCount,
-                    provider = properties.transport.uppercase(),
-                    status = MailAttemptStatus.IN_PROGRESS,
-                    providerMessageId = null,
-                    failureClass = null,
-                    failureCode = null,
-                    startedAt = now,
-                    finishedAt = null,
-                    nextRetryAt = null,
-                ),
+            val attempt = OutboundMailAttemptEntity(
+                id = attemptId,
+                intentId = intent.id,
+                attemptNumber = intent.attemptCount,
+                retryCycle = intent.retryCycle,
+                cycleAttemptNumber = intent.cycleAttemptCount,
+                provider = properties.transport.uppercase(),
+                status = MailAttemptStatus.IN_PROGRESS,
+                providerMessageId = null,
+                failureClass = null,
+                failureCode = null,
+                startedAt = now,
+                finishedAt = null,
+                nextRetryAt = null,
             )
+            attemptRepository.saveAndFlush(attempt)
             eventRepository.saveAndFlush(
                 systemDeliveryEvent(intent, attemptId, "MAIL_ATTEMPT_STARTED", now),
             )
-            return ClaimedMail(
-                attemptId = attemptId,
-                attemptNumber = intent.attemptCount,
-                cycleAttemptNumber = intent.cycleAttemptCount,
-                message = MailTransportMessage(
-                    intentId = intent.id,
-                    idempotencyKey = intent.idempotencyKey,
-                    stableMessageId = intent.stableMessageId,
-                    fromAddress = intent.senderAddress,
-                    recipientAddress = intent.recipientAddress,
-                    subject = intent.subject,
-                    textBody = if (intent.protectedBodyCiphertext == null) {
-                        intent.textBody
-                    } else {
-                        val ciphertext = requireNotNull(intent.protectedBodyCiphertext)
-                        protectedContentCipher.decrypt(
-                            ProtectedMailContent(
-                                ciphertext = ciphertext,
-                                nonce = requireNotNull(intent.protectedBodyNonce),
-                                keyVersion = requireNotNull(intent.protectedBodyKeyVersion),
-                            ),
-                            intent.id,
-                        )
-                    },
+            val textBody = try {
+                resolveTextBody(intent)
+            } catch (_: ProtectedMailContentUnreadableException) {
+                markProtectedContentUnreadable(intent, attempt, now)
+                return MailClaimResult.ProtectedContentUnreadable(intent.id, intent.attemptCount)
+            }
+            return MailClaimResult.Deliverable(
+                ClaimedMail(
+                    attemptId = attemptId,
+                    attemptNumber = intent.attemptCount,
+                    cycleAttemptNumber = intent.cycleAttemptCount,
+                    message = MailTransportMessage(
+                        intentId = intent.id,
+                        idempotencyKey = intent.idempotencyKey,
+                        stableMessageId = intent.stableMessageId,
+                        fromAddress = intent.senderAddress,
+                        recipientAddress = intent.recipientAddress,
+                        subject = intent.subject,
+                        textBody = textBody,
+                    ),
                 ),
             )
         }
+    }
+
+    private fun resolveTextBody(intent: OutboundMailIntentEntity): String {
+        val ciphertext = intent.protectedBodyCiphertext
+        val nonce = intent.protectedBodyNonce
+        val keyVersion = intent.protectedBodyKeyVersion
+        if (ciphertext == null && nonce == null && keyVersion == null) return intent.textBody
+        return protectedContentCipher.decrypt(
+            ProtectedMailContent(
+                ciphertext = ciphertext ?: throw ProtectedMailContentUnreadableException(),
+                nonce = nonce ?: throw ProtectedMailContentUnreadableException(),
+                keyVersion = keyVersion ?: throw ProtectedMailContentUnreadableException(),
+            ),
+            intent.id,
+        )
+    }
+
+    private fun markProtectedContentUnreadable(
+        intent: OutboundMailIntentEntity,
+        attempt: OutboundMailAttemptEntity,
+        now: Instant,
+    ) {
+        val code = "PROTECTED_CONTENT_UNREADABLE"
+        attempt.status = MailAttemptStatus.PERMANENT_FAILED
+        attempt.failureClass = "PROTECTED_CONTENT"
+        attempt.failureCode = code
+        attempt.finishedAt = now
+        attemptRepository.saveAndFlush(attempt)
+        intent.status = MailIntentStatus.FAILED
+        intent.nextAttemptAt = null
+        intent.leaseExpiresAt = null
+        intent.failedAt = now
+        intent.lastErrorCode = code
+        intentRepository.saveAndFlush(intent)
+        eventRepository.saveAndFlush(
+            systemDeliveryEvent(intent, attempt.id, "MAIL_ATTEMPT_FAILED", now, code),
+        )
+        eventRepository.saveAndFlush(
+            systemDeliveryEvent(intent, attempt.id, "MAIL_TERMINAL_FAILED", now, code),
+        )
     }
 
     private fun abandonExpiredAttempt(intent: OutboundMailIntentEntity, now: Instant) {
@@ -267,7 +311,18 @@ internal class MailDeliveryWorker(
     fun runDueBatch(): Int {
         var processed = 0
         repeat(properties.batchSize.coerceIn(1, 1_000)) {
-            val claim = claimService.claimNext() ?: return processed
+            val result = claimService.claimNext() ?: return processed
+            if (result is MailClaimResult.ProtectedContentUnreadable) {
+                failedCounter.increment()
+                logger.warn(
+                    "Outbound mail delivery failed intentId={} attempt={} code=PROTECTED_CONTENT_UNREADABLE",
+                    result.intentId,
+                    result.attemptNumber,
+                )
+                processed += 1
+                return@repeat
+            }
+            val claim = (result as MailClaimResult.Deliverable).claim
             try {
                 val receipt = transport.send(claim.message)
                 finalizer.succeeded(claim, receipt)

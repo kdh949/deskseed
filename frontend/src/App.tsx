@@ -35,128 +35,139 @@ const FrontendSystemFixturePage = import.meta.env.DEV
     )
   : null
 
-export const appRoutes: RouteObject[] = [
-  ...(import.meta.env.DEV
-    ? [
+export function createAppRoutes(
+  customerMagicLinkToken: string | null,
+): RouteObject[] {
+  return [
+    ...(import.meta.env.DEV
+      ? [
+          {
+            path: '/__fixtures__/frontend-system/:fixtureName',
+            element: FrontendSystemFixturePage ? (
+              <Suspense fallback={null}>
+                <FrontendSystemFixturePage />
+              </Suspense>
+            ) : null,
+          },
+        ]
+      : []),
+    {
+      element: <StaffSessionLayout />,
+      children: [
+        { path: '/agent/login', element: <StaffLoginPage /> },
         {
-          path: '/__fixtures__/frontend-system/:fixtureName',
-          element: FrontendSystemFixturePage ? (
-            <Suspense fallback={null}>
-              <FrontendSystemFixturePage />
-            </Suspense>
-          ) : null,
+          element: <StaffRoute />,
+          children: [
+            {
+              element: <AgentRoute />,
+              children: [
+                {
+                  path: '/agent',
+                  element: <AgentShell />,
+                  children: [
+                    {
+                      index: true,
+                      element: <Navigate to="/agent/views/my-open" replace />,
+                    },
+                    {
+                      path: 'home',
+                      element: <Navigate to="/agent/views/my-open" replace />,
+                    },
+                    {
+                      path: 'views',
+                      element: <Navigate to="/agent/views/my-open" replace />,
+                    },
+                    { path: 'views/:viewKey', element: <AgentViewsPage /> },
+                    { path: 'search', element: <AgentSearchPage /> },
+                    {
+                      path: 'tickets/:ticketNumber',
+                      element: <AgentTicketWorkspacePage />,
+                    },
+                    {
+                      path: '*',
+                      element: <Navigate to="/agent/views/my-open" replace />,
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              element: <AdminRoute />,
+              children: [
+                {
+                  path: '/admin',
+                  element: <AdminShell />,
+                  children: [
+                    {
+                      index: true,
+                      element: <Navigate to="/admin/staff" replace />,
+                    },
+                    { path: 'staff', element: <AdminStaffPage /> },
+                    { path: 'groups', element: <AdminGroupsPage /> },
+                    {
+                      path: '*',
+                      element: <Navigate to="/admin/staff" replace />,
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              element: <AuditRoute />,
+              children: [
+                {
+                  path: '/audit',
+                  element: <AuditShell />,
+                  children: [
+                    {
+                      index: true,
+                      element: <Navigate to="/audit/activity" replace />,
+                    },
+                    { path: 'activity', element: <AuditExplorerPage /> },
+                    {
+                      path: '*',
+                      element: <Navigate to="/audit/activity" replace />,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
         },
-      ]
-    : []),
-  {
-    element: <StaffSessionLayout />,
-    children: [
-      { path: '/agent/login', element: <StaffLoginPage /> },
-      {
-        element: <StaffRoute />,
-        children: [
-          {
-            element: <AgentRoute />,
-            children: [
-              {
-                path: '/agent',
-                element: <AgentShell />,
-                children: [
-                  {
-                    index: true,
-                    element: <Navigate to="/agent/views/my-open" replace />,
-                  },
-                  {
-                    path: 'home',
-                    element: <Navigate to="/agent/views/my-open" replace />,
-                  },
-                  {
-                    path: 'views',
-                    element: <Navigate to="/agent/views/my-open" replace />,
-                  },
-                  { path: 'views/:viewKey', element: <AgentViewsPage /> },
-                  { path: 'search', element: <AgentSearchPage /> },
-                  {
-                    path: 'tickets/:ticketNumber',
-                    element: <AgentTicketWorkspacePage />,
-                  },
-                  {
-                    path: '*',
-                    element: <Navigate to="/agent/views/my-open" replace />,
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            element: <AdminRoute />,
-            children: [
-              {
-                path: '/admin',
-                element: <AdminShell />,
-                children: [
-                  {
-                    index: true,
-                    element: <Navigate to="/admin/staff" replace />,
-                  },
-                  { path: 'staff', element: <AdminStaffPage /> },
-                  { path: 'groups', element: <AdminGroupsPage /> },
-                  {
-                    path: '*',
-                    element: <Navigate to="/admin/staff" replace />,
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            element: <AuditRoute />,
-            children: [
-              {
-                path: '/audit',
-                element: <AuditShell />,
-                children: [
-                  {
-                    index: true,
-                    element: <Navigate to="/audit/activity" replace />,
-                  },
-                  { path: 'activity', element: <AuditExplorerPage /> },
-                  {
-                    path: '*',
-                    element: <Navigate to="/audit/activity" replace />,
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    element: (
-      <AppShell>
-        <Outlet />
-      </AppShell>
-    ),
-    children: [
-      { index: true, element: <HomePage /> },
-      { path: '/requests/new', element: <NewRequestPage /> },
-      { path: '/requests/lookup', element: <LookupPage /> },
-      { path: '/customer/sign-in', element: <CustomerSignInPage /> },
-      {
-        path: '/customer/sign-in/consume',
-        element: <CustomerMagicLinkConsumePage />,
-      },
-      {
-        path: '/requests/:ticketNumber',
-        element: <RequestDetailPage />,
-      },
-      { path: '/lookup', element: <Navigate to="/requests/lookup" replace /> },
-      { path: '*', element: <Navigate to="/" replace /> },
-    ],
-  },
-]
+      ],
+    },
+    {
+      element: (
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      ),
+      children: [
+        { index: true, element: <HomePage /> },
+        { path: '/requests/new', element: <NewRequestPage /> },
+        { path: '/requests/lookup', element: <LookupPage /> },
+        { path: '/customer/sign-in', element: <CustomerSignInPage /> },
+        {
+          path: '/customer/sign-in/consume',
+          element: (
+            <CustomerMagicLinkConsumePage token={customerMagicLinkToken} />
+          ),
+        },
+        {
+          path: '/requests/:ticketNumber',
+          element: <RequestDetailPage />,
+        },
+        {
+          path: '/lookup',
+          element: <Navigate to="/requests/lookup" replace />,
+        },
+        { path: '*', element: <Navigate to="/" replace /> },
+      ],
+    },
+  ]
+}
+
+export const appRoutes = createAppRoutes(null)
 
 export default function App() {
   return useRoutes(appRoutes)
