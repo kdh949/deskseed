@@ -9,7 +9,7 @@ An unchecked item is a release blocker or owner gate, not an implicit waiver.
 - [ ] Visual diffs reviewed
 - [ ] Accessibility checks and manual keyboard pass
 - [x] OpenAPI diff classified
-- [x] Empty and current-image V11→V14 migrations tested
+- [x] Empty and current-image V11→V15 migrations tested
 - [x] Backup and restore rehearsal
 - [ ] Production readiness, alert/dashboard and central logging gate
 - [x] Security threat-model delta

@@ -1030,6 +1030,7 @@ expected_query_names=(
   queue_recently_solved_first_page
   queue_my_child_tasks_first_page
   audit_first_cursor_page
+  audit_projection_status
   staff_command_replay_lookup
   audit_actor_and_date
   audit_ticket_and_date
@@ -1257,6 +1258,9 @@ failure_phase="render_summary"
   printf 'limit-2 duplicate detection. Migration V14’s partial replay index remains '
   printf 'installed in both phases; the before/after candidate-index comparison does '
   printf 'not remove this command-path correctness index.\n'
+  printf '\nThe audit_projection_status row is the exact list-endpoint status query: '
+  printf 'it derives transient `REBUILDING` from the advisory lock and reads the '
+  printf 'stored projection count. It does not execute `count(*)` over the projection.\n'
   printf '\nThe `before` phase temporarily removes only '
   printf '`tickets_assignee_status_cursor_idx` and '
   printf '`audit_activity_projection_actor_cursor_idx`. The `after` phase recreates '

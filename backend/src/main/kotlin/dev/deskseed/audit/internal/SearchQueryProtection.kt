@@ -33,6 +33,7 @@ import javax.crypto.spec.SecretKeySpec
 internal data class SearchQueryAuditProperties(
     val enabled: Boolean = true,
     val activeKeyVersion: String = "",
+    val sessionFingerprintKey: String = "",
     val keys: Map<String, String> = emptyMap(),
     val ciphertextRetention: Duration = Duration.ofDays(30),
     val retentionBatchSize: Int = 1000,
@@ -48,6 +49,10 @@ internal class SearchQueryProtection(
     private val secureRandom: SecureRandom = SecureRandom(),
 ) : SearchQueryProtector, SearchQueryRevealer {
     private val decodedKeys: Map<String, ByteArray> = decodeKeys(properties)
+    private val decodedSessionFingerprintKey: ByteArray? = decodeRootKey(
+        properties.sessionFingerprintKey,
+        "Access audit session fingerprint key",
+    )
 
     init {
         if (properties.enabled) {
@@ -59,6 +64,9 @@ internal class SearchQueryProtection(
             }
             if (decodedKeys[properties.activeKeyVersion] == null) {
                 throw SearchQueryConfigurationException("Access audit active key version is not configured")
+            }
+            if (decodedSessionFingerprintKey == null) {
+                throw SearchQueryConfigurationException("Access audit session fingerprint key is required")
             }
         }
         if (properties.ciphertextRetention.isZero || properties.ciphertextRetention.isNegative) {
@@ -136,12 +144,13 @@ internal class SearchQueryProtection(
             throw SearchQueryConfigurationException("Access audit is disabled for protected reads")
         }
         require(sessionId.isNotBlank()) { "Authenticated session is required" }
-        val rootKey = decodedKeys.getValue(properties.activeKeyVersion)
+        val rootKey = decodedSessionFingerprintKey
+            ?: throw SearchQueryConfigurationException("Access audit session fingerprint key is required")
         val fingerprint = hmac(
             derive(rootKey, SESSION_KEY_PURPOSE),
             "$SESSION_MESSAGE_PURPOSE\u0000$sessionId".toByteArray(StandardCharsets.UTF_8),
         )
-        return "${properties.activeKeyVersion}:${Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint)}"
+        return "$SESSION_FINGERPRINT_VERSION:${Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint)}"
     }
 
     private fun associatedData(eventId: UUID): ByteArray =
@@ -166,16 +175,22 @@ internal class SearchQueryProtection(
             if (version.isBlank() || version.length > MAX_KEY_VERSION_LENGTH) {
                 throw SearchQueryConfigurationException("Access audit key version must contain between 1 and 64 characters")
             }
-            val decoded = try {
-                Base64.getDecoder().decode(encoded)
-            } catch (exception: IllegalArgumentException) {
-                throw SearchQueryConfigurationException("Access audit key must be base64 encoded", exception)
-            }
-            if (decoded.size != ROOT_KEY_BYTES) {
-                throw SearchQueryConfigurationException("Access audit key must decode to $ROOT_KEY_BYTES bytes")
-            }
-            decoded
+            decodeRootKey(encoded, "Access audit key")
+                ?: throw SearchQueryConfigurationException("Access audit key is required")
         }
+
+    private fun decodeRootKey(encoded: String, label: String): ByteArray? {
+        if (encoded.isBlank()) return null
+        val decoded = try {
+            Base64.getDecoder().decode(encoded)
+        } catch (exception: IllegalArgumentException) {
+            throw SearchQueryConfigurationException("$label must be base64 encoded", exception)
+        }
+        if (decoded.size != ROOT_KEY_BYTES) {
+            throw SearchQueryConfigurationException("$label must decode to $ROOT_KEY_BYTES bytes")
+        }
+        return decoded
+    }
 
     private companion object {
         const val MAX_QUERY_LENGTH = 500
@@ -191,6 +206,7 @@ internal class SearchQueryProtection(
         const val CIPHERTEXT_AAD_PURPOSE = "deskseed:access-audit:search-query:ciphertext:v1"
         const val SESSION_KEY_PURPOSE = "deskseed:access-audit:staff-session:fingerprint-key:v1"
         const val SESSION_MESSAGE_PURPOSE = "deskseed:access-audit:staff-session:fingerprint:v1"
+        const val SESSION_FINGERPRINT_VERSION = "v1"
         const val ROUTINE_QUERY_REPRESENTATION = "[PROTECTED]"
         val WHITESPACE = Regex("\\s+")
     }

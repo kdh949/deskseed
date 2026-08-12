@@ -42,7 +42,7 @@ Docker layer cache 재사용을 우회하는 fresh-volume 설치부터 V11→lat
 8. cleanup 또는 zero-artifact 검사가 실패하면 실행과 evidence를 `FAIL`로 만들고, cleanup 결과가 정해진 뒤에만 evidence를 쓴다.
 9. evidence에는 secret이나 access token을 쓰지 않는다.
 
-2026-08-12의 current full evidence는 위 경계에서 139초 만에 V11→V14, backup/restore와 post-restore smoke를 완료했다. `pg_dump`은 93,929바이트/403ms, fresh `pg_restore` parity는 341ms, post-restore application smoke는 8초였다. 이는 로컬 synthetic fixture 관찰값이며 production SLA가 아니다.
+2026-08-12의 current full evidence는 위 경계에서 137초 만에 V11→V15, backup/restore와 post-restore smoke를 완료했다. `pg_dump`은 97,874바이트/343ms, fresh `pg_restore` parity는 363ms, post-restore application smoke는 7초였다. 이는 로컬 synthetic fixture 관찰값이며 production SLA가 아니다.
 
 고정 포트 `28080`, `25173`, `28081`, `25174`가 사용 중이면 아래 변수로 바꾼다.
 
@@ -81,6 +81,7 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 - DB migration/runtime credential
 - first-admin password file
 - 32-byte base64 access-audit key와 key version
+- 별도 32-byte base64 access-audit session-fingerprint key
 - agent queue cursor signing key
 - Audit Explorer cursor signing key
 - 허용된 CORS origin
@@ -199,7 +200,7 @@ Rehearsal은 그 다음 default startup privilege와 runtime role 권한을 모�
 - 측정 restore duration: fresh DB의 `pg_restore` wall time.
 - 측정 recovery-validation duration: restored backend/frontend 기동과 login/ticket/audit smoke 완료까지.
 
-Current full rehearsal의 관찰값은 backup 403ms, fresh restore parity 341ms, post-restore application smoke 8s다. 이 수치는 특정 로컬 fixture와 하드웨어의 관찰값이며 SLA가 아니다. 실제 production data volume으로 정기 restore drill을 반복해 capacity와 목표를 정해야 한다.
+Current full rehearsal의 관찰값은 backup 343ms, fresh restore parity 363ms, post-restore application smoke 7s다. 이 수치는 특정 로컬 fixture와 하드웨어의 관찰값이며 SLA가 아니다. 실제 production data volume으로 정기 restore drill을 반복해 capacity와 목표를 정해야 한다.
 
 ## 10. Rollback과 failed migration
 
@@ -221,7 +222,7 @@ Flyway migration은 forward-only다. 저장소에는 자동 down migration이 �
 
 ### Application rollback 제한
 
-이전 binary가 새 schema와 호환된다는 검증 없이는 image만 되돌리지 않는다. 이번 release는 이전 tagged image가 없어 binary rollback을 검증하지 못했다. Current-image V11 fixture→V14 전진, backup/restore와 application smoke는 통과했지만 그 결과를 이전 배포 binary의 backward compatibility 보장으로 확대하지 않는다. DB volume 삭제나 in-place destructive rollback은 허용 절차가 아니다.
+이전 binary가 새 schema와 호환된다는 검증 없이는 image만 되돌리지 않는다. 이번 release는 이전 tagged image가 없어 binary rollback을 검증하지 못했다. Current-image V11 fixture→V15 전진, backup/restore와 application smoke는 통과했지만 그 결과를 이전 배포 binary의 backward compatibility 보장으로 확대하지 않는다. DB volume 삭제나 in-place destructive rollback은 허용 절차가 아니다.
 
 ## 11. Observability와 incident 확인
 
@@ -245,7 +246,7 @@ Audit persistence failure 시 민감 read/write가 fail closed하는지 확인�
 
 | Gate | 상태 | 이 rehearsal의 근거 | 남은 조건 |
 |---|---|---|---|
-| OPS-001 Fresh install/upgrade | LIMITED | empty volume, current image V11→V14, health, data preservation | 실제 previous tagged image 경로 |
+| OPS-001 Fresh install/upgrade | LIMITED | empty volume, current image V11→V15, health, data preservation | 실제 previous tagged image 경로 |
 | OPS-002 Backup/restore | PASS (local synthetic scope) | login, ticket, canonical audit/projection, checksum, duration, RPO window | attachment/reference는 feature 미구현이라 검증 불가; production-size drill |
 | OPS-003 Secrets/bootstrap | LIMITED | rehearsal-generated secrets, 0600 file, anonymous Docker client, one-time audited admin, private-overlay split DB roles | production manifest, 전체 secret rotation procedure와 public deployment controls |
 | OPS-004 Health/observability | NOT MET | aggregate health와 request context | 분리 readiness, alert/dashboard, structured central logs |

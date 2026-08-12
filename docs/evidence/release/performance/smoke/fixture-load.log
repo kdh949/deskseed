@@ -1,90 +1,90 @@
 Timing is on.
-Time: 0.270 ms
+Time: 0.266 ms
 SET
-Time: 0.115 ms
+Time: 0.016 ms
 SET
-Time: 0.049 ms
+Time: 0.007 ms
 FIXTURE_SUPPORT_GROUPS
 INSERT 0 10
-Time: 1.117 ms
+Time: 1.055 ms
 FIXTURE_STAFF
 INSERT 0 100
-Time: 0.716 ms
+Time: 0.652 ms
 INSERT 0 100
-Time: 2.409 ms
+Time: 2.342 ms
 FIXTURE_CUSTOMERS
 INSERT 0 1000
-Time: 3.195 ms
+Time: 3.090 ms
 FIXTURE_TICKETS
 INSERT 0 10000
-Time: 247.411 ms
+Time: 243.861 ms
  setval
 --------
   11000
 (1 row)
 
-Time: 0.159 ms
+Time: 0.225 ms
 INSERT 0 100
-Time: 2.605 ms
+Time: 2.537 ms
 FIXTURE_COMMENTS
 INSERT 0 20000
-Time: 184.342 ms
+Time: 188.969 ms
 ALTER TABLE
-Time: 0.283 ms
+Time: 0.416 ms
 ALTER TABLE
-Time: 0.135 ms
+Time: 0.119 ms
 ALTER TABLE
-Time: 0.153 ms
+Time: 0.095 ms
 ALTER TABLE
-Time: 0.199 ms
+Time: 0.130 ms
 ALTER TABLE
-Time: 0.408 ms
+Time: 0.327 ms
 FIXTURE_TICKET_AUDITS
 INSERT 0 10000
-Time: 121.553 ms
+Time: 188.242 ms
 INSERT 0 10000
-Time: 82.014 ms
+Time: 74.787 ms
 FIXTURE_ACCESS_AUDITS
 INSERT 0 5000
-Time: 44.471 ms
+Time: 70.567 ms
 INSERT 0 500
-Time: 5.860 ms
+Time: 5.762 ms
 FIXTURE_ADMIN_AUDITS
 INSERT 0 1000
-Time: 9.057 ms
+Time: 8.229 ms
 ALTER TABLE
-Time: 0.198 ms
+Time: 0.099 ms
 ALTER TABLE
-Time: 0.135 ms
+Time: 0.089 ms
 ALTER TABLE
-Time: 0.145 ms
+Time: 0.092 ms
 ALTER TABLE
-Time: 0.148 ms
+Time: 0.173 ms
 ALTER TABLE
-Time: 0.103 ms
+Time: 0.121 ms
 REBUILD_AUDIT_ACTIVITY_PROJECTION
  ticket_change_count | access_search_count | admin_security_count | total_count
 ---------------------+---------------------+----------------------+-------------
                10000 |                5000 |                 1000 |       16000
 (1 row)
 
-Time: 259.982 ms
+Time: 229.512 ms
 VACUUM_ANALYZE_RELEASE_FIXTURE
 VACUUM
-Time: 3.648 ms
+Time: 4.012 ms
 VACUUM
-Time: 27.936 ms
+Time: 32.284 ms
 VACUUM
-Time: 37.892 ms
+Time: 37.525 ms
 VACUUM
-Time: 25.087 ms
+Time: 29.440 ms
 VACUUM
-Time: 10.078 ms
+Time: 10.040 ms
 VACUUM
-Time: 19.971 ms
+Time: 20.236 ms
 VACUUM
-Time: 0.855 ms
+Time: 1.111 ms
 VACUUM
-Time: 3.424 ms
+Time: 3.551 ms
 VACUUM
-Time: 95.621 ms
+Time: 90.793 ms

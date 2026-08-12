@@ -11,6 +11,7 @@ import java.util.UUID
 class SearchQueryProtectionTest {
     private val eventId = UUID.fromString("10000000-0000-0000-0000-000000000001")
     private val occurredAt = Instant.parse("2026-08-11T00:00:00Z")
+    private val sessionFingerprintKey = key(99)
 
     @Test
     fun `protect stores redacted text keyed fingerprint and authenticated ciphertext without losing the exact original`() {
@@ -90,12 +91,34 @@ class SearchQueryProtectionTest {
     }
 
     @Test
+    fun `session fingerprint is independent from active encryption key rotation and key version length`() {
+        val sessionId = "same-authenticated-http-session"
+
+        listOf(56, 57, 64).forEach { versionLength ->
+            val previousVersion = "a".repeat(versionLength)
+            val activeVersion = "b".repeat(versionLength)
+            val beforeRotation = protection(previousVersion, previousVersion to key(41))
+            val afterRotation = protection(
+                activeVersion,
+                previousVersion to key(41),
+                activeVersion to key(42),
+            )
+
+            assertThat(afterRotation.fingerprintSession(sessionId))
+                .isEqualTo(beforeRotation.fingerprintSession(sessionId))
+                .startsWith("v1:")
+                .hasSize(46)
+        }
+    }
+
+    @Test
     fun `missing invalid and unknown active keys fail configuration`() {
         assertThatThrownBy {
             SearchQueryProtection(
                 SearchQueryAuditProperties(
                     enabled = true,
                     activeKeyVersion = "v1",
+                    sessionFingerprintKey = sessionFingerprintKey,
                     keys = emptyMap(),
                 ),
             )
@@ -119,6 +142,7 @@ class SearchQueryProtectionTest {
             SearchQueryAuditProperties(
                 enabled = true,
                 activeKeyVersion = activeVersion,
+                sessionFingerprintKey = sessionFingerprintKey,
                 keys = mapOf(*keys),
             ),
         )

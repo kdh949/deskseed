@@ -2,48 +2,48 @@ Pager usage is off.
 QUEUE_MY_OPEN_FIRST_PAGE
                                                                                       QUERY PLAN
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=180.32..840.10 rows=40 width=606) (actual time=0.353..0.610 rows=40 loops=1)
+ Limit  (cost=180.32..840.10 rows=40 width=606) (actual time=0.356..0.594 rows=40 loops=1)
    Buffers: shared hit=1763 read=73
-   ->  Result  (cost=180.32..840.10 rows=40 width=606) (actual time=0.353..0.608 rows=40 loops=1)
+   ->  Result  (cost=180.32..840.10 rows=40 width=606) (actual time=0.355..0.592 rows=40 loops=1)
          Buffers: shared hit=1763 read=73
-         ->  Sort  (cost=180.32..180.42 rows=40 width=598) (actual time=0.333..0.336 rows=40 loops=1)
+         ->  Sort  (cost=180.32..180.42 rows=40 width=598) (actual time=0.323..0.325 rows=40 loops=1)
                Sort Key: t.updated_at DESC, t.ticket_number DESC
                Sort Method: quicksort  Memory: 35kB
                Buffers: shared hit=6 read=70
-               ->  Nested Loop Left Join  (cost=50.49..179.25 rows=40 width=598) (actual time=0.198..0.313 rows=40 loops=1)
+               ->  Nested Loop Left Join  (cost=50.49..179.25 rows=40 width=598) (actual time=0.193..0.302 rows=40 loops=1)
                      Buffers: shared read=70
-                     ->  Nested Loop Left Join  (cost=50.35..170.59 rows=40 width=380) (actual time=0.189..0.299 rows=40 loops=1)
+                     ->  Nested Loop Left Join  (cost=50.35..170.59 rows=40 width=380) (actual time=0.183..0.287 rows=40 loops=1)
                            Buffers: shared read=68
-                           ->  Hash Join  (cost=50.20..154.95 rows=40 width=162) (actual time=0.179..0.280 rows=40 loops=1)
+                           ->  Hash Join  (cost=50.20..154.95 rows=40 width=162) (actual time=0.171..0.268 rows=40 loops=1)
                                  Hash Cond: (t.requester_id = c.id)
                                  Buffers: shared read=66
-                                 ->  Bitmap Heap Scan on tickets t  (cost=4.70..109.34 rows=40 width=138) (actual time=0.019..0.113 rows=40 loops=1)
+                                 ->  Bitmap Heap Scan on tickets t  (cost=4.70..109.34 rows=40 width=138) (actual time=0.024..0.114 rows=40 loops=1)
                                        Recheck Cond: ((assignee_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND ((status)::text = 'OPEN'::text))
                                        Heap Blocks: exact=40
                                        Buffers: shared read=43
-                                       ->  Bitmap Index Scan on tickets_assignee_status_cursor_idx  (cost=0.00..4.69 rows=40 width=0) (actual time=0.012..0.012 rows=40 loops=1)
+                                       ->  Bitmap Index Scan on tickets_assignee_status_cursor_idx  (cost=0.00..4.69 rows=40 width=0) (actual time=0.017..0.017 rows=40 loops=1)
                                              Index Cond: ((assignee_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND ((status)::text = 'OPEN'::text))
                                              Buffers: shared read=3
-                                 ->  Hash  (cost=33.00..33.00 rows=1000 width=40) (actual time=0.151..0.151 rows=1000 loops=1)
+                                 ->  Hash  (cost=33.00..33.00 rows=1000 width=40) (actual time=0.142..0.142 rows=1000 loops=1)
                                        Buckets: 1024  Batches: 1  Memory Usage: 80kB
                                        Buffers: shared read=23
-                                       ->  Seq Scan on customers c  (cost=0.00..33.00 rows=1000 width=40) (actual time=0.005..0.095 rows=1000 loops=1)
+                                       ->  Seq Scan on customers c  (cost=0.00..33.00 rows=1000 width=40) (actual time=0.005..0.088 rows=1000 loops=1)
                                              Buffers: shared read=23
                            ->  Memoize  (cost=0.15..1.37 rows=1 width=234) (actual time=0.000..0.000 rows=1 loops=40)
                                  Cache Key: t.group_id
                                  Cache Mode: logical
                                  Hits: 39  Misses: 1  Evictions: 0  Overflows: 0  Memory Usage: 1kB
                                  Buffers: shared read=2
-                                 ->  Index Scan using support_groups_pkey on support_groups g  (cost=0.14..1.36 rows=1 width=234) (actual time=0.008..0.008 rows=1 loops=1)
+                                 ->  Index Scan using support_groups_pkey on support_groups g  (cost=0.14..1.36 rows=1 width=234) (actual time=0.009..0.009 rows=1 loops=1)
                                        Index Cond: (id = t.group_id)
                                        Buffers: shared read=2
                      ->  Materialize  (cost=0.14..8.16 rows=1 width=234) (actual time=0.000..0.000 rows=1 loops=40)
                            Buffers: shared read=2
-                           ->  Index Scan using staff_accounts_pkey on staff_accounts s  (cost=0.14..8.16 rows=1 width=234) (actual time=0.007..0.007 rows=1 loops=1)
+                           ->  Index Scan using staff_accounts_pkey on staff_accounts s  (cost=0.14..8.16 rows=1 width=234) (actual time=0.008..0.008 rows=1 loops=1)
                                  Index Cond: (id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid)
                                  Buffers: shared read=2
          SubPlan 1
-           ->  Aggregate  (cost=16.47..16.48 rows=1 width=8) (actual time=0.007..0.007 rows=1 loops=40)
+           ->  Aggregate  (cost=16.47..16.48 rows=1 width=8) (actual time=0.006..0.006 rows=1 loops=40)
                  Buffers: shared hit=1757 read=3
                  ->  Nested Loop  (cost=0.43..16.47 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=40)
                        Buffers: shared hit=1757 read=3
@@ -55,56 +55,56 @@ QUEUE_MY_OPEN_FIRST_PAGE
                              Index Cond: (id = relation.target_ticket_id)
                              Filter: ((status)::text <> ALL ('{SOLVED,CLOSED}'::text[]))
  Planning:
-   Buffers: shared hit=713 read=67 dirtied=6
- Planning Time: 1.906 ms
- Execution Time: 0.691 ms
+   Buffers: shared hit=699 read=67 dirtied=6
+ Planning Time: 1.744 ms
+ Execution Time: 0.665 ms
 (56 rows)
 
 QUEUE_UNASSIGNED_MY_GROUPS_FIRST_PAGE
                                                                                                      QUERY PLAN
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=324.34..423.31 rows=6 width=606) (actual time=1.033..1.359 rows=51 loops=1)
+ Limit  (cost=324.34..423.31 rows=6 width=606) (actual time=0.750..1.056 rows=51 loops=1)
    Buffers: shared hit=2683 read=216
-   ->  Result  (cost=324.34..423.31 rows=6 width=606) (actual time=1.033..1.354 rows=51 loops=1)
+   ->  Result  (cost=324.34..423.31 rows=6 width=606) (actual time=0.749..1.055 rows=51 loops=1)
          Buffers: shared hit=2683 read=216
-         ->  Sort  (cost=324.34..324.36 rows=6 width=598) (actual time=1.017..1.019 rows=51 loops=1)
+         ->  Sort  (cost=324.34..324.36 rows=6 width=598) (actual time=0.739..0.741 rows=51 loops=1)
                Sort Key: t.updated_at DESC, t.ticket_number DESC
                Sort Method: quicksort  Memory: 45kB
                Buffers: shared hit=439 read=216
-               ->  Nested Loop Left Join  (cost=68.43..324.27 rows=6 width=598) (actual time=0.144..0.994 rows=80 loops=1)
+               ->  Nested Loop Left Join  (cost=68.43..324.27 rows=6 width=598) (actual time=0.109..0.721 rows=80 loops=1)
                      Buffers: shared hit=439 read=216
-                     ->  Nested Loop Left Join  (cost=68.29..323.13 rows=6 width=380) (actual time=0.141..0.943 rows=80 loops=1)
+                     ->  Nested Loop Left Join  (cost=68.29..323.13 rows=6 width=380) (actual time=0.107..0.705 rows=80 loops=1)
                            Buffers: shared hit=439 read=216
-                           ->  Nested Loop  (cost=68.14..321.97 rows=6 width=162) (actual time=0.137..0.895 rows=80 loops=1)
+                           ->  Nested Loop  (cost=68.14..321.97 rows=6 width=162) (actual time=0.105..0.674 rows=80 loops=1)
                                  Buffers: shared hit=279 read=216
-                                 ->  Nested Loop  (cost=67.87..319.74 rows=6 width=138) (actual time=0.133..0.827 rows=80 loops=1)
+                                 ->  Nested Loop  (cost=67.87..319.74 rows=6 width=138) (actual time=0.102..0.623 rows=80 loops=1)
                                        Buffers: shared hit=41 read=214
-                                       ->  HashAggregate  (cost=16.35..16.36 rows=1 width=32) (actual time=0.036..0.037 rows=1 loops=1)
+                                       ->  HashAggregate  (cost=16.35..16.36 rows=1 width=32) (actual time=0.023..0.024 rows=1 loops=1)
                                              Group Key: gm.group_id
                                              Batches: 1  Memory Usage: 24kB
                                              Buffers: shared hit=1 read=3
-                                             ->  Nested Loop  (cost=0.29..16.34 rows=1 width=32) (actual time=0.034..0.034 rows=1 loops=1)
+                                             ->  Nested Loop  (cost=0.29..16.34 rows=1 width=32) (actual time=0.022..0.022 rows=1 loops=1)
                                                    Join Filter: (gm.group_id = mg.id)
                                                    Rows Removed by Join Filter: 2
                                                    Buffers: shared hit=1 read=3
-                                                   ->  Index Only Scan using group_memberships_staff_active_idx on group_memberships gm  (cost=0.15..8.17 rows=1 width=16) (actual time=0.022..0.022 rows=1 loops=1)
+                                                   ->  Index Only Scan using group_memberships_staff_active_idx on group_memberships gm  (cost=0.15..8.17 rows=1 width=16) (actual time=0.013..0.014 rows=1 loops=1)
                                                          Index Cond: ((staff_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND (status = 'ACTIVE'::text))
                                                          Heap Fetches: 1
                                                          Buffers: shared read=2
-                                                   ->  Index Only Scan using support_groups_status_name_idx on support_groups mg  (cost=0.14..8.16 rows=1 width=16) (actual time=0.010..0.011 rows=3 loops=1)
+                                                   ->  Index Only Scan using support_groups_status_name_idx on support_groups mg  (cost=0.14..8.16 rows=1 width=16) (actual time=0.007..0.007 rows=3 loops=1)
                                                          Index Cond: (status = 'ACTIVE'::text)
                                                          Heap Fetches: 3
                                                          Buffers: shared hit=1 read=1
-                                       ->  Bitmap Heap Scan on tickets t  (cost=51.52..301.92 rows=146 width=138) (actual time=0.096..0.781 rows=80 loops=1)
+                                       ->  Bitmap Heap Scan on tickets t  (cost=51.52..301.92 rows=146 width=138) (actual time=0.079..0.593 rows=80 loops=1)
                                              Recheck Cond: (group_id = mg.id)
                                              Filter: ((assignee_id IS NULL) AND ((status)::text <> ALL ('{SOLVED,CLOSED}'::text[])))
                                              Rows Removed by Filter: 1120
                                              Heap Blocks: exact=236
                                              Buffers: shared hit=40 read=211
-                                             ->  Bitmap Index Scan on tickets_group_status_cursor_idx  (cost=0.00..51.48 rows=960 width=0) (actual time=0.080..0.080 rows=1200 loops=1)
+                                             ->  Bitmap Index Scan on tickets_group_status_cursor_idx  (cost=0.00..51.48 rows=960 width=0) (actual time=0.066..0.066 rows=1200 loops=1)
                                                    Index Cond: (group_id = mg.id)
                                                    Buffers: shared read=15
-                                 ->  Index Scan using customers_pkey on customers c  (cost=0.28..0.37 rows=1 width=40) (actual time=0.001..0.001 rows=1 loops=80)
+                                 ->  Index Scan using customers_pkey on customers c  (cost=0.28..0.37 rows=1 width=40) (actual time=0.000..0.000 rows=1 loops=80)
                                        Index Cond: (id = t.requester_id)
                                        Buffers: shared hit=238 read=2
                            ->  Index Scan using support_groups_pkey on support_groups g  (cost=0.14..0.19 rows=1 width=234) (actual time=0.000..0.000 rows=1 loops=80)
@@ -126,24 +126,24 @@ QUEUE_UNASSIGNED_MY_GROUPS_FIRST_PAGE
                              Filter: ((status)::text <> ALL ('{SOLVED,CLOSED}'::text[]))
  Planning:
    Buffers: shared hit=91 read=5
- Planning Time: 0.718 ms
- Execution Time: 1.426 ms
+ Planning Time: 0.594 ms
+ Execution Time: 1.104 ms
 (65 rows)
 
 QUEUE_PENDING_FIRST_PAGE
                                                                                       QUERY PLAN
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.71..925.39 rows=51 width=606) (actual time=0.042..0.533 rows=51 loops=1)
+ Limit  (cost=0.71..925.39 rows=51 width=606) (actual time=0.054..0.526 rows=51 loops=1)
    Buffers: shared hit=2497 read=5
-   ->  Nested Loop Left Join  (cost=0.71..36262.74 rows=2000 width=606) (actual time=0.042..0.530 rows=51 loops=1)
+   ->  Nested Loop Left Join  (cost=0.71..36262.74 rows=2000 width=606) (actual time=0.054..0.523 rows=51 loops=1)
          Join Filter: (s.id = t.assignee_id)
          Rows Removed by Join Filter: 2010
          Buffers: shared hit=2497 read=5
-         ->  Nested Loop Left Join  (cost=0.71..2099.64 rows=2000 width=380) (actual time=0.022..0.088 rows=51 loops=1)
+         ->  Nested Loop Left Join  (cost=0.71..2099.64 rows=2000 width=380) (actual time=0.030..0.090 rows=51 loops=1)
                Buffers: shared hit=252 read=3
-               ->  Nested Loop  (cost=0.56..1726.97 rows=2000 width=162) (actual time=0.019..0.068 rows=51 loops=1)
+               ->  Nested Loop  (cost=0.56..1726.97 rows=2000 width=162) (actual time=0.026..0.070 rows=51 loops=1)
                      Buffers: shared hit=154 read=3
-                     ->  Index Scan using tickets_status_cursor_idx on tickets t  (cost=0.29..1022.13 rows=2000 width=138) (actual time=0.015..0.019 rows=51 loops=1)
+                     ->  Index Scan using tickets_status_cursor_idx on tickets t  (cost=0.29..1022.13 rows=2000 width=138) (actual time=0.021..0.025 rows=51 loops=1)
                            Index Cond: ((status)::text = 'PENDING'::text)
                            Buffers: shared hit=2 read=2
                      ->  Index Scan using customers_pkey on customers c  (cost=0.28..0.35 rows=1 width=40) (actual time=0.001..0.001 rows=1 loops=51)
@@ -170,39 +170,39 @@ QUEUE_PENDING_FIRST_PAGE
                              Filter: ((status)::text <> ALL ('{SOLVED,CLOSED}'::text[]))
  Planning:
    Buffers: shared hit=12
- Planning Time: 0.261 ms
+ Planning Time: 0.333 ms
  Execution Time: 0.560 ms
 (39 rows)
 
 QUEUE_RECENTLY_SOLVED_FIRST_PAGE
                                                                                                                          QUERY PLAN
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=180.62..840.40 rows=40 width=606) (actual time=0.177..0.426 rows=40 loops=1)
+ Limit  (cost=180.62..840.40 rows=40 width=606) (actual time=0.168..0.473 rows=40 loops=1)
    Buffers: shared hit=1829
-   ->  Result  (cost=180.62..840.40 rows=40 width=606) (actual time=0.177..0.424 rows=40 loops=1)
+   ->  Result  (cost=180.62..840.40 rows=40 width=606) (actual time=0.167..0.471 rows=40 loops=1)
          Buffers: shared hit=1829
-         ->  Sort  (cost=180.62..180.72 rows=40 width=598) (actual time=0.166..0.171 rows=40 loops=1)
+         ->  Sort  (cost=180.62..180.72 rows=40 width=598) (actual time=0.156..0.158 rows=40 loops=1)
                Sort Key: t.updated_at DESC, t.ticket_number DESC
                Sort Method: quicksort  Memory: 35kB
                Buffers: shared hit=69
-               ->  Nested Loop Left Join  (cost=50.59..179.55 rows=40 width=598) (actual time=0.134..0.162 rows=40 loops=1)
+               ->  Nested Loop Left Join  (cost=50.59..179.55 rows=40 width=598) (actual time=0.118..0.149 rows=40 loops=1)
                      Buffers: shared hit=69
-                     ->  Nested Loop Left Join  (cost=50.45..170.89 rows=40 width=380) (actual time=0.130..0.153 rows=40 loops=1)
+                     ->  Nested Loop Left Join  (cost=50.45..170.89 rows=40 width=380) (actual time=0.113..0.140 rows=40 loops=1)
                            Buffers: shared hit=67
-                           ->  Hash Join  (cost=50.30..155.25 rows=40 width=162) (actual time=0.125..0.143 rows=40 loops=1)
+                           ->  Hash Join  (cost=50.30..155.25 rows=40 width=162) (actual time=0.109..0.130 rows=40 loops=1)
                                  Hash Cond: (t.requester_id = c.id)
                                  Buffers: shared hit=65
-                                 ->  Bitmap Heap Scan on tickets t  (cost=4.80..109.65 rows=40 width=138) (actual time=0.011..0.020 rows=40 loops=1)
+                                 ->  Bitmap Heap Scan on tickets t  (cost=4.80..109.65 rows=40 width=138) (actual time=0.012..0.027 rows=40 loops=1)
                                        Recheck Cond: ((assignee_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND ((status)::text = 'SOLVED'::text) AND (updated_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '30 days'::interval)))
                                        Heap Blocks: exact=40
                                        Buffers: shared hit=42
                                        ->  Bitmap Index Scan on tickets_assignee_status_cursor_idx  (cost=0.00..4.79 rows=40 width=0) (actual time=0.008..0.008 rows=40 loops=1)
                                              Index Cond: ((assignee_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND ((status)::text = 'SOLVED'::text) AND (updated_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '30 days'::interval)))
                                              Buffers: shared hit=2
-                                 ->  Hash  (cost=33.00..33.00 rows=1000 width=40) (actual time=0.110..0.111 rows=1000 loops=1)
+                                 ->  Hash  (cost=33.00..33.00 rows=1000 width=40) (actual time=0.093..0.093 rows=1000 loops=1)
                                        Buckets: 1024  Batches: 1  Memory Usage: 80kB
                                        Buffers: shared hit=23
-                                       ->  Seq Scan on customers c  (cost=0.00..33.00 rows=1000 width=40) (actual time=0.001..0.040 rows=1000 loops=1)
+                                       ->  Seq Scan on customers c  (cost=0.00..33.00 rows=1000 width=40) (actual time=0.002..0.040 rows=1000 loops=1)
                                              Buffers: shared hit=23
                            ->  Memoize  (cost=0.15..1.37 rows=1 width=234) (actual time=0.000..0.000 rows=1 loops=40)
                                  Cache Key: t.group_id
@@ -218,11 +218,11 @@ QUEUE_RECENTLY_SOLVED_FIRST_PAGE
                                  Index Cond: (id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid)
                                  Buffers: shared hit=2
          SubPlan 1
-           ->  Aggregate  (cost=16.47..16.48 rows=1 width=8) (actual time=0.006..0.006 rows=1 loops=40)
+           ->  Aggregate  (cost=16.47..16.48 rows=1 width=8) (actual time=0.008..0.008 rows=1 loops=40)
                  Buffers: shared hit=1760
-                 ->  Nested Loop  (cost=0.43..16.47 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=40)
+                 ->  Nested Loop  (cost=0.43..16.47 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=40)
                        Buffers: shared hit=1760
-                       ->  Index Scan using ticket_relations_one_parent_idx on ticket_relations relation  (cost=0.14..8.16 rows=1 width=16) (actual time=0.006..0.006 rows=0 loops=40)
+                       ->  Index Scan using ticket_relations_one_parent_idx on ticket_relations relation  (cost=0.14..8.16 rows=1 width=16) (actual time=0.007..0.007 rows=0 loops=40)
                              Filter: (source_ticket_id = t.id)
                              Rows Removed by Filter: 100
                              Buffers: shared hit=1760
@@ -231,34 +231,34 @@ QUEUE_RECENTLY_SOLVED_FIRST_PAGE
                              Filter: ((status)::text <> ALL ('{SOLVED,CLOSED}'::text[]))
  Planning:
    Buffers: shared hit=20
- Planning Time: 0.207 ms
- Execution Time: 0.464 ms
+ Planning Time: 0.291 ms
+ Execution Time: 0.520 ms
 (56 rows)
 
 QUEUE_MY_CHILD_TASKS_FIRST_PAGE
                                                                                         QUERY PLAN
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=48.46..81.45 rows=2 width=606) (actual time=0.138..0.474 rows=51 loops=1)
+ Limit  (cost=48.46..81.45 rows=2 width=606) (actual time=0.177..0.500 rows=51 loops=1)
    Buffers: shared hit=2587 read=2
-   ->  Result  (cost=48.46..81.45 rows=2 width=606) (actual time=0.138..0.472 rows=51 loops=1)
+   ->  Result  (cost=48.46..81.45 rows=2 width=606) (actual time=0.176..0.498 rows=51 loops=1)
          Buffers: shared hit=2587 read=2
-         ->  Sort  (cost=48.46..48.46 rows=2 width=598) (actual time=0.127..0.129 rows=51 loops=1)
+         ->  Sort  (cost=48.46..48.46 rows=2 width=598) (actual time=0.164..0.169 rows=51 loops=1)
                Sort Key: t.updated_at DESC, t.ticket_number DESC
                Sort Method: quicksort  Memory: 45kB
                Buffers: shared hit=343 read=2
-               ->  Nested Loop Left Join  (cost=10.61..48.45 rows=2 width=598) (actual time=0.061..0.109 rows=80 loops=1)
+               ->  Nested Loop Left Join  (cost=10.61..48.45 rows=2 width=598) (actual time=0.091..0.145 rows=80 loops=1)
                      Buffers: shared hit=343 read=2
-                     ->  Nested Loop  (cost=10.47..40.26 rows=2 width=380) (actual time=0.057..0.097 rows=80 loops=1)
+                     ->  Nested Loop  (cost=10.47..40.26 rows=2 width=380) (actual time=0.085..0.131 rows=80 loops=1)
                            Buffers: shared hit=341 read=2
-                           ->  Hash Right Join  (cost=10.19..23.66 rows=2 width=356) (actual time=0.054..0.062 rows=80 loops=1)
+                           ->  Hash Right Join  (cost=10.19..23.66 rows=2 width=356) (actual time=0.080..0.091 rows=80 loops=1)
                                  Hash Cond: (g.id = t.group_id)
                                  Buffers: shared hit=101 read=2
-                                 ->  Seq Scan on support_groups g  (cost=0.00..12.30 rows=230 width=234) (actual time=0.001..0.001 rows=10 loops=1)
+                                 ->  Seq Scan on support_groups g  (cost=0.00..12.30 rows=230 width=234) (actual time=0.002..0.002 rows=10 loops=1)
                                        Buffers: shared hit=1
-                                 ->  Hash  (cost=10.17..10.17 rows=2 width=138) (actual time=0.051..0.051 rows=80 loops=1)
+                                 ->  Hash  (cost=10.17..10.17 rows=2 width=138) (actual time=0.074..0.074 rows=80 loops=1)
                                        Buckets: 1024  Batches: 1  Memory Usage: 22kB
                                        Buffers: shared hit=100 read=2
-                                       ->  Index Scan using tickets_kind_assignee_cursor_idx on tickets t  (cost=0.29..10.17 rows=2 width=138) (actual time=0.016..0.040 rows=80 loops=1)
+                                       ->  Index Scan using tickets_kind_assignee_cursor_idx on tickets t  (cost=0.29..10.17 rows=2 width=138) (actual time=0.017..0.062 rows=80 loops=1)
                                              Index Cond: (((kind)::text = 'INTERNAL_CHILD'::text) AND (assignee_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid))
                                              Filter: ((status)::text <> ALL ('{SOLVED,CLOSED}'::text[]))
                                              Rows Removed by Filter: 20
@@ -268,11 +268,11 @@ QUEUE_MY_CHILD_TASKS_FIRST_PAGE
                                  Buffers: shared hit=240
                      ->  Materialize  (cost=0.14..8.16 rows=1 width=234) (actual time=0.000..0.000 rows=1 loops=80)
                            Buffers: shared hit=2
-                           ->  Index Scan using staff_accounts_pkey on staff_accounts s  (cost=0.14..8.16 rows=1 width=234) (actual time=0.002..0.002 rows=1 loops=1)
+                           ->  Index Scan using staff_accounts_pkey on staff_accounts s  (cost=0.14..8.16 rows=1 width=234) (actual time=0.003..0.003 rows=1 loops=1)
                                  Index Cond: (id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid)
                                  Buffers: shared hit=2
          SubPlan 1
-           ->  Aggregate  (cost=16.47..16.48 rows=1 width=8) (actual time=0.007..0.007 rows=1 loops=51)
+           ->  Aggregate  (cost=16.47..16.48 rows=1 width=8) (actual time=0.006..0.006 rows=1 loops=51)
                  Buffers: shared hit=2244
                  ->  Nested Loop  (cost=0.43..16.47 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=51)
                        Buffers: shared hit=2244
@@ -285,34 +285,46 @@ QUEUE_MY_CHILD_TASKS_FIRST_PAGE
                              Filter: ((status)::text <> ALL ('{SOLVED,CLOSED}'::text[]))
  Planning:
    Buffers: shared hit=12
- Planning Time: 0.177 ms
- Execution Time: 0.511 ms
+ Planning Time: 0.232 ms
+ Execution Time: 0.541 ms
 (49 rows)
 
 AUDIT_FIRST_CURSOR_PAGE
-                                                                                                                                                          QUERY PLAN
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.29..12.41 rows=51 width=553) (actual time=0.005..0.026 rows=51 loops=1)
+                                                                                                                                                         QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..12.32 rows=51 width=553) (actual time=0.005..0.024 rows=51 loops=1)
    Buffers: shared hit=44 read=4
-   ->  Index Scan using audit_activity_projection_cursor_idx on audit_activity_projection  (cost=0.29..3804.22 rows=16000 width=553) (actual time=0.005..0.024 rows=51 loops=1)
-         Index Cond: ((occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at <= '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+   ->  Index Scan using audit_activity_projection_cursor_idx on audit_activity_projection  (cost=0.29..3776.22 rows=16000 width=553) (actual time=0.005..0.021 rows=51 loops=1)
+         Index Cond: ((occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at < '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
          Buffers: shared hit=44 read=4
  Planning:
-   Buffers: shared hit=398 read=31 dirtied=11
- Planning Time: 0.723 ms
+   Buffers: shared hit=392 read=31 dirtied=10
+ Planning Time: 0.706 ms
  Execution Time: 0.044 ms
 (9 rows)
+
+AUDIT_PROJECTION_STATUS
+                                                                              QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Index Scan using audit_activity_projection_state_pkey on audit_activity_projection_state  (cost=0.15..8.17 rows=1 width=48) (actual time=0.017..0.017 rows=1 loops=1)
+   Index Cond: (id = 1)
+   Buffers: shared read=2
+ Planning:
+   Buffers: shared hit=30 read=1
+ Planning Time: 0.071 ms
+ Execution Time: 0.021 ms
+(7 rows)
 
 STAFF_COMMAND_REPLAY_LOOKUP
                                                                                   QUERY PLAN
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Limit  (cost=0.86..33.26 rows=1 width=136) (actual time=0.041..0.042 rows=1 loops=1)
    Buffers: shared hit=5 read=7
-   ->  Nested Loop Left Join  (cost=0.86..33.26 rows=1 width=136) (actual time=0.040..0.041 rows=1 loops=1)
+   ->  Nested Loop Left Join  (cost=0.86..33.26 rows=1 width=136) (actual time=0.041..0.042 rows=1 loops=1)
          Buffers: shared hit=5 read=7
-         ->  Nested Loop  (cost=0.57..16.61 rows=1 width=40) (actual time=0.016..0.017 rows=1 loops=1)
+         ->  Nested Loop  (cost=0.57..16.61 rows=1 width=40) (actual time=0.017..0.018 rows=1 loops=1)
                Buffers: shared hit=2 read=4
-               ->  Index Scan using ticket_audits_staff_command_replay_idx on ticket_audits audit  (cost=0.29..8.30 rows=1 width=48) (actual time=0.011..0.011 rows=1 loops=1)
+               ->  Index Scan using ticket_audits_staff_command_replay_idx on ticket_audits audit  (cost=0.29..8.30 rows=1 width=48) (actual time=0.011..0.012 rows=1 loops=1)
                      Index Cond: ((actor_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND ((command_id)::text = 'perf-command-42'::text))
                      Buffers: shared read=3
                ->  Index Scan using tickets_pkey on tickets ticket  (cost=0.29..8.30 rows=1 width=24) (actual time=0.005..0.005 rows=1 loops=1)
@@ -330,49 +342,49 @@ STAFF_COMMAND_REPLAY_LOOKUP
                        Index Cond: (audit_id = audit.id)
                        Buffers: shared hit=3
  Planning:
-   Buffers: shared hit=154 read=16
- Planning Time: 0.386 ms
+   Buffers: shared hit=148 read=19
+ Planning Time: 0.385 ms
  Execution Time: 0.065 ms
 (27 rows)
 
 AUDIT_ACTOR_AND_DATE
-                                                                                                                                                                                         QUERY PLAN
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.29..188.98 rows=51 width=553) (actual time=0.016..0.124 rows=51 loops=1)
+                                                                                                                                                                                        QUERY PLAN
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..188.98 rows=51 width=553) (actual time=0.020..0.136 rows=51 loops=1)
    Buffers: shared read=54
-   ->  Index Scan using audit_activity_projection_actor_cursor_idx on audit_activity_projection  (cost=0.29..592.26 rows=160 width=553) (actual time=0.016..0.122 rows=51 loops=1)
-         Index Cond: ((actor_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND (occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at <= '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+   ->  Index Scan using audit_activity_projection_actor_cursor_idx on audit_activity_projection  (cost=0.29..592.26 rows=160 width=553) (actual time=0.019..0.134 rows=51 loops=1)
+         Index Cond: ((actor_id = '517f6f70-8dce-4373-385d-a6051ce5b3f9'::uuid) AND (occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at < '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
          Buffers: shared read=54
  Planning:
    Buffers: shared hit=13
- Planning Time: 0.065 ms
- Execution Time: 0.132 ms
+ Planning Time: 0.134 ms
+ Execution Time: 0.147 ms
 (9 rows)
 
 AUDIT_TICKET_AND_DATE
                                                                                                                                                                        QUERY PLAN
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.29..8.31 rows=1 width=553) (actual time=0.015..0.017 rows=2 loops=1)
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..8.31 rows=1 width=553) (actual time=0.023..0.026 rows=2 loops=1)
    Buffers: shared hit=3 read=4
-   ->  Index Scan using audit_activity_projection_ticket_cursor_idx on audit_activity_projection  (cost=0.29..8.31 rows=1 width=553) (actual time=0.015..0.017 rows=2 loops=1)
-         Index Cond: ((ticket_number = 5242) AND (occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at <= '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+   ->  Index Scan using audit_activity_projection_ticket_cursor_idx on audit_activity_projection  (cost=0.29..8.31 rows=1 width=553) (actual time=0.023..0.026 rows=2 loops=1)
+         Index Cond: ((ticket_number = 5242) AND (occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at < '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
          Buffers: shared hit=3 read=4
  Planning:
    Buffers: shared hit=18
- Planning Time: 0.078 ms
- Execution Time: 0.022 ms
+ Planning Time: 0.070 ms
+ Execution Time: 0.031 ms
 (9 rows)
 
 AUDIT_ACTION_AND_DATE
-                                                                                                                                                                                 QUERY PLAN
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.29..56.19 rows=51 width=553) (actual time=0.012..0.031 rows=51 loops=1)
+                                                                                                                                                                                QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..56.19 rows=51 width=553) (actual time=0.013..0.035 rows=51 loops=1)
    Buffers: shared hit=3 read=9
-   ->  Index Scan using audit_activity_projection_action_cursor_idx on audit_activity_projection  (cost=0.29..2740.66 rows=2500 width=553) (actual time=0.011..0.029 rows=51 loops=1)
-         Index Cond: (((action)::text = 'STATUS_CHANGED'::text) AND (occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at <= '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+   ->  Index Scan using audit_activity_projection_action_cursor_idx on audit_activity_projection  (cost=0.29..2740.54 rows=2500 width=553) (actual time=0.013..0.033 rows=51 loops=1)
+         Index Cond: (((action)::text = 'STATUS_CHANGED'::text) AND (occurred_at >= ('2026-08-12 00:00:00+00'::timestamp with time zone - '7 days'::interval)) AND (occurred_at < '2026-08-12 00:00:00+00'::timestamp with time zone) AND (ROW(occurred_at, id) <= ROW('2026-08-12 00:00:00+00'::timestamp with time zone, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
          Buffers: shared hit=3 read=9
  Planning:
    Buffers: shared hit=13
- Planning Time: 0.076 ms
- Execution Time: 0.039 ms
+ Planning Time: 0.091 ms
+ Execution Time: 0.041 ms
 (9 rows)

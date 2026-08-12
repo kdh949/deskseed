@@ -164,7 +164,7 @@ X-Request-Access-Token: <opaque-token>
 ## 보안·운영 경계
 
 - 직원 인증은 server-side password session, CSRF, idle/absolute expiry와 DB 기반 login throttle을 사용한다. password reset, MFA, SSO/OIDC는 없다.
-- 검색 원문은 authenticated ciphertext와 key version으로 보존하고 기본 30일 후 bounded retention job이 ciphertext만 삭제한다. routine audit UI에는 내용 비보존 표식과 keyed fingerprint를 사용한다.
+- 검색 원문은 authenticated ciphertext와 key version으로 보존하고 기본 30일 후 bounded retention job이 ciphertext만 삭제한다. routine audit UI에는 내용 비보존 표식과 keyed fingerprint를 사용하며, result-open session 소유권은 암호화 rotation과 분리된 고정 형식 key로 검증한다.
 - runtime DB role은 canonical ledger의 `UPDATE`/`DELETE`와 schema DDL을 거부하도록 구성할 수 있다. DB owner/superuser까지 막거나 외부 변조를 증명하는 signed checkpoint는 없다.
 - Compose는 TLS reverse proxy, production secret manager, email ownership, CAPTCHA, 계층형 abuse control, 중앙 log/alert를 제공하지 않는다.
 - 공용 인터넷 배포는 위 통제와 [남은 security findings](docs/evidence/release/security/security-scan.md)를 운영 책임자가 해결·수용하기 전까지 지원하지 않는다.

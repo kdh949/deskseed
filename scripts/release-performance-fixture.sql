@@ -238,7 +238,8 @@ alter table admin_security_audit_events disable trigger admin_security_audit_eve
 \echo FIXTURE_TICKET_AUDITS
 insert into ticket_audits (
     id, ticket_id, ticket_version, actor_type, actor_id, source, created_at,
-    request_id, correlation_id, command_id, expected_version
+    request_id, correlation_id, command_id, expected_version,
+    actor_display_snapshot, group_id
 )
 select
     md5(:'seed' || ':ticket-audit:' || sequence)::uuid,
@@ -251,8 +252,14 @@ select
     'perf-request-' || sequence,
     'perf-correlation-' || (sequence % 10000),
     'perf-command-' || sequence,
-    0
-from generate_series(1, :ticket_audit_count) as fixture(sequence);
+    0,
+    staff.display_name,
+    ticket.group_id
+from generate_series(1, :ticket_audit_count) as fixture(sequence)
+join tickets ticket
+  on ticket.id = md5(:'seed' || ':ticket:' || sequence)::uuid
+join staff_accounts staff
+  on staff.id = md5(:'seed' || ':staff:' || (((sequence - 1) % :staff_count) + 1))::uuid;
 
 insert into ticket_audit_events (
     id, audit_id, event_order, event_type, field_name,
@@ -294,7 +301,7 @@ insert into access_audit_events (
     id, occurred_at, actor_type, actor_id, actor_display_snapshot, source,
     action, resource_type, resource_id, ticket_number, interaction_id,
     request_id, correlation_id, ip_address, user_agent, outcome, http_status,
-    session_fingerprint, auth_type, origin_search_event_id
+    session_fingerprint, auth_type, origin_search_event_id, group_id
 )
 select
     md5(:'seed' || ':access-audit:' || sequence)::uuid,
@@ -320,8 +327,13 @@ select
     case when sequence % 19 = 0 then 403 else 200 end,
     'hmac-v1:performance-session-' || (sequence % :staff_count),
     'STAFF_SESSION',
-    null
-from generate_series(1, :access_audit_count) as fixture(sequence);
+    null,
+    access_ticket.group_id
+from generate_series(1, :access_audit_count) as fixture(sequence)
+left join tickets access_ticket
+  on access_ticket.id = case when sequence % 10 = 0 then null else
+      md5(:'seed' || ':ticket:' || (((sequence - 1) % :ticket_count) + 1))::uuid
+  end;
 
 insert into search_audit_details (
     access_event_id, query_redacted, query_fingerprint, query_key_version,

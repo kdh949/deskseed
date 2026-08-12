@@ -1327,6 +1327,10 @@ function decodeAuditSearchContext(
     !Number.isSafeInteger(value.resultCount) ||
     value.resultCount < 0 ||
     !isNullableString(value.originSearchActivityId) ||
+    typeof value.openedActivityCount !== 'number' ||
+    !Number.isSafeInteger(value.openedActivityCount) ||
+    value.openedActivityCount < 0 ||
+    typeof value.openedActivitiesTruncated !== 'boolean' ||
     !Array.isArray(value.openedActivities)
   ) {
     return undefined
@@ -1357,6 +1361,8 @@ function decodeAuditSearchContext(
     sort: value.sort,
     resultCount: value.resultCount,
     originSearchActivityId: value.originSearchActivityId,
+    openedActivityCount: value.openedActivityCount,
+    openedActivitiesTruncated: value.openedActivitiesTruncated,
     openedActivities,
   }
 }

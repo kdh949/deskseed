@@ -5,13 +5,13 @@ unified Audit Explorer paths, and required sensitive-read audit overhead. It mea
 current PostgreSQL schema; it does not introduce a cache, search engine, or new service.
 
 > **Current artifact status:** both `smoke/` and `release/` were regenerated on
-> 2026-08-12 from the current runner and V1-V14 schema. The release artifact is `PASS`,
-> records all 33 relevant source hashes with no mismatch at six freeze checkpoints,
-> includes all five `DefaultStaffView` shapes plus four Audit Explorer reads and the exact
-> staff-command replay lookup, and verifies container, anonymous data-volume, and scratch
-> cleanup. Its host-filesystem preflight passed with 50.21 GiB free against a 17 GiB guard;
-> no low-disk override was used. Docker Desktop VM quota remains a separately stated
-> operator check rather than a measured guarantee.
+> 2026-08-12 from the current runner and V1-V15 schema. The release artifact is `PASS`,
+> records 34 relevant source hashes with no mismatch at six freeze checkpoints, and covers
+> all five `DefaultStaffView` shapes, four Audit Explorer page reads, the exact O(1)
+> projection-status read, and the staff-command replay lookup. Its host-filesystem preflight
+> passed with 44.68 GiB free against a 17 GiB guard; no low-disk override was used. Exact
+> container, anonymous data-volume, and scratch cleanup passed. Docker Desktop VM quota
+> remains a separately stated operator check rather than a measured guarantee.
 
 ## Reproduce
 
@@ -125,11 +125,11 @@ component gate, not a production SLO.
 
 | Exact production View | Eligible rows | First page | After p95 (ms) | After-plan observation |
 |---|---:|---:|---:|---|
-| `MY_OPEN` | 2,200 | 51 | 0.632 | `tickets_assignee_status_cursor_idx`; bounded `LIMIT 51` |
-| `UNASSIGNED_MY_GROUPS` | 1,600 | 51 | 10.167 | membership query plus bounded top-N first page |
-| `PENDING` | 200,000 | 51 | 1.046 | `tickets_status_cursor_idx`; stops after the first 51 rows |
-| `RECENTLY_SOLVED` | 2,200 | 51 | 0.608 | assignee/status/cursor index with the 30-day predicate |
-| `MY_CHILD_TASKS` | 8,000 | 51 | 0.621 | exact child-kind/actor/non-terminal predicate; bounded first page |
+| `MY_OPEN` | 2,200 | 51 | 0.536 | `tickets_assignee_status_cursor_idx`; bounded `LIMIT 51` |
+| `UNASSIGNED_MY_GROUPS` | 1,600 | 51 | 9.367 | membership query plus bounded top-N first page |
+| `PENDING` | 200,000 | 51 | 0.670 | `tickets_status_cursor_idx`; stops after the first 51 rows |
+| `RECENTLY_SOLVED` | 2,200 | 51 | 0.367 | assignee/status/cursor index with the 30-day predicate |
+| `MY_CHILD_TASKS` | 8,000 | 51 | 0.362 | exact child-kind/actor/non-terminal predicate; bounded first page |
 
 These numbers come directly from
 [`release/latency-after.csv`](release/latency-after.csv), while eligible and returned rows
@@ -143,6 +143,11 @@ The raw budget table is
 [`release/queue-latency-budget.csv`](release/queue-latency-budget.csv). The earlier
 08:22 artifact remains a baseline only because it preceded the declared budget; it was
 not retroactively reclassified.
+
+The current list-endpoint status query is separately captured as
+`audit_projection_status`: its release p95 is 0.017 ms and the raw plan reads the single
+`audit_activity_projection_state` row plus advisory-lock state. It does not scan or count
+the 1.6-million-row projection.
 
 ## Required access-audit overhead (PERF-003)
 
@@ -161,8 +166,8 @@ ticket detail is not returned successfully. The benchmark runs after fixture cou
 candidate-index sizes are captured, so its additional synthetic audit rows do not alter
 those fixture assertions.
 
-The raw files are intentionally small: ten plan shapes (five queues, four Audit Explorer
-reads, and the exact staff-command replay lookup), query cardinality, aggregated latency
+The raw files are intentionally small: eleven plan shapes (five queues, four Audit Explorer
+page reads, the exact projection-status read, and the staff-command replay lookup), query cardinality, aggregated latency
 percentiles, the access-write comparison, object sizes, exact fixture counts,
 database settings, image digest, harness/migration/production-query-source SHA-256 values
 and phase durations. They contain no credentials, request tokens, comment bodies, raw

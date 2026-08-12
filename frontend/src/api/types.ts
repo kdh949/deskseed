@@ -354,6 +354,8 @@ export interface AuditSearchContext {
   sort: string | null
   resultCount: number
   originSearchActivityId: string | null
+  openedActivityCount: number
+  openedActivitiesTruncated: boolean
   openedActivities: Array<{
     activityId: string
     ticketNumber: number

@@ -71,13 +71,13 @@ Release-delta verification completed with:
 
 ```bash
 cd backend
-./gradlew clean check --rerun-tasks          # 29 suites, 127/127, 0 skipped
+./gradlew clean test                         # 29 suites, 134/134, 0 skipped
 
 cd ../frontend
 npm run format:check
 npm run lint
 npm run typecheck
-npm test -- --run                           # 14 files, 148/148
+npm test                                    # 14 files, 150/150
 npm run build
 
 PLAYWRIGHT_BROWSER=chromium npm run test:e2e:dev  # 41/41
@@ -91,15 +91,15 @@ bash scripts/run-release-performance.sh --scale release
   --evidence-file docs/evidence/release/operations/2026-08-12-macos-arm64-full.md
 ```
 
-The release-scale run applied V1-V14, checked all 33 recorded source hashes at six
+The release-scale run applied V1-V15, checked all 34 recorded source hashes at six
 freeze checkpoints without a mismatch, measured all five Agent Views plus four Audit
-Explorer reads and the exact command-replay lookup, and removed and verified absence of
+Explorer page reads, the exact O(1) projection-status read and command-replay lookup, and removed and verified absence of
 its exact owned container, anonymous data volume, and scratch directory. Host headroom
 passed without an override; the separately unmeasured Docker Desktop VM quota boundary
 remains recorded rather than silently treated as capacity proof.
 
 The final operations rehearsal independently matched the current runner and all recorded
-input/build-context hashes, built backend/frontend without cache reuse, exercised V11→V14,
+input/build-context hashes, built backend/frontend without cache reuse, exercised V11→V15,
 runtime/Flyway/canonical-ledger denials, checksumed backup and same-image fresh restore,
 then verified exact absence of its containers, networks, volumes, images, anonymous Docker
 configuration and secret workspace. The current E2E/Compose wrappers likewise use
@@ -113,8 +113,20 @@ harness and real customer, Audit Explorer and health runs left zero owner-labell
 | Routine audit stores plaintext-equivalent arbitrary search content (CWE-312) | Medium | **FIXED** — routine rows use only `[PROTECTED]`; V13 scrubs existing canonical/projection rows and prevents content-bearing replacements; keyed fingerprint and policy-gated ciphertext remain separate |
 | Baseline auditor automatically receives reveal/export/rebuild authorities (CWE-269) | Medium | OPEN DESIGN RISK — reason/recent-auth/no-store/self-audit and no export artifact reduce impact; explicit persisted grant model is not implemented |
 | PUBLIC/INTERNAL drafts outlive staff session without TTL (CWE-922) | Medium | **FIXED** — 12-hour recovery-validity TTL, authenticated-session expiry sweep, active-session owner marker, exact staff-namespace purge on logout/401/account change, stale-writer rejection and stale-401 generation checks are covered by regressions |
+
 | Anonymous email can reuse/mutate an unverified customer actor (CWE-287) | Low | KNOWN LIMITATION — no prior-ticket access; public deployment remains blocked until verified identity |
 | Login throttle pair permits identity rotation/shared-proxy contention (CWE-307) | Low | KNOWN LIMITATION — per-pair control exists; layered ingress/account/global admission remains required before public exposure |
+
+### PR #17/#18 post-scan delta
+
+The follow-up review adds a separate fixed-format session-fingerprint key, removes
+identifier truncation, uses collision-free cursor filter encoding, captures immutable
+actor/group projection snapshots, serializes rebuild with canonical writers, bounds linked
+opens, and records reveal-specific denied events. The current clean backend run covers
+134/134 tests; frontend covers 150/150 plus typecheck/lint/format/build. V1-V15 release
+performance and the V11→V15 full operations rehearsal match the current sources and clean
+up their exact owned resources. This delta changes no conclusion about the still-open
+auditor-grant/public-deployment limitations.
 
 Deferred informational path: an Internet-exposed anonymous endpoint can amplify one
 request into several durable rows. This is real, but the supported release is local or

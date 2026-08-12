@@ -1,3 +1,3 @@
 phase,samples,p50_ms,p95_ms,throughput_ops_per_second,canonical_rows_written,projection_rows_written,total_rows_written,relation_bytes_delta,wal_bytes_delta,rows_written_per_operation,relation_bytes_per_operation,wal_bytes_per_operation
-without_required_access_audit,100,0.141,0.880,4839.100,0,0,0,0,4000,0.000,0.000,40.000
-with_required_access_audit,100,0.633,1.657,1342.048,100,100,200,229376,2147808,2.000,2293.760,21478.080
+without_required_access_audit,100,0.148,0.315,6065.017,0,0,0,0,4000,0.000,0.000,40.000
+with_required_access_audit,100,0.646,1.950,1270.003,100,100,200,245760,2226256,2.000,2457.600,22262.560

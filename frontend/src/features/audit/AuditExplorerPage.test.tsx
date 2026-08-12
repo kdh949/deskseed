@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DeskseedThemeProvider } from '../../shared/ui/DeskseedThemeProvider'
 import { StaffSessionProvider } from '../staff-auth/StaffSessionContext'
-import { AuditExplorerPage } from './AuditExplorerPage'
+import { AuditExplorerPage, filtersFrom } from './AuditExplorerPage'
 
 const CHANGE_ID = 'a0000000-0000-0000-0000-000000000001'
 const SEARCH_ID = 'a0000000-0000-0000-0000-000000000002'
@@ -52,7 +52,11 @@ const searchActivity = {
   searchFingerprint: 'fingerprint-v1',
 }
 
-function renderExplorer(fetchMock: ReturnType<typeof vi.fn>) {
+function renderExplorer(
+  fetchMock: ReturnType<typeof vi.fn>,
+  initialEntries = ['/audit/activity'],
+  initialIndex = initialEntries.length - 1,
+) {
   vi.stubGlobal('fetch', fetchMock)
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -60,10 +64,21 @@ function renderExplorer(fetchMock: ReturnType<typeof vi.fn>) {
   const rendered = render(
     <DeskseedThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/audit/activity']}>
+        <MemoryRouter
+          initialEntries={initialEntries}
+          initialIndex={initialIndex}
+        >
           <StaffSessionProvider>
             <Routes>
-              <Route path="/audit/activity" element={<AuditExplorerPage />} />
+              <Route
+                path="/audit/activity"
+                element={
+                  <>
+                    <AuditExplorerPage />
+                    <HistoryBackButton />
+                  </>
+                }
+              />
             </Routes>
           </StaffSessionProvider>
         </MemoryRouter>
@@ -141,6 +156,8 @@ function auditFetch() {
           sort: 'updatedAt:desc,ticketNumber:desc',
           resultCount: 1,
           originSearchActivityId: null,
+          openedActivityCount: 0,
+          openedActivitiesTruncated: false,
           openedActivities: [],
         },
         metadata: { httpStatus: 200 },
@@ -281,7 +298,85 @@ describe('AuditExplorerPage', () => {
     releaseSecondDetail?.()
     expect(await screen.findByText('OPEN')).toBeVisible()
   })
+
+  it('converts local calendar dates to an exclusive next-day UTC boundary', () => {
+    try {
+      vi.stubEnv('TZ', 'Asia/Seoul')
+      expect(
+        filtersFrom(new URLSearchParams('from=2026-08-12&to=2026-08-12')),
+      ).toMatchObject({
+        from: '2026-08-11T15:00:00.000Z',
+        to: '2026-08-12T15:00:00.000Z',
+      })
+      vi.stubEnv('TZ', 'America/Los_Angeles')
+      expect(
+        filtersFrom(new URLSearchParams('from=2026-08-12&to=2026-08-12')),
+      ).toMatchObject({
+        from: '2026-08-12T07:00:00.000Z',
+        to: '2026-08-13T07:00:00.000Z',
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('drops a page cursor synchronously when browser history restores another filter', async () => {
+    const user = userEvent.setup()
+    const requestedUrls: string[] = []
+    const baseFetch = auditFetch()
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), 'http://deskseed.test')
+        if (url.pathname === '/api/v1/audit/activities') {
+          requestedUrls.push(url.toString())
+          return json({
+            items: [change],
+            nextCursor: url.searchParams.has('cursor')
+              ? null
+              : 'cursor-b-page-2',
+            snapshotAt: '2026-08-11T02:00:00Z',
+            projection: {
+              state: 'CURRENT',
+              projectedCount: 1,
+              lastRebuiltAt: '2026-08-11T00:00:00Z',
+            },
+          })
+        }
+        return baseFetch(input, init)
+      },
+    )
+    renderExplorer(
+      fetchMock,
+      [
+        '/audit/activity?ledger=ACCESS_SEARCH',
+        '/audit/activity?ledger=ADMIN_SECURITY',
+      ],
+      1,
+    )
+
+    await user.click(await screen.findByRole('button', { name: '다음 페이지' }))
+    await waitFor(() =>
+      expect(
+        requestedUrls.some((url) => url.includes('cursor=cursor-b-page-2')),
+      ).toBe(true),
+    )
+    await user.click(screen.getByRole('button', { name: '브라우저 뒤로' }))
+    await waitFor(() => {
+      const latest = new URL(requestedUrls.at(-1)!)
+      expect(latest.searchParams.get('ledger')).toBe('ACCESS_SEARCH')
+      expect(latest.searchParams.has('cursor')).toBe(false)
+    })
+  })
 })
+
+function HistoryBackButton() {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      브라우저 뒤로
+    </button>
+  )
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

@@ -1,9 +1,9 @@
 # Release capacity estimate from measured relation sizes
 
 - Source profile: `smoke`
-- Measured table heap + index bytes: `44195840` (`42.15 MiB`)
-- Projected default release relation bytes: `4419584000` (`4.116 GiB`)
-- Transient relation/index/WAL allowance: `3x` (`12.348 GiB`)
+- Measured table heap + index bytes: `44548096` (`42.48 MiB`)
+- Projected default release relation bytes: `4454809600` (`4.149 GiB`)
+- Transient relation/index/WAL allowance: `3x` (`12.447 GiB`)
 - Additional host reserve: `4 GiB`
 - Recommended free space before full run: `17 GiB`
 

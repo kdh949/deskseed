@@ -32,6 +32,7 @@ declare
         'queue_recently_solved_first_page',
         'queue_my_child_tasks_first_page',
         'audit_first_cursor_page',
+        'audit_projection_status',
         'staff_command_replay_lookup',
         'audit_actor_and_date',
         'audit_ticket_and_date',
@@ -167,11 +168,23 @@ begin
             select *
             from audit_activity_projection
             where occurred_at >= %L::timestamptz
-              and occurred_at <= %L::timestamptz
+              and occurred_at < %L::timestamptz
               and (occurred_at, id) <= (%L::timestamptz, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
             order by occurred_at desc, id desc
             limit 51
         $query$, p_base_time - interval '7 days', p_base_time, p_base_time),
+        $query$
+            select
+                   case
+                       when pg_try_advisory_xact_lock_shared(hashtext('deskseed:audit-activity-projection:rebuild'))
+                           then state
+                       else 'REBUILDING'
+                   end as state,
+                   last_rebuilt_at,
+                   projected_count
+            from audit_activity_projection_state
+            where id = 1
+        $query$,
         format($query$
             select audit.id as audit_id, ticket.ticket_number, audit.ticket_version,
                    first_event.metadata_json::jsonb ->> 'commandOperation' as command_operation,
@@ -205,7 +218,7 @@ begin
             select *
             from audit_activity_projection
             where occurred_at >= %L::timestamptz
-              and occurred_at <= %L::timestamptz
+              and occurred_at < %L::timestamptz
               and (occurred_at, id) <= (%L::timestamptz, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
               and actor_id = %L::uuid
             order by occurred_at desc, id desc
@@ -216,7 +229,7 @@ begin
             select *
             from audit_activity_projection
             where occurred_at >= %L::timestamptz
-              and occurred_at <= %L::timestamptz
+              and occurred_at < %L::timestamptz
               and (occurred_at, id) <= (%L::timestamptz, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
               and ticket_number = 5242
             order by occurred_at desc, id desc
@@ -226,7 +239,7 @@ begin
             select *
             from audit_activity_projection
             where occurred_at >= %L::timestamptz
-              and occurred_at <= %L::timestamptz
+              and occurred_at < %L::timestamptz
               and (occurred_at, id) <= (%L::timestamptz, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
               and action = 'STATUS_CHANGED'
             order by occurred_at desc, id desc

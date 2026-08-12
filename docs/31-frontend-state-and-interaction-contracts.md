@@ -145,6 +145,8 @@ searchSessionId + interactionId + ticketNumber
 
 URL에는 원문 검색어가 남을 수 있으므로 browser history와 referrer 정책을 검토한다. 민감 검색이 예상되면 POST search 또는 URL redaction 전략을 사용한다.
 
+Audit Explorer의 달력 날짜는 브라우저 local midnight에서 다음 local midnight까지의 half-open UTC instant 범위로 변환한다. `to`는 exclusive이며 inclusive `23:59:59.999`를 만들지 않는다. Cursor는 필터 key와 하나의 pagination state로 묶는다. browser Back/Forward로 URL filter가 바뀌면 렌더 단계에서 새 필터의 첫 페이지를 사용하고 이전 필터 cursor를 보내지 않는다.
+
 ## 9. Loading patterns
 
 - 예측 가능한 ticket/table: Skeleton.

@@ -306,7 +306,10 @@ function SearchInvestigation({
       ) : null}
       {search.openedActivities.length ? (
         <div className="audit-opened-path">
-          <strong>이 검색에서 연 결과</strong>
+          <strong>
+            이 검색에서 연 결과 · {search.openedActivityCount.toLocaleString()}
+            건
+          </strong>
           {search.openedActivities.map((opened) => (
             <button
               key={opened.activityId}
@@ -317,6 +320,9 @@ function SearchInvestigation({
               #{opened.ticketNumber} · {formatTime(opened.occurredAt)}
             </button>
           ))}
+          {search.openedActivitiesTruncated ? (
+            <p role="status">최근 연결 100건만 표시합니다.</p>
+          ) : null}
         </div>
       ) : null}
 

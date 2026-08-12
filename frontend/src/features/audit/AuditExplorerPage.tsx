@@ -34,12 +34,18 @@ export function AuditExplorerPage() {
   const staffId = session.staff?.id
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [refreshSequence, setRefreshSequence] = useState(0)
   const filters = filtersFrom(searchParams)
   const filterKey = filterKeyFrom(searchParams)
+  const [pagination, setPagination] = useState(() =>
+    initialPagination(filterKey),
+  )
+  const activePagination =
+    pagination.filterKey === filterKey
+      ? pagination
+      : initialPagination(filterKey)
+  const { cursor, cursorHistory } = activePagination
   const listInteractionId = useMemo(
     () => createAuditInteractionId(),
     [filterKey, refreshSequence, staffId],
@@ -69,8 +75,7 @@ export function AuditExplorerPage() {
     if (value) next.set(key, value)
     else next.delete(key)
     next.delete('activity')
-    setCursor(null)
-    setCursorHistory([])
+    setPagination(initialPagination(filterKeyFrom(next)))
     setSearchParams(next)
   }
   const selectActivity = (activityId: string | null) => {
@@ -159,8 +164,7 @@ export function AuditExplorerPage() {
         params={searchParams}
         update={updateFilter}
         clear={() => {
-          setCursor(null)
-          setCursorHistory([])
+          setPagination(initialPagination(''))
           setSearchParams(new URLSearchParams())
         }}
       />
@@ -220,8 +224,11 @@ export function AuditExplorerPage() {
               disabled={cursorHistory.length === 0}
               onClick={() => {
                 const previous = cursorHistory.at(-1) ?? null
-                setCursorHistory((current) => current.slice(0, -1))
-                setCursor(previous)
+                setPagination({
+                  filterKey,
+                  cursor: previous,
+                  cursorHistory: cursorHistory.slice(0, -1),
+                })
               }}
             >
               이전 페이지
@@ -231,8 +238,11 @@ export function AuditExplorerPage() {
               type="button"
               disabled={!query.data.nextCursor}
               onClick={() => {
-                setCursorHistory((current) => [...current, cursor])
-                setCursor(query.data.nextCursor)
+                setPagination({
+                  filterKey,
+                  cursor: query.data.nextCursor,
+                  cursorHistory: [...cursorHistory, cursor],
+                })
               }}
             >
               다음 페이지
@@ -527,13 +537,13 @@ function AuditListError({ error, retry }: { error: Error; retry: () => void }) {
   )
 }
 
-function filtersFrom(params: URLSearchParams): AuditActivityFilters {
+export function filtersFrom(params: URLSearchParams): AuditActivityFilters {
   const from = params.get('from')
   const to = params.get('to')
   const ticketNumber = Number(params.get('ticketNumber'))
   return {
-    ...(from ? { from: `${from}T00:00:00.000Z` } : {}),
-    ...(to ? { to: `${to}T23:59:59.999Z` } : {}),
+    ...(from ? { from: localDayBoundary(from, 0) } : {}),
+    ...(to ? { to: localDayBoundary(to, 1) } : {}),
     ...(params.get('ledger')
       ? { ledger: params.get('ledger') as AuditLedgerType }
       : {}),
@@ -558,6 +568,25 @@ function filtersFrom(params: URLSearchParams): AuditActivityFilters {
     ...(params.get('searchFingerprint')
       ? { searchFingerprint: params.get('searchFingerprint')! }
       : {}),
+  }
+}
+
+function localDayBoundary(value: string, daysToAdd: number): string {
+  const [yearText, monthText, dayText] = value.split('-')
+  if (!yearText || !monthText || !dayText) {
+    throw new Error('Invalid local calendar date')
+  }
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  return new Date(year, month - 1, day + daysToAdd).toISOString()
+}
+
+function initialPagination(filterKey: string) {
+  return {
+    filterKey,
+    cursor: null as string | null,
+    cursorHistory: [] as Array<string | null>,
   }
 }
 

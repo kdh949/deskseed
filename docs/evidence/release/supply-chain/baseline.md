@@ -155,8 +155,8 @@ both Compose projects before the first application start.
 
 | Image | Result | Final run-scoped image ID | Current source proof |
 |---|---|---|---|
-| backend | PASS; clean `bootJar` and health | `sha256:4d0d96cd7ce2d1e7a946e82714c8b82087435729336a66c7a0b816a740cb741c` | backend context `sha256:35707c6b…`, 147 files |
-| frontend | PASS; `npm ci`, production build and health | `sha256:42fd246b75b6e95b5f286f855a0e18511ce32b5cf3629c298414491922ac93b5` | frontend context `sha256:796512fe…`, 194 files |
+| backend | PASS; clean `bootJar` and health | `sha256:a4234ae421fee9d6d21bd50ca9e91c92a956b4ee2f284390381469f56d117f7f` | backend context `sha256:710f3628…`, 148 files |
+| frontend | PASS; `npm ci`, production build and health | `sha256:a0a4e6e97aa1c5043c23972b0369b62460d21ffb81c375272f9751b5dc2e4af5` | frontend context `sha256:12701749…`, 194 files |
 | PostgreSQL | PASS; identical source/restore image | `sha256:ca8550761466dbd3d4dd6f69686d372966ec7eb0721ed8fb945486aa30de3b4f` | `postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193` |
 
 The rehearsal removed these run-scoped images and verified their absence before publishing

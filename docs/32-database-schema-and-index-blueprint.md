@@ -14,6 +14,8 @@
 
 ## 3. Core tables
 
+Audit projection note: V15 adds immutable `actor_display_snapshot`/`group_id` facts to canonical ticket/access audit rows and `projected_count` to projection state. The one-time backfill is the best value available at migration time; rebuilds must not join mutable staff or ticket ownership to reinterpret older events.
+
 ### customers
 
 ```text

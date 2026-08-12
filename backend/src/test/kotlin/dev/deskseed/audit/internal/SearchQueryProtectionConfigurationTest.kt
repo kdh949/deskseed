@@ -14,6 +14,21 @@ class SearchQueryProtectionConfigurationTest {
             .withPropertyValues(
                 "deskseed.audit.access.enabled=true",
                 "deskseed.audit.access.active-key-version=v1",
+                "deskseed.audit.access.session-fingerprint-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            )
+            .run { context ->
+                assertThat(context).hasFailed()
+                assertThat(context.startupFailure).hasRootCauseInstanceOf(SearchQueryConfigurationException::class.java)
+            }
+    }
+
+    @Test
+    fun `enabled access audit fails application startup when session fingerprint key is missing`() {
+        contextRunner
+            .withPropertyValues(
+                "deskseed.audit.access.enabled=true",
+                "deskseed.audit.access.active-key-version=v1",
+                "deskseed.audit.access.keys.v1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             )
             .run { context ->
                 assertThat(context).hasFailed()

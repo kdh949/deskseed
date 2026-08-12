@@ -1,10 +1,10 @@
 Timing is on.
 CREATE INDEX
-Time: 6.537 ms
+Time: 6.389 ms
 CREATE INDEX
-Time: 5.839 ms
-Time: 0.514 ms
+Time: 5.926 ms
+Time: 0.351 ms
 ANALYZE
-Time: 21.559 ms
+Time: 20.991 ms
 ANALYZE
-Time: 88.363 ms
+Time: 87.501 ms

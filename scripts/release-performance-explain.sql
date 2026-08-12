@@ -129,13 +129,26 @@ explain (analyze, buffers, settings)
 select *
 from audit_activity_projection
 where occurred_at >= :'base_time'::timestamptz - interval '7 days'
-  and occurred_at <= :'base_time'::timestamptz
+  and occurred_at < :'base_time'::timestamptz
   and (occurred_at, id) <= (
       :'base_time'::timestamptz,
       'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid
   )
 order by occurred_at desc, id desc
 limit 51;
+
+\echo AUDIT_PROJECTION_STATUS
+explain (analyze, buffers, settings)
+select
+       case
+           when pg_try_advisory_xact_lock_shared(hashtext('deskseed:audit-activity-projection:rebuild'))
+               then state
+           else 'REBUILDING'
+       end as state,
+       last_rebuilt_at,
+       projected_count
+from audit_activity_projection_state
+where id = 1;
 
 \echo STAFF_COMMAND_REPLAY_LOOKUP
 explain (analyze, buffers, settings)
@@ -172,7 +185,7 @@ explain (analyze, buffers, settings)
 select *
 from audit_activity_projection
 where occurred_at >= :'base_time'::timestamptz - interval '7 days'
-  and occurred_at <= :'base_time'::timestamptz
+  and occurred_at < :'base_time'::timestamptz
   and (occurred_at, id) <= (
       :'base_time'::timestamptz,
       'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid
@@ -186,7 +199,7 @@ explain (analyze, buffers, settings)
 select *
 from audit_activity_projection
 where occurred_at >= :'base_time'::timestamptz - interval '7 days'
-  and occurred_at <= :'base_time'::timestamptz
+  and occurred_at < :'base_time'::timestamptz
   and (occurred_at, id) <= (
       :'base_time'::timestamptz,
       'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid
@@ -200,7 +213,7 @@ explain (analyze, buffers, settings)
 select *
 from audit_activity_projection
 where occurred_at >= :'base_time'::timestamptz - interval '7 days'
-  and occurred_at <= :'base_time'::timestamptz
+  and occurred_at < :'base_time'::timestamptz
   and (occurred_at, id) <= (
       :'base_time'::timestamptz,
       'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid

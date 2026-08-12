@@ -2,14 +2,15 @@ migration,duration_seconds
 V1__initial_request_vertical_slice.sql,0
 V2__add_ticket_audit_command_context.sql,0
 V3__enforce_request_access_token_lifecycle.sql,0
-V4__timestamp_ticket_audit_events.sql,1
+V4__timestamp_ticket_audit_events.sql,0
 V5__staff_authentication_and_groups.sql,0
 V6__agent_ticket_read_and_access_audit.sql,0
 V7__ticket_command_audit_concurrency.sql,0
 V8__ticket_parent_child_relations.sql,0
 V9__access_search_audit.sql,0
 V10__security_auditor_role.sql,0
-V11__audit_activity_projection.sql,0
+V11__audit_activity_projection.sql,1
 V12__audit_explorer_self_audit_and_export_skeleton.sql,0
 V13__sanitize_search_audit_routine_representation.sql,0
 V14__index_staff_ticket_command_replay.sql,0
+V15__stabilize_audit_projection_history.sql,0

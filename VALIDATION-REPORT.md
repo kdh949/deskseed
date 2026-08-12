@@ -8,7 +8,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 
 ## Validated
 
-- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0036 are present and unique.
+- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0037 are present and unique.
 - Markdown fenced-code balance and relative Markdown links.
 - JSON/YAML parsing and Draft 2020-12 JSON Schema validity.
 - OpenAPI 3.1 operation IDs, local `$ref` resolution, and FROZEN staff expected-actor/CSRF/error bindings.
@@ -20,15 +20,15 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 
 ## Counts
 
-- Adr Files: 36
+- Adr Files: 37
 - Bundled Image Assets: 0
 - Canonical Docs: 55
 - Core Api Requirement Links: 41
-- Decision Definitions: 50
+- Decision Definitions: 51
 - Dual Use Actor Bound Operations: 1
 - E2E Visual Baselines: 84
 - Json Files: 8
-- Markdown Files: 168
+- Markdown Files: 170
 - Openapi Operations: 56
 - Openapi Paths: 46
 - Requirement Definitions: 78

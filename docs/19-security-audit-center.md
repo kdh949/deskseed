@@ -289,6 +289,10 @@ TICKET_VIEWED event V1
 
 `X-Origin-Search-Event-Id`는 authorization proof가 아니다. 서버는 같은 actor와 authenticated session인지뿐 아니라 열려는 ticket이 S1의 실제 returned-result membership에 포함됐는지도 검증한 뒤 `SEARCH_RESULT_OPENED`/linked `TICKET_VIEWED`를 기록한다. 임의의 자기 search event ID를 다른 ticket에 붙이는 client claim은 거부한다.
 
+Session ownership fingerprint는 검색 원문 암호화 key와 분리된 32-byte key로
+`v1:<base64url HMAC-SHA256>` 고정 형식을 사용한다. 검색 ciphertext의 active key를 rotation해도
+같은 authenticated session의 기존 result-open은 유효하며, session ID 원문은 저장하지 않는다.
+
 This enables investigations such as “검색어 X를 사용한 뒤 어떤 고객 티켓을 열었는가?”
 
 ### 6.4 Querying raw search terms
@@ -442,7 +446,9 @@ If access event persistence fails, return a service/audit-unavailable problem in
 
 ### Audit projection failure
 
-Canonical ledger success is enough for the original command/read. A failed unified projection can be rebuilt. Projection lag is shown in the Audit Explorer and monitored.
+Canonical ledger success is enough for the original command/read. A failed unified projection can be rebuilt. Canonical rows capture actor display/group snapshots at event time, so later staff rename or ticket transfer does not rewrite historical projection meaning. Incremental writers share a PostgreSQL transaction advisory lock while rebuild takes the exclusive lock; lock contention is exposed as `REBUILDING`. Projection state stores the current row count instead of scanning the full projection on every list request. Projection lag is shown in the Audit Explorer and monitored.
+
+Search detail returns at most 100 linked `SEARCH_RESULT_OPENED` rows. The response also carries the full count and a truncation flag, so repeated opens cannot create an unbounded DB/object/JSON/DOM response.
 
 ### Export failure
 

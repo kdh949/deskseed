@@ -10,6 +10,9 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @Testcontainers
 class AuditActivityProjectionMigrationTest {
@@ -236,6 +239,113 @@ class AuditActivityProjectionMigrationTest {
         }
     }
 
+    @Test
+    fun `version fifteen preserves event time actor and group snapshots across rebuild`() {
+        migrateTo("14")
+        insertCanonicalFixture("[PROTECTED]")
+
+        migrateTo("15")
+
+        connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                val before = projectedActorAndGroup(statement, "TICKET_CHANGE")
+                assertThat(before.first).isEqualTo("감사자")
+                assertThat(before.second.toString()).isEqualTo("00000000-0000-0000-0000-000000001120")
+                statement.executeUpdate(
+                    """
+                    insert into access_audit_events (
+                        id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                        source, action, resource_type, resource_id, ticket_number,
+                        interaction_id, session_fingerprint, auth_type, request_id,
+                        correlation_id, outcome, http_status
+                    ) values (
+                        '00000000-0000-0000-0000-000000001123', now(), 'STAFF',
+                        '00000000-0000-0000-0000-000000001102', '감사자', 'AGENT_UI',
+                        'TICKET_VIEWED', 'TICKET',
+                        '00000000-0000-0000-0000-000000001103', 9101,
+                        '00000000-0000-0000-0000-000000001124', 'v1:fixture',
+                        'STAFF_SESSION', 'snapshot-request', 'snapshot-correlation',
+                        'SUCCEEDED', 200
+                    )
+                    """.trimIndent(),
+                )
+                val accessBefore = projectedActorAndGroup(statement, "ACCESS_SEARCH")
+                assertThat(accessBefore.second.toString()).isEqualTo("00000000-0000-0000-0000-000000001120")
+
+                statement.executeUpdate(
+                    "update staff_accounts set display_name = '변경된 감사자' " +
+                        "where id = '00000000-0000-0000-0000-000000001102'",
+                )
+                statement.executeUpdate(
+                    "update tickets set group_id = '00000000-0000-0000-0000-000000001121' " +
+                        "where id = '00000000-0000-0000-0000-000000001103'",
+                )
+                statement.executeQuery("select * from rebuild_audit_activity_projection()").use { assertThat(it.next()).isTrue() }
+
+                assertThat(projectedActorAndGroup(statement, "TICKET_CHANGE")).isEqualTo(before)
+                assertThat(projectedActorAndGroup(statement, "ACCESS_SEARCH")).isEqualTo(accessBefore)
+            }
+        }
+    }
+
+    @Test
+    fun `version fifteen serializes canonical projection refresh with rebuild`() {
+        migrateTo("14")
+        insertCanonicalFixture("[PROTECTED]")
+        migrateTo("15")
+
+        val rebuildStarted = CountDownLatch(1)
+        val releaseRebuild = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val rebuild = executor.submit {
+                connection().use { jdbc ->
+                    jdbc.autoCommit = false
+                    jdbc.createStatement().use { statement ->
+                        statement.execute("select pg_advisory_xact_lock(hashtext('deskseed:audit-activity-projection:rebuild'))")
+                        rebuildStarted.countDown()
+                        releaseRebuild.await(5, TimeUnit.SECONDS)
+                        statement.executeQuery("select * from rebuild_audit_activity_projection()").use { it.next() }
+                    }
+                    jdbc.commit()
+                }
+            }
+            assertThat(rebuildStarted.await(5, TimeUnit.SECONDS)).isTrue()
+            val writer = executor.submit {
+                connection().use { jdbc ->
+                    jdbc.createStatement().use { statement ->
+                        statement.executeUpdate(
+                            adminEventSql(
+                                id = "00000000-0000-0000-0000-000000001122",
+                                type = "AUDIT_LOG_VIEWED",
+                            ),
+                        )
+                    }
+                }
+            }
+            Thread.sleep(100)
+            assertThat(writer.isDone).isFalse()
+            releaseRebuild.countDown()
+            rebuild.get(5, TimeUnit.SECONDS)
+            writer.get(5, TimeUnit.SECONDS)
+
+            connection().use { jdbc ->
+                jdbc.createStatement().use { statement ->
+                    assertThat(
+                        count(
+                            statement,
+                            "audit_activity_projection where source_event_id = " +
+                                "'00000000-0000-0000-0000-000000001122'",
+                        ),
+                    ).isEqualTo(1)
+                }
+            }
+        } finally {
+            releaseRebuild.countDown()
+            executor.shutdownNow()
+        }
+    }
+
     private fun migrateTo(version: String) {
         Flyway.configure()
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
@@ -269,13 +379,22 @@ class AuditActivityProjectionMigrationTest {
                 )
                 statement.executeUpdate(
                     """
+                    insert into support_groups (id, name, status, created_at, updated_at, version)
+                    values
+                        ('00000000-0000-0000-0000-000000001120', '감사 그룹 A', 'ACTIVE', now(), now(), 0),
+                        ('00000000-0000-0000-0000-000000001121', '감사 그룹 B', 'ACTIVE', now(), now(), 0)
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
                     insert into tickets (
                         id, ticket_number, requester_id, kind, subject, status, priority,
-                        channel, version, created_at, updated_at
+                        group_id, channel, version, created_at, updated_at
                     ) values (
                         '00000000-0000-0000-0000-000000001103', 9101,
                         '00000000-0000-0000-0000-000000001101', 'CUSTOMER_REQUEST',
-                        'projection ticket', 'PENDING', 'HIGH', 'WEB', 2, now(), now()
+                        'projection ticket', 'PENDING', 'HIGH',
+                        '00000000-0000-0000-0000-000000001120', 'WEB', 2, now(), now()
                     )
                     """.trimIndent(),
                 )
@@ -372,6 +491,15 @@ class AuditActivityProjectionMigrationTest {
 
     private fun queryString(statement: java.sql.Statement, sql: String): String =
         statement.executeQuery(sql).use { result -> result.next(); result.getString(1) }
+
+    private fun projectedActorAndGroup(statement: java.sql.Statement, ledger: String): Pair<String, Any> =
+        statement.executeQuery(
+            "select actor_display_snapshot, group_id from audit_activity_projection " +
+                "where ledger_type = '$ledger' and group_id is not null limit 1",
+        ).use { result ->
+            assertThat(result.next()).isTrue()
+            result.getString(1) to result.getObject(2)
+        }
 
     private fun connection() = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
 

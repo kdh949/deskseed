@@ -52,7 +52,8 @@ class AuditExplorerIntegrationTest {
             """.trimIndent(),
         )
         jdbcTemplate.update(
-            "update audit_activity_projection_state set state = 'CURRENT', last_failure_at = null where id = 1",
+            "update audit_activity_projection_state set state = 'CURRENT', projected_count = 0, " +
+                "last_failure_at = null where id = 1",
         )
     }
 
@@ -119,6 +120,27 @@ class AuditExplorerIntegrationTest {
             .andExpect(jsonPath("$.commentBody").doesNotExist())
 
         assertThat(selfAuditCount("AUDIT_LOG_VIEWED", auditorId)).isEqualTo(2)
+    }
+
+    @Test
+    fun `audit date interval includes the final microsecond and excludes the next boundary`() {
+        val auditorId = insertStaff("auditor-date-boundary@example.com")
+        val session = login("auditor-date-boundary@example.com")
+        val included = insertAdminEvent(auditorId, Instant.parse("2026-08-11T23:59:59.999500Z"))
+        insertAdminEvent(auditorId, Instant.parse("2026-08-12T00:00:00Z"))
+
+        mockMvc.perform(
+            get("/api/v1/audit/activities")
+                .session(session)
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .queryParam("from", "2026-08-11T00:00:00Z")
+                .queryParam("to", "2026-08-12T00:00:00Z")
+                .queryParam("ledger", "ADMIN_SECURITY")
+                .queryParam("action", "ROLE_CHANGED"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].id").value(included.toString()))
     }
 
     @Test
@@ -367,6 +389,46 @@ class AuditExplorerIntegrationTest {
             .andExpect(status().isForbidden)
             .andExpect(jsonPath("$.type").value("/problems/audit-reveal-reauthentication-required"))
             .andExpect(jsonPath("$.rawQuery").doesNotExist())
+    }
+
+    @Test
+    fun `search detail bounds repeated result opens and reports the full count`() {
+        val auditorId = insertStaff("auditor-open-bound@example.com")
+        val session = login("auditor-open-bound@example.com")
+        val ticket = insertTicketChangeFixture(auditorId)
+        val search = insertSearchFixture(auditorId, ticket, "bounded opens")
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot, source,
+                action, resource_type, resource_id, ticket_number, interaction_id,
+                session_fingerprint, auth_type, request_id, correlation_id, ip_address,
+                user_agent, origin_search_event_id, outcome, http_status
+            )
+            select md5('bounded-open-' || item::text)::uuid,
+                   now() + item * interval '1 millisecond', 'STAFF', ?, '감사 담당자',
+                   'AGENT_UI', 'SEARCH_RESULT_OPENED', 'TICKET', ?, ?,
+                   md5('bounded-interaction-' || item::text)::uuid,
+                   'local-v1:fixture', 'STAFF_SESSION', 'bounded-open-request',
+                   'bounded-open-correlation', '192.0.2.8', 'Deskseed test', ?,
+                   'SUCCEEDED', 200
+            from generate_series(1, 105) item
+            """.trimIndent(),
+            auditorId,
+            ticket.ticketId,
+            ticket.ticketNumber,
+            search.eventId,
+        )
+
+        mockMvc.perform(
+            get("/api/v1/audit/activities/{activityId}", search.activityId)
+                .session(session)
+                .header("X-Interaction-Id", UUID.randomUUID()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.search.openedActivities.length()").value(100))
+            .andExpect(jsonPath("$.search.openedActivityCount").value(106))
+            .andExpect(jsonPath("$.search.openedActivitiesTruncated").value(true))
     }
 
     @Test

@@ -49,6 +49,23 @@ class AuditActivityCursorCodecTest {
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 
+    @Test
+    fun `filter fingerprint distinguishes delimiters unicode empty values and null`() {
+        val codec = codec("v1", mapOf("v1" to KEY_ONE))
+        val delimiterLeft = filters.copy(requestId = "a|b", correlationId = "c")
+        val delimiterRight = filters.copy(requestId = "a", correlationId = "b|c")
+        val empty = filters.copy(requestId = "", correlationId = "한글|🙂")
+        val absent = filters.copy(requestId = null, correlationId = "한글|🙂")
+
+        assertThat(codec.filterFingerprint(delimiterLeft))
+            .isNotEqualTo(codec.filterFingerprint(delimiterRight))
+        assertThat(codec.filterFingerprint(empty))
+            .isNotEqualTo(codec.filterFingerprint(absent))
+        assertThatThrownBy {
+            codec.decode(delimiterRight, codec.encode(delimiterLeft, cursor))
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
     private fun codec(active: String, keys: Map<String, String>) =
         AuditActivityCursorCodec(AuditActivityCursorProperties(active, keys))
 

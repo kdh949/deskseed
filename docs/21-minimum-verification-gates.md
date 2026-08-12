@@ -217,6 +217,9 @@ The following create events with actor/filter/resource/outcome:
 - delete/recreate test AuditActivityProjection.
 - rebuild from canonical ledgers.
 - counts and sampled records match.
+- staff display/ticket group mutation after canonical write does not change historical projection snapshots.
+- concurrent canonical writer and rebuild share a lock protocol and converge without duplicate or missing rows.
+- list status reads stored projection count rather than executing a full exact count per request.
 - canonical writes remain available while projection recovery policy is exercised.
 
 ### AUD-006 — Tamper evidence baseline

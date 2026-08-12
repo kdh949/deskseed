@@ -1297,11 +1297,13 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - name: from
         in: query
+        description: Inclusive instant at which the audit interval starts.
         schema:
           type: string
           format: date-time
       - name: to
         in: query
+        description: Exclusive instant at which the audit interval ends.
         schema:
           type: string
           format: date-time
@@ -3557,7 +3559,7 @@ components:
     AuditSearchContext:
       type: object
       additionalProperties: false
-      required: [queryRedacted, queryFingerprint, filters, resultCount, openedActivities]
+      required: [queryRedacted, queryFingerprint, filters, resultCount, openedActivityCount, openedActivitiesTruncated, openedActivities]
       properties:
         queryRedacted:
           type: string
@@ -3580,8 +3582,16 @@ components:
         originSearchActivityId:
           type: [string, 'null']
           format: uuid
+        openedActivityCount:
+          type: integer
+          format: int64
+          minimum: 0
+        openedActivitiesTruncated:
+          type: boolean
+          description: True when only the first 100 linked opens are returned.
         openedActivities:
           type: array
+          maxItems: 100
           items:
             type: object
             additionalProperties: false
