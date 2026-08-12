@@ -2798,6 +2798,211 @@ textarea[aria-invalid='true'] {
   border-bottom: 1px solid #e4e9ec;
 }
 
+.schedule-layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.24fr) minmax(0, 0.76fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.schedule-workspace {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
+.schedule-list {
+  position: sticky;
+  top: 20px;
+}
+
+.schedule-list ul,
+.version-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule-select,
+.version-select {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #f5f7f8;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.schedule-select span,
+.schedule-select small,
+.version-select span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.schedule-select.active,
+.version-select.active {
+  border-color: #8fbcc0;
+  background: var(--brand-soft);
+}
+
+.schedule-section-heading,
+.schedule-subsection-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.schedule-section-heading h2,
+.schedule-subsection-heading h3 {
+  margin-bottom: 5px;
+}
+
+.schedule-section-heading p,
+.schedule-subsection-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.schedule-active-badge,
+.dst-policy {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.schedule-basics,
+.preview-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.weekday-editor {
+  display: grid;
+  gap: 8px;
+  margin: 24px 0 30px;
+  border-top: 1px solid #e4e9ec;
+}
+
+.weekday-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid #e4e9ec;
+}
+
+.weekday-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+}
+
+.weekday-toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.interval-editor {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+}
+
+.interval-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.interval-row input {
+  min-width: 125px;
+}
+
+.exception-list {
+  display: grid;
+  gap: 12px;
+}
+
+.exception-row {
+  display: grid;
+  grid-template-columns: 150px 140px minmax(180px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+  border: 1px solid #dce3e6;
+  border-radius: 7px;
+  background: #fafbfb;
+}
+
+.exception-row .interval-editor {
+  grid-column: 1 / -1;
+}
+
+.schedule-empty-copy {
+  padding: 18px;
+  border: 1px dashed #c8d2d6;
+  color: var(--muted);
+  text-align: center;
+}
+
+.schedule-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.preview-controls {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.preview-results {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 20px 0 0;
+}
+
+.preview-results div {
+  padding: 14px;
+  border-radius: 6px;
+  background: #f4f7f7;
+}
+
+.preview-results dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.preview-results dd {
+  margin: 6px 0 0;
+  font-weight: 750;
+}
+
+.version-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -2821,6 +3026,19 @@ textarea[aria-invalid='true'] {
   .admin-grid {
     grid-template-columns: 1fr;
   }
+  .schedule-layout {
+    grid-template-columns: 1fr;
+  }
+  .schedule-list {
+    position: static;
+  }
+  .preview-controls,
+  .preview-results {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .exception-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 560px) {
@@ -2833,5 +3051,12 @@ textarea[aria-invalid='true'] {
   .inline-admin-form {
     align-items: stretch;
     flex-direction: column;
+  }
+  .schedule-basics,
+  .preview-controls,
+  .preview-results,
+  .exception-row,
+  .weekday-row {
+    grid-template-columns: 1fr;
   }
 }

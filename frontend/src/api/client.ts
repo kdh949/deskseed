@@ -18,6 +18,12 @@ import type {
   AuditProjectionRebuildResult,
   AuditProjectionStatus,
   AuditSearchContext,
+  BusinessInterval,
+  BusinessSchedule,
+  BusinessScheduleDefinition,
+  BusinessSchedulePreview,
+  BusinessSchedulePreviewInput,
+  BusinessWeekday,
   CreateAuditExportInput,
   CreateChildTicketCommand,
   CreateChildTicketResult,
@@ -236,6 +242,10 @@ function decodeProblem(value: unknown): ProblemDetails | undefined {
     ...(typeof value.currentVersion === 'number' &&
     Number.isSafeInteger(value.currentVersion)
       ? { currentVersion: value.currentVersion }
+      : {}),
+    ...(typeof value.currentAggregateVersion === 'number' &&
+    Number.isSafeInteger(value.currentAggregateVersion)
+      ? { currentAggregateVersion: value.currentAggregateVersion }
       : {}),
     ...(Array.isArray(value.conflictingFields) &&
     conflictingFields?.length === value.conflictingFields.length
@@ -869,6 +879,215 @@ export async function removeGroupMember(
       'DELETE',
     ),
   )
+}
+
+const BUSINESS_WEEKDAYS = new Set<BusinessWeekday>([
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+])
+
+function decodeBusinessInterval(value: unknown): BusinessInterval | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.start !== 'string' ||
+    typeof value.end !== 'string' ||
+    !/^\d{2}:\d{2}$/.test(value.start) ||
+    !/^\d{2}:\d{2}$/.test(value.end)
+  ) {
+    return undefined
+  }
+  return { start: value.start, end: value.end }
+}
+
+function decodeBusinessSchedule(value: unknown): BusinessSchedule | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    !isNonBlankString(value.timeZone) ||
+    !Array.isArray(value.weekdays) ||
+    !Array.isArray(value.exceptions) ||
+    typeof value.version !== 'number' ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 1 ||
+    typeof value.aggregateVersion !== 'number' ||
+    !Number.isSafeInteger(value.aggregateVersion) ||
+    value.aggregateVersion < 0 ||
+    typeof value.active !== 'boolean' ||
+    !isTimestamp(value.createdAt) ||
+    !isRecord(value.createdBy) ||
+    !['STAFF', 'SYSTEM'].includes(String(value.createdBy.actorType)) ||
+    (value.createdBy.actorId !== null &&
+      !isCanonicalUuid(value.createdBy.actorId)) ||
+    !isNonBlankString(value.createdBy.displayName)
+  ) {
+    return undefined
+  }
+  const weekdays = value.weekdays.flatMap((weekday) => {
+    if (
+      !isRecord(weekday) ||
+      typeof weekday.weekday !== 'string' ||
+      !BUSINESS_WEEKDAYS.has(weekday.weekday as BusinessWeekday) ||
+      typeof weekday.enabled !== 'boolean' ||
+      !Array.isArray(weekday.intervals)
+    ) {
+      return []
+    }
+    const intervals = weekday.intervals.map(decodeBusinessInterval)
+    if (intervals.some((interval) => !interval)) return []
+    return [
+      {
+        weekday: weekday.weekday as BusinessWeekday,
+        enabled: weekday.enabled,
+        intervals: intervals as BusinessInterval[],
+      },
+    ]
+  })
+  const exceptions = value.exceptions.flatMap((exception) => {
+    if (
+      !isRecord(exception) ||
+      typeof exception.date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(exception.date) ||
+      !['CLOSED', 'OPEN'].includes(String(exception.mode)) ||
+      !Array.isArray(exception.intervals) ||
+      (exception.label !== null && typeof exception.label !== 'string')
+    ) {
+      return []
+    }
+    const intervals = exception.intervals.map(decodeBusinessInterval)
+    if (intervals.some((interval) => !interval)) return []
+    return [
+      {
+        date: exception.date,
+        mode: exception.mode as 'CLOSED' | 'OPEN',
+        intervals: intervals as BusinessInterval[],
+        label: exception.label as string | null,
+      },
+    ]
+  })
+  if (
+    weekdays.length !== value.weekdays.length ||
+    weekdays.length !== 7 ||
+    exceptions.length !== value.exceptions.length
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    timeZone: value.timeZone,
+    weekdays,
+    exceptions,
+    version: value.version,
+    aggregateVersion: value.aggregateVersion,
+    active: value.active,
+    createdAt: value.createdAt,
+    createdBy: {
+      actorType: value.createdBy.actorType as 'STAFF' | 'SYSTEM',
+      actorId: value.createdBy.actorId as string | null,
+      displayName: value.createdBy.displayName,
+    },
+  }
+}
+
+function decodedBusinessSchedules(response: Response, body: unknown) {
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const schedules = body.map(decodeBusinessSchedule)
+  if (schedules.some((schedule) => !schedule)) throw malformedSuccess(response)
+  return schedules as BusinessSchedule[]
+}
+
+export async function listBusinessSchedules(): Promise<BusinessSchedule[]> {
+  const response = await staffFetch('/api/v1/admin/business-schedules')
+  return decodedBusinessSchedules(response, await checkedBody(response))
+}
+
+export async function createBusinessSchedule(
+  definition: BusinessScheduleDefinition,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/business-schedules',
+    'POST',
+    definition,
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function listBusinessScheduleVersions(
+  scheduleId: string,
+): Promise<BusinessSchedule[]> {
+  const response = await staffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions`,
+  )
+  return decodedBusinessSchedules(response, await checkedBody(response))
+}
+
+export async function createBusinessScheduleVersion(
+  scheduleId: string,
+  aggregateVersion: number,
+  definition: BusinessScheduleDefinition,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions`,
+    'POST',
+    definition,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function activateBusinessScheduleVersion(
+  scheduleId: string,
+  version: number,
+  aggregateVersion: number,
+): Promise<BusinessSchedule> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/business-schedules/${scheduleId}/versions/${version}/activation`,
+    'PUT',
+    undefined,
+    { 'If-Match': `"${aggregateVersion}"` },
+  )
+  const schedule = decodeBusinessSchedule(await checkedBody(response))
+  if (!schedule) throw malformedSuccess(response)
+  return schedule
+}
+
+export async function previewBusinessSchedule(
+  input: BusinessSchedulePreviewInput,
+): Promise<BusinessSchedulePreview> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/business-schedules/preview',
+    'POST',
+    input,
+  )
+  const body = await checkedBody(response)
+  if (
+    !isRecord(body) ||
+    (body.dueAt !== null && !isTimestamp(body.dueAt)) ||
+    typeof body.elapsedBusinessMinutes !== 'number' ||
+    !Number.isSafeInteger(body.elapsedBusinessMinutes) ||
+    (body.nextOpenAt !== null && !isTimestamp(body.nextOpenAt)) ||
+    (body.nextCloseAt !== null && !isTimestamp(body.nextCloseAt)) ||
+    body.dstPolicy !== 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    dueAt: body.dueAt,
+    elapsedBusinessMinutes: body.elapsedBusinessMinutes,
+    nextOpenAt: body.nextOpenAt,
+    nextCloseAt: body.nextCloseAt,
+    dstPolicy: body.dstPolicy,
+  }
 }
 
 function decodeActorSummary(value: unknown): ActorSummary | undefined {

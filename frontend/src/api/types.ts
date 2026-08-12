@@ -43,6 +43,7 @@ export interface ProblemDetails {
   code?: string
   fieldErrors?: FieldError[]
   currentVersion?: number
+  currentAggregateVersion?: number
   conflictingFields?: TicketFieldName[]
 }
 
@@ -102,6 +103,68 @@ export interface GroupMembership {
   staffId: string
   staffDisplayName: string
   role: StaffRole
+}
+
+export type BusinessWeekday =
+  | 'MONDAY'
+  | 'TUESDAY'
+  | 'WEDNESDAY'
+  | 'THURSDAY'
+  | 'FRIDAY'
+  | 'SATURDAY'
+  | 'SUNDAY'
+
+export interface BusinessInterval {
+  start: string
+  end: string
+}
+
+export interface BusinessWeekdaySchedule {
+  weekday: BusinessWeekday
+  enabled: boolean
+  intervals: BusinessInterval[]
+}
+
+export interface BusinessScheduleException {
+  date: string
+  mode: 'CLOSED' | 'OPEN'
+  intervals: BusinessInterval[]
+  label: string | null
+}
+
+export interface BusinessScheduleDefinition {
+  name: string
+  timeZone: string
+  weekdays: BusinessWeekdaySchedule[]
+  exceptions: BusinessScheduleException[]
+}
+
+export interface BusinessSchedule extends BusinessScheduleDefinition {
+  id: string
+  version: number
+  aggregateVersion: number
+  active: boolean
+  createdAt: string
+  createdBy: {
+    actorType: 'STAFF' | 'SYSTEM'
+    actorId: string | null
+    displayName: string
+  }
+}
+
+export interface BusinessSchedulePreviewInput {
+  schedule: BusinessScheduleDefinition
+  startAt: string
+  endAt: string
+  businessMinutes: number
+}
+
+export interface BusinessSchedulePreview {
+  dueAt: string | null
+  elapsedBusinessMinutes: number
+  nextOpenAt: string | null
+  nextCloseAt: string | null
+  dstPolicy: 'GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH'
 }
 
 export interface CreateStaffInput {

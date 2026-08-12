@@ -16,6 +16,7 @@ import {
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
 import { AdminGroupsPage } from './pages/AdminGroupsPage'
+import { AdminBusinessSchedulesPage } from './pages/AdminBusinessSchedulesPage'
 import { AdminStaffPage } from './pages/AdminStaffPage'
 import { HomePage } from './pages/HomePage'
 import { LookupPage } from './pages/LookupPage'
@@ -97,6 +98,10 @@ export const appRoutes: RouteObject[] = [
                   },
                   { path: 'staff', element: <AdminStaffPage /> },
                   { path: 'groups', element: <AdminGroupsPage /> },
+                  {
+                    path: 'business-rules/schedules',
+                    element: <AdminBusinessSchedulesPage />,
+                  },
                   {
                     path: '*',
                     element: <Navigate to="/admin/staff" replace />,
