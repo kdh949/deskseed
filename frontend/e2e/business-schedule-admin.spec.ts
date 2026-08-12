@@ -56,8 +56,7 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
         version === 1 ? '2026-08-10T00:00:00Z' : '2026-08-12T10:00:00Z',
       createdBy: {
         actorType: version === 1 ? 'SYSTEM' : 'STAFF',
-        actorId:
-          version === 1 ? null : '11000000-0000-4000-8000-000000000001',
+        actorId: version === 1 ? null : '11000000-0000-4000-8000-000000000001',
         displayName: version === 1 ? 'Deskseed seed' : '김관리',
       },
     }
@@ -99,7 +98,10 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
           .map(schedule),
       })
     }
-    if (path === '/api/v1/admin/business-schedules/preview' && method === 'POST') {
+    if (
+      path === '/api/v1/admin/business-schedules/preview' &&
+      method === 'POST'
+    ) {
       expect(request.headers()['x-csrf-token']).toBe(CSRF_TOKEN)
       const body = request.postDataJSON()
       expect(body.schedule.weekdays[5]).toEqual({
@@ -148,11 +150,16 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
   })
 
   await page.goto('/admin/business-rules/schedules')
-  await expect(page.getByRole('heading', { name: '업무 시간 일정' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '업무 시간 일정' }),
+  ).toBeVisible()
   await expect(page.getByText('활성 버전', { exact: true })).toBeVisible()
-  await expect(page).toHaveScreenshot('business-schedule-admin-default-1440.png', {
-    fullPage: true,
-  })
+  await expect(page).toHaveScreenshot(
+    'business-schedule-admin-default-1440.png',
+    {
+      fullPage: true,
+    },
+  )
 
   await page.getByRole('checkbox', { name: '토요일 영업' }).check()
   await page.getByRole('button', { name: '토요일 시간 구간 추가' }).click()
@@ -164,9 +171,12 @@ test('admin previews, versions, and activates a weekend and holiday schedule', a
   await page.getByRole('button', { name: '미저장 일정 미리보기' }).click()
   await expect(page.getByText('2026. 8. 17. 오전 10:00')).toBeVisible()
   await page.getByRole('heading', { name: '미저장 일정 미리보기' }).click()
-  await expect(page).toHaveScreenshot('business-schedule-admin-preview-1440.png', {
-    fullPage: true,
-  })
+  await expect(page).toHaveScreenshot(
+    'business-schedule-admin-preview-1440.png',
+    {
+      fullPage: true,
+    },
+  )
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 
   await page.getByRole('button', { name: '새 버전 저장' }).click()

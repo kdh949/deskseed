@@ -22,15 +22,17 @@ const schedule: BusinessSchedule = {
   id: '51000000-0000-0000-0000-000000000001',
   name: 'Default Support Hours',
   timeZone: 'Asia/Seoul',
-  weekdays: ([
-    'MONDAY',
-    'TUESDAY',
-    'WEDNESDAY',
-    'THURSDAY',
-    'FRIDAY',
-    'SATURDAY',
-    'SUNDAY',
-  ] as const).map((weekday, index) => ({
+  weekdays: (
+    [
+      'MONDAY',
+      'TUESDAY',
+      'WEDNESDAY',
+      'THURSDAY',
+      'FRIDAY',
+      'SATURDAY',
+      'SUNDAY',
+    ] as const
+  ).map((weekday, index) => ({
     weekday,
     enabled: index < 5,
     intervals: index < 5 ? [{ start: '09:00', end: '18:00' }] : [],
@@ -65,19 +67,27 @@ describe('AdminBusinessSchedulesPage', () => {
     const user = userEvent.setup()
     render(<AdminBusinessSchedulesPage />)
 
-    expect(await screen.findByRole('heading', { name: '업무 시간 일정' })).toBeVisible()
+    expect(
+      await screen.findByRole('heading', { name: '업무 시간 일정' }),
+    ).toBeVisible()
     expect(screen.getByDisplayValue('Asia/Seoul')).toBeVisible()
     await user.click(screen.getByRole('checkbox', { name: '토요일 영업' }))
     expect(screen.getByLabelText('토요일 구간 1 시작')).toHaveValue('09:00')
 
-    await user.click(screen.getByRole('button', { name: '토요일 시간 구간 추가' }))
+    await user.click(
+      screen.getByRole('button', { name: '토요일 시간 구간 추가' }),
+    )
     await user.clear(screen.getByLabelText('토요일 구간 2 시작'))
     await user.type(screen.getByLabelText('토요일 구간 2 시작'), '19:00')
     await user.clear(screen.getByLabelText('토요일 구간 2 종료'))
     await user.type(screen.getByLabelText('토요일 구간 2 종료'), '21:00')
-    await user.click(screen.getByRole('button', { name: '미저장 일정 미리보기' }))
+    await user.click(
+      screen.getByRole('button', { name: '미저장 일정 미리보기' }),
+    )
 
-    await waitFor(() => expect(apiMocks.previewBusinessSchedule).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(apiMocks.previewBusinessSchedule).toHaveBeenCalledTimes(1),
+    )
     const request = apiMocks.previewBusinessSchedule.mock.calls[0]![0]
     expect(request.schedule.weekdays[5]).toEqual({
       weekday: 'SATURDAY',
@@ -93,8 +103,17 @@ describe('AdminBusinessSchedulesPage', () => {
 
   it('saves an immutable version then activates it with the latest aggregate version', async () => {
     const user = userEvent.setup()
-    const versionTwo = { ...schedule, version: 2, aggregateVersion: 1, active: false }
-    const activeVersionTwo = { ...versionTwo, aggregateVersion: 2, active: true }
+    const versionTwo = {
+      ...schedule,
+      version: 2,
+      aggregateVersion: 1,
+      active: false,
+    }
+    const activeVersionTwo = {
+      ...versionTwo,
+      aggregateVersion: 2,
+      active: true,
+    }
     apiMocks.createBusinessScheduleVersion.mockResolvedValue(versionTwo)
     apiMocks.activateBusinessScheduleVersion.mockResolvedValue(activeVersionTwo)
     apiMocks.listBusinessSchedules
@@ -119,7 +138,11 @@ describe('AdminBusinessSchedulesPage', () => {
     )
     expect(await screen.findByText('버전 2가 저장되었습니다.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '버전 2 활성화' }))
-    expect(apiMocks.activateBusinessScheduleVersion).toHaveBeenCalledWith(schedule.id, 2, 1)
+    expect(apiMocks.activateBusinessScheduleVersion).toHaveBeenCalledWith(
+      schedule.id,
+      2,
+      1,
+    )
     expect(await screen.findByText('버전 2가 활성화되었습니다.')).toBeVisible()
   })
 })
