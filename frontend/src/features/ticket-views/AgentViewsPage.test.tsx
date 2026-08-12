@@ -1,24 +1,44 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentViewsPage } from './AgentViewsPage'
 
-const sessionState = vi.hoisted(() => ({ staffId: 'agent-a' }))
-
-vi.mock('../staff-auth/StaffSessionContext', () => ({
-  useStaffSession: () => ({
-    status: 'authenticated',
-    staff: {
-      id: sessionState.staffId,
-      email: `${sessionState.staffId}@example.com`,
-      displayName: sessionState.staffId,
-      role: 'AGENT',
-      capabilities: ['AGENT_WORKSPACE'],
-    },
-  }),
-}))
+const views = [
+  {
+    key: 'my-open',
+    name: '내 open',
+    scope: 'SYSTEM',
+    categoryPath: ['Views'],
+    ticketCount: null,
+    readScope: 'ALL_TICKETS',
+  },
+  {
+    key: 'pending',
+    name: 'Pending',
+    scope: 'SHARED',
+    categoryPath: ['Views'],
+    ticketCount: null,
+    readScope: 'ALL_TICKETS',
+  },
+  {
+    key: 'follow-up',
+    name: '내가 팔로우 중인 티켓',
+    scope: 'PERSONAL',
+    categoryPath: ['Views'],
+    ticketCount: 2,
+    readScope: 'ALL_TICKETS',
+  },
+  {
+    key: 'drafts',
+    name: '임시 보관함',
+    scope: 'PERSONAL',
+    categoryPath: ['Views'],
+    ticketCount: 1,
+    readScope: 'ALL_TICKETS',
+  },
+]
 
 function ticket(ticketNumber: number, subject: string) {
   return {
@@ -31,40 +51,74 @@ function ticket(ticketNumber: number, subject: string) {
       type: 'CUSTOMER',
       displayName: ticketNumber === 1042 ? '김민수' : '이수진',
     },
-    group: { id: 'group-payments', name: '결제 지원' },
+    group: { id: '00000000-0000-0000-0000-000000000001', name: '결제 지원' },
     assignee:
-      ticketNumber === 1042 ? { id: 'agent-id', displayName: '상담사' } : null,
+      ticketNumber === 1042
+        ? { id: '00000000-0000-0000-0000-000000000002', displayName: '상담사' }
+        : null,
     updatedAt: '2026-08-10T10:02:00Z',
     version: 0,
     isChild: false,
     openChildCount: 0,
-    sla:
-      ticketNumber === 1042
-        ? {
-            metric: 'FIRST_REPLY',
-            state: 'BREACHED',
-            dueAt: '2026-08-10T09:00:00Z',
-            targetMinutes: 60,
-            policyVersion: 2,
-            scheduleVersion: 1,
-          }
-        : {
-            metric: 'FIRST_REPLY',
-            state: 'NO_POLICY',
-            dueAt: null,
-            targetMinutes: null,
-            policyVersion: null,
-            scheduleVersion: null,
-          },
+    sla: null,
   }
 }
 
-function renderPage(
-  path = '/agent/views/pending',
-  queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  }),
+function ticketPage(
+  items = [ticket(1042, '결제 승인 오류'), ticket(1041, '환불 문의')],
 ) {
+  return {
+    items,
+    nextCursor: 'next-page',
+    totalApproximate: null,
+    sort: 'updatedAt:desc,ticketNumber:desc',
+  }
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'Content-Type':
+        status >= 400 ? 'application/problem+json' : 'application/json',
+    },
+  })
+}
+
+function mockReadApi(
+  page = ticketPage(),
+  error?: { body: unknown; status: number },
+) {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/api/v1/agent/views'))
+      return Promise.resolve(jsonResponse(views))
+    if (
+      url.includes('/api/v1/agent/views/') &&
+      url.split('?')[0]?.endsWith('/tickets')
+    ) {
+      return Promise.resolve(
+        error ? jsonResponse(error.body, error.status) : jsonResponse(page),
+      )
+    }
+    return Promise.resolve(
+      jsonResponse({ title: 'Not found', status: 404 }, 404),
+    )
+  })
+}
+
+function ticketRequestUrls(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls
+    .map(([url]) => String(url))
+    .filter(
+      (url) => url.includes('/api/v1/agent/views/') && url.includes('/tickets'),
+    )
+}
+
+function renderPage(path = '/agent/views/pending') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
@@ -80,183 +134,269 @@ function renderPage(
   )
 }
 
-afterEach(() => {
-  sessionState.staffId = 'agent-a'
-  vi.unstubAllGlobals()
-})
+afterEach(() => vi.unstubAllGlobals())
 
 describe('AgentViewsPage', () => {
-  it('renders a dense accessible queue and keeps filters in the URL', async () => {
+  it('uses supported URL filters, hides unsupported controls, and supports current-page selection', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            items: [ticket(1042, '결제 승인 오류'), ticket(1041, '환불 문의')],
-            nextCursor: 'next-page',
-            totalApproximate: null,
-            sort: 'updatedAt:desc,ticketNumber:desc',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    )
+    const fetchMock = mockReadApi()
     vi.stubGlobal('fetch', fetchMock)
 
-    renderPage()
+    renderPage('/agent/views/pending?status=OPEN')
 
     expect(
-      await screen.findByRole('heading', { name: 'Pending' }),
+      await screen.findByRole('heading', { name: '고객 답변 대기' }),
     ).toBeVisible()
     expect(
-      await screen.findByRole('table', { name: 'Pending 티켓' }),
+      await screen.findByRole('table', { name: '고객 답변 대기 티켓' }),
     ).toBeVisible()
-    expect(screen.getByRole('option', { name: 'ON_HOLD' })).toBeVisible()
-    expect(screen.getByRole('option', { name: 'CLOSED' })).toBeVisible()
-    expect(screen.getByRole('columnheader', { name: '상태' })).toBeVisible()
+    expect(screen.getByRole('option', { name: '보류' })).toBeVisible()
+    expect(screen.getByRole('option', { name: '종료' })).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: /업데이트/ })).toBeVisible()
     expect(
-      screen.getByRole('columnheader', { name: 'First Reply SLA' }),
+      screen.getByRole('button', { name: '티켓 ID 내림차순' }),
     ).toBeVisible()
-    expect(screen.getByText('위반')).toBeVisible()
-    expect(screen.getByText('정책 없음')).toBeVisible()
     expect(
-      screen.getByRole('link', { name: '#1042 결제 승인 오류 열기' }),
+      screen.getByRole('link', { name: '티켓 #1042 결제 승인 오류' }),
     ).toBeVisible()
-    expect(screen.getByText('URGENT', { selector: 'span' })).toBeVisible()
+    expect(screen.getByText('긴급', { selector: 'span' })).toBeVisible()
 
     await user.selectOptions(screen.getByLabelText('상태 필터'), 'PENDING')
-    await screen.findByRole('table', { name: 'Pending 티켓' })
     await user.selectOptions(screen.getByLabelText('우선순위 필터'), 'URGENT')
-    await screen.findByRole('table', { name: 'Pending 티켓' })
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('status=PENDING')
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('priority=URGENT')
-    await user.selectOptions(
-      screen.getByLabelText('First Reply SLA 필터'),
-      'BREACHED',
-    )
-    await screen.findByRole('table', { name: 'Pending 티켓' })
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('slaState=BREACHED')
+    await waitFor(() => {
+      expect(ticketRequestUrls(fetchMock).at(-1)).toContain('status=PENDING')
+      expect(ticketRequestUrls(fetchMock).at(-1)).toContain('priority=URGENT')
+    })
 
-    await user.click(await screen.findByRole('button', { name: '다음 페이지' }))
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain('cursor=next-page')
+    expect(screen.queryByLabelText('채널 필터')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'View 저장' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '티켓 ID 내림차순' }))
+    expect(
+      screen.getByRole('columnheader', { name: /티켓 ID/ }),
+    ).toHaveAttribute('aria-sort', 'ascending')
+
+    await user.click(screen.getByLabelText('티켓 #1042 선택'))
+    expect(
+      await screen.findByRole('region', { name: '선택된 티켓' }),
+    ).toHaveTextContent('1개 선택됨')
+    await user.click(screen.getByRole('button', { name: '선택 해제' }))
+    expect(
+      screen.queryByRole('region', { name: '선택된 티켓' }),
+    ).not.toBeInTheDocument()
+
+    await user.type(
+      screen.getByRole('searchbox', { name: '현재 목록 검색' }),
+      '없는값',
+    )
+    expect(
+      await screen.findByRole('heading', {
+        name: '일치하는 티켓이 없습니다.',
+      }),
+    ).toBeVisible()
+    expect(ticketRequestUrls(fetchMock).some((url) => url.includes('q='))).toBe(
+      false,
+    )
   })
 
-  it('opens a row with the keyboard and never prefetches ticket detail', async () => {
+  it('uses roving row keyboard navigation, selects with Space, and opens only after Enter', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          items: [ticket(1042, '결제 승인 오류')],
-          nextCursor: null,
-          totalApproximate: null,
-          sort: 'updatedAt:desc,ticketNumber:desc',
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    )
+    const fetchMock = mockReadApi()
     vi.stubGlobal('fetch', fetchMock)
 
-    renderPage()
-    const ticketLink = await screen.findByRole('link', {
-      name: '#1042 결제 승인 오류 열기',
+    renderPage('/agent/views/my-open')
+    const firstTicketLink = await screen.findByRole('link', {
+      name: '티켓 #1042 결제 승인 오류',
     })
-    ticketLink.focus()
-    await user.keyboard('{Enter}')
+    const secondTicketLink = screen.getByRole('link', {
+      name: '티켓 #1041 환불 문의',
+    })
 
+    firstTicketLink.focus()
+    await user.keyboard('{ArrowDown}')
+    expect(secondTicketLink).toHaveFocus()
+    await user.keyboard(' ')
+    expect(await screen.findByText('1개 선택됨')).toBeVisible()
+
+    await user.keyboard('{ArrowUp}')
+    expect(firstTicketLink).toHaveFocus()
+    await user.keyboard(' ')
+    expect(await screen.findByText('2개 선택됨')).toBeVisible()
+
+    await user.keyboard('{Enter}')
     expect(await screen.findByText('티켓 열림')).toBeVisible()
     expect(
       fetchMock.mock.calls.some(([url]) =>
-        String(url).includes('/agent/tickets/'),
+        String(url).includes('/api/v1/agent/tickets/'),
       ),
     ).toBe(false)
   })
 
-  it('distinguishes empty and failed queues with recovery actions', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              items: [],
-              nextCursor: null,
-              totalApproximate: null,
-              sort: 'updatedAt:desc,ticketNumber:desc',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              type: '/problems/agent-ticket-read',
-              title: 'Unavailable',
-              status: 503,
-              requestId: 'safe-request-id',
-            }),
-            {
-              status: 503,
-              headers: { 'Content-Type': 'application/problem+json' },
-            },
-          ),
-        ),
+  it('creates a local personal view without executing a new server view query', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockReadApi()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage('/agent/views/my-open')
+    await screen.findByRole('table', { name: '내 티켓 티켓' })
+    const ticketRequestCountBeforeCreate = ticketRequestUrls(fetchMock).length
+
+    await user.click(screen.getByRole('button', { name: '새 보기 만들기' }))
+    const dialog = await screen.findByRole('dialog', {
+      name: '새 개인 보기 만들기',
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: '보기 만들기' }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '보기 이름을 입력하세요.',
     )
 
+    await user.type(
+      within(dialog).getByRole('textbox', { name: '보기 이름' }),
+      '검토 전용 보기',
+    )
+    await user.click(
+      within(dialog).getByRole('button', { name: '중요 아이콘 선택' }),
+    )
+    await user.click(
+      within(dialog).getByRole('button', { name: '보기 만들기' }),
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        name: '아직 연결된 티켓 조건이 없습니다.',
+      }),
+    ).toBeVisible()
+    expect(screen.getByRole('link', { name: '검토 전용 보기' })).toBeVisible()
+    expect(ticketRequestUrls(fetchMock)).toHaveLength(
+      ticketRequestCountBeforeCreate,
+    )
+  })
+
+  it('keeps one active view and exposes only applicable view actions', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', mockReadApi())
+
+    renderPage('/agent/views/my-open')
+    await screen.findByRole('table', { name: '내 티켓 티켓' })
+
+    expect(screen.getByRole('link', { name: '내 티켓' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(
+      screen.getByRole('link', { name: '고객 답변 대기' }),
+    ).not.toHaveAttribute('aria-current')
+
+    await user.click(screen.getByRole('button', { name: '작업' }))
+    const menu = await screen.findByRole('menu', { name: '보기 작업' })
+    expect(
+      within(menu).getByRole('menuitem', { name: '새 보기 만들기' }),
+    ).toBeVisible()
+    expect(
+      within(menu).queryByRole('menuitem', { name: '보기 설정' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps shared views read-only and saves personal name, icon, and order only on confirmation', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', mockReadApi())
+
+    renderPage('/agent/views/follow-up')
+    await screen.findByRole('table', { name: '내가 팔로우 중인 티켓 티켓' })
+    expect(
+      screen.queryByRole('button', { name: '내 티켓 편집' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: '내가 팔로우 중인 티켓 편집' }),
+    )
+    let dialog = await screen.findByRole('dialog', { name: '개인 보기 편집' })
+    await user.click(within(dialog).getByRole('button', { name: '아래로' }))
+    await user.click(within(dialog).getByRole('button', { name: '취소' }))
+    const linksAfterCancel = screen
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+    expect(
+      linksAfterCancel.findIndex((label) =>
+        label?.startsWith('내가 팔로우 중인 티켓'),
+      ),
+    ).toBeLessThan(
+      linksAfterCancel.findIndex((label) => label?.startsWith('임시 보관함')),
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: '내가 팔로우 중인 티켓 편집' }),
+    )
+    dialog = await screen.findByRole('dialog', { name: '개인 보기 편집' })
+    await user.clear(within(dialog).getByRole('textbox', { name: '보기 이름' }))
+    await user.type(
+      within(dialog).getByRole('textbox', { name: '보기 이름' }),
+      '검토 예정',
+    )
+    await user.click(
+      within(dialog).getByRole('button', { name: '북마크 아이콘 선택' }),
+    )
+    await user.click(within(dialog).getByRole('button', { name: '아래로' }))
+    await user.click(within(dialog).getByRole('button', { name: '변경 저장' }))
+
+    expect(
+      await screen.findByRole('heading', { name: '검토 예정' }),
+    ).toBeVisible()
+    const personalLinks = screen
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+    expect(
+      personalLinks.findIndex((label) => label?.startsWith('임시 보관함')),
+    ).toBeLessThan(
+      personalLinks.findIndex((label) => label?.startsWith('검토 예정')),
+    )
+  })
+
+  it('distinguishes empty, denied, and failed queues with safe recovery states', async () => {
+    const emptyFetchMock = mockReadApi(ticketPage([]))
+    vi.stubGlobal('fetch', emptyFetchMock)
     const first = renderPage()
     expect(
-      await screen.findByText('이 View에 표시할 티켓이 없습니다.'),
+      await screen.findByRole('heading', {
+        name: '처리할 티켓이 없습니다.',
+      }),
     ).toBeVisible()
     first.unmount()
 
-    renderPage('/agent/views/my-open?status=OPEN')
+    const deniedFetchMock = mockReadApi(ticketPage(), {
+      status: 403,
+      body: {
+        type: '/problems/agent-ticket-read',
+        title: 'Forbidden',
+        status: 403,
+        requestId: 'safe-denied-request-id',
+      },
+    })
+    vi.stubGlobal('fetch', deniedFetchMock)
+    const second = renderPage('/agent/views/my-open')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '이 티켓 목록에 접근할 수 없습니다.',
+    )
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeVisible()
+    second.unmount()
+
+    const failedFetchMock = mockReadApi(ticketPage(), {
+      status: 503,
+      body: {
+        type: '/problems/agent-ticket-read',
+        title: 'Unavailable',
+        status: 503,
+        requestId: 'safe-request-id',
+      },
+    })
+    vi.stubGlobal('fetch', failedFetchMock)
+    renderPage('/agent/views/my-open')
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'safe-request-id',
     )
-    expect(screen.getByRole('button', { name: '다시 시도' })).toBeVisible()
-  })
-
-  it('never reuses another staff account queue from the shared query cache', async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
-      },
-    })
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            items: [ticket(1042, 'A 계정 전용 문의')],
-            nextCursor: null,
-            totalApproximate: null,
-            sort: 'updatedAt:desc,ticketNumber:desc',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            items: [ticket(2042, 'B 계정 전용 문의')],
-            nextCursor: null,
-            totalApproximate: null,
-            sort: 'updatedAt:desc,ticketNumber:desc',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const accountA = renderPage('/agent/views/my-open', queryClient)
-    expect(await screen.findByText('A 계정 전용 문의')).toBeVisible()
-    accountA.unmount()
-
-    sessionState.staffId = 'agent-b'
-    renderPage('/agent/views/my-open', queryClient)
-
-    expect(await screen.findByText('B 계정 전용 문의')).toBeVisible()
-    expect(screen.queryByText('A 계정 전용 문의')).not.toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

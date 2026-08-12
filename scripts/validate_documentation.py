@@ -50,9 +50,9 @@ REQUIRED_CHECKLISTS = {
     "checklists/pr-review.md",
     "checklists/release.md",
 }
-EXPECTED_DOC_NUMBERS = set(range(0, 55))
+EXPECTED_DOC_NUMBERS = set(range(0, 56))
 EXPECTED_TASK_NUMBERS = set(range(0, 26))
-EXPECTED_ADR_NUMBERS = set(range(1, 39))
+EXPECTED_ADR_NUMBERS = set(range(1, 40))
 # This is an onboarding brief that precedes the canonical 00-19 delivery
 # sequence. It intentionally shares the bootstrap number but is not a release
 # task in the contiguous task register.
@@ -84,9 +84,11 @@ GENERATED_DIRECTORY_NAMES = {
     "node_modules",
     "playwright-report",
     "test-results",
+    # "artifacts",
 }
 GENERATED_PATH_PREFIXES = {Path("backend/bin")}
 E2E_VISUAL_BASELINE_DIRECTORY = ROOT / "frontend/e2e/__screenshots__"
+APPROVED_DESKSEED_ASSET_DIRECTORY = ROOT / "frontend/src/assets/deskseed"
 
 
 def rel(path: Path) -> str:
@@ -198,11 +200,11 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
             if count > 1:
                 errors.append(f"Duplicate {label} number: {number}")
     if set(docs_numbers) != EXPECTED_DOC_NUMBERS:
-        errors.append(f"Canonical docs must be contiguous 00-54; missing={sorted(EXPECTED_DOC_NUMBERS-set(docs_numbers))}, extra={sorted(set(docs_numbers)-EXPECTED_DOC_NUMBERS)}")
+        errors.append(f"Canonical docs must be contiguous 00-55; missing={sorted(EXPECTED_DOC_NUMBERS-set(docs_numbers))}, extra={sorted(set(docs_numbers)-EXPECTED_DOC_NUMBERS)}")
     if set(task_numbers) != EXPECTED_TASK_NUMBERS:
         errors.append(f"Task briefs must be contiguous 00-25; missing={sorted(EXPECTED_TASK_NUMBERS-set(task_numbers))}, extra={sorted(set(task_numbers)-EXPECTED_TASK_NUMBERS)}")
     if set(adr_numbers) != EXPECTED_ADR_NUMBERS:
-        errors.append(f"ADRs must be contiguous 0001-0038; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
+        errors.append(f"ADRs must be contiguous 0001-0039; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
     counts.update(canonical_docs=len(docs_numbers), task_briefs=len(task_numbers), adr_files=len(adr_numbers))
 
     md_files = all_files("**/*.md")
@@ -480,12 +482,13 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
         if path.is_file()
         and not is_generated(path)
         and not path.is_relative_to(E2E_VISUAL_BASELINE_DIRECTORY)
+        and not path.is_relative_to(APPROVED_DESKSEED_ASSET_DIRECTORY)
         and path.suffix.lower() in IMAGE_EXTENSIONS
     ]
     counts["e2e_visual_baselines"] = len(e2e_visual_baselines)
     counts["bundled_image_assets"] = len(image_assets)
     if image_assets:
-        errors.append("Documentation seed must not bundle copied Zendesk visual assets: " + ", ".join(rel(p) for p in image_assets))
+        errors.append("Repository must not bundle unapproved visual assets: " + ", ".join(rel(p) for p in image_assets))
 
     validation_heading = (ROOT / "VALIDATION-REPORT.md").read_text(encoding="utf-8").splitlines()[0] if (ROOT / "VALIDATION-REPORT.md").exists() else ""
     if validation_heading and "v0.6" not in validation_heading:
@@ -522,7 +525,7 @@ def write_report(errors: list[str], warnings: list[str], counts: dict[str, int])
         "",
         "## Validated",
         "",
-        "- Canonical docs 00–54, tasks 00–25, and ADRs 0001–0038 are present and unique.",
+        "- Canonical docs 00–55, tasks 00–25, and ADRs 0001–0039 are present and unique.",
         "- Markdown fenced-code balance and relative Markdown links.",
         "- JSON/YAML parsing and Draft 2020-12 JSON Schema validity.",
         "- OpenAPI 3.1 operation IDs, local `$ref` resolution, and FROZEN staff expected-actor/CSRF/error bindings.",

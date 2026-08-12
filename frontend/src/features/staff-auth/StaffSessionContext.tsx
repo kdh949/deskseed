@@ -25,7 +25,7 @@ import {
   STAFF_DRAFT_SESSION_OWNER_KEY,
   purgeStaffTicketDrafts,
   sweepStaffTicketDrafts,
-} from '../ticket-workspace/ticketEditorModel'
+} from '../ticket-workspace/model/ticketEditorModel'
 
 type SessionStatus = 'loading' | 'authenticated' | 'anonymous' | 'error'
 

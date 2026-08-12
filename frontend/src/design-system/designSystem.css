@@ -1,0 +1,276 @@
+@import './foundations/tokens.css';
+@import './primitives/primitives.css';
+
+:root {
+  font-family:
+    Inter,
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  color: var(--ds-foreground-default);
+  background: var(--ds-background-default);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: var(--ds-foreground-default);
+  background: var(--ds-background-default);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Agent application shell: compact global rail and ticket-focused chrome. */
+.agent-shell {
+  min-width: var(--ds-layout-agent-min-width);
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: var(--ds-layout-nav-rail-width) minmax(0, 1fr);
+  position: relative;
+  color: var(--ds-foreground-default);
+  background: var(--ds-background-default);
+}
+.agent-shell::before {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 0;
+  height: var(--ds-layout-top-chrome-height);
+  content: '';
+  background: var(--ds-background-chrome);
+  border-bottom: var(--ds-ref-border-width-default) solid
+    var(--ds-border-chrome);
+  pointer-events: none;
+}
+
+.agent-global-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: var(--ds-layout-top-chrome-height) minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: center;
+  min-height: 100vh;
+  padding: 0;
+  color: var(--ds-nav-rail-foreground);
+  background: var(--ds-nav-rail-background);
+}
+
+.agent-brand,
+.agent-nav-link {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ds-ref-radius-control);
+  text-decoration: none;
+}
+
+.agent-brand {
+  z-index: 1;
+  width: var(--ds-layout-nav-rail-width);
+  height: var(--ds-layout-top-chrome-height);
+  overflow: hidden;
+  border-radius: 0;
+  background: var(--ds-background-chrome);
+}
+.agent-brand .ds-brand-mark {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+}
+.agent-nav-items {
+  align-self: start;
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  gap: var(--ds-ref-space-2);
+  padding: var(--ds-ref-space-3) 0;
+}
+.agent-nav-link {
+  position: relative;
+  color: var(--ds-foreground-subtle);
+}
+.agent-nav-link:hover,
+.agent-nav-link[aria-current='page'],
+.agent-nav-link.is-active {
+  color: var(--ds-foreground-primary);
+  background: var(--ds-nav-rail-selected-background);
+}
+.agent-nav-tooltip {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.agent-main-column {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: var(--ds-layout-top-chrome-height) minmax(0, 1fr);
+  position: relative;
+  z-index: 1;
+}
+.agent-top-chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-ref-space-2);
+  min-width: 0;
+  padding: 0 var(--ds-ref-space-6) 0 var(--ds-ref-space-5);
+  color: var(--ds-foreground-inverse);
+  background: var(--ds-background-chrome);
+}
+.agent-back-to-views {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-ref-space-2);
+  flex: 0 0 172px;
+  color: var(--ds-foreground-inverse);
+  font-size: var(--ds-ref-font-size-sm);
+  font-weight: var(--ds-ref-font-weight-semibold);
+  text-decoration: none;
+}
+.agent-ticket-tabs {
+  display: flex;
+  align-self: stretch;
+  align-items: stretch;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-top: var(--ds-ref-space-2);
+  box-sizing: border-box;
+}
+.agent-ticket-tab-wrap {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 320px;
+  border-left: 1px solid var(--ds-border-chrome);
+  border-radius: var(--ds-ref-radius-control) var(--ds-ref-radius-control) 0 0;
+  overflow: hidden;
+}
+.agent-ticket-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-ref-space-2);
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0 var(--ds-ref-space-4);
+  border: 0;
+  color: var(--ds-foreground-chrome-subtle);
+  background: transparent;
+  font-size: var(--ds-ref-font-size-sm);
+  text-decoration: none;
+}
+.agent-ticket-tab-wrap--active .agent-ticket-tab,
+.agent-ticket-tab-wrap--active .agent-ticket-tab-close {
+  color: var(--ds-foreground-default);
+  background: var(--ds-background-raised);
+}
+.agent-ticket-tab strong {
+  flex: 0 0 auto;
+}
+.agent-ticket-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-ticket-tab .ds-icon {
+  flex: 0 0 auto;
+}
+.agent-ticket-tab-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--ds-ref-control-default);
+  padding: 0;
+  border: 0;
+  color: var(--ds-foreground-chrome-subtle);
+  background: transparent;
+  cursor: pointer;
+}
+.agent-ticket-tab-close:hover {
+  background: var(--ds-nav-rail-selected-background);
+  color: var(--ds-foreground-inverse);
+}
+.agent-ticket-tab-wrap--active .agent-ticket-tab-close:hover {
+  background: var(--ds-background-hover);
+  color: var(--ds-foreground-default);
+}
+.agent-ticket-tabs > .ds-icon-button {
+  align-self: stretch;
+  flex: 0 0 var(--ds-ref-control-default);
+  height: auto;
+  border-radius: var(--ds-ref-radius-control) var(--ds-ref-radius-control) 0 0;
+}
+.agent-top-chrome .ds-icon-button {
+  color: var(--ds-foreground-chrome-subtle);
+}
+.agent-top-chrome .ds-icon-button:hover {
+  color: var(--ds-foreground-inverse);
+  background: var(--ds-nav-rail-selected-background);
+}
+.agent-profile {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-ref-space-3);
+  flex: 0 0 auto;
+}
+.agent-profile > span {
+  display: grid;
+  gap: 1px;
+}
+.agent-profile strong {
+  font-size: var(--ds-ref-font-size-sm);
+}
+.agent-profile small {
+  color: var(--ds-foreground-chrome-subtle);
+  font-size: var(--ds-ref-font-size-xs);
+}
+
+.agent-shell :focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
+}
+
+@media (max-width: 1080px) {
+  .agent-shell {
+    min-width: 0;
+  }
+  .agent-ticket-tab:nth-of-type(n + 2),
+  .agent-profile > span {
+    display: none;
+  }
+}

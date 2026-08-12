@@ -1,250 +1,69 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { useQuery } from '@tanstack/react-query'
+import { useMemo, useRef } from 'react'
+import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
-import { ScreenState, SplitPanel, TicketTabs } from '../../shared/ui/system'
-import { useStaffSession } from '../staff-auth/StaffSessionContext'
-import { TicketContextPanel } from './TicketContextPanel'
-import { TicketConversation } from './TicketConversation'
-import { TicketPropertiesEditor } from './TicketPropertiesEditor'
-import { TicketReplyComposer } from './TicketReplyComposer'
-import { UnsavedNavigationDialog } from './UnsavedNavigationDialog'
-import { usePanelPreferences } from './usePanelPreferences'
-import { useTicketEditor } from './useTicketEditor'
+import type {
+  AgentComment,
+  AgentTicketDetail,
+  AgentTicketStatus,
+  TicketPriority,
+} from '../../api/types'
+import { DsButton, ScreenState } from '../../design-system'
+import { TicketWorkspace } from './TicketWorkspace'
+import type {
+  ConversationEntry,
+  WorkspaceTicket,
+} from './ticketWorkspaceFixture'
 
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
-  const [searchParams] = useSearchParams()
-  const originSearchEventId = validUuid(searchParams.get('originSearchEventId'))
-  const session = useStaffSession()
-  const staffId = session.staff?.id
-  const interactionId = useMemo(createInteractionId, [staffId, ticketNumber])
-  const queryClient = useQueryClient()
-  const queryKey = [
-    'agent-ticket',
-    staffId,
-    ticketNumber,
-    interactionId,
-  ] as const
+  const interactionId = useMemo(createInteractionId, [ticketNumber])
+  const successfulInteractionId = useRef<string | null>(null)
   const query = useQuery({
-    queryKey,
-    queryFn: () =>
-      getAgentTicket(
+    queryKey: ['agent-ticket', ticketNumber, interactionId],
+    queryFn: async () => {
+      const readIntent =
+        successfulInteractionId.current === interactionId
+          ? 'BACKGROUND'
+          : 'NAVIGATION'
+      const detail = await getAgentTicket(
         ticketNumber ?? 0,
         interactionId,
-        'NAVIGATION',
-        originSearchEventId,
-      ),
-    enabled:
-      session.status === 'authenticated' &&
-      staffId !== undefined &&
-      ticketNumber !== null,
+        readIntent,
+      )
+      successfulInteractionId.current = interactionId
+      return detail
+    },
+    enabled: ticketNumber !== null,
   })
 
-  if (ticketNumber === null) {
-    return <InvalidTicketRoute />
-  }
-
-  if (query.isPending) {
-    return <WorkspaceLoading ticketNumber={ticketNumberParam} />
-  }
+  if (ticketNumber === null) return <InvalidTicketRoute />
+  if (query.isPending) return <TicketWorkspace initialState="loading" />
   if (query.isError) {
     return <WorkspaceError error={query.error} retry={() => query.refetch()} />
   }
 
-  const detail = query.data
-  const refreshLatest = async () => {
-    const latest = await getAgentTicket(
-      ticketNumber,
-      interactionId,
-      'BACKGROUND',
-    )
-    queryClient.setQueryData(queryKey, latest)
-    return latest
-  }
-
   return (
-    <TicketWorkspaceContent
-      key={`${session.staff?.id ?? 'unknown'}:${ticketNumber}`}
-      detail={detail}
-      staffId={staffId ?? 'unknown'}
-      refreshLatest={refreshLatest}
+    <TicketWorkspace
+      detail={query.data}
+      onRefresh={() => query.refetch()}
+      refreshing={query.isFetching}
+      submitDisabledReason="현재 티켓은 읽기 전용입니다."
+      ticket={toWorkspaceTicket(query.data)}
     />
-  )
-}
-
-function TicketWorkspaceContent({
-  detail,
-  staffId,
-  refreshLatest,
-}: {
-  detail: Awaited<ReturnType<typeof getAgentTicket>>
-  staffId: string
-  refreshLatest: () => Promise<Awaited<ReturnType<typeof getAgentTicket>>>
-}) {
-  const contextToggleRef = useRef<HTMLButtonElement>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const { preferences, setPropertyWidth, setContextWidth, toggleContext } =
-    usePanelPreferences(staffId)
-  const refreshWithStatus = async () => {
-    setRefreshing(true)
-    try {
-      return await refreshLatest()
-    } finally {
-      setRefreshing(false)
-    }
-  }
-  const editor = useTicketEditor({
-    detail,
-    staffId,
-    refreshLatest: refreshWithStatus,
-  })
-  const ticket = detail.ticket
-  const canUpdate = detail.capabilities.includes('UPDATE')
-
-  return (
-    <main
-      className="ticket-workspace-page"
-      aria-labelledby="ticket-workspace-title"
-    >
-      <TicketTabs
-        backTo="/agent/views/my-open"
-        backLabel="Views로 돌아가기"
-        ticketNumber={ticket.ticketNumber}
-        subject={ticket.subject}
-        status={ticket.status}
-        onRefresh={() => void editor.refreshEditor()}
-        refreshing={refreshing}
-        unsaved={editor.isUnsaved}
-      />
-      <header className="ticket-titlebar">
-        <div>
-          <p className="agent-page-eyebrow">
-            TICKET #{ticket.ticketNumber} · ALL_TICKETS READ
-          </p>
-          <h1 id="ticket-workspace-title">{ticket.subject}</h1>
-          {ticket.sla ? (
-            <p
-              className={`workspace-sla sla-${ticket.sla.state.toLowerCase()}`}
-            >
-              <strong>First Reply · {ticket.sla.state}</strong>
-              {ticket.sla.dueAt ? (
-                <span>
-                  {' · 기한 '}
-                  {new Intl.DateTimeFormat('ko-KR', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  }).format(new Date(ticket.sla.dueAt))}
-                </span>
-              ) : null}
-              {ticket.sla.policyVersion ? (
-                <small>
-                  {' · 정책 v'}
-                  {ticket.sla.policyVersion} / 일정 v
-                  {ticket.sla.scheduleVersion}
-                </small>
-              ) : null}
-            </p>
-          ) : null}
-        </div>
-        {preferences.contextCollapsed ? (
-          <button
-            ref={contextToggleRef}
-            className="compact-button"
-            type="button"
-            onClick={toggleContext}
-          >
-            컨텍스트 패널 펼치기
-          </button>
-        ) : (
-          <button
-            ref={contextToggleRef}
-            className="compact-button"
-            type="button"
-            onClick={toggleContext}
-          >
-            컨텍스트 패널 접기
-          </button>
-        )}
-      </header>
-      <SplitPanel
-        propertyWidth={preferences.propertyWidth}
-        contextWidth={preferences.contextWidth}
-        onPropertyWidthChange={setPropertyWidth}
-        onContextWidthChange={setContextWidth}
-        propertyPanel={
-          <TicketPropertiesEditor
-            detail={detail}
-            localFields={editor.localFields}
-            conflict={editor.conflict}
-            conflictRef={editor.conflictRef}
-            disabled={!canUpdate || editor.submitting}
-            onFieldChange={editor.updateField}
-            onResolveConflict={editor.resolveField}
-            onReloadConflict={() => void editor.loadLatestForConflict()}
-          />
-        }
-        conversationPanel={
-          <TicketConversation
-            comments={detail.comments}
-            footer={
-              canUpdate ? (
-                <TicketReplyComposer
-                  mode={editor.mode}
-                  drafts={editor.comments}
-                  submitting={editor.submitting}
-                  canSubmit={editor.canSubmit}
-                  error={editor.error}
-                  success={editor.success}
-                  warnings={editor.warnings}
-                  internalOnly={ticket.isChild}
-                  onModeChange={editor.setMode}
-                  onDraftChange={editor.updateDraft}
-                  onSubmit={() => void editor.submit()}
-                />
-              ) : undefined
-            }
-          />
-        }
-        contextPanel={
-          preferences.contextCollapsed ? undefined : (
-            <TicketContextPanel
-              detail={detail}
-              canUpdate={canUpdate}
-              onCommandCompleted={editor.refreshEditor}
-            />
-          )
-        }
-      />
-      <UnsavedNavigationDialog
-        blocker={editor.blocker}
-        submitting={editor.submitting}
-      />
-    </main>
-  )
-}
-
-function WorkspaceLoading({ ticketNumber }: { ticketNumber: string }) {
-  return (
-    <main className="ticket-workspace-loading" aria-busy="true">
-      <span className="sr-only" role="status">
-        티켓 #{ticketNumber} 불러오는 중
-      </span>
-      <div />
-      <div />
-      <div />
-    </main>
   )
 }
 
 function InvalidTicketRoute() {
   return (
-    <main className="workspace-error-state" role="alert">
-      <p className="agent-page-eyebrow">INVALID TICKET URL</p>
-      <h1>티켓 번호를 확인할 수 없습니다.</h1>
-      <p>양의 정수 티켓 번호로 다시 시도해 주세요.</p>
-      <Link to="/agent/views/my-open">Views로 돌아가기</Link>
+    <main className="workspace-error-state">
+      <ScreenState
+        action={<Link to="/agent/views/my-open">내 티켓으로 돌아가기</Link>}
+        description="올바른 티켓 번호로 다시 시도해 주세요."
+        kind="not-found"
+        title="티켓 번호를 확인할 수 없습니다."
+      />
     </main>
   )
 }
@@ -260,25 +79,80 @@ function WorkspaceError({ error, retry }: { error: Error; retry: () => void }) {
   return (
     <main className="workspace-error-state">
       <ScreenState
-        kind={kind}
-        title="티켓을 열 수 없습니다."
-        description={
-          apiError?.status === 404
-            ? '티켓이 없거나 접근 가능한 범위에 없습니다.'
-            : '읽기 감사 기록을 포함한 요청을 완료하지 못했습니다.'
-        }
-        requestId={apiError?.requestId}
         action={
           <div className="state-action-row">
-            <button className="compact-button" type="button" onClick={retry}>
-              다시 시도
-            </button>
-            <Link to="/agent/views/my-open">Views로 돌아가기</Link>
+            <DsButton onClick={retry}>다시 시도</DsButton>
+            <Link to="/agent/views/my-open">내 티켓으로 돌아가기</Link>
           </div>
         }
+        description={
+          apiError?.status === 403
+            ? '현재 계정으로 이 티켓을 볼 수 없습니다.'
+            : apiError?.status === 404
+              ? '티켓이 없거나 더 이상 열 수 없습니다.'
+              : '잠시 후 다시 시도해 주세요.'
+        }
+        kind={kind}
+        requestId={apiError?.requestId}
+        title="티켓을 열 수 없습니다."
       />
     </main>
   )
+}
+
+function toWorkspaceTicket(detail: AgentTicketDetail): WorkspaceTicket {
+  const ticket = detail.ticket
+  return {
+    number: String(ticket.ticketNumber),
+    subject: ticket.subject,
+    createdAt: `업데이트 ${formatDate(ticket.updatedAt)}`,
+    status: statusLabel(ticket.status),
+    priority: priorityLabel(ticket.priority),
+    group: ticket.group?.name ?? '미배정',
+    assignee: ticket.assignee?.displayName ?? '미배정',
+    requester: ticket.requester.displayName,
+    conversation: detail.comments.map(toConversationEntry),
+  }
+}
+
+function toConversationEntry(comment: AgentComment): ConversationEntry {
+  if (comment.actor.type === 'SYSTEM') {
+    return {
+      kind: 'system',
+      timestamp: formatDate(comment.createdAt),
+      body: comment.body,
+    }
+  }
+  return {
+    kind: 'message',
+    visibility: comment.visibility === 'INTERNAL' ? 'internal' : 'public',
+    author: comment.actor.type === 'CUSTOMER' ? 'customer' : 'agent',
+    name: comment.actor.displayName,
+    timestamp: formatDate(comment.createdAt),
+    body: comment.body.split(/\n{2,}/),
+  }
+}
+
+function statusLabel(status: AgentTicketStatus): WorkspaceTicket['status'] {
+  const labels: Record<AgentTicketStatus, WorkspaceTicket['status']> = {
+    NEW: 'New',
+    OPEN: 'Open',
+    PENDING: 'Pending',
+    ON_HOLD: 'Pending',
+    SOLVED: 'Solved',
+    CLOSED: 'Solved',
+  }
+  return labels[status]
+}
+
+function priorityLabel(priority: TicketPriority): WorkspaceTicket['priority'] {
+  const labels: Record<TicketPriority, WorkspaceTicket['priority']> = {
+    LOW: 'Low',
+    NORMAL: 'Normal',
+    HIGH: 'High',
+    URGENT: 'Urgent',
+  }
+  return labels[priority]
 }
 
 function parseTicketNumber(value: string): number | null {
@@ -306,11 +180,9 @@ function createInteractionId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-function validUuid(value: string | null): string | undefined {
-  return value &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-    ? value
-    : undefined
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }

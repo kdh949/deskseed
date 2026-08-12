@@ -14,7 +14,9 @@ Deskseed는 Zendesk의 업무 정보 구조와 상호작용 패턴을 참고한�
 
 ## 2. 프론트 의존성 기준
 
-초기 후보:
+현재 runtime과 개발 도구의 정확한 버전은 `frontend/package-lock.json`이 소유한다. Garden은 `frontend/src/design-system/` 내부 provider, primitive, icon 구현에서만 직접 import할 수 있다. feature/page/shell은 canonical public export를 사용하며 호환 wrapper를 만들지 않는다.
+
+핵심 계층:
 
 ```text
 react
@@ -25,55 +27,25 @@ vite
 @tanstack/react-query
 styled-components
 @zendeskgarden/react-theming
-@zendeskgarden/react-buttons
-@zendeskgarden/react-forms
-@zendeskgarden/react-dropdowns
-@zendeskgarden/react-tables
-@zendeskgarden/react-tabs
-@zendeskgarden/react-modals
-@zendeskgarden/react-notifications
-@zendeskgarden/react-loaders
-@zendeskgarden/react-accordions
-@zendeskgarden/react-avatars
-@zendeskgarden/react-tags
-@zendeskgarden/react-tooltip
 @zendeskgarden/svg-icons
+storybook / vitest / playwright / axe
 ```
 
 실제 package version은 저장소 초기화 시 lockfile에 고정한다. Garden major upgrade는 별도 ADR과 visual regression을 요구한다.
 
 ## 3. 브랜드와 theme
 
-Deskseed 기본 theme 제안:
+Deskseed theme의 유일한 token source는 `frontend/src/design-system/foundations/tokens.css`다. 문서에 token 값을 복제하거나 과거 이름의 alias를 두지 않는다.
+
+원칙:
 
 ```text
-Primary hue: blue 또는 teal
-Chrome hue: deep teal/navy 계열
-Danger: red
-Warning: amber/yellow
-Success: green
-Neutral: grey
-Font: system-ui stack
-Base spacing: 4px
+semantic role → component/state contract
+reference role → current foundations value
+brand role → Deskseed-owned asset and color
 ```
 
-Zendesk와 동일한 색상 값을 복사하는 대신 Garden semantic token과 Deskseed brand token을 결합한다.
-
-```css
---ds-space-1: 4px;
---ds-space-2: 8px;
---ds-space-3: 12px;
---ds-space-4: 16px;
---ds-space-5: 20px;
---ds-space-8: 32px;
-
---ds-nav-width: 52px;
---ds-work-nav-width: 248px;
---ds-properties-width: 300px;
---ds-context-width: 320px;
---ds-topbar-height: 48px;
---ds-composer-min-height: 148px;
-```
+Zendesk screenshot의 색을 추출하지 않고 Garden semantics와 Deskseed brand를 조합한다.
 
 ## 4. Typography
 
@@ -130,14 +102,7 @@ Zendesk와 동일한 색상 값을 복사하는 대신 Garden semantic token과 
 - `ExternalReferenceCard`
 - `AuditTimeline`
 
-### Admin/Audit/Integration
-
-- `AdminSideNav`
-- `AuditFilterBuilder`
-- `AuditResultTable`
-- `AuditDetailDrawer`
-- `SecretRevealDialog`
-- `WebhookDeliveryTimeline`
+Admin/Audit/Integration 전용 시각 컴포넌트는 현재 public design-system surface에 포함하지 않는다. 재조합 시 필요한 범용 primitive/pattern만 current design으로 추가한다.
 
 ## 7. Conversation 디자인
 

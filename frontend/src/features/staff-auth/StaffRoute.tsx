@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, useLocation } from 'react-router'
-import { ScreenState } from '../../shared/ui/system'
+import { DsButton, ScreenState } from '../../design-system'
 import { StaffSessionProvider, useStaffSession } from './StaffSessionContext'
 
 export function StaffSessionLayout() {
@@ -32,13 +32,9 @@ export function StaffRoute() {
           kind="error"
           title="세션을 확인할 수 없습니다."
           action={
-            <button
-              className="button primary"
-              type="button"
-              onClick={session.retry}
-            >
+            <DsButton onClick={session.retry} tone="primary">
               다시 시도
-            </button>
+            </DsButton>
           }
         />
       </main>
@@ -47,95 +43,6 @@ export function StaffRoute() {
   if (session.status === 'anonymous') {
     return (
       <Navigate to="/agent/login" replace state={{ from: location.pathname }} />
-    )
-  }
-  return <Outlet />
-}
-
-export function AdminRoute() {
-  const session = useStaffSession()
-  if (session.staff?.role !== 'ADMIN') {
-    return (
-      <main className="staff-gate">
-        <ScreenState
-          kind="denied"
-          title="관리자 권한이 필요합니다."
-          description="이 계정은 관리자 설정을 열 수 없습니다."
-          action={
-            <Link
-              className="button primary"
-              to={
-                session.staff?.role === 'SECURITY_AUDITOR'
-                  ? '/audit/activity'
-                  : '/agent/home'
-              }
-            >
-              {session.staff?.role === 'SECURITY_AUDITOR'
-                ? '감사 조사 화면으로 이동'
-                : '상담사 작업 공간으로 이동'}
-            </Link>
-          }
-        />
-      </main>
-    )
-  }
-  return <Outlet />
-}
-
-export function IntegrationAdminRoute() {
-  return (
-    <IntegrationCapabilityRoute
-      capability="integration:clients:manage"
-      title="연동 클라이언트 관리 권한이 필요합니다."
-      description="보안 감사자와 상담사 계정은 API key를 발급하거나 변경할 수 없습니다."
-    />
-  )
-}
-
-export function ExternalSystemAdminRoute() {
-  return (
-    <IntegrationCapabilityRoute
-      capability="integration:systems:manage"
-      title="외부 시스템 관리 권한이 필요합니다."
-      description="보안 감사자와 상담사 계정은 외부 시스템과 허용 hostname을 변경할 수 없습니다."
-    />
-  )
-}
-
-function IntegrationCapabilityRoute({
-  capability,
-  title,
-  description,
-}: {
-  capability: string
-  title: string
-  description: string
-}) {
-  const session = useStaffSession()
-  const allowed =
-    session.staff?.role === 'ADMIN' &&
-    session.staff.capabilities.includes(capability)
-  if (!allowed) {
-    return (
-      <main className="staff-gate">
-        <ScreenState
-          kind="denied"
-          title={title}
-          description={description}
-          action={
-            <Link
-              className="button primary"
-              to={
-                session.staff?.role === 'SECURITY_AUDITOR'
-                  ? '/audit/activity'
-                  : '/agent/home'
-              }
-            >
-              허용된 작업 공간으로 이동
-            </Link>
-          }
-        />
-      </main>
     )
   }
   return <Outlet />
@@ -152,41 +59,8 @@ export function AgentRoute() {
         <ScreenState
           kind="denied"
           title="상담사 작업 공간 권한이 필요합니다."
-          description="보안 감사자 계정은 티켓 화면과 변경 작업을 사용할 수 없습니다."
-          action={
-            <Link className="button primary" to="/audit/activity">
-              감사 조사 화면으로 이동
-            </Link>
-          }
-        />
-      </main>
-    )
-  }
-  return <Outlet />
-}
-
-export function AuditRoute() {
-  const session = useStaffSession()
-  const allowed =
-    session.staff?.role === 'SECURITY_AUDITOR' &&
-    session.staff.capabilities.includes('audit:activity:read')
-  if (!allowed) {
-    return (
-      <main className="staff-gate">
-        <ScreenState
-          kind="denied"
-          title="보안 감사자 권한이 필요합니다."
-          description="이 계정은 통합 감사 원장을 조사할 수 없습니다."
-          action={
-            <Link
-              className="button primary"
-              to={
-                session.staff?.role === 'ADMIN' ? '/admin/staff' : '/agent/home'
-              }
-            >
-              허용된 작업 공간으로 이동
-            </Link>
-          }
+          description="이 계정은 티켓 큐와 작업 공간을 열 수 없습니다."
+          action={<Link to="/agent/login">다른 계정으로 로그인</Link>}
         />
       </main>
     )

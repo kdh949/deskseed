@@ -59,7 +59,6 @@ Viewports:
 1280x800
 1440x900
 1920x1080
-390x844 customer portal
 ```
 
 Themes:
@@ -89,8 +88,8 @@ frontend/e2e/__screenshots__/
 
 `frontend-system.spec.ts`는 다음을 고정한다.
 
-- Agent Home, View Queue, Workspace, Admin, Public form/detail: 1280x800, 1440x900, 1920x1080.
-- Workspace INTERNAL draft, same-field conflict, 공통 상태 gallery: 1440x900.
+- View Queue와 Workspace: 1280x800, 1440x900, 1920x1080.
+- 최소 로그인, canonical denied/not-found, Queue/Workspace 상태 gallery는 browser assertion과 Storybook에서 검증한다.
 - fixture route는 `import.meta.env.DEV`에서만 등록하고 production bundle에는 포함하지 않는다.
 - 데이터와 시각 시간 표현은 고정 fixture를 사용하고 animation은 비활성화한다.
 
@@ -99,27 +98,18 @@ frontend/e2e/__screenshots__/
 baseline 변경 통제:
 
 1. clean checkout에서는 `cd frontend && npm ci && npx playwright install chromium firefox webkit`으로 세 browser binary를 설치한다. Linux가 system dependency까지 필요하면 Playwright가 지원하는 환경에서 `npx playwright install --with-deps chromium firefox webkit`을 사용한다.
-2. fixture/mock browser suite는 Vite development server에서 아래 세 명령으로 각각 실행한다. production Compose suite는 `npm run test:e2e:stack`으로 `customer-request.full-stack.spec.ts`만 실행한다. 두 suite는 별도 CI job이며 production Compose suite는 snapshot을 쓰지 않는다.
+2. fixture/mock browser suite는 Vite development server에서 다음 명령으로 실행한다.
 
    ```bash
-   PLAYWRIGHT_BROWSER=chromium npm run test:e2e:dev
-   PLAYWRIGHT_BROWSER=firefox npm run test:e2e:dev
-   PLAYWRIGHT_BROWSER=webkit npm run test:e2e:dev
+   npm run test:e2e:dev
    ```
 
-3. 의도한 UI 변경은 실패 diff와 실제 화면을 먼저 확인한 뒤에만 `PLAYWRIGHT_BROWSER=chromium npm run test:e2e:update`로 전체 7-spec Chromium baseline을 갱신한다. 이 명령은 현재 platform의 42장을 모두 생성하며, 일부 spec만 갱신하는 명령을 release baseline 생성 명령으로 사용하지 않는다.
+3. 의도한 UI 변경은 실패 diff와 실제 화면을 먼저 확인한 뒤에만 `npm run test:e2e:update`로 현재 4-spec Chromium suite를 갱신한다. 기준선은 Queue/Workspace 3개 폭 × Darwin/Linux의 12장이다.
 4. Darwin과 Linux 이미지는 각 플랫폼의 동일 Playwright 버전에서 생성한다. 한 플랫폼 이미지를 다른 플랫폼 폴더로 복사하지 않는다.
 5. PR은 변경 이유와 대표 before/after를 설명하고, 무관한 baseline 변경을 포함하지 않는다.
 6. 사람의 화면 검토 없이 대량 snapshot 갱신을 승인하지 않는다.
 
-Firefox/WebKit release smoke는 동일한 기능·axe·keyboard assertions를 실행하지만 Chromium pixel baseline을 재사용하지 않는다. `playwright.config.ts`는 이 두 project에서 snapshot 비교를 명시적으로 비활성화하고, Chromium만 platform별 pixel baseline의 source of truth로 둔다.
-
-Playwright 1.62 WebKit은 이 저장소의 41개 test를 한 browser process에서 순서대로
-실행할 때 37개 이후 다음 navigation이 응답 없이 멈추는 engine-process lifetime
-문제가 재현된다. `scripts/run-frontend-browser-e2e.sh`는 WebKit에서만 동일한 41개를
-35개와 6개의 두 fresh Playwright process로 나눈다. retry와 skip은 여전히 0이며,
-두 process 중 하나라도 실패하면 명령 전체가 실패한다. Chromium과 Firefox는 한
-process에서 전체 suite를 실행한다.
+Chromium이 platform별 pixel baseline의 source of truth다. 다른 browser 확장은 현재 surface가 안정된 뒤 별도 gate로 재도입한다.
 
 ## 8. Component stories
 
@@ -129,9 +119,9 @@ process에서 전체 suite를 실행한다.
 - ReplyComposer public/internal/disabled/uploading.
 - TicketProperties editable/read-only/conflict.
 - ConflictBanner one/multiple fields.
-- ChildWarning.
-- AuditDiff simple/complex/redacted.
-- WebhookDelivery success/retry/dead-letter.
+- Queue loading/empty/error/denied.
+- Workspace loading/empty/error/denied/conflict.
+- 최소 로그인과 공통 denied/not-found.
 
 ## 9. Accessibility CI
 
@@ -141,6 +131,6 @@ process에서 전체 suite를 실행한다.
 - keyboard script.
 - manual screen-reader checklist per stable release.
 
-`frontend-system.spec.ts`는 development-only fixture route가 실제 제공됨을 먼저 확인하고, 1440px의 모든 핵심 fixture와 INTERNAL/conflict/state fixture에서 axe violation 0을 요구한다. 별도 keyboard 시나리오는 최초 Tab의 skip link, context tab arrow 이동, Composer의 roving tab ArrowLeft/ArrowRight/Home/End와 PUBLIC/INTERNAL draft 보존, 텍스트·아이콘 기반 visibility, 양쪽 resize separator의 keyboard semantics를 검증한다. production Compose suite는 fixture route에 접근하지 않는다.
+Storybook `run-story-tests`는 모든 current story의 interaction과 axe를 검증한다. Playwright 4-spec suite는 최소 로그인/404/denied, Queue keyboard 선택·진입, Workspace context 토글, Composer PUBLIC/INTERNAL draft 분리, background read intent를 검증한다. development-only fixture route는 production bundle에 포함하지 않는다.
 
 자동 도구 통과만으로 접근성 완료를 주장하지 않는다.
