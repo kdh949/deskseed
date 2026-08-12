@@ -139,6 +139,8 @@ async function installAuditApi(page: Page) {
           sort: 'updatedAt:desc,ticketNumber:desc',
           resultCount: 4,
           originSearchActivityId: null,
+          openedActivityCount: 1,
+          openedActivitiesTruncated: false,
           openedActivities: [
             {
               activityId: 'a0000000-0000-0000-0000-000000000004',
