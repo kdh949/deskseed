@@ -51,10 +51,12 @@ internal class StaffAccessSecurityConfiguration(
             .authorizeHttpRequests {
                 it.requestMatchers(HttpMethod.POST, "/api/v1/requests").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/requests/*").permitAll()
+                it.requestMatchers(HttpMethod.POST, "/api/v1/requests/*/claim-grants").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/csrf").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/agent/session").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/magic-link-requests").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/magic-link-sessions").permitAll()
+                it.requestMatchers(HttpMethod.GET, "/api/v1/customer/access-mode").permitAll()
                 it.requestMatchers("/api/v1/customer/**").hasRole("CUSTOMER")
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/me").authenticated()

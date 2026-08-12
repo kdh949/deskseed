@@ -1,6 +1,7 @@
 package dev.deskseed.customerauth.internal
 
 import dev.deskseed.customerauth.CustomerCsrfFilter
+import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.customerauth.customerSessionCookie
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource

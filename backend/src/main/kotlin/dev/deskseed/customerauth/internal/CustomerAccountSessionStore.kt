@@ -1,20 +1,13 @@
 package dev.deskseed.customerauth.internal
 
 import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.customerauth.CustomerPrincipal
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
-
-internal data class CustomerPrincipal(
-    val accountId: UUID,
-    val customerId: UUID,
-    val email: String,
-    val displayName: String,
-    val verifiedAt: Instant,
-)
 
 internal data class CustomerAccountIdentity(
     val accountId: UUID,

@@ -2,12 +2,17 @@ package dev.deskseed.ticketing.internal
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.repository.query.Param
 import org.springframework.data.repository.Repository
 import java.util.UUID
 
 internal interface TicketRepository : JpaRepository<TicketEntity, UUID> {
     fun findByTicketNumber(ticketNumber: Long): TicketEntity?
+
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select ticket from TicketEntity ticket where ticket.ticketNumber = :ticketNumber")
+    fun lockByTicketNumber(@Param("ticketNumber") ticketNumber: Long): TicketEntity?
 
     fun existsByAssigneeId(assigneeId: UUID): Boolean
 
