@@ -38,6 +38,12 @@ paths:
               $ref: '#/components/headers/ETag'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -71,6 +77,12 @@ paths:
               $ref: '#/components/headers/ETag'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -107,6 +119,12 @@ paths:
               $ref: '#/components/headers/ETag'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -146,6 +164,17 @@ paths:
       responses:
         '201':
           description: Internal comment created
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
@@ -211,6 +240,20 @@ components:
       schema:
         type: integer
         minimum: 1
+    RateLimitLimit:
+      schema:
+        type: integer
+        minimum: 1
+    RateLimitRemaining:
+      schema:
+        type: integer
+        minimum: 0
+    RateLimitReset:
+      description: UTC epoch second when the current client window resets.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
   responses:
     Problem:
       description: RFC 9457 Problem Details
@@ -223,6 +266,12 @@ components:
       headers:
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
       content:
         application/problem+json:
           schema:
@@ -244,7 +293,7 @@ components:
         subject:
           type: string
           minLength: 1
-          maxLength: 300
+          maxLength: 200
         message:
           type: string
           minLength: 1
@@ -266,9 +315,6 @@ components:
         assigneeId:
           type: string
           format: uuid
-        externalOperationId:
-          type: string
-          maxLength: 200
       allOf:
       - if:
           properties:
@@ -287,7 +333,7 @@ components:
         name:
           type: string
           minLength: 1
-          maxLength: 200
+          maxLength: 100
         email:
           type: string
           format: email
@@ -303,7 +349,7 @@ components:
           - NEW
           - OPEN
           - PENDING
-          - HOLD
+          - ON_HOLD
           - SOLVED
         priority:
           type: string
@@ -322,10 +368,6 @@ components:
           - string
           - 'null'
           format: uuid
-        subject:
-          type: string
-          minLength: 1
-          maxLength: 300
     AddInternalCommentRequest:
       type: object
       additionalProperties: false
@@ -341,6 +383,7 @@ components:
       additionalProperties: false
       required:
       - ticketNumber
+      - kind
       - subject
       - status
       - priority
@@ -351,6 +394,11 @@ components:
         ticketNumber:
           type: integer
           format: int64
+        kind:
+          type: string
+          enum:
+          - CUSTOMER_REQUEST
+          - INTERNAL_WORK_ITEM
         subject:
           type: string
         status:
