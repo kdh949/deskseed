@@ -47,7 +47,7 @@ d5daebd2c22d648294bb4d0b4ea8481c9e1efb417f1482326cf12c529ad9a989        4923  do
 6b62524e1f8718a09bbd30a1e9696b0a288ddd02a679c68c114db626e4aee179        7343  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 5d8f72af4ffcfd6bf429615f5b32ee17a981a7e5fad6dc54f77c06f88bd11e79        8070  docs/25-implementation-decision-register.md
-35e74b95d101e3215c85edd4fa233877b49435f5c05c8351a0f2ec4ec4067f5d       18304  docs/26-requirement-traceability.md
+c75d862f0b27db7926417022fccb5ad98338c4201f67e127b1fcb8319468d7f7       18409  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 a2232257074ed3aa0e4421318ff9b3c97940b97b034221b65e6c9a5f1f0878e8        6905  docs/28-frontend-product-and-information-architecture.md
 54f95cb71d8d951e208f3ed2e33d798e2b39e05bedd20402ef4b61ffa5f8d494        6900  docs/29-zendesk-inspired-design-system.md
@@ -173,7 +173,7 @@ f6ee98458b8f3ea81ed41a9b2e5addf32aaf853991ff1dbd6cac54b4bc5a0a26        1062  do
 2eacc4b7019b6aad2aad966f090c921cee42afae726a800cb0e8b4502e24133b         592  docs/evidence/release/performance/smoke/source-fingerprint-checks.txt
 ee6dace509e9953144826b0986ea47e9772f4c4a865e5d150fe6164bb0466eca        4464  docs/evidence/release/performance/smoke/source-manifest.txt
 d7e319d217bcdb0cc2c7b192614899893304bce8fc27ddc7123e51fd2d78e0c3        7237  docs/evidence/release/performance/smoke/summary.md
-264599cc1590b865565cbf17b83d0dc17d3aaa21315c904b4b3d75ffec5b0074       14961  docs/evidence/release/security/security-scan.md
+a568a867859eb274a8b06eef1f830db1bb6bc6e20dae112f76d80dac27d27267       15213  docs/evidence/release/security/security-scan.md
 009b3377423c806f74b9c3e032355925c4b244d8b5ed7054c06d63246144c7ca       13188  docs/evidence/release/supply-chain/baseline.md
 061024b60c19f520a55420e93d4fb3d1628d48433fd1987513b71f5a157abe3a        6246  docs/evidence/release/ui/automated-and-visual-review.md
 ae62b492d11c8ca99a44cc951608fe319d8d21740614cee95d83aaf14aca0f56        6413  docs/evidence/release/verification-summary.md
@@ -249,7 +249,7 @@ cc4b8447a1eafd516303bffe7c1ceed6df0eaed4f086fdc74f0cb19e86a7744a         806  ta
 2198cae4d3f3682da8b50a095274115772da812b8f462cbac370807e5f467b97        7111  tasks/briefs/agent-views-workspace-read.md
 1facdae3c4be1b43efcbebdfb50ffabd8fd2599c0c78bcfcaa0d9558b50d6c9f        9086  tasks/briefs/audit-explorer-core.md
 9b1f9db9e4594effb46d9d4d331e2cba4dac8f253b280aae73a950c33204a8c3        6311  tasks/briefs/frontend-system-hardening.md
-fd99a645288949feb0ad8d38e5b1ca2376bfd00ae0feac15e97796d52841a935        6573  tasks/briefs/issue-24-review-remediation.md
+7928256db634523d0ae40396641fdc934e61edd7b0eb8e1948bc35aadf29fccd        6645  tasks/briefs/issue-24-review-remediation.md
 8bf4a7fd763175bb6ad4f745aec5a115d823c16b81acf820b0c137836d86cb93        6017  tasks/briefs/pr17-pr18-review-followup.md
 61ff0d84d05f8d92b589e48a0e26552600ad6056eca8f5eb5b7ecba83826f1af       12249  tasks/briefs/release-hardening.md
 3b869e69ab417aa64154989cd6436b1add4ab385bb4d4c9e32e0447a38256f43        8715  tasks/briefs/ticket-composer-conflict-ui.md

@@ -79,6 +79,7 @@
 ## Validation
 
 - focused PostgreSQL/Testcontainers RED/GREEN regressions per slice
+- V15 fixture를 V17로 올리는 explicit forward-migration regression
 - `cd backend && ./gradlew clean test`
 - `cd frontend && npm run format:check && npm run lint && npm run typecheck && npm test && npm run build`
 - `make check`, OpenAPI/document validator, security dependency audit and relevant browser E2E

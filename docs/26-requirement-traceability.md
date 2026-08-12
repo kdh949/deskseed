@@ -38,7 +38,7 @@
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
 | REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
-| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부와 verified-only unique constraint |
+| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부와 `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
 | REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37 | 내부 메모 비노출 E2E |
 | REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53 | 설정별 계약 테스트 |
 | REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53 | single-use·claim·격리 테스트 |
@@ -74,7 +74,7 @@
 | REQ-AUD-003 | 어떤 상담원이 어떤 티켓을 열었는지 기록한다 | IMPLEMENTATION_READY | R1 | 19, 31, 34 | `AgentTicketReadIntegrationTest`: 모든 성공 detail의 `API_RESOURCE_READ`, navigation 1건, 동일 interaction refetch의 추가 semantic view 0건, background semantic view 0건, audit 실패 fail-closed |
 | REQ-AUD-004 | 상담원이 실행한 검색어와 결과 열람 연결을 기록한다 | IMPLEMENTATION_READY | R1/R2 | 19, 23, 34, ADR 0037 | `AgentTicketSearchIntegrationTest`의 filter/count/context와 `SEARCH_RESULT_OPENED` linkage/dedupe 및 encryption-key rotation 후 same-session origin 검증; detail linked-open 100개 제한·full count; real-stack search→ticket DB-ledger E2E |
 | REQ-AUD-005 | 검색어 원문은 암호화 저장하고 routine audit에는 내용 비포함 marker·HMAC 지문만 유지한다 | IMPLEMENTATION_READY | R1 | 19, 23, 53, ADR 0036, ADR 0037 | `SearchQueryProtectionTest`의 content-free marker/exact round-trip/tamper/AAD/encryption rotation, fixed-size independent session fingerprint, V13 scrub·constraint, missing-key startup, DB plaintext-column 부재, 로그 캡처, 30일 expiry·retention rollback |
-| REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | `SecurityAuditorAuthorizationIntegrationTest`의 default-deny·명시 grant/revoke·session revalidation·audit rollback, list/detail/reveal/export/rebuild self-audit 장애 주입, 실제 Compose DB self-audit, export job/artifact placeholder 원자성 |
+| REQ-AUD-006 | 감사 로그를 본 사람과 export한 사람도 감사한다 | IMPLEMENTATION_READY | R2 | 19, 33, 34 | `SecurityAuditorAuthorizationIntegrationTest`의 default-deny·명시 grant/revoke·session revalidation·audit rollback, `Issue24RemediationMigrationTest`의 V15→V17 무백필, list/detail/reveal/export/rebuild self-audit 장애 주입, 실제 Compose DB self-audit, export job/artifact placeholder 원자성 |
 | REQ-AUD-007 | Ticket change audit은 변경과 같은 트랜잭션에 기록한다 | IMPLEMENTATION_READY | M3 | 03, 19, 32 | CHG-001 |
 | REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ticket detail/search와 Explorer list/detail/reveal self-audit 장애 주입 시 503·민감 원문/projection 미반환, retention audit 장애 시 delete rollback |
 | REQ-AUD-009 | 감사 보존 기간·원문 공개 정책을 관리자 설정으로 관리한다 | PROVISIONAL | R2/P2 | 23, 36 | retention job·권한 테스트 |

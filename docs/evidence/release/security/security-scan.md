@@ -176,7 +176,9 @@ The CWE-269 remediation separates routine investigation from exceptional authori
 - login and per-request active-identity lookup derive capabilities from current rows, so
   an older session fails closed after either grant or revoke;
 - PostgreSQL-backed failure injection proves an admin-audit failure rolls back both grant
-  and revoke, and the Admin Staff UI exposes labeled keyboard-operable controls.
+  and revoke, and the Admin Staff UI exposes labeled keyboard-operable controls;
+- a V15→V17 Flyway regression preserves existing staff/customer rows and proves that
+  existing auditors receive no implicit grant.
 
 The CWE-287 remediation treats anonymous email as unverified contact input:
 
@@ -185,7 +187,9 @@ The CWE-287 remediation treats anonymous email as unverified contact input:
 - same-email sequential and concurrent submissions retain distinct names/requester IDs,
   one ticket each and ticket-scoped tokens that cannot be crossed;
 - a verified profile remains unchanged while a same-email unverified contact can coexist,
-  and a second row cannot be promoted to the same verified email.
+  and a second row cannot be promoted to the same verified email;
+- the same V15→V17 regression proves those constraints on an upgraded schema rather than
+  only on a clean install.
 
 Verification commands:
 
