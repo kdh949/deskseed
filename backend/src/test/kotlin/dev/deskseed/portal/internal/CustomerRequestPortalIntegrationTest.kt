@@ -4,10 +4,13 @@ import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
@@ -36,6 +39,7 @@ import java.util.UUID
 )
 @AutoConfigureMockMvc
 @Testcontainers
+@ExtendWith(OutputCaptureExtension::class)
 class CustomerRequestPortalIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
@@ -202,7 +206,7 @@ class CustomerRequestPortalIntegrationTest {
     }
 
     @Test
-    fun `expired signed claim grant is rejected without storing or logging bearer plaintext`() {
+    fun `expired signed claim grant is rejected without storing or logging bearer plaintext`(output: CapturedOutput) {
         val session = customerSession("grant-expired@example.com")
         val request = submitAnonymous("grant-expired@example.com", "만료 claim 문의")
         val originalRequester = requesterId(request.ticketNumber)
@@ -224,6 +228,7 @@ class CustomerRequestPortalIntegrationTest {
                 String::class.java,
             ),
         ).doesNotContain(claimToken, "grant-expired@example.com")
+        assertThat(output.all).doesNotContain(claimToken, "grant-expired@example.com")
         assertThat(ticketAuditEventCount(request.ticketNumber, "REQUESTER_CHANGED")).isZero()
     }
 
