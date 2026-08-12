@@ -130,14 +130,23 @@ The platform must not accept arbitrary actor IDs in headers or request bodies.
 
 ### 4.4 Scopes and resource constraints
 
-Scopes describe operations:
+The I1 management/authentication slice freezes the v1 credential vocabulary to exactly:
+
+```text
+tickets:create
+tickets:read
+tickets:update
+tickets:comment:internal
+```
+
+No Platform Ticket API is exposed by this slice. The broader candidate vocabulary below is reserved for a later contract-freeze decision and must not be accepted by the I1 client-management API:
 
 ```text
 tickets:read
 tickets:create
 tickets:update
-comments:internal:write
-comments:public:write
+tickets:comment:internal
+tickets:comment:public
 customers:read
 customers:write
 external-references:read
@@ -158,6 +167,7 @@ customerPiiFieldSet
 ```
 
 Authorization is the intersection of scope and constraint. A broad scope with a narrow constraint remains narrow.
+When a configured resource dimension is missing from an authorization request, authorization fails closed; callers cannot omit group or ticket kind to bypass a configured constraint.
 
 ## 5. Platform API design
 

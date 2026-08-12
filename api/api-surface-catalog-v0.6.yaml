@@ -79,6 +79,34 @@ surfaces:
         path: "/api/v1/audit/exports"
         command: RequestAuditExport
         audit: AUDIT_EXPORT_REQUESTED
+  integration_admin:
+    source: api/core-api-outline-v1.yaml
+    actor: [admin]
+    authority: integration:clients:manage
+    phase: integration_i1
+    endpoints:
+      - method: GET
+        path: "/api/v1/admin/integration-clients"
+        query: IntegrationClientList
+      - method: POST
+        path: "/api/v1/admin/integration-clients"
+        command: CreateIntegrationClient
+        audit: INTEGRATION_CLIENT_CREATED
+      - method: GET
+        path: "/api/v1/admin/integration-clients/{clientId}"
+        query: IntegrationClientDetail
+      - method: POST
+        path: "/api/v1/admin/integration-clients/{clientId}/disable"
+        command: DisableIntegrationClient
+        audit: INTEGRATION_CLIENT_DISABLED
+      - method: POST
+        path: "/api/v1/admin/integration-clients/{clientId}/revoke"
+        command: RevokeIntegrationClient
+        audit: INTEGRATION_CLIENT_REVOKED
+      - method: POST
+        path: "/api/v1/admin/integration-clients/{clientId}/rotate"
+        command: RotateIntegrationClientCredential
+        audit: INTEGRATION_CLIENT_ROTATED
   admin_schedule_sla:
     source: api/core-api-outline-v1.yaml
     actor: [admin]

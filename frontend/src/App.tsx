@@ -12,6 +12,7 @@ import {
   AgentRoute,
   AdminRoute,
   AuditRoute,
+  IntegrationAdminRoute,
   StaffRoute,
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
@@ -22,6 +23,7 @@ import { LookupPage } from './pages/LookupPage'
 import { NewRequestPage } from './pages/NewRequestPage'
 import { RequestDetailPage } from './pages/RequestDetailPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
+import { IntegrationClientsPage } from './pages/IntegrationClientsPage'
 
 const FrontendSystemFixturePage = import.meta.env.DEV
   ? lazy(() =>
@@ -79,6 +81,26 @@ export const appRoutes: RouteObject[] = [
                   {
                     path: '*',
                     element: <Navigate to="/agent/views/my-open" replace />,
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            element: <IntegrationAdminRoute />,
+            children: [
+              {
+                path: '/integrations',
+                element: <AdminShell />,
+                children: [
+                  {
+                    index: true,
+                    element: <Navigate to="/integrations/clients" replace />,
+                  },
+                  { path: 'clients', element: <IntegrationClientsPage /> },
+                  {
+                    path: '*',
+                    element: <Navigate to="/integrations/clients" replace />,
                   },
                 ],
               },

@@ -51,7 +51,7 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | reveal protected audit content | D | D | D | explicit C | separate grant C | D |
 | request audit export | D | D | D | explicit C | separate grant C | D |
 | rebuild audit projection | D | D | D | explicit C | separate grant C | D |
-| manage integration client | D | D | D | A | D | D |
+| manage integration client | D | D | D | explicit capability C | D | D |
 
 ## 4. Agent ticket scope
 
@@ -159,20 +159,13 @@ invalidates an older staff session on its next protected request.
 
 ## 10. Integration scopes
 
-Baseline vocabulary:
+I1에서 발급 가능한 v1 vocabulary는 다음 네 개로 고정한다:
 
 ```text
-tickets:read
 tickets:create
+tickets:read
 tickets:update
 tickets:comment:internal
-tickets:comment:public
-external-references:read
-external-references:write
-customers:basic:read
-customers:contact:read
-exports:read
-webhooks:manage
 ```
 
 Effective permission:
@@ -190,7 +183,11 @@ Constraints:
 - allowed ticket kinds
 - optional network/IP policy
 
+Configured group or ticket-kind constraint와 대조할 resource dimension이 요청에 없으면 deny한다. Constraint omission은 unrestricted를 뜻하지만 request dimension omission은 configured constraint를 우회하지 못한다.
+
 ## 11. Admin capabilities
+
+Integration client management uses the separate `integration:clients:manage` authority. The initial ADMIN role receives it, but both the HTTP route and application-service method boundary check the authority explicitly. AGENT and SECURITY_AUDITOR are denied even on direct URLs. This does not grant Platform Ticket API access.
 
 Admin role is not automatically Security Auditor in stricter deployments. Initial self-hosted MVP may allow Admin to explicitly receive audit read grants, but decision and audit must be visible.
 

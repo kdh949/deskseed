@@ -131,8 +131,11 @@ GROUP_MEMBERSHIP_CHANGED
 SETTING_CHANGED
 CUSTOMER_ACCESS_MODE_CHANGED
 INTEGRATION_CLIENT_CREATED
+INTEGRATION_CLIENT_DISABLED
 INTEGRATION_CLIENT_ROTATED
 INTEGRATION_CLIENT_REVOKED
+INTEGRATION_AUTHENTICATION_FAILED
+INTEGRATION_CLIENT_LAST_USED
 WEBHOOK_CREATED
 WEBHOOK_SECRET_ROTATED
 WEBHOOK_DISABLED
@@ -147,6 +150,8 @@ RETENTION_JOB_EXECUTED
 `GrantStaffAuditAuthority`와 `RevokeStaffAuditAuthority`는 ADMIN actor만 실행하며,
 `AUDIT_SEARCH_QUERY_REVEAL`, `AUDIT_EXPORT`, `AUDIT_PROJECTION_REBUILD`만 허용한다.
 grant row 변경과 대응하는 admin/security event는 같은 transaction에서 commit/rollback한다.
+
+Integration client lifecycle mutation and its event also commit/rollback together. Authentication returns one generic failure externally while `INTEGRATION_AUTHENTICATION_FAILED` stores only a bounded reason code, public key ID, and normalized remote IP. Successful verification updates credential/client last-used metadata and appends `INTEGRATION_CLIENT_LAST_USED` in one transaction; required audit failure prevents authentication success. Neither event contains the API key secret, hash, or Authorization value.
 
 ## 8. Domain/application event catalog
 

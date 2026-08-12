@@ -295,11 +295,24 @@ expires_at
 ### integration_clients / credentials
 
 ```text
-integration_clients(id, name, status, scopes_json, constraints_json, ...)
-integration_credentials(id, client_id, public_key_id, secret_hash, status, expires_at, last_used_at, last_used_ip, ...)
+integration_clients(
+ id, name, description, status, scopes_json, constraints_json,
+ created_by_staff_id, created_at, updated_at, last_used_at, last_used_ip, version
+)
+integration_credentials(
+ id, client_id, sequence, public_key_id, secret_hash, status,
+ expires_at, overlap_expires_at, rotated_from_credential_id,
+ created_by_staff_id, created_at, revoked_at, last_used_at, last_used_ip, version
+)
 ```
 
-원문 secret 저장 금지.
+- 원문 secret column은 두지 않고 발급/회전 응답에서만 한 번 반환한다.
+- `public_key_id`는 unique locator이고 `secret_hash`는 salt가 포함된 slow verifier다.
+- status는 client `ACTIVE/DISABLED/REVOKED`, credential `ACTIVE/RETIRING/REVOKED`로 제한한다. `EXPIRED`는 시간에서 계산하는 projection 상태다.
+- client마다 ACTIVE credential은 최대 1개, RETIRING credential은 최대 1개인 partial unique index로 bounded-overlap rotation을 보장한다.
+- `expires_at > created_at`, RETIRING에만 `overlap_expires_at` 존재, revoke metadata 정합성을 check constraint로 보호한다.
+- scopes/constraints JSON shape를 DB constraint로 검증하고 지원 scope vocabulary는 application/OpenAPI enum으로 고정한다.
+- V18 migration이 이 구조와 actor/source audit enum 확장을 소유한다.
 
 ### external_systems / external_references
 

@@ -9,6 +9,7 @@ import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.context.SecurityContextHolderFilter
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository
+import dev.deskseed.integration.INTEGRATION_CLIENT_MANAGE_AUTHORITY
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
@@ -52,6 +53,8 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/me").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                it.requestMatchers("/api/v1/admin/integration-clients/**")
+                    .hasAuthority(INTEGRATION_CLIENT_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/activities/*/search-query-reveal")
                     .authenticated()

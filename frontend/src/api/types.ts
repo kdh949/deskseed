@@ -111,6 +111,76 @@ export interface CreateStaffInput {
   password: string
 }
 
+export type IntegrationScope =
+  | 'tickets:create'
+  | 'tickets:read'
+  | 'tickets:update'
+  | 'tickets:comment:internal'
+export type IntegrationClientStatus = 'ACTIVE' | 'DISABLED' | 'REVOKED'
+export type IntegrationCredentialStatus =
+  'ACTIVE' | 'RETIRING' | 'EXPIRED' | 'REVOKED'
+export type IntegrationTicketKind = 'CUSTOMER_REQUEST' | 'INTERNAL_TASK'
+export type IntegrationTicketField =
+  'status' | 'priority' | 'groupId' | 'assigneeId'
+
+export interface IntegrationResourceConstraints {
+  allowedGroupIds: string[] | null
+  allowedTicketKinds: IntegrationTicketKind[] | null
+  allowedFields: IntegrationTicketField[] | null
+  ipAllowlist: string[] | null
+}
+
+export interface IntegrationCredential {
+  id: string
+  sequence: number
+  publicKeyId: string
+  status: IntegrationCredentialStatus
+  expiresAt: string
+  overlapExpiresAt: string | null
+  createdAt: string
+  revokedAt: string | null
+  lastUsedAt: string | null
+  lastUsedIp: string | null
+}
+
+export interface IntegrationClient {
+  id: string
+  name: string
+  description: string
+  status: IntegrationClientStatus
+  scopes: IntegrationScope[]
+  resourceConstraints: IntegrationResourceConstraints
+  credentials: IntegrationCredential[]
+  expiresAt: string | null
+  lastUsedAt: string | null
+  lastUsedIp: string | null
+  createdAt: string
+}
+
+export interface CreateIntegrationClientInput {
+  name: string
+  description: string
+  scopes: IntegrationScope[]
+  resourceConstraints: {
+    allowedGroupIds?: string[]
+    allowedTicketKinds?: IntegrationTicketKind[]
+    allowedFields?: IntegrationTicketField[]
+    ipAllowlist?: string[]
+  }
+  expiresAt: string
+}
+
+export interface RotateIntegrationCredentialInput {
+  expiresAt: string
+  overlapSeconds: number
+}
+
+export interface IntegrationCredentialIssue {
+  client: IntegrationClient
+  credential: IntegrationCredential
+  apiKey: string
+}
+
 export interface SavedAgentView {
   key: string
   name: string

@@ -119,6 +119,7 @@ SettingValue
 | `webhook.allowPrivateNetworkTargets` | bool | false | I5 | SSRF boundary |
 
 Secrets such as API key values and webhook HMAC secret are credential objects, not ordinary settings.
+Integration client CRUD/disable/revoke/rotate is likewise a typed credential-management surface guarded by `integration:clients:manage`, not generic settings CRUD. Per-client IP/CIDR allowlists and required expiry are stored with the client/credential; rotation overlap is bounded to 24 hours. `platformApi.enabled=false` remains unchanged and no Platform endpoint is registered by the I1 management slice.
 
 ## 8. SLA and business time
 

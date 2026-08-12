@@ -18,6 +18,7 @@ enum class GrantableAuditAuthority(val capability: String) {
 object StaffAuthorityCatalog {
     const val AGENT_WORKSPACE = "AGENT_WORKSPACE"
     const val ADMIN_MANAGE = "ADMIN_MANAGE"
+    const val INTEGRATION_CLIENT_MANAGE = "integration:clients:manage"
     const val AUDIT_ACTIVITY_READ = "audit:activity:read"
     const val AUDIT_TICKET_CHANGE_READ = "audit:ticket-change:read"
     const val AUDIT_ACCESS_READ = "audit:access:read"
@@ -27,7 +28,7 @@ object StaffAuthorityCatalog {
     const val AUDIT_PROJECTION_REBUILD = "audit:projection:rebuild"
 
     fun forRole(role: StaffRole): Set<String> = when (role) {
-        StaffRole.ADMIN -> setOf(ADMIN_MANAGE, AGENT_WORKSPACE)
+        StaffRole.ADMIN -> setOf(ADMIN_MANAGE, AGENT_WORKSPACE, INTEGRATION_CLIENT_MANAGE)
         StaffRole.AGENT -> setOf(AGENT_WORKSPACE)
         StaffRole.SECURITY_AUDITOR -> setOf(
             AUDIT_ACTIVITY_READ,

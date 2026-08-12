@@ -70,7 +70,14 @@ PUT/DELETE /api/v1/admin/staff/{staffId}/audit-authorities/{authority}
 GET/POST/PATCH /api/v1/admin/groups...
 PUT /api/v1/admin/settings/customer-access-mode
 GET/PUT /api/v1/admin/permissions...
+GET/POST /api/v1/admin/integration-clients
+GET      /api/v1/admin/integration-clients/{clientId}
+POST     /api/v1/admin/integration-clients/{clientId}/disable
+POST     /api/v1/admin/integration-clients/{clientId}/revoke
+POST     /api/v1/admin/integration-clients/{clientId}/rotate
 ```
+
+Integration client create/rotate responses are `no-store` one-time secret envelopes. The I1 freeze adds management endpoints only; `/api/v1/platform/**` remains unexposed until the Platform Ticket API slice.
 
 ### Audit v1
 

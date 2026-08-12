@@ -61,6 +61,7 @@ tags:
 - name: Agent Tickets
 - name: Agent Search
 - name: Admin
+- name: Integration Admin
 - name: Audit
 - name: Customer Auth
 - name: Admin Schedule
@@ -1302,6 +1303,205 @@ paths:
         '404': *id001
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/integration-clients:
+    get:
+      summary: List integration machine principals without credential secrets
+      operationId: listIntegrationClients
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: Bounded client list. Credential hashes and secrets are absent.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+            X-Page-Number:
+              $ref: '#/components/headers/PageNumber'
+            X-Page-Size:
+              $ref: '#/components/headers/PageSize'
+            X-Total-Count:
+              $ref: '#/components/headers/TotalCount'
+            X-Total-Pages:
+              $ref: '#/components/headers/TotalPages'
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: Create an integration client and show its first API key once
+      operationId: createIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIntegrationClient' }
+      responses:
+        '201':
+          description: Client created. The API key is returned by this response only.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationCredentialIssue' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}:
+    get:
+      summary: Read one integration client and credential metadata
+      operationId: getIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client detail without any credential verifier or secret.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/integration-clients/{clientId}/disable:
+    post:
+      summary: Disable an active integration client immediately
+      operationId: disableIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client disabled; all credentials fail authentication.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}/revoke:
+    post:
+      summary: Permanently revoke an integration client and every credential
+      operationId: revokeIntegrationClient
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: Client and credentials permanently revoked.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationClient' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
+  /api/v1/admin/integration-clients/{clientId}/rotate:
+    post:
+      summary: Rotate a client credential with at most 24 hours of overlap
+      operationId: rotateIntegrationClientCredential
+      x-deskseed-contract-status: FROZEN
+      tags: [Integration Admin]
+      x-deskseed-phase: I1
+      x-deskseed-requirements: [REQ-INT-002]
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateIntegrationCredential' }
+      responses:
+        '200':
+          description: New API key returned once; the previous key follows the bounded overlap.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationCredentialIssue' }
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id001
+        '403': *id001
+        '404': *id001
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503': *id001
   /api/v1/admin/settings/{key}:
     get:
       summary: Read an allowed admin setting
@@ -2206,6 +2406,13 @@ components:
         minimum: 1
         maximum: 100
         default: 50
+    IntegrationClientId:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     StaffId:
       name: staffId
       in: path
@@ -3455,6 +3662,127 @@ components:
           - string
           - 'null'
           format: date-time
+    IntegrationScope:
+      type: string
+      enum:
+      - tickets:create
+      - tickets:read
+      - tickets:update
+      - tickets:comment:internal
+    IntegrationClientStatus:
+      type: string
+      enum: [ACTIVE, DISABLED, REVOKED]
+    IntegrationCredentialStatus:
+      type: string
+      enum: [ACTIVE, RETIRING, EXPIRED, REVOKED]
+    IntegrationResourceConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        allowedGroupIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        allowedTicketKinds:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { type: string, enum: [CUSTOMER_REQUEST, INTERNAL_TASK] }
+        allowedFields:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items: { type: string, enum: [status, priority, groupId, assigneeId] }
+        ipAllowlist:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          description: Optional literal IP or CIDR allowlist. Absence means no network restriction at this client seam.
+          items:
+            type: string
+            minLength: 2
+            maxLength: 64
+    IntegrationCredentialMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, sequence, publicKeyId, status, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer, minimum: 1 }
+        publicKeyId:
+          type: string
+          minLength: 16
+          maxLength: 32
+        status: { $ref: '#/components/schemas/IntegrationCredentialStatus' }
+        expiresAt: { type: string, format: date-time }
+        overlapExpiresAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        lastUsedIp: { type: [string, 'null'] }
+    IntegrationClient:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, status, scopes, resourceConstraints, credentials, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        status: { $ref: '#/components/schemas/IntegrationClientStatus' }
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/IntegrationScope' }
+        resourceConstraints: { $ref: '#/components/schemas/IntegrationResourceConstraints' }
+        credentials:
+          type: array
+          items: { $ref: '#/components/schemas/IntegrationCredentialMetadata' }
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: Latest effective credential expiry for list display.
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        lastUsedIp: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    CreateIntegrationClient:
+      type: object
+      additionalProperties: false
+      required: [name, description, scopes, resourceConstraints, expiresAt]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/IntegrationScope' }
+        resourceConstraints: { $ref: '#/components/schemas/IntegrationResourceConstraints' }
+        expiresAt: { type: string, format: date-time }
+    RotateIntegrationCredential:
+      type: object
+      additionalProperties: false
+      required: [expiresAt, overlapSeconds]
+      properties:
+        expiresAt: { type: string, format: date-time }
+        overlapSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+    IntegrationCredentialIssue:
+      type: object
+      additionalProperties: false
+      required: [client, credential, apiKey]
+      properties:
+        client: { $ref: '#/components/schemas/IntegrationClient' }
+        credential: { $ref: '#/components/schemas/IntegrationCredentialMetadata' }
+        apiKey:
+          type: string
+          pattern: '^dsk_live_[A-Za-z0-9_-]{16,32}\.[A-Za-z0-9_-]{43}$'
+          readOnly: true
+          x-deskseed-one-time-display: true
     CreateStaffAccount:
       type: object
       additionalProperties: false

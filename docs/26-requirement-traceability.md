@@ -84,7 +84,7 @@
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
 | REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53 | OpenAPI·scope·idempotency test |
-| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1 | 18, 33 | INT-AUTH-001~004 |
+| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1 | 18, 32~34, 39, ADR 0012/0016 | `IntegrationAuthorizationPolicyTest`, `IntegrationCredentialSecurityTest`, `IntegrationClientMigrationTest`, `AdminIntegrationClientIntegrationTest`, `IntegrationClientsPage.test.tsx`, `integration-clients.spec.ts`; INT-AUTH-001~003·ARCH-001/002/004·ACC-007·AUD-001·UI-002/004. INT-AUTH-004와 Platform Ticket API는 Goal 17로 유보 |
 | REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20 | IDEM-001~004 |
 | REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | CONC-001 |
 | REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 32 | EXT-001~004 |

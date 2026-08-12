@@ -26,6 +26,17 @@ import type {
   GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
+  IntegrationClient,
+  IntegrationClientStatus,
+  IntegrationCredential,
+  IntegrationCredentialIssue,
+  IntegrationCredentialStatus,
+  IntegrationResourceConstraints,
+  IntegrationScope,
+  IntegrationTicketField,
+  IntegrationTicketKind,
+  CreateIntegrationClientInput,
+  RotateIntegrationCredentialInput,
   ProblemDetails,
   PublicComment,
   PublicRequest,
@@ -112,6 +123,33 @@ const ACTOR_TYPES = new Set<ActorSummary['type']>([
   'SYSTEM',
 ])
 const TICKET_FIELD_NAMES = new Set<TicketFieldName>([
+  'status',
+  'priority',
+  'groupId',
+  'assigneeId',
+])
+const INTEGRATION_SCOPES = new Set<IntegrationScope>([
+  'tickets:create',
+  'tickets:read',
+  'tickets:update',
+  'tickets:comment:internal',
+])
+const INTEGRATION_CLIENT_STATUSES = new Set<IntegrationClientStatus>([
+  'ACTIVE',
+  'DISABLED',
+  'REVOKED',
+])
+const INTEGRATION_CREDENTIAL_STATUSES = new Set<IntegrationCredentialStatus>([
+  'ACTIVE',
+  'RETIRING',
+  'EXPIRED',
+  'REVOKED',
+])
+const INTEGRATION_TICKET_KINDS = new Set<IntegrationTicketKind>([
+  'CUSTOMER_REQUEST',
+  'INTERNAL_TASK',
+])
+const INTEGRATION_TICKET_FIELDS = new Set<IntegrationTicketField>([
   'status',
   'priority',
   'groupId',
@@ -409,6 +447,156 @@ function decodeCurrentStaff(value: unknown): CurrentStaff | undefined {
   }
 }
 
+function decodeIntegrationStringSet<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  if (
+    !value.every(
+      (item): item is T => typeof item === 'string' && allowed.has(item as T),
+    )
+  ) {
+    return undefined
+  }
+  return value
+}
+
+function decodeNullableStringSet<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+): T[] | null | undefined {
+  if (value === null) return null
+  return decodeIntegrationStringSet(value, allowed)
+}
+
+function decodeNullableStringArray(
+  value: unknown,
+): string[] | null | undefined {
+  if (value === null) return null
+  if (!Array.isArray(value) || !value.every(isNonBlankString)) return undefined
+  return value
+}
+
+function decodeIntegrationConstraints(
+  value: unknown,
+): IntegrationResourceConstraints | undefined {
+  if (!isRecord(value)) return undefined
+  const allowedGroupIds = decodeNullableStringArray(value.allowedGroupIds)
+  const allowedTicketKinds = decodeNullableStringSet(
+    value.allowedTicketKinds,
+    INTEGRATION_TICKET_KINDS,
+  )
+  const allowedFields = decodeNullableStringSet(
+    value.allowedFields,
+    INTEGRATION_TICKET_FIELDS,
+  )
+  const ipAllowlist = decodeNullableStringArray(value.ipAllowlist)
+  if (
+    allowedGroupIds === undefined ||
+    allowedTicketKinds === undefined ||
+    allowedFields === undefined ||
+    ipAllowlist === undefined
+  ) {
+    return undefined
+  }
+  return { allowedGroupIds, allowedTicketKinds, allowedFields, ipAllowlist }
+}
+
+function decodeIntegrationCredential(
+  value: unknown,
+): IntegrationCredential | undefined {
+  if (!isRecord(value)) return undefined
+  if (
+    !isNonBlankString(value.id) ||
+    typeof value.sequence !== 'number' ||
+    !Number.isSafeInteger(value.sequence) ||
+    value.sequence < 1 ||
+    !isNonBlankString(value.publicKeyId) ||
+    typeof value.status !== 'string' ||
+    !INTEGRATION_CREDENTIAL_STATUSES.has(
+      value.status as IntegrationCredentialStatus,
+    ) ||
+    !isTimestamp(value.expiresAt) ||
+    (value.overlapExpiresAt !== null && !isTimestamp(value.overlapExpiresAt)) ||
+    !isTimestamp(value.createdAt) ||
+    (value.revokedAt !== null && !isTimestamp(value.revokedAt)) ||
+    (value.lastUsedAt !== null && !isTimestamp(value.lastUsedAt)) ||
+    (value.lastUsedIp !== null && typeof value.lastUsedIp !== 'string')
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    sequence: value.sequence,
+    publicKeyId: value.publicKeyId,
+    status: value.status as IntegrationCredentialStatus,
+    expiresAt: value.expiresAt,
+    overlapExpiresAt: value.overlapExpiresAt as string | null,
+    createdAt: value.createdAt,
+    revokedAt: value.revokedAt as string | null,
+    lastUsedAt: value.lastUsedAt as string | null,
+    lastUsedIp: value.lastUsedIp as string | null,
+  }
+}
+
+function decodeIntegrationClient(
+  value: unknown,
+): IntegrationClient | undefined {
+  if (!isRecord(value) || !Array.isArray(value.credentials)) return undefined
+  const scopes = decodeIntegrationStringSet(value.scopes, INTEGRATION_SCOPES)
+  const resourceConstraints = decodeIntegrationConstraints(
+    value.resourceConstraints,
+  )
+  const credentials = value.credentials.map(decodeIntegrationCredential)
+  if (
+    !isNonBlankString(value.id) ||
+    !isNonBlankString(value.name) ||
+    typeof value.description !== 'string' ||
+    typeof value.status !== 'string' ||
+    !INTEGRATION_CLIENT_STATUSES.has(value.status as IntegrationClientStatus) ||
+    !scopes ||
+    !resourceConstraints ||
+    credentials.some((credential) => !credential) ||
+    (value.expiresAt !== null && !isTimestamp(value.expiresAt)) ||
+    (value.lastUsedAt !== null && !isTimestamp(value.lastUsedAt)) ||
+    (value.lastUsedIp !== null && typeof value.lastUsedIp !== 'string') ||
+    !isTimestamp(value.createdAt)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    description: value.description,
+    status: value.status as IntegrationClientStatus,
+    scopes,
+    resourceConstraints,
+    credentials: credentials as IntegrationCredential[],
+    expiresAt: value.expiresAt as string | null,
+    lastUsedAt: value.lastUsedAt as string | null,
+    lastUsedIp: value.lastUsedIp as string | null,
+    createdAt: value.createdAt,
+  }
+}
+
+function decodeIntegrationCredentialIssue(
+  value: unknown,
+): IntegrationCredentialIssue | undefined {
+  if (!isRecord(value)) return undefined
+  const client = decodeIntegrationClient(value.client)
+  const credential = decodeIntegrationCredential(value.credential)
+  if (
+    !client ||
+    !credential ||
+    typeof value.apiKey !== 'string' ||
+    !/^dsk_live_[A-Za-z0-9_-]{16,32}\.[A-Za-z0-9_-]{43}$/.test(value.apiKey)
+  ) {
+    return undefined
+  }
+  return { client, credential, apiKey: value.apiKey }
+}
+
 function decodeStaffAccount(value: unknown): StaffAccount | undefined {
   if (
     !isRecord(value) ||
@@ -704,6 +892,87 @@ export async function listStaff(
   const decoded = body.map(decodeStaffAccount)
   if (decoded.some((staff) => !staff)) throw malformedSuccess(response)
   return decodeAdminListPage(response, decoded as StaffAccount[], page, size)
+}
+
+export async function listIntegrationClients(
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<IntegrationClient>> {
+  const response = await staffFetch(
+    `/api/v1/admin/integration-clients?page=${page}&size=${size}`,
+  )
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const decoded = body.map(decodeIntegrationClient)
+  if (decoded.some((client) => !client)) throw malformedSuccess(response)
+  return decodeAdminListPage(
+    response,
+    decoded as IntegrationClient[],
+    page,
+    size,
+  )
+}
+
+export async function getIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await staffFetch(
+    `/api/v1/admin/integration-clients/${clientId}`,
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createIntegrationClient(
+  input: CreateIntegrationClientInput,
+): Promise<IntegrationCredentialIssue> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/integration-clients',
+    'POST',
+    input,
+  )
+  const decoded = decodeIntegrationCredentialIssue(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function disableIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/disable`,
+    'POST',
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function revokeIntegrationClient(
+  clientId: string,
+): Promise<IntegrationClient> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/revoke`,
+    'POST',
+  )
+  const decoded = decodeIntegrationClient(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function rotateIntegrationClientCredential(
+  clientId: string,
+  input: RotateIntegrationCredentialInput,
+): Promise<IntegrationCredentialIssue> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/integration-clients/${clientId}/rotate`,
+    'POST',
+    input,
+  )
+  const decoded = decodeIntegrationCredentialIssue(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
 }
 
 export async function createStaff(
