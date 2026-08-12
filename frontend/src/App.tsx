@@ -5,10 +5,8 @@ import { AdminShell } from './features/admin/AdminShell'
 import { AgentShell } from './features/agent-shell/AgentShell'
 import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
 import { AuditShell } from './features/audit/AuditShell'
-import {
-  CustomerRoute,
-  CustomerSessionLayout,
-} from './features/customer-auth/CustomerRoute'
+import { CustomerRoute } from './features/customer-auth/CustomerRoute'
+import { CustomerSessionProvider } from './features/customer-auth/CustomerSessionContext'
 import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
@@ -151,9 +149,11 @@ export function createAppRoutes(
     },
     {
       element: (
-        <AppShell>
-          <Outlet />
-        </AppShell>
+        <CustomerSessionProvider>
+          <AppShell>
+            <Outlet />
+          </AppShell>
+        </CustomerSessionProvider>
       ),
       children: [
         { index: true, element: <HomePage /> },
@@ -168,20 +168,15 @@ export function createAppRoutes(
         },
         { path: '/requests/:ticketNumber', element: <RequestDetailPage /> },
         {
-          element: <CustomerSessionLayout />,
+          element: <CustomerRoute />,
           children: [
             {
-              element: <CustomerRoute />,
-              children: [
-                {
-                  path: '/account/requests',
-                  element: <CustomerRequestsPage />,
-                },
-                {
-                  path: '/account/requests/:ticketNumber',
-                  element: <CustomerRequestDetailPage />,
-                },
-              ],
+              path: '/account/requests',
+              element: <CustomerRequestsPage />,
+            },
+            {
+              path: '/account/requests/:ticketNumber',
+              element: <CustomerRequestDetailPage />,
             },
           ],
         },

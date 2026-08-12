@@ -3,7 +3,6 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { createAppRoutes } from './App'
-import { CustomerSessionProvider } from './features/customer-auth/CustomerSessionContext'
 import { RequestAccessProvider } from './features/customer-requests/RequestAccessContext'
 import { RequestSubmissionProvider } from './features/customer-requests/RequestSubmissionContext'
 import { takeAndClearMagicLinkToken } from './pages/CustomerSignInPage'
@@ -31,13 +30,11 @@ createRoot(root).render(
   <StrictMode>
     <DeskseedThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <CustomerSessionProvider>
-          <RequestAccessProvider>
-            <RequestSubmissionProvider>
-              <RouterProvider router={router} />
-            </RequestSubmissionProvider>
-          </RequestAccessProvider>
-        </CustomerSessionProvider>
+        <RequestAccessProvider>
+          <RequestSubmissionProvider>
+            <RouterProvider router={router} />
+          </RequestSubmissionProvider>
+        </RequestAccessProvider>
       </QueryClientProvider>
     </DeskseedThemeProvider>
   </StrictMode>,
