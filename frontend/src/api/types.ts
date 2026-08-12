@@ -348,7 +348,7 @@ export interface AgentTicketDetail {
   capabilities: string[]
   assignmentOptions: TicketAssignmentOptions
   context: {
-    customer: TicketCustomerContext
+    customer: TicketCustomerContext | null
     parent: AgentTicketSummary | null
     children: AgentTicketSummary[]
     externalReferences: unknown[]

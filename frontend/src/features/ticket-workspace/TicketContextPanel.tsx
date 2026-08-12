@@ -36,25 +36,29 @@ export function TicketContextPanel({
       onTabChange={(id) => setActiveTab(id as ContextTab)}
     >
       {activeTab === 'customer' ? (
-        <div className="customer-context-card">
-          <span className="customer-avatar" aria-hidden="true">
-            {detail.context.customer.displayName.slice(0, 1)}
-          </span>
-          <h2>{detail.context.customer.displayName}</h2>
-          <a href={`mailto:${detail.context.customer.email}`}>
-            {detail.context.customer.email}
-          </a>
-          <dl>
-            <div>
-              <dt>고객 ID</dt>
-              <dd>{detail.context.customer.id}</dd>
-            </div>
-            <div>
-              <dt>최근 티켓</dt>
-              <dd>현재 projection에서 제공하지 않음</dd>
-            </div>
-          </dl>
-        </div>
+        detail.context.customer ? (
+          <div className="customer-context-card">
+            <span className="customer-avatar" aria-hidden="true">
+              {detail.context.customer.displayName.slice(0, 1)}
+            </span>
+            <h2>{detail.context.customer.displayName}</h2>
+            <a href={`mailto:${detail.context.customer.email}`}>
+              {detail.context.customer.email}
+            </a>
+            <dl>
+              <div>
+                <dt>고객 ID</dt>
+                <dd>{detail.context.customer.id}</dd>
+              </div>
+              <div>
+                <dt>최근 티켓</dt>
+                <dd>현재 projection에서 제공하지 않음</dd>
+              </div>
+            </dl>
+          </div>
+        ) : (
+          <p className="context-empty">연결된 고객이 없는 내부 작업입니다.</p>
+        )
       ) : null}
       {activeTab === 'history' ? (
         detail.history.length ? (

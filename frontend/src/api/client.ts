@@ -1511,7 +1511,20 @@ function decodeAgentTicketDetail(
   }
   const ticket = decodeAgentTicketSummary(value.ticket)
   const comments = value.comments.map(decodeAgentComment)
-  const customer = value.context.customer
+  const customerValue = value.context.customer
+  const customer =
+    customerValue === null
+      ? null
+      : isRecord(customerValue) &&
+          isNonBlankString(customerValue.id) &&
+          isNonBlankString(customerValue.displayName) &&
+          isNonBlankString(customerValue.email)
+        ? {
+            id: customerValue.id,
+            displayName: customerValue.displayName,
+            email: customerValue.email,
+          }
+        : undefined
   const parent =
     value.context.parent === null
       ? null
@@ -1526,10 +1539,7 @@ function decodeAgentTicketDetail(
   if (
     !ticket ||
     comments.some((comment) => !comment) ||
-    !isRecord(customer) ||
-    !isNonBlankString(customer.id) ||
-    !isNonBlankString(customer.displayName) ||
-    !isNonBlankString(customer.email) ||
+    customer === undefined ||
     parent === undefined ||
     !Array.isArray(value.context.children) ||
     children.some((child) => !child) ||
@@ -1546,11 +1556,7 @@ function decodeAgentTicketDetail(
     capabilities: value.capabilities,
     assignmentOptions,
     context: {
-      customer: {
-        id: customer.id,
-        displayName: customer.displayName,
-        email: customer.email,
-      },
+      customer,
       parent,
       children: children as AgentTicketSummary[],
       externalReferences: [...value.context.externalReferences],

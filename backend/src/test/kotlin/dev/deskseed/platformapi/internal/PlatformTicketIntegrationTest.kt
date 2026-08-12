@@ -9,6 +9,9 @@ import dev.deskseed.integration.IntegrationScope
 import dev.deskseed.integration.IntegrationTicketField
 import dev.deskseed.integration.IntegrationTicketKind
 import dev.deskseed.ticketing.TicketingFacade
+import dev.deskseed.ticketing.StaffTicketReadScope
+import dev.deskseed.ticketing.StaffTicketReadStore
+import dev.deskseed.ticketing.StaffTicketSearchFilter
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -50,6 +53,7 @@ class PlatformTicketIntegrationTest {
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var administration: IntegrationClientAdministration
     @Autowired private lateinit var ticketingFacade: TicketingFacade
+    @Autowired private lateinit var staffTicketReadStore: StaffTicketReadStore
     @Autowired private lateinit var objectMapper: ObjectMapper
 
     private lateinit var adminId: UUID
@@ -159,6 +163,21 @@ class PlatformTicketIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select author_type from ticket_comments", String::class.java))
             .isEqualTo("INTEGRATION_CLIENT")
         assertThat(count("customers")).isZero()
+
+        val ticketNumber = objectMapper.readTree(result.response.contentAsString).get("ticketNumber").asLong()
+        val staffDetail = staffTicketReadStore.findDetail(ticketNumber)!!
+        assertThat(staffDetail.customer).isNull()
+        assertThat(staffDetail.ticket.requester.type).isEqualTo("INTEGRATION_CLIENT")
+        assertThat(staffDetail.comments.single().source).isEqualTo("PLATFORM_API")
+        assertThat(
+            staffTicketReadStore.search(
+                "Reconcile",
+                StaffTicketReadScope.ALL_TICKETS,
+                adminId,
+                StaffTicketSearchFilter(),
+                10,
+            ).items.map { it.ticketNumber },
+        ).containsExactly(ticketNumber)
     }
 
     @Test

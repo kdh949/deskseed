@@ -3431,7 +3431,10 @@ components:
       - externalReferences
       properties:
         customer:
-          $ref: '#/components/schemas/TicketCustomer'
+          description: Null for requesterless INTERNAL_WORK_ITEM tickets.
+          oneOf:
+          - $ref: '#/components/schemas/TicketCustomer'
+          - type: 'null'
         parent:
           oneOf:
           - $ref: '#/components/schemas/TicketSummary'
