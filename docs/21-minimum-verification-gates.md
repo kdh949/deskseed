@@ -930,7 +930,8 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 
 ### SEARCH-AUD-001 — Required encrypted original query
 
-- every successful `SEARCH_EXECUTED` event stores redacted query, keyed fingerprint, authenticated ciphertext and key version.
+- every successful `SEARCH_EXECUTED` event stores the input-independent `[PROTECTED]` routine marker, keyed fingerprint, authenticated ciphertext and key version.
+- migration and DB constraints scrub/reject content-derived routine query representations in both canonical detail and rebuildable projection.
 - no plaintext query column, log, trace, metric, cache, ordinary export or webhook payload exists.
 - missing/invalid active encryption key fails startup/readiness when access audit is enabled.
 

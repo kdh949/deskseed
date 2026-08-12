@@ -248,15 +248,13 @@ searchMode
 interactionId
 ```
 
-#### Redacted query
+#### Routine query representation
 
-Human-readable but masks configured patterns:
-
-- credential-like tokens
-- authorization headers
-- card/account patterns
-- national identifiers if configured
-- excessive free text after a maximum length
+ADR 0036 supersedes the earlier human-readable redaction decision. Arbitrary language,
+health data, identifiers and future secret formats cannot be made reliably safe with a
+pattern list, so `queryRedacted` contains only the input-independent marker
+`[PROTECTED]`. Ordinary list/detail/export metadata never contains a query-derived
+preview.
 
 #### Fingerprint
 
@@ -295,7 +293,9 @@ This enables investigations such as “검색어 X를 사용한 뒤 어떤 고�
 
 ### 6.4 Querying raw search terms
 
-Normal Audit Explorer search uses redacted values or fingerprint. Searching decrypted raw terms requires a privileged endpoint; mass decryption is not the default list query.
+Normal Audit Explorer correlation uses the content-free marker, filters and keyed
+fingerprint. Reading a decrypted raw term requires the privileged one-event reveal
+endpoint; mass decryption is not the default list query.
 
 ## 7. Ticket modification visibility
 

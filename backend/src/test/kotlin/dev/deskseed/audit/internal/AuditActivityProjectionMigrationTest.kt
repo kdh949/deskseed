@@ -1,7 +1,9 @@
 package dev.deskseed.audit.internal
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -11,6 +13,16 @@ import java.sql.DriverManager
 
 @Testcontainers
 class AuditActivityProjectionMigrationTest {
+    @BeforeEach
+    fun resetSchema() {
+        connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                statement.execute("drop schema public cascade")
+                statement.execute("create schema public")
+            }
+        }
+    }
+
     @Test
     fun `version eleven backfills three canonical ledgers survives hook failure and rebuilds identically`() {
         migrateTo("10")
@@ -125,6 +137,105 @@ class AuditActivityProjectionMigrationTest {
         }
     }
 
+    @Test
+    fun `version thirteen removes query content from canonical detail and projection without changing protected material`() {
+        migrateTo("12")
+        insertCanonicalFixture("환자는 희귀질환 HIV 양성 진단")
+
+        val ciphertextBefore = connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                assertThat(queryString(statement, "select query_redacted from search_audit_details"))
+                    .isEqualTo("환자는 희귀질환 HIV 양성 진단")
+                assertThat(queryString(statement, "select query_redacted from audit_activity_projection where ledger_type = 'ACCESS_SEARCH'"))
+                    .isEqualTo("환자는 희귀질환 HIV 양성 진단")
+                assertThatThrownBy {
+                    statement.executeUpdate("update search_audit_details set query_redacted = '[PROTECTED]'")
+                }.hasMessageContaining("Access audit history is append-only")
+                statement.executeQuery("select query_ciphertext from search_audit_query_ciphertexts").use { rows ->
+                    assertThat(rows.next()).isTrue()
+                    rows.getBytes(1)
+                }
+            }
+        }
+
+        migrateTo("13")
+
+        connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                assertThat(queryString(statement, "select query_redacted from search_audit_details"))
+                    .isEqualTo("[PROTECTED]")
+                assertThat(queryString(statement, "select query_redacted from audit_activity_projection where ledger_type = 'ACCESS_SEARCH'"))
+                    .isEqualTo("[PROTECTED]")
+                assertThat(queryString(statement, "select query_fingerprint from search_audit_details"))
+                    .isEqualTo("fingerprint-v1")
+                statement.executeQuery("select query_ciphertext from search_audit_query_ciphertexts").use { rows ->
+                    assertThat(rows.next()).isTrue()
+                    assertThat(rows.getBytes(1)).isEqualTo(ciphertextBefore)
+                }
+                assertThatThrownBy {
+                    statement.executeUpdate("update search_audit_details set query_redacted = 'plaintext'")
+                }.hasMessageContaining("Access audit history is append-only")
+                assertThat(
+                    count(
+                        statement,
+                        "pg_constraint where conname in ('search_audit_query_redacted_content_free', " +
+                            "'audit_projection_query_redacted_content_free')",
+                    ),
+                ).isEqualTo(2)
+                statement.executeUpdate(
+                    """
+                    insert into access_audit_events (
+                        id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                        source, action, resource_type, resource_id, ticket_number,
+                        interaction_id, session_fingerprint, auth_type, request_id,
+                        correlation_id, ip_address, user_agent, outcome, http_status
+                    )
+                    select '00000000-0000-0000-0000-000000001213', occurred_at,
+                           actor_type, actor_id, actor_display_snapshot, source, action,
+                           resource_type, resource_id, ticket_number,
+                           '00000000-0000-0000-0000-000000001313', session_fingerprint,
+                           auth_type, 'constraint-probe', correlation_id, ip_address,
+                           user_agent, outcome, http_status
+                    from access_audit_events
+                    where id = '00000000-0000-0000-0000-000000001106'
+                    """.trimIndent(),
+                )
+                assertThatThrownBy {
+                    statement.executeUpdate(
+                        """
+                        insert into search_audit_details (
+                            access_event_id, query_redacted, query_fingerprint,
+                            query_key_version, normalized_filters, sort, result_count
+                        ) values (
+                            '00000000-0000-0000-0000-000000001213', 'plaintext',
+                            'constraint-probe', 'local-v1', '{}',
+                            'updatedAt:desc,ticketNumber:desc', 0
+                        )
+                        """.trimIndent(),
+                    )
+                }.hasMessageContaining("search_audit_query_redacted_content_free")
+                assertThatThrownBy {
+                    statement.executeUpdate(
+                        """
+                        insert into audit_activity_projection (
+                            id, ledger_type, source_event_id, occurred_at, actor_type,
+                            actor_display_snapshot, source, action, outcome, metadata_json,
+                            query_redacted, projected_at
+                        )
+                        select '00000000-0000-0000-0000-000000001413', ledger_type,
+                               '00000000-0000-0000-0000-000000001513', occurred_at,
+                               actor_type, actor_display_snapshot, source, action, outcome,
+                               metadata_json, 'plaintext', now()
+                        from audit_activity_projection
+                        where ledger_type = 'ACCESS_SEARCH'
+                        limit 1
+                        """.trimIndent(),
+                    )
+                }.hasMessageContaining("audit_projection_query_redacted_content_free")
+            }
+        }
+    }
+
     private fun migrateTo(version: String) {
         Flyway.configure()
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
@@ -134,7 +245,7 @@ class AuditActivityProjectionMigrationTest {
             .migrate()
     }
 
-    private fun insertCanonicalFixture() {
+    private fun insertCanonicalFixture(queryRedacted: String = "c***@example.com") {
         connection().use { jdbc ->
             jdbc.createStatement().use { statement ->
                 statement.executeUpdate(
@@ -216,7 +327,7 @@ class AuditActivityProjectionMigrationTest {
                         access_event_id, query_redacted, query_fingerprint, query_key_version,
                         normalized_filters, sort, result_count
                     ) values (
-                        '00000000-0000-0000-0000-000000001106', 'c***@example.com',
+                        '00000000-0000-0000-0000-000000001106', '$queryRedacted',
                         'fingerprint-v1', 'local-v1', '{"status":"OPEN"}',
                         'updatedAt:desc,ticketNumber:desc', 1
                     )
@@ -258,6 +369,9 @@ class AuditActivityProjectionMigrationTest {
 
     private fun count(statement: java.sql.Statement, table: String): Long =
         statement.executeQuery("select count(*) from $table").use { result -> result.next(); result.getLong(1) }
+
+    private fun queryString(statement: java.sql.Statement, sql: String): String =
+        statement.executeQuery(sql).use { result -> result.next(); result.getString(1) }
 
     private fun connection() = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
 

@@ -61,6 +61,13 @@ commentVisibility
 - UI가 필드 일부 성공을 가정하면 안 됨.
 - 동일 request 재시도는 client-generated command ID 또는 idempotency key로 보호한다.
 
+`clientCommandId`는 한 logical submit의 수명 동안 유지한다. network/5xx처럼 commit 여부가 모호한 실패에서는 staff/ticket별
+12시간 draft snapshot에 ID와 original base/request state를 함께 보존해 reload 후 deliberate retry도 같은 ID를 보낸다.
+background/manual refresh는 성공 여부와 무관하게 ambiguous command의 outcome을 ID에 결부할 수 없으므로 original
+base/request state와 ID를 바꾸지 않는다. Payload edit, definite validation/conflict 또는 확인된 command 성공에서만 ID를
+회전한다. 성공 응답 뒤 detail refresh보다 먼저 submitted comment와
+confirmed field/base version을 하나의 local-storage write로 정리해 crash/reload가 이미 저장된 comment를 새 ID로 재전송하지 않게 한다.
+
 ## 5. Field-aware conflict
 
 서버 응답 예:
@@ -161,6 +168,9 @@ RFC Problem Details의 `type`, `title`, `detail`, `errors`, `requestId`를 공�
 5xx/network → draft 보존 + retry
 ```
 
+모호한 5xx/network retry는 같은 logical payload와 `clientCommandId`를 재사용한다. 4xx validation/permission/conflict는 definite
+failure이므로 ID를 폐기하고, 사용자가 수정·해결한 다음 새 logical command ID로 제출한다.
+
 ## 11. Unsaved navigation
 
 - comment 또는 dirty field가 있으면 route leave guard.
@@ -199,3 +209,25 @@ SSE/WebSocket을 추가할 때도 Query cache가 source of UI truth다.
 - dirty form이 없으면 invalidate/refetch.
 - dirty form이 있으면 “다른 사용자가 업데이트함” 배너.
 - event payload만으로 민감한 full data를 갱신하지 않는다.
+
+## 15. Staff actor consistency guard
+
+D-050의 `X-Deskseed-Expected-Staff-Id`는 인증 수단이나 actor 선택 입력이 아니다. 브라우저 realm은 마지막으로
+확인한 staff ID를 짧은 수명의 client security context로 유지하고, 일반 staff read와 인증된 CSRF/write 요청에 optional
+header로 보낸다. 서버가 검증한 session principal만 실제 actor이며 header는 그 principal과 같은지 비교하는
+defense-in-depth guard다. `localStorage`의 draft-session owner marker는 탭 간 변경 신호와 draft 정리에만 쓰며 임의
+요청의 actor를 공급하지 않는다.
+
+세션 설정에는 다음 예외가 있다.
+
+- 로그인 전 CSRF와 `POST /api/v1/agent/session`에는 아직 확인된 actor가 없으므로 header를 보내지 않는다.
+- 로그인 직후 새 session을 확인하는 `GET /api/v1/agent/me` 호출도 header를 생략한다. 일반 refresh의 `/me`는 마지막으로
+  확인한 actor가 있으면 guard를 사용할 수 있다.
+- mutation 한 번은 시작 시 confirmed actor와 session generation을 한 번 snapshot한다. CSRF 발급과 이어지는 write는
+  같은 snapshot을 사용하며 중간에 다른 탭이 session owner를 바꾸면 새 actor로 다시 snapshot해 write하지 않는다.
+
+present header가 canonical single UUID가 아니거나 중복이면 `400 /problems/invalid-staff-session-actor`, 검증된 session
+principal과 다르면 `409 /problems/staff-session-actor-mismatch`다. 둘 다 controller, success audit, mutation, session activity
+renewal 전에 fail closed한다. mismatch는 공유 server session이나 새 owner marker를 지우지 않고 stale tab의 인증 UI와
+그 tab이 소유한 draft만 정리한다. 구현된 operation별 parameter와 400/409 계약은
+`api/core-api-outline-v1.yaml`이 source of truth이며 blueprint-only staff operation은 구현 동결 시 같은 binding을 추가한다.

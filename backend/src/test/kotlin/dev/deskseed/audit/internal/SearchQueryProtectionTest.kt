@@ -19,14 +19,34 @@ class SearchQueryProtectionTest {
 
         val protected = protection.protect(eventId, rawQuery, occurredAt)
 
-        assertThat(protected.queryRedacted).doesNotContain("correct-horse-battery-staple")
-        assertThat(protected.queryRedacted).doesNotContain("customer@example.com")
-        assertThat(protected.queryRedacted).doesNotContain("\n", "\r", "\u0000")
+        assertThat(protected.queryRedacted).isEqualTo("[PROTECTED]")
         assertThat(protected.queryFingerprint).isNotBlank()
         assertThat(protected.keyVersion).isEqualTo("v1")
         assertThat(String(protected.queryCiphertext, Charsets.UTF_8)).doesNotContain(rawQuery)
         assertThat(protected.expiresAt).isEqualTo(occurredAt.plus(Duration.ofDays(30)))
         assertThat(protection.reveal(eventId, protected)).isEqualTo(rawQuery)
+    }
+
+    @Test
+    fun `routine audit representation is content free for arbitrary sensitive search text`() {
+        val protection = protection(activeVersion = "v1", "v1" to key(11))
+        val sensitiveQueries = listOf(
+            "eyJhbGciOiJIUzI1NiJ9.opaquePayload.signature",
+            "+82 10-1234-5678 900101-1234567",
+            "환자는 희귀질환 HIV 양성 진단",
+            "返品理由：家族に知られたくない 자유 메모",
+            "  민감\t검색\r\n\u0000내용  ",
+        )
+
+        sensitiveQueries.forEachIndexed { index, rawQuery ->
+            val protected = protection.protect(
+                UUID.fromString("10000000-0000-0000-0000-${(index + 2).toString().padStart(12, '0')}"),
+                rawQuery,
+                occurredAt,
+            )
+
+            assertThat(protected.queryRedacted).isEqualTo("[PROTECTED]")
+        }
     }
 
     @Test

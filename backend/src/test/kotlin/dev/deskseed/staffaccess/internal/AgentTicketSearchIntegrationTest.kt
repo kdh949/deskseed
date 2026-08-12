@@ -131,7 +131,7 @@ class AgentTicketSearchIntegrationTest {
             """.trimIndent(),
             searchEventId,
         )
-        assertThat(detail["query_redacted"]).isEqualTo("결제 오류")
+        assertThat(detail["query_redacted"]).isEqualTo("[PROTECTED]")
         assertThat(detail["query_fingerprint"].toString()).isNotBlank().isNotEqualTo("결제 오류")
         assertThat(detail["query_key_version"]).isEqualTo("local-v1")
         assertThat(detail["filters"].toString()).contains("\"status\": \"OPEN\"")
@@ -255,7 +255,7 @@ class AgentTicketSearchIntegrationTest {
     fun `search audit insert failure blocks results and agents cannot query the access ledger`() {
         val agent = insertStaff("strict@example.com", "Agent password 42", "Strict 상담사")
         val group = insertGroup("Strict 그룹", agent)
-        insertTicket(8401, "감사 장애 대상", "OPEN", "NORMAL", group, agent)
+        insertTicket(8401, "audit-failure-protected-search-result", "OPEN", "NORMAL", group, agent)
         val browser = login("strict@example.com", "Agent password 42")
 
         jdbcTemplate.execute(
@@ -268,16 +268,19 @@ class AgentTicketSearchIntegrationTest {
             "create trigger fail_search_audit before insert on access_audit_events for each row execute function fail_search_audit_insert()",
         )
         try {
-            mockMvc.perform(
+            val response = mockMvc.perform(
                 search(
                     browser,
                     UUID.randomUUID(),
-                    """{"query":"감사 장애","filters":{},"sort":"updatedAt:desc,ticketNumber:desc","limit":25}""",
+                    """{"query":"audit-failure-protected","filters":{},"sort":"updatedAt:desc,ticketNumber:desc","limit":25}""",
                 ),
             )
                 .andExpect(status().isServiceUnavailable)
-                .andExpect(jsonPath("$.type").value("/problems/access-audit-unavailable"))
+                .andExpect(jsonPath("$.type").value("/problems/audit-write-unavailable"))
                 .andExpect(jsonPath("$.items").doesNotExist())
+                .andExpect(jsonPath("$.resultCount").doesNotExist())
+                .andReturn().response.contentAsString
+            assertThat(response).doesNotContain("audit-failure-protected-search-result")
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_search_audit on access_audit_events")
             jdbcTemplate.execute("drop function if exists fail_search_audit_insert()")
@@ -321,7 +324,7 @@ class AgentTicketSearchIntegrationTest {
             "select query_redacted from search_audit_details order by access_event_id desc limit 1",
             String::class.java,
         )
-        assertThat(redacted).isEqualTo("token=[REDACTED]")
+        assertThat(redacted).isEqualTo("[PROTECTED]")
     }
 
     @Test

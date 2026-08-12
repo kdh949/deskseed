@@ -281,7 +281,13 @@ class AgentTicketReadIntegrationTest {
     fun `background read audit failure fails closed without returning protected detail`() {
         val agent = insertStaff("agent@example.com", "Agent password 42", "AGENT", "상담사")
         val group = insertGroup("보호 그룹", agent)
-        insertTicket(number = 5001, subject = "보호 티켓", groupId = group, assigneeId = agent)
+        val ticket = insertTicket(
+            number = 5001,
+            subject = "audit-failure-protected-subject",
+            groupId = group,
+            assigneeId = agent,
+        )
+        insertComment(ticket.id, "INTERNAL", "AGENT", agent, "audit-failure-protected-internal-note")
         val browser = login("agent@example.com", "Agent password 42")
         jdbcTemplate.execute(
             """
@@ -293,14 +299,57 @@ class AgentTicketReadIntegrationTest {
             "create trigger fail_access_audit before insert on access_audit_events for each row execute function fail_access_audit_insert()",
         )
         try {
-            mockMvc.perform(ticketDetail(5001, browser, UUID.randomUUID(), "BACKGROUND"))
+            val response = mockMvc.perform(ticketDetail(5001, browser, UUID.randomUUID(), "BACKGROUND"))
                 .andExpect(status().isServiceUnavailable)
-                .andExpect(jsonPath("$.type").value("/problems/access-audit-unavailable"))
+                .andExpect(jsonPath("$.type").value("/problems/audit-write-unavailable"))
                 .andExpect(jsonPath("$.ticket").doesNotExist())
+                .andExpect(jsonPath("$.comments").doesNotExist())
+                .andExpect(jsonPath("$.context").doesNotExist())
+                .andReturn().response.contentAsString
+            assertThat(response)
+                .doesNotContain("audit-failure-protected-subject")
+                .doesNotContain("audit-failure-protected-internal-note")
+                .doesNotContain("customer-5001@example.com")
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_access_audit on access_audit_events")
             jdbcTemplate.execute("drop function if exists fail_access_audit_insert()")
         }
+    }
+
+    @Test
+    fun `anonymous and inactive staff reads return no protected detail and create zero success audit rows`() {
+        val agent = insertStaff("denied@example.com", "Agent password 42", "AGENT", "차단 상담사")
+        val group = insertGroup("차단 그룹", agent)
+        val ticket = insertTicket(
+            number = 5101,
+            subject = "authorization-denied-protected-subject",
+            groupId = group,
+            assigneeId = agent,
+        )
+        insertComment(ticket.id, "INTERNAL", "AGENT", agent, "authorization-denied-protected-note")
+        val browser = login("denied@example.com", "Agent password 42")
+
+        val anonymousResponse = mockMvc.perform(
+            get("/api/v1/agent/tickets/5101")
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .header("X-Deskseed-Read-Intent", "NAVIGATION"),
+        ).andExpect(status().isUnauthorized).andReturn().response.contentAsString
+
+        jdbcTemplate.update("update staff_accounts set status = 'DISABLED' where id = ?", agent)
+        val inactiveResponse = mockMvc.perform(ticketDetail(5101, browser, UUID.randomUUID(), "NAVIGATION"))
+            .andExpect(status().isUnauthorized)
+            .andReturn().response.contentAsString
+
+        assertThat(anonymousResponse + inactiveResponse)
+            .doesNotContain("authorization-denied-protected-subject")
+            .doesNotContain("authorization-denied-protected-note")
+            .doesNotContain("customer-5101@example.com")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from access_audit_events where ticket_number = 5101 and outcome = 'SUCCEEDED'",
+                Long::class.java,
+            ),
+        ).isZero()
     }
 
     @Test

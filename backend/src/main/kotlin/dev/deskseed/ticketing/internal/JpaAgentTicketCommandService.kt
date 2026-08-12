@@ -15,6 +15,7 @@ import dev.deskseed.ticketing.TicketAssignmentInvalidException
 import dev.deskseed.ticketing.TicketAssignmentPolicy
 import dev.deskseed.ticketing.TicketAuditUnavailableException
 import dev.deskseed.ticketing.TicketCommandInvalidException
+import dev.deskseed.ticketing.TicketCommandIdReusedException
 import dev.deskseed.ticketing.TicketCommandResult
 import dev.deskseed.ticketing.TicketCommandWarning
 import dev.deskseed.ticketing.TicketField
@@ -103,6 +104,7 @@ internal class AgentTicketCommandTransaction(
     private val relationRepository: TicketRelationRepository,
     private val auditRepository: TicketAuditRepository,
     private val auditEventRepository: TicketAuditEventRepository,
+    private val commandReplayStore: StaffTicketCommandReplayStore,
     private val ticketNumberGenerator: TicketNumberGenerator,
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val authorizationPolicy: TicketWriteAuthorizationPolicy,
@@ -115,6 +117,10 @@ internal class AgentTicketCommandTransaction(
         validateText(command.subject, "subject", 200)
         validateComment(command.firstComment)
         validateAssignment(command.groupId, command.assigneeId)
+        commandReplayStore.lock(command.actor.id, command.context.commandId)
+        if (commandReplayStore.find(command.actor.id, command.context.commandId) != null) {
+            throw TicketCommandIdReusedException()
+        }
 
         val now = Instant.now(clock)
         val ticket = Ticket.createByAgent(
@@ -189,6 +195,18 @@ internal class AgentTicketCommandTransaction(
     @Transactional
     fun update(command: UpdateAgentTicketCommand): TicketCommandResult {
         validateUpdateCommand(command)
+        val requestDescriptor = updateRequestDescriptor(command)
+        commandReplayStore.lock(command.actor.id, command.context.commandId)
+        commandReplayStore.find(command.actor.id, command.context.commandId)?.let { original ->
+            if (
+                original.result.ticketNumber != command.ticketNumber ||
+                original.operation != UPDATE_TICKET_OPERATION ||
+                original.requestDescriptor != requestDescriptor
+            ) {
+                throw TicketCommandIdReusedException()
+            }
+            return original.result
+        }
         val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
             ?: throw AgentTicketNotFoundException()
         if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
@@ -275,21 +293,10 @@ internal class AgentTicketCommandTransaction(
             }
             ticketRepository.saveAndFlush(ticket)
         }
+        if (events.isEmpty()) {
+            events += NewAuditEvent(type = "UPDATE_COMMAND_RECEIVED")
+        }
 
-        val auditId = appendAudit(
-            ticket = ticket,
-            expectedVersion = command.expectedVersion,
-            resultVersion = ticket.version,
-            actorId = command.actor.id,
-            context = AuditCommandContext(
-                source = command.context.source.name,
-                requestId = command.context.requestId,
-                correlationId = command.context.correlationId,
-                commandId = command.context.commandId,
-            ),
-            now = now,
-            events = events,
-        )
         val warnings = if (oldStatus != TicketStatus.SOLVED && newStatus == TicketStatus.SOLVED) {
             relationRepository.findOpenChildTicketNumbers(ticket.id).takeIf { it.isNotEmpty() }?.let {
                 listOf(
@@ -303,6 +310,33 @@ internal class AgentTicketCommandTransaction(
         } else {
             emptyList()
         }
+        val eventsWithResult = events.mapIndexed { index, event ->
+            if (index != 0) {
+                event
+            } else {
+                event.copy(
+                    metadata = event.metadata + mapOf(
+                        "commandOperation" to UPDATE_TICKET_OPERATION,
+                        "commandRequestDescriptor" to requestDescriptor,
+                        "commandWarnings" to warnings,
+                    ),
+                )
+            }
+        }
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            resultVersion = ticket.version,
+            actorId = command.actor.id,
+            context = AuditCommandContext(
+                source = command.context.source.name,
+                requestId = command.context.requestId,
+                correlationId = command.context.correlationId,
+                commandId = command.context.commandId,
+            ),
+            now = now,
+            events = eventsWithResult,
+        )
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId, warnings)
     }
 
@@ -312,6 +346,10 @@ internal class AgentTicketCommandTransaction(
         if (command.expectedVersion < 0) throw TicketCommandInvalidException("expectedVersion must be non-negative")
         command.reason?.let { reason ->
             if (reason.length > 2_000) throw TicketCommandInvalidException("reason must not exceed 2000 characters")
+        }
+        commandReplayStore.lock(command.actor.id, command.context.commandId)
+        if (commandReplayStore.find(command.actor.id, command.context.commandId) != null) {
+            throw TicketCommandIdReusedException()
         }
         val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
             ?: throw AgentTicketNotFoundException()
@@ -383,6 +421,10 @@ internal class AgentTicketCommandTransaction(
         validateText(command.subject, "subject", 200)
         validateText(command.body, "body", 20_000)
         validateAssignment(command.groupId, command.assigneeId)
+        commandReplayStore.lock(command.actor.id, command.context.commandId)
+        if (commandReplayStore.find(command.actor.id, command.context.commandId) != null) {
+            throw TicketCommandIdReusedException()
+        }
 
         val parent = ticketRepository.findByTicketNumber(command.parentTicketNumber)
             ?: throw AgentTicketNotFoundException()
@@ -549,6 +591,32 @@ internal class AgentTicketCommandTransaction(
             throw TicketCommandInvalidException("priority must be declared in changedFields")
         }
         command.comment?.let(::validateComment)
+    }
+
+    private fun updateRequestDescriptor(command: UpdateAgentTicketCommand): String {
+        val requestedValues = linkedMapOf<String, Any?>()
+        if (TicketField.STATUS in command.changedFields) requestedValues["status"] = command.status?.name
+        if (TicketField.PRIORITY in command.changedFields) requestedValues["priority"] = command.priority?.name
+        if (TicketField.GROUP_ID in command.changedFields) requestedValues["groupId"] = command.groupId?.toString()
+        if (TicketField.ASSIGNEE_ID in command.changedFields) {
+            requestedValues["assigneeId"] = command.assigneeId?.toString()
+        }
+        val comment = command.comment?.let {
+            linkedMapOf(
+                "visibility" to it.visibility.name,
+                "contentSha256" to sha256(it.body.trim()),
+            )
+        }
+        return objectMapper.writeValueAsString(
+            linkedMapOf(
+                "operation" to UPDATE_TICKET_OPERATION,
+                "ticketNumber" to command.ticketNumber,
+                "expectedVersion" to command.expectedVersion,
+                "changedFields" to command.changedFields.map(TicketField::externalName).sorted(),
+                "requestedValues" to requestedValues,
+                "comment" to comment,
+            ),
+        )
     }
 
     private fun requireExactVersion(expectedVersion: Long, currentVersion: Long) {
@@ -720,4 +788,8 @@ internal class AgentTicketCommandTransaction(
         val metadata: Map<String, Any?> = emptyMap(),
         val occurredAt: Instant? = null,
     )
+
+    private companion object {
+        const val UPDATE_TICKET_OPERATION = "UPDATE_TICKET"
+    }
 }

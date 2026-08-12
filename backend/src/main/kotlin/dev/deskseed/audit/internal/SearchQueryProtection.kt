@@ -93,7 +93,7 @@ internal class SearchQueryProtection(
         val encrypted = cipher.doFinal(rawQuery.toByteArray(StandardCharsets.UTF_8))
 
         return ProtectedSearchQueryAudit(
-            queryRedacted = redact(rawQuery),
+            queryRedacted = ROUTINE_QUERY_REPRESENTATION,
             queryFingerprint = Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint),
             keyVersion = properties.activeKeyVersion,
             queryCiphertext = ByteBuffer.allocate(nonce.size + encrypted.size)
@@ -161,21 +161,6 @@ internal class SearchQueryProtection(
         .lowercase(Locale.ROOT)
         .replace(WHITESPACE, " ")
 
-    private fun redact(rawQuery: String): String {
-        var redacted = Normalizer.normalize(rawQuery, Normalizer.Form.NFKC)
-            .filterNot { it.isISOControl() && !it.isWhitespace() }
-            .replace(WHITESPACE, " ")
-            .trim()
-        redacted = AUTHORIZATION.replace(redacted) { match -> "${match.groupValues[1]} [REDACTED]" }
-        redacted = NAMED_SECRET.replace(redacted) { match -> "${match.groupValues[1]}=[REDACTED]" }
-        redacted = EMAIL.replace(redacted) { match ->
-            val local = match.groupValues[1]
-            "${local.take(1)}***@${match.groupValues[2]}"
-        }
-        redacted = CARD_LIKE.replace(redacted, "[CARD-REDACTED]")
-        return redacted.take(MAX_QUERY_LENGTH)
-    }
-
     private fun decodeKeys(properties: SearchQueryAuditProperties): Map<String, ByteArray> =
         properties.keys.mapValues { (version, encoded) ->
             if (version.isBlank() || version.length > MAX_KEY_VERSION_LENGTH) {
@@ -206,14 +191,8 @@ internal class SearchQueryProtection(
         const val CIPHERTEXT_AAD_PURPOSE = "deskseed:access-audit:search-query:ciphertext:v1"
         const val SESSION_KEY_PURPOSE = "deskseed:access-audit:staff-session:fingerprint-key:v1"
         const val SESSION_MESSAGE_PURPOSE = "deskseed:access-audit:staff-session:fingerprint:v1"
+        const val ROUTINE_QUERY_REPRESENTATION = "[PROTECTED]"
         val WHITESPACE = Regex("\\s+")
-        val AUTHORIZATION = Regex("\\b(bearer|basic)\\s+[^\\s]+", RegexOption.IGNORE_CASE)
-        val NAMED_SECRET = Regex(
-            "\\b(password|passwd|pwd|token|api[_-]?key|secret)\\s*[:=]\\s*[^\\s]+",
-            RegexOption.IGNORE_CASE,
-        )
-        val EMAIL = Regex("\\b([A-Z0-9._%+-]+)@([A-Z0-9.-]+\\.[A-Z]{2,})\\b", RegexOption.IGNORE_CASE)
-        val CARD_LIKE = Regex("(?<!\\d)(?:\\d[ -]?){13,19}(?!\\d)")
     }
 }
 

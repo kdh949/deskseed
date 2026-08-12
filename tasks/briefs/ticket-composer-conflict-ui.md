@@ -6,12 +6,12 @@
 
 ## Decision and source references
 
-- Decision IDs: D-003, D-005, D-007, D-018, D-030, D-031, D-032, D-041, D-042
+- Decision IDs: D-003, D-005, D-007, D-018, D-030, D-031, D-032, D-041, D-042, D-049
 - Accepted ADRs: 0003, 0005, 0007, 0018, 0019, 0020, 0021, 0030
 - Requirements: REQ-TKT-007, REQ-TKT-010, REQ-TKT-013~015, REQ-AUD-001/007, REQ-UI-001/003/005/006
 - API operations: `getAgentTicket`, `updateAgentTicket`
 - Screen: AGT-004
-- Gates: TKT-002/003/006, CHG-001~003, UI-001~005
+- Gates: TKT-002/003/006, CHG-001~003, IDEM-001~003, IDEM-004 response-loss path, UI-001~005
 
 ## Actor and source
 
@@ -19,7 +19,7 @@
 - Source: `AGENT_UI`.
 - Read scope: `ALL_TICKETS`; write remains `GROUP_OR_ASSIGNEE` and is exposed as an `UPDATE` capability only when the current actor can mutate the ticket.
 - Resource constraints: group/assignee choices are server-projected active assignment options; the command still validates membership and authorization server-side.
-- Request/correlation: the browser sends a fresh `clientCommandId` for each deliberate submit; server request/correlation semantics remain authoritative.
+- Request/correlation: the browser generates one `clientCommandId` per logical payload and preserves it across an ambiguous response, reload, and manual refresh. Edit, definite failure/conflict, or confirmed command success starts a new lifecycle; server request/correlation semantics remain authoritative.
 
 ## Product and UX contract
 
@@ -53,22 +53,22 @@
 - Ticket current row remains source of truth. Comment and field mutation plus one ordered audit commit or roll back together.
 - `expectedVersion` is the latest confirmed server version; `changedFields` is derived from current server values versus local field values.
 - Same-field stale changes remain unresolved until the user chooses. Disjoint changes are merged only by the tested server policy.
-- A failed/conflicted command clears no draft. Success clears only the submitted visibility draft and reconciles fields/comments from a fresh server response.
+- A failed/conflicted command clears no draft. Ambiguous network/5xx failure and any manual refresh preserve the original command ID and request base because a read cannot identify the write outcome; edit or definite 4xx rotates it. Success durably clears the submitted visibility and confirms fields/base version before the follow-up refresh.
 - No command retry occurs automatically after an ambiguous failure.
 - Assignment options do not bypass the active-group/member invariant or `GROUP_OR_ASSIGNEE` authorization.
 
 ## Data and privacy
 
-- Browser storage contains bounded plain-text drafts, editable field IDs, base version and saved time; never credentials, access tokens, cookies or attachment data.
+- Browser storage contains bounded plain-text drafts, editable field IDs, base version, saved time and an optional non-secret pending command UUID; never credentials, access tokens, cookies or attachment data.
 - Comment bodies remain absent from ordinary logs and are not duplicated into ticket-audit payloads.
 - Assignment options contain staff display names and IDs only on the audited staff detail projection.
-- Existing retention policy applies; this slice adds no retention executor or migration.
+- Existing canonical ticket-audit retention applies; this slice adds no receipt row/table or retention executor. V14 is an index-only migration.
 
 ## Threats changed
 
 - Accidental disclosure: explicit mode text/icon/ARIA and mode-specific clearing prevent INTERNAL/PUBLIC confusion.
 - Lost update/data loss: exact field sets, server versioning, explicit conflict choice and preserved drafts.
-- Duplicate side effects: submit lock plus fresh command ID; ambiguous failures require deliberate retry.
+- Duplicate side effects: submit lock plus a stable logical command ID; ambiguous failures require deliberate retry with the same ID, including after reload.
 - Authorization bypass: options are informational; every mutation is re-authorized and revalidated server-side.
 - Secret leakage/XSS: no secret storage and plain text rendering only.
 
@@ -104,8 +104,8 @@
 ## Compatibility and migration
 
 - OpenAPI: compatible additive detail fields plus frozen command conflict extensions; no released M3 client is broken.
-- Database migration/backfill: none.
-- Rollback: normal application/UI revert; persisted draft keys are versioned and safely ignored by older clients.
+- Database migration/backfill: V14 adds only the partial `ticket_audits` staff-command lookup index; it does not add a receipt table or copy comment bodies.
+- Rollback: application/UI rollback plus forward-fix or restore. Flyway has no down migration; older clients ignore the optional persisted command ID.
 
 ## Human explanation
 

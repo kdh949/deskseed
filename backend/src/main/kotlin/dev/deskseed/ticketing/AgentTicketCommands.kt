@@ -128,6 +128,8 @@ class TicketTransitionInvalidException(val reason: String) : RuntimeException(re
 
 class TicketCommandInvalidException(val reason: String) : RuntimeException(reason)
 
+class TicketCommandIdReusedException : RuntimeException()
+
 class TicketFieldConflictException(
     val currentVersion: Long,
     val conflictingFields: List<String>,
