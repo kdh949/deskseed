@@ -6,7 +6,7 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 2237c4385694db59ce55172dedec325ca31d8560011946544419827fa3f9994c        6279  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-d6f6ed55ac0fc24720421ea8635c8dfb35bc1501837dcd50bedf80b2bf2c2b5e      193120  api/core-api-outline-v1.yaml
+9045417bcb054b85509dbf12f88e6dd1ad68d240df486d52662492b4dc48c6b8      199066  api/core-api-outline-v1.yaml
 3fed2202173278118ddc6eb8e5d8ada47772b752f0d36a93e5b18d6301e538e8       13735  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -47,14 +47,14 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 2e6e4d6394970b174231d5755a39041d7bda4b0529914061f0860e15e74af0b2        8066  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 1cb5de486728eb8740a92b7abf6bbfb082c3f5bc28604708d0ca8746dccc5ed3        8603  docs/25-implementation-decision-register.md
-379aa15047088091c761fb4423e6173dd29694757e9a3b55af5d1749ad5474a6       20950  docs/26-requirement-traceability.md
+1ac2a6da1e13c30e5c9c90805582234bb800c49b235f2ab081669fb5fbeecb44       21429  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
 95b13d4dabd6f19b6cbd78bffff1c9e7805670a00ee6c3c38154af25eb587005        9306  docs/30-screen-specifications.md
 61cc6b1d9c883e9e9e4fe6e6b4fe60a0d9244a2f89046d449e2751578ef954b8        8326  docs/31-frontend-state-and-interaction-contracts.md
 2d299daa7cf6b47cc4c963848cc098393a634f8e36660203a7b49abb37666f93       14403  docs/32-database-schema-and-index-blueprint.md
-d0611346c7eaecccc4da060bdf70686438b8e714d3dc6c1410d43a16891d4c5c        8636  docs/33-authorization-permission-matrix.md
+3b8ef598b48f7549160cc59f5aad2c002aeec0d5cd40b5c9caef02f105aaebd1        8759  docs/33-authorization-permission-matrix.md
 3f64a58d9ccf196e01c13bac4d523dc4802cd768f30ff0a5849c7d063e21d3b1       10900  docs/34-state-machines-command-event-catalog.md
 b98cb50d41ece90f5f41fab23266df9da91e284ec584d1a9b23e7aadc70154ef        4406  docs/35-test-quality-release-strategy.md
 2b354a81041ebb5e4ec385225583167b8ae995d54df12551e1aeccba8d2a34d0       18580  docs/36-self-hosted-operations-runbook.md
@@ -76,7 +76,7 @@ bc5279f7b27c99f6ab0508d4475409f0c7a4a58c0508cfd528923cf404f268c2       10301  do
 4227ab13e8cdc20368d59719a5ea468095039730b8fedb038b89b2cfd44d07ff       11664  docs/52-admin-settings-catalog.md
 75a4338c3879f562cecb7c3d13a4c995daad9e9d8edb15f9f1cde7f08925229c        5879  docs/53-accepted-decisions-2026-08-10.md
 1dd6d96b7d15e1bc298989082b04d38fd7d82a80279b6b31d0bb26af3c8cb22b        1864  docs/54-next-decision-gates.md
-4ea86ffd2f684c49c3c18feccb30229c98caf6c2a390d2444e908ee9bd549c90        6411  docs/55-frontend-capability-recomposition-matrix.md
+2b369c475a8b83def12a3992aced4a4b33a6445291579e01aaa046bff3b11fd4        6699  docs/55-frontend-capability-recomposition-matrix.md
 027301f0e5da1824d14551ad602c7d3620c1e1f8b8067bc3def50d009615d144        1222  docs/adr/0001-kotlin-spring.md
 a60752cda4485dd1bf13168c30e3d337ad94eee6d262ce94e49ef01cfc09bcde        1189  docs/adr/0002-modular-monolith.md
 04ce88fcb2ab9f9f9337fee7d34fb727552475916253943643b481bb099f2792         899  docs/adr/0003-first-comment-no-description.md
