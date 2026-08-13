@@ -141,6 +141,27 @@ def check_openapi_contract() -> None:
             fail("customer request lookup must require X-Request-Access-Token")
 
 
+def check_api_documentation_container_boundary() -> None:
+    dockerfile = (ROOT / "backend/Dockerfile").read_text(encoding="utf-8")
+    compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    dockerignore = ROOT / ".dockerignore"
+    required_contracts = (
+        "api/core-api-outline-v1.yaml",
+        "api/customer-identity-api-v1.yaml",
+        "api/platform-api-outline-v1.yaml",
+    )
+
+    if "context: .\n      dockerfile: backend/Dockerfile" not in compose:
+        fail("backend Compose build must use the repository context and backend/Dockerfile")
+    if not dockerignore.is_file():
+        fail("repository-root backend Docker context requires .dockerignore")
+    for contract in required_contracts:
+        if contract not in dockerfile:
+            fail(f"backend Dockerfile does not copy committed API contract: {contract}")
+        if dockerignore.is_file() and f"!{contract}" not in dockerignore.read_text(encoding="utf-8"):
+            fail(f"root .dockerignore does not include committed API contract: {contract}")
+
+
 def check_audit_immutability() -> None:
     migration = (
         ROOT
@@ -193,6 +214,7 @@ def main() -> int:
     check_first_comment_model()
     check_module_boundaries()
     check_openapi_contract()
+    check_api_documentation_container_boundary()
     check_audit_immutability()
     check_executable_scripts()
     check_documentation_status()

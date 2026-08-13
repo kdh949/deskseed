@@ -213,7 +213,8 @@ release_revision="$(git rev-parse --verify HEAD)"
 
 docker build --pull --no-cache \
   --label "org.opencontainers.image.revision=$release_revision" \
-  -t "deskseed-scout-backend:$release_revision" backend
+  -t "deskseed-scout-backend:$release_revision" \
+  --file backend/Dockerfile .
 docker build --pull --no-cache \
   --label "org.opencontainers.image.revision=$release_revision" \
   -t "deskseed-scout-frontend:$release_revision" frontend

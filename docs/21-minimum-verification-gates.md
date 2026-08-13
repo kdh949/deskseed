@@ -978,6 +978,7 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 ### DOC-001 — 탐색 가능한 API 계약 문서
 
 - Scalar는 커밋된 Core, Customer Identity, Platform OpenAPI 계약을 `/docs/api`에서 렌더링한다.
+- Compose backend image에도 세 커밋 계약이 포함되며 container smoke에서 Scalar UI와 각 계약 URL의 HTTP 200을 확인한다.
 - 모든 작업의 목적·설명은 한국어로 직접 작성한다. 구현 대상으로 표시된 요청 schema는 `x-deskseed-documentation-review: MANUAL`, 도메인별 목적 설명, 필요한 필드를 포함한 합성 예시를 가진다.
 - 의미가 확인되지 않은 component/property에는 자동 생성 문구나 `예시 값` placeholder를 넣지 않는다. 문서 검증은 이러한 boilerplate를 실패시키되, 미확인 필드의 설명을 만들어 채우지 않는다.
 - `scripts/test_api_documentation_quality.py`는 이름·타입 기반 문구, placeholder 예시, 수동 검토 표식 누락, inline request schema 우회를 회귀 검증한다.

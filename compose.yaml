@@ -24,7 +24,8 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     # File-backed Compose secrets retain host ownership and permissions.
     # Set this to the non-root host uid:gid that owns a mode-0600 bootstrap
     # secret; the image's non-root deskseed account remains the default.
