@@ -4,7 +4,7 @@ import { StaffSessionProvider } from '../features/staff-auth/StaffSessionContext
 import { StaffLoginPage } from './StaffLoginPage'
 
 const meta = {
-  title: 'Product/Supporting/StaffLoginPage',
+  title: '07 Screens/Staff Login',
   component: StaffLoginPage,
   decorators: [
     (Story) => (
@@ -13,7 +13,16 @@ const meta = {
       </StaffSessionProvider>
     ),
   ],
-  parameters: { layout: 'fullscreen' },
+  parameters: {
+    docs: {
+      description: {
+        component:
+          '현재 staff surface의 최소 로그인 화면이다. 인증 결과는 server session이 소유하며 Story는 anonymous loading 완료와 form 접근성만 검증한다.',
+      },
+    },
+    layout: 'fullscreen',
+  },
+  tags: ['autodocs'],
 } satisfies Meta<typeof StaffLoginPage>
 
 export default meta

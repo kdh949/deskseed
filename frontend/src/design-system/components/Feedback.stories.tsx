@@ -3,8 +3,31 @@ import { expect } from 'storybook/test'
 import { ScreenState } from './Feedback'
 
 const meta = {
+  title: '03 Components/ScreenState',
   component: ScreenState,
-  tags: ['ai-generated'],
+  argTypes: {
+    kind: {
+      control: 'select',
+      options: [
+        'loading',
+        'empty',
+        'error',
+        'denied',
+        'not-found',
+        'conflict',
+        'stale',
+      ],
+    },
+  },
+  parameters: {
+    docs: {
+      description: {
+        component:
+          '화면 또는 큰 workspace region이 정상 콘텐츠를 표시할 수 없을 때 사용한다. loading, empty, error, denied, not-found, conflict, stale를 서로 다른 복구 의미로 전달한다.',
+      },
+    },
+  },
+  tags: ['autodocs'],
 } satisfies Meta<typeof ScreenState>
 
 export default meta
@@ -62,5 +85,13 @@ export const NotFound: Story = {
     description: '요청한 프론트엔드 화면은 현재 제공되지 않습니다.',
     kind: 'not-found',
     title: '페이지를 찾을 수 없습니다',
+  },
+}
+
+export const Stale: Story = {
+  args: {
+    description: '서버에서 최신 티켓 정보를 다시 확인해 주세요.',
+    kind: 'stale',
+    title: '표시 중인 정보가 오래되었습니다',
   },
 }

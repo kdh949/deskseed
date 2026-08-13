@@ -3,9 +3,17 @@ import { expect } from 'storybook/test'
 import { AgentShell } from './AgentShell'
 
 const meta = {
-  title: 'Design System/Shells/AgentShell',
+  title: '05 Shells & Layouts/AgentShell',
   component: AgentShell,
-  parameters: { layout: 'fullscreen' },
+  parameters: {
+    docs: {
+      description: {
+        component:
+          'Agent Queue와 Ticket Workspace가 공유하는 production shell이다. Deskseed global rail, top chrome, open ticket tabs, staff profile 영역의 layout contract를 소유한다.',
+      },
+    },
+    layout: 'fullscreen',
+  },
   tags: ['autodocs'],
 } satisfies Meta<typeof AgentShell>
 

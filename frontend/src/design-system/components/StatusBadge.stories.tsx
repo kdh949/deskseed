@@ -3,8 +3,23 @@ import { expect } from 'storybook/test'
 import { StatusBadge } from './StatusBadge'
 
 const meta = {
+  title: '03 Components/StatusBadge',
   component: StatusBadge,
-  tags: ['ai-generated'],
+  argTypes: {
+    status: {
+      control: 'select',
+      options: ['NEW', 'OPEN', 'PENDING', 'ON_HOLD', 'SOLVED', 'CLOSED'],
+    },
+  },
+  parameters: {
+    docs: {
+      description: {
+        component:
+          'canonical ticket status를 한국어 label, icon, tone으로 함께 표시한다. 상태를 색상만으로 전달하지 않는다.',
+      },
+    },
+  },
+  tags: ['autodocs'],
 } satisfies Meta<typeof StatusBadge>
 
 export default meta
@@ -23,6 +38,18 @@ export const Pending: Story = {
   args: { status: 'PENDING' },
 }
 
+export const Open: Story = {
+  args: { status: 'OPEN' },
+}
+
+export const OnHold: Story = {
+  args: { status: 'ON_HOLD' },
+}
+
 export const Solved: Story = {
   args: { status: 'SOLVED' },
+}
+
+export const Closed: Story = {
+  args: { status: 'CLOSED' },
 }

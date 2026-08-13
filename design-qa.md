@@ -125,3 +125,78 @@ The full Queue view and a focused visual pass of the left Views navigation, titl
 No actionable P0, P1, or P2 findings remain. The absent SLA/channel columns and the narrower global track are expected, documented product constraints rather than visual defects.
 
 final result: passed
+
+---
+
+# Agent global search design QA
+
+**Comparison target**
+
+- Source visual truth: `/var/folders/rg/k27jblsn7sn4qsddc_5ckkvw0000gn/T/codex-clipboard-bf037b9c-91a3-41cf-a349-24d2d83fb981.png`
+- Browser-rendered implementation: `/private/tmp/deskseed-global-search-full.png`
+- Combined focused comparison: `/private/tmp/deskseed-global-search-comparison.png` (source on top, implementation on bottom)
+- Story: `07 Screens/Agent Queue & Ticket Workspace / Queue`
+- URL: `http://localhost:6006/iframe.html?id=07-screens-agent-queue-ticket-workspace--queue&viewMode=story`
+- State: default global-search placeholder, queue filter open after the story interaction
+
+**Capture normalization**
+
+- Source pixels: `1090 × 128`; the source is a cropped top bar with unknown device density and no complete viewport metadata.
+- Implementation screenshot pixels: `1440 × 900`; CSS viewport `1440 × 900`; browser-reported `devicePixelRatio: 1.26`.
+- Focused implementation crop: the top-chrome region from `x=508`, `y=0`, `932 × 60`, padded to `1090 × 128` without scaling so the search field begins at the same horizontal offset as the source.
+- Density mismatch was not treated as typography or control-height drift because the source crop has no reliable CSS-size or density metadata.
+
+**Full-view comparison evidence**
+
+- The browser capture confirms that the 560 px global search remains inside the 60 px AgentShell chrome, directly precedes the persistent agent profile, and does not obscure the queue workspace at the canonical 1440 px desktop viewport.
+- The Ticket Workspace story was checked at the same viewport: search and profile remained visible with the same bounds, and no browser console errors were reported.
+
+**Focused region comparison evidence**
+
+- The combined comparison shows the source and implementation together. Both use dark teal chrome, a lighter teal search surface, a leading search icon, the exact `Search Deskseed` placeholder, a trailing `⌘ K` key hint, and the profile immediately after the field.
+- Source search bounds are approximately `x=188`, width `564`; normalized implementation crop bounds are `x=188`, width `560`. The 4 px width difference is not actionable.
+- The implementation uses the canonical Deskseed search icon and existing agent avatar rather than recreating visual assets.
+
+**Required fidelity surfaces**
+
+- Fonts and typography: existing Deskseed type styles are preserved; placeholder and shortcut hierarchy match the source intent. Source density prevents reliable pixel-level type-size comparison.
+- Spacing and layout rhythm: field width and horizontal start match the source crop; the implementation uses the AgentShell 8 px flex gap before the profile and remains responsive at documented breakpoints.
+- Colors and visual tokens: chrome, field, border, foreground, and shortcut colors come from existing Deskseed semantic chrome tokens and match the teal-on-deep-teal source palette.
+- Image quality and asset fidelity: no new raster assets were needed. Existing `DeskseedIcon` and `DsAvatar` output stays sharp and branded.
+- Copy and content: `Search Deskseed`, `⌘ K`, `Mina Park`, and `Available` match the reference content visible in scope.
+
+**Findings**
+
+- No actionable P0, P1, or P2 mismatch was found in the requested global-search region.
+
+**Open Questions**
+
+- None. The source is treated as a layout and styling reference for the global search only; existing agent-profile sizing remains owned by `AgentShell`.
+
+**Primary interactions and accessibility**
+
+- `⌘ K` focuses the accessible searchbox named `전역 검색`.
+- Text entry and clearing work in the deterministic Storybook fixture.
+- Queue and Workspace variants preserve the search and agent profile at 1440 px.
+- Focused Storybook component tests passed for all 11 screen stories.
+- Browser console errors checked: none.
+
+**Comparison history**
+
+- Iteration 1 finding: the screen-reader label was visible because the assumed `ds-sr-only` utility did not exist, and the story interaction left a query value in the visual capture.
+- Fix: replaced the visible label span with `aria-label="전역 검색"` and cleared the query at the end of the story interaction.
+- Post-fix evidence: `/private/tmp/deskseed-global-search-comparison.png` shows only the intended placeholder and shortcut; the browser DOM exposes one named searchbox.
+
+**Implementation Checklist**
+
+- [x] Global search placed immediately before agent profile
+- [x] Reference placeholder, icon, and keyboard hint reproduced with canonical components/tokens
+- [x] Keyboard focus shortcut implemented
+- [x] Queue and Workspace layouts checked
+- [x] Focused interaction and accessibility tests passed
+
+**Follow-up Polish**
+
+- None required for this scope.
+
+final result: passed
