@@ -588,11 +588,13 @@ paths:
           $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id006
         '403': *id006
+        '404': *id006
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '422': *id006
         '503': *id006
-      description: 상담사 발신 티켓 생성 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다.
+      description: 상담사 발신 티켓 생성 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다. requester.customerId가 기존
+        고객을 가리키지 않으면 404 /problems/agent-ticket-requester-not-found를 반환합니다.
   /api/v1/agent/tickets/{ticketNumber}:
     get:
       summary: 상담사용 티켓 상세 조회
