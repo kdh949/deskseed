@@ -1,0 +1,16 @@
+**
+!.dockerignore
+!backend/
+!backend/gradlew
+!backend/gradlew.bat
+!backend/settings.gradle.kts
+!backend/build.gradle.kts
+!backend/gradle.properties
+!backend/gradle/
+!backend/gradle/**
+!backend/src/
+!backend/src/**
+!api/
+!api/core-api-outline-v1.yaml
+!api/customer-identity-api-v1.yaml
+!api/platform-api-outline-v1.yaml

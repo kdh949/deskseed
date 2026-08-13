@@ -68,12 +68,19 @@ backend_port="${DESKSEED_BACKEND_PORT:-8080}"
 mailpit_port="${DESKSEED_MAILPIT_PORT:-8025}"
 for _attempt in $(seq 1 30); do
   if curl --fail --silent --show-error "http://localhost:$backend_port/actuator/health" >/dev/null \
-    && curl --fail --silent --show-error "http://localhost:$mailpit_port/readyz" >/dev/null; then
+    && curl --fail --silent --show-error "http://localhost:$mailpit_port/readyz" >/dev/null \
+    && curl --fail --silent --show-error "http://localhost:$backend_port/docs/api" >/dev/null \
+    && curl --fail --silent --show-error "http://localhost:$backend_port/api-docs/specs/core-api-outline-v1.yaml" \
+      | grep '^openapi: 3.1.0$' >/dev/null \
+    && curl --fail --silent --show-error "http://localhost:$backend_port/api-docs/specs/customer-identity-api-v1.yaml" \
+      | grep '^openapi: 3.1.0$' >/dev/null \
+    && curl --fail --silent --show-error "http://localhost:$backend_port/api-docs/specs/platform-api-outline-v1.yaml" \
+      | grep '^openapi: 3.1.0$' >/dev/null; then
     exit 0
   fi
   sleep 2
 done
 
 docker compose --project-name "$e2e_project" "${compose_files[@]}" logs --no-color
-echo "Backend health or Mailpit ready endpoint did not return HTTP 200 within 60 seconds." >&2
+echo "Backend health, Mailpit readiness, or committed API documentation did not return the expected response within 60 seconds." >&2
 exit 1

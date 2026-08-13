@@ -6,6 +6,7 @@
 
 ```text
 api/core-api-outline-v1.yaml       customer/agent/admin/audit outline
+api/customer-identity-api-v1.yaml  customer identity/session/claim contract
 api/platform-api-outline-v1.yaml   machine integration outline
 api/integration-event-envelope-v1.schema.json
 api/audit-activity-event-v1.schema.json
@@ -20,7 +21,9 @@ api/automation-api-v1.yaml   (later)
 api/analytics-api-v1.yaml    (later)
 ```
 
-현재 outline은 계약 동결 전 단계다. 구현 PR은 해당 endpoint를 full schema/examples/errors/security까지 승격해야 한다.
+`x-deskseed-contract-status: FROZEN` 작업과 현재 Platform v1 작업은 구현 계약이다. 나머지 outline 작업은 계약 동결 전 단계다. 구현 PR은 해당 endpoint를 full schema/examples/errors/security까지 승격해야 한다.
+
+Scalar `/docs/api`는 위 커밋 계약을 읽기 쉽게 렌더링할 뿐 source of truth를 바꾸지 않는다. springdoc `/v3/api-docs/**`는 Controller 구현과 커밋 계약의 경로·HTTP method 드리프트를 검출하는 보조 산출물이며 배포 계약이나 SDK 입력으로 사용하지 않는다.
 
 ## 2. Surface ownership
 
@@ -119,9 +122,11 @@ GET /api/v1/analytics/first-reply-sla
 5. problem types.
 6. pagination/idempotency/ETag.
 7. OpenAPI lint.
-8. generated mock/client.
-9. controller contract test.
-10. SDK diff.
+8. 사람이 검토한 한국어 목적·설명과 실제 흐름을 보여 주는 합성 request/response 예시 검증. 이름·타입 기반 문구 자동 생성은 금지한다.
+9. Scalar rendering과 production 노출 정책 검증.
+10. generated mock/client.
+11. controller contract test와 runtime path/method drift 검사.
+12. SDK diff.
 
 ## 5. Common headers
 
@@ -197,3 +202,5 @@ SDK release마다:
 - idempotency/concurrency.
 - rate limit.
 - PII classification.
+- 사람이 검토한 한국어 목적·설명과 실제 자격 증명 형태가 아닌 합성 예시. 확인되지 않은 필드에는 일반 문구를 채우지 않으며, 구현 요청 schema는 `MANUAL` 검토 표식을 남긴다.
+- Scalar가 커밋 계약을 렌더링하고 runtime 생성 문서는 검증 용도로만 쓰인다는 경계.

@@ -60,6 +60,27 @@ NON_CANONICAL_TASK_BRIEFS = {"00-bootstrap-documentation-and-repository.md"}
 # The repository retains this pre-v0.6 planning draft for historical context.
 # The v0.6 Core outline is the canonical contract validated below.
 NON_CANONICAL_OPENAPI_DRAFTS = {"api/mvp-target.yaml"}
+REFERENCE_OPENAPI_CONTRACTS = {
+    "api/core-api-outline-v1.yaml",
+    "api/customer-identity-api-v1.yaml",
+    "api/platform-api-outline-v1.yaml",
+}
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
+MANUAL_DOCUMENTATION_MARKER = "MANUAL"
+AUTOMATED_DESCRIPTION_PATTERNS = (
+    re.compile(r"^.+ 요청 또는 응답 모델입니다\.$"),
+    re.compile(r"^.+ 값입니다\.$"),
+    re.compile(r"^.+ 식별자입니다\.$"),
+    re.compile(r"^.+에 사용하는 입력 또는 표시 문자열입니다\.$"),
+    re.compile(r"^.+의 허용된 열거 값입니다\.$"),
+    re.compile(r"^(?:경로|조회 조건|HTTP 헤더|쿠키)로 전달하는 .+ 값입니다\.$"),
+    re.compile(r"^UTC 기준 ISO 8601 시각입니다\.$"),
+    re.compile(r"^낙관적 동시성 제어에 사용하는 버전입니다\.$"),
+    re.compile(r"^서버가 발급한 불투명 페이지 커서입니다\. 값을 해석하거나 변경하지 않습니다\.$"),
+    re.compile(r"^민감한 인증 값입니다\. 예시는 사용할 수 없는 합성 값이며 로그나 감사 기록에 저장하면 안 됩니다\.$"),
+    re.compile(r"^(?:요청이 정상적으로 처리되었습니다|요청 형식이나 입력값이 유효하지 않습니다|인증되지 않은 요청입니다|인증된 주체에게 필요한 권한이 없습니다|조회할 수 없거나 노출하면 안 되는 자원입니다|동시성, 상태 또는 멱등성 충돌이 발생했습니다|요청 제한을 초과했으며 Retry-After 정책을 따라야 합니다|서버가 안전하게 요청을 완료할 수 없었습니다|요청 처리 결과입니다)\.$"),
+)
+PLACEHOLDER_EXAMPLE_VALUES = {"예시 값"}
 MANIFEST_ROOT_FILES = {
     "AGENTS.md",
     "CHANGELOG-v0.6.md",
@@ -132,11 +153,165 @@ def openapi_operations(document: dict[str, Any]) -> list[tuple[str, str, str]]:
         if not isinstance(path_item, dict):
             continue
         for method, operation in path_item.items():
-            if method.lower() not in {"get", "post", "put", "patch", "delete", "head", "options", "trace"}:
+            if method.lower() not in HTTP_METHODS:
                 continue
             if isinstance(operation, dict):
                 operations.append((str(route), method.lower(), str(operation.get("operationId", ""))))
     return operations
+
+
+def is_automated_description(value: str) -> bool:
+    """Reject prose that can be inferred from a field name or primitive type alone."""
+    normalized = " ".join(value.split())
+    return any(pattern.fullmatch(normalized) for pattern in AUTOMATED_DESCRIPTION_PATTERNS)
+
+
+def contains_placeholder_example(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip() in PLACEHOLDER_EXAMPLE_VALUES
+    if isinstance(value, dict):
+        return any(contains_placeholder_example(child) for child in value.values())
+    if isinstance(value, list):
+        return any(contains_placeholder_example(child) for child in value)
+    return False
+
+
+def implemented_request_schema_names(location: str, document: dict[str, Any]) -> tuple[set[str], list[str]]:
+    """Return named request schemas and operations using an inline input schema.
+
+    Core and Customer Identity only freeze selected operations. Platform is a
+    current implementation contract, so all of its request bodies are covered.
+    """
+    names: set[str] = set()
+    inline_schema_operations: list[str] = []
+    is_platform_contract = location == "api/platform-api-outline-v1.yaml"
+    for route, path_item in (document.get("paths") or {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            if not is_platform_contract and operation.get("x-deskseed-contract-status") != "FROZEN":
+                continue
+            request_body = operation.get("requestBody") or {}
+            content = request_body.get("content") if isinstance(request_body, dict) else None
+            if not isinstance(content, dict):
+                continue
+            for media_type in content.values():
+                schema = media_type.get("schema") if isinstance(media_type, dict) else None
+                if not isinstance(schema, dict):
+                    continue
+                reference = schema.get("$ref")
+                if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+                    names.add(reference.rsplit("/", 1)[-1])
+                else:
+                    inline_schema_operations.append(f"{method.upper()} {route}")
+    return names, inline_schema_operations
+
+
+def validate_api_reference_quality(path: Path, document: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    location = rel(path)
+
+    def korean(value: Any) -> bool:
+        return isinstance(value, str) and bool(re.search(r"[가-힣]", value))
+
+    if document.get("x-deskseed-documentation-ownership") != MANUAL_DOCUMENTATION_MARKER:
+        errors.append(f"API reference documentation must be manually owned: {location}")
+    if not korean((document.get("info") or {}).get("description")):
+        errors.append(f"API reference info description must be Korean: {location}")
+    for tag in document.get("tags") or []:
+        if isinstance(tag, dict) and not korean(tag.get("description")):
+            errors.append(f"API reference tag description must be Korean: {location} {tag.get('name')}")
+    for node in walk(document):
+        if (
+            isinstance(node, dict)
+            and isinstance(node.get("description"), str)
+            and not korean(node.get("description"))
+        ):
+            errors.append(f"API reference contains a non-Korean description: {location}")
+            break
+
+    for route, path_item in (document.get("paths") or {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in HTTP_METHODS:
+                continue
+            if not isinstance(operation, dict):
+                continue
+            operation_label = f"{method.upper()} {route}"
+            if not korean(operation.get("summary")):
+                errors.append(f"API reference summary must be Korean: {location} {operation_label}")
+            if not korean(operation.get("description")):
+                errors.append(f"API reference description must be Korean: {location} {operation_label}")
+
+    schemas = ((document.get("components") or {}).get("schemas") or {})
+    for node in walk(document):
+        if not isinstance(node, dict) or not isinstance(node.get("description"), str):
+            continue
+        if is_automated_description(node["description"]):
+            errors.append(
+                f"API reference contains an inferred boilerplate description: {location}"
+            )
+            break
+
+    request_schema_names, inline_schema_operations = implemented_request_schema_names(location, document)
+    for operation_label in inline_schema_operations:
+        errors.append(
+            f"API reference implementation request must use a named schema for manual review: "
+            f"{location} {operation_label}"
+        )
+
+    for schema_name in sorted(request_schema_names):
+        schema = schemas.get(schema_name)
+        if not isinstance(schema, dict):
+            errors.append(f"API reference request schema is missing: {location} {schema_name}")
+            continue
+        if schema.get("x-deskseed-documentation-review") != MANUAL_DOCUMENTATION_MARKER:
+            errors.append(
+                f"API reference request schema must be manually reviewed: {location} {schema_name}"
+            )
+        if not korean(schema.get("description")) or is_automated_description(str(schema.get("description", ""))):
+            errors.append(
+                f"API reference request schema needs a Korean, domain-specific description: "
+                f"{location} {schema_name}"
+            )
+        example = schema.get("example")
+        if not isinstance(example, dict):
+            errors.append(f"API reference request schema needs an object example: {location} {schema_name}")
+            continue
+        missing_required = sorted(set(schema.get("required") or []) - set(example))
+        if missing_required:
+            errors.append(
+                f"API reference request example omits required fields: "
+                f"{location} {schema_name} {', '.join(missing_required)}"
+            )
+        if contains_placeholder_example(example):
+            errors.append(
+                f"API reference request example contains a placeholder value: {location} {schema_name}"
+            )
+
+    forbidden_example_patterns = (
+        re.compile(r"\bBearer\s+", re.IGNORECASE),
+        re.compile(r"\b(?:sk|pk)_(?:live|prod)_", re.IGNORECASE),
+        re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),
+        re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
+    )
+    for node in walk(document):
+        if not isinstance(node, dict):
+            continue
+        for key in ("example", "examples"):
+            if key not in node:
+                continue
+            rendered = json.dumps(node[key], ensure_ascii=False, default=str)
+            if contains_placeholder_example(node[key]):
+                errors.append(f"API reference example contains a placeholder value: {location}")
+                return errors
+            if any(pattern.search(rendered) for pattern in forbidden_example_patterns):
+                errors.append(f"API reference example resembles a real credential: {location}")
+                return errors
+    return errors
 
 
 def numbered_files(directory: Path, digits: int, excluded: set[str] | None = None) -> tuple[list[int], list[str]]:
@@ -244,6 +419,8 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
             continue
         if rel(path) in NON_CANONICAL_OPENAPI_DRAFTS:
             continue
+        if rel(path) in REFERENCE_OPENAPI_CONTRACTS:
+            errors.extend(validate_api_reference_quality(path, document))
         paths = document.get("paths") or {}
         openapi_path_count += len(paths)
         operations = openapi_operations(document)

@@ -4,6 +4,7 @@ import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.ticketing.CustomerRequestStatus
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
@@ -90,34 +91,47 @@ internal class PublicRequestController(
     }
 }
 
+@Schema(description = "고객 문의 접수 요청")
 internal data class SubmitRequestBody(
+    @field:Schema(description = "문의하는 고객의 표시 이름", example = "김고객")
     @field:NotBlank
     @field:Size(max = 100)
     val name: String,
 
+    @field:Schema(description = "고객 연락처로 사용할 이메일", example = "customer@example.com")
     @field:NotBlank
     @field:Email
     @field:Size(max = 254)
     val email: String,
 
+    @field:Schema(description = "고객 문의 제목", example = "결제가 중복으로 처리됐어요")
     @field:NotBlank
     @field:Size(max = 200)
     val subject: String,
 
+    @field:Schema(
+        description = "첫 PUBLIC 코멘트로 저장되는 문의 본문",
+        example = "주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.",
+    )
     @field:NotBlank
     @field:Size(max = 20_000)
     val message: String,
 
+    @field:Schema(description = "개인정보 처리 동의 여부", example = "true", nullable = true)
     val privacyConsent: Boolean? = null,
 )
 
+@Schema(description = "고객 문의 접수 결과")
 internal data class SubmittedRequestResponse(
+    @field:Schema(description = "사람이 식별하는 티켓 번호", example = "1042")
     val ticketNumber: Long,
     val status: CustomerRequestStatus,
+    @field:Schema(description = "다시 조회할 때 사용하는 일회 발급 토큰", example = "example-token-not-valid-0000000000000000")
     val accessToken: String,
     val createdAt: Instant,
 )
 
+@Schema(description = "고객에게 공개 가능한 문의 상세")
 internal data class PublicRequestResponse(
     val ticketNumber: Long,
     val subject: String,
@@ -127,6 +141,7 @@ internal data class PublicRequestResponse(
     val comments: List<PublicCommentResponse>,
 )
 
+@Schema(description = "고객에게 노출할 수 있는 PUBLIC 코멘트")
 internal data class PublicCommentResponse(
     val id: UUID,
     val authorDisplayName: String,

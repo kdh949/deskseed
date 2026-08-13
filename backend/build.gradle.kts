@@ -41,6 +41,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:3.1.0")
+    implementation("com.scalar.maven:scalar-webmvc:0.6.61")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
@@ -52,6 +54,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-security-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
+    testImplementation("org.yaml:snakeyaml")
     testImplementation(platform("org.testcontainers:testcontainers-bom:${property("testcontainersVersion")}"))
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     testImplementation("org.testcontainers:testcontainers-postgresql")
@@ -68,4 +71,15 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.processResources {
+    from(rootProject.file("../api")) {
+        include(
+            "core-api-outline-v1.yaml",
+            "customer-identity-api-v1.yaml",
+            "platform-api-outline-v1.yaml",
+        )
+        into("static/api-docs/specs")
+    }
 }

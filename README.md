@@ -15,6 +15,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 | 정합성 | 담당자/그룹 invariant, field-aware optimistic concurrency, same-field `409`과 draft 복구, 응답 유실 시 exact UpdateTicket command replay, transfer와 child-ticket 명령 분리, 열린 child 경고 후 parent solve 허용 |
 | 감사 | 한 command/한 `TicketAudit`과 ordered events, semantic `TICKET_VIEWED`, 검색→티켓 열람 연결, strict audit failure, 분리된 change/access/admin 원장과 재생성 가능한 Audit Explorer projection |
 | 감사자 화면 | 기본 routine activity 목록·상세, 명시적 영속 grant와 이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
+| 외부 시스템 API | 사설망 scoped API key, IntegrationClient lifecycle, resource constraint·rate limit, 티켓 create/read/update/INTERNAL comment, idempotency와 ETag/If-Match, ExternalReference 연결 |
 | Outbound mail 기반 | PostgreSQL intent/attempt outbox, PUBLIC 답변·접수 알림, retry/manual-retry seam, Mailpit 개발 SMTP/UI/API; production provider는 미선택 |
 | 배포·검증 | Docker Compose, Flyway, PostgreSQL Testcontainers, 실제 브라우저 E2E, visual/axe/keyboard suite, 설치·upgrade·backup·restore rehearsal, 성능 fixture/query-plan harness |
 
@@ -37,7 +38,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 | --- | --- |
 | 고객 계정, email ownership, magic link token 발급/소비, My Requests, 익명 티켓 claim | mail template/outbox 기반만 구현; 인증 흐름 미구현 |
 | 고객 profile 상세 접근 감사 (`ACC-005`) | 미구현 |
-| Platform API, IntegrationClient, idempotency/ETag, ExternalReference, webhook, generated SDK (`ACC-006` 포함) | 계약·blueprint만 존재; runtime 미구현 |
+| signed webhook, generated SDK, 외부 provider fetch·임의 데이터 mirroring | 계약·blueprint만 존재; runtime 미구현 |
 | Audit export artifact 생성·download·expiry·deletion (verification gate `AUD-004` 전체) | allowlisted request와 self-audit만 구현; artifact state는 `NOT_CREATED` |
 | 보호된 comment 본문 reveal | 미구현 |
 | Next Reply/Resolution SLA, OLA, trigger/automation, 범용 analytics dashboard, attachment/rich text, email channel, app/embed SDK | 후속 상세 명세만 존재; 미구현 |
@@ -150,10 +151,16 @@ Backend는 Spring Modulith 기반 모듈러 모놀리스다. HTTP adapter, appli
 
 ## API와 계약의 경계
 
-- [`api/openapi-v1.yaml`](api/openapi-v1.yaml): 현재 구현된 고객 문의 접수/조회 API 계약
-- [`api/core-api-outline-v1.yaml`](api/core-api-outline-v1.yaml): Customer/Agent/Admin/Audit v0.6 계약 outline; runtime 완료 여부는 코드와 release evidence로 판단
-- [`api/platform-api-outline-v1.yaml`](api/platform-api-outline-v1.yaml): 후속 Platform API blueprint; 현재 endpoint가 아님
+- 로컬 backend 실행 후 [Scalar API Reference](http://127.0.0.1:8080/docs/api)에서 Core, Customer Identity, Platform 계약을 검색·탐색하고 요청/응답 예시를 확인할 수 있다.
+- [`api/openapi-v1.yaml`](api/openapi-v1.yaml): 초기 고객 문의 접수/조회 계약을 보존한 레거시 문서
+- [`api/core-api-outline-v1.yaml`](api/core-api-outline-v1.yaml): Customer/Agent/Admin/Audit v0.6 커밋 계약; `FROZEN` 작업만 현재 runtime 구현 대상으로 검사한다.
+- [`api/customer-identity-api-v1.yaml`](api/customer-identity-api-v1.yaml): 고객 매직 링크·세션·문의 연결 커밋 계약
+- [`api/platform-api-outline-v1.yaml`](api/platform-api-outline-v1.yaml): 현재 구현된 private-network Platform Ticket API 계약
 - [`api/api-surface-catalog-v0.6.yaml`](api/api-surface-catalog-v0.6.yaml), [`api/ui-route-catalog-v0.6.yaml`](api/ui-route-catalog-v0.6.yaml): 전체 계획 surface와 상태 catalog
+
+Scalar는 커밋된 OpenAPI 파일을 그대로 렌더링하며 springdoc이 생성한 `/v3/api-docs/{core,customer-identity,platform}`는 구현 드리프트 검사용이다. 개발 환경에서는 문서와 Try it 기능이 켜지고 인증 값은 저장하지 않는다. production profile은 기본적으로 문서를 끄며, 운영자가 `DESKSEED_API_DOCS_ENABLED=true`를 명시한 경우에도 ADMIN 세션만 읽을 수 있고 Try it/client 기능은 숨긴다.
+
+API 설명·예시는 OpenAPI YAML에서 직접 관리한다. 필드의 도메인 의미를 확인하지 못했다면 일반 문구를 만들지 말고 비워 둔 뒤, operation·DTO·도메인 규칙을 확인해 보강한다. `make docs-check`는 구현 요청 schema의 수동 검토 표식과 전체 예시, 한국어 작업 설명, placeholder·자격 증명 노출·자동 boilerplate를 검사할 뿐 문구를 생성하거나 덮어쓰지 않는다.
 
 고객 조회는 생성 응답에서 한 번 반환된 token을 URL이 아닌 header로 보낸다.
 

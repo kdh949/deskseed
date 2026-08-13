@@ -96,7 +96,15 @@ Actuator health and basic Micrometer metrics come first.
 
 ### API documentation tooling
 
-The authoritative Platform API remains a committed OpenAPI 3.1 document. Runtime annotation tooling may validate or render it, but should not silently become the contract source. Add a compatible renderer/generator only after Boot version compatibility is verified.
+커밋된 OpenAPI 3.1 문서가 계약의 source of truth다. Scalar WebMVC `0.6.61`은 이 파일을 `/docs/api`에서 렌더링하고, springdoc WebMVC API `3.1.0`은 구현된 Controller의 runtime 문서를 생성해 경로·HTTP method 드리프트를 검사한다. runtime annotation이나 생성 결과가 커밋 계약을 자동으로 덮어쓰면 안 된다.
+
+- 개발 기본값: Scalar와 `/v3/api-docs/**` 활성화, Try it 허용, 인증 정보 저장·telemetry·Scalar agent 비활성화
+- production 기본값: 문서 전체 비활성화
+- production 명시적 활성화: ADMIN 세션만 허용하고 Try it/client 버튼 비활성화
+- renderer 입력: `core-api-outline-v1.yaml`, `customer-identity-api-v1.yaml`, `platform-api-outline-v1.yaml`
+- 문서 품질: 작업 목적은 한국어로 직접 작성한다. 구현 요청 schema는 사람이 검토한 도메인별 설명과 합성 전체 예시를 유지하며, 검증 도구는 누락·placeholder·자격 증명 노출·이름/타입 기반 boilerplate만 검사한다. 도구가 설명이나 예시를 생성·덮어쓰지 않는다.
+
+Scalar의 기본 원격 문서나 외부 font에 의존하지 않는다. API 문서에 password, token, Authorization header, session cookie, webhook secret 또는 실제 고객 데이터를 입력하지 않는다.
 
 ## 5. Required configuration principles
 

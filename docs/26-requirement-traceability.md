@@ -22,6 +22,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TECH-001 | Kotlin/Spring/PostgreSQL 기반으로 시작한다 | IMPLEMENTATION_READY | M0 | 03, 22, 27 | 빌드·테스트 통과 |
 | REQ-TECH-002 | 모듈러 모놀리스로 시작하고 필요 시 이벤트·Kafka로 진화한다 | IMPLEMENTATION_READY | M0→P9 | 03, 34, 38 | Modulith 검증, 도입 ADR |
 | REQ-TECH-003 | React/TypeScript/Vite 프론트엔드를 사용한다 | IMPLEMENTATION_READY | M0 | 22, 28, 29 | 프론트 빌드·E2E |
+| REQ-TECH-004 | 커밋된 OpenAPI 계약을 사람이 검토한 한국어 도메인 설명·합성 예시와 함께 탐색 가능한 API Reference로 제공한다 | IMPLEMENTATION_READY | M0 | 21, 22, 39, D-054 | `ApiDocumentationIntegrationTest`, `DOC-001`, `make docs-check` |
 | REQ-PORT-001 | 먼저 작동하는 포트폴리오를 만들고 이후 성능·Kafka까지 깊게 확장한다 | IMPLEMENTATION_READY | 전체 | 05, 11, 27, 41 | 릴리스별 증거 문서 |
 
 ## 2.1 인증·초기 상담원 가시성

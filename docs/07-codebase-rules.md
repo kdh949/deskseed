@@ -89,6 +89,7 @@ integrationClientId?
 8. 429 includes `Retry-After`.
 9. SDKs are generated from the committed contract and versioned with it.
 10. API examples must include retries, conflict, insufficient scope, and idempotency reuse.
+11. OpenAPI 설명과 예시는 YAML에서 도메인 근거를 확인해 직접 작성한다. 검증 도구는 문구를 자동 생성하지 않으며, 의미를 알 수 없는 필드에는 이름·타입 기반의 일반 설명을 넣지 않는다.
 
 ## 8. Integration security
 
@@ -154,3 +155,4 @@ integrationClientId?
 3. Public API changes include compatibility classification.
 4. Every substantial PR records commands run and those not run.
 5. AI output is not evidence; test output, query plans, and reproducible scenarios are evidence.
+6. API 문서의 `MANUAL` 검토 표시는 해당 operation, 도메인 규칙, 구현 DTO 중 하나로 필드 의미를 확인한 뒤에만 붙인다.

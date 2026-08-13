@@ -1106,7 +1106,20 @@ excluded_names = {
 }[kind]
 digest = hashlib.sha256()
 count = 0
-for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix()):
+if kind == "backend":
+    candidates = [root / ".dockerignore"]
+    candidates.extend((root / "backend").rglob("*"))
+    candidates.extend(
+        root / "api" / name
+        for name in (
+            "core-api-outline-v1.yaml",
+            "customer-identity-api-v1.yaml",
+            "platform-api-outline-v1.yaml",
+        )
+    )
+else:
+    candidates = list(root.rglob("*"))
+for path in sorted(candidates, key=lambda candidate: candidate.as_posix()):
     relative = path.relative_to(root)
     if any(part in excluded_directories for part in relative.parts):
         continue
@@ -1163,7 +1176,7 @@ PY
 verify_build_context_unchanged() {
   local current_backend_fingerprint
   local current_frontend_fingerprint
-  current_backend_fingerprint="$(build_context_fingerprint "$repository_root/backend" backend)"
+  current_backend_fingerprint="$(build_context_fingerprint "$repository_root" backend)"
   current_frontend_fingerprint="$(build_context_fingerprint "$repository_root/frontend" frontend)"
   if [[ "$current_backend_fingerprint" != "$backend_build_context_fingerprint" \
      || "$current_frontend_fingerprint" != "$frontend_build_context_fingerprint" ]]; then
@@ -2784,7 +2797,7 @@ else
 fi
 run_checked "verify operations inputs after PostgreSQL pull" verify_rehearsal_inputs_unchanged
 capture_checked_output "capture backend build-context fingerprint" backend_build_context_fingerprint \
-  build_context_fingerprint "$repository_root/backend" backend
+  build_context_fingerprint "$repository_root" backend
 capture_checked_output "capture frontend build-context fingerprint" frontend_build_context_fingerprint \
   build_context_fingerprint "$repository_root/frontend" frontend
 if [[ "$mode" == full ]]; then

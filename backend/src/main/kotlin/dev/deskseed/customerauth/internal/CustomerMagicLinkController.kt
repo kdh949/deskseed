@@ -5,6 +5,7 @@ import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.customerauth.customerSessionCookie
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.Cookie
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -159,16 +160,22 @@ internal class CustomerMagicLinkController(
     }
 }
 
+@Schema(description = "고객 매직 링크 발송 요청")
 internal data class MagicLinkRequest(
+    @field:Schema(description = "검증 링크를 받을 고객 이메일", example = "customer@example.com")
     @field:NotBlank @field:Email @field:Size(max = 254) val email: String,
 )
 
+@Schema(description = "일회성 매직 링크 소비 요청")
 internal data class MagicLinkConsumeRequest(
+    @field:Schema(description = "이메일 링크로 발급된 일회성 토큰", example = "example-token-not-valid-0000000000000000")
     @field:NotBlank @field:Size(max = 256) val token: String,
 )
 
+@Schema(description = "요청 수락 여부만 표시하는 열거 방지 응답")
 internal data class GenericAccepted(val accepted: Boolean)
 
+@Schema(description = "현재 인증된 고객 계정")
 internal data class CurrentCustomerResponse(
     val id: String,
     val email: String,
@@ -176,4 +183,5 @@ internal data class CurrentCustomerResponse(
     val verifiedAt: String,
 )
 
+@Schema(description = "고객 세션에 귀속된 CSRF 토큰")
 internal data class CustomerCsrfResponse(val token: String, val headerName: String)

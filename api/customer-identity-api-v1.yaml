@@ -2,269 +2,398 @@ openapi: 3.1.0
 info:
   title: Deskseed Customer Identity API v1
   version: 1.0.0-contract
-  description: >-
-    Implementation-ready email magic-link, secure customer session, and explicit
-    anonymous-request claim contract. Matching email alone never claims a request.
+  description: Deskseed의 커밋된 OpenAPI 3.1 계약입니다. API 목적과 데이터 경계는 한국어로 설명하며 예시는 모두 합성 데이터입니다. 실제 비밀번호, 세션, API key 또는 고객 정보를
+    문서에 입력하거나 저장하지 마세요.
   x-deskseed-status: implementation-ready
 servers:
-  - url: http://localhost:8080
+- url: http://localhost:8080
 security: []
 tags:
-  - name: Customer Identity
+- name: Customer Identity
+  description: 이메일 매직 링크, 고객 세션, CSRF, 익명 문의 연결을 처리하는 API입니다.
 paths:
   /api/v1/customer/auth/magic-link-requests:
     post:
-      tags: [Customer Identity]
+      tags:
+      - Customer Identity
       operationId: requestCustomerMagicLink
-      summary: Request a single-use email magic link
-      description: >-
-        For every syntactically valid email, including unknown and rate-limited
-        destinations, the operation returns the same 202 body, cache policy and timing
-        class. Delivery is a durable outbound-mail intent and account existence is not
-        exposed in the response, audit or logs.
+      summary: 고객 로그인용 일회성 링크 요청
+      description: '고객 로그인용 일회성 링크 요청 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다. 기존 계약의
+        세부 조건: For every syntactically valid email, including unknown and rate-limited destinations, the operation returns
+        the same 202 body, cache policy and timing class. Delivery is a durable outbound-mail intent and account existence
+        is not exposed in the response, audit or logs.'
       x-deskseed-contract-status: FROZEN
-      x-deskseed-requirements: [REQ-AUTH-001, REQ-AUTH-002]
+      x-deskseed-requirements:
+      - REQ-AUTH-001
+      - REQ-AUTH-002
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/MagicLinkRequest' }
+            schema:
+              $ref: '#/components/schemas/MagicLinkRequest'
       responses:
         '202':
-          description: Generic accepted response regardless of account existence
           headers:
             Cache-Control:
-              schema: { type: string, const: no-store }
+              schema:
+                type: string
+                const: no-store
             Referrer-Policy:
-              schema: { type: string, const: no-referrer }
+              schema:
+                type: string
+                const: no-referrer
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/GenericAccepted' }
-        '400': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
+              schema:
+                $ref: '#/components/schemas/GenericAccepted'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
   /api/v1/customer/auth/magic-link-sessions:
     post:
-      tags: [Customer Identity]
+      tags:
+      - Customer Identity
       operationId: consumeCustomerMagicLink
-      summary: Atomically consume a single-use token and create a customer session
-      description: >-
-        The token is accepted only in a JSON request body. Success rotates any
-        presented customer session, creates or links a CustomerAccount without
-        changing historical anonymous ticket ownership, and sets a new opaque cookie.
+      summary: 일회성 링크로 고객 세션 생성
+      description: '일회성 링크로 고객 세션 생성 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다. 기존 계약의
+        세부 조건: The token is accepted only in a JSON request body. Success rotates any presented customer session, creates
+        or links a CustomerAccount without changing historical anonymous ticket ownership, and sets a new opaque cookie.'
       x-deskseed-contract-status: FROZEN
-      x-deskseed-requirements: [REQ-AUTH-001, REQ-AUTH-002]
+      x-deskseed-requirements:
+      - REQ-AUTH-001
+      - REQ-AUTH-002
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/MagicLinkConsume' }
+            schema:
+              $ref: '#/components/schemas/MagicLinkConsume'
       responses:
         '200':
-          description: Token consumed once and server session created
           headers:
             Cache-Control:
-              schema: { type: string, const: no-store }
+              schema:
+                type: string
+                const: no-store
             Referrer-Policy:
-              schema: { type: string, const: no-referrer }
+              schema:
+                type: string
+                const: no-referrer
             Set-Cookie:
-              description: >-
-                DESKSEED_CUSTOMER_SESSION; Path=/; HttpOnly; Secure; SameSite=Lax.
-                Only a digest of the opaque value is retained server-side.
-              schema: { type: string }
+              description: DESKSEED_CUSTOMER_SESSION 쿠키입니다. Path=/, HttpOnly, Secure, SameSite=Lax를 사용하며 서버에는 opaque 값의 digest만
+                저장합니다.
+              schema:
+                type: string
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CurrentCustomer' }
-        '400': { $ref: '#/components/responses/Problem' }
-        '401': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
+              schema:
+                $ref: '#/components/schemas/CurrentCustomer'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
   /api/v1/customer/csrf:
     get:
-      tags: [Customer Identity]
+      tags:
+      - Customer Identity
       operationId: getCustomerCsrfToken
-      summary: Return a CSRF token bound to the current customer session
+      summary: 고객 세션용 CSRF 토큰 발급
       x-deskseed-contract-status: FROZEN
-      x-deskseed-requirements: [REQ-AUTH-001]
-      security: [{ customerSession: [] }]
+      x-deskseed-requirements:
+      - REQ-AUTH-001
+      security:
+      - customerSession: []
       responses:
         '200':
-          description: CSRF token for unsafe customer-session operations
           headers:
             Cache-Control:
-              schema: { type: string, const: no-store }
+              schema:
+                type: string
+                const: no-store
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CustomerCsrfToken' }
-        '401': { $ref: '#/components/responses/Problem' }
+              schema:
+                $ref: '#/components/schemas/CustomerCsrfToken'
+        '401':
+          $ref: '#/components/responses/Problem'
+      description: 고객 세션용 CSRF 토큰 발급 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
   /api/v1/customer/session:
     delete:
-      tags: [Customer Identity]
+      tags:
+      - Customer Identity
       operationId: deleteCustomerSession
-      summary: Invalidate the current customer session
+      summary: 현재 고객 세션 종료
       x-deskseed-contract-status: FROZEN
-      x-deskseed-requirements: [REQ-AUTH-001]
-      security: [{ customerSession: [] }]
+      x-deskseed-requirements:
+      - REQ-AUTH-001
+      security:
+      - customerSession: []
       parameters:
-        - $ref: '#/components/parameters/CustomerCsrfHeader'
+      - $ref: '#/components/parameters/CustomerCsrfHeader'
       responses:
         '204':
-          description: Server session revoked and cookie expired
           headers:
             Cache-Control:
-              schema: { type: string, const: no-store }
+              schema:
+                type: string
+                const: no-store
             Set-Cookie:
-              description: Expired DESKSEED_CUSTOMER_SESSION cookie
-              schema: { type: string }
-        '401': { $ref: '#/components/responses/Problem' }
-        '403': { $ref: '#/components/responses/Problem' }
+              description: 만료 처리된 DESKSEED_CUSTOMER_SESSION 쿠키입니다.
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+      description: 현재 고객 세션 종료 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
   /api/v1/customer/requests/{ticketNumber}/claim:
     post:
-      tags: [Customer Identity]
+      tags:
+      - Customer Identity
       operationId: claimAnonymousCustomerRequest
-      summary: Claim one anonymous request using a request-specific proof
-      description: >-
-        Matching email is necessary but never sufficient. Exactly one ticket-specific
-        request access token or signed claim token must be supplied. Success consumes
-        or revokes the proof and transfers the existing ticket requester to the current
-        customer account atomically with ticket and security audit.
+      summary: 익명 문의를 인증 고객 계정에 연결
+      description: '익명 문의를 인증 고객 계정에 연결 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다. 기존
+        계약의 세부 조건: Matching email is necessary but never sufficient. Exactly one ticket-specific request access token or signed
+        claim token must be supplied. Success consumes or revokes the proof and transfers the existing ticket requester to
+        the current customer account atomically with ticket and security audit.'
       x-deskseed-contract-status: FROZEN
-      x-deskseed-requirements: [REQ-AUTH-002, REQ-TKT-005]
-      security: [{ customerSession: [] }]
+      x-deskseed-requirements:
+      - REQ-AUTH-002
+      - REQ-TKT-005
+      security:
+      - customerSession: []
       parameters:
-        - name: ticketNumber
-          in: path
-          required: true
-          schema: { type: integer, format: int64, minimum: 1 }
-        - $ref: '#/components/parameters/CustomerCsrfHeader'
+      - name: ticketNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - $ref: '#/components/parameters/CustomerCsrfHeader'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ClaimRequest' }
+            schema:
+              $ref: '#/components/schemas/ClaimRequest'
       responses:
         '204':
-          description: Request linked to the signed-in customer; proof is no longer reusable
           headers:
             Cache-Control:
-              schema: { type: string, const: no-store }
-        '400': { $ref: '#/components/responses/Problem' }
-        '401': { $ref: '#/components/responses/Problem' }
-        '403': { $ref: '#/components/responses/Problem' }
-        '404': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+              schema:
+                type: string
+                const: no-store
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
   /api/v1/requests/{ticketNumber}/claim-grants:
     post:
-      tags: [Customer Identity]
+      tags:
+      - Customer Identity
       operationId: issueAnonymousRequestClaimGrant
-      summary: Exchange an active request-access capability for a short-lived claim grant
-      description: >-
-        The existing request access token is supplied only in the header. The returned
-        signed token is ticket-bound, email-fingerprint-bound, short-lived and single use.
-        No email or bearer token plaintext is persisted or audited.
+      summary: 문의 접근 토큰을 단기 연결 권한으로 교환
+      description: '문의 접근 토큰을 단기 연결 권한으로 교환 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
+        기존 계약의 세부 조건: The existing request access token is supplied only in the header. The returned signed token is ticket-bound,
+        email-fingerprint-bound, short-lived and single use. No email or bearer token plaintext is persisted or audited.'
       x-deskseed-contract-status: FROZEN
-      x-deskseed-requirements: [REQ-AUTH-002, REQ-TKT-005]
+      x-deskseed-requirements:
+      - REQ-AUTH-002
+      - REQ-TKT-005
       parameters:
-        - name: ticketNumber
-          in: path
-          required: true
-          schema: { type: integer, format: int64, minimum: 1 }
-        - name: X-Request-Access-Token
-          in: header
-          required: true
-          schema: { type: string, minLength: 32, maxLength: 256 }
+      - name: ticketNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: X-Request-Access-Token
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 32
+          maxLength: 256
       responses:
         '201':
-          description: Short-lived signed claim grant issued
           headers:
             Cache-Control:
-              schema: { type: string, const: no-store }
+              schema:
+                type: string
+                const: no-store
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ClaimGrant' }
-        '400': { $ref: '#/components/responses/Problem' }
-        '404': { $ref: '#/components/responses/Problem' }
+              schema:
+                $ref: '#/components/schemas/ClaimGrant'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
 components:
   securitySchemes:
     customerSession:
       type: apiKey
       in: cookie
       name: DESKSEED_CUSTOMER_SESSION
-      description: >-
-        Opaque HttpOnly, Secure, SameSite=Lax cookie. The server stores only a digest
-        and resolves it to exactly one active CustomerAccount.
+      description: Opaque HttpOnly, Secure, SameSite=Lax 쿠키입니다. 서버는 digest만 저장하고 정확히 하나의 활성 CustomerAccount로 해석합니다.
   parameters:
     CustomerCsrfHeader:
       name: X-CSRF-TOKEN
       in: header
       required: true
-      description: Token derived for and bound to the opaque customer server session.
-      schema: { type: string, minLength: 32, maxLength: 256 }
+      description: opaque 고객 서버 세션에서 파생되어 해당 세션에 귀속되는 토큰입니다.
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 256
   responses:
     Problem:
-      description: RFC 9457 Problem Details
+      description: RFC 9457 Problem Details 오류 응답입니다.
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+          schema:
+            $ref: '#/components/schemas/Problem'
   schemas:
     MagicLinkRequest:
       type: object
       additionalProperties: false
-      required: [email]
+      required:
+      - email
       properties:
-        email: { type: string, format: email, maxLength: 254 }
+        email:
+          type: string
+          format: email
+          maxLength: 254
+      description: 고객이 이메일로 일회성 로그인 링크 발송을 요청할 때 사용하는 본문입니다. 계정 존재 여부는 응답으로 노출하지 않습니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        email: mina.kim@example.test
     MagicLinkConsume:
       type: object
       additionalProperties: false
-      required: [token]
+      required:
+      - token
       properties:
         token:
           type: string
           minLength: 1
           maxLength: 256
+      description: 고객이 이메일로 받은 일회성 링크 토큰을 소비해 고객 세션을 만들 때 사용하는 요청입니다. token은 불투명한 capability 값이며 문서에는 사용할 수 없는 합성 값만 둡니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        token: example-magic-link-token-not-valid
     CustomerCsrfToken:
       type: object
       additionalProperties: false
-      required: [token, headerName]
+      required:
+      - token
+      - headerName
       properties:
-        token: { type: string, minLength: 32, maxLength: 256 }
-        headerName: { type: string, const: X-CSRF-TOKEN }
+        token:
+          type: string
+          minLength: 32
+          maxLength: 256
+        headerName:
+          type: string
+          const: X-CSRF-TOKEN
     CurrentCustomer:
       type: object
       additionalProperties: false
-      required: [id, email, displayName, verifiedAt]
+      required:
+      - id
+      - email
+      - displayName
+      - verifiedAt
       properties:
-        id: { type: string, format: uuid }
-        email: { type: string, format: email }
-        displayName: { type: string, minLength: 1, maxLength: 100 }
-        verifiedAt: { type: string, format: date-time }
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        verifiedAt:
+          type: string
+          format: date-time
     ClaimRequest:
       type: object
       additionalProperties: false
       oneOf:
-        - required: [requestAccessToken]
-        - required: [claimToken]
+      - required:
+        - requestAccessToken
+      - required:
+        - claimToken
       properties:
-        requestAccessToken: { type: string, minLength: 32, maxLength: 1000 }
-        claimToken: { type: string, minLength: 32, maxLength: 1000 }
+        requestAccessToken:
+          type: string
+          minLength: 32
+          maxLength: 1000
+        claimToken:
+          type: string
+          minLength: 32
+          maxLength: 1000
+      description: 익명 문의의 접근 토큰과 단기 연결 권한을 함께 제출해 인증 고객 계정에 문의를 연결할 때 사용하는 요청입니다. 두 값은 capability 값으로 취급하며 원문을 저장하지 않습니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        requestAccessToken: example-request-access-token-not-valid
+        claimToken: example-claim-token-not-valid
     ClaimGrant:
       type: object
       additionalProperties: false
-      required: [claimToken, expiresAt]
+      required:
+      - claimToken
+      - expiresAt
       properties:
-        claimToken: { type: string, minLength: 32, maxLength: 1000 }
-        expiresAt: { type: string, format: date-time }
+        claimToken:
+          type: string
+          minLength: 32
+          maxLength: 1000
+        expiresAt:
+          type: string
+          format: date-time
     GenericAccepted:
       type: object
       additionalProperties: false
-      required: [accepted]
+      required:
+      - accepted
       properties:
-        accepted: { type: boolean, const: true }
+        accepted:
+          type: boolean
+          const: true
     Problem:
       type: object
       additionalProperties: true
-      required: [type, title, status]
+      required:
+      - type
+      - title
+      - status
       properties:
-        type: { type: string, format: uri-reference }
-        title: { type: string }
-        status: { type: integer, minimum: 400, maximum: 599 }
-        detail: { type: string }
-        requestId: { type: string }
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        requestId:
+          type: string
+x-deskseed-documentation-ownership: MANUAL
