@@ -13,6 +13,7 @@ seed-verify:
 	python3 scripts/verify_seed.py
 
 docs-check:
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_documentation_quality.py
 	python3 scripts/validate_documentation.py --write
 	git diff --exit-code -- api/core-api-outline-v1.yaml api/customer-identity-api-v1.yaml api/platform-api-outline-v1.yaml VALIDATION-REPORT.md FILE-MANIFEST.txt
 

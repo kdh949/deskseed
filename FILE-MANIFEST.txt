@@ -42,7 +42,7 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 622b473df877ee3f7a95f87fbc70b839b54bd5c590617c98aded45f315de940e       16494  docs/18-integration-platform.md
 5b7aee4d7ae31125f0b713f1cfb45712bdcd88807b6df411d7749e9367ecd38b       16553  docs/19-security-audit-center.md
 7412962184d0f03424a8e5e5e7d6c098fb8ba7a072e98052e52534766955099e        7662  docs/20-api-sdk-contract.md
-aed1924d47d0ca4455f8510f7aab4bb361a7c501c5e71f87850098a89f4bf750       38376  docs/21-minimum-verification-gates.md
+9536c2d4167d2fe044e693573c95c4caedb8e64265e3ff73cd7636adc5c2ab8e       38557  docs/21-minimum-verification-gates.md
 4b19175beab8c34611a250e34ca5e3b7308310b7d288568b22650e94dc7ee4e6        5982  docs/22-spring-initializr-and-dependencies.md
 2e6e4d6394970b174231d5755a39041d7bda4b0529914061f0860e15e74af0b2        8066  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
@@ -220,6 +220,7 @@ eeb254520a57811577cabd62d1eb3360aa0c15611d55952ef0d3ba8f72ecfa4b         953  sc
 2f74185187ceff2f6e9addb7fabcb0d8591c9ebf7fb85242dfe8ff0575124f8d      126222  scripts/run-operations-rehearsal.sh
 bef82d42d8736a98eccff5bd3e4739538566655825d702ac870069768e38d2b9       54933  scripts/run-release-performance.sh
 86039df10acf707d5941485169b22bd6ef5e8709afbeb9d456a87b7b3e6d1ea4       10278  scripts/test-e2e-compose-ownership.sh
+c41221eaf975baca8476c608e852eb8686caab4762cca972000cc3782f67fa5a        2538  scripts/test_api_documentation_quality.py
 8532b19bdfe858d3eb142f83708bbd9774189fde894e9e8e9caea59175d64b08       35493  scripts/validate_documentation.py
 eec24376e2ab4be4a57c0149fc0d6121893b1daf301349a1ba174da16fea0152        7829  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
