@@ -3,9 +3,17 @@ import { expect, userEvent } from 'storybook/test'
 import { FrontendSystemFixturePage } from './FrontendSystemFixturePage'
 
 const meta = {
-  title: 'Product/Agent Workspace/Canonical Fixtures',
+  title: '07 Screens/Agent Queue & Ticket Workspace',
   component: FrontendSystemFixturePage,
-  parameters: { layout: 'fullscreen' },
+  parameters: {
+    docs: {
+      description: {
+        component:
+          '현재 shipped surface인 Agent Queue와 read-only Ticket Workspace를 production component와 deterministic fixture로 조합한다. page-level visual baseline은 Playwright가 별도로 소유한다.',
+      },
+    },
+    layout: 'fullscreen',
+  },
   tags: ['autodocs'],
 } satisfies Meta<typeof FrontendSystemFixturePage>
 
