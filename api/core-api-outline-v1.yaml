@@ -4353,10 +4353,10 @@ components:
         requester:
           type: object
           additionalProperties: false
-          required:
-          - name
-          - email
           properties:
+            customerId:
+              type: string
+              format: uuid
             name:
               type: string
               minLength: 1
@@ -4365,6 +4365,8 @@ components:
               type: string
               format: email
               maxLength: 254
+          description: customerId만 단독으로 지정해 검색으로 찾은 기존 고객을 요청자로 재사용하거나, name과 email을 함께 지정해 새 unverified
+            고객을 생성합니다. 세 필드를 함께 보내거나 아무 필드도 보내지 않으면 검증 오류입니다.
         subject:
           type: string
           minLength: 1

@@ -46,8 +46,7 @@ internal class AgentTicketCommandController(
         val result = applicationService.create(
             principal = principal,
             input = CreateAgentTicketInput(
-                requesterName = body.requester.name,
-                requesterEmail = body.requester.email,
+                requester = body.requester.toInput(),
                 subject = body.subject,
                 firstComment = body.firstComment.toDraft(),
                 priority = body.priority,
@@ -210,9 +209,23 @@ internal class AgentTicketCommandController(
 }
 
 internal data class AgentRequesterRequest(
-    @field:NotBlank @field:Size(max = 100) val name: String,
-    @field:NotBlank @field:Email @field:Size(max = 254) val email: String,
-)
+    val customerId: UUID? = null,
+    @field:Size(max = 100) val name: String? = null,
+    @field:Email @field:Size(max = 254) val email: String? = null,
+) {
+    fun toInput(): AgentTicketRequesterInput {
+        if (customerId != null) {
+            if (name != null || email != null) {
+                throw TicketCommandInvalidException("requester must specify either customerId or name and email, not both")
+            }
+            return AgentTicketRequesterInput.ExistingCustomer(customerId)
+        }
+        if (name.isNullOrBlank() || email.isNullOrBlank()) {
+            throw TicketCommandInvalidException("requester must specify either customerId or both name and email")
+        }
+        return AgentTicketRequesterInput.NewCustomer(name, email)
+    }
+}
 
 internal data class CommentDraftRequest(
     val visibility: CommentVisibility,
