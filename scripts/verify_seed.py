@@ -152,7 +152,12 @@ def check_audit_immutability() -> None:
 
 
 def check_executable_scripts() -> None:
-    for item in ("backend/gradlew", "scripts/demo-request.sh", "scripts/verify_seed.py"):
+    for item in (
+        "backend/gradlew",
+        "scripts/demo-request.sh",
+        "scripts/enrich_openapi_documentation.py",
+        "scripts/verify_seed.py",
+    ):
         path = ROOT / item
         mode = path.stat().st_mode if path.exists() else 0
         if not mode & stat.S_IXUSR:

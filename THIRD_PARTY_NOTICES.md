@@ -35,6 +35,15 @@ wordmark, screenshot, illustration or other proprietary visual asset, and it doe
 imply sponsorship, endorsement or compatibility. Deskseed ships an independent brand and
 implementation.
 
+## Direct backend API documentation dependencies
+
+| Package | Version | Declared license |
+| --- | ---: | --- |
+| `com.scalar.maven:scalar-webmvc` | 0.6.61 | MIT |
+| `org.springdoc:springdoc-openapi-starter-webmvc-api` | 3.1.0 | Apache-2.0 |
+
+Scalar renders the committed OpenAPI contracts in the backend API Reference. springdoc generates runtime-only implementation documents for drift verification. Their Maven metadata and upstream license texts apply independently of Deskseed.
+
 ## Transitive, development, backend and container dependencies
 
 The lockfile inventory contains 265 installed frontend package locations and no missing

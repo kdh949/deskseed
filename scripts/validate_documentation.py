@@ -60,6 +60,11 @@ NON_CANONICAL_TASK_BRIEFS = {"00-bootstrap-documentation-and-repository.md"}
 # The repository retains this pre-v0.6 planning draft for historical context.
 # The v0.6 Core outline is the canonical contract validated below.
 NON_CANONICAL_OPENAPI_DRAFTS = {"api/mvp-target.yaml"}
+REFERENCE_OPENAPI_CONTRACTS = {
+    "api/core-api-outline-v1.yaml",
+    "api/customer-identity-api-v1.yaml",
+    "api/platform-api-outline-v1.yaml",
+}
 MANIFEST_ROOT_FILES = {
     "AGENTS.md",
     "CHANGELOG-v0.6.md",
@@ -137,6 +142,75 @@ def openapi_operations(document: dict[str, Any]) -> list[tuple[str, str, str]]:
             if isinstance(operation, dict):
                 operations.append((str(route), method.lower(), str(operation.get("operationId", ""))))
     return operations
+
+
+def validate_api_reference_quality(path: Path, document: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    location = rel(path)
+
+    def korean(value: Any) -> bool:
+        return isinstance(value, str) and bool(re.search(r"[가-힣]", value))
+
+    if not korean((document.get("info") or {}).get("description")):
+        errors.append(f"API reference info description must be Korean: {location}")
+    for tag in document.get("tags") or []:
+        if isinstance(tag, dict) and not korean(tag.get("description")):
+            errors.append(f"API reference tag description must be Korean: {location} {tag.get('name')}")
+    for node in walk(document):
+        if (
+            isinstance(node, dict)
+            and isinstance(node.get("description"), str)
+            and not korean(node.get("description"))
+        ):
+            errors.append(f"API reference contains a non-Korean description: {location}")
+            break
+
+    for route, path_item in (document.get("paths") or {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete", "head", "options", "trace"}:
+                continue
+            if not isinstance(operation, dict):
+                continue
+            operation_label = f"{method.upper()} {route}"
+            if not korean(operation.get("summary")):
+                errors.append(f"API reference summary must be Korean: {location} {operation_label}")
+            if not korean(operation.get("description")):
+                errors.append(f"API reference description must be Korean: {location} {operation_label}")
+
+    schemas = ((document.get("components") or {}).get("schemas") or {})
+    for schema_name, schema in schemas.items():
+        if not isinstance(schema, dict):
+            continue
+        if not korean(schema.get("description")):
+            errors.append(f"API reference schema description must be Korean: {location} {schema_name}")
+        if "example" not in schema:
+            errors.append(f"API reference schema example is missing: {location} {schema_name}")
+        for property_name, prop in (schema.get("properties") or {}).items():
+            if isinstance(prop, dict) and not korean(prop.get("description")):
+                errors.append(
+                    f"API reference property description must be Korean: "
+                    f"{location} {schema_name}.{property_name}"
+                )
+
+    forbidden_example_patterns = (
+        re.compile(r"\bBearer\s+", re.IGNORECASE),
+        re.compile(r"\b(?:sk|pk)_(?:live|prod)_", re.IGNORECASE),
+        re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),
+        re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
+    )
+    for node in walk(document):
+        if not isinstance(node, dict):
+            continue
+        for key in ("example", "examples"):
+            if key not in node:
+                continue
+            rendered = json.dumps(node[key], ensure_ascii=False, default=str)
+            if any(pattern.search(rendered) for pattern in forbidden_example_patterns):
+                errors.append(f"API reference example resembles a real credential: {location}")
+                return errors
+    return errors
 
 
 def numbered_files(directory: Path, digits: int, excluded: set[str] | None = None) -> tuple[list[int], list[str]]:
@@ -244,6 +318,8 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
             continue
         if rel(path) in NON_CANONICAL_OPENAPI_DRAFTS:
             continue
+        if rel(path) in REFERENCE_OPENAPI_CONTRACTS:
+            errors.extend(validate_api_reference_quality(path, document))
         paths = document.get("paths") or {}
         openapi_path_count += len(paths)
         operations = openapi_operations(document)

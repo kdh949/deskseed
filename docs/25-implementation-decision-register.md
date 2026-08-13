@@ -59,6 +59,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-051 | Search-origin fingerprints use an encryption-independent fixed-format key; audit projection rebuild copies canonical event-time snapshots under a shared/exclusive PostgreSQL lock | accepted | session isolation or projection storage architecture changes |
 | D-052 | Organization mutations and membership-dependent staff ticket commands share one PostgreSQL transaction consistency guard | accepted | measured command contention justifies ordered keyed locks |
 | D-053 | The current frontend ships Agent Queue/read-only Workspace only and preserves deferred capabilities as OpenAPI/headless contracts under one canonical design system | accepted | a deferred capability is recomposed as a current-design vertical slice |
+| D-054 | Committed OpenAPI remains authoritative; Scalar renders it and springdoc runtime output is drift evidence only | accepted | contract ownership or API delivery model changes |
 
 D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
 IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.

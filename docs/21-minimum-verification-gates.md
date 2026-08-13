@@ -974,3 +974,11 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - initial First Reply policy pauses while the ticket is PENDING and resumes on the first later active status.
 - the pause-status set is policy data editable by Admin and versioned.
 - INTERNAL notes neither stop the clock nor count as the first public reply.
+
+### DOC-001 — 탐색 가능한 API 계약 문서
+
+- Scalar는 커밋된 Core, Customer Identity, Platform OpenAPI 계약을 `/docs/api`에서 렌더링한다.
+- 모든 작업의 목적·설명과 component schema/property 설명은 한국어이며, 모든 component schema는 합성 예시를 가진다.
+- 예시는 실제 password, token, Authorization 값, session cookie 또는 고객 데이터를 포함하지 않는다.
+- springdoc runtime 문서의 구현 경로·HTTP method 집합은 커밋 계약의 구현 대상으로 표시된 작업과 일치한다.
+- production profile은 기본적으로 문서를 비활성화하며 명시적 활성화 시 ADMIN 읽기만 허용하고 Try it/client 기능을 숨긴다.

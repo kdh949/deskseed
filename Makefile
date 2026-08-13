@@ -13,8 +13,9 @@ seed-verify:
 	python3 scripts/verify_seed.py
 
 docs-check:
+	python3 scripts/enrich_openapi_documentation.py
 	python3 scripts/validate_documentation.py --write
-	git diff --exit-code -- VALIDATION-REPORT.md FILE-MANIFEST.txt
+	git diff --exit-code -- api/core-api-outline-v1.yaml api/customer-identity-api-v1.yaml api/platform-api-outline-v1.yaml VALIDATION-REPORT.md FILE-MANIFEST.txt
 
 compose-smoke:
 	bash scripts/test-e2e-compose-ownership.sh
