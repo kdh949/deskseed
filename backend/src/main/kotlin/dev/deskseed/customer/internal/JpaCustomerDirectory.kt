@@ -2,6 +2,7 @@ package dev.deskseed.customer.internal
 
 import dev.deskseed.customer.CustomerDirectory
 import dev.deskseed.customer.CustomerRef
+import dev.deskseed.customer.CustomerSearchResult
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
@@ -77,21 +78,29 @@ internal class JpaCustomerDirectory(
     }
 
     @Transactional(readOnly = true)
-    override fun search(query: String, limit: Int): List<CustomerRef> {
+    override fun search(query: String, limit: Int): CustomerSearchResult {
         require(query.isNotBlank()) { "Search query is required" }
         require(limit in 1..25) { "Search limit must be between 1 and 25" }
 
-        val trimmedQuery = query.trim()
+        // ILIKE with a leading/trailing wildcard is sargable against the pg_trgm GIN indexes
+        // added in V27; email_normalized is already lowercased at write time (createUnverified/
+        // createVerified), so no extra lower() is needed on either side of the comparison.
+        val likePattern = "%${escapeLikeWildcards(query.trim())}%"
+        val whereClause = "name ilike :likePattern escape '\\' or email_normalized ilike :likePattern escape '\\'"
         val parameters = MapSqlParameterSource()
-            .addValue("queryText", trimmedQuery)
+            .addValue("likePattern", likePattern)
             .addValue("limit", limit)
 
-        return jdbcTemplate.query(
+        val resultCount = jdbcTemplate.queryForObject(
+            "select count(*) from customers where $whereClause",
+            parameters,
+            Long::class.java,
+        ) ?: 0L
+        val items = jdbcTemplate.query(
             """
             select id, name, email_normalized, email_display, verified_at
             from customers
-            where strpos(lower(name), lower(:queryText)) > 0
-               or strpos(lower(email_normalized), lower(:queryText)) > 0
+            where $whereClause
             order by name asc, id asc
             limit :limit
             """.trimIndent(),
@@ -104,7 +113,13 @@ internal class JpaCustomerDirectory(
                 verifiedAt = resultSet.getTimestamp("verified_at")?.toInstant(),
             )
         }
+        return CustomerSearchResult(items, resultCount)
     }
+
+    private fun escapeLikeWildcards(value: String): String = value
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
 
     private fun CustomerEntity.toRef() = CustomerRef(
         id = id,

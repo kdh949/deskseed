@@ -140,6 +140,18 @@ class AgentCustomerSearchIntegrationTest {
     }
 
     @Test
+    fun `resultCount reflects the true total match count, not just the returned page size`() {
+        val agent = insertStaff("paged-search@example.com", "Agent password 42", "페이지 상담사")
+        repeat(3) { index -> insertCustomer("페이지고객$index", "paged-$index@example.test") }
+        val browser = login("paged-search@example.com", "Agent password 42")
+
+        mockMvc.perform(search(browser, UUID.randomUUID(), """{"query":"페이지고객","limit":2}"""))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(2))
+            .andExpect(jsonPath("$.resultCount").value(3))
+    }
+
+    @Test
     fun `blank query and out-of-range limit are rejected before any search executes`() {
         val agent = insertStaff("invalid-search@example.com", "Agent password 42", "검증 상담사")
         val browser = login("invalid-search@example.com", "Agent password 42")

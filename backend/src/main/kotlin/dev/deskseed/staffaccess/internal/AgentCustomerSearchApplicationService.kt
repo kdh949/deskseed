@@ -49,7 +49,8 @@ internal class AgentCustomerSearchApplicationService(
         }
         require(request.limit in 1..25) { "Search limit must be between 1 and 25" }
 
-        val items = customerDirectory.search(query = request.query, limit = request.limit)
+        val searchResult = customerDirectory.search(query = request.query, limit = request.limit)
+        val items = searchResult.items
         val searchEventId = UUID.randomUUID()
         val occurredAt = Instant.now(clock)
         try {
@@ -64,7 +65,7 @@ internal class AgentCustomerSearchApplicationService(
                     context = auditContext,
                     interactionId = interactionId,
                     protectedQuery = protectedQuery,
-                    resultCount = items.size.toLong(),
+                    resultCount = searchResult.resultCount,
                     resultItems = items.mapIndexed { ordinal, customer ->
                         CustomerSearchResultAuditItem(customer.id, ordinal)
                     },
@@ -82,7 +83,7 @@ internal class AgentCustomerSearchApplicationService(
             searchEventId = searchEventId,
             searchInteractionId = interactionId,
             items = items,
-            resultCount = items.size.toLong(),
+            resultCount = searchResult.resultCount,
         )
     }
 }

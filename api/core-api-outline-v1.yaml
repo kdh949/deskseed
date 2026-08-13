@@ -4641,6 +4641,7 @@ components:
           type: integer
           format: int64
           minimum: 0
+          description: query와 일치하는 고객의 전체 수입니다. items는 limit로 잘린 페이지이므로 resultCount가 items.length보다 클 수 있습니다.
       description: 고객 검색 결과 페이지입니다. searchEventId는 이 조회에 대한 검색 감사 이벤트를 가리키며, 결과 자체가 보호된 직원용 projection이므로 캐시하지 않습니다.
       x-deskseed-documentation-review: MANUAL
       example:

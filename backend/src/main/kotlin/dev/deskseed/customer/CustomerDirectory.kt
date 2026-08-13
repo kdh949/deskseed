@@ -10,6 +10,12 @@ data class CustomerRef(
     val verifiedAt: Instant? = null,
 )
 
+data class CustomerSearchResult(
+    val items: List<CustomerRef>,
+    /** Total matches for the query, independent of [items].size / the requested limit. */
+    val resultCount: Long,
+)
+
 interface CustomerDirectory {
     fun createUnverified(name: String, email: String): CustomerRef
 
@@ -20,7 +26,7 @@ interface CustomerDirectory {
     fun findVerifiedByNormalizedEmail(email: String): CustomerRef?
 
     /** Substring match over name/email, ordered by name, for staff requester lookup. */
-    fun search(query: String, limit: Int): List<CustomerRef>
+    fun search(query: String, limit: Int): CustomerSearchResult
 
     /** Creates a new verified identity. It intentionally never upgrades an anonymous historical requester. */
     fun createVerified(name: String, email: String, verifiedAt: Instant): CustomerRef
