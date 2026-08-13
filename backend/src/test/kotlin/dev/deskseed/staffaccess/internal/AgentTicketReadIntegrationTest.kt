@@ -40,22 +40,27 @@ class AgentTicketReadIntegrationTest {
 
     @BeforeEach
     fun clearState() {
-        if (jdbcTemplate.queryForObject("select to_regclass('access_audit_events') is not null", Boolean::class.java) == true) {
-            jdbcTemplate.execute(
-                "truncate table search_audit_query_ciphertexts, search_audit_result_items, search_audit_details, access_audit_events",
-            )
-        }
-        jdbcTemplate.execute("truncate table admin_security_audit_events")
-        jdbcTemplate.update("delete from request_access_tokens")
-        jdbcTemplate.update("delete from ticket_audit_events")
-        jdbcTemplate.update("delete from ticket_audits")
-        jdbcTemplate.update("delete from ticket_comments")
-        jdbcTemplate.update("delete from tickets")
-        jdbcTemplate.update("delete from customers")
-        jdbcTemplate.update("delete from group_memberships")
-        jdbcTemplate.update("delete from support_groups")
-        jdbcTemplate.update("delete from staff_login_throttles")
-        jdbcTemplate.update("delete from staff_accounts")
+        // truncate (not delete) so this cascades through the append-only ticket_audit_events/ticket_audits
+        // triggers and any search_audit_* child tables referencing access_audit_events, regardless of
+        // whether a given test populated them or not.
+        jdbcTemplate.execute(
+            """
+            truncate table
+                access_audit_events,
+                admin_security_audit_events,
+                ticket_audit_events,
+                ticket_audits,
+                ticket_comments,
+                request_access_tokens,
+                tickets,
+                customers,
+                group_memberships,
+                support_groups,
+                staff_login_throttles,
+                staff_accounts
+            restart identity cascade
+            """.trimIndent(),
+        )
     }
 
     @Test
@@ -397,6 +402,29 @@ class AgentTicketReadIntegrationTest {
         )
             .andExpect(status().isOk)
             .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
+    }
+
+    @Test
+    fun `assignment options list active groups and members without requiring an existing ticket`() {
+        val agent = insertStaff("assignment-options@example.com", "Agent password 42", "AGENT", "배정 상담사")
+        val group = insertGroup("배정 옵션 그룹", agent)
+        val disabledGroupOwner = insertStaff("disabled-owner@example.com", "Agent password 42", "AGENT", "비활성 그룹 상담사")
+        val disabledGroup = insertGroup("비활성 그룹", disabledGroupOwner)
+        jdbcTemplate.update("update support_groups set status = 'DISABLED' where id = ?", disabledGroup)
+        val browser = login("assignment-options@example.com", "Agent password 42")
+
+        mockMvc.perform(get("/api/v1/agent/assignment-options").session(browser))
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.groups[?(@.id == '$group')].name").value("배정 옵션 그룹"))
+            .andExpect(jsonPath("$.groups[?(@.id == '$group')].members[0].id").value(agent.toString()))
+            .andExpect(jsonPath("$.groups[?(@.id == '$disabledGroup')]").isEmpty)
+    }
+
+    @Test
+    fun `assignment options are denied without an authenticated staff session`() {
+        mockMvc.perform(get("/api/v1/agent/assignment-options"))
+            .andExpect(status().isUnauthorized)
     }
 
     private fun ticketDetail(number: Long, session: MockHttpSession, interactionId: UUID, intent: String) =

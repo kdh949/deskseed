@@ -48,7 +48,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
 | REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33, 55 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`, Workspace projection/Storybook의 PUBLIC/INTERNAL 구분 |
 | REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37, 55 | 고객 API PUBLIC-only integration test와 `customerPortalClient.test.ts`; UI는 `DEFERRED_UI` |
-| REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39, 55 | `AgentTicketCommandIntegrationTest`; create UI는 `DEFERRED_UI` |
+| REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다. 생성 시점에 활성 그룹/구성원(`GET /api/v1/agent/assignment-options`)을 지정할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39, 55 | `AgentTicketCommandIntegrationTest`, `AgentTicketReadIntegrationTest`(assignment-options); create UI는 `DEFERRED_UI` |
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34, 55 | transition/permission integration tests, `ticketEditorModel.test.ts`; 운영 Workspace는 읽기 전용 |
 | REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34, ADR 0038 | `TransferChildTicketIntegrationTest`의 active group/member 거부·원자적 rollback 및 `OrganizationConcurrencyIntegrationTest`의 ticket assignment/group disable 공유 잠금 |
 | REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34, 55 | `TransferChildTicketIntegrationTest`; UI는 `FIXTURE_ONLY`/후속 재조합 |
@@ -109,6 +109,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-AUT-002 | 시간 경과 기반 automation을 제공한다 | BLUEPRINT_READY | P4 | 12, 45 | AUT-009 |
 | REQ-EXP-001 | 티켓 상세·변경 이력·필터 결과를 추출한다 | BLUEPRINT_READY | P5 | 18, 20, 30, 46 | ANA-007, EXP-001/002 |
 | REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | IMPLEMENTATION_READY | P6/P9 | 03, 11, 47 | frozen POST search contract, parameterized PostgreSQL authorized query, exact count/stable sort, fixed 2-SQL query-count test, component+real-stack E2E |
+| REQ-SRCH-002 | 상담사가 신규 티켓 생성 화면에서 기존 고객을 이름·이메일로 검색해 요청자로 선택할 수 있다 | IMPLEMENTATION_READY | M3 | 30, 33, 39, 55 | `AgentCustomerSearchIntegrationTest`(검색·빈 결과·검증·fail-closed·감사 불변성); create UI는 `DEFERRED_UI` |
 | REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35, 39 | release fixture/query-plan evidence와 `AdminOrganizationIntegrationTest`의 100-row max page, staff/group/member row 증가 전후 동일 SQL statement count(각 10 이하) |
 
 

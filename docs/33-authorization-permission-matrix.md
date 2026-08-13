@@ -41,6 +41,8 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | list staff ticket queue | D | D | C | A | D by default | scope C |
 | read staff ticket | D | D | C | A | D by default | scope+constraint C |
 | create staff ticket | D | D | C | A | D | scope C |
+| search customer/requester | D | D | C | A | D | D |
+| list assignment options (groups/members) | D | D | C | A | D | D |
 | add PUBLIC comment | D | own only | C | A | D | explicit scope C |
 | add INTERNAL comment | D | D | C | A | D | scope C |
 | update fields | D | limited later | C | A | D | scope+field C |

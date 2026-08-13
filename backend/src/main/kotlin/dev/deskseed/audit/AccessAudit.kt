@@ -80,6 +80,23 @@ data class SearchResultAuditItem(
     val ordinal: Int,
 )
 
+data class CustomerSearchExecutedAccessAudit(
+    val eventId: UUID,
+    val context: AccessAuditContext,
+    val interactionId: UUID,
+    val protectedQuery: ProtectedSearchQueryAudit,
+    val resultCount: Long,
+    val resultItems: List<CustomerSearchResultAuditItem>,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
+data class CustomerSearchResultAuditItem(
+    val customerId: UUID,
+    val ordinal: Int,
+)
+
 data class SearchResultOpenedAccessAudit(
     val context: AccessAuditContext,
     val ticketId: UUID,
@@ -120,6 +137,8 @@ interface AccessAuditWriter {
     fun appendTicketViewed(event: TicketViewAccessAudit): Boolean
 
     fun appendSearchExecuted(event: SearchExecutedAccessAudit)
+
+    fun appendCustomerSearchExecuted(event: CustomerSearchExecutedAccessAudit)
 
     fun isValidSearchOrigin(
         originSearchEventId: UUID,

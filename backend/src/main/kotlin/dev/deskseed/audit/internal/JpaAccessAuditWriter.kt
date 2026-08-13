@@ -3,6 +3,7 @@ package dev.deskseed.audit.internal
 import dev.deskseed.audit.AccessAuditContext
 import dev.deskseed.audit.AccessAuditOutcome
 import dev.deskseed.audit.AccessAuditWriter
+import dev.deskseed.audit.CustomerSearchExecutedAccessAudit
 import dev.deskseed.audit.SearchExecutedAccessAudit
 import dev.deskseed.audit.SearchResultOpenedAccessAudit
 import dev.deskseed.audit.TicketResourceReadAccessAudit
@@ -172,6 +173,89 @@ internal class JpaAccessAuditWriter(
         )
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun appendCustomerSearchExecuted(event: CustomerSearchExecutedAccessAudit) {
+        validateStaffContext(event.context)
+        require(event.outcome == AccessAuditOutcome.SUCCEEDED) { "Canonical search audit requires success outcome" }
+        require(event.resultCount >= 0) { "Search result count cannot be negative" }
+        require(event.resultItems.size <= 25 && event.resultItems.size <= event.resultCount) {
+            "Search result audit membership must be bounded by the result count"
+        }
+        require(event.resultItems.map { it.customerId }.distinct().size == event.resultItems.size) {
+            "Search result audit membership cannot contain duplicate customers"
+        }
+        require(event.resultItems.map { it.ordinal } == event.resultItems.indices.toList()) {
+            "Search result audit membership ordinals must be contiguous"
+        }
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                source, action, resource_type, resource_id, ticket_number,
+                interaction_id, session_fingerprint, auth_type, request_id, correlation_id,
+                ip_address, user_agent, outcome, http_status
+            ) values (?, ?, ?, ?, ?, ?, 'CUSTOMER_SEARCH_EXECUTED', 'SEARCH', null, null, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            Timestamp.from(event.occurredAt),
+            event.context.actorType.name,
+            event.context.actorId,
+            actorSnapshot(event.context.actorDisplaySnapshot),
+            event.context.source.name,
+            event.interactionId,
+            event.context.sessionFingerprint,
+            event.context.authType.name,
+            event.context.requestId.take(100),
+            event.context.correlationId.take(100),
+            event.context.ipAddress?.take(64),
+            sanitize(event.context.userAgent, 256),
+            event.outcome.name,
+            event.httpStatus,
+        )
+        jdbcTemplate.update(
+            """
+            insert into search_audit_details (
+                access_event_id, query_redacted, query_fingerprint, query_key_version,
+                normalized_filters, sort, result_count
+            ) values (?, ?, ?, ?, ?::jsonb, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            event.protectedQuery.queryRedacted,
+            event.protectedQuery.queryFingerprint,
+            event.protectedQuery.keyVersion,
+            filtersJson(emptyMap()),
+            CUSTOMER_SEARCH_SORT,
+            event.resultCount,
+        )
+        if (event.resultItems.isNotEmpty()) {
+            jdbcTemplate.batchUpdate(
+                """
+                insert into search_audit_customer_result_items (
+                    access_event_id, customer_id, result_ordinal
+                ) values (?, ?, ?)
+                """.trimIndent(),
+                event.resultItems,
+                event.resultItems.size,
+            ) { statement, item ->
+                statement.setObject(1, event.eventId)
+                statement.setObject(2, item.customerId)
+                statement.setInt(3, item.ordinal)
+            }
+        }
+        jdbcTemplate.update(
+            """
+            insert into search_audit_query_ciphertexts (
+                access_event_id, key_version, query_ciphertext, created_at, expires_at
+            ) values (?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            event.protectedQuery.keyVersion,
+            event.protectedQuery.queryCiphertext,
+            Timestamp.from(event.occurredAt),
+            Timestamp.from(event.protectedQuery.expiresAt),
+        )
+    }
+
     @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
     override fun isValidSearchOrigin(
         originSearchEventId: UUID,
@@ -277,5 +361,6 @@ internal class JpaAccessAuditWriter(
 
     private companion object {
         val SESSION_FINGERPRINT = Regex("v1:[A-Za-z0-9_-]{43}")
+        const val CUSTOMER_SEARCH_SORT = "name:asc,id:asc"
     }
 }

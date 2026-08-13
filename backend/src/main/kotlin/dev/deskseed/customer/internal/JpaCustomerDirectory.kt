@@ -2,6 +2,8 @@ package dev.deskseed.customer.internal
 
 import dev.deskseed.customer.CustomerDirectory
 import dev.deskseed.customer.CustomerRef
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -12,6 +14,7 @@ import java.util.UUID
 @Service
 internal class JpaCustomerDirectory(
     private val repository: CustomerRepository,
+    private val jdbcTemplate: NamedParameterJdbcTemplate,
     private val clock: Clock,
 ) : CustomerDirectory {
     @Transactional
@@ -71,6 +74,36 @@ internal class JpaCustomerDirectory(
                 updatedAt = now,
             ),
         ).toRef()
+    }
+
+    @Transactional(readOnly = true)
+    override fun search(query: String, limit: Int): List<CustomerRef> {
+        require(query.isNotBlank()) { "Search query is required" }
+        require(limit in 1..25) { "Search limit must be between 1 and 25" }
+
+        val trimmedQuery = query.trim()
+        val parameters = MapSqlParameterSource()
+            .addValue("queryText", trimmedQuery)
+            .addValue("limit", limit)
+
+        return jdbcTemplate.query(
+            """
+            select id, name, email_normalized, email_display, verified_at
+            from customers
+            where strpos(lower(name), lower(:queryText)) > 0
+               or strpos(lower(email_normalized), lower(:queryText)) > 0
+            order by name asc, id asc
+            limit :limit
+            """.trimIndent(),
+            parameters,
+        ) { resultSet, _ ->
+            CustomerRef(
+                id = resultSet.getObject("id", UUID::class.java),
+                name = resultSet.getString("name"),
+                email = resultSet.getString("email_display"),
+                verifiedAt = resultSet.getTimestamp("verified_at")?.toInstant(),
+            )
+        }
     }
 
     private fun CustomerEntity.toRef() = CustomerRef(
