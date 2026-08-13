@@ -35,6 +35,13 @@ const preview: Preview = {
     msw.use(...mswHandlers)
   },
   parameters: {
+    options: {
+      storySort: {
+        method: 'alphabetical',
+        locales: 'en-US',
+      },
+    },
+
     controls: {
       matchers: {
         color: /(background|color)$/i,
