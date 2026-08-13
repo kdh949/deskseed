@@ -122,7 +122,7 @@ GET /api/v1/analytics/first-reply-sla
 5. problem types.
 6. pagination/idempotency/ETag.
 7. OpenAPI lint.
-8. 한국어 목적·설명과 합성 request/response 예시 검증.
+8. 사람이 검토한 한국어 목적·설명과 실제 흐름을 보여 주는 합성 request/response 예시 검증. 이름·타입 기반 문구 자동 생성은 금지한다.
 9. Scalar rendering과 production 노출 정책 검증.
 10. generated mock/client.
 11. controller contract test와 runtime path/method drift 검사.
@@ -202,5 +202,5 @@ SDK release마다:
 - idempotency/concurrency.
 - rate limit.
 - PII classification.
-- 한국어 목적·설명과 실제 자격 증명 형태가 아닌 합성 예시.
+- 사람이 검토한 한국어 목적·설명과 실제 자격 증명 형태가 아닌 합성 예시. 확인되지 않은 필드에는 일반 문구를 채우지 않으며, 구현 요청 schema는 `MANUAL` 검토 표식을 남긴다.
 - Scalar가 커밋 계약을 렌더링하고 runtime 생성 문서는 검증 용도로만 쓰인다는 경계.

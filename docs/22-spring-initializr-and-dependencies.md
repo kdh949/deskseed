@@ -102,7 +102,7 @@ Actuator health and basic Micrometer metrics come first.
 - production 기본값: 문서 전체 비활성화
 - production 명시적 활성화: ADMIN 세션만 허용하고 Try it/client 버튼 비활성화
 - renderer 입력: `core-api-outline-v1.yaml`, `customer-identity-api-v1.yaml`, `platform-api-outline-v1.yaml`
-- 문서 품질: 작업 목적과 모든 description은 한국어, schema 예시는 실제 자격 증명이나 고객 데이터가 아닌 합성 값
+- 문서 품질: 작업 목적은 한국어로 직접 작성한다. 구현 요청 schema는 사람이 검토한 도메인별 설명과 합성 전체 예시를 유지하며, 검증 도구는 누락·placeholder·자격 증명 노출·이름/타입 기반 boilerplate만 검사한다. 도구가 설명이나 예시를 생성·덮어쓰지 않는다.
 
 Scalar의 기본 원격 문서나 외부 font에 의존하지 않는다. API 문서에 password, token, Authorization header, session cookie, webhook secret 또는 실제 고객 데이터를 입력하지 않는다.
 

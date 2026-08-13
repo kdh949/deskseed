@@ -160,7 +160,7 @@ Backend는 Spring Modulith 기반 모듈러 모놀리스다. HTTP adapter, appli
 
 Scalar는 커밋된 OpenAPI 파일을 그대로 렌더링하며 springdoc이 생성한 `/v3/api-docs/{core,customer-identity,platform}`는 구현 드리프트 검사용이다. 개발 환경에서는 문서와 Try it 기능이 켜지고 인증 값은 저장하지 않는다. production profile은 기본적으로 문서를 끄며, 운영자가 `DESKSEED_API_DOCS_ENABLED=true`를 명시한 경우에도 ADMIN 세션만 읽을 수 있고 Try it/client 기능은 숨긴다.
 
-API 설명·예시를 수정한 뒤에는 `make docs-check`를 실행한다. 이 gate는 한국어 설명, 모든 component schema의 합성 예시, 자격 증명 형태의 예시 금지, 문서 보강 스크립트의 결정적 결과를 검사한다.
+API 설명·예시는 OpenAPI YAML에서 직접 관리한다. 필드의 도메인 의미를 확인하지 못했다면 일반 문구를 만들지 말고 비워 둔 뒤, operation·DTO·도메인 규칙을 확인해 보강한다. `make docs-check`는 구현 요청 schema의 수동 검토 표식과 전체 예시, 한국어 작업 설명, placeholder·자격 증명 노출·자동 boilerplate를 검사할 뿐 문구를 생성하거나 덮어쓰지 않는다.
 
 고객 조회는 생성 응답에서 한 번 반환된 token을 URL이 아닌 header로 보낸다.
 

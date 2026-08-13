@@ -142,6 +142,8 @@ Every implementation PR must list at least one `REQ-*` ID and one verification g
 
 - Core Customer/Agent/Admin/Audit HTTP work must update `api/core-api-outline-v1.yaml` before or with implementation.
 - Platform API work must update `api/platform-api-outline-v1.yaml`.
+- OpenAPI의 목적·필드 설명·예시는 YAML에서 도메인 근거를 확인한 사람이 직접 소유한다. 도구는 누락·placeholder·보안·계약 일관성만 검증하며, 이름이나 타입만으로 설명·예시를 생성하거나 덮어쓰면 안 된다.
+- 필드 의미를 확인할 수 없으면 일반적인 문구를 채우지 말고 설명을 비워 둔 뒤 operation/도메인 결정이 확정될 때 보강한다. 구현 요청 모델은 `x-deskseed-documentation-review: MANUAL`과 실제 흐름을 보여 주는 합성 예시를 함께 갱신한다.
 - A `BLUEPRINT_READY` requirement cannot be coded until its first vertical slice satisfies `docs/39-api-contract-freeze-plan.md`.
 - One Codex task should implement one vertical slice and use a task brief plus `CODEX_TASK_TEMPLATE.md`.
 - Every completion report states what was not implemented and which validations were not run.

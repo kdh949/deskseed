@@ -155,7 +155,6 @@ def check_executable_scripts() -> None:
     for item in (
         "backend/gradlew",
         "scripts/demo-request.sh",
-        "scripts/enrich_openapi_documentation.py",
         "scripts/verify_seed.py",
     ):
         path = ROOT / item

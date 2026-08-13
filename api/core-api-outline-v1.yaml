@@ -96,20 +96,16 @@ paths:
       - name: X-CSRF-TOKEN
         in: header
         required: false
-        description: 'HTTP 헤더로 전달하는 `X-CSRF-TOKEN` 값입니다. 세부 계약: Required only when the optional customer session authenticates
-          the request; obtained from `getCustomerCsrfToken`.'
         schema:
           type: string
           minLength: 16
           maxLength: 256
       x-deskseed-generic-problem: &id006
-        description: '인증되지 않은 요청입니다. 세부 계약: RFC 9457 Problem Details'
         content: &id001
           application/problem+json:
             schema:
               $ref: '#/components/schemas/Problem'
       x-deskseed-no-store-problem: &id002
-        description: '요청 형식이나 입력값이 유효하지 않습니다. 세부 계약: RFC 9457 Problem Details'
         content: *id001
         headers: &id003
           Cache-Control:
@@ -120,7 +116,6 @@ paths:
               - no-store
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Request created'
           headers:
             Cache-Control:
               description: 응답에 한 번만 제공되는 접근 토큰이 포함되므로 항상 `no-store`를 사용합니다.
@@ -149,8 +144,6 @@ paths:
                 createdAt: '2026-08-10T00:00:00Z'
         '400': *id002
         '403':
-          description: '인증된 주체에게 필요한 권한이 없습니다. 세부 계약: Anonymous submission is disabled by access mode, or authenticated customer
-            CSRF validation failed.'
           content: *id001
           headers: *id003
         '409': *id002
@@ -178,20 +171,16 @@ paths:
           type: integer
           format: int64
           minimum: 1
-        description: 경로로 전달하는 `ticketNumber` 값입니다.
       - &id005
         name: X-Request-Access-Token
         in: header
         required: true
-        description: 'HTTP 헤더로 전달하는 `X-Request-Access-Token` 값입니다. 세부 계약: Opaque ticket-scoped token returned only by request
-          creation.'
         schema:
           type: string
           minLength: 32
           maxLength: 256
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Public request detail'
           headers:
             Cache-Control:
               description: 응답에 고객 콘텐츠가 포함되므로 항상 `no-store`를 사용합니다.
@@ -220,7 +209,6 @@ paths:
                   createdAt: '2026-08-10T00:00:00Z'
         '400': *id002
         '404':
-          description: '조회할 수 없거나 노출하면 안 되는 자원입니다. 세부 계약: The ticket/token pair is absent, expired, revoked, or invalid.'
           headers:
             Cache-Control:
               description: 고객 데이터가 포함될 수 있는 capability 보호 응답이므로 항상 `no-store`를 사용합니다.
@@ -264,7 +252,6 @@ paths:
               $ref: '#/components/schemas/AddCustomerComment'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Comment created'
           content:
             application/json:
               schema:
@@ -292,12 +279,10 @@ paths:
         in: query
         schema:
           type: string
-        description: 조회 조건로 전달하는 `status` 값입니다.
       - name: cursor
         in: query
         schema:
           type: string
-        description: 조회 조건로 전달하는 `cursor` 값입니다.
       - name: limit
         in: query
         schema:
@@ -305,10 +290,8 @@ paths:
           minimum: 1
           maximum: 100
           default: 25
-        description: 조회 조건로 전달하는 `limit` 값입니다.
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Request page'
           headers:
             Cache-Control:
               schema:
@@ -334,7 +317,6 @@ paths:
       - REQ-TKT-004
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Effective customer access mode'
           headers:
             Cache-Control:
               schema:
@@ -364,7 +346,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: CSRF token'
           headers:
             Cache-Control:
               schema:
@@ -404,7 +385,6 @@ paths:
               $ref: '#/components/schemas/StaffLogin'
       responses:
         '204':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Session created'
           headers:
             Set-Cookie:
               description: HttpOnly, SameSite=Lax 쿠키이며 운영 환경에서는 Secure를 사용합니다. 유휴 만료는 60분, 절대 만료는 12시간입니다.
@@ -429,8 +409,7 @@ paths:
       - $ref: '#/components/parameters/CsrfHeader'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
-        '204':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Session destroyed'
+        '204': {}
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id006
@@ -453,7 +432,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Current staff'
           content:
             application/json:
               schema:
@@ -481,7 +459,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Views'
           content:
             application/json:
               schema:
@@ -516,11 +493,8 @@ paths:
         required: true
         schema:
           type: string
-        description: 경로로 전달하는 `viewKey` 값입니다.
       - name: cursor
         in: query
-        description: '조회 조건로 전달하는 `cursor` 값입니다. 세부 계약: Opaque, versioned HMAC-signed keyset cursor bound to this view and
-          filters.'
         schema:
           type: string
       - name: limit
@@ -530,10 +504,8 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
-        description: 조회 조건로 전달하는 `limit` 값입니다.
       - name: sort
         in: query
-        description: '조회 조건로 전달하는 `sort` 값입니다. 세부 계약: Fixed stable ordering. Other values are rejected.'
         schema:
           type: string
           enum:
@@ -543,33 +515,26 @@ paths:
         in: query
         schema:
           $ref: '#/components/schemas/AgentTicketStatus'
-        description: 조회 조건로 전달하는 `status` 값입니다.
       - name: priority
         in: query
         schema:
           $ref: '#/components/schemas/TicketPriority'
-        description: 조회 조건로 전달하는 `priority` 값입니다.
       - name: groupId
         in: query
         schema:
           type: string
           format: uuid
-        description: 조회 조건로 전달하는 `groupId` 값입니다.
       - name: assigneeId
         in: query
-        description: '조회 조건로 전달하는 `assigneeId` 값입니다. 세부 계약: UUID, `me`, or `unassigned`.'
         schema:
           type: string
           pattern: ^(me|unassigned|[0-9a-fA-F-]{36})$
       - name: slaState
         in: query
-        description: '조회 조건로 전달하는 `slaState` 값입니다. 세부 계약: Effective First Reply state; overdue ACTIVE rows are returned as
-          BREACHED.'
         schema:
           $ref: '#/components/schemas/FirstReplySlaDisplayState'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Ticket page'
           content:
             application/json:
               schema:
@@ -606,7 +571,6 @@ paths:
               $ref: '#/components/schemas/CreateAgentTicket'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Ticket created'
           headers:
             Location:
               schema:
@@ -648,17 +612,12 @@ paths:
         name: X-Interaction-Id
         in: header
         required: true
-        description: 'HTTP 헤더로 전달하는 `X-Interaction-Id` 값입니다. 세부 계약: Semantic user interaction identifier; background revalidation
-          reuses the same value.'
         schema:
           type: string
           format: uuid
       - name: X-Deskseed-Read-Intent
         in: header
         required: true
-        description: 'HTTP 헤더로 전달하는 `X-Deskseed-Read-Intent` 값입니다. 세부 계약: Every successful detail read records a required
-          resource-read audit. NAVIGATION additionally records one deduplicated semantic view; BACKGROUND never records a
-          semantic view.'
         schema:
           type: string
           enum:
@@ -667,15 +626,11 @@ paths:
       - name: X-Origin-Search-Event-Id
         in: header
         required: false
-        description: 'HTTP 헤더로 전달하는 `X-Origin-Search-Event-Id` 값입니다. 세부 계약: Canonical SEARCH_EXECUTED event selected by a
-          search-result navigation. Accepted only for NAVIGATION reads by the same staff actor; successful use records SEARCH_RESULT_OPENED
-          and links TICKET_VIEWED to the search event.'
         schema:
           type: string
           format: uuid
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Agent ticket detail'
           headers:
             ETag:
               schema:
@@ -729,8 +684,6 @@ paths:
               $ref: '#/components/schemas/UpdateTicketCommand'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Command applied, or the stable original result of an exact clientCommandId
-            replay.'
           headers:
             ETag:
               schema:
@@ -744,8 +697,6 @@ paths:
         '401': *id006
         '403': *id006
         '409':
-          description: '동시성, 상태 또는 멱등성 충돌이 발생했습니다. 세부 계약: Requested fields conflict with a newer version, clientCommandId
-            was reused for a different request, or the browser''s confirmed actor differs from the authenticated session principal.'
           headers:
             Cache-Control:
               schema:
@@ -811,8 +762,6 @@ paths:
         schema:
           type: string
           pattern: ^"?[0-9]+"?$
-        description: 'HTTP 헤더로 전달하는 `If-Match` 값입니다. 세부 계약: Ticket ETag returned by the latest audited staff read. It must
-          identify the same version as `expectedVersion`.'
       requestBody:
         required: true
         content:
@@ -821,7 +770,6 @@ paths:
               $ref: '#/components/schemas/TransferTicketCommand'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Transfer applied'
           headers:
             ETag:
               schema:
@@ -837,7 +785,6 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '412':
-          description: '요청 처리 결과입니다. 세부 계약: The ticket no longer matches the supplied If-Match and expectedVersion.'
           content:
             application/problem+json:
               schema:
@@ -876,7 +823,6 @@ paths:
               $ref: '#/components/schemas/CreateChildTicketCommand'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Child created'
           headers:
             ETag:
               description: 관계 감사가 커밋된 뒤의 부모 티켓 ETag입니다.
@@ -893,7 +839,6 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '412':
-          description: '요청 처리 결과입니다. 세부 계약: The parent no longer matches the supplied If-Match and expectedVersion.'
           content:
             application/problem+json:
               schema:
@@ -922,7 +867,6 @@ paths:
       - *id008
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Bounded staff-only reference context with currently usable links only.'
           headers:
             Cache-Control:
               schema:
@@ -974,7 +918,6 @@ paths:
               $ref: '#/components/schemas/CreateExternalReferenceCommand'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Reference and ticket audit committed atomically.'
           headers:
             Cache-Control:
               schema:
@@ -996,7 +939,6 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '412':
-          description: '요청 처리 결과입니다. 세부 계약: The ticket no longer matches If-Match and expectedVersion.'
           content:
             application/problem+json:
               schema:
@@ -1027,7 +969,6 @@ paths:
       - $ref: '#/components/parameters/ExternalReferenceId'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Local reference removed and audit committed.'
           headers:
             Cache-Control:
               schema:
@@ -1049,7 +990,6 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '412':
-          description: '요청 처리 결과입니다. 세부 계약: The ticket no longer matches If-Match.'
           content:
             application/problem+json:
               schema:
@@ -1072,7 +1012,6 @@ paths:
         in: query
         schema:
           type: string
-        description: 조회 조건로 전달하는 `cursor` 값입니다.
       - name: limit
         in: query
         schema:
@@ -1080,10 +1019,8 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
-        description: 조회 조건로 전달하는 `limit` 값입니다.
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Audit page'
           content:
             application/json:
               schema:
@@ -1121,8 +1058,6 @@ paths:
               $ref: '#/components/schemas/AgentTicketSearchRequest'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Authorized ticket search results returned only after the canonical SEARCH_EXECUTED
-            event commits.'
           headers:
             Cache-Control:
               description: 결과가 보호된 직원용 projection이므로 항상 no-store를 사용합니다.
@@ -1158,7 +1093,6 @@ paths:
       - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Staff list'
           headers:
             X-Page-Number:
               $ref: '#/components/headers/PageNumber'
@@ -1203,7 +1137,6 @@ paths:
               $ref: '#/components/schemas/CreateStaffAccount'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Staff created'
           content:
             application/json:
               schema:
@@ -1233,9 +1166,7 @@ paths:
       - $ref: '#/components/parameters/CsrfHeader'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
-        '204':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Staff disabled and their sessions become unusable on the next protected
-            request'
+        '204': {}
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id006
@@ -1263,8 +1194,7 @@ paths:
       - $ref: '#/components/parameters/CsrfHeader'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
-        '204':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Authority is present and an actual grant is atomically admin-audited'
+        '204': {}
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id006
@@ -1292,8 +1222,7 @@ paths:
       - $ref: '#/components/parameters/CsrfHeader'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
-        '204':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Authority is absent and an actual revocation is atomically admin-audited'
+        '204': {}
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id006
@@ -1322,7 +1251,6 @@ paths:
       - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Group list'
           headers:
             X-Page-Number:
               $ref: '#/components/headers/PageNumber'
@@ -1368,7 +1296,6 @@ paths:
               $ref: '#/components/schemas/CreateGroup'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Group created'
           content:
             application/json:
               schema:
@@ -1405,7 +1332,6 @@ paths:
               $ref: '#/components/schemas/UpdateGroup'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Group updated'
           content:
             application/json:
               schema:
@@ -1435,8 +1361,7 @@ paths:
       - $ref: '#/components/parameters/CsrfHeader'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
-        '204':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Group disabled'
+        '204': {}
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id006
@@ -1465,7 +1390,6 @@ paths:
       - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Active memberships'
           headers:
             X-Page-Number:
               $ref: '#/components/headers/PageNumber'
@@ -1513,7 +1437,6 @@ paths:
               $ref: '#/components/schemas/CreateGroupMembership'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Membership created'
           content:
             application/json:
               schema:
@@ -1545,8 +1468,7 @@ paths:
       - $ref: '#/components/parameters/CsrfHeader'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
-        '204':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Membership removed'
+        '204': {}
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401': *id006
@@ -1573,7 +1495,6 @@ paths:
       - $ref: '#/components/parameters/AdminPageSize'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Bounded client list. Credential hashes and secrets are absent.'
           headers:
             Cache-Control:
               schema:
@@ -1623,7 +1544,6 @@ paths:
               $ref: '#/components/schemas/CreateIntegrationClient'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Client created. The API key is returned by this response only.'
           headers:
             Cache-Control:
               schema:
@@ -1659,7 +1579,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Client detail without any credential verifier or secret.'
           headers:
             Cache-Control:
               schema:
@@ -1696,7 +1615,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Client disabled; all credentials fail authentication.'
           headers:
             Cache-Control:
               schema:
@@ -1734,7 +1652,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Client and credentials permanently revoked.'
           headers:
             Cache-Control:
               schema:
@@ -1778,7 +1695,6 @@ paths:
               $ref: '#/components/schemas/RotateIntegrationCredential'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: New API key returned once; the previous key follows the bounded overlap.'
           headers:
             Cache-Control:
               schema:
@@ -1814,7 +1730,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Bounded registry list without provider secrets or credentials.'
           headers:
             Cache-Control:
               schema:
@@ -1860,7 +1775,6 @@ paths:
               $ref: '#/components/schemas/CreateExternalSystem'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Registry entry and AdminSecurityAudit committed atomically.'
           headers:
             Cache-Control:
               schema:
@@ -1903,7 +1817,6 @@ paths:
               $ref: '#/components/schemas/UpdateExternalSystem'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Registry and AdminSecurityAudit update committed atomically.'
           headers:
             Cache-Control:
               schema:
@@ -1925,7 +1838,6 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '412':
-          description: '요청 처리 결과입니다. 세부 계약: External-system version no longer matches If-Match and expectedVersion.'
           content:
             application/problem+json:
               schema:
@@ -1950,10 +1862,8 @@ paths:
         required: true
         schema:
           type: string
-        description: 경로로 전달하는 `key` 값입니다.
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Setting'
           content:
             application/json:
               schema:
@@ -1979,13 +1889,11 @@ paths:
         required: true
         schema:
           type: string
-        description: 경로로 전달하는 `key` 값입니다.
       - name: If-Match
         in: header
         required: true
         schema:
           type: string
-        description: HTTP 헤더로 전달하는 `If-Match` 값입니다.
       requestBody:
         required: true
         content:
@@ -1994,7 +1902,6 @@ paths:
               $ref: '#/components/schemas/UpdateAdminSetting'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Setting updated'
           content:
             application/json:
               schema:
@@ -2023,13 +1930,11 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       - name: from
         in: query
-        description: '조회 조건로 전달하는 `from` 값입니다. 세부 계약: Inclusive instant at which the audit interval starts.'
         schema:
           type: string
           format: date-time
       - name: to
         in: query
-        description: '조회 조건로 전달하는 `to` 값입니다. 세부 계약: Exclusive instant at which the audit interval ends.'
         schema:
           type: string
           format: date-time
@@ -2037,14 +1942,12 @@ paths:
         in: query
         schema:
           $ref: '#/components/schemas/AuditLedgerType'
-        description: 조회 조건로 전달하는 `ledger` 값입니다.
       - name: action
         in: query
         schema:
           type: string
           minLength: 1
           maxLength: 80
-        description: 조회 조건로 전달하는 `action` 값입니다.
       - name: actorType
         in: query
         schema:
@@ -2056,33 +1959,28 @@ paths:
           - TRIGGER
           - AUTOMATION
           - SYSTEM
-        description: 조회 조건로 전달하는 `actorType` 값입니다.
       - name: actorId
         in: query
         schema:
           type: string
           format: uuid
-        description: 조회 조건로 전달하는 `actorId` 값입니다.
       - name: ticketNumber
         in: query
         schema:
           type: integer
           format: int64
           minimum: 1
-        description: 조회 조건로 전달하는 `ticketNumber` 값입니다.
       - name: groupId
         in: query
         schema:
           type: string
           format: uuid
-        description: 조회 조건로 전달하는 `groupId` 값입니다.
       - name: field
         in: query
         schema:
           type: string
           minLength: 1
           maxLength: 60
-        description: 조회 조건로 전달하는 `field` 값입니다.
       - name: source
         in: query
         schema:
@@ -2095,37 +1993,30 @@ paths:
           - TRIGGER
           - AUTOMATION
           - SYSTEM_JOB
-        description: 조회 조건로 전달하는 `source` 값입니다.
       - name: outcome
         in: query
         schema:
           $ref: '#/components/schemas/AuditOutcome'
-        description: 조회 조건로 전달하는 `outcome` 값입니다.
       - name: requestId
         in: query
         schema:
           type: string
           minLength: 1
           maxLength: 100
-        description: 조회 조건로 전달하는 `requestId` 값입니다.
       - name: correlationId
         in: query
         schema:
           type: string
           minLength: 1
           maxLength: 100
-        description: 조회 조건로 전달하는 `correlationId` 값입니다.
       - name: searchFingerprint
         in: query
         schema:
           type: string
           minLength: 1
           maxLength: 100
-        description: 조회 조건로 전달하는 `searchFingerprint` 값입니다.
       - name: cursor
         in: query
-        description: '조회 조건로 전달하는 `cursor` 값입니다. 세부 계약: HMAC-signed keyset cursor bound to normalized filters and the first-page
-          snapshot.'
         schema:
           type: string
       - name: limit
@@ -2135,11 +2026,9 @@ paths:
           minimum: 1
           maximum: 100
           default: 50
-        description: 조회 조건로 전달하는 `limit` 값입니다.
       - $ref: '#/components/parameters/AuditInteractionHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Audit activity page'
           headers:
             Cache-Control:
               schema:
@@ -2178,8 +2067,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Allowlisted canonical detail. Comment bodies and raw search queries are
-            absent.'
           headers:
             Cache-Control:
               schema:
@@ -2225,7 +2112,6 @@ paths:
               $ref: '#/components/schemas/SearchQueryRevealRequest'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: One-event reveal or a structured retention/key-unavailable state.'
           headers:
             Cache-Control:
               schema:
@@ -2274,7 +2160,6 @@ paths:
               $ref: '#/components/schemas/CreateAuditExport'
       responses:
         '202':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Export accepted'
           content:
             application/json:
               schema:
@@ -2307,11 +2192,9 @@ paths:
         schema:
           type: string
           format: uuid
-        description: 경로로 전달하는 `jobId` 값입니다.
       - $ref: '#/components/parameters/AuditInteractionHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Requester-bound job and placeholder artifact state.'
           headers:
             Cache-Control:
               schema:
@@ -2350,7 +2233,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Rebuild counts and projection health.'
           content:
             application/json:
               schema:
@@ -2377,7 +2259,6 @@ paths:
       - customerSession: []
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Current customer'
           content:
             application/json:
               schema:
@@ -2385,7 +2266,6 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401':
-          description: '인증되지 않은 요청입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
@@ -2401,7 +2281,6 @@ paths:
         type: integer
         format: int64
         minimum: 1
-      description: 경로로 전달하는 `ticketNumber` 값입니다.
     get:
       summary: 인증 고객의 문의 상세 조회
       operationId: getCustomerRequest
@@ -2415,7 +2294,6 @@ paths:
       security: *id009
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Customer request detail'
           headers:
             Cache-Control:
               schema:
@@ -2427,13 +2305,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerRequestDetail'
         '401':
-          description: '인증되지 않은 요청입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '404':
-          description: '조회할 수 없거나 노출하면 안 되는 자원입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
@@ -2464,7 +2340,6 @@ paths:
               $ref: '#/components/schemas/AddAuthenticatedCustomerComment'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Public comment created, or the stable result of an exact replay'
           headers:
             Cache-Control:
               schema:
@@ -2478,19 +2353,16 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401':
-          description: '인증되지 않은 요청입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '404':
-          description: '조회할 수 없거나 노출하면 안 되는 자원입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409':
-          description: '동시성, 상태 또는 멱등성 충돌이 발생했습니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
@@ -2512,7 +2384,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Customer access mode setting'
           content:
             application/json:
               schema:
@@ -2547,7 +2418,6 @@ paths:
               $ref: '#/components/schemas/UpdateCustomerAccessMode'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Customer access mode updated and audited atomically'
           content:
             application/json:
               schema:
@@ -2575,7 +2445,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Schedules'
           content:
             application/json:
               schema:
@@ -2610,7 +2479,6 @@ paths:
               $ref: '#/components/schemas/BusinessScheduleInput'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Schedule created'
           headers:
             ETag:
               schema:
@@ -2649,7 +2517,6 @@ paths:
               $ref: '#/components/schemas/BusinessTimePreviewRequest'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Deterministic preview result'
           content:
             application/json:
               schema:
@@ -2670,7 +2537,6 @@ paths:
       schema:
         type: string
         format: uuid
-      description: 경로로 전달하는 `scheduleId` 값입니다.
     get:
       summary: 영업 시간표 최신 버전 조회
       operationId: getBusinessSchedule
@@ -2685,7 +2551,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Latest schedule version'
           headers:
             ETag:
               schema:
@@ -2720,7 +2585,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Schedule version history'
           content:
             application/json:
               schema:
@@ -2752,7 +2616,6 @@ paths:
         name: If-Match
         in: header
         required: true
-        description: 'HTTP 헤더로 전달하는 `If-Match` 값입니다. 세부 계약: Quoted schedule aggregate version returned as ETag.'
         schema:
           type: string
           pattern: ^"[0-9]+"$
@@ -2764,7 +2627,6 @@ paths:
               $ref: '#/components/schemas/BusinessScheduleInput'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: New immutable version'
           headers:
             ETag:
               schema:
@@ -2792,7 +2654,6 @@ paths:
       schema:
         type: integer
         minimum: 1
-      description: 경로로 전달하는 `version` 값입니다.
     put:
       summary: 영업 시간표 버전 활성화
       operationId: activateBusinessScheduleVersion
@@ -2809,7 +2670,6 @@ paths:
       - *id013
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Activated schedule version'
           headers:
             ETag:
               schema:
@@ -2844,7 +2704,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Policies'
           content:
             application/json:
               schema:
@@ -2854,13 +2713,11 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401':
-          description: '인증되지 않은 요청입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: '인증된 주체에게 필요한 권한이 없습니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
@@ -2890,7 +2747,6 @@ paths:
               $ref: '#/components/schemas/FirstReplySlaPolicyInput'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Policy created'
           headers:
             ETag:
               schema:
@@ -2903,13 +2759,11 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401':
-          description: '인증되지 않은 요청입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: '인증된 주체에게 필요한 권한이 없습니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
@@ -2940,7 +2794,6 @@ paths:
               $ref: '#/components/schemas/FirstReplySlaPreviewRequest'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Side-effect-free deterministic policy preview'
           content:
             application/json:
               schema:
@@ -2961,7 +2814,6 @@ paths:
       schema:
         type: string
         format: uuid
-      description: 경로로 전달하는 `policyId` 값입니다.
     get:
       summary: 최초 답변 SLA 정책 최신 버전 조회
       operationId: getSlaPolicy
@@ -2977,7 +2829,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Latest policy version'
           headers:
             ETag:
               schema:
@@ -2990,19 +2841,16 @@ paths:
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '401':
-          description: '인증되지 않은 요청입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '403':
-          description: '인증된 주체에게 필요한 권한이 없습니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '404':
-          description: '조회할 수 없거나 노출하면 안 되는 자원입니다. 세부 계약: RFC 9457 Problem Details'
           content:
             application/problem+json:
               schema:
@@ -3028,7 +2876,6 @@ paths:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Policy version history'
           content:
             application/json:
               schema:
@@ -3060,7 +2907,6 @@ paths:
       - name: If-Match
         in: header
         required: true
-        description: 'HTTP 헤더로 전달하는 `If-Match` 값입니다. 세부 계약: Quoted policy aggregate version returned as ETag.'
         schema:
           type: string
           pattern: ^"[0-9]+"$
@@ -3072,7 +2918,6 @@ paths:
               $ref: '#/components/schemas/FirstReplySlaPolicyInput'
       responses:
         '201':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: New immutable policy version'
           headers:
             ETag:
               schema:
@@ -3100,7 +2945,6 @@ paths:
       schema:
         type: integer
         minimum: 1
-      description: 경로로 전달하는 `version` 값입니다.
     put:
       summary: 최초 답변 SLA 정책 버전 활성화
       operationId: activateSlaPolicyVersion
@@ -3118,13 +2962,11 @@ paths:
       - name: If-Match
         in: header
         required: true
-        description: 'HTTP 헤더로 전달하는 `If-Match` 값입니다. 세부 계약: Quoted policy aggregate version returned as ETag.'
         schema:
           type: string
           pattern: ^"[0-9]+"$
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Activated policy version'
           headers:
             ETag:
               schema:
@@ -3161,15 +3003,12 @@ paths:
         schema:
           type: string
           format: uuid
-        description: 조회 조건로 전달하는 `policyId` 값입니다.
       - name: priority
         in: query
         schema:
           $ref: '#/components/schemas/TicketPriority'
-        description: 조회 조건로 전달하는 `priority` 값입니다.
       responses:
         '200':
-          description: '요청이 정상적으로 처리되었습니다. 세부 계약: Reconciled First Reply SLA counts and metric definition'
           content:
             application/json:
               schema:
@@ -3407,65 +3246,31 @@ components:
         type:
           type: string
           format: uri-reference
-          description: type 값입니다.
-          example: https://orders.example.com/orders/ORD-2026-1042
         title:
           type: string
-          description: title 값입니다.
-          example: 결제가 중복으로 처리됐어요
         status:
           type: integer
-          description: status의 허용된 열거 값입니다.
-          example: 1
         detail:
           type: string
-          description: detail에 사용하는 입력 또는 표시 문자열입니다.
-          example: 예시 값
         instance:
           type: string
           format: uri-reference
-          description: instance 값입니다.
-          example: https://orders.example.com/orders/ORD-2026-1042
         requestId:
           type: string
-          description: requestId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         code:
           type: string
-          description: code 값입니다.
-          example: 예시 값
         fieldErrors:
           type: array
           items:
             $ref: '#/components/schemas/FieldError'
-          description: fieldErrors 값입니다.
         currentVersion:
           type: integer
           format: int64
-          description: currentVersion 값입니다.
-          example: 1
         conflictingFields:
           type: array
           items:
             type: string
-          description: conflictingFields 값입니다.
       additionalProperties: true
-      description: Problem 요청 또는 응답 모델입니다.
-      example:
-        type: https://orders.example.com/orders/ORD-2026-1042
-        title: 결제가 중복으로 처리됐어요
-        status: 1
-        detail: 예시 값
-        instance: https://orders.example.com/orders/ORD-2026-1042
-        requestId: 11111111-1111-4111-8111-111111111111
-        code: 예시 값
-        fieldErrors:
-        - field: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          code: 예시 값
-        currentVersion: 1
-        conflictingFields:
-        - 예시 값
     InvalidExpectedStaffActorProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -3484,22 +3289,6 @@ components:
           status:
             type: integer
             const: 400
-      description: InvalidExpectedStaffActorProblem 요청 또는 응답 모델입니다.
-      example:
-        type: https://orders.example.com/orders/ORD-2026-1042
-        title: 결제가 중복으로 처리됐어요
-        status: 1
-        detail: 예시 값
-        instance: https://orders.example.com/orders/ORD-2026-1042
-        requestId: 11111111-1111-4111-8111-111111111111
-        code: 예시 값
-        fieldErrors:
-        - field: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          code: 예시 값
-        currentVersion: 1
-        conflictingFields:
-        - 예시 값
     StaffSessionActorMismatchProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -3518,22 +3307,6 @@ components:
           status:
             type: integer
             const: 409
-      description: StaffSessionActorMismatchProblem 요청 또는 응답 모델입니다.
-      example:
-        type: https://orders.example.com/orders/ORD-2026-1042
-        title: 결제가 중복으로 처리됐어요
-        status: 1
-        detail: 예시 값
-        instance: https://orders.example.com/orders/ORD-2026-1042
-        requestId: 11111111-1111-4111-8111-111111111111
-        code: 예시 값
-        fieldErrors:
-        - field: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          code: 예시 값
-        currentVersion: 1
-        conflictingFields:
-        - 예시 값
     TicketFieldConflictProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -3562,22 +3335,6 @@ components:
               - priority
               - groupId
               - assigneeId
-      description: TicketFieldConflictProblem 요청 또는 응답 모델입니다.
-      example:
-        type: https://orders.example.com/orders/ORD-2026-1042
-        title: 결제가 중복으로 처리됐어요
-        status: 1
-        detail: 예시 값
-        instance: https://orders.example.com/orders/ORD-2026-1042
-        requestId: 11111111-1111-4111-8111-111111111111
-        code: 예시 값
-        fieldErrors:
-        - field: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          code: 예시 값
-        currentVersion: 1
-        conflictingFields:
-        - 예시 값
     ClientCommandIdReusedProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -3589,22 +3346,6 @@ components:
           status:
             type: integer
             const: 409
-      description: ClientCommandIdReusedProblem 요청 또는 응답 모델입니다.
-      example:
-        type: https://orders.example.com/orders/ORD-2026-1042
-        title: 결제가 중복으로 처리됐어요
-        status: 1
-        detail: 예시 값
-        instance: https://orders.example.com/orders/ORD-2026-1042
-        requestId: 11111111-1111-4111-8111-111111111111
-        code: 예시 값
-        fieldErrors:
-        - field: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          code: 예시 값
-        currentVersion: 1
-        conflictingFields:
-        - 예시 값
     TicketVersionPreconditionProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -3621,22 +3362,6 @@ components:
           currentVersion:
             type: integer
             format: int64
-      description: TicketVersionPreconditionProblem 요청 또는 응답 모델입니다.
-      example:
-        type: https://orders.example.com/orders/ORD-2026-1042
-        title: 결제가 중복으로 처리됐어요
-        status: 1
-        detail: 예시 값
-        instance: https://orders.example.com/orders/ORD-2026-1042
-        requestId: 11111111-1111-4111-8111-111111111111
-        code: 예시 값
-        fieldErrors:
-        - field: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          code: 예시 값
-        currentVersion: 1
-        conflictingFields:
-        - 예시 값
     FieldError:
       type: object
       required:
@@ -3645,21 +3370,10 @@ components:
       properties:
         field:
           type: string
-          description: field 값입니다.
-          example: 예시 값
         message:
           type: string
-          description: message에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
         code:
           type: string
-          description: code 값입니다.
-          example: 예시 값
-      description: FieldError 요청 또는 응답 모델입니다.
-      example:
-        field: 예시 값
-        message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-        code: 예시 값
     CreateAnonymousRequest:
       type: object
       additionalProperties: false
@@ -3674,35 +3388,28 @@ components:
           minLength: 1
           maxLength: 100
           description: 익명 문의자의 이름입니다. 유효한 고객 세션이 요청자 신원을 제공하면 이 값은 사용하지 않습니다.
-          example: 김고객
         email:
           type: string
           format: email
           maxLength: 254
           description: 익명 문의자의 이메일입니다. 유효한 고객 세션이 요청자 신원을 제공하면 이 값은 사용하지 않습니다.
-          example: customer@example.com
         subject:
           type: string
           minLength: 1
           maxLength: 200
-          description: subject에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제가 중복으로 처리됐어요
         message:
           type: string
           minLength: 1
           maxLength: 20000
-          description: message에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
         privacyConsent:
           type: boolean
-          description: privacyConsent 값입니다.
-          example: true
-      description: CreateAnonymousRequest 요청 또는 응답 모델입니다.
+      description: 로그인하지 않은 고객이 새 문의를 접수할 때 사용하는 본문입니다. message는 Ticket.description이 아니라 첫 번째 PUBLIC comment로 저장됩니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        name: 김고객
-        email: customer@example.com
-        subject: 결제가 중복으로 처리됐어요
-        message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
+        name: 김민아
+        email: mina.kim@example.test
+        subject: 주문 ORD-2026-1042의 중복 결제 확인 요청
+        message: 같은 주문에 결제가 두 번 승인되었습니다. 결제 내역 확인 부탁드립니다.
         privacyConsent: true
     CreateAnonymousRequestResult:
       type: object
@@ -3717,25 +3424,14 @@ components:
           type: integer
           format: int64
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         status:
           $ref: '#/components/schemas/TicketStatus'
-          description: status의 허용된 열거 값입니다.
         accessToken:
           type: string
           description: 익명·인증 모드 모두 생성 시에만 반환하는 티켓 범위 조회·연결 복구 토큰입니다. 서버는 digest만 저장하고 소유권이 명시적으로 연결되면 활성 토큰을 폐기합니다.
-          example: example-token-not-valid-0000000000000000
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: CreateAnonymousRequestResult 요청 또는 응답 모델입니다.
-      example:
-        ticketNumber: 1042
-        status: NEW
-        accessToken: example-token-not-valid-0000000000000000
-        createdAt: '2026-08-10T09:00:00Z'
     AddCustomerComment:
       type: object
       required:
@@ -3745,11 +3441,6 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
-          description: body에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-      description: AddCustomerComment 요청 또는 응답 모델입니다.
-      example:
-        body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
     AddAuthenticatedCustomerComment:
       type: object
       additionalProperties: false
@@ -3761,19 +3452,16 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
-          description: body에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
         clientCommandId:
           type: string
           minLength: 1
           maxLength: 100
           pattern: ^[A-Za-z0-9._:-]+$
-          description: 전송 재시도 사이에도 유지하는 안정적인 고객 명령 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: AddAuthenticatedCustomerComment 요청 또는 응답 모델입니다.
+      description: 인증된 고객이 자신에게 공개된 문의에 PUBLIC 댓글을 남길 때 사용하는 명령입니다. clientCommandId는 전송 재시도에도 같은 값을 유지해 중복 댓글 생성을 막습니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-        clientCommandId: 11111111-1111-4111-8111-111111111111
+        body: 결제 카드 승인 내역을 첨부했습니다. 확인 부탁드립니다.
+        clientCommandId: 77777777-7777-4777-8777-777777777777
     PublicComment:
       type: object
       additionalProperties: false
@@ -3786,37 +3474,17 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         authorDisplayName:
           type: string
-          description: authorDisplayName 값입니다.
-          example: 김고객
         body:
           type: string
-          description: body에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         attachments:
           type: array
           items:
             $ref: '#/components/schemas/PublicAttachment'
-          description: attachments 값입니다.
-      description: PublicComment 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        authorDisplayName: 김고객
-        body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-        createdAt: '2026-08-10T09:00:00Z'
-        attachments:
-        - id: 11111111-1111-4111-8111-111111111111
-          fileName: 예시 값
-          sizeBytes: 1
-          downloadUrl: https://orders.example.com/orders/ORD-2026-1042
     PublicAttachment:
       type: object
       required:
@@ -3827,28 +3495,14 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         fileName:
           type: string
-          description: fileName 값입니다.
-          example: 예시 값
         sizeBytes:
           type: integer
           format: int64
-          description: sizeBytes 값입니다.
-          example: 1
         downloadUrl:
           type: string
           format: uri
-          description: downloadUrl 값입니다.
-          example: https://orders.example.com/orders/ORD-2026-1042
-      description: PublicAttachment 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        fileName: 예시 값
-        sizeBytes: 1
-        downloadUrl: https://orders.example.com/orders/ORD-2026-1042
     CustomerRequestDetail:
       type: object
       additionalProperties: false
@@ -3864,46 +3518,20 @@ components:
           type: integer
           format: int64
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         subject:
           type: string
-          description: subject에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제가 중복으로 처리됐어요
         status:
           $ref: '#/components/schemas/TicketStatus'
-          description: status의 허용된 열거 값입니다.
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         updatedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         comments:
           type: array
           items:
             $ref: '#/components/schemas/PublicComment'
-          description: comments 값입니다.
-      description: CustomerRequestDetail 요청 또는 응답 모델입니다.
-      example:
-        ticketNumber: 1042
-        subject: 결제가 중복으로 처리됐어요
-        status: NEW
-        createdAt: '2026-08-10T09:00:00Z'
-        updatedAt: '2026-08-10T09:00:00Z'
-        comments:
-        - id: 11111111-1111-4111-8111-111111111111
-          authorDisplayName: 김고객
-          body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          createdAt: '2026-08-10T09:00:00Z'
-          attachments:
-          - id: 11111111-1111-4111-8111-111111111111
-            fileName: 예시 값
-            sizeBytes: 1
-            downloadUrl: https://orders.example.com/orders/ORD-2026-1042
     CustomerRequestPage:
       type: object
       additionalProperties: false
@@ -3914,22 +3542,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CustomerRequestSummary'
-          description: items 값입니다.
         nextCursor:
           type:
           - string
           - 'null'
-          description: 서버가 발급한 불투명 페이지 커서입니다. 값을 해석하거나 변경하지 않습니다.
-          example: opaque-cursor-example
-      description: CustomerRequestPage 요청 또는 응답 모델입니다.
-      example:
-        items:
-        - ticketNumber: 1042
-          subject: 결제가 중복으로 처리됐어요
-          status: NEW
-          createdAt: '2026-08-10T09:00:00Z'
-          updatedAt: '2026-08-10T09:00:00Z'
-        nextCursor: opaque-cursor-example
     CustomerRequestSummary:
       type: object
       additionalProperties: false
@@ -3944,39 +3560,22 @@ components:
           type: integer
           format: int64
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         subject:
           type: string
-          description: subject에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제가 중복으로 처리됐어요
         status:
           $ref: '#/components/schemas/TicketStatus'
-          description: status의 허용된 열거 값입니다.
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         updatedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: CustomerRequestSummary 요청 또는 응답 모델입니다.
-      example:
-        ticketNumber: 1042
-        subject: 결제가 중복으로 처리됐어요
-        status: NEW
-        createdAt: '2026-08-10T09:00:00Z'
-        updatedAt: '2026-08-10T09:00:00Z'
     CustomerAccessMode:
       type: string
       enum:
       - ANONYMOUS_ALLOWED
       - REGISTRATION_OPTIONAL
       - REGISTRATION_REQUIRED
-      description: CustomerAccessMode 요청 또는 응답 모델입니다.
-      example: ANONYMOUS_ALLOWED
     CustomerAccessModeResponse:
       type: object
       additionalProperties: false
@@ -3985,10 +3584,6 @@ components:
       properties:
         mode:
           $ref: '#/components/schemas/CustomerAccessMode'
-          description: mode 값입니다.
-      description: CustomerAccessModeResponse 요청 또는 응답 모델입니다.
-      example:
-        mode: ANONYMOUS_ALLOWED
     CustomerAccessModeSetting:
       type: object
       additionalProperties: false
@@ -3999,23 +3594,13 @@ components:
       properties:
         mode:
           $ref: '#/components/schemas/CustomerAccessMode'
-          description: mode 값입니다.
         version:
           type: integer
           format: int64
           minimum: 0
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         updatedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: CustomerAccessModeSetting 요청 또는 응답 모델입니다.
-      example:
-        mode: ANONYMOUS_ALLOWED
-        version: 1
-        updatedAt: '2026-08-10T09:00:00Z'
     UpdateCustomerAccessMode:
       type: object
       additionalProperties: false
@@ -4025,17 +3610,15 @@ components:
       properties:
         mode:
           $ref: '#/components/schemas/CustomerAccessMode'
-          description: mode 값입니다.
         expectedVersion:
           type: integer
           format: int64
           minimum: 0
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
-      description: UpdateCustomerAccessMode 요청 또는 응답 모델입니다.
+      description: 고객 문의 접근 정책을 변경할 때 사용하는 요청입니다. expectedVersion은 현재 설정의 버전과 일치해야 하며, 정책 변경은 관리자 보안 감사와 함께 처리됩니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        mode: ANONYMOUS_ALLOWED
-        expectedVersion: 1
+        mode: REGISTRATION_OPTIONAL
+        expectedVersion: 3
     StaffLogin:
       type: object
       additionalProperties: false
@@ -4047,19 +3630,16 @@ components:
           type: string
           format: email
           maxLength: 254
-          description: email 값입니다.
-          example: customer@example.com
         password:
           type: string
           format: password
           minLength: 1
           maxLength: 128
           writeOnly: true
-          description: 민감한 인증 값입니다. 예시는 사용할 수 없는 합성 값이며 로그나 감사 기록에 저장하면 안 됩니다.
-          example: not-a-real-password
-      description: StaffLogin 요청 또는 응답 모델입니다.
+      description: 직원이 이메일과 password로 브라우저 세션을 시작할 때 사용하는 요청입니다. password는 인증에만 사용하며 문서·로그·감사 기록에 원문을 남기지 않습니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        email: customer@example.com
+        email: agent.park@example.test
         password: not-a-real-password
     CsrfToken:
       type: object
@@ -4072,16 +3652,10 @@ components:
           type: string
           minLength: 16
           maxLength: 256
-          description: 민감한 인증 값입니다. 예시는 사용할 수 없는 합성 값이며 로그나 감사 기록에 저장하면 안 됩니다.
-          example: example-token-not-valid-0000000000000000
         headerName:
           type: string
           enum:
           - X-CSRF-TOKEN
-          description: headerName 값입니다.
-          example: X-CSRF-TOKEN
-      description: CsrfToken 요청 또는 응답 모델입니다.
-      example: example-token-not-valid-0000000000000000
     CurrentStaff:
       type: object
       additionalProperties: false
@@ -4095,33 +3669,17 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         email:
           type: string
           format: email
-          description: email 값입니다.
-          example: customer@example.com
         displayName:
           type: string
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         role:
           $ref: '#/components/schemas/StaffRole'
-          description: role의 허용된 열거 값입니다.
         capabilities:
           type: array
           items:
             type: string
-          description: capabilities 값입니다.
-      description: CurrentStaff 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        email: customer@example.com
-        displayName: 김고객
-        role: ADMIN
-        capabilities:
-        - 예시 값
     SavedView:
       type: object
       additionalProperties: false
@@ -4133,45 +3691,26 @@ components:
       properties:
         key:
           type: string
-          description: key 값입니다.
-          example: example-secret-not-valid
         name:
           type: string
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         scope:
           type: string
           enum:
           - PERSONAL
           - SHARED
           - SYSTEM
-          description: scope 값입니다.
-          example: PERSONAL
         categoryPath:
           type: array
           items:
             type: string
-          description: categoryPath 값입니다.
         ticketCount:
           type:
           - integer
           - 'null'
-          description: ticketCount 값입니다.
-          example: 1
         readScope:
           type: string
           enum:
           - ALL_TICKETS
-          description: readScope 값입니다.
-          example: ALL_TICKETS
-      description: SavedView 요청 또는 응답 모델입니다.
-      example:
-        key: example-secret-not-valid
-        name: 김고객
-        scope: PERSONAL
-        categoryPath:
-        - 예시 값
-        readScope: ALL_TICKETS
     TicketStatus:
       type: string
       description: 고객에게 공개할 수 있는 티켓 상태 projection입니다.
@@ -4180,7 +3719,6 @@ components:
       - OPEN
       - PENDING
       - SOLVED
-      example: NEW
     AgentTicketStatus:
       type: string
       description: 직원용 티켓 조회와 명령에서 사용하는 정규 상태 projection입니다.
@@ -4191,7 +3729,6 @@ components:
       - ON_HOLD
       - SOLVED
       - CLOSED
-      example: NEW
     TicketPriority:
       type: string
       enum:
@@ -4199,15 +3736,11 @@ components:
       - NORMAL
       - HIGH
       - URGENT
-      description: TicketPriority 요청 또는 응답 모델입니다.
-      example: LOW
     TicketVisibility:
       type: string
       enum:
       - PUBLIC
       - INTERNAL
-      description: TicketVisibility 요청 또는 응답 모델입니다.
-      example: PUBLIC
     ActorSummary:
       type: object
       required:
@@ -4219,8 +3752,6 @@ components:
           - string
           - 'null'
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         type:
           type: string
           enum:
@@ -4230,17 +3761,8 @@ components:
           - TRIGGER
           - AUTOMATION
           - SYSTEM
-          description: type 값입니다.
-          example: CUSTOMER
         displayName:
           type: string
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
-      description: ActorSummary 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        type: CUSTOMER
-        displayName: 김고객
     TicketSummary:
       type: object
       required:
@@ -4256,71 +3778,30 @@ components:
           type: integer
           format: int64
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         subject:
           type: string
-          description: subject에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제가 중복으로 처리됐어요
         status:
           $ref: '#/components/schemas/AgentTicketStatus'
-          description: status의 허용된 열거 값입니다.
         priority:
           $ref: '#/components/schemas/TicketPriority'
-          description: priority의 허용된 열거 값입니다.
         requester:
           $ref: '#/components/schemas/ActorSummary'
-          description: requester 값입니다.
         group:
           $ref: '#/components/schemas/GroupRef'
-          description: group 값입니다.
         assignee:
           $ref: '#/components/schemas/StaffRef'
-          description: assignee 값입니다.
         updatedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         version:
           type: integer
           format: int64
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         isChild:
           type: boolean
-          description: isChild 값입니다.
-          example: true
         openChildCount:
           type: integer
-          description: openChildCount 값입니다.
-          example: 1
         sla:
           $ref: '#/components/schemas/SlaBadge'
-          description: sla 값입니다.
-      description: TicketSummary 요청 또는 응답 모델입니다.
-      example:
-        ticketNumber: 1042
-        subject: 결제가 중복으로 처리됐어요
-        status: NEW
-        priority: LOW
-        requester:
-          id: 11111111-1111-4111-8111-111111111111
-          type: CUSTOMER
-          displayName: 김고객
-        group:
-          id: 11111111-1111-4111-8111-111111111111
-          name: 김고객
-        assignee:
-          id: 11111111-1111-4111-8111-111111111111
-          displayName: 김고객
-        updatedAt: '2026-08-10T09:00:00Z'
-        version: 1
-        isChild: true
-        openChildCount: 1
-        sla:
-          metric: FIRST_REPLY
-          state: ACTIVE
-          dueAt: '2026-08-10T09:00:00Z'
     TicketSummaryPage:
       type: object
       additionalProperties: false
@@ -4332,52 +3813,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TicketSummary'
-          description: items 값입니다.
         nextCursor:
           type:
           - string
           - 'null'
-          description: 서버가 발급한 불투명 페이지 커서입니다. 값을 해석하거나 변경하지 않습니다.
-          example: opaque-cursor-example
         totalApproximate:
           type:
           - integer
           - 'null'
           format: int64
-          description: totalApproximate 값입니다.
-          example: 1
         sort:
           type: string
           const: updatedAt:desc,ticketNumber:desc
-          description: sort 값입니다.
-          example: updatedAt:desc,ticketNumber:desc
-      description: TicketSummaryPage 요청 또는 응답 모델입니다.
-      example:
-        items:
-        - ticketNumber: 1042
-          subject: 결제가 중복으로 처리됐어요
-          status: NEW
-          priority: LOW
-          requester:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          group:
-            id: 11111111-1111-4111-8111-111111111111
-            name: 김고객
-          assignee:
-            id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-          isChild: true
-          openChildCount: 1
-          sla:
-            metric: FIRST_REPLY
-            state: ACTIVE
-            dueAt: '2026-08-10T09:00:00Z'
-        nextCursor: opaque-cursor-example
-        sort: updatedAt:desc,ticketNumber:desc
     StaffRef:
       type:
       - object
@@ -4386,16 +3833,8 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         displayName:
           type: string
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
-      description: StaffRef 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        displayName: 김고객
     GroupRef:
       type:
       - object
@@ -4404,16 +3843,8 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         name:
           type: string
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
-      description: GroupRef 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        name: 김고객
     SlaBadge:
       type:
       - object
@@ -4430,44 +3861,28 @@ components:
         metric:
           type: string
           const: FIRST_REPLY
-          description: metric 값입니다.
-          example: FIRST_REPLY
         state:
           $ref: '#/components/schemas/FirstReplySlaDisplayState'
-          description: state 값입니다.
         dueAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         targetMinutes:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: targetMinutes 값입니다.
-          example: 1
         policyVersion:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: policyVersion 값입니다.
-          example: 1
         scheduleVersion:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: scheduleVersion 값입니다.
-          example: 1
-      description: SlaBadge 요청 또는 응답 모델입니다.
-      example:
-        metric: FIRST_REPLY
-        state: ACTIVE
-        dueAt: '2026-08-10T09:00:00Z'
     FirstReplySlaDisplayState:
       type: string
       enum:
@@ -4478,8 +3893,6 @@ components:
       - BREACHED
       - CANCELLED
       - NO_POLICY
-      description: FirstReplySlaDisplayState 요청 또는 응답 모델입니다.
-      example: ACTIVE
     AgentComment:
       type: object
       required:
@@ -4493,53 +3906,23 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         visibility:
           $ref: '#/components/schemas/TicketVisibility'
-          description: visibility의 허용된 열거 값입니다.
         actor:
           $ref: '#/components/schemas/ActorSummary'
-          description: actor 값입니다.
         body:
           type: string
-          description: body에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         source:
           type: string
-          description: source의 허용된 열거 값입니다.
-          example: 예시 값
         redactionState:
           type: string
-          description: redactionState 값입니다.
-          example: 예시 값
         attachments:
           type: array
           items:
             $ref: '#/components/schemas/PublicAttachment'
-          description: attachments 값입니다.
-      description: AgentComment 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        visibility: PUBLIC
-        actor:
-          id: 11111111-1111-4111-8111-111111111111
-          type: CUSTOMER
-          displayName: 김고객
-        body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-        createdAt: '2026-08-10T09:00:00Z'
-        source: 예시 값
-        redactionState: 예시 값
-        attachments:
-        - id: 11111111-1111-4111-8111-111111111111
-          fileName: 예시 값
-          sizeBytes: 1
-          downloadUrl: https://orders.example.com/orders/ORD-2026-1042
     AgentTicketDetail:
       type: object
       additionalProperties: false
@@ -4554,12 +3937,10 @@ components:
       properties:
         ticket:
           $ref: '#/components/schemas/TicketSummary'
-          description: ticket 값입니다.
         comments:
           type: array
           items:
             $ref: '#/components/schemas/AgentComment'
-          description: comments 값입니다.
         capabilities:
           type: array
           items:
@@ -4567,136 +3948,16 @@ components:
           description: 직원 상세 조회가 성공하면 READ가 항상 포함되고, 현재 actor가 티켓을 변경할 수 있을 때만 UPDATE가 포함됩니다.
         assignmentOptions:
           $ref: '#/components/schemas/TicketAssignmentOptions'
-          description: assignmentOptions 값입니다.
         context:
           $ref: '#/components/schemas/TicketContext'
-          description: context 값입니다.
         history:
           type: array
           items:
             $ref: '#/components/schemas/TicketHistoryItem'
-          description: history 값입니다.
         warnings:
           type: array
           items:
             $ref: '#/components/schemas/CommandWarning'
-          description: warnings 값입니다.
-      description: AgentTicketDetail 요청 또는 응답 모델입니다.
-      example:
-        ticket:
-          ticketNumber: 1042
-          subject: 결제가 중복으로 처리됐어요
-          status: NEW
-          priority: LOW
-          requester:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          group:
-            id: 11111111-1111-4111-8111-111111111111
-            name: 김고객
-          assignee:
-            id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-          isChild: true
-          openChildCount: 1
-          sla:
-            metric: FIRST_REPLY
-            state: ACTIVE
-            dueAt: '2026-08-10T09:00:00Z'
-        comments:
-        - id: 11111111-1111-4111-8111-111111111111
-          visibility: PUBLIC
-          actor:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          createdAt: '2026-08-10T09:00:00Z'
-          source: 예시 값
-          redactionState: 예시 값
-          attachments:
-          - id: 11111111-1111-4111-8111-111111111111
-            fileName: 예시 값
-            sizeBytes: 1
-            downloadUrl: https://orders.example.com/orders/ORD-2026-1042
-        capabilities:
-        - 예시 값
-        assignmentOptions:
-          groups:
-          - id: 11111111-1111-4111-8111-111111111111
-            name: 김고객
-            members:
-            - id: 11111111-1111-4111-8111-111111111111
-              displayName: 김고객
-        context:
-          customer:
-            id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-            email: customer@example.com
-          parent:
-            ticketNumber: 1042
-            subject: 결제가 중복으로 처리됐어요
-            status: NEW
-            priority: LOW
-            requester:
-              id: 11111111-1111-4111-8111-111111111111
-              type: CUSTOMER
-              displayName: 김고객
-            group:
-              id: 11111111-1111-4111-8111-111111111111
-              name: 김고객
-            assignee:
-              id: 11111111-1111-4111-8111-111111111111
-              displayName: 김고객
-            updatedAt: '2026-08-10T09:00:00Z'
-            version: 1
-            isChild: true
-            openChildCount: 1
-            sla:
-              metric: FIRST_REPLY
-              state: ACTIVE
-              dueAt: '2026-08-10T09:00:00Z'
-          children:
-          - ticketNumber: 1042
-            subject: 결제가 중복으로 처리됐어요
-            status: NEW
-            priority: LOW
-            requester:
-              id: 11111111-1111-4111-8111-111111111111
-              type: CUSTOMER
-              displayName: 김고객
-            group:
-              id: 11111111-1111-4111-8111-111111111111
-              name: 김고객
-            assignee:
-              id: 11111111-1111-4111-8111-111111111111
-              displayName: 김고객
-            updatedAt: '2026-08-10T09:00:00Z'
-            version: 1
-            isChild: true
-            openChildCount: 1
-            sla:
-              metric: FIRST_REPLY
-              state: ACTIVE
-              dueAt: '2026-08-10T09:00:00Z'
-          externalReferences: []
-        history:
-        - id: 11111111-1111-4111-8111-111111111111
-          eventType: 예시 값
-          actor:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          occurredAt: '2026-08-10T09:00:00Z'
-        warnings:
-        - code: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          count: 1
-          relatedTicketNumbers:
-          - 1
     TicketAssignmentOptions:
       type: object
       additionalProperties: false
@@ -4708,14 +3969,6 @@ components:
           description: 감사되는 직원 상세 화면에만 projection되는 활성 그룹과 활성 구성원입니다.
           items:
             $ref: '#/components/schemas/TicketAssignmentGroupOption'
-      description: TicketAssignmentOptions 요청 또는 응답 모델입니다.
-      example:
-        groups:
-        - id: 11111111-1111-4111-8111-111111111111
-          name: 김고객
-          members:
-          - id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
     TicketAssignmentGroupOption:
       type: object
       additionalProperties: false
@@ -4727,24 +3980,12 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         name:
           type: string
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         members:
           type: array
           items:
             $ref: '#/components/schemas/TicketAssignmentStaffOption'
-          description: members 값입니다.
-      description: TicketAssignmentGroupOption 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        name: 김고객
-        members:
-        - id: 11111111-1111-4111-8111-111111111111
-          displayName: 김고객
     TicketAssignmentStaffOption:
       type: object
       additionalProperties: false
@@ -4755,16 +3996,8 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         displayName:
           type: string
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
-      description: TicketAssignmentStaffOption 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        displayName: 김고객
     TicketContext:
       type: object
       additionalProperties: false
@@ -4783,71 +4016,15 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TicketSummary'
           - type: 'null'
-          description: parent 값입니다.
         children:
           type: array
           items:
             $ref: '#/components/schemas/TicketSummary'
-          description: children 값입니다.
         externalReferences:
           type: array
           items:
             type: object
             additionalProperties: true
-          description: externalReferences 값입니다.
-      description: TicketContext 요청 또는 응답 모델입니다.
-      example:
-        customer:
-          id: 11111111-1111-4111-8111-111111111111
-          displayName: 김고객
-          email: customer@example.com
-        parent:
-          ticketNumber: 1042
-          subject: 결제가 중복으로 처리됐어요
-          status: NEW
-          priority: LOW
-          requester:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          group:
-            id: 11111111-1111-4111-8111-111111111111
-            name: 김고객
-          assignee:
-            id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-          isChild: true
-          openChildCount: 1
-          sla:
-            metric: FIRST_REPLY
-            state: ACTIVE
-            dueAt: '2026-08-10T09:00:00Z'
-        children:
-        - ticketNumber: 1042
-          subject: 결제가 중복으로 처리됐어요
-          status: NEW
-          priority: LOW
-          requester:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          group:
-            id: 11111111-1111-4111-8111-111111111111
-            name: 김고객
-          assignee:
-            id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-          isChild: true
-          openChildCount: 1
-          sla:
-            metric: FIRST_REPLY
-            state: ACTIVE
-            dueAt: '2026-08-10T09:00:00Z'
-        externalReferences: []
     TicketCustomer:
       type: object
       additionalProperties: false
@@ -4859,22 +4036,11 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         displayName:
           type: string
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         email:
           type: string
           format: email
-          description: email 값입니다.
-          example: customer@example.com
-      description: TicketCustomer 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        displayName: 김고객
-        email: customer@example.com
     TicketHistoryItem:
       type: object
       additionalProperties: false
@@ -4887,29 +4053,13 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         eventType:
           type: string
-          description: eventType 값입니다.
-          example: 예시 값
         actor:
           $ref: '#/components/schemas/ActorSummary'
-          description: actor 값입니다.
         occurredAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: TicketHistoryItem 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        eventType: 예시 값
-        actor:
-          id: 11111111-1111-4111-8111-111111111111
-          type: CUSTOMER
-          displayName: 김고객
-        occurredAt: '2026-08-10T09:00:00Z'
     CommentDraft:
       type: object
       required:
@@ -4918,17 +4068,10 @@ components:
       properties:
         visibility:
           $ref: '#/components/schemas/TicketVisibility'
-          description: visibility의 허용된 열거 값입니다.
         body:
           type: string
           minLength: 1
           maxLength: 20000
-          description: body에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-      description: CommentDraft 요청 또는 응답 모델입니다.
-      example:
-        visibility: PUBLIC
-        body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
     UpdateTicketCommand:
       type: object
       additionalProperties: false
@@ -4949,8 +4092,6 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         changedFields:
           type: array
           maxItems: 4
@@ -4962,50 +4103,42 @@ components:
             - priority
             - groupId
             - assigneeId
-          description: changedFields 값입니다.
         status:
           $ref: '#/components/schemas/AgentTicketStatus'
-          description: status의 허용된 열거 값입니다.
         priority:
           $ref: '#/components/schemas/TicketPriority'
-          description: priority의 허용된 열거 값입니다.
         groupId:
           type:
           - string
           - 'null'
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         assigneeId:
           type:
           - string
           - 'null'
           format: uuid
-          description: assigneeId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         comment:
           oneOf:
           - $ref: '#/components/schemas/CommentDraft'
           - type: 'null'
-          description: comment 값입니다.
         clientCommandId:
           type: string
           format: uuid
           description: 인증된 직원 actor의 정규 업데이트 요청 하나를 식별합니다. 동일 재시도에는 원래 결과를 반환하고, 다른 payload·티켓·작업에 재사용하면 변경 없이 409를 반환합니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: UpdateTicketCommand 요청 또는 응답 모델입니다.
+      description: 상담사가 티켓의 상태·우선순위·소유권 변경과 댓글 작성을 하나의 원자적 명령으로 저장할 때 사용하는 요청입니다. expectedVersion과 changedFields는 실제 변경 필드와
+        일치해야 합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        expectedVersion: 1
+        expectedVersion: 7
         changedFields:
         - status
-        status: NEW
-        priority: LOW
-        groupId: 11111111-1111-4111-8111-111111111111
-        assigneeId: 11111111-1111-4111-8111-111111111111
+        - priority
+        status: PENDING
+        priority: HIGH
         comment:
           visibility: PUBLIC
-          body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-        clientCommandId: 11111111-1111-4111-8111-111111111111
+          body: 결제 대행사에 승인 내역을 확인 중이며 결과를 안내드리겠습니다.
+        clientCommandId: 77777777-7777-4777-8777-777777777777
     TransferTicketCommand:
       type: object
       additionalProperties: false
@@ -5016,39 +4149,30 @@ components:
         expectedVersion:
           type: integer
           format: int64
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         groupId:
           type: string
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         assigneeId:
           type:
           - string
           - 'null'
           format: uuid
-          description: assigneeId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         reason:
           type:
           - string
           - 'null'
           maxLength: 2000
-          description: reason에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제 기록 확인을 위한 감사 조사
         clientCommandId:
           type: string
           format: uuid
-          description: clientCommandId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: TransferTicketCommand 요청 또는 응답 모델입니다.
+      description: 기존 티켓의 소유권을 대상 지원 그룹으로 이관할 때 사용하는 명령입니다. assigneeId를 함께 지정하면 대상 그룹의 활성 구성원이어야 하며, 자식 티켓을 만드는 작업과 다릅니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        expectedVersion: 1
+        expectedVersion: 7
         groupId: 11111111-1111-4111-8111-111111111111
-        assigneeId: 11111111-1111-4111-8111-111111111111
-        reason: 결제 기록 확인을 위한 감사 조사
-        clientCommandId: 11111111-1111-4111-8111-111111111111
+        assigneeId: 22222222-2222-4222-8222-222222222222
+        reason: 결제 승인 확인 권한이 있는 지원 그룹으로 이관
+        clientCommandId: 77777777-7777-4777-8777-777777777777
     CreateChildTicketCommand:
       type: object
       additionalProperties: false
@@ -5062,49 +4186,37 @@ components:
         expectedVersion:
           type: integer
           format: int64
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         subject:
           type: string
           minLength: 1
           maxLength: 200
-          description: subject에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제가 중복으로 처리됐어요
         body:
           type: string
           minLength: 1
           maxLength: 20000
-          description: body에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
         groupId:
           type: string
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         assigneeId:
           type:
           - string
           - 'null'
           format: uuid
-          description: assigneeId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         priority:
           $ref: '#/components/schemas/TicketPriority'
-          description: priority의 허용된 열거 값입니다.
         clientCommandId:
           type: string
           format: uuid
-          description: clientCommandId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: CreateChildTicketCommand 요청 또는 응답 모델입니다.
+      description: 현재 티켓의 소유권을 바꾸지 않고 내부 협업용 자식 티켓을 만드는 명령입니다. body는 자식 티켓의 첫 INTERNAL comment로 저장됩니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        expectedVersion: 1
-        subject: 결제가 중복으로 처리됐어요
-        body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
+        expectedVersion: 7
+        subject: ORD-2026-1042 결제 승인 중복 조사
+        body: 결제 대행사 승인 로그와 주문 상태를 대조해 주세요.
         groupId: 11111111-1111-4111-8111-111111111111
-        assigneeId: 11111111-1111-4111-8111-111111111111
-        priority: LOW
-        clientCommandId: 11111111-1111-4111-8111-111111111111
+        assigneeId: 22222222-2222-4222-8222-222222222222
+        priority: HIGH
+        clientCommandId: 77777777-7777-4777-8777-777777777777
     CommandWarning:
       type: object
       additionalProperties: false
@@ -5116,31 +4228,17 @@ components:
       properties:
         code:
           type: string
-          description: code 값입니다.
-          example: 예시 값
         message:
           type: string
-          description: message에 사용하는 입력 또는 표시 문자열입니다.
-          example: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
         count:
           type: integer
           minimum: 1
-          description: count 값입니다.
-          example: 1
         relatedTicketNumbers:
           type: array
           uniqueItems: true
           items:
             type: integer
             format: int64
-          description: relatedTicketNumbers 값입니다.
-      description: CommandWarning 요청 또는 응답 모델입니다.
-      example:
-        code: 예시 값
-        message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-        count: 1
-        relatedTicketNumbers:
-        - 1
     TicketCommandResult:
       type: object
       required:
@@ -5153,59 +4251,18 @@ components:
           type: integer
           format: int64
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         version:
           type: integer
           format: int64
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         auditId:
           type: string
           format: uuid
-          description: auditId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         warnings:
           type: array
           items:
             $ref: '#/components/schemas/CommandWarning'
-          description: warnings 값입니다.
         ticket:
           $ref: '#/components/schemas/TicketSummary'
-          description: ticket 값입니다.
-      description: TicketCommandResult 요청 또는 응답 모델입니다.
-      example:
-        ticketNumber: 1042
-        version: 1
-        auditId: 11111111-1111-4111-8111-111111111111
-        warnings:
-        - code: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          count: 1
-          relatedTicketNumbers:
-          - 1
-        ticket:
-          ticketNumber: 1042
-          subject: 결제가 중복으로 처리됐어요
-          status: NEW
-          priority: LOW
-          requester:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          group:
-            id: 11111111-1111-4111-8111-111111111111
-            name: 김고객
-          assignee:
-            id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-          isChild: true
-          openChildCount: 1
-          sla:
-            metric: FIRST_REPLY
-            state: ACTIVE
-            dueAt: '2026-08-10T09:00:00Z'
     CreateAgentTicket:
       type: object
       additionalProperties: false
@@ -5230,51 +4287,42 @@ components:
               type: string
               format: email
               maxLength: 254
-          description: requester 값입니다.
         subject:
           type: string
           minLength: 1
           maxLength: 200
-          description: subject에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제가 중복으로 처리됐어요
         firstComment:
           $ref: '#/components/schemas/CommentDraft'
-          description: firstComment 값입니다.
         priority:
           $ref: '#/components/schemas/TicketPriority'
-          description: priority의 허용된 열거 값입니다.
         groupId:
           type:
           - string
           - 'null'
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         assigneeId:
           type:
           - string
           - 'null'
           format: uuid
-          description: assigneeId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         clientCommandId:
           type: string
           format: uuid
-          description: clientCommandId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: CreateAgentTicket 요청 또는 응답 모델입니다.
+      description: 상담사가 고객 문의를 직접 등록할 때 사용하는 요청입니다. firstComment의 visibility가 첫 댓글의 공개 범위를 결정하고, groupId와 assigneeId는 배정 권한과
+        활성 구성원 조건을 만족해야 합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
         requester:
-          name: 김고객
-          email: customer@example.com
-        subject: 결제가 중복으로 처리됐어요
+          name: 김민아
+          email: mina.kim@example.test
+        subject: 주문 ORD-2026-1042의 중복 결제 확인 요청
         firstComment:
           visibility: PUBLIC
-          body: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-        priority: LOW
+          body: 같은 주문에 결제가 두 번 승인되었습니다. 결제 내역 확인 부탁드립니다.
+        priority: HIGH
         groupId: 11111111-1111-4111-8111-111111111111
-        assigneeId: 11111111-1111-4111-8111-111111111111
-        clientCommandId: 11111111-1111-4111-8111-111111111111
+        assigneeId: 22222222-2222-4222-8222-222222222222
+        clientCommandId: 77777777-7777-4777-8777-777777777777
     CreateChildTicketResult:
       type: object
       required:
@@ -5287,35 +4335,18 @@ components:
         parentTicketNumber:
           type: integer
           format: int64
-          description: parentTicketNumber 값입니다.
-          example: 1
         parentVersion:
           type: integer
           format: int64
-          description: parentVersion 값입니다.
-          example: 1
         childTicketNumber:
           type: integer
           format: int64
-          description: childTicketNumber 값입니다.
-          example: 1
         parentAuditId:
           type: string
           format: uuid
-          description: parentAuditId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         childAuditId:
           type: string
           format: uuid
-          description: childAuditId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: CreateChildTicketResult 요청 또는 응답 모델입니다.
-      example:
-        parentTicketNumber: 1
-        parentVersion: 1
-        childTicketNumber: 1
-        parentAuditId: 11111111-1111-4111-8111-111111111111
-        childAuditId: 11111111-1111-4111-8111-111111111111
     TicketAuditEvent:
       type: object
       required:
@@ -5324,30 +4355,17 @@ components:
       properties:
         sequence:
           type: integer
-          description: sequence 값입니다.
-          example: 1
         type:
           type: string
-          description: type 값입니다.
-          example: 예시 값
         field:
           type:
           - string
           - 'null'
-          description: field 값입니다.
-          example: 예시 값
-        before:
-          description: before 값입니다.
-        after:
-          description: after 값입니다.
+        before: {}
+        after: {}
         metadata:
           type: object
           additionalProperties: true
-          description: metadata 값입니다.
-      description: TicketAuditEvent 요청 또는 응답 모델입니다.
-      example:
-        sequence: 1
-        type: 예시 값
     TicketAudit:
       type: object
       required:
@@ -5366,70 +4384,33 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         ticketNumber:
           type: integer
           format: int64
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         actor:
           $ref: '#/components/schemas/ActorSummary'
-          description: actor 값입니다.
         source:
           type: string
-          description: source의 허용된 열거 값입니다.
-          example: 예시 값
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         correlationId:
           type: string
-          description: correlationId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         requestId:
           type: string
-          description: requestId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         commandId:
           type: string
-          description: commandId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         expectedVersion:
           type: integer
           format: int64
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         resultVersion:
           type: integer
           format: int64
-          description: resultVersion 값입니다.
-          example: 1
         events:
           type: array
           items:
             $ref: '#/components/schemas/TicketAuditEvent'
-          description: events 값입니다.
-      description: TicketAudit 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        ticketNumber: 1042
-        actor:
-          id: 11111111-1111-4111-8111-111111111111
-          type: CUSTOMER
-          displayName: 김고객
-        source: 예시 값
-        createdAt: '2026-08-10T09:00:00Z'
-        correlationId: 11111111-1111-4111-8111-111111111111
-        requestId: 11111111-1111-4111-8111-111111111111
-        commandId: 11111111-1111-4111-8111-111111111111
-        expectedVersion: 1
-        resultVersion: 1
-        events:
-        - sequence: 1
-          type: 예시 값
     TicketAuditPage:
       type: object
       required:
@@ -5439,33 +4420,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TicketAudit'
-          description: items 값입니다.
         nextCursor:
           type:
           - string
           - 'null'
-          description: 서버가 발급한 불투명 페이지 커서입니다. 값을 해석하거나 변경하지 않습니다.
-          example: opaque-cursor-example
-      description: TicketAuditPage 요청 또는 응답 모델입니다.
-      example:
-        items:
-        - id: 11111111-1111-4111-8111-111111111111
-          ticketNumber: 1042
-          actor:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          source: 예시 값
-          createdAt: '2026-08-10T09:00:00Z'
-          correlationId: 11111111-1111-4111-8111-111111111111
-          requestId: 11111111-1111-4111-8111-111111111111
-          commandId: 11111111-1111-4111-8111-111111111111
-          expectedVersion: 1
-          resultVersion: 1
-          events:
-          - sequence: 1
-            type: 예시 값
-        nextCursor: opaque-cursor-example
     AgentTicketSearchFilters:
       type: object
       additionalProperties: false
@@ -5479,8 +4437,6 @@ components:
           - ON_HOLD
           - SOLVED
           - CLOSED
-          description: status의 허용된 열거 값입니다.
-          example: NEW
         priority:
           type: string
           enum:
@@ -5488,13 +4444,9 @@ components:
           - NORMAL
           - HIGH
           - URGENT
-          description: priority의 허용된 열거 값입니다.
-          example: LOW
         groupId:
           type: string
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         assigneeId:
           oneOf:
           - type: string
@@ -5503,14 +4455,6 @@ components:
             enum:
             - me
             - unassigned
-          description: assigneeId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: AgentTicketSearchFilters 요청 또는 응답 모델입니다.
-      example:
-        status: NEW
-        priority: LOW
-        groupId: 11111111-1111-4111-8111-111111111111
-        assigneeId: 11111111-1111-4111-8111-111111111111
     AgentTicketSearchRequest:
       type: object
       additionalProperties: false
@@ -5524,34 +4468,28 @@ components:
           type: string
           minLength: 1
           maxLength: 500
-          description: query 값입니다.
-          example: 예시 값
         filters:
           $ref: '#/components/schemas/AgentTicketSearchFilters'
-          description: filters 값입니다.
         sort:
           type: string
           enum:
           - updatedAt:desc,ticketNumber:desc
-          description: sort 값입니다.
-          example: updatedAt:desc,ticketNumber:desc
         limit:
           type: integer
           minimum: 1
           maximum: 100
           default: 25
-          description: limit 값입니다.
-          example: 1
-      description: AgentTicketSearchRequest 요청 또는 응답 모델입니다.
+      description: 상담사가 현재 권한으로 읽을 수 있는 티켓을 검색할 때 사용하는 요청입니다. query는 검색 감사에서 보호된 형태로 처리되고 filters는 결과 범위를 추가로 제한합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        query: 예시 값
+        query: 중복 결제
         filters:
-          status: NEW
-          priority: LOW
+          status: OPEN
+          priority: HIGH
           groupId: 11111111-1111-4111-8111-111111111111
-          assigneeId: 11111111-1111-4111-8111-111111111111
+          assigneeId: 22222222-2222-4222-8222-222222222222
         sort: updatedAt:desc,ticketNumber:desc
-        limit: 1
+        limit: 25
     AgentTicketSearchPage:
       type: object
       additionalProperties: false
@@ -5565,59 +4503,21 @@ components:
         searchEventId:
           type: string
           format: uuid
-          description: searchEventId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         searchInteractionId:
           type: string
           format: uuid
-          description: searchInteractionId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         items:
           type: array
           items:
             $ref: '#/components/schemas/TicketSummary'
-          description: items 값입니다.
         resultCount:
           type: integer
           format: int64
           minimum: 0
-          description: resultCount 값입니다.
-          example: 1
         sort:
           type: string
           enum:
           - updatedAt:desc,ticketNumber:desc
-          description: sort 값입니다.
-          example: updatedAt:desc,ticketNumber:desc
-      description: AgentTicketSearchPage 요청 또는 응답 모델입니다.
-      example:
-        searchEventId: 11111111-1111-4111-8111-111111111111
-        searchInteractionId: 11111111-1111-4111-8111-111111111111
-        items:
-        - ticketNumber: 1042
-          subject: 결제가 중복으로 처리됐어요
-          status: NEW
-          priority: LOW
-          requester:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          group:
-            id: 11111111-1111-4111-8111-111111111111
-            name: 김고객
-          assignee:
-            id: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-          isChild: true
-          openChildCount: 1
-          sla:
-            metric: FIRST_REPLY
-            state: ACTIVE
-            dueAt: '2026-08-10T09:00:00Z'
-        resultCount: 1
-        sort: updatedAt:desc,ticketNumber:desc
     StaffAccount:
       type: object
       additionalProperties: false
@@ -5633,28 +4533,19 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         email:
           type: string
           format: email
-          description: email 값입니다.
-          example: customer@example.com
         displayName:
           type: string
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         role:
           $ref: '#/components/schemas/StaffRole'
-          description: role의 허용된 열거 값입니다.
         status:
           $ref: '#/components/schemas/StaffStatus'
-          description: status의 허용된 열거 값입니다.
         memberships:
           type: array
           items:
             $ref: '#/components/schemas/GroupRef'
-          description: memberships 값입니다.
         auditAuthorities:
           type: array
           uniqueItems: true
@@ -5666,28 +4557,11 @@ components:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: StaffAccount 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        email: customer@example.com
-        displayName: 김고객
-        role: ADMIN
-        status: ACTIVE
-        memberships:
-        - id: 11111111-1111-4111-8111-111111111111
-          name: 김고객
-        auditAuthorities:
-        - AUDIT_SEARCH_QUERY_REVEAL
-        lastLoginAt: '2026-08-10T09:00:00Z'
     ExternalSystemStatus:
       type: string
       enum:
       - ACTIVE
       - DISABLED
-      description: ExternalSystemStatus 요청 또는 응답 모델입니다.
-      example: ACTIVE
     ExternalSystem:
       type: object
       additionalProperties: false
@@ -5704,24 +4578,17 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         systemKey:
           type: string
           minLength: 1
           maxLength: 64
           pattern: ^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$
-          description: 변경할 수 없는 정규화된 registry 식별자입니다.
-          example: 예시 값
         displayName:
           type: string
           minLength: 1
           maxLength: 100
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         status:
           $ref: '#/components/schemas/ExternalSystemStatus'
-          description: status의 허용된 열거 값입니다.
         allowedHostnames:
           type: array
           minItems: 1
@@ -5735,30 +4602,13 @@ components:
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         updatedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         version:
           type: integer
           format: int64
           minimum: 0
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
-      description: ExternalSystem 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        systemKey: 예시 값
-        displayName: 김고객
-        status: ACTIVE
-        allowedHostnames:
-        - 예시 값
-        createdAt: '2026-08-10T09:00:00Z'
-        updatedAt: '2026-08-10T09:00:00Z'
-        version: 1
     CreateExternalSystem:
       type: object
       additionalProperties: false
@@ -5772,14 +4622,10 @@ components:
           minLength: 1
           maxLength: 64
           pattern: ^[a-z]([a-z0-9-]{0,62}[a-z0-9])?$
-          description: systemKey 값입니다.
-          example: 예시 값
         displayName:
           type: string
           minLength: 1
           maxLength: 100
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         allowedHostnames:
           type: array
           minItems: 1
@@ -5789,13 +4635,13 @@ components:
             type: string
             minLength: 1
             maxLength: 253
-          description: allowedHostnames 값입니다.
-      description: CreateExternalSystem 요청 또는 응답 모델입니다.
+      description: 외부 참조에서 사용할 시스템과 deep link 허용 host 목록을 등록할 때 사용하는 요청입니다. 허용 host는 public DNS의 정확한 이름만 등록합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        systemKey: 예시 값
-        displayName: 김고객
+        systemKey: order-admin
+        displayName: 주문 운영 시스템
         allowedHostnames:
-        - 예시 값
+        - orders.example.test
     UpdateExternalSystem:
       type: object
       additionalProperties: false
@@ -5809,11 +4655,8 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         status:
           $ref: '#/components/schemas/ExternalSystemStatus'
-          description: status의 허용된 열거 값입니다.
         allowedHostnames:
           type: array
           minItems: 1
@@ -5823,20 +4666,18 @@ components:
             type: string
             minLength: 1
             maxLength: 253
-          description: allowedHostnames 값입니다.
         expectedVersion:
           type: integer
           format: int64
           minimum: 0
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
-      description: UpdateExternalSystem 요청 또는 응답 모델입니다.
+      description: 등록된 외부 시스템의 표시명, 활성 상태, deep link 허용 host를 바꿀 때 사용하는 요청입니다. expectedVersion은 현재 설정 버전과 일치해야 합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        displayName: 김고객
+        displayName: 주문 운영 시스템
         status: ACTIVE
         allowedHostnames:
-        - 예시 값
-        expectedVersion: 1
+        - orders.example.test
+        expectedVersion: 4
     ExternalObjectType:
       type: string
       enum:
@@ -5847,24 +4688,18 @@ components:
       - STORE
       - OPS_CASE
       - CUSTOM
-      description: ExternalObjectType 요청 또는 응답 모델입니다.
-      example: ORDER
     ExternalReferenceLinkState:
       type: string
       enum:
       - AVAILABLE
       - SYSTEM_DISABLED
       - HOST_NOT_ALLOWED
-      description: ExternalReferenceLinkState 요청 또는 응답 모델입니다.
-      example: AVAILABLE
     ExternalReferenceMetadataValue:
       oneOf:
       - type: string
         maxLength: 200
       - type: number
       - type: boolean
-      description: ExternalReferenceMetadataValue 요청 또는 응답 모델입니다.
-      example: 예시 값
     ExternalReferenceMetadataSnapshot:
       type: object
       additionalProperties: false
@@ -5872,34 +4707,18 @@ components:
       properties:
         status:
           $ref: '#/components/schemas/ExternalReferenceMetadataValue'
-          description: status의 허용된 열거 값입니다.
         storeName:
           $ref: '#/components/schemas/ExternalReferenceMetadataValue'
-          description: storeName 값입니다.
         amountDisplay:
           $ref: '#/components/schemas/ExternalReferenceMetadataValue'
-          description: amountDisplay 값입니다.
         currency:
           $ref: '#/components/schemas/ExternalReferenceMetadataValue'
-          description: currency 값입니다.
         occurredAt:
           $ref: '#/components/schemas/ExternalReferenceMetadataValue'
-          description: UTC 기준 ISO 8601 시각입니다.
         ownerLabel:
           $ref: '#/components/schemas/ExternalReferenceMetadataValue'
-          description: ownerLabel 값입니다.
         channel:
           $ref: '#/components/schemas/ExternalReferenceMetadataValue'
-          description: channel 값입니다.
-      description: ExternalReferenceMetadataSnapshot 요청 또는 응답 모델입니다.
-      example:
-        status: 예시 값
-        storeName: 예시 값
-        amountDisplay: 예시 값
-        currency: 예시 값
-        occurredAt: 예시 값
-        ownerLabel: 예시 값
-        channel: 예시 값
     ExternalReferenceActor:
       type: object
       additionalProperties: false
@@ -5910,18 +4729,10 @@ components:
         actorId:
           type: string
           format: uuid
-          description: actorId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         displayName:
           type: string
           minLength: 1
           maxLength: 100
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
-      description: ExternalReferenceActor 요청 또는 응답 모델입니다.
-      example:
-        actorId: 11111111-1111-4111-8111-111111111111
-        displayName: 김고객
     ExternalReference:
       type: object
       additionalProperties: false
@@ -5940,29 +4751,20 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         system:
           $ref: '#/components/schemas/ExternalSystem'
-          description: system 값입니다.
         objectType:
           $ref: '#/components/schemas/ExternalObjectType'
-          description: objectType 값입니다.
         externalId:
           type: string
           minLength: 1
           maxLength: 200
-          description: externalId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         displayLabel:
           type: string
           minLength: 1
           maxLength: 200
-          description: displayLabel 값입니다.
-          example: 예시 값
         linkState:
           $ref: '#/components/schemas/ExternalReferenceLinkState'
-          description: linkState 값입니다.
         safeDeepLink:
           type:
           - string
@@ -5970,54 +4772,16 @@ components:
           format: uri
           maxLength: 2048
           description: 시스템이 활성 상태이고 저장된 호스트가 계속 허용되는 동안에만 값이 존재합니다.
-          example: https://orders.example.com/orders/ORD-2026-1042
         metadata:
           $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot'
-          description: metadata 값입니다.
         metadataObservedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         createdBy:
           $ref: '#/components/schemas/ExternalReferenceActor'
-          description: createdBy 값입니다.
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: ExternalReference 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        system:
-          id: 11111111-1111-4111-8111-111111111111
-          systemKey: 예시 값
-          displayName: 김고객
-          status: ACTIVE
-          allowedHostnames:
-          - 예시 값
-          createdAt: '2026-08-10T09:00:00Z'
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-        objectType: ORDER
-        externalId: 11111111-1111-4111-8111-111111111111
-        displayLabel: 예시 값
-        linkState: AVAILABLE
-        safeDeepLink: https://orders.example.com/orders/ORD-2026-1042
-        metadata:
-          status: 예시 값
-          storeName: 예시 값
-          amountDisplay: 예시 값
-          currency: 예시 값
-          occurredAt: 예시 값
-          ownerLabel: 예시 값
-          channel: 예시 값
-        metadataObservedAt: '2026-08-10T09:00:00Z'
-        createdBy:
-          actorId: 11111111-1111-4111-8111-111111111111
-          displayName: 김고객
-        createdAt: '2026-08-10T09:00:00Z'
     ExternalReferenceContext:
       type: object
       additionalProperties: false
@@ -6031,68 +4795,18 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: ticketVersion 값입니다.
-          example: 1
         canManage:
           type: boolean
-          description: canManage 값입니다.
-          example: true
         availableSystems:
           type: array
           maxItems: 100
           items:
             $ref: '#/components/schemas/ExternalSystem'
-          description: availableSystems 값입니다.
         items:
           type: array
           maxItems: 100
           items:
             $ref: '#/components/schemas/ExternalReference'
-          description: items 값입니다.
-      description: ExternalReferenceContext 요청 또는 응답 모델입니다.
-      example:
-        ticketVersion: 1
-        canManage: true
-        availableSystems:
-        - id: 11111111-1111-4111-8111-111111111111
-          systemKey: 예시 값
-          displayName: 김고객
-          status: ACTIVE
-          allowedHostnames:
-          - 예시 값
-          createdAt: '2026-08-10T09:00:00Z'
-          updatedAt: '2026-08-10T09:00:00Z'
-          version: 1
-        items:
-        - id: 11111111-1111-4111-8111-111111111111
-          system:
-            id: 11111111-1111-4111-8111-111111111111
-            systemKey: 예시 값
-            displayName: 김고객
-            status: ACTIVE
-            allowedHostnames:
-            - 예시 값
-            createdAt: '2026-08-10T09:00:00Z'
-            updatedAt: '2026-08-10T09:00:00Z'
-            version: 1
-          objectType: ORDER
-          externalId: 11111111-1111-4111-8111-111111111111
-          displayLabel: 예시 값
-          linkState: AVAILABLE
-          safeDeepLink: https://orders.example.com/orders/ORD-2026-1042
-          metadata:
-            status: 예시 값
-            storeName: 예시 값
-            amountDisplay: 예시 값
-            currency: 예시 값
-            occurredAt: 예시 값
-            ownerLabel: 예시 값
-            channel: 예시 값
-          metadataObservedAt: '2026-08-10T09:00:00Z'
-          createdBy:
-            actorId: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          createdAt: '2026-08-10T09:00:00Z'
     CreateExternalReferenceCommand:
       type: object
       additionalProperties: false
@@ -6109,61 +4823,50 @@ components:
         externalSystemId:
           type: string
           format: uuid
-          description: externalSystemId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         objectType:
           $ref: '#/components/schemas/ExternalObjectType'
-          description: objectType 값입니다.
         externalId:
           type: string
           minLength: 1
           maxLength: 200
-          description: externalId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         displayLabel:
           type: string
           minLength: 1
           maxLength: 200
-          description: displayLabel 값입니다.
-          example: 예시 값
         safeDeepLink:
           type: string
           format: uri
           minLength: 9
           maxLength: 2048
           description: 호스트가 정확히 일치하는 HTTPS URL이며 userinfo와 자격 증명 형태의 query key는 금지합니다.
-          example: https://orders.example.com/orders/ORD-2026-1042
         metadata:
           $ref: '#/components/schemas/ExternalReferenceMetadataSnapshot'
-          description: metadata 값입니다.
         metadataObservedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         expectedVersion:
           type: integer
           format: int64
           minimum: 0
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
-      description: CreateExternalReferenceCommand 요청 또는 응답 모델입니다.
+      description: 상담 티켓에 외부 시스템 객체를 연결하는 명령입니다. safeDeepLink는 등록된 host와 정확히 일치하는 HTTPS 주소여야 하고 metadata는 허용된 요약 필드만 스냅샷으로
+        저장합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        externalSystemId: 11111111-1111-4111-8111-111111111111
+        externalSystemId: 44444444-4444-4444-8444-444444444444
         objectType: ORDER
-        externalId: 11111111-1111-4111-8111-111111111111
-        displayLabel: 예시 값
-        safeDeepLink: https://orders.example.com/orders/ORD-2026-1042
+        externalId: ORD-2026-1042
+        displayLabel: 주문 ORD-2026-1042
+        safeDeepLink: https://orders.example.test/orders/ORD-2026-1042
         metadata:
-          status: 예시 값
-          storeName: 예시 값
-          amountDisplay: 예시 값
-          currency: 예시 값
-          occurredAt: 예시 값
-          ownerLabel: 예시 값
-          channel: 예시 값
-        metadataObservedAt: '2026-08-10T09:00:00Z'
-        expectedVersion: 1
+          status: PAID
+          storeName: Deskseed Mall
+          amountDisplay: ₩32,000
+          currency: KRW
+          occurredAt: '2026-08-10T09:00:00Z'
+          ownerLabel: 김민아
+          channel: WEB
+        metadataObservedAt: '2026-08-10T09:05:00Z'
+        expectedVersion: 7
     ExternalReferenceCommandResult:
       type: object
       additionalProperties: false
@@ -6175,44 +4878,8 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: ticketVersion 값입니다.
-          example: 1
         reference:
           $ref: '#/components/schemas/ExternalReference'
-          description: reference 값입니다.
-      description: ExternalReferenceCommandResult 요청 또는 응답 모델입니다.
-      example:
-        ticketVersion: 1
-        reference:
-          id: 11111111-1111-4111-8111-111111111111
-          system:
-            id: 11111111-1111-4111-8111-111111111111
-            systemKey: 예시 값
-            displayName: 김고객
-            status: ACTIVE
-            allowedHostnames:
-            - 예시 값
-            createdAt: '2026-08-10T09:00:00Z'
-            updatedAt: '2026-08-10T09:00:00Z'
-            version: 1
-          objectType: ORDER
-          externalId: 11111111-1111-4111-8111-111111111111
-          displayLabel: 예시 값
-          linkState: AVAILABLE
-          safeDeepLink: https://orders.example.com/orders/ORD-2026-1042
-          metadata:
-            status: 예시 값
-            storeName: 예시 값
-            amountDisplay: 예시 값
-            currency: 예시 값
-            occurredAt: 예시 값
-            ownerLabel: 예시 값
-            channel: 예시 값
-          metadataObservedAt: '2026-08-10T09:00:00Z'
-          createdBy:
-            actorId: 11111111-1111-4111-8111-111111111111
-            displayName: 김고객
-          createdAt: '2026-08-10T09:00:00Z'
     DeleteExternalReferenceResult:
       type: object
       additionalProperties: false
@@ -6224,17 +4891,9 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: ticketVersion 값입니다.
-          example: 1
         removedReferenceId:
           type: string
           format: uuid
-          description: removedReferenceId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: DeleteExternalReferenceResult 요청 또는 응답 모델입니다.
-      example:
-        ticketVersion: 1
-        removedReferenceId: 11111111-1111-4111-8111-111111111111
     ExternalSystemVersionPreconditionProblem:
       allOf:
       - $ref: '#/components/schemas/Problem'
@@ -6247,22 +4906,6 @@ components:
             type: integer
             format: int64
             minimum: 0
-      description: ExternalSystemVersionPreconditionProblem 요청 또는 응답 모델입니다.
-      example:
-        type: https://orders.example.com/orders/ORD-2026-1042
-        title: 결제가 중복으로 처리됐어요
-        status: 1
-        detail: 예시 값
-        instance: https://orders.example.com/orders/ORD-2026-1042
-        requestId: 11111111-1111-4111-8111-111111111111
-        code: 예시 값
-        fieldErrors:
-        - field: 예시 값
-          message: 주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.
-          code: 예시 값
-        currentVersion: 1
-        conflictingFields:
-        - 예시 값
     IntegrationScope:
       type: string
       enum:
@@ -6270,16 +4913,12 @@ components:
       - tickets:read
       - tickets:update
       - tickets:comment:internal
-      description: IntegrationScope 요청 또는 응답 모델입니다.
-      example: tickets:create
     IntegrationClientStatus:
       type: string
       enum:
       - ACTIVE
       - DISABLED
       - REVOKED
-      description: IntegrationClientStatus 요청 또는 응답 모델입니다.
-      example: ACTIVE
     IntegrationCredentialStatus:
       type: string
       enum:
@@ -6287,8 +4926,6 @@ components:
       - RETIRING
       - EXPIRED
       - REVOKED
-      description: IntegrationCredentialStatus 요청 또는 응답 모델입니다.
-      example: ACTIVE
     IntegrationResourceConstraints:
       type: object
       additionalProperties: false
@@ -6300,7 +4937,6 @@ components:
           items:
             type: string
             format: uuid
-          description: allowedGroupIds 값입니다.
         allowedTicketKinds:
           type: array
           maxItems: 2
@@ -6310,7 +4946,6 @@ components:
             enum:
             - CUSTOMER_REQUEST
             - INTERNAL_TASK
-          description: allowedTicketKinds 값입니다.
         allowedFields:
           type: array
           maxItems: 4
@@ -6322,7 +4957,6 @@ components:
             - priority
             - groupId
             - assigneeId
-          description: allowedFields 값입니다.
         ipAllowlist:
           type: array
           maxItems: 32
@@ -6332,16 +4966,6 @@ components:
             type: string
             minLength: 2
             maxLength: 64
-      description: IntegrationResourceConstraints 요청 또는 응답 모델입니다.
-      example:
-        allowedGroupIds:
-        - 11111111-1111-4111-8111-111111111111
-        allowedTicketKinds:
-        - CUSTOMER_REQUEST
-        allowedFields:
-        - status
-        ipAllowlist:
-        - 예시 값
     IntegrationCredentialMetadata:
       type: object
       additionalProperties: false
@@ -6356,70 +4980,40 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         sequence:
           type: integer
           minimum: 1
-          description: sequence 값입니다.
-          example: 1
         publicKeyId:
           type: string
           minLength: 16
           maxLength: 32
-          description: publicKeyId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         status:
           $ref: '#/components/schemas/IntegrationCredentialStatus'
-          description: status의 허용된 열거 값입니다.
         expiresAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         overlapExpiresAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         revokedAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         lastUsedAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         lastUsedIp:
           type:
           - string
           - 'null'
-          description: lastUsedIp 값입니다.
-          example: 예시 값
-      description: IntegrationCredentialMetadata 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        sequence: 1
-        publicKeyId: 11111111-1111-4111-8111-111111111111
-        status: ACTIVE
-        expiresAt: '2026-08-10T09:00:00Z'
-        overlapExpiresAt: '2026-08-10T09:00:00Z'
-        createdAt: '2026-08-10T09:00:00Z'
-        revokedAt: '2026-08-10T09:00:00Z'
-        lastUsedAt: '2026-08-10T09:00:00Z'
     IntegrationClient:
       type: object
       additionalProperties: false
@@ -6436,92 +5030,45 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         name:
           type: string
           minLength: 1
           maxLength: 100
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         description:
           type: string
           maxLength: 500
-          description: description 값입니다.
-          example: 예시 값
         status:
           $ref: '#/components/schemas/IntegrationClientStatus'
-          description: status의 허용된 열거 값입니다.
         scopes:
           type: array
           minItems: 1
           uniqueItems: true
           items:
             $ref: '#/components/schemas/IntegrationScope'
-          description: scopes 값입니다.
         resourceConstraints:
           $ref: '#/components/schemas/IntegrationResourceConstraints'
-          description: resourceConstraints 값입니다.
         credentials:
           type: array
           items:
             $ref: '#/components/schemas/IntegrationCredentialMetadata'
-          description: credentials 값입니다.
         expiresAt:
           type:
           - string
           - 'null'
           format: date-time
           description: 목록 표시에 사용하는 현재 유효 자격 증명의 가장 늦은 만료 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         lastUsedAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         lastUsedIp:
           type:
           - string
           - 'null'
-          description: lastUsedIp 값입니다.
-          example: 예시 값
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: IntegrationClient 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        name: 김고객
-        description: 예시 값
-        status: ACTIVE
-        scopes:
-        - tickets:create
-        resourceConstraints:
-          allowedGroupIds:
-          - 11111111-1111-4111-8111-111111111111
-          allowedTicketKinds:
-          - CUSTOMER_REQUEST
-          allowedFields:
-          - status
-          ipAllowlist:
-          - 예시 값
-        credentials:
-        - id: 11111111-1111-4111-8111-111111111111
-          sequence: 1
-          publicKeyId: 11111111-1111-4111-8111-111111111111
-          status: ACTIVE
-          expiresAt: '2026-08-10T09:00:00Z'
-          overlapExpiresAt: '2026-08-10T09:00:00Z'
-          createdAt: '2026-08-10T09:00:00Z'
-          revokedAt: '2026-08-10T09:00:00Z'
-          lastUsedAt: '2026-08-10T09:00:00Z'
-        expiresAt: '2026-08-10T09:00:00Z'
-        lastUsedAt: '2026-08-10T09:00:00Z'
-        createdAt: '2026-08-10T09:00:00Z'
     CreateIntegrationClient:
       type: object
       additionalProperties: false
@@ -6536,13 +5083,9 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         description:
           type: string
           maxLength: 500
-          description: description 값입니다.
-          example: 예시 값
         scopes:
           type: array
           minItems: 1
@@ -6550,19 +5093,17 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/IntegrationScope'
-          description: scopes 값입니다.
         resourceConstraints:
           $ref: '#/components/schemas/IntegrationResourceConstraints'
-          description: resourceConstraints 값입니다.
         expiresAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: CreateIntegrationClient 요청 또는 응답 모델입니다.
+      description: 관리자가 기계 연동 클라이언트를 만들 때 사용하는 요청입니다. scopes와 resourceConstraints를 함께 적용해 접근 가능한 티켓과 변경 필드를 제한하며, API key
+        원문은 이 요청이 아닌 생성 응답에서 한 번만 표시됩니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        name: 김고객
-        description: 예시 값
+        name: order-operations
+        description: 주문 상태를 조회하고 지정된 결제 지원 그룹의 티켓을 생성하는 사내 주문 운영 연동
         scopes:
         - tickets:create
         resourceConstraints:
@@ -6573,8 +5114,8 @@ components:
           allowedFields:
           - status
           ipAllowlist:
-          - 예시 값
-        expiresAt: '2026-08-10T09:00:00Z'
+          - 203.0.113.0/24
+        expiresAt: '2027-08-13T00:00:00Z'
     RotateIntegrationCredential:
       type: object
       additionalProperties: false
@@ -6585,18 +5126,15 @@ components:
         expiresAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         overlapSeconds:
           type: integer
           minimum: 0
           maximum: 86400
-          description: overlapSeconds 값입니다.
-          example: 1
-      description: RotateIntegrationCredential 요청 또는 응답 모델입니다.
+      description: 연동 클라이언트의 API 자격 증명을 교체할 때 사용하는 요청입니다. overlapSeconds 동안 이전 자격 증명과 새 자격 증명을 함께 허용한 뒤 expiresAt에 이전 값을 만료시킵니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        expiresAt: '2026-08-10T09:00:00Z'
-        overlapSeconds: 1
+        expiresAt: '2027-08-13T00:00:00Z'
+        overlapSeconds: 3600
     IntegrationCredentialIssue:
       type: object
       additionalProperties: false
@@ -6607,59 +5145,13 @@ components:
       properties:
         client:
           $ref: '#/components/schemas/IntegrationClient'
-          description: client 값입니다.
         credential:
           $ref: '#/components/schemas/IntegrationCredentialMetadata'
-          description: credential 값입니다.
         apiKey:
           type: string
           pattern: ^dsk_live_[A-Za-z0-9_-]{16,32}\.[A-Za-z0-9_-]{43}$
           readOnly: true
           x-deskseed-one-time-display: true
-          description: apiKey 값입니다.
-          example: example-secret-not-valid
-      description: IntegrationCredentialIssue 요청 또는 응답 모델입니다.
-      example:
-        client:
-          id: 11111111-1111-4111-8111-111111111111
-          name: 김고객
-          description: 예시 값
-          status: ACTIVE
-          scopes:
-          - tickets:create
-          resourceConstraints:
-            allowedGroupIds:
-            - 11111111-1111-4111-8111-111111111111
-            allowedTicketKinds:
-            - CUSTOMER_REQUEST
-            allowedFields:
-            - status
-            ipAllowlist:
-            - 예시 값
-          credentials:
-          - id: 11111111-1111-4111-8111-111111111111
-            sequence: 1
-            publicKeyId: 11111111-1111-4111-8111-111111111111
-            status: ACTIVE
-            expiresAt: '2026-08-10T09:00:00Z'
-            overlapExpiresAt: '2026-08-10T09:00:00Z'
-            createdAt: '2026-08-10T09:00:00Z'
-            revokedAt: '2026-08-10T09:00:00Z'
-            lastUsedAt: '2026-08-10T09:00:00Z'
-          expiresAt: '2026-08-10T09:00:00Z'
-          lastUsedAt: '2026-08-10T09:00:00Z'
-          createdAt: '2026-08-10T09:00:00Z'
-        credential:
-          id: 11111111-1111-4111-8111-111111111111
-          sequence: 1
-          publicKeyId: 11111111-1111-4111-8111-111111111111
-          status: ACTIVE
-          expiresAt: '2026-08-10T09:00:00Z'
-          overlapExpiresAt: '2026-08-10T09:00:00Z'
-          createdAt: '2026-08-10T09:00:00Z'
-          revokedAt: '2026-08-10T09:00:00Z'
-          lastUsedAt: '2026-08-10T09:00:00Z'
-        apiKey: example-secret-not-valid
     CreateStaffAccount:
       type: object
       additionalProperties: false
@@ -6673,30 +5165,24 @@ components:
           type: string
           format: email
           maxLength: 254
-          description: email 값입니다.
-          example: customer@example.com
         displayName:
           type: string
           minLength: 1
           maxLength: 100
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         role:
           $ref: '#/components/schemas/StaffRole'
-          description: role의 허용된 열거 값입니다.
         password:
           type: string
           format: password
           minLength: 12
           maxLength: 128
           writeOnly: true
-          description: 민감한 인증 값입니다. 예시는 사용할 수 없는 합성 값이며 로그나 감사 기록에 저장하면 안 됩니다.
-          example: not-a-real-password
-      description: CreateStaffAccount 요청 또는 응답 모델입니다.
+      description: 관리자가 새 직원 계정을 만들 때 사용하는 요청입니다. 초기 password는 전송 직후 안전하게 처리되며 문서에는 사용할 수 없는 합성 값만 둡니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        email: customer@example.com
-        displayName: 김고객
-        role: ADMIN
+        email: agent.park@example.test
+        displayName: 박상담
+        role: AGENT
         password: not-a-real-password
     StaffRole:
       type: string
@@ -6704,23 +5190,17 @@ components:
       - ADMIN
       - AGENT
       - SECURITY_AUDITOR
-      description: StaffRole 요청 또는 응답 모델입니다.
-      example: ADMIN
     StaffStatus:
       type: string
       enum:
       - ACTIVE
       - DISABLED
-      description: StaffStatus 요청 또는 응답 모델입니다.
-      example: ACTIVE
     GrantableAuditAuthority:
       type: string
       enum:
       - AUDIT_SEARCH_QUERY_REVEAL
       - AUDIT_EXPORT
       - AUDIT_PROJECTION_REBUILD
-      description: GrantableAuditAuthority 요청 또는 응답 모델입니다.
-      example: AUDIT_SEARCH_QUERY_REVEAL
     Group:
       type: object
       additionalProperties: false
@@ -6732,30 +5212,16 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         name:
           type: string
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         status:
           type: string
           enum:
           - ACTIVE
           - DISABLED
-          description: status의 허용된 열거 값입니다.
-          example: ACTIVE
         memberCount:
           type: integer
           minimum: 0
-          description: memberCount 값입니다.
-          example: 1
-      description: Group 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        name: 김고객
-        status: ACTIVE
-        memberCount: 1
     CreateGroup:
       type: object
       additionalProperties: false
@@ -6766,11 +5232,10 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
-      description: CreateGroup 요청 또는 응답 모델입니다.
+      description: 관리자가 상담 티켓을 배정할 수 있는 새 지원 그룹을 만들 때 사용하는 요청입니다. 구성원은 별도 그룹 구성원 명령으로 추가합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        name: 김고객
+        name: 결제 지원팀
     UpdateGroup:
       type: object
       additionalProperties: false
@@ -6781,11 +5246,10 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
-      description: UpdateGroup 요청 또는 응답 모델입니다.
+      description: 지원 그룹의 표시 이름만 변경할 때 사용하는 요청입니다. 이 작업은 기존 구성원 관계나 티켓 소유권을 변경하지 않습니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        name: 김고객
+        name: 결제·정산 지원팀
     CreateGroupMembership:
       type: object
       additionalProperties: false
@@ -6795,11 +5259,10 @@ components:
         staffId:
           type: string
           format: uuid
-          description: staffId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
-      description: CreateGroupMembership 요청 또는 응답 모델입니다.
+      description: 기존 지원 그룹에 활성 직원 계정을 구성원으로 추가할 때 사용하는 요청입니다. 이 관계가 있어야 해당 그룹의 티켓을 해당 직원에게 배정할 수 있습니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        staffId: 11111111-1111-4111-8111-111111111111
+        staffId: 33333333-3333-4333-8333-333333333333
     GroupMembership:
       type: object
       additionalProperties: false
@@ -6812,26 +5275,13 @@ components:
         groupId:
           type: string
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         staffId:
           type: string
           format: uuid
-          description: staffId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         staffDisplayName:
           type: string
-          description: staffDisplayName 값입니다.
-          example: 예시 값
         role:
           $ref: '#/components/schemas/StaffRole'
-          description: role의 허용된 열거 값입니다.
-      description: GroupMembership 요청 또는 응답 모델입니다.
-      example:
-        groupId: 11111111-1111-4111-8111-111111111111
-        staffId: 11111111-1111-4111-8111-111111111111
-        staffDisplayName: 예시 값
-        role: ADMIN
     AdminSetting:
       type: object
       required:
@@ -6842,68 +5292,40 @@ components:
       properties:
         key:
           type: string
-          description: key 값입니다.
-          example: example-secret-not-valid
         valueType:
           type: string
-          description: valueType 값입니다.
-          example: 예시 값
-        value:
-          description: value 값입니다.
+        value: {}
         secret:
           type: boolean
-          description: 민감한 인증 값입니다. 예시는 사용할 수 없는 합성 값이며 로그나 감사 기록에 저장하면 안 됩니다.
-          example: example-secret-not-valid
         version:
           type: integer
           format: int64
-          description: 낙관적 동시성 제어에 사용하는 버전입니다.
-          example: 1
         effectiveAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: AdminSetting 요청 또는 응답 모델입니다.
-      example:
-        key: example-secret-not-valid
-        valueType: 예시 값
-        secret: example-secret-not-valid
-        version: 1
-        effectiveAt: '2026-08-10T09:00:00Z'
     UpdateAdminSetting:
       type: object
       required:
       - value
       - reason
       properties:
-        value:
-          description: value 값입니다.
+        value: {}
         reason:
           type: string
           minLength: 1
           maxLength: 1000
-          description: reason에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제 기록 확인을 위한 감사 조사
-      description: UpdateAdminSetting 요청 또는 응답 모델입니다.
-      example:
-        reason: 결제 기록 확인을 위한 감사 조사
     AuditLedgerType:
       type: string
       enum:
       - TICKET_CHANGE
       - ACCESS_SEARCH
       - ADMIN_SECURITY
-      description: AuditLedgerType 요청 또는 응답 모델입니다.
-      example: TICKET_CHANGE
     AuditOutcome:
       type: string
       enum:
       - SUCCEEDED
       - DENIED
       - FAILED
-      description: AuditOutcome 요청 또는 응답 모델입니다.
-      example: SUCCEEDED
     AuditFieldChange:
       type: object
       additionalProperties: false
@@ -6914,15 +5336,8 @@ components:
       properties:
         field:
           type: string
-          description: field 값입니다.
-          example: 예시 값
-        before:
-          description: before 값입니다.
-        after:
-          description: after 값입니다.
-      description: AuditFieldChange 요청 또는 응답 모델입니다.
-      example:
-        field: 예시 값
+        before: {}
+        after: {}
     AuditActivity:
       type: object
       additionalProperties: false
@@ -6938,107 +5353,58 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         ledger:
           $ref: '#/components/schemas/AuditLedgerType'
-          description: ledger 값입니다.
         action:
           type: string
-          description: action 값입니다.
-          example: 예시 값
         actor:
           $ref: '#/components/schemas/ActorSummary'
-          description: actor 값입니다.
         occurredAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         ticketNumber:
           type:
           - integer
           - 'null'
           format: int64
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         groupId:
           type:
           - string
           - 'null'
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         field:
           type:
           - string
           - 'null'
-          description: field 값입니다.
-          example: 예시 값
         resourceType:
           type:
           - string
           - 'null'
-          description: resourceType 값입니다.
-          example: 예시 값
         resourceId:
           type:
           - string
           - 'null'
-          description: resourceId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         summary:
           type: string
-          description: summary 값입니다.
-          example: 예시 값
         source:
           type: string
-          description: source의 허용된 열거 값입니다.
-          example: 예시 값
         outcome:
           $ref: '#/components/schemas/AuditOutcome'
-          description: outcome 값입니다.
         requestId:
           type:
           - string
           - 'null'
-          description: requestId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         correlationId:
           type:
           - string
           - 'null'
-          description: correlationId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         protectedContentAvailable:
           type: boolean
-          description: protectedContentAvailable 값입니다.
-          example: true
         searchFingerprint:
           type:
           - string
           - 'null'
-          description: searchFingerprint 값입니다.
-          example: 예시 값
-      description: AuditActivity 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        ledger: TICKET_CHANGE
-        action: 예시 값
-        actor:
-          id: 11111111-1111-4111-8111-111111111111
-          type: CUSTOMER
-          displayName: 김고객
-        occurredAt: '2026-08-10T09:00:00Z'
-        ticketNumber: 1042
-        groupId: 11111111-1111-4111-8111-111111111111
-        resourceId: 11111111-1111-4111-8111-111111111111
-        summary: 예시 값
-        source: 예시 값
-        outcome: SUCCEEDED
-        requestId: 11111111-1111-4111-8111-111111111111
-        correlationId: 11111111-1111-4111-8111-111111111111
-        protectedContentAvailable: true
     AuditActivityPage:
       type: object
       required:
@@ -7050,47 +5416,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditActivity'
-          description: items 값입니다.
         nextCursor:
           type:
           - string
           - 'null'
-          description: 서버가 발급한 불투명 페이지 커서입니다. 값을 해석하거나 변경하지 않습니다.
-          example: opaque-cursor-example
         snapshotAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         projection:
           $ref: '#/components/schemas/AuditProjectionStatus'
-          description: projection 값입니다.
-      description: AuditActivityPage 요청 또는 응답 모델입니다.
-      example:
-        items:
-        - id: 11111111-1111-4111-8111-111111111111
-          ledger: TICKET_CHANGE
-          action: 예시 값
-          actor:
-            id: 11111111-1111-4111-8111-111111111111
-            type: CUSTOMER
-            displayName: 김고객
-          occurredAt: '2026-08-10T09:00:00Z'
-          ticketNumber: 1042
-          groupId: 11111111-1111-4111-8111-111111111111
-          resourceId: 11111111-1111-4111-8111-111111111111
-          summary: 예시 값
-          source: 예시 값
-          outcome: SUCCEEDED
-          requestId: 11111111-1111-4111-8111-111111111111
-          correlationId: 11111111-1111-4111-8111-111111111111
-          protectedContentAvailable: true
-        nextCursor: opaque-cursor-example
-        snapshotAt: '2026-08-10T09:00:00Z'
-        projection:
-          state: CURRENT
-          projectedCount: 1
-          lastRebuiltAt: '2026-08-10T09:00:00Z'
     AuditProjectionStatus:
       type: object
       additionalProperties: false
@@ -7105,26 +5439,15 @@ components:
           - CURRENT
           - DEGRADED
           - REBUILDING
-          description: state 값입니다.
-          example: CURRENT
         projectedCount:
           type: integer
           format: int64
           minimum: 0
-          description: projectedCount 값입니다.
-          example: 1
         lastRebuiltAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: AuditProjectionStatus 요청 또는 응답 모델입니다.
-      example:
-        state: CURRENT
-        projectedCount: 1
-        lastRebuiltAt: '2026-08-10T09:00:00Z'
     AuditSearchContext:
       type: object
       additionalProperties: false
@@ -7142,43 +5465,30 @@ components:
           description: '입력값과 무관한 `[PROTECTED]` 일상 조회 표식에 남아 있는 레거시 필드명입니다. 정확한 검색어는 별도 권한과 사유가 필요한 공개 작업에서만 확인할 수 있습니다.
 
             '
-          example: 예시 값
         queryFingerprint:
           type: string
-          description: queryFingerprint 값입니다.
-          example: 예시 값
         filters:
           type: object
           additionalProperties:
             type: string
-          description: filters 값입니다.
         sort:
           type: string
-          description: sort 값입니다.
-          example: 예시 값
         resultCount:
           type: integer
           format: int64
           minimum: 0
-          description: resultCount 값입니다.
-          example: 1
         originSearchActivityId:
           type:
           - string
           - 'null'
           format: uuid
-          description: originSearchActivityId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         openedActivityCount:
           type: integer
           format: int64
           minimum: 0
-          description: openedActivityCount 값입니다.
-          example: 1
         openedActivitiesTruncated:
           type: boolean
           description: 연결된 열람 중 처음 100건만 반환했으면 true입니다.
-          example: true
         openedActivities:
           type: array
           maxItems: 100
@@ -7199,20 +5509,6 @@ components:
               occurredAt:
                 type: string
                 format: date-time
-          description: openedActivities 값입니다.
-      description: AuditSearchContext 요청 또는 응답 모델입니다.
-      example:
-        queryRedacted: 예시 값
-        queryFingerprint: 예시 값
-        sort: 예시 값
-        resultCount: 1
-        originSearchActivityId: 11111111-1111-4111-8111-111111111111
-        openedActivityCount: 1
-        openedActivitiesTruncated: true
-        openedActivities:
-        - activityId: 11111111-1111-4111-8111-111111111111
-          ticketNumber: 1042
-          occurredAt: '2026-08-10T09:00:00Z'
     AuditActivityDetail:
       allOf:
       - $ref: '#/components/schemas/AuditActivity'
@@ -7261,25 +5557,6 @@ components:
           metadata:
             type: object
             additionalProperties: true
-      description: AuditActivityDetail 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        ledger: TICKET_CHANGE
-        action: 예시 값
-        actor:
-          id: 11111111-1111-4111-8111-111111111111
-          type: CUSTOMER
-          displayName: 김고객
-        occurredAt: '2026-08-10T09:00:00Z'
-        ticketNumber: 1042
-        groupId: 11111111-1111-4111-8111-111111111111
-        resourceId: 11111111-1111-4111-8111-111111111111
-        summary: 예시 값
-        source: 예시 값
-        outcome: SUCCEEDED
-        requestId: 11111111-1111-4111-8111-111111111111
-        correlationId: 11111111-1111-4111-8111-111111111111
-        protectedContentAvailable: true
     SearchQueryRevealRequest:
       type: object
       additionalProperties: false
@@ -7290,11 +5567,10 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
-          description: reason에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제 기록 확인을 위한 감사 조사
-      description: SearchQueryRevealRequest 요청 또는 응답 모델입니다.
+      description: 보호된 검색어 원문을 공개할 권한이 있는 감사자가 사유를 남길 때 사용하는 요청입니다. 공개 행위도 별도 접근 감사로 기록됩니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        reason: 결제 기록 확인을 위한 감사 조사
+        reason: 고객 데이터 노출 의심 조사에서 검색 조건을 재현해야 합니다.
     SearchQueryRevealResult:
       type: object
       additionalProperties: false
@@ -7305,40 +5581,25 @@ components:
         activityId:
           type: string
           format: uuid
-          description: activityId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         state:
           type: string
           enum:
           - AVAILABLE
           - RETENTION_EXPIRED
           - KEY_UNAVAILABLE
-          description: state 값입니다.
-          example: AVAILABLE
         rawQuery:
           type:
           - string
           - 'null'
-          description: rawQuery 값입니다.
-          example: 예시 값
         keyVersion:
           type:
           - string
           - 'null'
-          description: keyVersion 값입니다.
-          example: 예시 값
         revealedAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: SearchQueryRevealResult 요청 또는 응답 모델입니다.
-      example:
-        activityId: 11111111-1111-4111-8111-111111111111
-        state: AVAILABLE
-        revealedAt: '2026-08-10T09:00:00Z'
     CreateAuditExport:
       type: object
       additionalProperties: false
@@ -7353,11 +5614,8 @@ components:
           enum:
           - CSV
           - JSONL
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: CSV
         filters:
           $ref: '#/components/schemas/AuditExportFilters'
-          description: filters 값입니다.
         fields:
           type: array
           minItems: 1
@@ -7378,34 +5636,26 @@ components:
             - requestId
             - correlationId
             - searchFingerprint
-          description: fields 값입니다.
         reason:
           type: string
           minLength: 1
           maxLength: 1000
-          description: reason에 사용하는 입력 또는 표시 문자열입니다.
-          example: 결제 기록 확인을 위한 감사 조사
-      description: CreateAuditExport 요청 또는 응답 모델입니다.
+      description: 감사 권한자가 필터 조건에 맞는 감사 활동을 내보내기 요청할 때 사용하는 본문입니다. reason과 선택한 fields는 내보내기 접근 자체에 대한 감사 근거가 됩니다.
+      x-deskseed-documentation-review: MANUAL
       example:
         format: CSV
         filters:
-          from: '2026-08-10T09:00:00Z'
-          to: '2026-08-10T09:00:00Z'
+          from: '2026-08-01T00:00:00Z'
+          to: '2026-08-31T23:59:59Z'
           ledger: TICKET_CHANGE
-          action: 예시 값
-          actorType: 예시 값
-          actorId: 11111111-1111-4111-8111-111111111111
           ticketNumber: 1042
-          groupId: 11111111-1111-4111-8111-111111111111
-          field: 예시 값
-          source: 예시 값
           outcome: SUCCEEDED
-          requestId: 11111111-1111-4111-8111-111111111111
-          correlationId: 11111111-1111-4111-8111-111111111111
-          searchFingerprint: 예시 값
         fields:
         - occurredAt
-        reason: 결제 기록 확인을 위한 감사 조사
+        - action
+        - ticketNumber
+        - outcome
+        reason: 주문 ORD-2026-1042의 처리 이력 확인을 위한 내부 감사
     AuditExportFilters:
       type: object
       additionalProperties: false
@@ -7413,84 +5663,43 @@ components:
         from:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         to:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         ledger:
           $ref: '#/components/schemas/AuditLedgerType'
-          description: ledger 값입니다.
         action:
           type: string
           maxLength: 80
-          description: action 값입니다.
-          example: 예시 값
         actorType:
           type: string
-          description: actorType의 허용된 열거 값입니다.
-          example: 예시 값
         actorId:
           type: string
           format: uuid
-          description: actorId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         ticketNumber:
           type: integer
           format: int64
           minimum: 1
           description: 사람이 식별하고 검색할 때 사용하는 티켓 번호입니다.
-          example: 1042
         groupId:
           type: string
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         field:
           type: string
           maxLength: 60
-          description: field 값입니다.
-          example: 예시 값
         source:
           type: string
-          description: source의 허용된 열거 값입니다.
-          example: 예시 값
         outcome:
           $ref: '#/components/schemas/AuditOutcome'
-          description: outcome 값입니다.
         requestId:
           type: string
           maxLength: 100
-          description: requestId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         correlationId:
           type: string
           maxLength: 100
-          description: correlationId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         searchFingerprint:
           type: string
           maxLength: 100
-          description: searchFingerprint 값입니다.
-          example: 예시 값
-      description: AuditExportFilters 요청 또는 응답 모델입니다.
-      example:
-        from: '2026-08-10T09:00:00Z'
-        to: '2026-08-10T09:00:00Z'
-        ledger: TICKET_CHANGE
-        action: 예시 값
-        actorType: 예시 값
-        actorId: 11111111-1111-4111-8111-111111111111
-        ticketNumber: 1042
-        groupId: 11111111-1111-4111-8111-111111111111
-        field: 예시 값
-        source: 예시 값
-        outcome: SUCCEEDED
-        requestId: 11111111-1111-4111-8111-111111111111
-        correlationId: 11111111-1111-4111-8111-111111111111
-        searchFingerprint: 예시 값
     ExportJob:
       type: object
       additionalProperties: false
@@ -7505,31 +5714,22 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         status:
           type: string
           enum:
           - REQUESTED
-          description: status의 허용된 열거 값입니다.
-          example: REQUESTED
         createdAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         format:
           type: string
           enum:
           - CSV
           - JSONL
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: CSV
         fields:
           type: array
           items:
             type: string
-          description: fields 값입니다.
         artifact:
           type: object
           additionalProperties: false
@@ -7544,18 +5744,6 @@ components:
             generationAvailable:
               type: boolean
               const: false
-          description: artifact 값입니다.
-      description: ExportJob 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        status: REQUESTED
-        createdAt: '2026-08-10T09:00:00Z'
-        format: CSV
-        fields:
-        - 예시 값
-        artifact:
-          state: NOT_CREATED
-          generationAvailable: false
     AuditProjectionRebuildResult:
       type: object
       additionalProperties: false
@@ -7571,45 +5759,23 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: ticketChangeCount 값입니다.
-          example: 1
         accessSearchCount:
           type: integer
           format: int64
           minimum: 0
-          description: accessSearchCount 값입니다.
-          example: 1
         adminSecurityCount:
           type: integer
           format: int64
           minimum: 0
-          description: adminSecurityCount 값입니다.
-          example: 1
         totalCount:
           type: integer
           format: int64
           minimum: 0
-          description: totalCount 값입니다.
-          example: 1
         completedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         projection:
           $ref: '#/components/schemas/AuditProjectionStatus'
-          description: projection 값입니다.
-      description: AuditProjectionRebuildResult 요청 또는 응답 모델입니다.
-      example:
-        ticketChangeCount: 1
-        accessSearchCount: 1
-        adminSecurityCount: 1
-        totalCount: 1
-        completedAt: '2026-08-10T09:00:00Z'
-        projection:
-          state: CURRENT
-          projectedCount: 1
-          lastRebuiltAt: '2026-08-10T09:00:00Z'
     CurrentCustomer:
       type: object
       additionalProperties: false
@@ -7621,30 +5787,16 @@ components:
         id:
           type: string
           format: uuid
-          description: id 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         email:
           type: string
           format: email
-          description: email 값입니다.
-          example: customer@example.com
         displayName:
           type:
           - string
           - 'null'
-          description: displayName에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         verifiedAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: CurrentCustomer 요청 또는 응답 모델입니다.
-      example:
-        id: 11111111-1111-4111-8111-111111111111
-        email: customer@example.com
-        displayName: 김고객
-        verifiedAt: '2026-08-10T09:00:00Z'
     BusinessInterval:
       type: object
       additionalProperties: false
@@ -7655,17 +5807,9 @@ components:
         start:
           type: string
           pattern: ^([01]\d|2[0-3]):[0-5]\d$
-          description: start 값입니다.
-          example: 예시 값
         end:
           type: string
           pattern: ^([01]\d|2[0-3]):[0-5]\d$
-          description: end 값입니다.
-          example: 예시 값
-      description: BusinessInterval 요청 또는 응답 모델입니다.
-      example:
-        start: 예시 값
-        end: 예시 값
     WeekdaySchedule:
       type: object
       additionalProperties: false
@@ -7684,25 +5828,13 @@ components:
           - FRIDAY
           - SATURDAY
           - SUNDAY
-          description: weekday 값입니다.
-          example: MONDAY
         enabled:
           type: boolean
-          description: enabled 값입니다.
-          example: true
         intervals:
           type: array
           maxItems: 12
           items:
             $ref: '#/components/schemas/BusinessInterval'
-          description: intervals 값입니다.
-      description: WeekdaySchedule 요청 또는 응답 모델입니다.
-      example:
-        weekday: MONDAY
-        enabled: true
-        intervals:
-        - start: 예시 값
-          end: 예시 값
     ScheduleException:
       type: object
       additionalProperties: false
@@ -7713,35 +5845,21 @@ components:
         date:
           type: string
           format: date
-          description: date 값입니다.
-          example: 예시 값
         mode:
           type: string
           enum:
           - CLOSED
           - OPEN
-          description: mode 값입니다.
-          example: CLOSED
         intervals:
           type: array
           maxItems: 12
           items:
             $ref: '#/components/schemas/BusinessInterval'
-          description: intervals 값입니다.
         label:
           type:
           - string
           - 'null'
           maxLength: 200
-          description: label 값입니다.
-          example: 예시 값
-      description: ScheduleException 요청 또는 응답 모델입니다.
-      example:
-        date: 예시 값
-        mode: CLOSED
-        intervals:
-        - start: 예시 값
-          end: 예시 값
     BusinessScheduleInput:
       type: object
       additionalProperties: false
@@ -7754,43 +5872,57 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         timeZone:
           type: string
           minLength: 1
           maxLength: 100
-          description: timeZone 값입니다.
-          example: 예시 값
         weekdays:
           type: array
           minItems: 7
           maxItems: 7
           items:
             $ref: '#/components/schemas/WeekdaySchedule'
-          description: weekdays 값입니다.
         exceptions:
           type: array
           maxItems: 366
           items:
             $ref: '#/components/schemas/ScheduleException'
-          description: exceptions 값입니다.
-      description: BusinessScheduleInput 요청 또는 응답 모델입니다.
-      example:
-        name: 김고객
-        timeZone: 예시 값
+      description: 관리자가 영업 시간표의 새 버전을 만들거나 미리보기할 때 사용하는 일정 정의입니다. weekdays와 exceptions는 지정한 IANA timeZone을 기준으로 SLA 영업 시간을
+        계산합니다.
+      x-deskseed-documentation-review: MANUAL
+      example: &id015
+        name: 대한민국 고객지원 기본 운영시간
+        timeZone: Asia/Seoul
         weekdays:
         - weekday: MONDAY
           enabled: true
           intervals:
-          - start: 예시 값
-            end: 예시 값
-        exceptions:
-        - date: 예시 값
-          mode: CLOSED
+          - start: 09:00
+            end: '18:00'
+        - weekday: TUESDAY
+          enabled: true
           intervals:
-          - start: 예시 값
-            end: 예시 값
+          - start: 09:00
+            end: '18:00'
+        - weekday: WEDNESDAY
+          enabled: true
+          intervals:
+          - start: 09:00
+            end: '18:00'
+        - weekday: THURSDAY
+          enabled: true
+          intervals:
+          - start: 09:00
+            end: '18:00'
+        - weekday: FRIDAY
+          enabled: true
+          intervals:
+          - start: 09:00
+            end: '18:00'
+        exceptions:
+        - date: '2026-10-03'
+          mode: CLOSED
+          label: 개천절
     BusinessSchedule:
       allOf:
       - $ref: '#/components/schemas/BusinessScheduleInput'
@@ -7850,22 +5982,6 @@ components:
                 format: uuid
               displayName:
                 type: string
-      description: BusinessSchedule 요청 또는 응답 모델입니다.
-      example:
-        name: 김고객
-        timeZone: 예시 값
-        weekdays:
-        - weekday: MONDAY
-          enabled: true
-          intervals:
-          - start: 예시 값
-            end: 예시 값
-        exceptions:
-        - date: 예시 값
-          mode: CLOSED
-          intervals:
-          - start: 예시 값
-            end: 예시 값
     BusinessTimePreviewRequest:
       type: object
       additionalProperties: false
@@ -7877,43 +5993,24 @@ components:
       properties:
         schedule:
           $ref: '#/components/schemas/BusinessScheduleInput'
-          description: schedule 값입니다.
         startAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         endAt:
           type: string
           format: date-time
           description: startAt 이후 최대 366일 이내여야 합니다.
-          example: '2026-08-10T09:00:00Z'
         businessMinutes:
           type: integer
           minimum: 0
           maximum: 525600
-          description: businessMinutes 값입니다.
-          example: 1
-      description: BusinessTimePreviewRequest 요청 또는 응답 모델입니다.
+      description: 저장 전 영업 시간표 정의로 두 시각 사이의 영업 분을 계산해 보는 요청입니다. 이 작업은 입력 schedule을 저장하거나 활성화하지 않습니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        schedule:
-          name: 김고객
-          timeZone: 예시 값
-          weekdays:
-          - weekday: MONDAY
-            enabled: true
-            intervals:
-            - start: 예시 값
-              end: 예시 값
-          exceptions:
-          - date: 예시 값
-            mode: CLOSED
-            intervals:
-            - start: 예시 값
-              end: 예시 값
-        startAt: '2026-08-10T09:00:00Z'
+        schedule: *id015
+        startAt: '2026-08-10T00:00:00Z'
         endAt: '2026-08-10T09:00:00Z'
-        businessMinutes: 1
+        businessMinutes: 480
     BusinessTimePreviewResult:
       type: object
       additionalProperties: false
@@ -7929,40 +6026,23 @@ components:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         elapsedBusinessMinutes:
           type: integer
           minimum: 0
-          description: elapsedBusinessMinutes 값입니다.
-          example: 1
         nextOpenAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         nextCloseAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         dstPolicy:
           type: string
           enum:
           - GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH
-          description: dstPolicy 값입니다.
-          example: GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH
-      description: BusinessTimePreviewResult 요청 또는 응답 모델입니다.
-      example:
-        dueAt: '2026-08-10T09:00:00Z'
-        elapsedBusinessMinutes: 1
-        nextOpenAt: '2026-08-10T09:00:00Z'
-        nextCloseAt: '2026-08-10T09:00:00Z'
-        dstPolicy: GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH
     PriorityTargets:
       type: object
       additionalProperties: false
@@ -7972,36 +6052,22 @@ components:
           - integer
           - 'null'
           minimum: 1
-          description: LOW 값입니다.
-          example: 1
         NORMAL:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: NORMAL 값입니다.
-          example: 1
         HIGH:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: HIGH 값입니다.
-          example: 1
         URGENT:
           type:
           - integer
           - 'null'
           minimum: 1
           maximum: 525600
-          description: URGENT 값입니다.
-          example: 1
-      description: PriorityTargets 요청 또는 응답 모델입니다.
-      example:
-        LOW: 1
-        NORMAL: 1
-        HIGH: 1
-        URGENT: 1
     FirstReplySlaPolicyConditions:
       type: object
       additionalProperties: false
@@ -8011,8 +6077,6 @@ components:
           - string
           - 'null'
           format: uuid
-          description: groupId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         channel:
           type:
           - string
@@ -8024,12 +6088,6 @@ components:
           - CHAT
           - API
           - null
-          description: channel 값입니다.
-          example: WEB
-      description: FirstReplySlaPolicyConditions 요청 또는 응답 모델입니다.
-      example:
-        groupId: 11111111-1111-4111-8111-111111111111
-        channel: WEB
     FirstReplySlaPolicyInput:
       type: object
       additionalProperties: false
@@ -8045,25 +6103,17 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: name에 사용하는 입력 또는 표시 문자열입니다.
-          example: 김고객
         position:
           type: integer
           minimum: 1
           maximum: 10000
-          description: position 값입니다.
-          example: 1
         scheduleId:
           type: string
           format: uuid
-          description: scheduleId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         conditions:
           $ref: '#/components/schemas/FirstReplySlaPolicyConditions'
-          description: conditions 값입니다.
         targets:
           $ref: '#/components/schemas/PriorityTargets'
-          description: targets 값입니다.
         pauseStatuses:
           type: array
           items:
@@ -8077,17 +6127,23 @@ components:
           maxItems: 4
           default:
           - PENDING
-          description: pauseStatuses 값입니다.
-      description: FirstReplySlaPolicyInput 요청 또는 응답 모델입니다.
-      example:
-        name: 김고객
-        position: 1
-        scheduleId: 11111111-1111-4111-8111-111111111111
+      description: 관리자가 최초 PUBLIC 답변 목표를 계산할 SLA 정책 버전을 정의할 때 사용하는 요청입니다. scheduleId, 조건, 우선순위별 targets, pauseStatuses가 함께
+        적용 순서를 결정합니다.
+      x-deskseed-documentation-review: MANUAL
+      example: &id016
+        name: 결제 문의 기본 최초 답변 SLA
+        position: 10
+        scheduleId: 55555555-5555-4555-8555-555555555555
         conditions:
           groupId: 11111111-1111-4111-8111-111111111111
           channel: WEB
+        targets:
+          LOW: 480
+          NORMAL: 240
+          HIGH: 120
+          URGENT: 60
         pauseStatuses:
-        - NEW
+        - PENDING
     FirstReplySlaPolicy:
       allOf:
       - $ref: '#/components/schemas/FirstReplySlaPolicyInput'
@@ -8125,16 +6181,6 @@ components:
           createdAt:
             type: string
             format: date-time
-      description: FirstReplySlaPolicy 요청 또는 응답 모델입니다.
-      example:
-        name: 김고객
-        position: 1
-        scheduleId: 11111111-1111-4111-8111-111111111111
-        conditions:
-          groupId: 11111111-1111-4111-8111-111111111111
-          channel: WEB
-        pauseStatuses:
-        - NEW
     FirstReplySlaPreviewRequest:
       type: object
       additionalProperties: false
@@ -8148,12 +6194,10 @@ components:
           - 'null'
           format: uuid
           description: 순서가 있는 미리보기 평가에서 후보 정책으로 대체할 기존 정책입니다.
-          example: 11111111-1111-4111-8111-111111111111
         candidate:
           oneOf:
           - $ref: '#/components/schemas/FirstReplySlaPolicyInput'
           - type: 'null'
-          description: candidate 값입니다.
         ticket:
           type: object
           additionalProperties: false
@@ -8176,29 +6220,20 @@ components:
               - EMAIL
               - CHAT
               - API
-          description: ticket 값입니다.
         startAt:
           type: string
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
-      description: FirstReplySlaPreviewRequest 요청 또는 응답 모델입니다.
+      description: 후보 최초 답변 SLA 정책과 샘플 티켓에 대해 적용 결과를 저장 전 미리보기할 때 사용하는 요청입니다. candidate는 candidatePolicyId가 가리키는 기존 정책을 평가
+        중에만 대체합니다.
+      x-deskseed-documentation-review: MANUAL
       example:
-        candidatePolicyId: 11111111-1111-4111-8111-111111111111
-        candidate:
-          name: 김고객
-          position: 1
-          scheduleId: 11111111-1111-4111-8111-111111111111
-          conditions:
-            groupId: 11111111-1111-4111-8111-111111111111
-            channel: WEB
-          pauseStatuses:
-          - NEW
+        candidatePolicyId: 66666666-6666-4666-8666-666666666666
+        candidate: *id016
         ticket:
-          priority: LOW
+          priority: HIGH
           groupId: 11111111-1111-4111-8111-111111111111
           channel: WEB
-        startAt: '2026-08-10T09:00:00Z'
+        startAt: '2026-08-10T00:00:00Z'
     FirstReplySlaPreviewResult:
       type: object
       additionalProperties: false
@@ -8214,63 +6249,40 @@ components:
       properties:
         matched:
           type: boolean
-          description: matched 값입니다.
-          example: true
         dueAt:
           type:
           - string
           - 'null'
           format: date-time
-          description: UTC 기준 ISO 8601 시각입니다.
-          example: '2026-08-10T09:00:00Z'
         targetMinutes:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: targetMinutes 값입니다.
-          example: 1
         policyId:
           type:
           - string
           - 'null'
           format: uuid
-          description: policyId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         policyVersion:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: policyVersion 값입니다.
-          example: 1
         scheduleId:
           type:
           - string
           - 'null'
           format: uuid
-          description: scheduleId 식별자입니다.
-          example: 11111111-1111-4111-8111-111111111111
         scheduleVersion:
           type:
           - integer
           - 'null'
           minimum: 1
-          description: scheduleVersion 값입니다.
-          example: 1
         dstPolicy:
           type: string
           enum:
           - GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH
-          description: dstPolicy 값입니다.
-          example: GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH
-      description: FirstReplySlaPreviewResult 요청 또는 응답 모델입니다.
-      example:
-        matched: true
-        dueAt: '2026-08-10T09:00:00Z'
-        policyId: 11111111-1111-4111-8111-111111111111
-        scheduleId: 11111111-1111-4111-8111-111111111111
-        dstPolicy: GAP_SHIFT_FORWARD_OVERLAP_INCLUDE_BOTH
     FirstReplySlaAnalytics:
       type: object
       additionalProperties: false
@@ -8289,54 +6301,36 @@ components:
         metric:
           type: string
           const: FIRST_REPLY
-          description: metric 값입니다.
-          example: FIRST_REPLY
         calculationVersion:
           type: string
-          description: calculationVersion 값입니다.
-          example: 예시 값
         active:
           type: integer
           format: int64
           minimum: 0
-          description: active 값입니다.
-          example: 1
         paused:
           type: integer
           format: int64
           minimum: 0
-          description: paused 값입니다.
-          example: 1
         achieved:
           type: integer
           format: int64
           minimum: 0
-          description: achieved 값입니다.
-          example: 1
         breached:
           type: integer
           format: int64
           minimum: 0
-          description: breached 값입니다.
-          example: 1
         cancelled:
           type: integer
           format: int64
           minimum: 0
-          description: cancelled 값입니다.
-          example: 1
         noPolicy:
           type: integer
           format: int64
           minimum: 0
-          description: noPolicy 값입니다.
-          example: 1
         achievedRateDenominator:
           type: integer
           format: int64
           minimum: 0
-          description: achievedRateDenominator 값입니다.
-          example: 1
         achievedRate:
           type:
           - number
@@ -8344,16 +6338,4 @@ components:
           format: double
           minimum: 0
           maximum: 1
-          description: achievedRate 값입니다.
-          example: 1.0
-      description: FirstReplySlaAnalytics 요청 또는 응답 모델입니다.
-      example:
-        metric: FIRST_REPLY
-        calculationVersion: 예시 값
-        active: 1
-        paused: 1
-        achieved: 1
-        breached: 1
-        cancelled: 1
-        noPolicy: 1
-        achievedRateDenominator: 1
+x-deskseed-documentation-ownership: MANUAL
