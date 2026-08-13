@@ -6,6 +6,8 @@ import type {
   AgentTicketDetail,
   AgentTicketFilters,
   AgentTicketPage,
+  AgentCustomerSearchInput,
+  AgentCustomerSearchPage,
   AgentTicketSearchInput,
   AgentTicketSearchPage,
   AgentTicketSummary,
@@ -25,9 +27,11 @@ import type {
   BusinessSchedulePreviewInput,
   BusinessWeekday,
   CreateAuditExportInput,
+  CreateAgentTicketCommand,
   CreateChildTicketCommand,
   CreateChildTicketResult,
   CustomerAccessModeSetting,
+  CustomerSummary,
   UpdateCustomerAccessModeInput,
   CreateStaffInput,
   CurrentStaff,
@@ -2217,6 +2221,24 @@ function decodeCreateChildTicketResult(
   }
 }
 
+function decodeCustomerSummary(value: unknown): CustomerSummary | undefined {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    !isNonBlankString(value.email) ||
+    typeof value.verified !== 'boolean'
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    email: value.email,
+    verified: value.verified,
+  }
+}
+
 export async function listAgentViews(): Promise<SavedAgentView[]> {
   const response = await staffFetch('/api/v1/agent/views')
   const body = await checkedBody(response)
@@ -2360,6 +2382,61 @@ export async function createChildTicket(
   const result = decodeCreateChildTicketResult(await checkedBody(response))
   if (!result) throw malformedSuccess(response)
   return result
+}
+
+export async function createAgentTicket(
+  command: CreateAgentTicketCommand,
+): Promise<TicketCommandResult> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/tickets',
+    'POST',
+    command,
+  )
+  const result = decodeTicketCommandResult(await checkedBody(response))
+  if (!result) throw malformedSuccess(response)
+  return result
+}
+
+export async function searchAgentCustomers(
+  input: AgentCustomerSearchInput,
+  interactionId: string,
+): Promise<AgentCustomerSearchPage> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/customers/search',
+    'POST',
+    input,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const body = await checkedBody(response)
+  if (!isRecord(body) || !Array.isArray(body.items)) {
+    throw malformedSuccess(response)
+  }
+  const items = body.items.map(decodeCustomerSummary)
+  if (
+    !isUuid(body.searchEventId) ||
+    !isUuid(body.searchInteractionId) ||
+    items.some((customer) => !customer) ||
+    typeof body.resultCount !== 'number' ||
+    !Number.isSafeInteger(body.resultCount) ||
+    body.resultCount < 0
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    searchEventId: body.searchEventId,
+    searchInteractionId: body.searchInteractionId,
+    items: items as CustomerSummary[],
+    resultCount: body.resultCount,
+  }
+}
+
+export async function listTicketAssignmentOptions(): Promise<TicketAssignmentOptions> {
+  const response = await staffFetch('/api/v1/agent/assignment-options')
+  const body = await checkedBody(response)
+  if (!isRecord(body)) throw malformedSuccess(response)
+  const decoded = decodeTicketAssignmentOptions(body)
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
 }
 
 export async function listTicketExternalReferences(

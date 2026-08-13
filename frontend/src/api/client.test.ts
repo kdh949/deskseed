@@ -2,15 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   advanceStaffSessionGeneration,
   ApiError,
+  createAgentTicket,
   createChildTicket,
   getAgentTicket,
   getCurrentStaff,
   getPublicRequest,
   isCurrentStaffSessionActorMismatch,
+  listTicketAssignmentOptions,
   loginStaff,
   listAgentViews,
   listStaff,
   listTicketsInView,
+  searchAgentCustomers,
   searchAgentTickets,
   setConfirmedStaffActor,
   STAFF_SESSION_ACTOR_MISMATCH_EVENT,
@@ -1171,5 +1174,223 @@ describe('agent ticket read API client', () => {
         'NAVIGATION',
       ),
     ).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('agent ticket create API client', () => {
+  it('sends a create-ticket command with an existing customerId requester', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1050,
+            version: 0,
+            auditId: '55555555-5555-4555-8555-555555555555',
+            warnings: [],
+          }),
+          { status: 201 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      createAgentTicket({
+        requester: { customerId: '11111111-1111-4111-8111-111111111111' },
+        subject: '검색으로 찾은 고객 티켓',
+        firstComment: { visibility: 'INTERNAL', body: '내부 조사 시작' },
+        priority: 'NORMAL',
+        clientCommandId: '66666666-6666-4666-8666-666666666666',
+      }),
+    ).resolves.toEqual({
+      ticketNumber: 1050,
+      version: 0,
+      auditId: '55555555-5555-4555-8555-555555555555',
+      warnings: [],
+    })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agent/tickets')
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      requester: { customerId: '11111111-1111-4111-8111-111111111111' },
+      subject: '검색으로 찾은 고객 티켓',
+      firstComment: { visibility: 'INTERNAL', body: '내부 조사 시작' },
+      priority: 'NORMAL',
+      clientCommandId: '66666666-6666-4666-8666-666666666666',
+    })
+  })
+
+  it('rejects a malformed create-ticket success body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ticketNumber: 1050 }), { status: 201 }),
+        ),
+    )
+
+    await expect(
+      createAgentTicket({
+        requester: { name: '김민아', email: 'mina.kim@example.test' },
+        subject: '제목',
+        firstComment: { visibility: 'INTERNAL', body: '본문' },
+        priority: 'NORMAL',
+        clientCommandId: '77777777-7777-4777-8777-777777777777',
+      }),
+    ).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('agent customer search API client', () => {
+  it('sends the search request with the interaction id and decodes the redacted page', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            searchEventId: '11111111-1111-4111-8111-111111111111',
+            searchInteractionId: '22222222-2222-4222-8222-222222222222',
+            items: [
+              {
+                id: '33333333-3333-4333-8333-333333333333',
+                name: '김민아',
+                email: 'mina.kim@example.test',
+                verified: false,
+              },
+            ],
+            resultCount: 1,
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      searchAgentCustomers(
+        { query: '민', limit: 10 },
+        '22222222-2222-4222-8222-222222222222',
+      ),
+    ).resolves.toEqual({
+      searchEventId: '11111111-1111-4111-8111-111111111111',
+      searchInteractionId: '22222222-2222-4222-8222-222222222222',
+      items: [
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          name: '김민아',
+          email: 'mina.kim@example.test',
+          verified: false,
+        },
+      ],
+      resultCount: 1,
+    })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agent/customers/search')
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        'X-CSRF-TOKEN': 'csrf-token',
+        'X-Interaction-Id': '22222222-2222-4222-8222-222222222222',
+        'Content-Type': 'application/json',
+      },
+    })
+  })
+
+  it('rejects a malformed search success body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ items: [{ id: 'not-a-uuid' }] }), {
+            status: 200,
+          }),
+        ),
+    )
+
+    await expect(
+      searchAgentCustomers(
+        { query: '민', limit: 10 },
+        '22222222-2222-4222-8222-222222222222',
+      ),
+    ).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('ticket assignment options API client', () => {
+  it('decodes active groups and members', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            groups: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                name: '결제 지원',
+                members: [
+                  {
+                    id: '22222222-2222-4222-8222-222222222222',
+                    displayName: '박서준',
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+
+    await expect(listTicketAssignmentOptions()).resolves.toEqual({
+      groups: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: '결제 지원',
+          members: [
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              displayName: '박서준',
+            },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('rejects a malformed assignment options body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response(JSON.stringify({ groups: [{ id: 'missing-name' }] }), {
+          status: 200,
+        }),
+      ),
+    )
+
+    await expect(listTicketAssignmentOptions()).rejects.toBeInstanceOf(ApiError)
   })
 })

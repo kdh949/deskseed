@@ -37,6 +37,7 @@ export const Queue: Story = {
       canvas.getByRole('navigation', { name: '상담사 전역 탐색' }),
     ).toBeVisible()
     await expect(canvas.getByRole('link', { name: 'Views' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '새 티켓' })).toBeVisible()
     await expect(canvas.queryByRole('searchbox')).not.toBeInTheDocument()
     await expect(
       canvas.queryByRole('link', { name: '관리자 설정' }),

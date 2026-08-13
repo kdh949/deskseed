@@ -580,6 +580,41 @@ export interface CreateChildTicketCommand {
   clientCommandId: string
 }
 
+export interface CustomerSummary {
+  id: string
+  name: string
+  email: string
+  verified: boolean
+}
+
+export interface AgentCustomerSearchInput {
+  query: string
+  limit: number
+}
+
+export interface AgentCustomerSearchPage {
+  searchEventId: string
+  searchInteractionId: string
+  items: CustomerSummary[]
+  resultCount: number
+}
+
+export interface CreateAgentTicketRequester {
+  customerId?: string
+  name?: string
+  email?: string
+}
+
+export interface CreateAgentTicketCommand {
+  requester: CreateAgentTicketRequester
+  subject: string
+  firstComment: TicketCommentDraft
+  priority: TicketPriority
+  groupId?: string | null
+  assigneeId?: string | null
+  clientCommandId: string
+}
+
 export interface TicketCommandWarning {
   code: string
   message: string
