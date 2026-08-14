@@ -2813,6 +2813,19 @@ export async function createAuditExport(
   return decoded
 }
 
+export async function getAuditExport(
+  jobId: string,
+  interactionId: string,
+): Promise<AuditExportJob> {
+  const response = await staffFetch(
+    `/api/v1/audit/exports/${encodeURIComponent(jobId)}`,
+    { headers: { 'X-Interaction-Id': interactionId } },
+  )
+  const decoded = decodeAuditExportJob(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
 export async function rebuildAuditProjection(
   interactionId: string,
 ): Promise<AuditProjectionRebuildResult> {

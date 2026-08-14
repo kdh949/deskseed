@@ -3,6 +3,7 @@ import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
 import { ScreenState } from './design-system'
 import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
 import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
+import { AuditExportStatusPage } from './features/audit/AuditExportStatusPage'
 import {
   AgentRoute,
   AuditRoute,
@@ -34,6 +35,7 @@ const agentChildren: RouteObject[] = [
 
 const auditChildren: RouteObject[] = [
   { path: 'audit', element: <AuditExplorerPage /> },
+  { path: 'audit/exports/:jobId', element: <AuditExportStatusPage /> },
 ]
 
 export const appRoutes: RouteObject[] = [
