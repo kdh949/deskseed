@@ -41,6 +41,11 @@ deskseed:
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
     consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL}
+  portal:
+    public-request-rate-limit:
+      fingerprint-key: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY}
+      # An empty value safely ignores X-Forwarded-For; configure only deployed reverse proxies here.
+      trusted-proxy-cidrs: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_TRUSTED_PROXY_CIDRS:}
   customer-portal:
     claim-grant-ttl: ${DESKSEED_CUSTOMER_CLAIM_GRANT_TTL:15m}
     claim-signing-key: ${DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY}

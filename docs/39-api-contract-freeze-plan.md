@@ -53,6 +53,14 @@ GET  /api/v1/customer/requests                       account later
 GET  /api/v1/customer/requests/{ticketNumber}        account later
 ```
 
+#### `POST /api/v1/requests` 공개 접수 제한 경계
+
+- 서버는 customer/ticket 생성 전에 대상 이메일, 신뢰된 실제 client 주소, 전역 고정 창을 모두 PostgreSQL 버킷으로 차감한다.
+- 대상과 IP의 원문은 저장하지 않고 purpose-bound HMAC fingerprint만 저장한다. 버킷은 만료 시 bounded `FOR UPDATE SKIP LOCKED` cleanup으로 제거한다.
+- `X-Forwarded-For`는 direct peer가 `trusted-proxy-cidrs`에 있을 때만 해석한다. 신뢰되지 않은 peer의 header는 무시하고, 신뢰 프록시의 손상·복수·상한 초과 chain은 400으로 fail closed한다.
+- 제한 초과는 `429 /problems/request-rate-limit-exceeded`, `Retry-After: <seconds>`, `Cache-Control: no-store`를 반환한다. limiter persistence가 불가능하면 customer/ticket을 만들지 않고 `503 /problems/request-rate-limit-unavailable`을 반환한다.
+- limiter transaction은 ticket transaction보다 먼저 독립적으로 commit한다. 이후 ticket/audit/outbox rollback도 이미 소비한 anti-abuse budget을 되돌리지 않는다.
+
 ### Agent v1
 
 ```text

@@ -32,6 +32,7 @@ import java.util.UUID
 @Validated
 internal class PublicRequestController(
     private val applicationService: PublicRequestApplicationService,
+    private val clientAddressResolver: PublicRequestClientAddressResolver,
 ) {
     @PostMapping
     fun submit(
@@ -47,6 +48,7 @@ internal class PublicRequestController(
                 message = body.message,
                 authenticatedCustomerId = principal?.customerId,
                 authenticatedEmail = principal?.email,
+                effectiveClientAddress = clientAddressResolver.resolve(request),
                 context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
             ),
         )

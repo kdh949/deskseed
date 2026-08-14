@@ -63,12 +63,13 @@ paths:
   /api/v1/requests:
     post:
       summary: 고객 문의 접수
-      description: '고객 문의 접수 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다. 기존 계약의 세부 조건:
-        Anonymous submissions create an isolated unverified customer; matching email input never merges or claims an earlier
-        profile. When a valid customer session is present, the session customer becomes the requester and body name/email
-        never override authenticated identity. The configured customer access mode may reject anonymous submission. A one-time
-        request access token is returned in both modes for explicit ticket-scoped lookup or claim workflows and is revoked
-        when ownership is claimed.'
+      description: '고객 문의 접수 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
+        익명 접수는 격리된 미검증 Customer를 만들며 같은 이메일 입력만으로 기존 profile을 병합하거나 claim하지 않습니다. 유효한 고객 세션이
+        있으면 세션 Customer가 requester가 되고 body의 name/email은 인증된 identity를 바꾸지 않습니다. 설정된 고객 접근 모드는 익명 접수를
+        거부할 수 있습니다. 두 경우 모두 명시적인 ticket 범위 조회 또는 claim 흐름에만 쓰는 일회성 request access token을 반환하고 ownership
+        claim 때 revoke합니다. 문의 대상 이메일·신뢰된 실제 클라이언트 주소·전체 요청 수에는 PostgreSQL 고정 창 제한을 적용합니다. 신뢰되지 않은
+        peer의 X-Forwarded-For는 client identity를 바꾸지 않으며, 제한 시 429와 초 단위 Retry-After를 반환합니다. 제한 버킷에는 원문 이메일이나
+        IP를 저장하지 않습니다.'
       operationId: createCustomerRequest
       x-deskseed-contract-status: FROZEN
       tags:
@@ -80,6 +81,7 @@ paths:
       x-deskseed-requirements:
       - REQ-TKT-001
       - REQ-TKT-002
+      - REQ-TKT-003
       - REQ-TKT-006
       - REQ-AUD-007
       requestBody:
@@ -149,7 +151,20 @@ paths:
           content: *id001
           headers: *id003
         '409': *id002
-        '429': *id002
+        '429':
+          headers:
+            Retry-After:
+              description: 다음 고정 창이 시작될 때까지 기다릴 초 수입니다. 1 이상의 정수이며 원문 이메일이나 IP를 포함하지 않습니다.
+              schema:
+                type: integer
+                minimum: 1
+            Cache-Control:
+              description: 고객 데이터가 포함될 수 있는 capability 보호 응답이므로 항상 `no-store`를 사용합니다.
+              schema:
+                type: string
+                enum:
+                - no-store
+          content: *id001
         '503': *id002
         '500': *id002
   /api/v1/requests/{ticketNumber}:

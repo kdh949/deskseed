@@ -67,6 +67,22 @@ request_ip_hash nullable
 - expiry and replay indexes/cleanup.
 - application logs never contain token.
 
+### public_request_rate_limit_buckets
+
+```text
+bucket_type              GLOBAL | CLIENT | DESTINATION
+bucket_fingerprint       purpose-bound HMAC-SHA-256 hex, never raw email/IP
+window_started_at
+request_count
+expires_at
+updated_at
+```
+
+- primary key `(bucket_type, bucket_fingerprint, window_started_at)` makes each PostgreSQL fixed-window increment atomic across application instances.
+- requests acquire bucket types in the stable order `GLOBAL → CLIENT → DESTINATION`; an over-limit increment rolls back every bucket increment in that limiter transaction.
+- `expires_at` is indexed with the primary-key columns for bounded `FOR UPDATE SKIP LOCKED` cleanup. The table intentionally has no ticket, customer, raw destination, raw IP, request header, or token column.
+- V28 is additive. Rollback is a deliberate limiter disable/configuration action; it never deletes the table or historical expired rows outside the cleanup policy.
+
 ### staff_accounts
 
 ```text
@@ -468,6 +484,12 @@ setting_change_audits (canonical audit ledger와 연결)
   the ticket audit remains the replay source rather than a second command-result table.
 - V20 does not rewrite existing ticket requester IDs. Ownership changes only through the
   explicit, audited claim command.
+
+### 8.2 Public request abuse limiter (V28)
+
+- `public_request_rate_limit_buckets` is Portal-owned operational state, not a ticket or audit event store.
+- each row contains only bucket category, keyed fingerprint, count, timestamps, and expiry; it cannot be used to recover the submitted email or client IP without the independently provisioned HMAC key.
+- expiry cleanup deletes at most the configured batch size while holding row locks with `SKIP LOCKED`; concurrent application instances can run it safely.
 
 ## 9. Migration 순서
 
