@@ -47,7 +47,7 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 2e6e4d6394970b174231d5755a39041d7bda4b0529914061f0860e15e74af0b2        8066  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 1cb5de486728eb8740a92b7abf6bbfb082c3f5bc28604708d0ca8746dccc5ed3        8603  docs/25-implementation-decision-register.md
-430a7d5919309640408fe9727c4fa7241f505b245c7d85717d0c8518e64d7c89       21555  docs/26-requirement-traceability.md
+6065dbf23af4a311b0c1766e6893cae4bbc7f6f7ca8f6699141fa4639fd3a0bd       21625  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -76,7 +76,7 @@ bc5279f7b27c99f6ab0508d4475409f0c7a4a58c0508cfd528923cf404f268c2       10301  do
 4227ab13e8cdc20368d59719a5ea468095039730b8fedb038b89b2cfd44d07ff       11664  docs/52-admin-settings-catalog.md
 75a4338c3879f562cecb7c3d13a4c995daad9e9d8edb15f9f1cde7f08925229c        5879  docs/53-accepted-decisions-2026-08-10.md
 1dd6d96b7d15e1bc298989082b04d38fd7d82a80279b6b31d0bb26af3c8cb22b        1864  docs/54-next-decision-gates.md
-671b29242a1d5e6070bd9eeacfe5dd99595cafa58bb281b48d7c3092cdfd23ab        6847  docs/55-frontend-capability-recomposition-matrix.md
+d82948dc23fd9641e2860abec82741094d9651f05330a977b6348074f52954e6        7275  docs/55-frontend-capability-recomposition-matrix.md
 027301f0e5da1824d14551ad602c7d3620c1e1f8b8067bc3def50d009615d144        1222  docs/adr/0001-kotlin-spring.md
 a60752cda4485dd1bf13168c30e3d337ad94eee6d262ce94e49ef01cfc09bcde        1189  docs/adr/0002-modular-monolith.md
 04ce88fcb2ab9f9f9337fee7d34fb727552475916253943643b481bb099f2792         899  docs/adr/0003-first-comment-no-description.md

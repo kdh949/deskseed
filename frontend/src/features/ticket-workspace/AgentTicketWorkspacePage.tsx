@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useRef } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
+import { createOpaqueUuid } from '../../api/uuid'
 import type {
   AgentComment,
   AgentTicketDetail,
@@ -18,7 +19,7 @@ import type {
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
-  const interactionId = useMemo(createInteractionId, [ticketNumber])
+  const interactionId = useMemo(createOpaqueUuid, [ticketNumber])
   const successfulInteractionId = useRef<string | null>(null)
   const query = useQuery({
     queryKey: ['agent-ticket', ticketNumber, interactionId],
@@ -159,25 +160,6 @@ function parseTicketNumber(value: string): number | null {
   if (!/^[1-9]\d*$/.test(value)) return null
   const ticketNumber = Number(value)
   return Number.isSafeInteger(ticketNumber) ? ticketNumber : null
-}
-
-function createInteractionId(): string {
-  const webCrypto = globalThis.crypto
-  if (webCrypto?.randomUUID) return webCrypto.randomUUID()
-
-  const bytes = new Uint8Array(16)
-  if (webCrypto?.getRandomValues) webCrypto.getRandomValues(bytes)
-  else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256)
-    }
-  }
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80
-  const hex = Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 function formatDate(value: string) {
