@@ -7,9 +7,9 @@ This log tracks the four independently committed vertical slices requested by th
 | Slice | Contract frozen | Migration | Implementation | Targeted tests | Status | Commit |
 |---|---|---|---|---|---|---|
 | BE-P0-CUSTOMER-ACCESS | PASS | not required | PASS | PASS | PASS | `b7fdf57` |
-| BE-P0-PUBLIC-ABUSE | PASS | V28 | PASS | PASS | PASS | `feat: 공개 문의 남용 제한 추가` |
-| BE-P0-MAIL-OPERATIONS | PASS | V29 | PASS | PASS | PASS | `feat: 운영 메일 전송 관리 추가` |
-| BE-P0-PRODUCTION-CONSISTENCY | pending | pending | pending | pending | PENDING | — |
+| BE-P0-PUBLIC-ABUSE | PASS | V28 | PASS | PASS | PASS | `87bda52` |
+| BE-P0-MAIL-OPERATIONS | PASS | V29 | PASS | PASS | PASS | `6d10385` |
+| BE-P0-PRODUCTION-CONSISTENCY | PASS | not required | PASS | PASS | PASS | `fix: 운영 환경 경계와 Platform SLA 정합성 보강` |
 
 ## Discovery checkpoint — 2026-08-15
 
@@ -37,3 +37,46 @@ This log tracks the four independently committed vertical slices requested by th
 - PASS: `./gradlew --no-daemon test --tests dev.deskseed.portal.internal.PublicRequestIntegrationTest --tests dev.deskseed.portal.internal.PublicRequestRateLimitPropertiesTest --tests dev.deskseed.portal.internal.PublicRequestRateLimitIntegrationTest` (from `backend/`); the added integration class covers destination/client/global limits, trusted/untrusted forwarding, malformed/oversized chains, 8-way concurrent upserts with exactly two admissions, expiry cleanup, and injected persistence failure. `./gradlew --no-daemon test --tests dev.deskseed.staffaccess.internal.ApiDocumentationIntegrationTest` (from `backend/`); `python3 scripts/test_api_documentation_quality.py`; `python3 scripts/validate_documentation.py`; `git diff --check`.
 - Execution note: an initial documentation test invocation from repository root failed because this repository stores the Gradle wrapper in `backend/`; the identical Gradle test was rerun there and passed. This was not a code or test failure.
 - Known risk/non-goal: values are deliberately configurable deployment policy, not a generic shared limiter, Redis/CDN/WAF/CAPTCHA integration, or customer-account login throttle. PostgreSQL provides correctness; no production throughput measurement or capacity claim is made in this slice.
+
+## BE-P0-MAIL-OPERATIONS checkpoint — 2026-08-15
+
+- Contract frozen: Core Admin mail operations now document summary, signed-cursor list, masked detail, and terminal retry. All views omit rendered body, raw recipient, protected ciphertext/nonce/key version, credentials, request/correlation IDs, and provider response.
+- Migration: additive `V29__outbound_mail_operations_indexes.sql` adds only mail-operation lookup/cleanup indexes; existing Flyway versions were not changed.
+- Implementation: production delivery is property-controlled rather than profile-disabled. When delivery is enabled, startup requires SMTP host/port/auth/credentials, TLS, sender, HTTPS public URL, and active protected-content key. ADMIN retry locks terminal `FAILED` intent, requires a reason, requeues the same intent without creating a new business command, and atomically writes delivery/admin-security audit records.
+- Targeted tests: `MailDeliveryConfigurationValidatorTest` (4), `OutboundMailDeliveryIntegrationTest` (10), `AdminOutboundMailIntegrationTest` (3), `MailpitApiE2ETest` (3), `ApiDocumentationIntegrationTest` (4), and `ArchitectureTest` (1) passed. The targeted run covers disabled production startup, missing production configuration, authenticated TLS, safe diagnostics, Mailpit delivery, retry races, and audit rollback.
+- Failed tests: none after the production property-condition implementation; a root-level Gradle invocation was corrected to the backend wrapper before validation.
+- Remaining risk/non-goal: provider bounce/complaint handling and inbound mail are intentionally outside this goal. Full backend suite remains the final gate.
+
+## BE-P0-PRODUCTION-CONSISTENCY checkpoint — 2026-08-15
+
+- Contract frozen: `platformCreateTicket` now documents exact-once First Reply behavior; Core staff ticket summaries add `createdAt` and state the server-authorized UPDATE capability rule. `docs/18`, `docs/34`, `docs/44`, and traceability bind the transaction-local fact to `REQ-INT-001`, `REQ-INT-003`, `REQ-SLA-001`, and staff read coverage.
+- Migration: none. `createdAt` is an additive projection field and the profile correction is a fail-fast deployment-policy change; V28/V29 remain additive and unchanged.
+- Implementation: the actual `production` profile, rather than `prod`, requires nonempty valid Platform allowed-client and trusted-proxy CIDRs and never uses development local fallbacks. Platform creation writes one audit, publishes one in-transaction `TicketSubmitted` with that audit ID, `API` channel, and `PLATFORM_API` source. The SLA projection creates a target only for `CUSTOMER_REQUEST`; internal work items still receive a state interval but no First Reply target/fact. Staff list/search/detail and related-ticket projections return immutable `createdAt`; CLOSED has READ only while a server-authorized ON_HOLD ticket retains UPDATE.
+- Targeted tests: `PlatformNetworkBoundaryTest` (5), `PlatformTicketIntegrationTest` (12), `FirstReplySlaIntegrationTest` (12), `AgentTicketReadIntegrationTest` (10), `PlatformOpenApiContractTest` (1), `ApiDocumentationIntegrationTest` (4), and `ArchitectureTest` (1) passed. The Platform test proves replay has one creation audit, one state interval, one target/fact/start event linked to the creation audit, and no First Reply data for an internal work item.
+- Failed tests: the first compile run exposed a missing Kotlin return type on the newly returned audit ID and was fixed before tests. The first Platform SLA test run also showed that fixture `TRUNCATE ... CASCADE` erased the migration-seeded schedule; fixture cleanup now deletes test staff after dependent truncation, and the identical test passed on rerun. Neither issue is a production runtime failure.
+- Full backend suite: `/usr/bin/env -u DEBUG ./gradlew --no-daemon test` completed with 65 XML reports / 312 tests / 0 failures / 0 errors. The reports were generated at the final-suite checkpoint.
+- Remaining risk/non-goal: no in-scope implementation risk remains after the final backend suite. No new Platform endpoint, SLA policy rule, schema migration, tenanting, or broader staff write policy was added.
+
+## Final completion audit — 2026-08-15
+
+The original P0 goal was reread after implementation. Every item below has a concrete code path and a passing test; no `FAIL` or `BLOCKED` item remains.
+
+| # | Scenario | Code path | Passing test evidence | Result |
+|---|---|---|---|---|
+| 1 | New-device email link | `OutboundMailContentRenderer` renders `RequestReceivedMail` and `PublicAgentReplyMail` with `{publicBaseUrl}/requests/{ticketNumber}#token={rawAccessToken}`. | `OutboundMailPolicyTest#versioned templates render fragment request links and classify token-bearing bodies as protected`; `CustomerRequestPortalIntegrationTest#public follow-up replay creates one customer comment one audit and one mail intent` | PASS |
+| 2 | Token non-exposure | `RenderedMailSensitivity.PROTECTED` selects encrypted outbox persistence; Portal keeps raw grants out of normal body, audit, errors, logs, and provider metadata. | `PublicRequestIntegrationTest#raw request access token is never persisted`; `PublicRequestIntegrationTest#message and issued token never appear in application logs` | PASS |
+| 3 | Anonymous PUBLIC follow-up | Portal capability verification invokes Ticketing's PUBLIC-only comment command, preserving the first-PUBLIC-comment invariant. | `PublicRequestIntegrationTest#anonymous public follow-up is replay safe reopens pending and protects its fresh mail grant`; `PublicRequestIntegrationTest#anonymous follow-up has no internal visibility input or storage path` | PASS |
+| 4 | Idempotent retry | Stable `clientCommandId` replay returns the canonical response while the Portal side-effect gate prevents a second comment, audit, grant, or intent. | `CustomerRequestPortalIntegrationTest#public follow-up replay creates one customer comment one audit and one mail intent`; `PublicRequestIntegrationTest#anonymous public follow-up is replay safe reopens pending and protects its fresh mail grant` | PASS |
+| 5 | Durable rate limit | PostgreSQL bucket transaction uses HMAC destination/client fingerprints and global bucket; trusted forwarding is resolved before admission. | `PublicRequestRateLimitIntegrationTest#concurrent durable bucket upserts admit exactly the configured client limit`; `PublicRequestRateLimitIntegrationTest#malformed or oversized forwarding chains from trusted proxy fail closed before bucket or ticket creation` | PASS |
+| 6 | Production SMTP | Property-controlled SMTP startup validation gates host, transport, TLS/authentication, sender, HTTPS public URL, and protected-content key before enabled delivery. | `MailDeliveryConfigurationValidatorTest#enabled production SMTP rejects every missing security prerequisite`; `MailDeliveryConfigurationValidatorTest#enabled production SMTP accepts explicit authenticated TLS configuration`; `MailpitApiE2ETest` | PASS |
+| 7 | Admin mail retry | ADMIN retry locks a terminal `FAILED` intent, requires reason, requeues that same intent, and atomically writes delivery/admin-security audit records. | `OutboundMailDeliveryIntegrationTest#terminal failure manual retry reuses intent and business comment`; `AdminOutboundMailIntegrationTest` | PASS |
+| 8 | Production network fail-closed | `PlatformNetworkBoundary` recognizes `production`, requires explicit valid allowed-client/trusted-proxy CIDRs, and never substitutes local CIDRs. | `PlatformNetworkBoundaryTest#production requires explicit allowlist and trusted proxy configuration`; `PlatformNetworkBoundaryTest#production accepts only explicit valid deployment CIDRs and never falls back to local defaults` | PASS |
+| 9 | Platform API SLA exact-once | `JpaPlatformTicketService` writes the creation audit then publishes one transaction-local `TicketSubmitted`; `FirstReplySlaLifecycleProjection` records one target/fact/event with that audit ID. | `PlatformTicketIntegrationTest#platform customer request starts First Reply once while internal work item stays outside the metric`; `FirstReplySlaIntegrationTest` | PASS |
+| 10 | INTERNAL isolation | Platform internal work items persist an INTERNAL machine comment and state interval but never create a First Reply target/fact; staff response capabilities remain server-derived. | `PlatformTicketIntegrationTest#internal work item has no fabricated requester and starts with an internal machine comment`; `PlatformTicketIntegrationTest#platform customer request starts First Reply once while internal work item stays outside the metric`; `AgentTicketReadIntegrationTest#agent read supports canonical on hold list rows and closed direct detail` | PASS |
+
+### Final verification status
+
+- PASS: `/usr/bin/env -u DEBUG ./gradlew --no-daemon test` from `backend/` — 312 tests across 65 XML reports, 0 failures, 0 errors.
+- PASS: `make seed-verify`.
+- PASS: `make docs-check` — API documentation quality tests (5) and deterministic contract/traceability validation passed; the generated API/manifest diff was clean against the staged snapshot.
+- PASS: `npm_config_cache=/private/tmp/deskseed-p0-npm-cache make check` — seed/doc gates, backend Gradle verification, frontend format/type/lint, 138 frontend unit tests, and the production build completed. The first unmodified `make check` stopped only because the user-global `~/.npm` cache contains root-owned entries; the retry used an isolated temporary cache and did not alter that global state.

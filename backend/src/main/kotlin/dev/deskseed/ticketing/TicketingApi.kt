@@ -103,7 +103,7 @@ interface TicketAssignmentUsage {
 data class TicketSubmitted(
     val ticketId: UUID,
     val ticketNumber: Long,
-    val requesterId: UUID,
+    val requesterId: UUID?,
     val kind: TicketKind,
     val priority: TicketPriority,
     val groupId: UUID?,

@@ -8,7 +8,14 @@ import dev.deskseed.integration.IntegrationResourceConstraints
 import dev.deskseed.integration.IntegrationScope
 import dev.deskseed.integration.IntegrationTicketField
 import dev.deskseed.integration.IntegrationTicketKind
+import dev.deskseed.sla.FirstReplyPolicyConditions
+import dev.deskseed.sla.FirstReplySlaAdministration
+import dev.deskseed.sla.FirstReplySlaPolicyDefinition
+import dev.deskseed.sla.SlaAdminActor
 import dev.deskseed.ticketing.TicketingFacade
+import dev.deskseed.ticketing.TicketChannel
+import dev.deskseed.ticketing.TicketPriority
+import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSearchFilter
@@ -60,6 +67,7 @@ class PlatformTicketIntegrationTest {
     @Autowired private lateinit var objectMapper: ObjectMapper
     @Autowired private lateinit var idempotencyRetentionJob: PlatformIdempotencyRetentionJob
     @Autowired private lateinit var meterRegistry: MeterRegistry
+    @Autowired private lateinit var slaAdministration: FirstReplySlaAdministration
 
     private lateinit var adminId: UUID
 
@@ -68,9 +76,13 @@ class PlatformTicketIntegrationTest {
         jdbcTemplate.execute(
             "truncate table platform_idempotency_records, integration_credentials, integration_clients, " +
                 "access_audit_events, admin_security_audit_events, ticket_audit_events, ticket_audits, " +
-                "ticket_comments, tickets, group_memberships, support_groups, staff_authority_grants, " +
-                "staff_accounts, customers cascade",
+                "ticket_comments, ticket_state_intervals, sla_target_events, analytics_first_reply_facts, " +
+                "sla_target_instances, sla_policy_activations, sla_policy_pause_statuses, " +
+                "sla_policy_priority_targets, sla_policy_versions, sla_policies, tickets, group_memberships, " +
+                "support_groups, staff_authority_grants, " +
+                "customers cascade",
         )
+        jdbcTemplate.update("delete from staff_accounts")
         jdbcTemplate.execute("alter sequence ticket_number_seq restart with 1000")
         adminId = UUID.randomUUID()
         jdbcTemplate.update(
@@ -183,6 +195,97 @@ class PlatformTicketIntegrationTest {
                 10,
             ).items.map { it.ticketNumber },
         ).containsExactly(ticketNumber)
+    }
+
+    @Test
+    fun `platform customer request starts First Reply once while internal work item stays outside the metric`() {
+        val policy = activateApiFirstReplyPolicy()
+        val key = issueClient(setOf(IntegrationScope.TICKETS_CREATE))
+        val created = perform(post("/api/v1/platform/tickets"), key, "sla-customer-create", customerRequest("SLA start"))
+        val ticketNumber = objectMapper.readTree(created.response.contentAsString).get("ticketNumber").asLong()
+        val replay = perform(post("/api/v1/platform/tickets"), key, "sla-customer-create", customerRequest("SLA start"))
+
+        assertThat(created.response.status).isEqualTo(201)
+        assertThat(replay.response.status).isEqualTo(201)
+        assertThat(replay.response.contentAsString).isEqualTo(created.response.contentAsString)
+
+        val ticketId = jdbcTemplate.queryForObject(
+            "select id from tickets where ticket_number = ?",
+            UUID::class.java,
+            ticketNumber,
+        )!!
+        val creationAuditId = jdbcTemplate.queryForObject(
+            "select id from ticket_audits where ticket_id = ?",
+            UUID::class.java,
+            ticketId,
+        )!!
+        assertThat(countWhere("ticket_audits", "ticket_id = '$ticketId'")).isEqualTo(1)
+        assertThat(countWhere("ticket_state_intervals", "ticket_id = '$ticketId'")).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select start_audit_id from ticket_state_intervals where ticket_id = ?",
+                UUID::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(creationAuditId)
+        assertThat(countWhere("sla_target_instances", "ticket_id = '$ticketId' and metric = 'FIRST_REPLY'"))
+            .isEqualTo(1)
+        assertThat(countWhere("analytics_first_reply_facts", "ticket_id = '$ticketId'"))
+            .isEqualTo(1)
+        assertThat(countWhere("sla_target_events", "ticket_audit_id = '$creationAuditId' and event_type = 'SLA_TARGET_STARTED'"))
+            .isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select policy_id from sla_target_instances where ticket_id = ?",
+                UUID::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(policy.id)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select source from sla_target_events where ticket_audit_id = ?",
+                String::class.java,
+                creationAuditId,
+            ),
+        ).isEqualTo(RequestSource.PLATFORM_API.name)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select actor_type from sla_target_events where ticket_audit_id = ?",
+                String::class.java,
+                creationAuditId,
+            ),
+        ).isEqualTo("INTEGRATION_CLIENT")
+
+        val internal = perform(
+            post("/api/v1/platform/tickets"),
+            key,
+            "sla-internal-create",
+            """{"kind":"INTERNAL_WORK_ITEM","subject":"Internal SLA exclusion","message":"Investigate reconciliation"}""",
+        )
+        val internalTicketNumber = objectMapper.readTree(internal.response.contentAsString).get("ticketNumber").asLong()
+        val internalTicketId = jdbcTemplate.queryForObject(
+            "select id from tickets where ticket_number = ?",
+            UUID::class.java,
+            internalTicketNumber,
+        )!!
+        val internalCreationAuditId = jdbcTemplate.queryForObject(
+            "select id from ticket_audits where ticket_id = ?",
+            UUID::class.java,
+            internalTicketId,
+        )!!
+        assertThat(internal.response.status).isEqualTo(201)
+        assertThat(countWhere("ticket_state_intervals", "ticket_id = '$internalTicketId'")).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select start_audit_id from ticket_state_intervals where ticket_id = ?",
+                UUID::class.java,
+                internalTicketId,
+            ),
+        ).isEqualTo(internalCreationAuditId)
+        assertThat(countWhere("sla_target_instances", "ticket_id = '$internalTicketId' and metric = 'FIRST_REPLY'"))
+            .isZero()
+        assertThat(countWhere("analytics_first_reply_facts", "ticket_id = '$internalTicketId'"))
+            .isZero()
     }
 
     @Test
@@ -395,6 +498,8 @@ class PlatformTicketIntegrationTest {
             assertThat(responses.map { it.contentAsString }.distinct()).hasSize(1)
             assertThat(count("tickets")).isEqualTo(1)
             assertThat(count("ticket_audits")).isEqualTo(1)
+            assertThat(count("ticket_state_intervals")).isEqualTo(1)
+            assertThat(count("analytics_first_reply_facts")).isEqualTo(1)
             assertThat(count("platform_idempotency_records")).isEqualTo(1)
         } finally {
             executor.shutdownNow()
@@ -555,6 +660,43 @@ class PlatformTicketIntegrationTest {
     private fun customerRequest(message: String) =
         """{"kind":"CUSTOMER_REQUEST","subject":"Need help","message":"$message","requester":{"name":"Customer","email":"customer@example.com"}}"""
 
+    private fun activateApiFirstReplyPolicy() = asAdmin {
+        slaAdministration.create(
+            FirstReplySlaPolicyDefinition(
+                name = "Platform API First Reply",
+                position = 10,
+                scheduleId = DEFAULT_SCHEDULE_ID,
+                conditions = FirstReplyPolicyConditions(channel = TicketChannel.API),
+                targets = mapOf(TicketPriority.NORMAL to 60),
+                pauseStatuses = setOf(TicketStatus.PENDING),
+            ),
+            slaAdminActor(),
+        ).let { created ->
+            slaAdministration.activate(created.id, created.version, created.aggregateVersion, slaAdminActor())
+        }
+    }
+
+    private fun slaAdminActor() = SlaAdminActor(
+        adminId,
+        "Admin",
+        RequestSource.ADMIN_UI,
+        UUID.randomUUID().toString(),
+        UUID.randomUUID().toString(),
+    )
+
+    private fun <T> asAdmin(action: () -> T): T {
+        SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken.authenticated(
+            "admin",
+            null,
+            listOf(SimpleGrantedAuthority("ROLE_ADMIN")),
+        )
+        return try {
+            action()
+        } finally {
+            SecurityContextHolder.clearContext()
+        }
+    }
+
     private fun count(table: String): Long = jdbcTemplate.queryForObject("select count(*) from $table", Long::class.java)!!
 
     private fun countWhere(table: String, condition: String): Long =
@@ -594,6 +736,8 @@ class PlatformTicketIntegrationTest {
         .joinToString("") { "%02x".format(it) }
 
     companion object {
+        private val DEFAULT_SCHEDULE_ID: UUID = UUID.fromString("51000000-0000-0000-0000-000000000001")
+
         @Container
         @ServiceConnection
         @JvmStatic

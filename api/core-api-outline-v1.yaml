@@ -4341,6 +4341,7 @@ components:
       - status
       - priority
       - requester
+      - createdAt
       - updatedAt
       - version
       properties:
@@ -4360,6 +4361,10 @@ components:
           $ref: '#/components/schemas/GroupRef'
         assignee:
           $ref: '#/components/schemas/StaffRef'
+        createdAt:
+          type: string
+          format: date-time
+          description: 티켓이 최초 생성된 시각입니다. 정렬이나 현재 상태 변경으로 바뀌지 않습니다.
         updatedAt:
           type: string
           format: date-time
@@ -4515,7 +4520,7 @@ components:
           type: array
           items:
             type: string
-          description: 직원 상세 조회가 성공하면 READ가 항상 포함되고, 현재 actor가 티켓을 변경할 수 있을 때만 UPDATE가 포함됩니다.
+          description: 직원 상세 조회가 성공하면 READ가 항상 포함됩니다. UPDATE는 현재 actor가 별도 write authorization을 통과하고 티켓이 CLOSED가 아닐 때만 포함됩니다.
         assignmentOptions:
           $ref: '#/components/schemas/TicketAssignmentOptions'
         context:

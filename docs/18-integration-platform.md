@@ -217,6 +217,12 @@ INTERNAL_WORK_ITEM
 
 Do not infer visibility from missing fields.
 
+`CUSTOMER_REQUEST` creation writes one TicketAudit and then publishes one transaction-local
+`TicketSubmitted` fact with `channel=API` and `source=PLATFORM_API`. A matching idempotency
+replay returns the stored response without a second audit, state interval, or First Reply target/fact.
+`INTERNAL_WORK_ITEM` also receives the creation-state projection but never starts First Reply SLA.
+The fact is a projection trigger, not an external integration event or an event-sourcing source of truth.
+
 ### 5.4 Stable identifiers
 
 - internal UUID is opaque

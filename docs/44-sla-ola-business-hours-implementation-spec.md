@@ -121,6 +121,11 @@ Start: first customer-visible ticket creation/first public customer comment.
 Stop: first qualifying public reply by staff/system policy.
 Exclude: internal notes, automated acknowledgement unless policy explicitly counts it.
 
+Platform `CUSTOMER_REQUEST` creation is a qualifying first customer event only after its creation
+TicketAudit is persisted; the same transaction-local fact creates at most one target/fact. An exact
+Platform idempotency replay does not start another cycle. `INTERNAL_WORK_ITEM` is not eligible for
+First Reply SLA even though its ticket-state interval is projected.
+
 ### Next reply time
 
 Start: each qualifying public customer reply after agent response.

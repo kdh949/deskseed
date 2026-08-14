@@ -57,7 +57,7 @@ paths:
           $ref: '#/components/responses/Problem'
         '429':
           $ref: '#/components/responses/RateLimited'
-      description: 외부 시스템에서 고객 문의 또는 내부 티켓 생성 API입니다. INTEGRATION_CLIENT가 scoped API key와 resource constraint 검사를 통과한 뒤 사용합니다.
+      description: 외부 시스템에서 고객 문의 또는 내부 티켓 생성 API입니다. INTEGRATION_CLIENT가 scoped API key와 resource constraint 검사를 통과한 뒤 사용합니다. CUSTOMER_REQUEST는 creation audit과 같은 트랜잭션에서 First Reply SLA 시작 fact를 한 번만 만들며, 같은 Idempotency-Key 재전송은 audit 또는 SLA target을 추가로 만들지 않습니다. INTERNAL_WORK_ITEM은 First Reply SLA 대상이 아닙니다.
   /tickets/{ticketNumber}:
     parameters:
     - $ref: '#/components/parameters/TicketNumber'

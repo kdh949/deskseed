@@ -42,7 +42,7 @@ internal class FirstReplySlaLifecycleProjection(
             event.occurredAt.atOffset(ZoneOffset.UTC),
             event.ticketAuditId,
         )
-        if (!event.startsFirstReplySla || event.kind != TicketKind.CUSTOMER_REQUEST) return
+        if (event.kind != TicketKind.CUSTOMER_REQUEST || !event.startsFirstReplySla) return
         if (projectionExists(event.ticketId)) return
 
         val policy = matcher.match(

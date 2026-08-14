@@ -39,6 +39,10 @@ server:
 deskseed:
   api-docs:
     require-admin: true
+  platform:
+    network:
+      allowed-client-cidrs: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS}
+      trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS}
   mail:
     # Delivery remains opt-in. When enabled, startup validates SMTP auth, TLS, sender, HTTPS URL, and key material.
     delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}

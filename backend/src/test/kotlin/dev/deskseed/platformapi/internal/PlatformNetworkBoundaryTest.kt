@@ -2,8 +2,11 @@ package dev.deskseed.platformapi.internal
 
 import dev.deskseed.integration.IntegrationNetworkPolicy
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean
+import org.springframework.core.io.ClassPathResource
 import org.springframework.mock.env.MockEnvironment
 import org.springframework.mock.web.MockHttpServletRequest
 
@@ -34,13 +37,42 @@ class PlatformNetworkBoundaryTest {
 
     @Test
     fun `production requires explicit allowlist and trusted proxy configuration`() {
-        val environment = MockEnvironment().withProperty("spring.profiles.active", "prod")
-        environment.setActiveProfiles("prod")
+        val environment = MockEnvironment().withProperty("spring.profiles.active", "production")
+        environment.setActiveProfiles("production")
         val boundary = PlatformNetworkBoundary(policy, environment, "", "")
 
         assertThatThrownBy(boundary::validate)
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("Production Platform API requires")
+    }
+
+    @Test
+    fun `production accepts only explicit valid deployment CIDRs and never falls back to local defaults`() {
+        val environment = MockEnvironment().apply { setActiveProfiles("production") }
+        val boundary = PlatformNetworkBoundary(policy, environment, "10.0.0.0/8", "192.0.2.0/24")
+
+        assertThatCode(boundary::validate).doesNotThrowAnyException()
+        assertThat(
+            boundary.resolveAllowedClient(MockHttpServletRequest().apply { remoteAddr = "127.0.0.1" }),
+        ).isNull()
+        assertThat(
+            boundary.resolveAllowedClient(MockHttpServletRequest().apply { remoteAddr = "10.1.2.3" }),
+        ).isEqualTo("10.1.2.3")
+        assertThatThrownBy {
+            PlatformNetworkBoundary(policy, environment, "not-a-cidr", "192.0.2.0/24").validate()
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `production configuration requires operator supplied Platform CIDRs without defaults`() {
+        val production = YamlPropertiesFactoryBean().apply {
+            setResources(ClassPathResource("application-production.yml"))
+        }.getObject()
+
+        assertThat(production?.getProperty("deskseed.platform.network.allowed-client-cidrs"))
+            .isEqualTo("${'$'}{DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS}")
+        assertThat(production?.getProperty("deskseed.platform.network.trusted-proxy-cidrs"))
+            .isEqualTo("${'$'}{DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS}")
     }
 
     @Test
