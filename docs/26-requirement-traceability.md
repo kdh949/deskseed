@@ -41,7 +41,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
 | REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
-| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부와 `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
+| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부, `PublicRequestRateLimitIntegrationTest`의 대상/client/global PostgreSQL bucket·forwarded spoof/fail-closed·429/503, `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
 | REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37, 39 ADR, 55 | `PublicRequestIntegrationTest`의 token-scoped 익명 PUBLIC follow-up/replay/mismatch·expiry·rollback과 `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection; UI는 `DEFERRED_UI` |
 | REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53, 55 | `CustomerAccessModeIntegrationTest` submit/view 행렬·optimistic conflict·감사 원자성, `customerAuthClient.test.ts`; UI는 `DEFERRED_UI` |
 | REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53, 55 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox와 `PublicRequestIntegrationTest`의 anonymous capability follow-up; UI는 `DEFERRED_UI` |

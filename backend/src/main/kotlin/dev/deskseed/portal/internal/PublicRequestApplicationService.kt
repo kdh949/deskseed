@@ -32,9 +32,14 @@ internal class PublicRequestApplicationService(
     private val ticketPortal: CustomerTicketPortal,
     private val accessTokenStore: RequestAccessTokenStore,
     private val outboundMailPort: OutboundMailPort,
+    private val rateLimiter: PublicRequestRateLimiter,
 ) {
     @Transactional
     fun submit(command: SubmitAnonymousRequest): AnonymousRequestSubmitted {
+        rateLimiter.consume(
+            destination = command.authenticatedEmail ?: command.email,
+            clientAddress = command.effectiveClientAddress,
+        )
         val customer = if (command.authenticatedCustomerId == null) {
             customerAccessPolicy.requireAnonymousSubmissionAllowed()
             customerDirectory.createUnverified(name = command.name, email = command.email)
@@ -159,6 +164,8 @@ internal data class SubmitAnonymousRequest(
     val message: String,
     val authenticatedCustomerId: UUID? = null,
     val authenticatedEmail: String? = null,
+    /** HTTP callers resolve a trusted effective address; loopback keeps direct application tests deterministic. */
+    val effectiveClientAddress: String = "127.0.0.1",
     val context: CommandContext,
 )
 

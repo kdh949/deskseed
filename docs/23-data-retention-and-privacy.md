@@ -127,6 +127,11 @@ These help security investigation but are personal/behavioral data.
 - exports may mask IP for lower-privilege viewers
 - proxy trust configuration must define which forwarded IP header is accepted
 
+Public request abuse control is an operational exception to retaining raw IP: V28 stores only purpose-bound HMAC fingerprints for
+destination/client/global fixed windows plus count and expiry. It has no raw email, IP, forwarded header, request body, token, ticket,
+or audit-reference column. A bounded `FOR UPDATE SKIP LOCKED` cleanup deletes expired buckets; this maintenance state is not exposed
+through customer, staff, audit, export, or Platform API projections.
+
 ## 8. Deletion and retention execution
 
 Retention job:

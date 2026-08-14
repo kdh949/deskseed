@@ -10,6 +10,7 @@ import dev.deskseed.ticketing.CustomerTicketNotFoundException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.ConstraintViolationException
 import org.springframework.http.HttpStatus
+import org.springframework.http.HttpHeaders
 import org.springframework.http.ProblemDetail
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -91,6 +92,43 @@ internal class PublicRequestExceptionHandler {
             title = "Request storage unavailable",
             detail = "The request could not be processed safely.",
             type = "/problems/request-storage-unavailable",
+            request = request,
+        ),
+    )
+
+    @ExceptionHandler(PublicRequestRateLimitExceededException::class)
+    fun handleRateLimitExceeded(
+        exception: PublicRequestRateLimitExceededException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.TOO_MANY_REQUESTS,
+            title = "Request rate limit exceeded",
+            detail = "Retry after the current request rate-limit window resets.",
+            type = "/problems/request-rate-limit-exceeded",
+            request = request,
+        ),
+        headers = HttpHeaders().apply { set("Retry-After", exception.retryAfter.seconds.toString()) },
+    )
+
+    @ExceptionHandler(PublicRequestRateLimitUnavailableException::class)
+    fun handleRateLimitUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.SERVICE_UNAVAILABLE,
+            title = "Request rate limit unavailable",
+            detail = "The request could not be processed safely.",
+            type = "/problems/request-rate-limit-unavailable",
+            request = request,
+        ),
+    )
+
+    @ExceptionHandler(PublicRequestNetworkBoundaryException::class)
+    fun handleInvalidRequestNetwork(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.BAD_REQUEST,
+            title = "Request network invalid",
+            detail = "The request network information is invalid.",
+            type = "/problems/request-network-invalid",
             request = request,
         ),
     )
@@ -181,6 +219,8 @@ internal class PublicRequestExceptionHandler {
         )
     }
 
-    private fun respond(problem: ProblemDetail): ResponseEntity<ProblemDetail> =
-        ResponseEntity.status(problem.status).body(problem)
+    private fun respond(
+        problem: ProblemDetail,
+        headers: HttpHeaders = HttpHeaders(),
+    ): ResponseEntity<ProblemDetail> = ResponseEntity.status(problem.status).headers(headers).body(problem)
 }
