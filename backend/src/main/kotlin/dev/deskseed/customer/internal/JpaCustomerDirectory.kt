@@ -91,14 +91,15 @@ internal class JpaCustomerDirectory(
             .addValue("likePattern", likePattern)
             .addValue("limit", limit)
 
-        val resultCount = jdbcTemplate.queryForObject(
-            "select count(*) from customers where $whereClause",
-            parameters,
-            Long::class.java,
-        ) ?: 0L
+        // count(*) over() and the page are derived from the same query/snapshot so a
+        // concurrent insert between two separate statements cannot make items.size exceed
+        // resultCount under READ COMMITTED (see the audit membership invariant in
+        // JpaAccessAuditWriter.appendCustomerSearchExecuted).
+        var resultCount = 0L
         val items = jdbcTemplate.query(
             """
-            select id, name, email_normalized, email_display, verified_at
+            select id, name, email_normalized, email_display, verified_at,
+                   count(*) over () as total_count
             from customers
             where $whereClause
             order by name asc, id asc
@@ -106,6 +107,7 @@ internal class JpaCustomerDirectory(
             """.trimIndent(),
             parameters,
         ) { resultSet, _ ->
+            resultCount = resultSet.getLong("total_count")
             CustomerRef(
                 id = resultSet.getObject("id", UUID::class.java),
                 name = resultSet.getString("name"),
