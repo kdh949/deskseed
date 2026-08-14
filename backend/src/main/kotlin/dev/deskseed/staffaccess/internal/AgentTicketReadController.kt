@@ -37,6 +37,7 @@ import java.util.UUID
 internal class AgentTicketReadController(
     private val applicationService: AgentTicketReadApplicationService,
     private val searchApplicationService: AgentTicketSearchApplicationService,
+    private val customerSearchApplicationService: AgentCustomerSearchApplicationService,
 ) {
     @GetMapping("/views")
     fun views(@AuthenticationPrincipal principal: StaffPrincipal): List<SavedViewResponse> =
@@ -50,6 +51,28 @@ internal class AgentTicketReadController(
                 readScope = it.readScope.name,
             )
         }
+
+    @GetMapping("/assignment-options")
+    fun assignmentOptions(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+    ): ResponseEntity<TicketAssignmentOptionsResponse> {
+        val groups = applicationService.assignmentOptions(principal)
+        return ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
+            .body(
+                TicketAssignmentOptionsResponse(
+                    groups = groups.map { group ->
+                        TicketAssignmentGroupOptionResponse(
+                            id = group.id,
+                            name = group.name,
+                            members = group.members.map { member ->
+                                TicketAssignmentStaffOptionResponse(member.id, member.displayName)
+                            },
+                        )
+                    },
+                ),
+            )
+    }
 
     @GetMapping("/views/{viewKey}/tickets")
     fun tickets(
@@ -183,6 +206,47 @@ internal class AgentTicketReadController(
             )
     }
 
+    @PostMapping("/customers/search")
+    fun searchCustomers(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @RequestHeader("X-Interaction-Id") interactionId: UUID,
+        @Valid @RequestBody body: AgentCustomerSearchRequestBody,
+        request: HttpServletRequest,
+    ): ResponseEntity<AgentCustomerSearchPageResponse> {
+        val page = customerSearchApplicationService.search(
+            principal = principal,
+            interactionId = interactionId,
+            request = AgentCustomerSearchRequest(
+                query = body.query,
+                limit = body.limit,
+            ),
+            context = AgentReadRequestContext(
+                requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
+                correlationId = request.getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+                sessionId = authenticatedSessionId(request),
+                ipAddress = request.remoteAddr,
+                userAgent = request.getHeader("User-Agent"),
+            ),
+        )
+        return ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
+            .body(
+                AgentCustomerSearchPageResponse(
+                    searchEventId = page.searchEventId,
+                    searchInteractionId = page.searchInteractionId,
+                    items = page.items.map {
+                        CustomerSummaryResponse(
+                            id = it.id,
+                            name = it.name,
+                            email = it.email,
+                            verified = it.verifiedAt != null,
+                        )
+                    },
+                    resultCount = page.resultCount,
+                ),
+            )
+    }
+
     private fun ticketResponse(ticket: StaffTicketSummary) = TicketSummaryResponse(
         ticketNumber = ticket.ticketNumber,
         subject = ticket.subject,
@@ -263,6 +327,29 @@ internal data class AgentTicketSearchPageResponse(
     val items: List<TicketSummaryResponse>,
     val resultCount: Long,
     val sort: String,
+)
+
+internal data class AgentCustomerSearchRequestBody(
+    @field:NotBlank
+    @field:Size(max = 200)
+    val query: String,
+    @field:Min(1)
+    @field:Max(25)
+    val limit: Int,
+)
+
+internal data class AgentCustomerSearchPageResponse(
+    val searchEventId: UUID,
+    val searchInteractionId: UUID,
+    val items: List<CustomerSummaryResponse>,
+    val resultCount: Long,
+)
+
+internal data class CustomerSummaryResponse(
+    val id: UUID,
+    val name: String,
+    val email: String,
+    val verified: Boolean,
 )
 
 internal data class SavedViewResponse(

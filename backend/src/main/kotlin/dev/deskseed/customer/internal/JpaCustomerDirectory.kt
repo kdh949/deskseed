@@ -2,6 +2,9 @@ package dev.deskseed.customer.internal
 
 import dev.deskseed.customer.CustomerDirectory
 import dev.deskseed.customer.CustomerRef
+import dev.deskseed.customer.CustomerSearchResult
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -12,6 +15,7 @@ import java.util.UUID
 @Service
 internal class JpaCustomerDirectory(
     private val repository: CustomerRepository,
+    private val jdbcTemplate: NamedParameterJdbcTemplate,
     private val clock: Clock,
 ) : CustomerDirectory {
     @Transactional
@@ -72,6 +76,52 @@ internal class JpaCustomerDirectory(
             ),
         ).toRef()
     }
+
+    @Transactional(readOnly = true)
+    override fun search(query: String, limit: Int): CustomerSearchResult {
+        require(query.isNotBlank()) { "Search query is required" }
+        require(limit in 1..25) { "Search limit must be between 1 and 25" }
+
+        // ILIKE with a leading/trailing wildcard is sargable against the pg_trgm GIN indexes
+        // added in V27; email_normalized is already lowercased at write time (createUnverified/
+        // createVerified), so no extra lower() is needed on either side of the comparison.
+        val likePattern = "%${escapeLikeWildcards(query.trim())}%"
+        val whereClause = "name ilike :likePattern escape '\\' or email_normalized ilike :likePattern escape '\\'"
+        val parameters = MapSqlParameterSource()
+            .addValue("likePattern", likePattern)
+            .addValue("limit", limit)
+
+        // count(*) over() and the page are derived from the same query/snapshot so a
+        // concurrent insert between two separate statements cannot make items.size exceed
+        // resultCount under READ COMMITTED (see the audit membership invariant in
+        // JpaAccessAuditWriter.appendCustomerSearchExecuted).
+        var resultCount = 0L
+        val items = jdbcTemplate.query(
+            """
+            select id, name, email_normalized, email_display, verified_at,
+                   count(*) over () as total_count
+            from customers
+            where $whereClause
+            order by name asc, id asc
+            limit :limit
+            """.trimIndent(),
+            parameters,
+        ) { resultSet, _ ->
+            resultCount = resultSet.getLong("total_count")
+            CustomerRef(
+                id = resultSet.getObject("id", UUID::class.java),
+                name = resultSet.getString("name"),
+                email = resultSet.getString("email_display"),
+                verifiedAt = resultSet.getTimestamp("verified_at")?.toInstant(),
+            )
+        }
+        return CustomerSearchResult(items, resultCount)
+    }
+
+    private fun escapeLikeWildcards(value: String): String = value
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
 
     private fun CustomerEntity.toRef() = CustomerRef(
         id = id,

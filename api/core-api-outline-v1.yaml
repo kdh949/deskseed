@@ -43,6 +43,8 @@ tags:
   description: 상담사용 티켓 조회·변경·이관·내부 협업 API입니다.
 - name: Agent Search
   description: 권한 범위 안의 티켓을 검색하고 검색 감사를 남기는 API입니다.
+- name: Agent Customers
+  description: 상담사가 신규 티켓 생성 시 요청자로 선택할 기존 고객을 검색하고 검색 감사를 남기는 API입니다.
 - name: Admin
   description: 직원, 그룹, 권한과 제품 설정을 관리하는 ADMIN 전용 API입니다.
 - name: Integration Admin
@@ -586,11 +588,13 @@ paths:
           $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '401': *id006
         '403': *id006
+        '404': *id006
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '422': *id006
         '503': *id006
-      description: 상담사 발신 티켓 생성 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다.
+      description: 상담사 발신 티켓 생성 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다. requester.customerId가 기존
+        고객을 가리키지 않으면 404 /problems/agent-ticket-requester-not-found를 반환합니다.
   /api/v1/agent/tickets/{ticketNumber}:
     get:
       summary: 상담사용 티켓 상세 조회
@@ -1075,6 +1079,82 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id006
       description: 상담사가 접근 가능한 티켓 검색 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다.
+  /api/v1/agent/customers/search:
+    post:
+      summary: 상담사가 요청자 후보로 선택할 기존 고객 검색
+      operationId: searchAgentCustomers
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Agent Customers
+      x-deskseed-phase: M3
+      x-deskseed-requirements:
+      - REQ-SRCH-002
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - *id008
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentCustomerSearchRequest'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              description: 결과가 보호된 직원용 projection이므로 항상 no-store를 사용합니다.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentCustomerSearchPage'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id006
+        '403': *id006
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503': *id006
+      description: 상담사가 신규 티켓 생성 시 요청자로 선택할 기존 고객을 이름·이메일 부분 문자열로 검색하는 API입니다. 조회 자체가 검색 감사로 기록되며, 인증된 직원의 역할을 서버에서
+        확인한 뒤 처리합니다.
+  /api/v1/agent/assignment-options:
+    get:
+      summary: 티켓 생성·배정에 사용할 활성 그룹과 구성원 목록 조회
+      operationId: listTicketAssignmentOptions
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Agent Tickets
+      x-deskseed-phase: M3
+      x-deskseed-requirements:
+      - REQ-TKT-009
+      - REQ-TKT-011
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              description: 활성 그룹·구성원 목록이 자주 바뀔 수 있는 직원용 projection이므로 항상 no-store를 사용합니다.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketAssignmentOptions'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '401': *id006
+        '403': *id006
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+      description: 아직 티켓이 존재하지 않는 신규 생성 화면에서도 배정 가능한 활성 그룹과 그 활성 구성원 목록을 조회하는 API입니다. 티켓 상세 응답에 내장된 assignmentOptions와
+        동일한 스키마를 사용합니다.
   /api/v1/admin/staff:
     get:
       summary: 직원 계정 목록 조회
@@ -4275,10 +4355,10 @@ components:
         requester:
           type: object
           additionalProperties: false
-          required:
-          - name
-          - email
           properties:
+            customerId:
+              type: string
+              format: uuid
             name:
               type: string
               minLength: 1
@@ -4287,6 +4367,8 @@ components:
               type: string
               format: email
               maxLength: 254
+          description: customerId만 단독으로 지정해 검색으로 찾은 기존 고객을 요청자로 재사용하거나, name과 email을 함께 지정해 새 unverified
+            고객을 생성합니다. 세 필드를 함께 보내거나 아무 필드도 보내지 않으면 검증 오류입니다.
         subject:
           type: string
           minLength: 1
@@ -4518,6 +4600,89 @@ components:
           type: string
           enum:
           - updatedAt:desc,ticketNumber:desc
+    AgentCustomerSearchRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - query
+      - limit
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 200
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 25
+          default: 10
+      description: 상담사가 신규 티켓 생성 화면에서 요청자 후보를 찾기 위해 기존 고객의 이름 또는 이메일 일부 문자열로 검색할 때 사용하는 요청입니다. query는 검색 감사에서 보호된
+        형태로 처리됩니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        query: 김민아
+        limit: 10
+    AgentCustomerSearchPage:
+      type: object
+      additionalProperties: false
+      required:
+      - searchEventId
+      - searchInteractionId
+      - items
+      - resultCount
+      properties:
+        searchEventId:
+          type: string
+          format: uuid
+        searchInteractionId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerSummary'
+        resultCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: query와 일치하는 고객의 전체 수입니다. items는 limit로 잘린 페이지이므로 resultCount가 items.length보다 클 수 있습니다.
+      description: 고객 검색 결과 페이지입니다. searchEventId는 이 조회에 대한 검색 감사 이벤트를 가리키며, 결과 자체가 보호된 직원용 projection이므로 캐시하지 않습니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        searchEventId: 33333333-3333-4333-8333-333333333333
+        searchInteractionId: 44444444-4444-4444-8444-444444444444
+        items:
+        - id: 22222222-2222-4222-8222-222222222222
+          name: 김민아
+          email: mina.kim@example.test
+          verified: false
+        resultCount: 1
+    CustomerSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - email
+      - verified
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        verified:
+          type: boolean
+      description: 상담사가 요청자 후보를 구분할 수 있는 최소한의 고객 요약 정보입니다. 내부 전용 필드나 감사 메타데이터는 포함하지 않습니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        id: 22222222-2222-4222-8222-222222222222
+        name: 김민아
+        email: mina.kim@example.test
+        verified: false
     StaffAccount:
       type: object
       additionalProperties: false

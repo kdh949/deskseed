@@ -39,6 +39,15 @@ internal class AgentTicketCommandExceptionHandler {
         "The requested ticket was not found.",
     )
 
+    @ExceptionHandler(RequesterNotFoundException::class)
+    fun requesterNotFound(request: HttpServletRequest) = problem(
+        request,
+        HttpStatus.NOT_FOUND,
+        "/problems/agent-ticket-requester-not-found",
+        "Requester customer not found",
+        "The requested customerId does not identify an existing customer.",
+    )
+
     @ExceptionHandler(ExternalReferenceNotFoundException::class, ExternalSystemNotFoundException::class)
     fun externalNotFound(request: HttpServletRequest) = problem(
         request,

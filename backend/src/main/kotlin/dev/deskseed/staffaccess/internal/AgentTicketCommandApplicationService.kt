@@ -25,9 +25,15 @@ import java.util.UUID
 import java.time.Instant
 import dev.deskseed.integration.ExternalObjectType
 
+internal sealed interface AgentTicketRequesterInput {
+    data class ExistingCustomer(val customerId: UUID) : AgentTicketRequesterInput
+    data class NewCustomer(val name: String, val email: String) : AgentTicketRequesterInput
+}
+
+internal class RequesterNotFoundException : RuntimeException("The requester customer was not found")
+
 internal data class CreateAgentTicketInput(
-    val requesterName: String,
-    val requesterEmail: String,
+    val requester: AgentTicketRequesterInput,
     val subject: String,
     val firstComment: AgentCommentDraft,
     val priority: TicketPriority,
@@ -83,7 +89,12 @@ internal class AgentTicketCommandApplicationService(
         input: CreateAgentTicketInput,
         context: CommandContext,
     ): TicketCommandResult {
-        val requester = customerDirectory.createUnverified(input.requesterName, input.requesterEmail)
+        val requester = when (val requesterInput = input.requester) {
+            is AgentTicketRequesterInput.ExistingCustomer ->
+                customerDirectory.findById(requesterInput.customerId) ?: throw RequesterNotFoundException()
+            is AgentTicketRequesterInput.NewCustomer ->
+                customerDirectory.createUnverified(requesterInput.name, requesterInput.email)
+        }
         return ticketCommandService.create(
             CreateAgentTicketCommand(
                 requesterId = requester.id,

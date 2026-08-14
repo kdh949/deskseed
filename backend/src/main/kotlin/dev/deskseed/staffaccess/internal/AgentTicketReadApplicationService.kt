@@ -93,6 +93,12 @@ internal class AgentTicketReadApplicationService(
     }
 
     @Transactional(readOnly = true)
+    fun assignmentOptions(principal: StaffPrincipal): List<TicketAssignmentGroupOption> {
+        requireActiveStaffRead(principal)
+        return assignmentCatalog.listActiveGroups()
+    }
+
+    @Transactional(readOnly = true)
     fun listTickets(
         principal: StaffPrincipal,
         view: DefaultStaffView,

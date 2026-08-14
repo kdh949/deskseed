@@ -136,6 +136,97 @@ class AgentTicketCommandIntegrationTest {
     }
 
     @Test
+    fun `agent creation reuses an existing customer by id instead of minting a duplicate unverified customer`() {
+        val agentId = insertStaff("reuse-creator@example.com", "재사용 상담사", "AGENT")
+        val existingCustomerId = insertCustomer("기존 고객", "existing-customer@example.com")
+        val browser = login("reuse-creator@example.com")
+
+        val response = mockMvc.perform(
+            createTicketRequest(
+                browser = browser,
+                requestId = "request-agent-create-existing",
+                correlationId = "correlation-agent-create-existing",
+                body =
+                    """
+                    {
+                      "requester": {"customerId": "$existingCustomerId"},
+                      "subject": "기존 고객 재사용 티켓",
+                      "firstComment": {"visibility": "INTERNAL", "body": "검색으로 찾은 고객으로 생성"},
+                      "priority": "NORMAL"
+                    }
+                    """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isCreated)
+            .andReturn().response.contentAsString
+
+        val ticketNumber = longField(response, "ticketNumber")
+        val ticket = jdbcTemplate.queryForMap(
+            "select requester_id::text from tickets where ticket_number = ?",
+            ticketNumber,
+        )
+        assertThat(ticket["requester_id"]).isEqualTo(existingCustomerId.toString())
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from customers", Long::class.java),
+        ).isEqualTo(1L)
+    }
+
+    @Test
+    fun `agent creation with an unknown customerId is rejected without creating a ticket`() {
+        val agentId = insertStaff("missing-customer-creator@example.com", "미존재 상담사", "AGENT")
+        val browser = login("missing-customer-creator@example.com")
+
+        mockMvc.perform(
+            createTicketRequest(
+                browser = browser,
+                requestId = "request-agent-create-missing",
+                correlationId = "correlation-agent-create-missing",
+                body =
+                    """
+                    {
+                      "requester": {"customerId": "${UUID.randomUUID()}"},
+                      "subject": "존재하지 않는 고객",
+                      "firstComment": {"visibility": "INTERNAL", "body": "본문"},
+                      "priority": "NORMAL"
+                    }
+                    """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.type").value("/problems/agent-ticket-requester-not-found"))
+
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from tickets", Long::class.java),
+        ).isZero()
+    }
+
+    @Test
+    fun `agent creation rejects a requester that mixes customerId with name or email`() {
+        val agentId = insertStaff("mixed-requester@example.com", "혼합 상담사", "AGENT")
+        val existingCustomerId = insertCustomer("혼합 고객", "mixed-customer@example.com")
+        val browser = login("mixed-requester@example.com")
+
+        mockMvc.perform(
+            createTicketRequest(
+                browser = browser,
+                requestId = "request-agent-create-mixed",
+                correlationId = "correlation-agent-create-mixed",
+                body =
+                    """
+                    {
+                      "requester": {"customerId": "$existingCustomerId", "name": "다른 이름", "email": "other@example.com"},
+                      "subject": "혼합 요청",
+                      "firstComment": {"visibility": "INTERNAL", "body": "본문"},
+                      "priority": "NORMAL"
+                    }
+                    """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
+    }
+
+    @Test
     fun `comment field combined and no-op saves create one audit with ordered effects or receipt`() {
         val agentId = insertStaff("writer@example.com", "상담사 저장", "AGENT")
         val groupId = insertGroup("저장 그룹", agentId)
@@ -1224,6 +1315,21 @@ class AgentTicketCommandIntegrationTest {
                 staffId,
             )
         }
+        return id
+    }
+
+    private fun insertCustomer(name: String, email: String): UUID {
+        val id = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into customers (id, name, email_normalized, email_display, created_at, updated_at)
+            values (?, ?, ?, ?, now(), now())
+            """.trimIndent(),
+            id,
+            name,
+            email.lowercase(),
+            email,
+        )
         return id
     }
 
