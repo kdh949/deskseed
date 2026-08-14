@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
 import { getAuditActivity } from '../../../api/client'
-import { createOpaqueUuid } from '../../../api/uuid'
 
-export function useAuditActivityDetail(activityId: string | null) {
-  const interactionId = useMemo(createOpaqueUuid, [activityId])
+export function useAuditActivityDetail(
+  activityId: string | null,
+  interactionId: string | null,
+) {
   return useQuery({
-    enabled: activityId !== null,
-    queryKey: ['audit-activity', activityId],
-    queryFn: () => getAuditActivity(activityId!, interactionId),
+    enabled: activityId !== null && interactionId !== null,
+    queryKey: ['audit-activity', activityId, interactionId],
+    queryFn: () => getAuditActivity(activityId!, interactionId!),
   })
 }

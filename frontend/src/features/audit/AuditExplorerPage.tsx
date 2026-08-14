@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ApiError } from '../../api/client'
+import { createOpaqueUuid } from '../../api/uuid'
 import { AuditActivityDetailDrawer } from './AuditActivityDetailDrawer'
 import { AuditExplorer, type AuditActivitiesState } from './AuditExplorer'
 import { CreateAuditExportDrawer } from './CreateAuditExportDrawer'
@@ -7,6 +8,8 @@ import { useAuditActivities } from './model/useAuditActivities'
 import { useAuditActivityDetail } from './model/useAuditActivityDetail'
 import { useAuditActivityFilters } from './model/useAuditActivityFilters'
 import { useCreateAuditExport } from './model/useCreateAuditExport'
+
+type SelectedActivity = { id: string; interactionId: string }
 
 export function AuditExplorerPage() {
   const {
@@ -18,10 +21,15 @@ export function AuditExplorerPage() {
     clearFilters,
   } = useAuditActivityFilters()
   const activitiesQuery = useAuditActivities(filters, cursor)
-  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(
-    null,
+  const [selectedActivity, setSelectedActivity] =
+    useState<SelectedActivity | null>(null)
+  const openActivity = (activityId: string) => {
+    setSelectedActivity({ id: activityId, interactionId: createOpaqueUuid() })
+  }
+  const detailQuery = useAuditActivityDetail(
+    selectedActivity?.id ?? null,
+    selectedActivity?.interactionId ?? null,
   )
-  const detailQuery = useAuditActivityDetail(selectedActivityId)
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false)
   const createExport = useCreateAuditExport()
 
@@ -58,17 +66,17 @@ export function AuditExplorerPage() {
             setCursor(activities.nextCursor)
           }
         }}
-        onOpenActivity={setSelectedActivityId}
+        onOpenActivity={openActivity}
         onRetryActivities={() => activitiesQuery.refetch()}
         onUpdateFilter={updateFilter}
       />
       <AuditActivityDetailDrawer
-        onClose={() => setSelectedActivityId(null)}
-        onOpenActivity={setSelectedActivityId}
+        onClose={() => setSelectedActivity(null)}
+        onOpenActivity={openActivity}
         onRetry={() => detailQuery.refetch()}
-        open={selectedActivityId !== null}
+        open={selectedActivity !== null}
         state={
-          selectedActivityId === null
+          selectedActivity === null
             ? null
             : detailQuery.isPending
               ? { status: 'loading' }

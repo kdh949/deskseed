@@ -8,9 +8,13 @@ export function useAuditActivities(
   filters: AuditActivityFilters,
   cursor: string | null,
 ) {
-  const interactionId = useMemo(createOpaqueUuid, [])
+  const filterSignature = JSON.stringify(filters)
+  // A new interaction represents a new investigation: minted per distinct
+  // filter set (or fresh mount), reused across cursor pagination and
+  // background refetches of the same investigation.
+  const interactionId = useMemo(createOpaqueUuid, [filterSignature])
   return useQuery({
-    queryKey: ['audit-activities', filters, cursor],
+    queryKey: ['audit-activities', filters, cursor, interactionId],
     queryFn: () => listAuditActivities(filters, cursor, interactionId),
   })
 }

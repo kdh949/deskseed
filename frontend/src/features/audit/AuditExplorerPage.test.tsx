@@ -59,7 +59,12 @@ function jsonResponse(body: unknown, status = 200) {
 function mockAuditExplorerApi({
   activitiesStatus = 200,
   exportStatus = 202,
-}: { activitiesStatus?: number; exportStatus?: number } = {}) {
+  activitiesResponse = activityPage,
+}: {
+  activitiesStatus?: number
+  exportStatus?: number
+  activitiesResponse?: unknown
+} = {}) {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     const method = init?.method ?? 'GET'
@@ -75,7 +80,7 @@ function mockAuditExplorerApi({
           ),
         )
       }
-      return Promise.resolve(jsonResponse(activityPage))
+      return Promise.resolve(jsonResponse(activitiesResponse))
     }
     if (url.endsWith('/api/v1/agent/csrf')) {
       return Promise.resolve(
@@ -187,5 +192,68 @@ describe('AuditExplorerPage', () => {
     expect(exportCall).toBeDefined()
     const body = JSON.parse(String(exportCall?.[1]?.body))
     expect(body).toMatchObject({ format: 'CSV', reason: '월간 점검' })
+  })
+
+  it('sends the same default "to" across the default page and its cursor page', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockAuditExplorerApi({
+      activitiesResponse: { ...activityPage, nextCursor: 'opaque-cursor-2' },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+    await screen.findByRole('button', { name: '다음 페이지' })
+    await user.click(screen.getByRole('button', { name: '다음 페이지' }))
+    await screen.findByRole('link', {
+      name: 'TICKET_PRIORITY_CHANGED 상세 보기',
+    })
+
+    const activitiesCalls = fetchMock.mock.calls.filter(([requestUrl]) =>
+      String(requestUrl).includes('/api/v1/audit/activities?'),
+    )
+    expect(activitiesCalls).toHaveLength(2)
+    const toValues = activitiesCalls.map(([requestUrl]) =>
+      new URL(String(requestUrl), 'http://localhost').searchParams.get('to'),
+    )
+    expect(toValues[0]).not.toBeNull()
+    expect(toValues[1]).toBe(toValues[0])
+  })
+
+  it('mints a new interaction id each time the same activity is reopened', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockAuditExplorerApi()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage()
+    const rowLink = await screen.findByRole('link', {
+      name: 'TICKET_PRIORITY_CHANGED 상세 보기',
+    })
+
+    await user.click(rowLink)
+    await screen.findByText('99999999-9999-4999-8999-999999999999')
+    await user.click(
+      screen.getByRole('button', { name: '감사 활동 상세 닫기' }),
+    )
+    await user.click(
+      screen.getByRole('link', {
+        name: 'TICKET_PRIORITY_CHANGED 상세 보기',
+      }),
+    )
+    await screen.findByText('99999999-9999-4999-8999-999999999999')
+
+    const detailCalls = fetchMock.mock.calls.filter(([requestUrl]) =>
+      String(requestUrl).includes('/api/v1/audit/activities/11111111'),
+    )
+    expect(detailCalls).toHaveLength(2)
+    const interactionIds = detailCalls.map(
+      ([, requestInit]) =>
+        (requestInit as RequestInit | undefined)?.headers as
+          Record<string, string> | undefined,
+    )
+    expect(interactionIds[0]?.['X-Interaction-Id']).toBeTruthy()
+    expect(interactionIds[1]?.['X-Interaction-Id']).toBeTruthy()
+    expect(interactionIds[1]?.['X-Interaction-Id']).not.toBe(
+      interactionIds[0]?.['X-Interaction-Id'],
+    )
   })
 })

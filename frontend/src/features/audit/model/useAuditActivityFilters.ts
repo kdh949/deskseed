@@ -37,12 +37,15 @@ export type AuditFilterKey = (typeof FILTER_KEYS)[number]
 
 export function useAuditActivityFilters() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const defaultFrom = useMemo(
-    () => new Date(Date.now() - SEVEN_DAYS_MS).toISOString(),
-    [],
-  )
+  const defaultRange = useMemo(() => {
+    const to = new Date()
+    return {
+      from: new Date(to.getTime() - SEVEN_DAYS_MS).toISOString(),
+      to: to.toISOString(),
+    }
+  }, [])
 
-  const filters = filtersFrom(searchParams, defaultFrom)
+  const filters = filtersFrom(searchParams, defaultRange)
   const cursor = searchParams.get('cursor')
   const hasActiveFilters = FILTER_KEYS.some((key) => searchParams.has(key))
 
@@ -79,15 +82,15 @@ export function useAuditActivityFilters() {
 
 function filtersFrom(
   searchParams: URLSearchParams,
-  defaultFrom: string,
+  defaultRange: { from: string; to: string },
 ): AuditActivityFilters {
   const ledger = searchParams.get('ledger')
   const outcome = searchParams.get('outcome')
   const actorType = searchParams.get('actorType')
   const ticketNumber = searchParams.get('ticketNumber')
   return {
-    from: searchParams.get('from') ?? defaultFrom,
-    ...(searchParams.get('to') ? { to: searchParams.get('to')! } : {}),
+    from: searchParams.get('from') ?? defaultRange.from,
+    to: searchParams.get('to') ?? defaultRange.to,
     ...(ledger && LEDGERS.includes(ledger as AuditLedgerType)
       ? { ledger: ledger as AuditLedgerType }
       : {}),
