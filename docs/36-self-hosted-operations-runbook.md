@@ -84,6 +84,9 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 - 별도 32-byte base64 access-audit session-fingerprint key
 - agent queue cursor signing key
 - Audit Explorer cursor signing key
+- outbound-mail operations cursor signing key
+- delivery를 활성화하는 경우 SMTP host/port/username/password, auth 및 required TLS 설정
+- delivery를 활성화하는 경우 bare sender mailbox, HTTPS public base URL, active 32-byte base64 protected-mail key와 key version
 - 허용된 CORS origin
 - TLS reverse proxy 설정
 

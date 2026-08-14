@@ -415,6 +415,7 @@ outbound_mail_delivery_events(
 - unique `idempotency_key`가 같은 business notification의 중복 intent를 막는다.
 - `stable_message_id`는 모든 attempt에서 유지한다.
 - due/expired-lease partial index와 `FOR UPDATE SKIP LOCKED`가 bounded worker claim을 지원한다.
+- `V29`의 `(queued_at desc, id desc)` 및 `(status, queued_at desc, id desc)` additive index는 ADMIN metadata-only 키셋 조회를 지원한다. manual retry의 row lock은 기존 primary key를 사용한다.
 - recipient/template/version/rendered plain-text snapshot은 delivery 조사에 보존한다.
 - attempt/event에는 provider response body나 exception message를 저장하지 않는다.
 - delivery event는 append-only이며 Ticket Change, Access/Search, Admin/Security ledger와 합치지 않는다.

@@ -16,7 +16,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 | 감사 | 한 command/한 `TicketAudit`과 ordered events, semantic `TICKET_VIEWED`, 검색→티켓 열람 연결, strict audit failure, 분리된 change/access/admin 원장과 재생성 가능한 Audit Explorer projection |
 | 감사자 화면 | 기본 routine activity 목록·상세, 명시적 영속 grant와 이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
 | 외부 시스템 API | 사설망 scoped API key, IntegrationClient lifecycle, resource constraint·rate limit, 티켓 create/read/update/INTERNAL comment, idempotency와 ETag/If-Match, ExternalReference 연결 |
-| Outbound mail 기반 | PostgreSQL intent/attempt outbox, PUBLIC 답변·접수 알림, retry/manual-retry seam, Mailpit 개발 SMTP/UI/API; production provider는 미선택 |
+| Outbound mail 기반 | PostgreSQL intent/attempt outbox, PUBLIC 답변·접수 알림, 같은 intent의 감사 가능한 terminal retry, Mailpit 개발 SMTP/UI/API와 명시적 opt-in production SMTP/TLS 검증; 관리자 API는 마스킹된 운영 projection만 제공 |
 | 배포·검증 | Docker Compose, Flyway, PostgreSQL Testcontainers, 실제 브라우저 E2E, visual/axe/keyboard suite, 설치·upgrade·backup·restore rehearsal, 성능 fixture/query-plan harness |
 
 핵심 데이터 규칙은 다음과 같다.
