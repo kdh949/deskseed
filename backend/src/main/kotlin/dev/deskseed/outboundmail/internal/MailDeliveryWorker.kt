@@ -6,7 +6,7 @@ import io.micrometer.core.instrument.MeterRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Configuration
-import org.springframework.context.annotation.Profile
+import org.springframework.context.annotation.DependsOn
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -295,8 +295,8 @@ internal class MailDeliveryFinalizer(
 }
 
 @Component
+@DependsOn("mailDeliveryConfigurationValidator")
 @ConditionalOnProperty(prefix = "deskseed.mail", name = ["delivery-enabled"], havingValue = "true")
-@Profile("!production")
 internal class MailDeliveryWorker(
     private val claimService: MailDeliveryClaimService,
     private val finalizer: MailDeliveryFinalizer,
@@ -363,7 +363,6 @@ internal class MailDeliveryWorker(
     name = ["delivery-enabled", "scheduling-enabled"],
     havingValue = "true",
 )
-@Profile("!production")
 internal class MailDeliveryScheduler(private val worker: MailDeliveryWorker) {
     // Fixed delay is measured from completion, avoiding overlapping work from one scheduler thread.
     // Source: https://docs.spring.io/spring-framework/reference/integration/scheduling.html#scheduling-annotation-support-scheduled
@@ -383,7 +382,6 @@ internal class MailDeliveryScheduler(private val worker: MailDeliveryWorker) {
     name = ["delivery-enabled", "scheduling-enabled"],
     havingValue = "true",
 )
-@Profile("!production")
 internal class OutboundMailSchedulingConfiguration
 
 @Component

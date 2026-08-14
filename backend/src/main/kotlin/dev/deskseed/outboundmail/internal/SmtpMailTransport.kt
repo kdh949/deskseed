@@ -2,16 +2,18 @@ package dev.deskseed.outboundmail.internal
 
 import jakarta.mail.Message
 import jakarta.mail.internet.InternetAddress
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.context.annotation.Profile
+import org.springframework.context.annotation.DependsOn
 import org.springframework.mail.MailException
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.stereotype.Component
 import java.nio.charset.StandardCharsets
 
 @Component
+@DependsOn("mailDeliveryConfigurationValidator")
+@ConditionalOnExpression("\${deskseed.mail.delivery-enabled:false}")
 @ConditionalOnProperty(prefix = "deskseed.mail", name = ["transport"], havingValue = "smtp")
-@Profile("!production")
 // Spring Boot 4.1 creates JavaMailSender from spring.mail + starter-mail.
 // Source: https://docs.spring.io/spring-boot/4.1/reference/io/email.html
 internal class SmtpMailTransport(

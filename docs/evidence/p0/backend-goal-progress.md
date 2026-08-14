@@ -8,7 +8,7 @@ This log tracks the four independently committed vertical slices requested by th
 |---|---|---|---|---|---|---|
 | BE-P0-CUSTOMER-ACCESS | PASS | not required | PASS | PASS | PASS | `b7fdf57` |
 | BE-P0-PUBLIC-ABUSE | PASS | V28 | PASS | PASS | PASS | `feat: 공개 문의 남용 제한 추가` |
-| BE-P0-MAIL-OPERATIONS | pending | pending | pending | pending | PENDING | — |
+| BE-P0-MAIL-OPERATIONS | PASS | V29 | PASS | PASS | PASS | `feat: 운영 메일 전송 관리 추가` |
 | BE-P0-PRODUCTION-CONSISTENCY | pending | pending | pending | pending | PENDING | — |
 
 ## Discovery checkpoint — 2026-08-15

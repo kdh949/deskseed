@@ -10,6 +10,7 @@ import jakarta.mail.internet.InternetAddress
 import org.springframework.boot.context.properties.ConfigurationProperties
 import java.net.URI
 import java.time.Duration
+import java.util.Base64
 
 @ConfigurationProperties("deskseed.mail")
 internal data class OutboundMailProperties(
@@ -35,7 +36,23 @@ internal data class OutboundMailProperties(
 internal data class ProtectedMailContentProperties(
     var activeKeyVersion: String = "local-v1",
     var keys: Map<String, String> = emptyMap(),
-)
+) {
+    fun decodedKey(version: String): ByteArray {
+        require(version.matches(KEY_VERSION_PATTERN)) { "protected mail key version is invalid" }
+        val encoded = keys[version] ?: error("protected mail key version is not configured")
+        val decoded = runCatching { Base64.getDecoder().decode(encoded) }
+            .getOrElse { throw IllegalArgumentException("protected mail key is invalid") }
+        require(decoded.size == PROTECTED_KEY_BYTES) { "protected mail key must contain $PROTECTED_KEY_BYTES bytes" }
+        return decoded
+    }
+
+    fun requireActiveKey(): ByteArray = decodedKey(activeKeyVersion)
+
+    private companion object {
+        val KEY_VERSION_PATTERN = Regex("[A-Za-z0-9._-]{1,40}")
+        const val PROTECTED_KEY_BYTES = 32
+    }
+}
 
 internal class OutboundMailSafety {
     fun requireMailbox(value: String): String {

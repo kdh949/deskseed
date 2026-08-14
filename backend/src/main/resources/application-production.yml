@@ -10,6 +10,16 @@ spring:
     url: ${DATABASE_MIGRATION_URL:${DATABASE_URL}}
     user: ${DATABASE_MIGRATION_USERNAME}
     password: ${DATABASE_MIGRATION_PASSWORD}
+  mail:
+    host: ${DESKSEED_MAIL_SMTP_HOST:}
+    port: ${DESKSEED_MAIL_SMTP_PORT:}
+    username: ${DESKSEED_MAIL_SMTP_USERNAME:}
+    password: ${DESKSEED_MAIL_SMTP_PASSWORD:}
+    properties:
+      "[mail.smtp.auth]": ${DESKSEED_MAIL_SMTP_AUTH:false}
+      "[mail.smtp.starttls.enable]": ${DESKSEED_MAIL_SMTP_STARTTLS_ENABLE:false}
+      "[mail.smtp.starttls.required]": ${DESKSEED_MAIL_SMTP_STARTTLS_REQUIRED:false}
+      "[mail.smtp.ssl.enable]": ${DESKSEED_MAIL_SMTP_SSL_ENABLE:false}
 
 springdoc:
   api-docs:
@@ -30,13 +40,21 @@ deskseed:
   api-docs:
     require-admin: true
   mail:
-    # A production provider is not selected in this slice. Operators must add a reviewed adapter/configuration.
-    delivery-enabled: false
-    transport: disabled
+    # Delivery remains opt-in. When enabled, startup validates SMTP auth, TLS, sender, HTTPS URL, and key material.
+    delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}
+    scheduling-enabled: ${DESKSEED_MAIL_SCHEDULING_ENABLED:true}
+    transport: ${DESKSEED_MAIL_TRANSPORT:disabled}
+    from-address: ${DESKSEED_MAIL_FROM_ADDRESS:}
+    public-base-url: ${DESKSEED_MAIL_PUBLIC_BASE_URL:}
     protected-content:
       active-key-version: ${DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION:v1}
       keys:
         v1: ${DESKSEED_MAIL_PROTECTED_KEY_V1}
+    operations:
+      cursor:
+        active-key-id: ${DESKSEED_MAIL_OPERATIONS_CURSOR_ACTIVE_KEY_ID:v1}
+        signing-keys:
+          v1: ${DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY}
   customer-auth:
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}

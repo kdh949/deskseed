@@ -180,7 +180,7 @@ The first outbound-only slice implements `REQ-NOTIF-001` and `REQ-CHAN-003`:
 - `OutboundMailPort` queues provider-neutral versioned intents in the caller's business transaction.
 - PostgreSQL stores intent, attempt and append-only delivery-event state; workers claim due rows with a lease and `SKIP LOCKED`.
 - development Compose enables the SMTP adapter against `mailpit:1025` and exposes Mailpit UI/API at `localhost:8025`.
-- the production profile does not activate this development adapter.
+- production delivery is also opt-in: `deskseed.mail.delivery-enabled=true` and `transport=smtp` activate the same worker/scheduler/SMTP adapter path. Before that path starts, production validates SMTP host/port/username/password/auth, required TLS, a bare sender mailbox, an HTTPS public base URL, and the active protected-content key. Disabled production delivery remains healthy-but-explicitly-disabled and does not require SMTP configuration.
 - request received and PUBLIC agent reply are wired; INTERNAL comments have no mail intent path.
 - request received and PUBLIC agent reply issue a fresh opaque request grant and render only
   `{publicBaseUrl}/requests/{ticketNumber}#token={rawAccessToken}`. The raw token is absent from
@@ -188,7 +188,9 @@ The first outbound-only slice implements `REQ-NOTIF-001` and `REQ-CHAN-003`:
   token-bearing rendered body is classified `PROTECTED` and encrypted at rest by its rendered
   sensitivity, not by template-name special casing.
 - customer magic-link rendering is available for the customer-auth slice, but token issuance/consume is not implemented here.
-- plain text only; production provider, inbound, bounce, attachments and rich text remain unimplemented.
+- ADMIN operations expose a no-store, signed-cursor projection of only masked recipient, template/version, delivery status/counts/timestamps and normalized failure codes. Raw mailbox/body/subject, request identifiers, token/ciphertext/nonce/key version, SMTP credentials, provider message ID and provider response are not externally readable.
+- terminal `FAILED` retry locks the existing intent, creates a new retry cycle on that same identity, appends the delivery event and ADMIN security audit in one transaction. A concurrent second retry observes a non-FAILED intent and conflicts; it never creates a comment, token grant, or second intent.
+- plain text only; inbound, bounce, provider-specific idempotency reconciliation, attachments and rich text remain unimplemented.
 
 Default retry table:
 

@@ -127,6 +127,12 @@ deskseed:
       keys:
         # Public local-development material only. Production must provision its own 32-byte key.
         local-v1: ${DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1:AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=}
+    operations:
+      cursor:
+        active-key-id: ${DESKSEED_MAIL_OPERATIONS_CURSOR_ACTIVE_KEY_ID:local-v1}
+        signing-keys:
+          # Local-only development value. Production overrides this with a purpose-specific secret.
+          local-v1: ${DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY:deskseed-local-outbound-mail-operations-cursor-signing-key-change-before-production}
   audit:
     access:
       enabled: ${DESKSEED_ACCESS_AUDIT_ENABLED:true}
