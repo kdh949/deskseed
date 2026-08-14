@@ -67,3 +67,21 @@ export function AgentRoute() {
   }
   return <Outlet />
 }
+
+export function AuditRoute() {
+  const session = useStaffSession()
+  const allowed = session.staff?.role === 'SECURITY_AUDITOR'
+  if (!allowed) {
+    return (
+      <main className="staff-gate">
+        <ScreenState
+          kind="denied"
+          title="감사 권한이 필요합니다."
+          description="이 계정은 감사 탐색기와 내보내기 작업을 열 수 없습니다."
+          action={<Link to="/agent/login">다른 계정으로 로그인</Link>}
+        />
+      </main>
+    )
+  }
+  return <Outlet />
+}

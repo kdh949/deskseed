@@ -2,8 +2,10 @@ import { lazy, Suspense } from 'react'
 import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
 import { ScreenState } from './design-system'
 import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
+import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
 import {
   AgentRoute,
+  AuditRoute,
   StaffRoute,
   StaffSessionLayout,
 } from './features/staff-auth/StaffRoute'
@@ -28,6 +30,10 @@ const agentChildren: RouteObject[] = [
   { path: 'tickets/new', element: <CreateAgentTicketPage /> },
   { path: 'tickets/:ticketNumber', element: <AgentTicketWorkspacePage /> },
   { path: '*', element: <Navigate to="/agent/views/my-open" replace /> },
+]
+
+const auditChildren: RouteObject[] = [
+  { path: 'audit', element: <AuditExplorerPage /> },
 ]
 
 export const appRoutes: RouteObject[] = [
@@ -57,6 +63,16 @@ export const appRoutes: RouteObject[] = [
                 path: '/agent',
                 element: <AgentShellLayout />,
                 children: agentChildren,
+              },
+            ],
+          },
+          {
+            element: <AuditRoute />,
+            children: [
+              {
+                path: '/agent',
+                element: <AgentShellLayout />,
+                children: auditChildren,
               },
             ],
           },
