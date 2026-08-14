@@ -5,6 +5,7 @@ import {
   createAgentTicket,
   createChildTicket,
   getAgentTicket,
+  getAuditExport,
   getCurrentStaff,
   getPublicRequest,
   isCurrentStaffSessionActorMismatch,
@@ -1392,5 +1393,86 @@ describe('ticket assignment options API client', () => {
     )
 
     await expect(listTicketAssignmentOptions()).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+describe('audit export status API client', () => {
+  it('fetches an export job by id with the interaction header', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: '11111111-1111-4111-8111-111111111111',
+          status: 'REQUESTED',
+          createdAt: '2026-08-14T00:00:00Z',
+          format: 'CSV',
+          fields: ['occurredAt', 'action'],
+          artifact: { state: 'NOT_CREATED', generationAvailable: false },
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      getAuditExport(
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ),
+    ).resolves.toEqual({
+      id: '11111111-1111-4111-8111-111111111111',
+      status: 'REQUESTED',
+      createdAt: '2026-08-14T00:00:00Z',
+      format: 'CSV',
+      fields: ['occurredAt', 'action'],
+      artifact: { state: 'NOT_CREATED', generationAvailable: false },
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/v1/audit/exports/11111111-1111-4111-8111-111111111111',
+    )
+    expect(
+      (fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>)?.[
+        'X-Interaction-Id'
+      ],
+    ).toBe('22222222-2222-4222-8222-222222222222')
+  })
+
+  it('rejects a malformed export job body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'missing-fields' }), {
+          status: 200,
+        }),
+      ),
+    )
+
+    await expect(
+      getAuditExport(
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ),
+    ).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('surfaces a 404 as an ApiError when the job is not found or not owned', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ title: 'Audit export not found', status: 404 }),
+            { status: 404 },
+          ),
+        ),
+    )
+
+    await expect(
+      getAuditExport(
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ),
+    ).rejects.toMatchObject({ status: 404 })
   })
 })

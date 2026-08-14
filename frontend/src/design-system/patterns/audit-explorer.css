@@ -1,0 +1,284 @@
+.audit-explorer {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--ds-ref-space-8) var(--ds-ref-space-6) var(--ds-ref-space-12);
+  display: grid;
+  gap: var(--ds-ref-space-5);
+}
+
+.audit-explorer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ds-ref-space-4);
+}
+
+.audit-explorer-header h1 {
+  margin: 0 0 var(--ds-ref-space-2);
+  font-size: var(--ds-ref-font-size-xl);
+}
+
+.audit-explorer-header p {
+  margin: 0;
+  color: var(--ds-foreground-muted);
+}
+
+.audit-explorer-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  align-items: end;
+  gap: var(--ds-ref-space-3);
+  padding: var(--ds-ref-space-4);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-container);
+  background: var(--ds-background-raised);
+}
+
+.audit-explorer-filters input,
+.audit-explorer-filters select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--ds-ref-control-default);
+  padding: 0 var(--ds-ref-space-2);
+  border: 1px solid var(--ds-input-border);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-foreground-default);
+  background: var(--ds-input-background);
+  font: inherit;
+}
+
+.audit-explorer-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-ref-space-3);
+}
+
+.audit-explorer-pagination p {
+  margin: 0;
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-sm);
+}
+
+.ds-audit-activity-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+}
+
+.ds-audit-activity-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  color: var(--ds-foreground-subtle);
+  font-size: var(--ds-ref-font-size-sm);
+  line-height: var(--ds-ref-line-height-sm);
+}
+
+.ds-audit-activity-table th,
+.ds-audit-activity-table td {
+  padding: var(--ds-ref-space-2);
+  border-bottom: 1px solid var(--ds-border-subtle);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ds-audit-activity-table th {
+  color: var(--ds-foreground-subtle);
+  background: var(--ds-background-recessed);
+  font-size: var(--ds-ref-font-size-xs);
+  font-weight: var(--ds-ref-font-weight-semibold);
+  white-space: nowrap;
+}
+
+.ds-audit-activity-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ds-audit-activity-table tbody tr:hover {
+  background: var(--ds-ticket-row-hover);
+}
+
+.ds-audit-activity-actor {
+  display: flex;
+  flex-direction: column;
+}
+
+.ds-audit-activity-actor small {
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+}
+
+.ds-audit-activity-protected {
+  margin-left: var(--ds-ref-space-2);
+  color: var(--ds-foreground-muted);
+}
+
+.ds-audit-detail {
+  display: grid;
+  gap: var(--ds-ref-space-5);
+}
+
+.ds-audit-detail dl {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  margin: 0;
+}
+
+.ds-audit-detail dl > div {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--ds-ref-space-2);
+}
+
+.ds-audit-detail dt {
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.ds-audit-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ds-audit-detail-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ds-ref-space-3);
+}
+
+.ds-audit-detail-diff pre {
+  margin: 0;
+  padding: var(--ds-ref-space-2);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+  background: var(--ds-background-recessed);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ds-audit-detail-protected {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-ref-space-2);
+  margin: 0;
+  color: var(--ds-foreground-muted);
+}
+
+.ds-audit-detail-opened {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-ref-space-2);
+  margin: var(--ds-ref-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ds-audit-detail-opened button {
+  padding: var(--ds-ref-space-1) var(--ds-ref-space-2);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+  background: var(--ds-background-raised);
+  color: var(--ds-foreground-primary);
+  cursor: pointer;
+}
+
+.audit-export-form {
+  display: grid;
+  gap: var(--ds-ref-space-4);
+}
+
+.audit-export-form fieldset {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.audit-export-form legend {
+  padding: 0 0 var(--ds-ref-space-2);
+  color: var(--ds-foreground-subtle);
+  font-size: var(--ds-ref-font-size-sm);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.audit-export-form fieldset label {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-ref-space-2);
+}
+
+.audit-export-reason {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  color: var(--ds-foreground-subtle);
+  font-size: var(--ds-ref-font-size-sm);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.audit-export-reason textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--ds-ref-space-2);
+  border: 1px solid var(--ds-input-border);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-foreground-default);
+  background: var(--ds-input-background);
+  font: inherit;
+  font-weight: var(--ds-ref-font-weight-regular);
+  resize: vertical;
+}
+
+.audit-export-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ds-ref-space-3);
+}
+
+.audit-export-status {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--ds-ref-space-8) var(--ds-ref-space-6) var(--ds-ref-space-12);
+  display: grid;
+  gap: var(--ds-ref-space-5);
+}
+
+.audit-export-status header h1 {
+  margin: 0 0 var(--ds-ref-space-2);
+  font-size: var(--ds-ref-font-size-xl);
+}
+
+.audit-export-status header p {
+  margin: 0;
+  color: var(--ds-foreground-muted);
+}
+
+.audit-export-status-summary {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  margin: 0;
+  padding: var(--ds-ref-space-4);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-container);
+  background: var(--ds-background-raised);
+}
+
+.audit-export-status-summary > div {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: var(--ds-ref-space-2);
+}
+
+.audit-export-status-summary dt {
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.audit-export-status-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
