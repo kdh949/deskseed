@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, searchAgentCustomers } from '../../../api/client'
 import type { CustomerSummary } from '../../../api/types'
+import { createOpaqueUuid } from '../../../api/uuid'
 
 const SEARCH_DEBOUNCE_MS = 300
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -21,7 +22,8 @@ export function useRequesterSearch() {
     useState<CustomerSummary | null>(null)
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
-  const interactionIdRef = useRef(createInteractionId())
+  const interactionIdRef = useRef(createOpaqueUuid())
+  const latestRequestIdRef = useRef(0)
 
   useEffect(() => {
     if (tab !== 'search' || selectedCustomer) {
@@ -38,14 +40,17 @@ export function useRequesterSearch() {
     setSearching(true)
     setSearchError(null)
     const timeoutId = window.setTimeout(() => {
+      const requestId = (latestRequestIdRef.current += 1)
       searchAgentCustomers(
         { query: trimmed, limit: 10 },
         interactionIdRef.current,
       )
         .then((page) => {
+          if (latestRequestIdRef.current !== requestId) return
           setResults(page.items)
         })
         .catch((cause: unknown) => {
+          if (latestRequestIdRef.current !== requestId) return
           const apiError = cause instanceof ApiError ? cause : null
           setSearchError(
             apiError?.message ??
@@ -54,6 +59,7 @@ export function useRequesterSearch() {
           setResults([])
         })
         .finally(() => {
+          if (latestRequestIdRef.current !== requestId) return
           setSearching(false)
         })
     }, SEARCH_DEBOUNCE_MS)
@@ -98,23 +104,4 @@ export function useRequesterSearch() {
     setNewEmail,
     selection,
   }
-}
-
-function createInteractionId(): string {
-  const webCrypto = globalThis.crypto
-  if (webCrypto?.randomUUID) return webCrypto.randomUUID()
-
-  const bytes = new Uint8Array(16)
-  if (webCrypto?.getRandomValues) webCrypto.getRandomValues(bytes)
-  else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256)
-    }
-  }
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80
-  const hex = Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
