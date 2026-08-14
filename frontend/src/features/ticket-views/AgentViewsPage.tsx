@@ -205,11 +205,6 @@ export function AgentViewsPage() {
   }
   const currentPersonalItem = personalItems.find((item) => item.key === viewKey)
   const actionItems = [
-    {
-      id: 'create-ticket',
-      label: '새 티켓 생성',
-      onClick: () => navigate('/agent/tickets/new'),
-    },
     ...(currentPersonalItem
       ? [
           {

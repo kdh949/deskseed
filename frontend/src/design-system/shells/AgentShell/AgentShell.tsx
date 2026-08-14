@@ -1,7 +1,6 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate, useOutlet } from 'react-router'
 import { DeskseedIcon } from '../../primitives/DeskseedIcon'
-import { DsButton } from '../../primitives/DeskseedControls'
 import {
   DeskseedBrandMark,
   DsAvatar,
@@ -127,13 +126,6 @@ export function AgentShell({
               </nav>
             </>
           ) : null}
-          <DsButton
-            className="agent-create-ticket-action"
-            onClick={() => navigate('/agent/tickets/new')}
-            tone="primary"
-          >
-            <DeskseedIcon name="plus" size="sm" />새 티켓
-          </DsButton>
           <div className="agent-profile">
             <DsAvatar name={displayName} size="sm" src={agentAvatar} />
             <span>
