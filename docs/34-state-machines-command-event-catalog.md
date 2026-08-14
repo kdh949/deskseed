@@ -309,10 +309,13 @@ already verified/non-customer ticket   → NOT_FOUND
   an ownership lookup or automatic claim trigger.
 - Claim mutation, token revocation/consume, one canonical ticket audit and one admin/security
   audit commit or roll back together.
-- A CUSTOMER follow-up command is keyed by `(requesterId, clientCommandId)`. Exact replay returns
-  the canonical comment; reuse with a different ticket/body returns conflict without mutation.
+- An authenticated or ticket-scoped anonymous CUSTOMER follow-up command is keyed by
+  `(requesterId, clientCommandId)`. The anonymous adapter first locks an active opaque request
+  access token and verifies its ticket ID matches the path number; token mismatch, expiry, and
+  revocation share the customer-facing not-found result. Exact replay returns the canonical
+  comment; reuse with a different ticket/body returns conflict without mutation.
 - NEW/OPEN/HOLD/PENDING accept a PUBLIC follow-up; PENDING becomes OPEN. SOLVED/CLOSED return
   conflict and are not automatically reopened.
-- Comment, optional state transition, one TicketAudit with ordered events, and the stable
-  `customer-follow-up-received:{commentId}` mail intent share the business transaction. SMTP
-  delivery remains post-commit under the outbound-mail state machine above.
+- Comment, optional state transition, one TicketAudit with ordered events, a fresh request access
+  grant, and the stable `customer-follow-up-received:{commentId}` mail intent share the business
+  transaction. SMTP delivery remains post-commit under the outbound-mail state machine above.

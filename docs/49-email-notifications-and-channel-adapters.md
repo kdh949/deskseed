@@ -182,6 +182,11 @@ The first outbound-only slice implements `REQ-NOTIF-001` and `REQ-CHAN-003`:
 - development Compose enables the SMTP adapter against `mailpit:1025` and exposes Mailpit UI/API at `localhost:8025`.
 - the production profile does not activate this development adapter.
 - request received and PUBLIC agent reply are wired; INTERNAL comments have no mail intent path.
+- request received and PUBLIC agent reply issue a fresh opaque request grant and render only
+  `{publicBaseUrl}/requests/{ticketNumber}#token={rawAccessToken}`. The raw token is absent from
+  URLs other than the mail fragment, audit metadata and normal outbox body columns; every
+  token-bearing rendered body is classified `PROTECTED` and encrypted at rest by its rendered
+  sensitivity, not by template-name special casing.
 - customer magic-link rendering is available for the customer-auth slice, but token issuance/consume is not implemented here.
 - plain text only; production provider, inbound, bounce, attachments and rich text remain unimplemented.
 

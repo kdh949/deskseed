@@ -5,7 +5,12 @@ import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.foundation.ActorType
+import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.CommandContext
+import dev.deskseed.outboundmail.MailRecipient
+import dev.deskseed.outboundmail.OutboundMailIntent
+import dev.deskseed.outboundmail.OutboundMailPort
+import dev.deskseed.outboundmail.RequestReceivedMail
 import dev.deskseed.settings.CustomerAccessMode
 import dev.deskseed.settings.CustomerAccessPolicy
 import dev.deskseed.ticketing.ClaimCustomerTicketCommand
@@ -39,6 +44,7 @@ internal data class ClaimCustomerRequestInput(
 internal class CustomerRequestPortalApplicationService(
     private val ticketPortal: CustomerTicketPortal,
     private val accessTokenStore: RequestAccessTokenStore,
+    private val outboundMailPort: OutboundMailPort,
     private val claimGrantStore: CustomerClaimGrantStore,
     private val cursorCodec: CustomerRequestCursorCodec,
     private val customerAccessPolicy: CustomerAccessPolicy,
@@ -79,16 +85,34 @@ internal class CustomerRequestPortalApplicationService(
         body: String,
         clientCommandId: String,
         context: CommandContext,
-    ): CustomerFollowUpResult = ticketPortal.addFollowUp(
-        CustomerFollowUpCommand(
-            ticketNumber = ticketNumber,
-            requesterId = principal.customerId,
-            requesterEmail = principal.email,
-            body = body,
-            clientCommandId = clientCommandId,
-            context = context,
-        ),
-    )
+    ): CustomerFollowUpResult {
+        val result = ticketPortal.addFollowUp(
+            CustomerFollowUpCommand(
+                ticketNumber = ticketNumber,
+                requesterId = principal.customerId,
+                requesterEmail = principal.email,
+                body = body,
+                clientCommandId = clientCommandId,
+                context = context,
+            ),
+        )
+        if (!result.replayed) {
+            val rawAccessToken = accessTokenStore.issue(result.ticketId)
+            outboundMailPort.enqueue(
+                OutboundMailIntent(
+                    idempotencyKey = "customer-follow-up-received:${result.comment.id}",
+                    recipient = MailRecipient(principal.email),
+                    content = RequestReceivedMail(ticketNumber, rawAccessToken),
+                    ticketId = result.ticketId,
+                    commentId = result.comment.id,
+                    customerId = principal.customerId,
+                    actor = ActorRef(ActorType.CUSTOMER, principal.customerId),
+                    context = context.copy(commandId = clientCommandId),
+                ),
+            )
+        }
+        return result
+    }
 
     @Transactional(readOnly = true)
     fun accessMode(): CustomerAccessMode = customerAccessPolicy.currentMode()

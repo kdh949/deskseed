@@ -23,12 +23,12 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Adr Files: 39
 - Bundled Image Assets: 0
 - Canonical Docs: 56
-- Core Api Requirement Links: 45
+- Core Api Requirement Links: 47
 - Decision Definitions: 54
 - Dual Use Actor Bound Operations: 1
 - E2E Visual Baselines: 12
 - Json Files: 9
-- Markdown Files: 190
+- Markdown Files: 192
 - Openapi Operations: 84
 - Openapi Paths: 68
 - Requirement Definitions: 80

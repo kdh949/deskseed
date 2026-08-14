@@ -367,6 +367,179 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
+    fun `anonymous public follow-up is replay safe reopens pending and protects its fresh mail grant`() {
+        val submitted = submitUniqueRequest("anonymous-follow-up")
+        val ticketId = ticketId(submitted.ticketNumber)
+        jdbcTemplate.update("update tickets set status = 'PENDING' where id = ?", ticketId)
+        val commandId = UUID.randomUUID().toString()
+
+        val first = addAnonymousFollowUp(
+            ticketNumber = submitted.ticketNumber,
+            accessToken = submitted.accessToken,
+            clientCommandId = commandId,
+            body = "추가 승인 내역을 남깁니다.",
+        )
+            .andExpect(status().isCreated)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.body").value("추가 승인 내역을 남깁니다."))
+            .andReturn().response.contentAsString
+        val replay = addAnonymousFollowUp(
+            ticketNumber = submitted.ticketNumber,
+            accessToken = submitted.accessToken,
+            clientCommandId = commandId,
+            body = "추가 승인 내역을 남깁니다.",
+        )
+            .andExpect(status().isCreated)
+            .andReturn().response.contentAsString
+
+        assertThat(replay).isEqualTo(first)
+        assertThat(
+            jdbcTemplate.queryForObject("select status from tickets where id = ?", String::class.java, ticketId),
+        ).isEqualTo("OPEN")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ?",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_audit_events where audit_id in (select id from ticket_audits where ticket_id = ?) and event_type = 'COMMENT_CREATED'",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from request_access_tokens where ticket_id = ?",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_intents where ticket_id = ? and protected_body_ciphertext is not null",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForList(
+                "select text_body from outbound_mail_intents where ticket_id = ? order by queued_at, id",
+                String::class.java,
+                ticketId,
+            ).filterNotNull(),
+        ).containsOnly("[protected customer authentication content]")
+    }
+
+    @Test
+    fun `anonymous public follow-up returns one not-found boundary for invalid expired revoked and mismatched token`() {
+        val submitted = submitUniqueRequest("anonymous-follow-up-not-found")
+        val other = submitUniqueRequest("anonymous-follow-up-other")
+        val revoked = submitUniqueRequest("anonymous-follow-up-revoked")
+        val commandId = UUID.randomUUID().toString()
+
+        fun problem(ticketNumber: Long, token: String): String = addAnonymousFollowUp(
+            ticketNumber = ticketNumber,
+            accessToken = token,
+            clientCommandId = commandId,
+            body = "접근 토큰 오류 확인",
+        )
+            .andExpect(status().isNotFound)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.type").value("/problems/request-not-found"))
+            .andReturn().response.contentAsString
+
+        val mismatched = problem(other.ticketNumber, submitted.accessToken)
+        val malformed = problem(submitted.ticketNumber, "x".repeat(43))
+        jdbcTemplate.update(
+            "update request_access_tokens set created_at = now() - interval '31 days', expires_at = now() - interval '1 second' where ticket_id = ?",
+            ticketId(submitted.ticketNumber),
+        )
+        val expired = problem(submitted.ticketNumber, submitted.accessToken)
+        jdbcTemplate.update(
+            "update request_access_tokens set revoked_at = created_at where ticket_id = ?",
+            ticketId(revoked.ticketNumber),
+        )
+        val revokedProblem = problem(revoked.ticketNumber, revoked.accessToken)
+
+        assertThat(problemFields(mismatched)).isEqualTo(problemFields(malformed))
+        assertThat(problemFields(expired)).isEqualTo(problemFields(malformed))
+        assertThat(problemFields(revokedProblem)).isEqualTo(problemFields(malformed))
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ?",
+                Long::class.java,
+                ticketId(submitted.ticketNumber),
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
+    fun `anonymous public follow-up rejects solved without a partial comment audit grant or intent`() {
+        val submitted = submitUniqueRequest("anonymous-follow-up-solved")
+        val ticketId = ticketId(submitted.ticketNumber)
+        jdbcTemplate.update("update tickets set status = 'SOLVED' where id = ?", ticketId)
+
+        addAnonymousFollowUp(
+            ticketNumber = submitted.ticketNumber,
+            accessToken = submitted.accessToken,
+            clientCommandId = UUID.randomUUID().toString(),
+            body = "해결 후 후속 답변",
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-conflict"))
+
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from ticket_comments where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from request_access_tokens where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+    }
+
+    @Test
+    fun `anonymous follow-up has no internal visibility input or storage path`() {
+        val submitted = submitUniqueRequest("anonymous-follow-up-public-only")
+        val ticketId = ticketId(submitted.ticketNumber)
+
+        mockMvc.perform(
+            post("/api/v1/requests/{ticketNumber}/comments", submitted.ticketNumber)
+                .header("X-Request-Access-Token", submitted.accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "body": "INTERNAL로 위장한 입력",
+                      "clientCommandId": "${UUID.randomUUID()}",
+                      "visibility": "INTERNAL"
+                    }
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/malformed-json"))
+
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from ticket_comments where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+    }
+
+    @Test
+    fun `anonymous public follow-up audit and outbox failures roll back comment state grant and intent`() {
+        assertAnonymousFollowUpRollsBackWhenInsertFails("ticket_audits")
+        assertAnonymousFollowUpRollsBackWhenInsertFails("outbound_mail_intents")
+    }
+
+    @Test
     fun `raw request access token is never persisted`() {
         val submitted = submitUniqueRequest("token")
         val storedHashCount = jdbcTemplate.queryForObject(
@@ -847,6 +1020,63 @@ class PublicRequestIntegrationTest {
           "privacyConsent": true
         }
         """.trimIndent()
+
+    private fun addAnonymousFollowUp(
+        ticketNumber: Long,
+        accessToken: String,
+        clientCommandId: String,
+        body: String,
+    ) = mockMvc.perform(
+        post("/api/v1/requests/{ticketNumber}/comments", ticketNumber)
+            .header("X-Request-Access-Token", accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {
+                  "body": "$body",
+                  "clientCommandId": "$clientCommandId"
+                }
+                """.trimIndent(),
+            ),
+    )
+
+    private fun assertAnonymousFollowUpRollsBackWhenInsertFails(table: String) {
+        val submitted = submitUniqueRequest("anonymous-follow-up-$table")
+        val ticketId = ticketId(submitted.ticketNumber)
+        jdbcTemplate.update("update tickets set status = 'PENDING' where id = ?", ticketId)
+        val functionName = "test_fail_${table}_anonymous_follow_up"
+        val triggerName = "${functionName}_trigger"
+        installFailingInsertTrigger(table, functionName, triggerName)
+        try {
+            addAnonymousFollowUp(
+                ticketNumber = submitted.ticketNumber,
+                accessToken = submitted.accessToken,
+                clientCommandId = UUID.randomUUID().toString(),
+                body = "원자성 실패 주입 $table",
+            )
+                .andExpect(status().isServiceUnavailable)
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.type").value("/problems/request-storage-unavailable"))
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists $triggerName on $table")
+            jdbcTemplate.execute("drop function if exists $functionName()")
+        }
+        assertThat(
+            jdbcTemplate.queryForObject("select status from tickets where id = ?", String::class.java, ticketId),
+        ).isEqualTo("PENDING")
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from ticket_comments where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from request_access_tokens where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents where ticket_id = ?", Long::class.java, ticketId),
+        ).isEqualTo(1)
+    }
 
     private fun problemFields(json: String): List<String> = listOf(
         Regex("\"type\":\"([^\"]+)\"").find(json)!!.groupValues[1],

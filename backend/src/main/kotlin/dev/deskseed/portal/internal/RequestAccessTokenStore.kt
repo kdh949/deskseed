@@ -56,9 +56,13 @@ internal class RequestAccessTokenStore(
         ?.ticketId
 
     @Transactional
-    fun lockTicketIdForClaim(rawToken: String): UUID? = repository
+    fun lockActiveTicketId(rawToken: String): UUID? = repository
         .lockActiveByHash(codec.hash(rawToken), Instant.now(clock))
         ?.ticketId
+
+    /** Retained for the existing explicit-claim flow; anonymous follow-ups use [lockActiveTicketId]. */
+    @Transactional
+    fun lockTicketIdForClaim(rawToken: String): UUID? = lockActiveTicketId(rawToken)
 
     @Transactional
     fun revokeAll(ticketId: UUID) {

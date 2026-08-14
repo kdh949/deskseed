@@ -34,9 +34,20 @@ data class CustomerFollowUpCommand(
     val context: CommandContext,
 )
 
+data class AnonymousCustomerFollowUpCommand(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val body: String,
+    val clientCommandId: String,
+    val context: CommandContext,
+)
+
 data class CustomerFollowUpResult(
     val comment: PublicCommentView,
     val auditId: UUID,
+    val ticketId: UUID,
+    val requesterId: UUID,
+    val replayed: Boolean = false,
 )
 
 data class ClaimableCustomerTicket(
@@ -66,6 +77,9 @@ interface CustomerTicketPortal {
     fun detail(requesterId: UUID, ticketNumber: Long): PublicTicketView?
 
     fun addFollowUp(command: CustomerFollowUpCommand): CustomerFollowUpResult
+
+    /** Adds a PUBLIC follow-up after Portal has locked a ticket-scoped anonymous capability. */
+    fun addAnonymousFollowUp(command: AnonymousCustomerFollowUpCommand): CustomerFollowUpResult
 
     fun findClaimable(ticketId: UUID, ticketNumber: Long): ClaimableCustomerTicket?
 
