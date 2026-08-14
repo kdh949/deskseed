@@ -66,6 +66,7 @@ data class StaffTicketSummary(
     val requester: StaffActorSummary,
     val group: StaffGroupReference?,
     val assignee: StaffReference?,
+    val createdAt: Instant,
     val updatedAt: Instant,
     val version: Long,
     val isChild: Boolean,

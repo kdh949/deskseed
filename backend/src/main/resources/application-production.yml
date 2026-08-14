@@ -39,6 +39,10 @@ server:
 deskseed:
   api-docs:
     require-admin: true
+  platform:
+    network:
+      allowed-client-cidrs: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS}
+      trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS}
   mail:
     # Delivery remains opt-in. Protected intents are queued regardless, so encryption key material is always required.
     delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}

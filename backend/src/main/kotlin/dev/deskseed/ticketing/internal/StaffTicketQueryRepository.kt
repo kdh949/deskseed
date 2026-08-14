@@ -118,7 +118,7 @@ internal class StaffTicketQueryRepository(
         return jdbcTemplate.query(
             """
             select t.id, t.ticket_number, t.subject, t.status, t.priority,
-                   t.updated_at, t.version, t.kind,
+                   t.created_at, t.updated_at, t.version, t.kind,
                    (select count(*)
                     from ticket_relations relation
                     join tickets child on child.id = relation.target_ticket_id
@@ -155,6 +155,7 @@ internal class StaffTicketQueryRepository(
                 assignee = result.getObject("assignee_id", UUID::class.java)?.let {
                     StaffReference(it, result.getString("assignee_name"))
                 },
+                createdAt = result.getTimestamp("created_at").toInstant(),
                 updatedAt = result.getTimestamp("updated_at").toInstant(),
                 version = result.getLong("version"),
                 isChild = result.getString("kind") == "INTERNAL_CHILD",
@@ -243,7 +244,7 @@ internal class StaffTicketQueryRepository(
         val items = jdbcTemplate.query(
             """
             select t.id, t.ticket_number, t.subject, t.status, t.priority,
-                   t.updated_at, t.version, t.kind,
+                   t.created_at, t.updated_at, t.version, t.kind,
                    (select count(*)
                     from ticket_relations relation
                     join tickets child on child.id = relation.target_ticket_id
@@ -275,6 +276,7 @@ internal class StaffTicketQueryRepository(
                 assignee = result.getObject("assignee_id", UUID::class.java)?.let {
                     StaffReference(it, result.getString("assignee_name"))
                 },
+                createdAt = result.getTimestamp("created_at").toInstant(),
                 updatedAt = result.getTimestamp("updated_at").toInstant(),
                 version = result.getLong("version"),
                 isChild = result.getString("kind") == "INTERNAL_CHILD",
@@ -292,7 +294,7 @@ internal class StaffTicketQueryRepository(
         val ticketRows = jdbcTemplate.query(
             """
             select t.id, t.ticket_number, t.subject, t.status, t.priority,
-                   t.updated_at, t.version, t.kind,
+                   t.created_at, t.updated_at, t.version, t.kind,
                    (select count(*)
                     from ticket_relations relation
                     join tickets child on child.id = relation.target_ticket_id
@@ -308,7 +310,8 @@ internal class StaffTicketQueryRepository(
                    linked.direction as related_direction,
                    rt.id as related_id, rt.ticket_number as related_ticket_number,
                    rt.subject as related_subject, rt.status as related_status,
-                   rt.priority as related_priority, rt.updated_at as related_updated_at,
+                   rt.priority as related_priority, rt.created_at as related_created_at,
+                   rt.updated_at as related_updated_at,
                    rt.version as related_version, rt.kind as related_kind,
                    (select count(*)
                     from ticket_relations open_relation
@@ -359,6 +362,7 @@ internal class StaffTicketQueryRepository(
                     assignee = result.getObject("assignee_id", UUID::class.java)?.let {
                         StaffReference(it, result.getString("assignee_name"))
                     },
+                    createdAt = result.getTimestamp("created_at").toInstant(),
                     updatedAt = result.getTimestamp("updated_at").toInstant(),
                     version = result.getLong("version"),
                     isChild = result.getString("kind") == "INTERNAL_CHILD",
@@ -388,6 +392,7 @@ internal class StaffTicketQueryRepository(
                             assignee = result.getObject("related_assignee_id", UUID::class.java)?.let {
                                 StaffReference(it, result.getString("related_assignee_name"))
                             },
+                            createdAt = result.getTimestamp("related_created_at").toInstant(),
                             updatedAt = result.getTimestamp("related_updated_at").toInstant(),
                             version = result.getLong("related_version"),
                             isChild = result.getString("related_kind") == "INTERNAL_CHILD",

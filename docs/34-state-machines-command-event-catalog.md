@@ -250,6 +250,9 @@ Safety:
 - policy version snapshot on target creation.
 - business schedule versions calculate dueAt without consulting server default timezone.
 - clock progression tests use deterministic Clock.
+- Platform `CUSTOMER_REQUEST` creation publishes one in-transaction `TicketSubmitted` fact after its
+  creation audit (`channel=API`, `source=PLATFORM_API`); a matching idempotency replay publishes none.
+  `INTERNAL_WORK_ITEM` may open its state interval but is excluded before First Reply policy matching.
 
 Business schedule administration emits canonical AdminSecurityAudit events:
 

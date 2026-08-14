@@ -6,12 +6,12 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 2237c4385694db59ce55172dedec325ca31d8560011946544419827fa3f9994c        6279  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-bc5b0455165d46976f397ab4a70c6ca74a5cc2177d323dfd2daef8e0502dc8c7      216386  api/core-api-outline-v1.yaml
+0329490f15032d453189efb1cad9f9bf6a962783b668cbf3ea3966ee3d41011e      216647  api/core-api-outline-v1.yaml
 3fed2202173278118ddc6eb8e5d8ada47772b752f0d36a93e5b18d6301e538e8       13735  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
 aa62e24c2ea979697aa8f378ec6f9d250902c26a7b71a51c67282e81a7a2aa5f        9399  api/openapi-v1.yaml
-8df0c416ec38a7e8da5a8a8d207cad882b6822d5be9bfe74dde441fa72dfdec3       15873  api/platform-api-outline-v1.yaml
+8d4d6e04d2b2448c160ed135e62997b466e0ca2924233135fe95147202f79d85       16149  api/platform-api-outline-v1.yaml
 99ebfbdbec349a4393df6b8b9b1dc90e50e98d99e09286c4d0d68c844a10612f         542  api/ui-route-catalog-v0.6.yaml
 9c020a4c12585495dc9f530e9805567afa79a8eef346d6fe757c661fdaa8d740         430  checklists/feature-readiness.md
 78ce0e4c5e256dca8d3783a357f1a422a8d59c16f01f6e726fc1f4ae38036ae3         807  checklists/pr-review.md
@@ -39,7 +39,7 @@ c9135bdbd123cfb7c118ef14fd6dccfb82bb9e9cb7a7630b99e68e36ece1498d        6279  do
 e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  docs/15-seed-status.md
 19b7616dda936661aeb93a98081aac77f3cedf9c5457c027f9aa4c89a759621e        7275  docs/16-metric-glossary-draft.md
 1a234089ea1f791f0bb56e91215e11619cea6520ecd3259069625bb872a72760        7154  docs/17-open-source-study-guide.md
-622b473df877ee3f7a95f87fbc70b839b54bd5c590617c98aded45f315de940e       16494  docs/18-integration-platform.md
+0141f66f1ef42954f49cc9b68f377142e3f4e26fdf2327539df70e8c0e27ac76       16987  docs/18-integration-platform.md
 5b7aee4d7ae31125f0b713f1cfb45712bdcd88807b6df411d7749e9367ecd38b       16553  docs/19-security-audit-center.md
 7412962184d0f03424a8e5e5e7d6c098fb8ba7a072e98052e52534766955099e        7662  docs/20-api-sdk-contract.md
 384f67495078a4077302557a87eb4d06b4743621df90710f9de5ffdb6d08851c       38700  docs/21-minimum-verification-gates.md
@@ -47,7 +47,7 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 1cb5de486728eb8740a92b7abf6bbfb082c3f5bc28604708d0ca8746dccc5ed3        8603  docs/25-implementation-decision-register.md
-4e1b00f40f95cc07667fc08357386e4ffd55b34914200829b4a3da64f3742a42       22431  docs/26-requirement-traceability.md
+be1b0dfd9a297da410a0f6ae3f224b5a9ee4d9cf861300745ee188808cf74b0d       22700  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -55,7 +55,7 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 61cc6b1d9c883e9e9e4fe6e6b4fe60a0d9244a2f89046d449e2751578ef954b8        8326  docs/31-frontend-state-and-interaction-contracts.md
 79afef1ef3e929536c0aba07b0b4c389ad950baeae7c19577c8b89fdfd4463d0       16062  docs/32-database-schema-and-index-blueprint.md
 3b8ef598b48f7549160cc59f5aad2c002aeec0d5cd40b5c9caef02f105aaebd1        8759  docs/33-authorization-permission-matrix.md
-9ef98c0b3809c8b7dc7dc961bcf572da4902748fd688881c8772e7a80fa08c32       11561  docs/34-state-machines-command-event-catalog.md
+f547a1aa6e9b4e76936dcd8e27fd76dafafde6ab6866c7b3be1f3faa7ebe2433       11868  docs/34-state-machines-command-event-catalog.md
 b98cb50d41ece90f5f41fab23266df9da91e284ec584d1a9b23e7aadc70154ef        4406  docs/35-test-quality-release-strategy.md
 9265782af391fd85519e106c426f0733f9ca3b2606554828c2466e3f5337cafa       18863  docs/36-self-hosted-operations-runbook.md
 3030495d978e5bec340ce4247a576aa69f84a49eeacc6653eab735ab33382658        6115  docs/37-customer-portal-and-identity-blueprint.md
@@ -65,7 +65,7 @@ d656e849bc6bdd8ea351c609e20a642bd6bd3306be5e638621722c8425a0c1ce        4936  do
 124ed38dfc46f153f2fefcaef669f79aa7072a24bf9029b4502943f8ab340e8f        2312  docs/41-feature-implementation-dependency-map.md
 5980d939e7a55e7d5173c46f79c59f8f873ba9bd14c4053b469030c0794ee44c        4603  docs/42-zendesk-frontend-research.md
 a6d391143e02939d415acb9cf13f788d928754db7ffcd7d5645f9629f6570795        3235  docs/43-coverage-assessment-v03-to-v05.md
-51c016b28bc0c06781bec33e9474cedba3e6aef4572ae40f44464dcb619855a9        7581  docs/44-sla-ola-business-hours-implementation-spec.md
+f2382ba8d4bc14b0df4bc29dd92b8a67ad4bf4bd15d9eb00889800144ccd8851        7947  docs/44-sla-ola-business-hours-implementation-spec.md
 68c7e8e5f1f040d2c27813625f05ae0440b340f5c7e9f615aef0312142d83fda        5702  docs/45-trigger-automation-engine-implementation-spec.md
 67a1ccc594e6aa2db072fa7498ee054e182cc4243417be912d3b2abd0423b78d        5350  docs/46-analytics-explore-reporting-implementation-spec.md
 a6b24c25dd329f0ed3bc43928de44a88bdef324a333ee92d3cfc0df852b57ca1        7649  docs/47-ticketing-depth-views-fields-macros-search.md
@@ -121,8 +121,9 @@ eb8fd5cb2d295e6e988b35fe88ad39a2f475b9e3357f7014556a3901eba656a9        2326  do
 f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  docs/evidence/outbound-mail-mailpit-foundation.md
 36d43d6d66f816434f4d3701dda086aa9cc830edc37aba91936501e54f919e90        4966  docs/evidence/p0/BE-P0-CUSTOMER-ACCESS.md
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md
+389bbe2bea0c975b3f358f53d6eafc24cf3efac751aa080a3c972f680ec2edf9        5096  docs/evidence/p0/BE-P0-PRODUCTION-CONSISTENCY.md
 b1b7618986dc18412b85ca5f502cb76ca466aa12499663fd8ee25ac6a7c48d52        2875  docs/evidence/p0/BE-P0-PUBLIC-ABUSE.md
-e51dde268bcc738526735f02cc167839b8606a5aa5c68104e42a86b5e148b44e        7053  docs/evidence/p0/backend-goal-progress.md
+34f815ce5f30363bcad22d002c31b78dc20b07e002e6bebbf2c1093360fdfb9d       16510  docs/evidence/p0/backend-goal-progress.md
 4d249184a8ab250e1e5366c3327f7febad7c6152b63a70c4293a3aea05b2b779        2173  docs/evidence/release/README.md
 35d6ff0b3a7790b15a4c71750b0397a0af139a32f66eb9b3abe8ad942d10e113        4379  docs/evidence/release/operations/2026-08-12-macos-arm64-cleanup-smoke.md
 b1db656e42be6f7677fa693047181f064b358a257540c7ffca592176f1120ebf       12229  docs/evidence/release/operations/2026-08-12-macos-arm64-full.md
