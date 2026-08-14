@@ -43,7 +43,7 @@ Scalar `/docs/api`는 위 커밋 계약을 읽기 쉽게 렌더링할 뿐 source
 ```text
 POST /api/v1/requests
 GET  /api/v1/requests/{ticketNumber}
-POST /api/v1/requests/{ticketNumber}/comments       later
+POST /api/v1/requests/{ticketNumber}/comments       ticket-scoped anonymous PUBLIC follow-up
 POST /api/v1/customer/auth/magic-link-requests
 POST /api/v1/customer/auth/magic-link-sessions
 GET  /api/v1/customer/csrf

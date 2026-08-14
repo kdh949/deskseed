@@ -12,23 +12,36 @@ enum class OutboundMailTemplate(val version: Int) {
 
 data class MailRecipient(val address: String)
 
+enum class RenderedMailSensitivity {
+    STANDARD,
+    PROTECTED,
+}
+
 sealed interface OutboundMailContent {
     val template: OutboundMailTemplate
+    val renderedSensitivity: RenderedMailSensitivity
 }
 
 data class MagicLinkMail(val magicLink: String) : OutboundMailContent {
     override val template = OutboundMailTemplate.CUSTOMER_MAGIC_LINK
+    override val renderedSensitivity = RenderedMailSensitivity.PROTECTED
 }
 
-data class RequestReceivedMail(val ticketNumber: Long) : OutboundMailContent {
+data class RequestReceivedMail(
+    val ticketNumber: Long,
+    val requestAccessToken: String,
+) : OutboundMailContent {
     override val template = OutboundMailTemplate.REQUEST_RECEIVED
+    override val renderedSensitivity = RenderedMailSensitivity.PROTECTED
 }
 
 data class PublicAgentReplyMail(
     val ticketNumber: Long,
     val publicBody: String,
+    val requestAccessToken: String,
 ) : OutboundMailContent {
     override val template = OutboundMailTemplate.PUBLIC_AGENT_REPLY
+    override val renderedSensitivity = RenderedMailSensitivity.PROTECTED
 }
 
 data class OutboundMailIntent(

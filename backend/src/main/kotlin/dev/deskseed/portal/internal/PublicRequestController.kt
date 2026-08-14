@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import org.springframework.validation.annotation.Validated
@@ -89,6 +90,32 @@ internal class PublicRequestController(
                 ),
             )
     }
+
+    @PostMapping("/{ticketNumber}/comments")
+    fun addComment(
+        @PathVariable @Positive ticketNumber: Long,
+        @RequestHeader("X-Request-Access-Token") @Size(min = 32, max = 256) accessToken: String,
+        @Valid @RequestBody body: AnonymousCustomerFollowUpRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<PublicCommentResponse> {
+        val result = applicationService.addComment(
+            ticketNumber = ticketNumber,
+            rawAccessToken = accessToken,
+            body = body.body,
+            clientCommandId = body.clientCommandId,
+            context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
+        )
+        return ResponseEntity.created(
+            URI.create("/api/v1/requests/$ticketNumber/comments/${result.comment.id}"),
+        ).cacheControl(CacheControl.noStore()).body(
+            PublicCommentResponse(
+                id = result.comment.id,
+                authorDisplayName = result.comment.authorDisplayName,
+                body = result.comment.body,
+                createdAt = result.comment.createdAt,
+            ),
+        )
+    }
 }
 
 @Schema(description = "고객 문의 접수 요청")
@@ -147,4 +174,18 @@ internal data class PublicCommentResponse(
     val authorDisplayName: String,
     val body: String,
     val createdAt: Instant,
+)
+
+@Schema(description = "접근 토큰으로 고객 문의에 추가할 PUBLIC 댓글")
+internal data class AnonymousCustomerFollowUpRequest(
+    @field:Schema(description = "고객이 추가로 남기는 PUBLIC 댓글 본문", example = "결제 카드 승인 내역을 추가로 확인해 주세요.")
+    @field:NotBlank
+    @field:Size(max = 20_000)
+    val body: String,
+
+    @field:Schema(description = "네트워크 재전송에도 유지하는 고객 명령 식별자", example = "77777777-7777-4777-8777-777777777777")
+    @field:NotBlank
+    @field:Size(max = 100)
+    @field:Pattern(regexp = "[A-Za-z0-9._:-]+")
+    val clientCommandId: String,
 )

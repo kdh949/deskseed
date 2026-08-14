@@ -11,6 +11,10 @@ import dev.deskseed.outboundmail.OutboundMailPort
 import dev.deskseed.outboundmail.RequestReceivedMail
 import dev.deskseed.settings.CustomerAccessPolicy
 import dev.deskseed.ticketing.CustomerRequestStatus
+import dev.deskseed.ticketing.CustomerFollowUpResult
+import dev.deskseed.ticketing.CustomerTicketNotFoundException
+import dev.deskseed.ticketing.CustomerTicketPortal
+import dev.deskseed.ticketing.AnonymousCustomerFollowUpCommand
 import dev.deskseed.ticketing.PublicTicketView
 import dev.deskseed.ticketing.SubmitPublicRequestCommand
 import dev.deskseed.ticketing.TicketingFacade
@@ -25,6 +29,7 @@ internal class PublicRequestApplicationService(
     private val customerAccessPolicy: CustomerAccessPolicy,
     private val customerDirectory: CustomerDirectory,
     private val ticketingFacade: TicketingFacade,
+    private val ticketPortal: CustomerTicketPortal,
     private val accessTokenStore: RequestAccessTokenStore,
     private val outboundMailPort: OutboundMailPort,
 ) {
@@ -54,16 +59,15 @@ internal class PublicRequestApplicationService(
             ),
         )
         val rawAccessToken = accessTokenStore.issue(ticket.ticketId)
-        outboundMailPort.enqueue(
-            OutboundMailIntent(
-                idempotencyKey = "request-received:${ticket.ticketId}",
-                recipient = MailRecipient(customer.email),
-                content = RequestReceivedMail(ticket.ticketNumber),
-                ticketId = ticket.ticketId,
-                customerId = customer.id,
-                actor = ActorRef(ActorType.CUSTOMER, customer.id),
-                context = command.context,
-            ),
+        enqueueRequestReceivedMail(
+            ticketId = ticket.ticketId,
+            ticketNumber = ticket.ticketNumber,
+            commentId = null,
+            customerId = customer.id,
+            customerEmail = customer.email,
+            rawAccessToken = rawAccessToken,
+            idempotencyKey = "request-received:${ticket.ticketId}",
+            context = command.context,
         )
 
         return AnonymousRequestSubmitted(
@@ -81,6 +85,70 @@ internal class PublicRequestApplicationService(
         val ticket = ticketingFacade.findPublicTicket(ticketId, ticketNumber)
             ?: throw RequestNotFoundException()
         return ticket
+    }
+
+    @Transactional
+    fun addComment(
+        ticketNumber: Long,
+        rawAccessToken: String,
+        body: String,
+        clientCommandId: String,
+        context: CommandContext,
+    ): CustomerFollowUpResult {
+        val ticketId = accessTokenStore.lockActiveTicketId(rawAccessToken)
+            ?: throw RequestNotFoundException()
+        val result = try {
+            ticketPortal.addAnonymousFollowUp(
+                AnonymousCustomerFollowUpCommand(
+                    ticketId = ticketId,
+                    ticketNumber = ticketNumber,
+                    body = body,
+                    clientCommandId = clientCommandId,
+                    context = context,
+                ),
+            )
+        } catch (_: CustomerTicketNotFoundException) {
+            throw RequestNotFoundException()
+        }
+        if (!result.replayed) {
+            val customer = customerDirectory.findById(result.requesterId) ?: throw RequestNotFoundException()
+            val freshAccessToken = accessTokenStore.issue(result.ticketId)
+            enqueueRequestReceivedMail(
+                ticketId = result.ticketId,
+                ticketNumber = ticketNumber,
+                commentId = result.comment.id,
+                customerId = result.requesterId,
+                customerEmail = customer.email,
+                rawAccessToken = freshAccessToken,
+                idempotencyKey = "customer-follow-up-received:${result.comment.id}",
+                context = context.copy(commandId = clientCommandId),
+            )
+        }
+        return result
+    }
+
+    private fun enqueueRequestReceivedMail(
+        ticketId: UUID,
+        ticketNumber: Long,
+        commentId: UUID?,
+        customerId: UUID,
+        customerEmail: String,
+        rawAccessToken: String,
+        idempotencyKey: String,
+        context: CommandContext,
+    ) {
+        outboundMailPort.enqueue(
+            OutboundMailIntent(
+                idempotencyKey = idempotencyKey,
+                recipient = MailRecipient(customerEmail),
+                content = RequestReceivedMail(ticketNumber, rawAccessToken),
+                ticketId = ticketId,
+                commentId = commentId,
+                customerId = customerId,
+                actor = ActorRef(ActorType.CUSTOMER, customerId),
+                context = context,
+            ),
+        )
     }
 }
 

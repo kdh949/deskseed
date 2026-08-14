@@ -55,6 +55,7 @@ internal class StaffAccessSecurityConfiguration(
             .authorizeHttpRequests {
                 it.requestMatchers(HttpMethod.POST, "/api/v1/requests").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/requests/*").permitAll()
+                it.requestMatchers(HttpMethod.POST, "/api/v1/requests/*/comments").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/requests/*/claim-grants").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/csrf").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/agent/session").permitAll()

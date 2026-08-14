@@ -131,3 +131,18 @@ data class TicketSlaLifecycleChanged(
     val correlationId: String,
     val occurredAt: Instant,
 )
+
+/**
+ * A PUBLIC staff comment persisted in the current transaction that needs Portal-owned customer capability issuance
+ * and mail intent creation. The fact is synchronous and transaction-local, not an external delivery guarantee.
+ */
+data class PublicAgentReplyRecorded(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val requesterId: UUID,
+    val commentId: UUID,
+    val publicBody: String,
+    val actor: ActorRef,
+    val context: CommandContext,
+    val ticketAuditId: UUID,
+)

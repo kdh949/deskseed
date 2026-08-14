@@ -43,15 +43,19 @@ class OutboundMailPolicyTest {
     }
 
     @Test
-    fun `three versioned plain text templates render only their public inputs`() {
+    fun `versioned templates render fragment request links and classify token-bearing bodies as protected`() {
         val magicLink = "https://deskseed.example/customer/magic/opaque-token"
+        val requestAccessToken = "a".repeat(43)
         val magic = renderer.render(intent(MagicLinkMail(magicLink)))
-        val received = renderer.render(intent(RequestReceivedMail(ticketNumber = 1042)))
+        val received = renderer.render(
+            intent(RequestReceivedMail(ticketNumber = 1042, requestAccessToken = requestAccessToken)),
+        )
         val reply = renderer.render(
             intent(
                 PublicAgentReplyMail(
                     ticketNumber = 1042,
                     publicBody = "고객에게 공개되는 답변",
+                    requestAccessToken = requestAccessToken,
                 ),
             ),
         )
@@ -60,10 +64,15 @@ class OutboundMailPolicyTest {
         assertThat(magic.templateVersion).isEqualTo(1)
         assertThat(magic.subject).contains("로그인")
         assertThat(magic.textBody).contains(magicLink)
+        assertThat(magic.sensitivity).isEqualTo(dev.deskseed.outboundmail.RenderedMailSensitivity.PROTECTED)
         assertThat(received.subject).contains("#1042", "접수")
-        assertThat(received.textBody).contains("http://localhost:5173/requests/1042")
+        assertThat(received.textBody).contains("http://localhost:5173/requests/1042#token=$requestAccessToken")
+        assertThat(received.textBody).doesNotContain("?token=")
+        assertThat(received.sensitivity).isEqualTo(dev.deskseed.outboundmail.RenderedMailSensitivity.PROTECTED)
         assertThat(reply.subject).contains("#1042", "공개 답변")
         assertThat(reply.textBody).contains("고객에게 공개되는 답변")
+        assertThat(reply.textBody).contains("http://localhost:5173/requests/1042#token=$requestAccessToken")
+        assertThat(reply.sensitivity).isEqualTo(dev.deskseed.outboundmail.RenderedMailSensitivity.PROTECTED)
         assertThat(reply.textBody).doesNotContain("INTERNAL")
     }
 

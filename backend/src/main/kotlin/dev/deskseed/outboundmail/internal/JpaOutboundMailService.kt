@@ -10,7 +10,7 @@ import dev.deskseed.outboundmail.OutboundMailIntentConflictException
 import dev.deskseed.outboundmail.OutboundMailOperations
 import dev.deskseed.outboundmail.OutboundMailPort
 import dev.deskseed.outboundmail.OutboundMailRetryInvalidException
-import dev.deskseed.outboundmail.MagicLinkMail
+import dev.deskseed.outboundmail.RenderedMailSensitivity
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -44,7 +44,7 @@ internal class JpaOutboundMailService(
 
         val now = Instant.now(clock)
         val intentId = UUID.randomUUID()
-        val protectedBody = if (intent.content is MagicLinkMail) {
+        val protectedBody = if (rendered.sensitivity == RenderedMailSensitivity.PROTECTED) {
             protectedContentCipher.encrypt(rendered.textBody, intentId)
         } else {
             null

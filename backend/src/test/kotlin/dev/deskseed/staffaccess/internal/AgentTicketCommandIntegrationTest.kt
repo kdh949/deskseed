@@ -1073,6 +1073,20 @@ class AgentTicketCommandIntegrationTest {
         ).containsExactly("REQUEST_RECEIVED", "PUBLIC_AGENT_REPLY")
         assertThat(
             jdbcTemplate.queryForObject(
+                "select count(*) from request_access_tokens where ticket_id = ?",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_intents where ticket_id = ? and protected_body_ciphertext is not null",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
                 "select count(*) from outbound_mail_intents where ticket_id = ? and text_body like ?",
                 Long::class.java,
                 ticketId,
