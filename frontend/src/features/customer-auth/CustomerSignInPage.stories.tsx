@@ -34,7 +34,7 @@ export const RequestLink: Story = {
       canvas.getByRole('button', { name: '로그인 링크 보내기' }),
     )
     await expect(
-      canvas.getByText(
+      await canvas.findByText(
         '입력한 이메일 주소가 유효하면 로그인 링크를 보냈습니다.',
       ),
     ).toBeVisible()
@@ -58,7 +58,7 @@ export const ServiceUnavailable: Story = {
       canvas.getByRole('button', { name: '로그인 링크 보내기' }),
     )
     await expect(
-      canvas.getByText('로그인 링크를 요청할 수 없습니다.'),
+      await canvas.findByText('로그인 링크를 요청할 수 없습니다.'),
     ).toBeVisible()
   },
 }
