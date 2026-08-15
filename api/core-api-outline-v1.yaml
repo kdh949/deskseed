@@ -4964,6 +4964,8 @@ components:
       - GROUP
       - ASSIGNEE
       - FIRST_REPLY_SLA_STATE
+      - TICKET_KIND
+      - UPDATED_AT
     SavedViewConditionOperator:
       type: string
       enum:
@@ -4973,7 +4975,9 @@ components:
       - NOT_IN
       - IS_CURRENT_ACTOR
       - IS_UNASSIGNED
+      - IS_CURRENT_ACTOR_GROUP
       - LESS_THAN_SOLVED
+      - WITHIN_LAST_DAYS
     SavedViewCondition:
       type: object
       additionalProperties: false
@@ -4995,7 +4999,7 @@ components:
             type: string
             minLength: 1
             maxLength: 100
-      description: field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다. IS_CURRENT_ACTOR, IS_UNASSIGNED, LESS_THAN_SOLVED는 빈 values만 허용하며 raw SQL, SpEL, JavaScript, script expression은 허용하지 않습니다.
+      description: field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다. IS_CURRENT_ACTOR, IS_UNASSIGNED, IS_CURRENT_ACTOR_GROUP, LESS_THAN_SOLVED는 빈 values만 허용하고 UPDATED_AT/WITHIN_LAST_DAYS는 bounded 정수 하루 수 하나만 허용합니다. raw SQL, SpEL, JavaScript, script expression은 허용하지 않습니다.
     SavedViewConditions:
       type: object
       additionalProperties: false
@@ -5077,17 +5081,35 @@ components:
         - UPDATED_AT
         sort: updatedAt:desc,ticketNumber:desc
     CreateSavedView:
-      allOf:
-      - $ref: '#/components/schemas/SavedViewDefinition'
-      - type: object
-        required:
-        - scope
-        properties:
-          scope:
-            type: string
-            enum:
-            - PERSONAL
-            - SHARED
+      type: object
+      additionalProperties: false
+      required:
+      - scope
+      - name
+      - conditions
+      - columns
+      - sort
+      properties:
+        scope:
+          type: string
+          enum:
+          - PERSONAL
+          - SHARED
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        conditions:
+          $ref: '#/components/schemas/SavedViewConditions'
+        columns:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SavedViewColumn'
+        sort:
+          $ref: '#/components/schemas/SavedViewSort'
       x-deskseed-documentation-review: MANUAL
       description: 현재 상담사가 새 PERSONAL definition을 만들거나, 명시적 shared-view capability를 가진 ADMIN이 SHARED definition을 만들 때 사용하는 요청입니다. SYSTEM scope는 생성할 수 없습니다.
       example:
@@ -5109,16 +5131,34 @@ components:
         - UPDATED_AT
         sort: updatedAt:desc,ticketNumber:desc
     UpdateSavedView:
-      allOf:
-      - $ref: '#/components/schemas/SavedViewDefinition'
-      - type: object
-        required:
-        - expectedVersion
-        properties:
-          expectedVersion:
-            type: integer
-            format: int64
-            minimum: 1
+      type: object
+      additionalProperties: false
+      required:
+      - expectedVersion
+      - name
+      - conditions
+      - columns
+      - sort
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        conditions:
+          $ref: '#/components/schemas/SavedViewConditions'
+        columns:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SavedViewColumn'
+        sort:
+          $ref: '#/components/schemas/SavedViewSort'
       x-deskseed-documentation-review: MANUAL
       description: owner의 PERSONAL 또는 권한 있는 ADMIN의 SHARED definition을 낙관적 version으로 갱신할 때 사용하는 요청입니다. scope·owner·SYSTEM immutable 상태는 이 요청으로 바꾸지 않습니다.
       example:

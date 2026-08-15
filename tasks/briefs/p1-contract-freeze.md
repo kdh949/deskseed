@@ -23,7 +23,7 @@ P0의 ticket/audit/security 불변식을 유지한 채, P1의 독립 vertical sl
 
 ## Product and API contract
 
-- Saved Views are versioned, allowlisted condition AST definitions, never ticket-ID lists. The initial AST supports only status, priority, group, assignee and First Reply SLA state; it rejects tags, raw SQL, SpEL, JavaScript and scripts. Five seeded SYSTEM definitions remain available.
+- Saved Views are versioned, allowlisted condition AST definitions, never ticket-ID lists. The initial AST supports status, priority, group, assignee, First Reply SLA state, ticket kind and bounded updated-age predicates needed by the seeded views; it rejects tags, raw SQL, SpEL, JavaScript and scripts. Five seeded SYSTEM definitions remain available.
 - View rows, preview, and counts use one compiler and the same SQL authorization predicate. Counts cover the first 20 visible definitions using one parameterized `UNION ALL` round-trip; lists remain authoritative.
 - Search accepts an opaque signed cursor in the JSON body. It is bound to normalized query fingerprint, filters, sort and snapshot; score/ticketNumber ordering is available without putting the raw query in a URL or log. It returns exact count, `nextCursor`, and SLA-state filtering.
 - A batch contains 1–100 unique explicit ticket numbers. Each item has `expectedVersion`, a stable `clientCommandId`, and exactly one allowlisted update or transfer command. Items are independent transactions and report `SUCCEEDED`, `CONFLICT`, `DENIED`, `NOT_FOUND`, or `VALIDATION_FAILED`; comments are not representable in the schema.
