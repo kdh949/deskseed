@@ -71,6 +71,10 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+
+    // The suite has distinct Spring integration contexts; retain a bounded set in CI.
+    maxHeapSize = "1g"
+    systemProperty("spring.test.context.cache.maxSize", "8")
 }
 
 tasks.processResources {
