@@ -21,11 +21,10 @@ internal class ProtectedMailContentUnreadableException : RuntimeException(null, 
  */
 internal class ProtectedMailContentCipher(
     private val properties: ProtectedMailContentProperties,
-    private val validateActiveKeyAtStartup: Boolean,
     private val secureRandom: SecureRandom = SecureRandom(),
 ) {
     init {
-        if (validateActiveKeyAtStartup) key(properties.activeKeyVersion)
+        key(properties.activeKeyVersion)
     }
 
     fun encrypt(plaintext: String, intentId: UUID): ProtectedMailContent {

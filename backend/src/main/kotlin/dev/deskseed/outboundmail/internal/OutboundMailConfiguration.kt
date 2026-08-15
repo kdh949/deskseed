@@ -22,7 +22,7 @@ internal class OutboundMailConfiguration {
 
     @Bean
     fun protectedMailContentCipher(properties: OutboundMailProperties) =
-        ProtectedMailContentCipher(properties.protectedContent, properties.deliveryEnabled)
+        ProtectedMailContentCipher(properties.protectedContent)
 
     @Bean
     fun mailDeliveryConfigurationValidator(

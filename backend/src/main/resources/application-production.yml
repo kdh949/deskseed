@@ -40,7 +40,7 @@ deskseed:
   api-docs:
     require-admin: true
   mail:
-    # Delivery remains opt-in. When enabled, startup validates SMTP auth, TLS, sender, HTTPS URL, and key material.
+    # Delivery remains opt-in. Protected intents are queued regardless, so encryption key material is always required.
     delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}
     scheduling-enabled: ${DESKSEED_MAIL_SCHEDULING_ENABLED:true}
     transport: ${DESKSEED_MAIL_TRANSPORT:disabled}
