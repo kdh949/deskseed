@@ -3,7 +3,6 @@ package dev.deskseed.outboundmail.internal
 import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
-import java.util.Base64
 import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
@@ -58,12 +57,7 @@ internal class ProtectedMailContentCipher(
     }
 
     private fun key(version: String): SecretKeySpec {
-        require(version.matches(Regex("[A-Za-z0-9._-]{1,40}"))) { "protected mail key version is invalid" }
-        val encoded = properties.keys[version]
-            ?: error("protected mail key version is not configured")
-        val decoded = Base64.getDecoder().decode(encoded)
-        require(decoded.size == 32) { "protected mail key must contain 32 bytes" }
-        return SecretKeySpec(decoded, "AES")
+        return SecretKeySpec(properties.decodedKey(version), "AES")
     }
 
     private companion object {

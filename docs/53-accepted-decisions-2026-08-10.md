@@ -109,7 +109,7 @@ Related ADR: `0033-required-encrypted-raw-search-query-audit.md`.
 
 ## 6. Email development adapter
 
-**Decision:** development uses Mailpit; production providers are connected through adapters later.
+**Decision:** development uses Mailpit; production delivery uses the same provider-neutral SMTP adapter only when an operator explicitly enables and provisions it.
 
 Implementation contract:
 
@@ -120,6 +120,7 @@ Implementation contract:
 - email intent is committed before network delivery; retries are duplicate-safe.
 - INTERNAL comments never generate outbound customer email.
 - Mailpit REST API may be used by integration tests to assert recipient, subject, and link content.
+- production stays disabled by default. Enabling delivery requires SMTP host/port/auth/credentials, required TLS, a sender mailbox, an HTTPS public base URL and active protected-mail key validation before the worker starts; host/credentials/provider responses are not exposed by ADMIN operations.
 - full inbound email ticket creation remains blueprint-ready until a production ingestion boundary and threading policy are chosen.
 
 Related ADR: `0034-mailpit-development-outbound-mail-adapter.md`.

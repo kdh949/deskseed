@@ -115,6 +115,7 @@ class AgentTicketReadIntegrationTest {
             .andExpect(jsonPath("$.items[0].ticketNumber").value(2001))
             .andExpect(jsonPath("$.items[0].group.name").value("결제 지원"))
             .andExpect(jsonPath("$.items[0].assignee.displayName").value("상담사 B"))
+            .andExpect(jsonPath("$.items[0].createdAt").value("2026-08-09T23:59:00Z"))
             .andExpect(jsonPath("$.sort").value("updatedAt:desc,ticketNumber:desc"))
 
         val interactionId = UUID.randomUUID()
@@ -123,6 +124,7 @@ class AgentTicketReadIntegrationTest {
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(header().string("ETag", "\"0\""))
             .andExpect(jsonPath("$.ticket.ticketNumber").value(2001))
+            .andExpect(jsonPath("$.ticket.createdAt").value("2026-08-09T23:59:00Z"))
             .andExpect(jsonPath("$.context.customer.email").value("customer-2001@example.com"))
             .andExpect(jsonPath("$.comments.length()").value(2))
             .andExpect(jsonPath("$.comments[1].visibility").value("INTERNAL"))
@@ -369,9 +371,18 @@ class AgentTicketReadIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.items[?(@.ticketNumber == 6001)].status").value("ON_HOLD"))
 
+        mockMvc.perform(ticketDetail(6001, browser, UUID.randomUUID(), "BACKGROUND"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.ticket.status").value("ON_HOLD"))
+            .andExpect(jsonPath("$.capabilities.length()").value(2))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
+            .andExpect(jsonPath("$.capabilities[1]").value("UPDATE"))
+
         mockMvc.perform(ticketDetail(6002, browser, UUID.randomUUID(), "BACKGROUND"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.ticket.status").value("CLOSED"))
+            .andExpect(jsonPath("$.capabilities.length()").value(1))
+            .andExpect(jsonPath("$.capabilities[0]").value("READ"))
     }
 
     @Test

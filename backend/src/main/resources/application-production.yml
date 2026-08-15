@@ -10,6 +10,16 @@ spring:
     url: ${DATABASE_MIGRATION_URL:${DATABASE_URL}}
     user: ${DATABASE_MIGRATION_USERNAME}
     password: ${DATABASE_MIGRATION_PASSWORD}
+  mail:
+    host: ${DESKSEED_MAIL_SMTP_HOST:}
+    port: ${DESKSEED_MAIL_SMTP_PORT:}
+    username: ${DESKSEED_MAIL_SMTP_USERNAME:}
+    password: ${DESKSEED_MAIL_SMTP_PASSWORD:}
+    properties:
+      "[mail.smtp.auth]": ${DESKSEED_MAIL_SMTP_AUTH:false}
+      "[mail.smtp.starttls.enable]": ${DESKSEED_MAIL_SMTP_STARTTLS_ENABLE:false}
+      "[mail.smtp.starttls.required]": ${DESKSEED_MAIL_SMTP_STARTTLS_REQUIRED:false}
+      "[mail.smtp.ssl.enable]": ${DESKSEED_MAIL_SMTP_SSL_ENABLE:false}
 
 springdoc:
   api-docs:
@@ -29,18 +39,35 @@ server:
 deskseed:
   api-docs:
     require-admin: true
+  platform:
+    network:
+      allowed-client-cidrs: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS}
+      trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS}
   mail:
-    # A production provider is not selected in this slice. Operators must add a reviewed adapter/configuration.
-    delivery-enabled: false
-    transport: disabled
+    # Delivery remains opt-in. Protected intents are queued regardless, so encryption key material is always required.
+    delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}
+    scheduling-enabled: ${DESKSEED_MAIL_SCHEDULING_ENABLED:true}
+    transport: ${DESKSEED_MAIL_TRANSPORT:disabled}
+    from-address: ${DESKSEED_MAIL_FROM_ADDRESS:}
+    public-base-url: ${DESKSEED_MAIL_PUBLIC_BASE_URL:}
     protected-content:
       active-key-version: ${DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION:v1}
       keys:
         v1: ${DESKSEED_MAIL_PROTECTED_KEY_V1}
+    operations:
+      cursor:
+        active-key-id: ${DESKSEED_MAIL_OPERATIONS_CURSOR_ACTIVE_KEY_ID:v1}
+        signing-keys:
+          v1: ${DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY}
   customer-auth:
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
     consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL}
+  portal:
+    public-request-rate-limit:
+      fingerprint-key: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY}
+      # An empty value safely ignores X-Forwarded-For; configure only deployed reverse proxies here.
+      trusted-proxy-cidrs: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_TRUSTED_PROXY_CIDRS:}
   customer-portal:
     claim-grant-ttl: ${DESKSEED_CUSTOMER_CLAIM_GRANT_TTL:15m}
     claim-signing-key: ${DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY}

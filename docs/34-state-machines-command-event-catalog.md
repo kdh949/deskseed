@@ -250,6 +250,9 @@ Safety:
 - policy version snapshot on target creation.
 - business schedule versions calculate dueAt without consulting server default timezone.
 - clock progression tests use deterministic Clock.
+- Platform `CUSTOMER_REQUEST` creation publishes one in-transaction `TicketSubmitted` fact after its
+  creation audit (`channel=API`, `source=PLATFORM_API`); a matching idempotency replay publishes none.
+  `INTERNAL_WORK_ITEM` may open its state interval but is excluded before First Reply policy matching.
 
 Business schedule administration emits canonical AdminSecurityAudit events:
 
@@ -287,7 +290,8 @@ FAILED --explicit manual retry--> QUEUED (same intent)
 - worker는 claim/lease transaction을 먼저 commit한 뒤 SMTP를 호출하고 별도 transaction으로 결과를 기록한다.
 - attempt는 `IN_PROGRESS | SUCCEEDED | RETRYABLE_FAILED | PERMANENT_FAILED | ABANDONED`다.
 - 기본 retry schedule은 immediate, 1m, 5m, 30m, 2h이며 exhaustion은 terminal `FAILED`다.
-- manual retry는 새 comment/intent가 아니라 기존 terminal intent의 새 retry cycle과 delivery event다.
+- manual retry는 ADMIN_UI의 STAFF actor만 수행하며, `FAILED` row를 pessimistic lock으로 잡아 기존 terminal intent의 새 retry cycle과 delivery event를 만든다. 이 상태 전환과 `OUTBOUND_MAIL_MANUAL_RETRY_REQUESTED` Admin/Security audit은 함께 commit/rollback한다.
+- 두 retry가 경쟁하면 하나만 `FAILED → QUEUED`를 수행한다. 나머지는 lock 해제 뒤 `QUEUED`를 보고 conflict가 되며 새 comment/intent/token grant를 만들지 않는다.
 - Mailpit SMTP는 stable `Message-ID`를 전달하지만 SMTP accept 후 acknowledgement 유실을 원자적으로 판별하지 못한다. production adapter는 provider idempotency/reconciliation 계약을 별도로 동결해야 한다.
 
 ## 14. Customer request claim and follow-up state
@@ -309,10 +313,13 @@ already verified/non-customer ticket   → NOT_FOUND
   an ownership lookup or automatic claim trigger.
 - Claim mutation, token revocation/consume, one canonical ticket audit and one admin/security
   audit commit or roll back together.
-- A CUSTOMER follow-up command is keyed by `(requesterId, clientCommandId)`. Exact replay returns
-  the canonical comment; reuse with a different ticket/body returns conflict without mutation.
+- An authenticated or ticket-scoped anonymous CUSTOMER follow-up command is keyed by
+  `(requesterId, clientCommandId)`. The anonymous adapter first locks an active opaque request
+  access token and verifies its ticket ID matches the path number; token mismatch, expiry, and
+  revocation share the customer-facing not-found result. Exact replay returns the canonical
+  comment; reuse with a different ticket/body returns conflict without mutation.
 - NEW/OPEN/HOLD/PENDING accept a PUBLIC follow-up; PENDING becomes OPEN. SOLVED/CLOSED return
   conflict and are not automatically reopened.
-- Comment, optional state transition, one TicketAudit with ordered events, and the stable
-  `customer-follow-up-received:{commentId}` mail intent share the business transaction. SMTP
-  delivery remains post-commit under the outbound-mail state machine above.
+- Comment, optional state transition, one TicketAudit with ordered events, a fresh request access
+  grant, and the stable `customer-follow-up-received:{commentId}` mail intent share the business
+  transaction. SMTP delivery remains post-commit under the outbound-mail state machine above.

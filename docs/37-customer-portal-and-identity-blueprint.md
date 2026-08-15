@@ -40,6 +40,17 @@ CustomerAccount = authentication identity
 - rate limit.
 - wrong ticket/token pair는 동일한 404.
 
+### 3.1 Public request abuse boundary
+
+`POST /api/v1/requests`는 customer/ticket을 만들기 전에 Portal-owned PostgreSQL fixed-window limiter를 통과한다. 대상 이메일,
+신뢰된 client 주소, 전체 요청은 서로 다른 bucket으로 계산하지만 row에는 각각의 purpose-bound HMAC fingerprint만 남긴다. raw
+email, IP, forwarding header, token, ticket body는 저장하거나 audit/log metadata로 복사하지 않는다.
+
+직접 연결 peer가 설정된 `trusted-proxy-cidrs` 안에 있을 때만 `X-Forwarded-For` chain을 해석한다. 그 밖의 peer가 보낸 header는
+identity를 바꾸지 못한다. 신뢰 프록시에서 온 malformed, 복수, 또는 hop 상한 초과 chain은 400으로 fail closed한다. 제한은 `429`와
+`Retry-After`를 반환하고, limiter persistence 실패는 customer/ticket을 만들지 않는 503이다. limiter budget은 별도 transaction으로
+먼저 commit하므로, 이후 ticket/audit/outbox 실패가 budget을 되돌려 재시도 남용 경로가 되지 않는다.
+
 ## 4. Account authentication — accepted contract
 
 Initial method: **email magic link only**.

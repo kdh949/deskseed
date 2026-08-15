@@ -15,14 +15,15 @@ internal class PlatformNetworkBoundary(
     @Value("\${deskseed.platform.network.allowed-client-cidrs:}") allowedClientCidrs: String,
     @Value("\${deskseed.platform.network.trusted-proxy-cidrs:}") trustedProxyCidrs: String,
 ) {
+    private val productionProfile = environment.acceptsProfiles(Profiles.of("production"))
     private val configuredAllowed = splitCidrs(allowedClientCidrs)
     private val configuredTrusted = splitCidrs(trustedProxyCidrs)
-    private val allowedClientCidrs = configuredAllowed.ifEmpty { LOCAL_ALLOWED }
-    private val trustedProxyCidrs = configuredTrusted.ifEmpty { LOCAL_TRUSTED }
+    private val allowedClientCidrs = if (productionProfile) configuredAllowed else configuredAllowed.ifEmpty { LOCAL_ALLOWED }
+    private val trustedProxyCidrs = if (productionProfile) configuredTrusted else configuredTrusted.ifEmpty { LOCAL_TRUSTED }
 
     @PostConstruct
     fun validate() {
-        if (environment.acceptsProfiles(Profiles.of("prod"))) {
+        if (productionProfile) {
             require(configuredAllowed.isNotEmpty() && configuredTrusted.isNotEmpty()) {
                 "Production Platform API requires allowed-client-cidrs and trusted-proxy-cidrs"
             }
@@ -59,4 +60,3 @@ internal class PlatformNetworkBoundary(
         val LOCAL_TRUSTED = listOf("127.0.0.0/8", "::1/128")
     }
 }
-

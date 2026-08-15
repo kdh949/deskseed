@@ -63,12 +63,13 @@ paths:
   /api/v1/requests:
     post:
       summary: 고객 문의 접수
-      description: '고객 문의 접수 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다. 기존 계약의 세부 조건:
-        Anonymous submissions create an isolated unverified customer; matching email input never merges or claims an earlier
-        profile. When a valid customer session is present, the session customer becomes the requester and body name/email
-        never override authenticated identity. The configured customer access mode may reject anonymous submission. A one-time
-        request access token is returned in both modes for explicit ticket-scoped lookup or claim workflows and is revoked
-        when ownership is claimed.'
+      description: '고객 문의 접수 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
+        익명 접수는 격리된 미검증 Customer를 만들며 같은 이메일 입력만으로 기존 profile을 병합하거나 claim하지 않습니다. 유효한 고객 세션이
+        있으면 세션 Customer가 requester가 되고 body의 name/email은 인증된 identity를 바꾸지 않습니다. 설정된 고객 접근 모드는 익명 접수를
+        거부할 수 있습니다. 두 경우 모두 명시적인 ticket 범위 조회 또는 claim 흐름에만 쓰는 일회성 request access token을 반환하고 ownership
+        claim 때 revoke합니다. 문의 대상 이메일·신뢰된 실제 클라이언트 주소·전체 요청 수에는 PostgreSQL 고정 창 제한을 적용합니다. 신뢰되지 않은
+        peer의 X-Forwarded-For는 client identity를 바꾸지 않으며, 제한 시 429와 초 단위 Retry-After를 반환합니다. 제한 버킷에는 원문 이메일이나
+        IP를 저장하지 않습니다.'
       operationId: createCustomerRequest
       x-deskseed-contract-status: FROZEN
       tags:
@@ -80,6 +81,7 @@ paths:
       x-deskseed-requirements:
       - REQ-TKT-001
       - REQ-TKT-002
+      - REQ-TKT-003
       - REQ-TKT-006
       - REQ-AUD-007
       requestBody:
@@ -149,7 +151,20 @@ paths:
           content: *id001
           headers: *id003
         '409': *id002
-        '429': *id002
+        '429':
+          headers:
+            Retry-After:
+              description: 다음 고정 창이 시작될 때까지 기다릴 초 수입니다. 1 이상의 정수이며 원문 이메일이나 IP를 포함하지 않습니다.
+              schema:
+                type: integer
+                minimum: 1
+            Cache-Control:
+              description: 고객 데이터가 포함될 수 있는 capability 보호 응답이므로 항상 `no-store`를 사용합니다.
+              schema:
+                type: string
+                enum:
+                - no-store
+          content: *id001
         '503': *id002
         '500': *id002
   /api/v1/requests/{ticketNumber}:
@@ -235,14 +250,19 @@ paths:
   /api/v1/requests/{ticketNumber}/comments:
     post:
       summary: 고객 문의에 공개 답변 추가
+      description: '접근 토큰으로 식별한 고객 문의에 PUBLIC 댓글을 추가하는 API입니다. 토큰은 요청 헤더로만 전달하며 URL, 응답 본문, 감사 메타데이터에 다시 노출하지 않습니다. PENDING 문의는 OPEN으로 전환됩니다. SOLVED와 CLOSED는 자동 재개하지 않고 409를 반환합니다. 같은 ticketNumber·clientCommandId·본문의 재전송은 기존 댓글을 반환하며, 같은 식별자를 다른 티켓 또는 본문에 재사용하면 409를 반환합니다. 댓글, 상태 변경, TicketAudit, 새 접근 grant, request-received 메일 intent는 하나의 트랜잭션에서 함께 저장됩니다.'
       operationId: addCustomerRequestComment
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
-      x-deskseed-phase: P1
+      security: []
+      x-deskseed-phase: M1
       x-deskseed-requirements:
       - REQ-TKT-003
       - REQ-TKT-005
       - REQ-TKT-008
+      - REQ-NOTIF-001
+      - REQ-CHAN-003
       parameters:
       - *id004
       - *id005
@@ -252,8 +272,22 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AddCustomerComment'
+            example:
+              body: 결제 카드 승인 내역을 추가로 확인해 주세요.
+              clientCommandId: 77777777-7777-4777-8777-777777777777
       responses:
         '201':
+          headers:
+            Cache-Control:
+              description: capability 기반 고객 응답이므로 항상 `no-store`를 사용합니다.
+              schema:
+                type: string
+                enum:
+                - no-store
+            Location:
+              description: 접근 토큰을 포함하지 않는 새 PUBLIC 댓글 리소스 위치입니다.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -262,7 +296,7 @@ paths:
         '404': *id002
         '409': *id002
         '429': *id002
-      description: 고객 문의에 공개 답변 추가 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
+        '503': *id002
   /api/v1/customer/requests:
     get:
       summary: 인증 고객의 문의 목록 조회
@@ -2509,6 +2543,209 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
       description: 고객 접근 모드 설정 변경 API입니다. ADMIN 또는 명시된 관리 권한이 있는 직원만 사용할 수 있으며 변경은 보안 감사와 함께 처리됩니다.
+  /api/v1/admin/mail/summary:
+    get:
+      summary: 아웃바운드 메일 운영 상태 조회
+      operationId: getOutboundMailSummary
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P0
+      x-deskseed-requirements:
+      - REQ-NOTIF-001
+      - REQ-CHAN-003
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundMailOperationsSummary'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id006
+        '403': *id006
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: ADMIN이 전송 활성화·스케줄·전송 방식과 상태별 건수만 확인하는 안전한 운영 진단 API입니다. SMTP 호스트, 자격 증명, 수신자, 본문과 보호된 콘텐츠는 반환하지 않습니다.
+  /api/v1/admin/mail/intents:
+    get:
+      summary: 아웃바운드 메일 의도 목록 조회
+      operationId: listOutboundMailIntents
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P0
+      x-deskseed-requirements:
+      - REQ-NOTIF-001
+      - REQ-CHAN-003
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: status
+        in: query
+        required: false
+        description: 지정하면 해당 전송 상태만 키셋 페이지로 조회합니다. cursor와 함께 사용할 때는 첫 요청의 상태를 바꾸면 안 됩니다.
+        schema:
+          $ref: '#/components/schemas/OutboundMailIntentStatus'
+      - name: cursor
+        in: query
+        required: false
+        description: 이전 응답의 nextCursor입니다. 서명되며 상태 필터에 결합됩니다.
+        schema:
+          type: string
+          maxLength: 2000
+      - name: limit
+        in: query
+        required: false
+        description: 한 페이지의 최대 의도 수입니다.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundMailIntentPage'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id006
+        '403': *id006
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: ADMIN이 마스킹된 수신자와 안전한 상태·시도·시간 메타데이터만 조회하는 키셋 목록 API입니다. 원본 수신자, 제목, 본문, 토큰, 암호문, nonce와 provider 응답은 반환하지 않습니다.
+  /api/v1/admin/mail/intents/{intentId}:
+    get:
+      summary: 아웃바운드 메일 의도 상세 조회
+      operationId: getOutboundMailIntent
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P0
+      x-deskseed-requirements:
+      - REQ-NOTIF-001
+      - REQ-CHAN-003
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: intentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundMailIntent'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id006
+        '403': *id006
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: ADMIN이 한 전송 의도와 시도 이력을 마스킹된 운영 projection으로 조회합니다. providerMessageId, provider 응답, 원본 수신자와 메일 콘텐츠는 계약상 제외됩니다.
+  /api/v1/admin/mail/intents/{intentId}/retry:
+    post:
+      summary: 실패한 아웃바운드 메일 의도 재시도
+      operationId: retryOutboundMailIntent
+      x-deskseed-contract-status: FROZEN
+      tags:
+      - Admin
+      x-deskseed-phase: P0
+      x-deskseed-requirements:
+      - REQ-NOTIF-001
+      - REQ-CHAN-003
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: intentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryOutboundMailIntent'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundMailIntent'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401': *id006
+        '403': *id006
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      description: ADMIN이 terminal FAILED 상태의 기존 전송 의도를 같은 intent로 다시 QUEUED 상태로 전환합니다. 하나의 intent만 잠그며 별도 티켓·comment·의도를 만들지 않고, 전환과 보안 감사는 같은 트랜잭션에서 성공해야 합니다.
   /api/v1/admin/business-schedules:
     get:
       summary: 영업 시간표 목록 조회
@@ -3514,13 +3751,27 @@ components:
           format: date-time
     AddCustomerComment:
       type: object
+      additionalProperties: false
       required:
       - body
+      - clientCommandId
       properties:
         body:
           type: string
           minLength: 1
           maxLength: 20000
+          description: 고객이 문의 대화에 추가하는 PUBLIC 댓글 본문입니다. INTERNAL 메모나 첨부 파일을 지정할 수 없습니다.
+        clientCommandId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: ^[A-Za-z0-9._:-]+$
+          description: 네트워크 재전송에서도 유지하는 고객 명령 식별자입니다. 동일 식별자는 같은 티켓과 같은 본문에만 재사용할 수 있습니다.
+      description: 접근 토큰을 가진 고객이 자신의 문의에 PUBLIC 댓글을 추가할 때 사용하는 명령입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        body: 결제 카드 승인 내역을 추가로 확인해 주세요.
+        clientCommandId: 77777777-7777-4777-8777-777777777777
     AddAuthenticatedCustomerComment:
       type: object
       additionalProperties: false
@@ -3699,6 +3950,245 @@ components:
       example:
         mode: REGISTRATION_OPTIONAL
         expectedVersion: 3
+    OutboundMailIntentStatus:
+      type: string
+      enum:
+      - QUEUED
+      - SENDING
+      - RETRY_WAIT
+      - SENT
+      - FAILED
+    OutboundMailAttemptStatus:
+      type: string
+      enum:
+      - IN_PROGRESS
+      - SUCCEEDED
+      - RETRYABLE_FAILED
+      - PERMANENT_FAILED
+      - ABANDONED
+    OutboundMailOperationsSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - deliveryEnabled
+      - schedulingEnabled
+      - transport
+      - queuedCount
+      - sendingCount
+      - retryWaitCount
+      - failedCount
+      - sentCount
+      - oldestPendingAt
+      properties:
+        deliveryEnabled:
+          type: boolean
+          description: 실제 delivery worker가 활성화되었는지 나타내는 opt-in 상태입니다.
+        schedulingEnabled:
+          type: boolean
+          description: worker 실행을 위한 내부 스케줄러 활성화 상태입니다.
+        transport:
+          type: string
+          enum:
+          - DISABLED
+          - SMTP
+          - FAKE
+          description: 선택된 provider-neutral 전송 방식입니다. 호스트나 자격 증명은 포함하지 않습니다.
+        queuedCount:
+          type: integer
+          format: int64
+          minimum: 0
+        sendingCount:
+          type: integer
+          format: int64
+          minimum: 0
+        retryWaitCount:
+          type: integer
+          format: int64
+          minimum: 0
+        failedCount:
+          type: integer
+          format: int64
+          minimum: 0
+        sentCount:
+          type: integer
+          format: int64
+          minimum: 0
+        oldestPendingAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: QUEUED, SENDING 또는 RETRY_WAIT 의도 중 가장 오래된 queuedAt입니다.
+      description: 메일 본문·수신자·자격 증명 없이 운영 상태를 확인하기 위한 ADMIN projection입니다.
+    OutboundMailAttempt:
+      type: object
+      additionalProperties: false
+      required:
+      - attemptNumber
+      - retryCycle
+      - cycleAttemptNumber
+      - status
+      - failureClass
+      - failureCode
+      - startedAt
+      - finishedAt
+      - nextRetryAt
+      properties:
+        attemptNumber:
+          type: integer
+          minimum: 1
+        retryCycle:
+          type: integer
+          minimum: 0
+        cycleAttemptNumber:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/OutboundMailAttemptStatus'
+        failureClass:
+          type:
+          - string
+          - 'null'
+          maxLength: 40
+        failureCode:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+          description: provider 원문이 아닌 정규화된 안전 오류 코드입니다.
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        nextRetryAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    OutboundMailIntent:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - template
+      - templateVersion
+      - status
+      - recipientMasked
+      - attemptCount
+      - maxAttempts
+      - retryCycle
+      - manualRetryCount
+      - nextAttemptAt
+      - leaseExpiresAt
+      - lastErrorCode
+      - queuedAt
+      - sentAt
+      - failedAt
+      - attempts
+      properties:
+        id:
+          type: string
+          format: uuid
+        template:
+          type: string
+          enum:
+          - CUSTOMER_MAGIC_LINK
+          - REQUEST_RECEIVED
+          - PUBLIC_AGENT_REPLY
+        templateVersion:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/OutboundMailIntentStatus'
+        recipientMasked:
+          type: string
+          maxLength: 254
+          description: 로컬 파트를 숨긴 수신자 표시값입니다. 원본 mailbox는 이 API에 포함되지 않습니다.
+          example: '***@example.com'
+        attemptCount:
+          type: integer
+          minimum: 0
+        maxAttempts:
+          type: integer
+          minimum: 1
+        retryCycle:
+          type: integer
+          minimum: 0
+        manualRetryCount:
+          type: integer
+          minimum: 0
+        nextAttemptAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        leaseExpiresAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        lastErrorCode:
+          type:
+          - string
+          - 'null'
+          maxLength: 80
+          description: provider 원문이 아닌 마지막 안전 오류 코드입니다.
+        queuedAt:
+          type: string
+          format: date-time
+        sentAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        failedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        attempts:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/OutboundMailAttempt'
+      description: 안전한 운영 조회용 전송 의도입니다. sender, raw recipient, subject, body, protected ciphertext/nonce/key version, request/correlation IDs, provider message ID와 provider response는 의도적으로 제외됩니다.
+    OutboundMailIntentPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/OutboundMailIntent'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+          description: 다음 페이지에만 사용할 수 있는 상태 필터 결합 서명 cursor입니다.
+    RetryOutboundMailIntent:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: 운영자가 terminal FAILED 의도를 다시 시도하는 이유입니다. 응답에는 되돌려 주지 않습니다.
+      description: 고객에게 공개된 답변 메일이 영구 실패한 뒤 주소 또는 SMTP 설정을 확인한 운영자가 같은 전송 의도를 재큐잉할 때 사용합니다. 상태 전환과 보안 감사는 함께 commit됩니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        reason: SMTP 수신 거부 원인을 확인해 주소를 정정한 뒤 같은 접수 완료 메일 재시도
     StaffLogin:
       type: object
       additionalProperties: false
@@ -3851,6 +4341,7 @@ components:
       - status
       - priority
       - requester
+      - createdAt
       - updatedAt
       - version
       properties:
@@ -3870,6 +4361,10 @@ components:
           $ref: '#/components/schemas/GroupRef'
         assignee:
           $ref: '#/components/schemas/StaffRef'
+        createdAt:
+          type: string
+          format: date-time
+          description: 티켓이 최초 생성된 시각입니다. 정렬이나 현재 상태 변경으로 바뀌지 않습니다.
         updatedAt:
           type: string
           format: date-time
@@ -4025,7 +4520,7 @@ components:
           type: array
           items:
             type: string
-          description: 직원 상세 조회가 성공하면 READ가 항상 포함되고, 현재 actor가 티켓을 변경할 수 있을 때만 UPDATE가 포함됩니다.
+          description: 직원 상세 조회가 성공하면 READ가 항상 포함됩니다. UPDATE는 현재 actor가 별도 write authorization을 통과하고 티켓이 CLOSED가 아닐 때만 포함됩니다.
         assignmentOptions:
           $ref: '#/components/schemas/TicketAssignmentOptions'
         context:

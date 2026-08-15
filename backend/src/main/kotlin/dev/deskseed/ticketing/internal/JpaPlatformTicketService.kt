@@ -20,9 +20,11 @@ import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketKind
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.TicketSubmitted
 import dev.deskseed.ticketing.UpdatePlatformTicketCommand
 import dev.deskseed.ticketing.ValidatePlatformTicketCreateCommand
 import dev.deskseed.ticketing.internal.domain.TicketStatusTransitions
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -42,6 +44,7 @@ internal class JpaPlatformTicketService(
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
+    private val eventPublisher: ApplicationEventPublisher,
 ) : PlatformTicketService {
     @Transactional(noRollbackFor = [PlatformTicketInvalidException::class])
     override fun validateCreate(command: ValidatePlatformTicketCreateCommand) {
@@ -103,7 +106,7 @@ internal class JpaPlatformTicketService(
                 createdAt = now,
             ),
         )
-        appendAudit(
+        val auditId = appendAudit(
             ticket,
             expectedVersion = 0,
             command.actor.id,
@@ -130,6 +133,26 @@ internal class JpaPlatformTicketService(
                         "contentSha256" to sha256(command.message.trim()),
                     ),
                 ),
+            ),
+        )
+        eventPublisher.publishEvent(
+            TicketSubmitted(
+                ticketId = ticket.id,
+                ticketNumber = ticket.ticketNumber,
+                requesterId = ticket.requesterId,
+                kind = ticket.kind,
+                priority = ticket.priority,
+                groupId = ticket.groupId,
+                channel = ticket.channel,
+                status = ticket.status,
+                ticketAuditId = auditId,
+                actorType = ActorType.INTEGRATION_CLIENT.name,
+                actorId = command.actor.id,
+                source = RequestSource.PLATFORM_API.name,
+                requestId = command.context.requestId,
+                correlationId = command.context.correlationId,
+                startsFirstReplySla = ticket.kind == TicketKind.CUSTOMER_REQUEST,
+                occurredAt = now,
             ),
         )
         ticket.toPlatformView()
@@ -280,7 +303,7 @@ internal class JpaPlatformTicketService(
         commandId: String,
         now: Instant,
         events: List<NewEvent>,
-    ) {
+    ): UUID {
         val auditId = UUID.randomUUID()
         auditRepository.saveAndFlush(
             TicketAuditEntity(
@@ -312,6 +335,7 @@ internal class JpaPlatformTicketService(
                 )
             },
         )
+        return auditId
     }
 
     private fun validateRequesterShape(command: CreatePlatformTicketCommand) {

@@ -29,6 +29,9 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -69,6 +72,7 @@ class OutboundMailDeliveryIntegrationTest {
                 outbound_mail_delivery_events,
                 outbound_mail_attempts,
                 outbound_mail_intents,
+                admin_security_audit_events,
                 ticket_audit_events,
                 ticket_audits,
                 ticket_comments,
@@ -124,14 +128,17 @@ class OutboundMailDeliveryIntegrationTest {
         worker.runDueBatch()
 
         assertThat(intentStatus(ticketId)).isEqualTo("FAILED")
-        operations.retryTerminal(
-            ManualMailRetryCommand(
-                intentId = intentId,
-                actor = ActorRef(ActorType.STAFF, UUID.randomUUID()),
-                context = context("manual-retry-command", RequestSource.ADMIN_UI),
-                reason = "주소 확인 후 운영자 재시도",
-            ),
-        )
+        asAdmin {
+            operations.retryTerminal(
+                ManualMailRetryCommand(
+                    intentId = intentId,
+                    actor = ActorRef(ActorType.STAFF, UUID.randomUUID()),
+                    actorDisplayName = "메일 관리자",
+                    context = context("manual-retry-command", RequestSource.ADMIN_UI),
+                    reason = "주소 확인 후 운영자 재시도",
+                ),
+            )
+        }
         assertThat(worker.runDueBatch()).isEqualTo(1)
 
         assertThat(intentStatus(ticketId)).isEqualTo("SENT")
@@ -153,6 +160,113 @@ class OutboundMailDeliveryIntegrationTest {
         ).containsEntry("actor_type", "STAFF")
             .containsEntry("source", "ADMIN_UI")
             .containsEntry("reason_text", "주소 확인 후 운영자 재시도")
+        assertThat(
+            jdbcTemplate.queryForMap(
+                """
+                select actor_type, source, target_type, metadata_json
+                from admin_security_audit_events
+                where event_type = 'OUTBOUND_MAIL_MANUAL_RETRY_REQUESTED'
+                """.trimIndent(),
+            ),
+        ).containsEntry("actor_type", "STAFF")
+            .containsEntry("source", "ADMIN_UI")
+            .containsEntry("target_type", "OUTBOUND_MAIL_INTENT")
+            .doesNotContainValue("주소 확인 후 운영자 재시도")
+    }
+
+    @Test
+    fun `concurrent manual retries requeue one failed intent and write one security audit`() {
+        val intentId = terminalFailedIntent("retry-race")
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val results = executor.invokeAll(
+                (1..2).map { index ->
+                    Callable {
+                        runCatching {
+                            asAdmin {
+                                operations.retryTerminal(
+                                    ManualMailRetryCommand(
+                                        intentId = intentId,
+                                        actor = ActorRef(ActorType.STAFF, UUID.randomUUID()),
+                                        actorDisplayName = "동시 관리자 $index",
+                                        context = context("retry-race-$index", RequestSource.ADMIN_UI),
+                                        reason = "동시 재시도 검증",
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                },
+            ).map { it.get(10, TimeUnit.SECONDS) }
+
+            assertThat(results.count { it.isSuccess }).isEqualTo(1)
+            assertThat(
+                results.count { it.exceptionOrNull() is dev.deskseed.outboundmail.OutboundMailRetryInvalidException },
+            ).isEqualTo(1)
+        } finally {
+            executor.shutdownNow()
+        }
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select status, retry_cycle, manual_retry_count from outbound_mail_intents where id = ?",
+                intentId,
+            ),
+        ).containsEntry("status", "QUEUED")
+            .containsEntry("retry_cycle", 1)
+            .containsEntry("manual_retry_count", 1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from admin_security_audit_events where event_type = 'OUTBOUND_MAIL_MANUAL_RETRY_REQUESTED' and target_id = ?",
+                Long::class.java,
+                intentId,
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
+    fun `manual retry rolls back state and delivery event when security audit persistence fails`() {
+        val intentId = terminalFailedIntent("retry-audit-rollback")
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_outbound_mail_retry_security_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected outbound mail retry audit failure'; end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_outbound_mail_retry_security_audit before insert on admin_security_audit_events for each row execute function fail_outbound_mail_retry_security_audit()",
+        )
+        try {
+            assertThatThrownBy {
+                asAdmin {
+                    operations.retryTerminal(
+                        ManualMailRetryCommand(
+                            intentId = intentId,
+                            actor = ActorRef(ActorType.STAFF, UUID.randomUUID()),
+                            actorDisplayName = "실패 관리자",
+                            context = context("retry-audit-rollback", RequestSource.ADMIN_UI),
+                            reason = "감사 실패 롤백 검증",
+                        ),
+                    )
+                }
+            }.isInstanceOf(RuntimeException::class.java)
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_outbound_mail_retry_security_audit on admin_security_audit_events")
+            jdbcTemplate.execute("drop function if exists fail_outbound_mail_retry_security_audit()")
+        }
+
+        assertThat(
+            jdbcTemplate.queryForObject("select status from outbound_mail_intents where id = ?", String::class.java, intentId),
+        ).isEqualTo("FAILED")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_delivery_events where intent_id = ? and event_type = 'MAIL_MANUAL_RETRY_REQUESTED'",
+                Long::class.java,
+                intentId,
+            ),
+        ).isZero()
     }
 
     @Test
@@ -335,6 +449,31 @@ class OutboundMailDeliveryIntegrationTest {
         correlationId = "correlation-$suffix",
         commandId = "command-$suffix",
     )
+
+    private fun terminalFailedIntent(suffix: String): UUID {
+        val submitted = submitRequest(suffix)
+        val ticketId = ticketId(submitted.ticketNumber)
+        val intentId = intentId(ticketId)
+        transport.failNext(MailTransportException(false, "RECIPIENT_REJECTED"))
+        worker.runDueBatch()
+        assertThat(intentStatus(ticketId)).isEqualTo("FAILED")
+        return intentId
+    }
+
+    private fun <T> asAdmin(block: () -> T): T {
+        val previous = SecurityContextHolder.getContext().authentication
+        SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken.authenticated(
+            "outbound-mail-admin",
+            null,
+            listOf(SimpleGrantedAuthority("ROLE_ADMIN")),
+        )
+        return try {
+            block()
+        } finally {
+            if (previous == null) SecurityContextHolder.clearContext()
+            else SecurityContextHolder.getContext().authentication = previous
+        }
+    }
 
     private fun ticketId(ticketNumber: Long): UUID = jdbcTemplate.queryForObject(
         "select id from tickets where ticket_number = ?",

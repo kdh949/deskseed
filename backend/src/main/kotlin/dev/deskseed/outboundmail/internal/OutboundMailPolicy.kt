@@ -4,11 +4,13 @@ import dev.deskseed.outboundmail.MagicLinkMail
 import dev.deskseed.outboundmail.OutboundMailIntent
 import dev.deskseed.outboundmail.OutboundMailTemplate
 import dev.deskseed.outboundmail.PublicAgentReplyMail
+import dev.deskseed.outboundmail.RenderedMailSensitivity
 import dev.deskseed.outboundmail.RequestReceivedMail
 import jakarta.mail.internet.InternetAddress
 import org.springframework.boot.context.properties.ConfigurationProperties
 import java.net.URI
 import java.time.Duration
+import java.util.Base64
 
 @ConfigurationProperties("deskseed.mail")
 internal data class OutboundMailProperties(
@@ -34,7 +36,23 @@ internal data class OutboundMailProperties(
 internal data class ProtectedMailContentProperties(
     var activeKeyVersion: String = "local-v1",
     var keys: Map<String, String> = emptyMap(),
-)
+) {
+    fun decodedKey(version: String): ByteArray {
+        require(version.matches(KEY_VERSION_PATTERN)) { "protected mail key version is invalid" }
+        val encoded = keys[version] ?: error("protected mail key version is not configured")
+        val decoded = runCatching { Base64.getDecoder().decode(encoded) }
+            .getOrElse { throw IllegalArgumentException("protected mail key is invalid") }
+        require(decoded.size == PROTECTED_KEY_BYTES) { "protected mail key must contain $PROTECTED_KEY_BYTES bytes" }
+        return decoded
+    }
+
+    fun requireActiveKey(): ByteArray = decodedKey(activeKeyVersion)
+
+    private companion object {
+        val KEY_VERSION_PATTERN = Regex("[A-Za-z0-9._-]{1,40}")
+        const val PROTECTED_KEY_BYTES = 32
+    }
+}
 
 internal class OutboundMailSafety {
     fun requireMailbox(value: String): String {
@@ -74,6 +92,11 @@ internal class OutboundMailSafety {
         require(uri.isAbsolute && uri.host != null && uri.scheme in setOf("http", "https")) { "$field is invalid" }
         return value
     }
+
+    fun requireRequestAccessToken(value: String): String {
+        require(value.matches(Regex("[A-Za-z0-9_-]{32,256}"))) { "request access token is invalid" }
+        return value
+    }
 }
 
 internal data class RenderedMail(
@@ -83,6 +106,7 @@ internal data class RenderedMail(
     val recipient: String,
     val subject: String,
     val textBody: String,
+    val sensitivity: RenderedMailSensitivity,
 )
 
 internal class MailTemplateRenderer(
@@ -107,22 +131,24 @@ internal class MailTemplateRenderer(
             }
             is RequestReceivedMail -> {
                 require(content.ticketNumber > 0) { "ticket number must be positive" }
+                val requestUrl = requestUrl(baseUrl, content.ticketNumber, content.requestAccessToken)
                 "[Deskseed] 요청 #${content.ticketNumber} 접수 완료" to """
                     요청 #${content.ticketNumber}이 접수되었습니다.
 
-                    요청 보기: $baseUrl/requests/${content.ticketNumber}
+                    요청 보기: $requestUrl
                 """.trimIndent()
             }
             is PublicAgentReplyMail -> {
                 require(content.ticketNumber > 0) { "ticket number must be positive" }
                 val publicBody = content.publicBody.trim()
                 require(publicBody.isNotEmpty() && publicBody.length <= 20_000) { "public reply body is invalid" }
+                val requestUrl = requestUrl(baseUrl, content.ticketNumber, content.requestAccessToken)
                 "[Deskseed] 요청 #${content.ticketNumber} 새 공개 답변" to """
                     요청 #${content.ticketNumber}에 새 공개 답변이 등록되었습니다.
 
                     $publicBody
 
-                    요청 보기: $baseUrl/requests/${content.ticketNumber}
+                    요청 보기: $requestUrl
                 """.trimIndent()
             }
         }
@@ -133,8 +159,12 @@ internal class MailTemplateRenderer(
             recipient = recipient,
             subject = safety.requireHeaderValue(rendered.first, "subject", 200),
             textBody = rendered.second,
+            sensitivity = intent.content.renderedSensitivity,
         )
     }
+
+    private fun requestUrl(baseUrl: String, ticketNumber: Long, rawAccessToken: String): String =
+        "$baseUrl/requests/$ticketNumber#token=${safety.requireRequestAccessToken(rawAccessToken)}"
 }
 
 internal class MailRetryPolicy(private val properties: OutboundMailProperties) {

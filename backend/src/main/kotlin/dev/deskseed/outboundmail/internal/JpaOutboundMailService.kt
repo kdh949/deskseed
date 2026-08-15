@@ -1,5 +1,8 @@
 package dev.deskseed.outboundmail.internal
 
+import dev.deskseed.audit.AdminSecurityAudit
+import dev.deskseed.audit.AdminSecurityAuditWriter
+import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
@@ -7,11 +10,17 @@ import dev.deskseed.foundation.RequestSource
 import dev.deskseed.outboundmail.ManualMailRetryCommand
 import dev.deskseed.outboundmail.OutboundMailIntent
 import dev.deskseed.outboundmail.OutboundMailIntentConflictException
+import dev.deskseed.outboundmail.OutboundMailIntentListQuery
+import dev.deskseed.outboundmail.OutboundMailIntentNotFoundException
+import dev.deskseed.outboundmail.OutboundMailIntentPage
+import dev.deskseed.outboundmail.OutboundMailIntentView
 import dev.deskseed.outboundmail.OutboundMailOperations
+import dev.deskseed.outboundmail.OutboundMailOperationsSummary
 import dev.deskseed.outboundmail.OutboundMailPort
 import dev.deskseed.outboundmail.OutboundMailRetryInvalidException
-import dev.deskseed.outboundmail.MagicLinkMail
+import dev.deskseed.outboundmail.RenderedMailSensitivity
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -27,6 +36,8 @@ internal class JpaOutboundMailService(
     private val renderer: MailTemplateRenderer,
     private val retryPolicy: MailRetryPolicy,
     private val protectedContentCipher: ProtectedMailContentCipher,
+    private val operationsReader: JdbcOutboundMailOperationsReader,
+    private val adminSecurityAuditWriter: AdminSecurityAuditWriter,
     private val clock: Clock,
 ) : OutboundMailPort, OutboundMailOperations {
     @Transactional(propagation = Propagation.MANDATORY)
@@ -44,7 +55,7 @@ internal class JpaOutboundMailService(
 
         val now = Instant.now(clock)
         val intentId = UUID.randomUUID()
-        val protectedBody = if (intent.content is MagicLinkMail) {
+        val protectedBody = if (rendered.sensitivity == RenderedMailSensitivity.PROTECTED) {
             protectedContentCipher.encrypt(rendered.textBody, intentId)
         } else {
             null
@@ -98,19 +109,37 @@ internal class JpaOutboundMailService(
         return intentId
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun summary(): OutboundMailOperationsSummary = operationsReader.summary()
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun listIntents(query: OutboundMailIntentListQuery): OutboundMailIntentPage = operationsReader.list(query)
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun getIntent(intentId: UUID): OutboundMailIntentView =
+        operationsReader.get(intentId) ?: throw OutboundMailIntentNotFoundException()
+
     @Transactional
-    override fun retryTerminal(command: ManualMailRetryCommand) {
-        require(command.actor.actorType == ActorType.STAFF || command.actor.actorType == ActorType.SYSTEM) {
-            "manual retry requires a staff or system actor"
+    @PreAuthorize("hasRole('ADMIN')")
+    override fun retryTerminal(command: ManualMailRetryCommand): OutboundMailIntentView {
+        require(command.actor.actorType == ActorType.STAFF) {
+            "manual retry requires a staff actor"
+        }
+        require(command.actor.actorId != null) { "manual retry requires a staff actor ID" }
+        require(command.context.source == RequestSource.ADMIN_UI) {
+            "manual retry requires the admin UI source"
         }
         val reason = command.reason.trim()
         require(reason.isNotEmpty() && reason.length <= 500 && reason.none(Char::isISOControl)) {
             "manual retry reason is invalid"
         }
         val intent = intentRepository.lockById(command.intentId)
-            ?: throw OutboundMailRetryInvalidException("Outbound mail intent was not found")
+            ?: throw OutboundMailIntentNotFoundException()
         if (intent.status != MailIntentStatus.FAILED) {
-            throw OutboundMailRetryInvalidException("Only a terminal failed intent can be retried")
+            throw OutboundMailRetryInvalidException()
         }
         val now = Instant.now(clock)
         intent.status = MailIntentStatus.QUEUED
@@ -135,6 +164,26 @@ internal class JpaOutboundMailService(
                 reasonText = reason,
             ),
         )
+        adminSecurityAuditWriter.append(
+            AdminSecurityAudit(
+                eventType = "OUTBOUND_MAIL_MANUAL_RETRY_REQUESTED",
+                actorType = command.actor.actorType,
+                actorId = command.actor.actorId,
+                actorDisplaySnapshot = command.actorDisplayName,
+                source = command.context.source,
+                targetType = "OUTBOUND_MAIL_INTENT",
+                targetId = intent.id,
+                outcome = AdminSecurityOutcome.SUCCEEDED,
+                requestId = command.context.requestId,
+                correlationId = command.context.correlationId,
+                metadata = mapOf(
+                    "retryCycle" to intent.retryCycle.toString(),
+                    "manualRetryCount" to intent.manualRetryCount.toString(),
+                ),
+                occurredAt = now,
+            ),
+        )
+        return operationsReader.get(intent.id) ?: throw IllegalStateException("Outbound mail intent disappeared after retry")
     }
 
     private fun OutboundMailIntentEntity.matches(intent: OutboundMailIntent, rendered: RenderedMail): Boolean =

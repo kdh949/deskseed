@@ -67,6 +67,22 @@ request_ip_hash nullable
 - expiry and replay indexes/cleanup.
 - application logs never contain token.
 
+### public_request_rate_limit_buckets
+
+```text
+bucket_type              GLOBAL | CLIENT | DESTINATION
+bucket_fingerprint       purpose-bound HMAC-SHA-256 hex, never raw email/IP
+window_started_at
+request_count
+expires_at
+updated_at
+```
+
+- primary key `(bucket_type, bucket_fingerprint, window_started_at)` makes each PostgreSQL fixed-window increment atomic across application instances.
+- requests acquire bucket types in the stable order `GLOBAL → CLIENT → DESTINATION`; an over-limit increment rolls back every bucket increment in that limiter transaction.
+- `expires_at` is indexed with the primary-key columns for bounded `FOR UPDATE SKIP LOCKED` cleanup. The table intentionally has no ticket, customer, raw destination, raw IP, request header, or token column.
+- V28 is additive. Rollback is a deliberate limiter disable/configuration action; it never deletes the table or historical expired rows outside the cleanup policy.
+
 ### staff_accounts
 
 ```text
@@ -399,6 +415,7 @@ outbound_mail_delivery_events(
 - unique `idempotency_key`가 같은 business notification의 중복 intent를 막는다.
 - `stable_message_id`는 모든 attempt에서 유지한다.
 - due/expired-lease partial index와 `FOR UPDATE SKIP LOCKED`가 bounded worker claim을 지원한다.
+- `V29`의 `(queued_at desc, id desc)` 및 `(status, queued_at desc, id desc)` additive index는 ADMIN metadata-only 키셋 조회를 지원한다. manual retry의 row lock은 기존 primary key를 사용한다.
 - recipient/template/version/rendered plain-text snapshot은 delivery 조사에 보존한다.
 - attempt/event에는 provider response body나 exception message를 저장하지 않는다.
 - delivery event는 append-only이며 Ticket Change, Access/Search, Admin/Security ledger와 합치지 않는다.
@@ -468,6 +485,12 @@ setting_change_audits (canonical audit ledger와 연결)
   the ticket audit remains the replay source rather than a second command-result table.
 - V20 does not rewrite existing ticket requester IDs. Ownership changes only through the
   explicit, audited claim command.
+
+### 8.2 Public request abuse limiter (V28)
+
+- `public_request_rate_limit_buckets` is Portal-owned operational state, not a ticket or audit event store.
+- each row contains only bucket category, keyed fingerprint, count, timestamps, and expiry; it cannot be used to recover the submitted email or client IP without the independently provisioned HMAC key.
+- expiry cleanup deletes at most the configured batch size while holding row locks with `SKIP LOCKED`; concurrent application instances can run it safely.
 
 ## 9. Migration 순서
 

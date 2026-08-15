@@ -41,13 +41,13 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
 | REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
-| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부와 `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
-| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37, 39 ADR, 55 | `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection, `customerPortalClient.test.ts`; UI는 `DEFERRED_UI` |
+| REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부, `PublicRequestRateLimitIntegrationTest`의 대상/client/global PostgreSQL bucket·forwarded spoof/fail-closed·429/503, `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
+| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37, 39 ADR, 55 | `PublicRequestIntegrationTest`의 token-scoped 익명 PUBLIC follow-up/replay/mismatch·expiry·rollback과 `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection; UI는 `DEFERRED_UI` |
 | REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53, 55 | `CustomerAccessModeIntegrationTest` submit/view 행렬·optimistic conflict·감사 원자성, `customerAuthClient.test.ts`; UI는 `DEFERRED_UI` |
-| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53, 55 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox, headless customer clients; UI는 `DEFERRED_UI` |
+| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53, 55 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox와 `PublicRequestIntegrationTest`의 anonymous capability follow-up; UI는 `DEFERRED_UI` |
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
-| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33, 55 | `AgentTicketReadIntegrationTest`, `AgentTicketWorkspacePage.test.tsx`, Workspace projection/Storybook의 PUBLIC/INTERNAL 구분 |
-| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37, 55 | 고객 API PUBLIC-only integration test와 `customerPortalClient.test.ts`; UI는 `DEFERRED_UI` |
+| REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33, 55 | `AgentTicketReadIntegrationTest`의 PUBLIC/INTERNAL projection, exact ON_HOLD/CLOSED status, createdAt 및 server-authorized capability; `AgentTicketWorkspacePage.test.tsx`, Workspace projection/Storybook의 PUBLIC/INTERNAL 구분 |
+| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37, 55 | 고객 API PUBLIC-only integration test와 token-scoped anonymous follow-up regression, `customerPortalClient.test.ts`; UI는 `DEFERRED_UI` |
 | REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다(`/agent/tickets/new`). 검색으로 찾은 기존 고객을 `customerId`로 재사용하거나, 생성 시점에 활성 그룹/구성원(`GET /api/v1/agent/assignment-options`)을 지정할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39, 55 | `AgentTicketCommandIntegrationTest`(customerId 재사용/미존재/혼합 요청 포함), `AgentTicketReadIntegrationTest`(assignment-options), `CreateAgentTicketPage.test.tsx` |
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34, 55 | transition/permission integration tests, `ticketEditorModel.test.ts`; 운영 Workspace는 읽기 전용 |
 | REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34, ADR 0038 | `TransferChildTicketIntegrationTest`의 active group/member 거부·원자적 rollback 및 `OrganizationConcurrencyIntegrationTest`의 ticket assignment/group disable 공유 잠금 |
@@ -86,9 +86,9 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53, ADR 0031 | `PlatformOpenApiContractTest`, `PlatformNetworkBoundaryTest`, `PlatformTicketIntegrationTest`; PLAT-001/002 |
+| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53, ADR 0031 | `PlatformOpenApiContractTest`, `PlatformNetworkBoundaryTest`의 production CIDR fail-closed, `PlatformTicketIntegrationTest`; PLAT-001/002 |
 | REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1/I2 | 18, 32~34, 39, ADR 0012/0016/0031 | 기존 IntegrationClient lifecycle suite + `PlatformTicketIntegrationTest`, `PlatformRateLimitIntegrationTest`; INT-AUTH-001~004·ARCH-001/002/004·ACC-006/007·AUD-001 |
-| REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20, 32 | `PlatformApiMigrationTest`, `PlatformTicketIntegrationTest`의 replay/key misuse/concurrent claim/audit·receipt crash rollback/final failure replay; IDEM-001~004 |
+| REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20, 32 | `PlatformApiMigrationTest`, `PlatformTicketIntegrationTest`의 replay/key misuse/concurrent claim/audit·receipt crash rollback/final failure replay 및 Platform SLA target/fact exact-once; IDEM-001~004 |
 | REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | `PlatformTicketIntegrationTest` matching/stale/final replay; CONC-001 |
 | REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 30, 32~34, 39, 55, ADR 0015 | `ExternalReferenceValidationTest`, migration/integration tests, OpenAPI/API types; UI는 `DEFERRED_UI`. Platform API·provider fetch·mirroring은 미구현 |
 | REQ-INT-006 | 외부 시스템에 signed webhook을 보낸다 | BLUEPRINT_READY | I5 | 18, 20, 38 | WH-001~005 |
@@ -101,7 +101,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-SLA-001 | versioned First Reply SLA의 만족·위반 여부를 계산한다 | IMPLEMENTATION_READY | P3 | 12, 16, 44, 53, 55 | `FirstReplySlaStateMachineTest`, `FirstReplySlaIntegrationTest`, `FirstReplySlaAdminIntegrationTest`, SLA-001/002/004/005/006/008, ANA-004; UI는 `DEFERRED_UI` |
+| REQ-SLA-001 | versioned First Reply SLA의 만족·위반 여부를 계산한다 | IMPLEMENTATION_READY | P3 | 12, 16, 44, 53, 55 | `FirstReplySlaStateMachineTest`, `FirstReplySlaIntegrationTest`, `FirstReplySlaAdminIntegrationTest`, `PlatformTicketIntegrationTest`의 API customer target/fact exact-once 및 internal exclusion, SLA-001/002/004/005/006/008, ANA-004; UI는 `DEFERRED_UI` |
 | REQ-SLA-002 | 관리자가 timezone·평일/주말·시간구간·휴일을 수정한다 | IMPLEMENTATION_READY | P3 | 44, 52, 53, 55 | `BusinessTimeCalculatorTest`, `BusinessScheduleMigrationTest`, `BusinessScheduleAdminIntegrationTest`; UI는 `DEFERRED_UI` |
 | REQ-SLA-003 | First Reply SLA는 기본적으로 PENDING 동안 정지한다 | IMPLEMENTATION_READY | P3 | 44, 53 | `FirstReplySlaIntegrationTest`의 PENDING pause/resume 및 canonical audit 기반 idempotent interval rebuild, SLA-004/009 |
 | REQ-ANL-001 | Zendesk Explore 유사 통계와 대시보드를 제공한다 | BLUEPRINT_READY | P5 | 12, 16, 30, 46 | ANA-001~008 |
@@ -124,8 +124,8 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-FILE-002 | rich text와 redaction은 안전한 canonical format과 별도 권한을 사용한다 | BLUEPRINT_READY | P8 | 48 | XSS/redaction/audit 테스트 |
 | REQ-CHAN-001 | 이메일 수신·발신을 Ticket/Comment channel adapter로 제공한다 | BLUEPRINT_READY | P8 | 38, 49 | threading/dedup/outbox/bounce 테스트 |
 | REQ-CHAN-002 | 채팅·메시징은 나중에 같은 conversation model 위에 추가한다 | DEFERRED | P8+ | 38, 49 | session/transcript/channel adapter 테스트 |
-| REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | `MailpitApiE2ETest`, Compose `mailpit:1025` + `localhost:8025`, production profile delivery 비활성 |
-| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | `OutboundMailDeliveryIntegrationTest`, PUBLIC/INTERNAL 회귀, V18 intent/attempt/event 상태 |
+| REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | `MailpitApiE2ETest`, Compose `mailpit:1025` + `localhost:8025`, `MailDeliveryConfigurationValidatorTest`의 production opt-in SMTP/TLS/키 검증 |
+| REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | `OutboundMailDeliveryIntegrationTest`의 post-commit/delivery/manual retry race·audit rollback, `AdminOutboundMailIntegrationTest`의 masked admin projection/CSRF, V18 intent/attempt/event 및 V29 operations cursor index |
 | REQ-AI-001 | AI 요약·답변 제안은 검색·권한·감사·평가 기반이 준비된 뒤 선택적으로 추가한다 | DEFERRED | P10 | 38, 49 | 데이터 경계/평가/사람 승인 테스트 |
 
 ## 9. 프론트엔드 경험

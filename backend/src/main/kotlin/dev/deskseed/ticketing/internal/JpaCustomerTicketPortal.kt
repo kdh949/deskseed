@@ -1,13 +1,9 @@
 package dev.deskseed.ticketing.internal
 
 import dev.deskseed.customer.CustomerDirectory
-import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
-import dev.deskseed.outboundmail.MailRecipient
-import dev.deskseed.outboundmail.OutboundMailIntent
-import dev.deskseed.outboundmail.OutboundMailPort
-import dev.deskseed.outboundmail.RequestReceivedMail
+import dev.deskseed.ticketing.AnonymousCustomerFollowUpCommand
 import dev.deskseed.ticketing.ClaimCustomerTicketCommand
 import dev.deskseed.ticketing.ClaimableCustomerTicket
 import dev.deskseed.ticketing.CommentAuthorType
@@ -47,7 +43,6 @@ internal class JpaCustomerTicketPortal(
     private val publicTicketQueryRepository: PublicTicketQueryRepository,
     private val customerTicketQueryRepository: CustomerTicketQueryRepository,
     private val customerDirectory: CustomerDirectory,
-    private val outboundMailPort: OutboundMailPort,
     private val jdbcTemplate: JdbcTemplate,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
@@ -77,29 +72,70 @@ internal class JpaCustomerTicketPortal(
 
     @Transactional
     override fun addFollowUp(command: CustomerFollowUpCommand): CustomerFollowUpResult {
-        require(command.context.source == RequestSource.CUSTOMER_PORTAL)
-        require(command.clientCommandId.matches(Regex("[A-Za-z0-9._:-]{1,100}"))) {
-            "Customer command ID is invalid"
-        }
-        val body = command.body.trim()
-        require(body.isNotEmpty() && body.length <= 20_000) { "Customer follow-up body is invalid" }
+        val body = validateFollowUp(command.context, command.clientCommandId, command.body)
+        val ticket = lockCustomerRequestTicket(command.ticketNumber)
+            ?.takeIf { it.requesterId == command.requesterId }
+            ?: throw CustomerTicketNotFoundException()
         lockCommand(command.requesterId, command.clientCommandId)
         findReplay(command.requesterId, command.clientCommandId)?.let { replay ->
             if (replay.ticketNumber != command.ticketNumber || replay.bodyDigest != sha256(body)) {
                 throw CustomerCommandIdReusedException()
             }
-            return CustomerFollowUpResult(replay.comment, replay.auditId)
+            return CustomerFollowUpResult(replay.comment, replay.auditId, replay.ticketId, command.requesterId, replayed = true)
         }
 
-        val ticket = ticketRepository.lockByTicketNumber(command.ticketNumber)
-            ?.takeIf { it.kind == TicketKind.CUSTOMER_REQUEST && it.requesterId == command.requesterId }
-            ?: throw CustomerTicketNotFoundException()
         if (ticket.status in setOf(TicketStatus.SOLVED, TicketStatus.CLOSED)) {
             throw CustomerFollowUpConflictException()
         }
         val customer = customerDirectory.findById(command.requesterId)
             ?.takeIf { it.verifiedAt != null && normalize(it.email) == normalize(command.requesterEmail) }
             ?: throw CustomerTicketNotFoundException()
+        return persistFollowUp(
+            ticket = ticket,
+            requesterId = customer.id,
+            authorDisplayName = customer.name,
+            body = body,
+            clientCommandId = command.clientCommandId,
+            context = command.context,
+        )
+    }
+
+    @Transactional
+    override fun addAnonymousFollowUp(command: AnonymousCustomerFollowUpCommand): CustomerFollowUpResult {
+        val body = validateFollowUp(command.context, command.clientCommandId, command.body)
+        val ticket = lockCustomerRequestTicket(command.ticketNumber)
+            ?.takeIf { it.id == command.ticketId }
+            ?: throw CustomerTicketNotFoundException()
+        val requesterId = ticket.requesterId ?: throw CustomerTicketNotFoundException()
+        lockCommand(requesterId, command.clientCommandId)
+        findReplay(requesterId, command.clientCommandId)?.let { replay ->
+            if (replay.ticketNumber != command.ticketNumber || replay.bodyDigest != sha256(body)) {
+                throw CustomerCommandIdReusedException()
+            }
+            return CustomerFollowUpResult(replay.comment, replay.auditId, replay.ticketId, requesterId, replayed = true)
+        }
+        if (ticket.status in setOf(TicketStatus.SOLVED, TicketStatus.CLOSED)) {
+            throw CustomerFollowUpConflictException()
+        }
+        val customer = customerDirectory.findById(requesterId) ?: throw CustomerTicketNotFoundException()
+        return persistFollowUp(
+            ticket = ticket,
+            requesterId = customer.id,
+            authorDisplayName = customer.name,
+            body = body,
+            clientCommandId = command.clientCommandId,
+            context = command.context,
+        )
+    }
+
+    private fun persistFollowUp(
+        ticket: TicketEntity,
+        requesterId: UUID,
+        authorDisplayName: String,
+        body: String,
+        clientCommandId: String,
+        context: dev.deskseed.foundation.CommandContext,
+    ): CustomerFollowUpResult {
         val now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
         val previousStatus = ticket.status
         if (ticket.status == TicketStatus.PENDING) ticket.status = TicketStatus.OPEN
@@ -112,28 +148,27 @@ internal class JpaCustomerTicketPortal(
                 id = commentId,
                 ticketId = ticket.id,
                 authorType = CommentAuthorType.CUSTOMER,
-                authorId = customer.id,
+                authorId = requesterId,
                 visibility = CommentVisibility.PUBLIC,
                 body = body,
                 createdAt = now,
             ),
         )
-        val auditId = appendFollowUpAudit(ticket, previousStatus, commentId, body, command, now)
-        outboundMailPort.enqueue(
-            OutboundMailIntent(
-                idempotencyKey = "customer-follow-up-received:$commentId",
-                recipient = MailRecipient(customer.email),
-                content = RequestReceivedMail(ticket.ticketNumber),
-                ticketId = ticket.id,
-                commentId = commentId,
-                customerId = customer.id,
-                actor = ActorRef(ActorType.CUSTOMER, customer.id),
-                context = command.context.copy(commandId = command.clientCommandId),
-            ),
+        val auditId = appendFollowUpAudit(
+            ticket = ticket,
+            previousStatus = previousStatus,
+            commentId = commentId,
+            body = body,
+            requesterId = requesterId,
+            clientCommandId = clientCommandId,
+            context = context,
+            now = now,
         )
         return CustomerFollowUpResult(
-            PublicCommentView(commentId, customer.name, body, now),
+            PublicCommentView(commentId, authorDisplayName, body, now),
             auditId,
+            ticket.id,
+            requesterId,
         )
     }
 
@@ -220,7 +255,9 @@ internal class JpaCustomerTicketPortal(
         previousStatus: TicketStatus,
         commentId: UUID,
         body: String,
-        command: CustomerFollowUpCommand,
+        requesterId: UUID,
+        clientCommandId: String,
+        context: dev.deskseed.foundation.CommandContext,
         now: Instant,
     ): UUID {
         val auditId = UUID.randomUUID()
@@ -231,11 +268,11 @@ internal class JpaCustomerTicketPortal(
                 ticketVersion = ticket.version,
                 expectedVersion = ticket.version - 1,
                 actorType = ActorType.CUSTOMER.name,
-                actorId = command.requesterId,
-                source = command.context.source.name,
-                requestId = command.context.requestId,
-                correlationId = command.context.correlationId,
-                commandId = command.clientCommandId,
+                actorId = requesterId,
+                source = context.source.name,
+                requestId = context.requestId,
+                correlationId = context.correlationId,
+                commandId = clientCommandId,
                 createdAt = now,
             ),
         )
@@ -276,6 +313,20 @@ internal class JpaCustomerTicketPortal(
         return auditId
     }
 
+    private fun validateFollowUp(
+        context: dev.deskseed.foundation.CommandContext,
+        clientCommandId: String,
+        submittedBody: String,
+    ): String {
+        require(context.source == RequestSource.CUSTOMER_PORTAL)
+        require(clientCommandId.matches(Regex("[A-Za-z0-9._:-]{1,100}"))) {
+            "Customer command ID is invalid"
+        }
+        return submittedBody.trim().also { body ->
+            require(body.isNotEmpty() && body.length <= 20_000) { "Customer follow-up body is invalid" }
+        }
+    }
+
     private fun lockCommand(actorId: UUID, commandId: String) {
         jdbcTemplate.queryForObject(
             "select pg_advisory_xact_lock(hashtextextended(?, 0))",
@@ -284,10 +335,17 @@ internal class JpaCustomerTicketPortal(
         )
     }
 
+    /**
+     * Both authenticated and token-capability follow-ups must lock the ticket before the command advisory lock.
+     * Reversing either path can deadlock when the same customer submits the same command through both surfaces.
+     */
+    private fun lockCustomerRequestTicket(ticketNumber: Long): TicketEntity? = ticketRepository.lockByTicketNumber(ticketNumber)
+        ?.takeIf { it.kind == TicketKind.CUSTOMER_REQUEST }
+
     private fun findReplay(actorId: UUID, commandId: String): CustomerReplay? {
         val matches = jdbcTemplate.query(
             """
-            select audit.id as audit_id, ticket.ticket_number,
+            select audit.id as audit_id, ticket.id as ticket_id, ticket.ticket_number,
                    comment.id as comment_id, comment.body, comment.created_at,
                    coalesce(customer.name, '고객') as author_display_name,
                    first_event.metadata_json::jsonb ->> 'contentSha256' as body_digest
@@ -307,6 +365,7 @@ internal class JpaCustomerTicketPortal(
             { result, _ ->
                 CustomerReplay(
                     auditId = result.getObject("audit_id", UUID::class.java),
+                    ticketId = result.getObject("ticket_id", UUID::class.java),
                     ticketNumber = result.getLong("ticket_number"),
                     bodyDigest = result.getString("body_digest"),
                     comment = PublicCommentView(
@@ -332,6 +391,7 @@ internal class JpaCustomerTicketPortal(
 
     private data class CustomerReplay(
         val auditId: UUID,
+        val ticketId: UUID,
         val ticketNumber: Long,
         val bodyDigest: String,
         val comment: PublicCommentView,
