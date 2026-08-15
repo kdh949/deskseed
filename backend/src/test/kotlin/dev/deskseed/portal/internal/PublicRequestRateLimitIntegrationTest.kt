@@ -26,6 +26,7 @@ import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import org.springframework.transaction.support.TransactionTemplate
 
 @SpringBootTest(
     properties = [
@@ -47,6 +48,7 @@ class PublicRequestRateLimitIntegrationTest {
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var rateLimiter: PublicRequestRateLimiter
     @Autowired private lateinit var retentionJob: PublicRequestRateLimitRetentionJob
+    @Autowired private lateinit var transactionTemplate: TransactionTemplate
 
     @BeforeEach
     fun clearRateLimitBuckets() {
@@ -198,6 +200,36 @@ class PublicRequestRateLimitIntegrationTest {
                 Int::class.java,
             ),
         ).isEqualTo(2)
+    }
+
+    @Test
+    fun `separate limiter instances cannot split one database bucket at a local clock boundary`() {
+        val destination = "clock-skew-${UUID.randomUUID()}@example.com"
+        val clientAddress = "198.51.100.221"
+        val properties = PublicRequestRateLimitProperties(
+            window = java.time.Duration.ofMinutes(1),
+            destinationLimit = 1,
+            clientLimit = 1,
+            globalLimit = 1,
+            fingerprintKey = "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+        )
+        // Nodes may have local clocks on opposite sides of a boundary. The limiter deliberately has no Clock
+        // dependency: the timestamp that selects this shared bucket comes from PostgreSQL.
+        val beforeBoundary = PublicRequestRateLimiter(jdbcTemplate, properties)
+        val afterBoundary = PublicRequestRateLimiter(jdbcTemplate, properties)
+
+        transactionTemplate.executeWithoutResult { beforeBoundary.consume(destination, clientAddress) }
+
+        org.assertj.core.api.Assertions.assertThatThrownBy {
+            transactionTemplate.executeWithoutResult { afterBoundary.consume(destination, clientAddress) }
+        }.isInstanceOf(PublicRequestRateLimitExceededException::class.java)
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(distinct window_started_at) from public_request_rate_limit_buckets",
+                Long::class.java,
+            ),
+        ).isEqualTo(1)
     }
 
     @Test

@@ -118,7 +118,6 @@ internal class PublicRequestClientAddressResolver(
 internal class PublicRequestRateLimiter(
     private val jdbcTemplate: JdbcTemplate,
     private val properties: PublicRequestRateLimitProperties,
-    private val clock: Clock,
 ) {
     private val fingerprintKey = SecretKeySpec(properties.fingerprintKeyBytes(), "HmacSHA256")
 
@@ -129,20 +128,20 @@ internal class PublicRequestRateLimiter(
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun consume(destination: String, clientAddress: String) {
         if (!properties.enabled) return
-        val now = Instant.now(clock)
-        val windowStartedAt = fixedWindowStart(now)
-        val resetAt = windowStartedAt.plus(properties.window)
-        val retryAfter = retryAfter(now, resetAt)
-        val buckets = listOf(
-            PublicRequestRateLimitBucket(BucketType.GLOBAL, fingerprint(BucketType.GLOBAL, "public-request-v1"), properties.globalLimit),
-            PublicRequestRateLimitBucket(BucketType.CLIENT, fingerprint(BucketType.CLIENT, clientAddress), properties.clientLimit),
-            PublicRequestRateLimitBucket(
-                BucketType.DESTINATION,
-                fingerprint(BucketType.DESTINATION, destination.trim().lowercase(Locale.ROOT)),
-                properties.destinationLimit,
-            ),
-        )
         try {
+            val now = databaseNow()
+            val windowStartedAt = fixedWindowStart(now)
+            val resetAt = windowStartedAt.plus(properties.window)
+            val retryAfter = retryAfter(now, resetAt)
+            val buckets = listOf(
+                PublicRequestRateLimitBucket(BucketType.GLOBAL, fingerprint(BucketType.GLOBAL, "public-request-v1"), properties.globalLimit),
+                PublicRequestRateLimitBucket(BucketType.CLIENT, fingerprint(BucketType.CLIENT, clientAddress), properties.clientLimit),
+                PublicRequestRateLimitBucket(
+                    BucketType.DESTINATION,
+                    fingerprint(BucketType.DESTINATION, destination.trim().lowercase(Locale.ROOT)),
+                    properties.destinationLimit,
+                ),
+            )
             buckets.forEach { bucket ->
                 if (increment(bucket, windowStartedAt, resetAt, now) > bucket.limit) {
                     throw PublicRequestRateLimitExceededException(retryAfter)
@@ -154,6 +153,12 @@ internal class PublicRequestRateLimiter(
             throw PublicRequestRateLimitUnavailableException()
         }
     }
+
+    /** The rate-limit bucket key is shared across nodes, so its time source must be shared as well. */
+    private fun databaseNow(): Instant = jdbcTemplate.queryForObject(
+        "select clock_timestamp()",
+        { resultSet, _ -> resultSet.getTimestamp(1).toInstant() },
+    ) ?: throw PublicRequestRateLimitUnavailableException()
 
     private fun increment(
         bucket: PublicRequestRateLimitBucket,
