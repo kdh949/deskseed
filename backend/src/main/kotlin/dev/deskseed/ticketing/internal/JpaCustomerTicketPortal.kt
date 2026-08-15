@@ -73,6 +73,9 @@ internal class JpaCustomerTicketPortal(
     @Transactional
     override fun addFollowUp(command: CustomerFollowUpCommand): CustomerFollowUpResult {
         val body = validateFollowUp(command.context, command.clientCommandId, command.body)
+        val ticket = lockCustomerRequestTicket(command.ticketNumber)
+            ?.takeIf { it.requesterId == command.requesterId }
+            ?: throw CustomerTicketNotFoundException()
         lockCommand(command.requesterId, command.clientCommandId)
         findReplay(command.requesterId, command.clientCommandId)?.let { replay ->
             if (replay.ticketNumber != command.ticketNumber || replay.bodyDigest != sha256(body)) {
@@ -81,9 +84,6 @@ internal class JpaCustomerTicketPortal(
             return CustomerFollowUpResult(replay.comment, replay.auditId, replay.ticketId, command.requesterId, replayed = true)
         }
 
-        val ticket = ticketRepository.lockByTicketNumber(command.ticketNumber)
-            ?.takeIf { it.kind == TicketKind.CUSTOMER_REQUEST && it.requesterId == command.requesterId }
-            ?: throw CustomerTicketNotFoundException()
         if (ticket.status in setOf(TicketStatus.SOLVED, TicketStatus.CLOSED)) {
             throw CustomerFollowUpConflictException()
         }
@@ -103,8 +103,8 @@ internal class JpaCustomerTicketPortal(
     @Transactional
     override fun addAnonymousFollowUp(command: AnonymousCustomerFollowUpCommand): CustomerFollowUpResult {
         val body = validateFollowUp(command.context, command.clientCommandId, command.body)
-        val ticket = ticketRepository.lockByTicketNumber(command.ticketNumber)
-            ?.takeIf { it.id == command.ticketId && it.kind == TicketKind.CUSTOMER_REQUEST }
+        val ticket = lockCustomerRequestTicket(command.ticketNumber)
+            ?.takeIf { it.id == command.ticketId }
             ?: throw CustomerTicketNotFoundException()
         val requesterId = ticket.requesterId ?: throw CustomerTicketNotFoundException()
         lockCommand(requesterId, command.clientCommandId)
@@ -334,6 +334,13 @@ internal class JpaCustomerTicketPortal(
             "customer-follow-up:$actorId:$commandId",
         )
     }
+
+    /**
+     * Both authenticated and token-capability follow-ups must lock the ticket before the command advisory lock.
+     * Reversing either path can deadlock when the same customer submits the same command through both surfaces.
+     */
+    private fun lockCustomerRequestTicket(ticketNumber: Long): TicketEntity? = ticketRepository.lockByTicketNumber(ticketNumber)
+        ?.takeIf { it.kind == TicketKind.CUSTOMER_REQUEST }
 
     private fun findReplay(actorId: UUID, commandId: String): CustomerReplay? {
         val matches = jdbcTemplate.query(
