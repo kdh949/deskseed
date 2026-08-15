@@ -33,6 +33,13 @@ import type {
   CustomerAccessModeSetting,
   CustomerSummary,
   UpdateCustomerAccessModeInput,
+  OutboundMailAttempt,
+  OutboundMailAttemptStatus,
+  OutboundMailIntent,
+  OutboundMailIntentPage,
+  OutboundMailIntentStatus,
+  OutboundMailOperationsSummary,
+  OutboundMailTemplate,
   CreateStaffInput,
   CurrentStaff,
   FirstReplySlaAnalytics,
@@ -210,6 +217,25 @@ const EXTERNAL_LINK_STATES = new Set<ExternalReferenceLinkState>([
   'AVAILABLE',
   'SYSTEM_DISABLED',
   'HOST_NOT_ALLOWED',
+])
+const OUTBOUND_MAIL_INTENT_STATUSES = new Set<OutboundMailIntentStatus>([
+  'QUEUED',
+  'SENDING',
+  'RETRY_WAIT',
+  'SENT',
+  'FAILED',
+])
+const OUTBOUND_MAIL_ATTEMPT_STATUSES = new Set<OutboundMailAttemptStatus>([
+  'IN_PROGRESS',
+  'SUCCEEDED',
+  'RETRYABLE_FAILED',
+  'PERMANENT_FAILED',
+  'ABANDONED',
+])
+const OUTBOUND_MAIL_TEMPLATES = new Set<OutboundMailTemplate>([
+  'CUSTOMER_MAGIC_LINK',
+  'REQUEST_RECEIVED',
+  'PUBLIC_AGENT_REPLY',
 ])
 
 export class ApiError extends Error {
@@ -458,6 +484,7 @@ export async function submitRequest(
     const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
       credentials: 'include',
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     })
     const csrfBody = await successfulResponseBody(csrfResponse)
     if (!isRecord(csrfBody) || !isNonBlankString(csrfBody.token)) {
@@ -473,6 +500,7 @@ export async function submitRequest(
       ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
     },
     cache: 'no-store',
+    referrerPolicy: 'no-referrer',
     body: JSON.stringify(input),
   })
   const body = await successfulResponseBody(response)
@@ -488,14 +516,42 @@ export async function getPublicRequest(
   const response = await fetch(
     `${API_BASE_URL}/api/v1/requests/${ticketNumber}`,
     {
+      credentials: 'include',
       headers: { 'X-Request-Access-Token': accessToken },
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     },
   )
   const body = await successfulResponseBody(response)
   const request = decodePublicRequest(body)
   if (!request) throw malformedSuccess(response)
   return request
+}
+
+export async function addAnonymousRequestComment(
+  ticketNumber: number,
+  accessToken: string,
+  body: string,
+  clientCommandId: string,
+): Promise<PublicComment> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/requests/${ticketNumber}/comments`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Request-Access-Token': accessToken,
+      },
+      body: JSON.stringify({ body, clientCommandId }),
+    },
+  )
+  const responseBody = await successfulResponseBody(response)
+  const comment = decodePublicComment(responseBody)
+  if (!comment) throw malformedSuccess(response)
+  return comment
 }
 
 const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT', 'SECURITY_AUDITOR'])
@@ -1864,6 +1920,247 @@ function decodeCustomerAccessModeSetting(
     version: value.version,
     updatedAt: value.updatedAt,
   }
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+}
+
+function isNullableTimestamp(value: unknown): value is string | null {
+  return value === null || isTimestamp(value)
+}
+
+function isSafeOutboundMailCode(
+  value: unknown,
+  maxLength: number,
+): value is string | null {
+  return (
+    value === null ||
+    (typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= maxLength &&
+      /^[A-Z0-9][A-Z0-9_:-]*$/.test(value))
+  )
+}
+
+/**
+ * The operations API promises a masked local part. Validate that promise at the
+ * browser boundary so an accidental raw mailbox can never be rendered.
+ */
+function isSafeMaskedRecipient(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 254 &&
+    /^\*+@[^\s@]+$/.test(value) &&
+    !hasControlCharacter(value)
+  )
+}
+
+function hasControlCharacter(value: string) {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0)
+    return codePoint === undefined || codePoint <= 0x1f || codePoint === 0x7f
+  })
+}
+
+function decodeOutboundMailAttempt(
+  value: unknown,
+): OutboundMailAttempt | undefined {
+  if (
+    !isRecord(value) ||
+    !isPositiveSafeInteger(value.attemptNumber) ||
+    !isNonNegativeSafeInteger(value.retryCycle) ||
+    !isPositiveSafeInteger(value.cycleAttemptNumber) ||
+    typeof value.status !== 'string' ||
+    !OUTBOUND_MAIL_ATTEMPT_STATUSES.has(
+      value.status as OutboundMailAttemptStatus,
+    ) ||
+    !isSafeOutboundMailCode(value.failureClass, 40) ||
+    !isSafeOutboundMailCode(value.failureCode, 80) ||
+    !isTimestamp(value.startedAt) ||
+    !isNullableTimestamp(value.finishedAt) ||
+    !isNullableTimestamp(value.nextRetryAt)
+  ) {
+    return undefined
+  }
+  return {
+    attemptNumber: value.attemptNumber,
+    retryCycle: value.retryCycle,
+    cycleAttemptNumber: value.cycleAttemptNumber,
+    status: value.status as OutboundMailAttemptStatus,
+    failureClass: value.failureClass,
+    failureCode: value.failureCode,
+    startedAt: value.startedAt,
+    finishedAt: value.finishedAt,
+    nextRetryAt: value.nextRetryAt,
+  }
+}
+
+function decodeOutboundMailIntent(
+  value: unknown,
+): OutboundMailIntent | undefined {
+  if (!isRecord(value) || !Array.isArray(value.attempts)) return undefined
+  const attempts = value.attempts.map(decodeOutboundMailAttempt)
+  if (
+    !isCanonicalUuid(value.id) ||
+    typeof value.template !== 'string' ||
+    !OUTBOUND_MAIL_TEMPLATES.has(value.template as OutboundMailTemplate) ||
+    !isPositiveSafeInteger(value.templateVersion) ||
+    typeof value.status !== 'string' ||
+    !OUTBOUND_MAIL_INTENT_STATUSES.has(
+      value.status as OutboundMailIntentStatus,
+    ) ||
+    !isSafeMaskedRecipient(value.recipientMasked) ||
+    !isNonNegativeSafeInteger(value.attemptCount) ||
+    !isPositiveSafeInteger(value.maxAttempts) ||
+    !isNonNegativeSafeInteger(value.retryCycle) ||
+    !isNonNegativeSafeInteger(value.manualRetryCount) ||
+    !isNullableTimestamp(value.nextAttemptAt) ||
+    !isNullableTimestamp(value.leaseExpiresAt) ||
+    !isSafeOutboundMailCode(value.lastErrorCode, 80) ||
+    !isTimestamp(value.queuedAt) ||
+    !isNullableTimestamp(value.sentAt) ||
+    !isNullableTimestamp(value.failedAt) ||
+    attempts.some((attempt) => !attempt)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    template: value.template as OutboundMailTemplate,
+    templateVersion: value.templateVersion,
+    status: value.status as OutboundMailIntentStatus,
+    recipientMasked: value.recipientMasked,
+    attemptCount: value.attemptCount,
+    maxAttempts: value.maxAttempts,
+    retryCycle: value.retryCycle,
+    manualRetryCount: value.manualRetryCount,
+    nextAttemptAt: value.nextAttemptAt,
+    leaseExpiresAt: value.leaseExpiresAt,
+    lastErrorCode: value.lastErrorCode,
+    queuedAt: value.queuedAt,
+    sentAt: value.sentAt,
+    failedAt: value.failedAt,
+    attempts: attempts as OutboundMailAttempt[],
+  }
+}
+
+function decodeOutboundMailIntentPage(
+  value: unknown,
+): OutboundMailIntentPage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(decodeOutboundMailIntent)
+  if (
+    items.some((item) => !item) ||
+    (value.nextCursor !== null && typeof value.nextCursor !== 'string') ||
+    (typeof value.nextCursor === 'string' &&
+      (value.nextCursor.length === 0 || value.nextCursor.length > 2000))
+  ) {
+    return undefined
+  }
+  return {
+    items: items as OutboundMailIntent[],
+    nextCursor: value.nextCursor,
+  }
+}
+
+function decodeOutboundMailOperationsSummary(
+  value: unknown,
+): OutboundMailOperationsSummary | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.deliveryEnabled !== 'boolean' ||
+    typeof value.schedulingEnabled !== 'boolean' ||
+    (value.transport !== 'DISABLED' &&
+      value.transport !== 'SMTP' &&
+      value.transport !== 'FAKE') ||
+    !isNonNegativeSafeInteger(value.queuedCount) ||
+    !isNonNegativeSafeInteger(value.sendingCount) ||
+    !isNonNegativeSafeInteger(value.retryWaitCount) ||
+    !isNonNegativeSafeInteger(value.failedCount) ||
+    !isNonNegativeSafeInteger(value.sentCount) ||
+    !isNullableTimestamp(value.oldestPendingAt)
+  ) {
+    return undefined
+  }
+  return {
+    deliveryEnabled: value.deliveryEnabled,
+    schedulingEnabled: value.schedulingEnabled,
+    transport: value.transport,
+    queuedCount: value.queuedCount,
+    sendingCount: value.sendingCount,
+    retryWaitCount: value.retryWaitCount,
+    failedCount: value.failedCount,
+    sentCount: value.sentCount,
+    oldestPendingAt: value.oldestPendingAt,
+  }
+}
+
+export async function getOutboundMailSummary(): Promise<OutboundMailOperationsSummary> {
+  const response = await staffFetch('/api/v1/admin/mail/summary')
+  const summary = decodeOutboundMailOperationsSummary(
+    await checkedBody(response),
+  )
+  if (!summary) throw malformedSuccess(response)
+  return summary
+}
+
+export async function listOutboundMailIntents({
+  cursor,
+  limit = 50,
+  status,
+}: {
+  cursor?: string
+  limit?: number
+  status?: OutboundMailIntentStatus
+} = {}): Promise<OutboundMailIntentPage> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error('Outbound mail list limit must be between 1 and 100')
+  }
+  if (cursor !== undefined && (cursor.length === 0 || cursor.length > 2000)) {
+    throw new Error('Outbound mail cursor is invalid')
+  }
+  const search = new URLSearchParams({ limit: String(limit) })
+  if (status) search.set('status', status)
+  if (cursor) search.set('cursor', cursor)
+  const response = await staffFetch(`/api/v1/admin/mail/intents?${search}`)
+  const page = decodeOutboundMailIntentPage(await checkedBody(response))
+  if (!page) throw malformedSuccess(response)
+  return page
+}
+
+export async function getOutboundMailIntent(
+  intentId: string,
+): Promise<OutboundMailIntent> {
+  const response = await staffFetch(`/api/v1/admin/mail/intents/${intentId}`)
+  const intent = decodeOutboundMailIntent(await checkedBody(response))
+  if (!intent) throw malformedSuccess(response)
+  return intent
+}
+
+export async function retryOutboundMailIntent(
+  intentId: string,
+  reason: string,
+): Promise<OutboundMailIntent> {
+  const normalizedReason = reason.trim()
+  if (!normalizedReason || normalizedReason.length > 500) {
+    throw new Error(
+      'Manual mail retry reason must be between 1 and 500 characters',
+    )
+  }
+  const response = await unsafeStaffFetch(
+    `/api/v1/admin/mail/intents/${intentId}/retry`,
+    'POST',
+    { reason: normalizedReason },
+  )
+  const intent = decodeOutboundMailIntent(await checkedBody(response))
+  if (!intent) throw malformedSuccess(response)
+  return intent
 }
 
 function decodeActorSummary(value: unknown): ActorSummary | undefined {

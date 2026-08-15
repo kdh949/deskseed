@@ -1,24 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
-import type {
-  AgentComment,
-  AgentTicketDetail,
-  AgentTicketStatus,
-  TicketPriority,
-} from '../../api/types'
 import { DsButton, ScreenState } from '../../design-system'
-import { TicketWorkspace } from './TicketWorkspace'
-import type {
-  ConversationEntry,
-  WorkspaceTicket,
-} from './ticketWorkspaceFixture'
+import { useStaffSession } from '../staff-auth/StaffSessionContext'
+import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
 
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
+  const session = useStaffSession()
   const interactionId = useMemo(createOpaqueUuid, [ticketNumber])
   const successfulInteractionId = useRef<string | null>(null)
   const query = useQuery({
@@ -36,23 +28,45 @@ export function AgentTicketWorkspacePage() {
       successfulInteractionId.current = interactionId
       return detail
     },
-    enabled: ticketNumber !== null,
+    enabled: ticketNumber !== null && session.staff !== null,
   })
+  const refreshLatest = useCallback(async () => {
+    const result = await query.refetch()
+    if (result.error) throw result.error
+    if (!result.data) throw new Error('최신 티켓 정보를 받지 못했습니다.')
+    return result.data
+  }, [query.refetch])
 
   if (ticketNumber === null) return <InvalidTicketRoute />
-  if (query.isPending) return <TicketWorkspace initialState="loading" />
-  if (query.isError) {
+  if (session.staff === null) return <MissingStaffSession />
+  if (query.isPending) return <WorkspaceLoading />
+  if (query.isError && !query.data) {
     return <WorkspaceError error={query.error} retry={() => query.refetch()} />
   }
 
   return (
-    <TicketWorkspace
+    <AgentTicketEditorWorkspace
       detail={query.data}
-      onRefresh={() => query.refetch()}
-      refreshing={query.isFetching}
-      submitDisabledReason="현재 티켓은 읽기 전용입니다."
-      ticket={toWorkspaceTicket(query.data)}
+      key={`${session.staff.id}:${ticketNumber}`}
+      refreshLatest={refreshLatest}
+      staffId={session.staff.id}
     />
+  )
+}
+
+function WorkspaceLoading() {
+  return (
+    <main className="workspace-error-state">
+      <ScreenState compact kind="loading" title="티켓을 불러오는 중입니다." />
+    </main>
+  )
+}
+
+function MissingStaffSession() {
+  return (
+    <main className="workspace-error-state">
+      <ScreenState kind="denied" title="직원 세션을 확인할 수 없습니다." />
+    </main>
   )
 }
 
@@ -101,70 +115,8 @@ function WorkspaceError({ error, retry }: { error: Error; retry: () => void }) {
   )
 }
 
-function toWorkspaceTicket(detail: AgentTicketDetail): WorkspaceTicket {
-  const ticket = detail.ticket
-  return {
-    number: String(ticket.ticketNumber),
-    subject: ticket.subject,
-    createdAt: `업데이트 ${formatDate(ticket.updatedAt)}`,
-    status: statusLabel(ticket.status),
-    priority: priorityLabel(ticket.priority),
-    group: ticket.group?.name ?? '미배정',
-    assignee: ticket.assignee?.displayName ?? '미배정',
-    requester: ticket.requester.displayName,
-    conversation: detail.comments.map(toConversationEntry),
-  }
-}
-
-function toConversationEntry(comment: AgentComment): ConversationEntry {
-  if (comment.actor.type === 'SYSTEM') {
-    return {
-      kind: 'system',
-      timestamp: formatDate(comment.createdAt),
-      body: comment.body,
-    }
-  }
-  return {
-    kind: 'message',
-    visibility: comment.visibility === 'INTERNAL' ? 'internal' : 'public',
-    author: comment.actor.type === 'CUSTOMER' ? 'customer' : 'agent',
-    name: comment.actor.displayName,
-    timestamp: formatDate(comment.createdAt),
-    body: comment.body.split(/\n{2,}/),
-  }
-}
-
-function statusLabel(status: AgentTicketStatus): WorkspaceTicket['status'] {
-  const labels: Record<AgentTicketStatus, WorkspaceTicket['status']> = {
-    NEW: 'New',
-    OPEN: 'Open',
-    PENDING: 'Pending',
-    ON_HOLD: 'Pending',
-    SOLVED: 'Solved',
-    CLOSED: 'Solved',
-  }
-  return labels[status]
-}
-
-function priorityLabel(priority: TicketPriority): WorkspaceTicket['priority'] {
-  const labels: Record<TicketPriority, WorkspaceTicket['priority']> = {
-    LOW: 'Low',
-    NORMAL: 'Normal',
-    HIGH: 'High',
-    URGENT: 'Urgent',
-  }
-  return labels[priority]
-}
-
 function parseTicketNumber(value: string): number | null {
   if (!/^[1-9]\d*$/.test(value)) return null
   const ticketNumber = Number(value)
   return Number.isSafeInteger(ticketNumber) ? ticketNumber : null
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('ko-KR', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
 }

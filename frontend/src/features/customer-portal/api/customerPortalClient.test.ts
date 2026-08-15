@@ -72,12 +72,17 @@ describe('customer portal API adapter', () => {
     )
 
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/customer/csrf')
+    expect(fetchMock.mock.calls[0]![1]).toMatchObject({
+      credentials: 'include',
+      referrerPolicy: 'no-referrer',
+    })
     expect(fetchMock.mock.calls[1]![0]).toBe(
       '/api/v1/customer/requests/1042/comments',
     )
     expect(fetchMock.mock.calls[1]![1]).toMatchObject({
       method: 'POST',
       credentials: 'include',
+      referrerPolicy: 'no-referrer',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-TOKEN': 'csrf-token',

@@ -7,11 +7,13 @@ import {
   getAgentTicket,
   getAuditExport,
   getCurrentStaff,
+  getOutboundMailSummary,
   getPublicRequest,
   isCurrentStaffSessionActorMismatch,
   listTicketAssignmentOptions,
   loginStaff,
   listAgentViews,
+  listOutboundMailIntents,
   listStaff,
   listTicketsInView,
   searchAgentCustomers,
@@ -20,6 +22,7 @@ import {
   STAFF_SESSION_ACTOR_MISMATCH_EVENT,
   STAFF_SESSION_INVALID_EVENT,
   submitRequest,
+  retryOutboundMailIntent,
   transferAgentTicket,
   updateAgentTicket,
 } from './client'
@@ -95,6 +98,142 @@ describe('admin list API client', () => {
   })
 })
 
+describe('admin outbound mail API client', () => {
+  const intent = {
+    id: '11111111-1111-4111-8111-111111111111',
+    template: 'REQUEST_RECEIVED',
+    templateVersion: 1,
+    status: 'FAILED',
+    recipientMasked: '***@example.test',
+    attemptCount: 3,
+    maxAttempts: 3,
+    retryCycle: 0,
+    manualRetryCount: 0,
+    nextAttemptAt: null,
+    leaseExpiresAt: null,
+    lastErrorCode: 'MAIL_DELIVERY_FAILURE',
+    queuedAt: '2026-08-15T10:00:00Z',
+    sentAt: null,
+    failedAt: '2026-08-15T10:03:00Z',
+    attempts: [],
+  }
+
+  it('accepts only a contract-masked mail projection and keeps its cursor local to the request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [intent], nextCursor: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      listOutboundMailIntents({ status: 'FAILED', limit: 25 }),
+    ).resolves.toEqual({ items: [intent], nextCursor: null })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/admin/mail/intents?limit=25&status=FAILED',
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'include',
+      }),
+    )
+  })
+
+  it('fails closed before a raw mailbox can be rendered', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [{ ...intent, recipientMasked: 'customer@example.test' }],
+            nextCursor: null,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      ),
+    )
+
+    await expect(listOutboundMailIntents()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('uses staff CSRF and the expected actor for a reasoned retry', async () => {
+    setConfirmedStaffActor('11111111-1111-4111-8111-111111111111')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            token: 'csrf-token',
+            headerName: 'X-CSRF-TOKEN',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...intent, status: 'QUEUED' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      retryOutboundMailIntent(intent.id, '주소 정정 후 재시도'),
+    ).resolves.toMatchObject({ id: intent.id, status: 'QUEUED' })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/v1/admin/mail/intents/${intent.id}/retry`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': 'csrf-token',
+          'X-Deskseed-Expected-Staff-Id':
+            '11111111-1111-4111-8111-111111111111',
+        },
+        body: JSON.stringify({ reason: '주소 정정 후 재시도' }),
+      }),
+    )
+  })
+
+  it('decodes the summary without credential or transport host fields', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            deliveryEnabled: true,
+            schedulingEnabled: true,
+            transport: 'SMTP',
+            queuedCount: 2,
+            sendingCount: 1,
+            retryWaitCount: 3,
+            failedCount: 4,
+            sentCount: 5,
+            oldestPendingAt: '2026-08-15T10:00:00Z',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+
+    await expect(getOutboundMailSummary()).resolves.toEqual({
+      deliveryEnabled: true,
+      schedulingEnabled: true,
+      transport: 'SMTP',
+      queuedCount: 2,
+      sendingCount: 1,
+      retryWaitCount: 3,
+      failedCount: 4,
+      sentCount: 5,
+      oldestPendingAt: '2026-08-15T10:00:00Z',
+    })
+  })
+})
+
 describe('customer request API client', () => {
   it('uses the customer CSRF contract for authenticated submission', async () => {
     const fetchMock = vi
@@ -123,6 +262,7 @@ describe('customer request API client', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/customer/csrf', {
       credentials: 'include',
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     })
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
@@ -229,7 +369,9 @@ describe('customer request API client', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/requests/1042', {
       headers: { 'X-Request-Access-Token': 'opaque-secret-token' },
+      credentials: 'include',
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     })
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
       'requests/1042?access=',

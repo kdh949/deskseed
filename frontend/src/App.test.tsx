@@ -19,6 +19,15 @@ function TestApp() {
 function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
+    if (url.endsWith('/api/v1/customer/me')) {
+      return new Response(
+        JSON.stringify({ title: 'Unauthorized', status: 401 }),
+        {
+          status: 401,
+          headers: { 'Content-Type': 'application/problem+json' },
+        },
+      )
+    }
     if (url.endsWith('/api/v1/agent/me')) {
       return new Response(
         JSON.stringify({
@@ -41,7 +50,7 @@ function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
     }
-    if (url.endsWith('/api/v1/admin/staff')) {
+    if (url.includes('/api/v1/admin/staff')) {
       return new Response('[]', {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -80,7 +89,7 @@ function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
 describe('App', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('redirects the root route to the Agent Queue', async () => {
+  it('renders the root route as the customer support home instead of the Agent Queue', async () => {
     vi.stubGlobal('fetch', sessionFetch('AGENT'))
     render(
       <DeskseedThemeProvider>
@@ -90,21 +99,22 @@ describe('App', () => {
       </DeskseedThemeProvider>,
     )
 
-    expect(await screen.findByRole('main', { name: '티켓 큐' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '내 티켓' })).toBeVisible()
     expect(
-      screen.getByRole('navigation', { name: '상담사 전역 탐색' }),
+      await screen.findByRole('heading', {
+        name: '문의부터 답변 확인까지 한곳에서',
+      }),
     ).toBeVisible()
+    expect(screen.getByRole('navigation', { name: '고객 탐색' })).toBeVisible()
     expect(
-      screen.queryByRole('navigation', { name: '주요 메뉴' }),
+      screen.queryByRole('navigation', { name: '상담사 전역 탐색' }),
     ).not.toBeInTheDocument()
   })
 
-  it('renders the canonical not-found state for a removed product route', async () => {
+  it('renders the canonical not-found state for an unknown product route', async () => {
     vi.stubGlobal('fetch', sessionFetch('AGENT'))
     render(
       <DeskseedThemeProvider>
-        <MemoryRouter initialEntries={['/admin/staff']}>
+        <MemoryRouter initialEntries={['/unknown-route']}>
           <TestApp />
         </MemoryRouter>
       </DeskseedThemeProvider>,
@@ -116,7 +126,7 @@ describe('App', () => {
       }),
     ).toBeVisible()
     expect(
-      screen.queryByRole('heading', { name: '직원 계정' }),
+      screen.queryByRole('heading', { name: '직원' }),
     ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('navigation', { name: '관리자 설정 메뉴' }),
@@ -135,6 +145,7 @@ describe('App', () => {
 
     expect(
       await screen.findByRole('heading', {
+        level: 1,
         name: '상담사 작업 공간 권한이 필요합니다.',
       }),
     ).toBeVisible()
@@ -157,5 +168,45 @@ describe('App', () => {
     expect(
       screen.queryByRole('heading', { name: '직원 로그인' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('renders an ADMIN-only staff route for an admin session', async () => {
+    vi.stubGlobal('fetch', sessionFetch('ADMIN'))
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={['/admin/staff']}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+
+    expect(await screen.findByRole('heading', { name: '직원' })).toBeVisible()
+    expect(
+      screen.getByRole('navigation', { name: '관리자 설정 메뉴' }),
+    ).toBeVisible()
+  })
+
+  it('denies an agent from an ADMIN-only route before an admin operation is queried', async () => {
+    const fetchMock = sessionFetch('AGENT')
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={['/admin/operations/mail']}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: '관리자 운영 권한이 필요합니다.',
+      }),
+    ).toBeVisible()
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/v1/admin/mail'),
+      ),
+    ).toBe(false)
   })
 })

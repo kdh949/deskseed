@@ -22,12 +22,14 @@ test('anonymous staff sees the minimum login surface', async ({ page }) => {
 test('removed and unknown routes use the canonical not-found state', async ({
   page,
 }) => {
-  await page.goto('/admin/staff')
+  await page.goto('/removed-route')
 
   await expect(
     page.getByRole('heading', { name: '페이지를 찾을 수 없습니다.' }),
   ).toBeVisible()
-  await expect(page.getByRole('link', { name: '티켓 큐로 이동' })).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: '고객 지원 홈으로 이동' }),
+  ).toBeVisible()
 })
 
 test('SECURITY_AUDITOR remains denied from the Agent Workspace', async ({
@@ -44,7 +46,37 @@ test('SECURITY_AUDITOR remains denied from the Agent Workspace', async ({
 
   await expect(
     page.getByRole('heading', {
+      level: 1,
       name: '상담사 작업 공간 권한이 필요합니다.',
     }),
   ).toBeVisible()
+})
+
+test('non-admin staff is denied before any admin operations endpoint is requested', async ({
+  page,
+}) => {
+  let adminRequestCount = 0
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/admin/')) {
+      adminRequestCount += 1
+    }
+  })
+  await mockStaff(page, {
+    id: 'agent-e2e',
+    email: 'agent@example.test',
+    displayName: 'Agent',
+    role: 'AGENT',
+    capabilities: ['AGENT_WORKSPACE'],
+  })
+
+  await page.goto('/admin/staff')
+
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: '관리자 운영 권한이 필요합니다.',
+    }),
+  ).toBeVisible()
+  expect(adminRequestCount).toBe(0)
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })

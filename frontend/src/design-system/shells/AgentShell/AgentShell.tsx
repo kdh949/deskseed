@@ -1,13 +1,11 @@
-import { useState, type MouseEvent, type ReactNode } from 'react'
-import { NavLink, useLocation, useNavigate, useOutlet } from 'react-router'
+import { type ReactNode } from 'react'
+import { NavLink, useLocation, useOutlet } from 'react-router'
 import { DeskseedIcon } from '../../primitives/DeskseedIcon'
-import { DsButton } from '../../primitives/DeskseedControls'
 import {
   DeskseedBrandMark,
-  DsAvatar,
   DsIconButton,
+  DsInitialAvatar,
 } from '../../primitives/DeskseedPrimitives'
-import agentAvatar from '../../../assets/deskseed/agent-mina-park-v1.png'
 
 const navigationItems = [
   { id: 'views', icon: 'inbox' as const, label: 'Views', to: '/agent/views' },
@@ -15,48 +13,38 @@ const navigationItems = [
 
 type AgentNavigationItemId = (typeof navigationItems)[number]['id']
 
-const initialOpenTickets = [
-  { number: '1042', subject: '결제 버튼을 누르면 오류가 납니다' },
-  { number: '1038', subject: '환불 처리 문의' },
-]
-
 type AgentShellProps = {
   activeNavigationItem?: AgentNavigationItemId
+  canCreateTicket?: boolean
   children?: ReactNode
   displayName: string
   onSignOut?: () => void
 }
 
+function toInitials(displayName: string) {
+  const words = displayName.trim().split(/\s+/).filter(Boolean)
+  if (words.length > 1) {
+    return words
+      .slice(0, 2)
+      .map((word) => Array.from(word)[0])
+      .join('')
+      .toLocaleUpperCase()
+  }
+  return Array.from(words[0] ?? '')
+    .slice(0, 2)
+    .join('')
+}
+
 export function AgentShell({
   activeNavigationItem,
+  canCreateTicket = false,
   children,
   displayName,
   onSignOut,
 }: AgentShellProps) {
   const location = useLocation()
-  const navigate = useNavigate()
   const outlet = useOutlet()
   const isTicketRoute = location.pathname.startsWith('/agent/tickets/')
-  const [openTickets, setOpenTickets] = useState(initialOpenTickets)
-
-  const closeTicketTab = (
-    event: MouseEvent<HTMLButtonElement>,
-    number: string,
-  ) => {
-    event.preventDefault()
-    event.stopPropagation()
-    const remainingTickets = openTickets.filter(
-      (ticket) => ticket.number !== number,
-    )
-    setOpenTickets(remainingTickets)
-    if (location.pathname === `/agent/tickets/${number}`) {
-      navigate(
-        remainingTickets[0]
-          ? `/agent/tickets/${remainingTickets[0].number}`
-          : '/agent/views/my-open',
-      )
-    }
-  }
 
   return (
     <div className="agent-shell">
@@ -91,60 +79,34 @@ export function AgentShell({
       <div className="agent-main-column">
         <header className="agent-top-chrome">
           {isTicketRoute ? (
-            <>
-              <NavLink className="agent-back-to-views" to="/agent/views">
-                <DeskseedIcon name="arrowLeft" />
-                Back to Views
-              </NavLink>
-              <nav aria-label="열린 티켓 탭" className="agent-ticket-tabs">
-                {openTickets.map((ticket) => (
-                  <div
-                    className={
-                      location.pathname === `/agent/tickets/${ticket.number}`
-                        ? 'agent-ticket-tab-wrap agent-ticket-tab-wrap--active'
-                        : 'agent-ticket-tab-wrap'
-                    }
-                    key={ticket.number}
-                  >
-                    <NavLink
-                      aria-label={`티켓 #${ticket.number} ${ticket.subject}`}
-                      className="agent-ticket-tab"
-                      to={`/agent/tickets/${ticket.number}`}
-                    >
-                      <strong>#{ticket.number}</strong>
-                      <span>{ticket.subject}</span>
-                    </NavLink>
-                    <button
-                      aria-label={`티켓 #${ticket.number} 탭 닫기`}
-                      className="agent-ticket-tab-close"
-                      onClick={(event) => closeTicketTab(event, ticket.number)}
-                      type="button"
-                    >
-                      <DeskseedIcon name="x" size="sm" />
-                    </button>
-                  </div>
-                ))}
-              </nav>
-            </>
+            <NavLink className="agent-back-to-views" to="/agent/views">
+              <DeskseedIcon name="arrowLeft" />
+              Back to Views
+            </NavLink>
           ) : null}
-          <DsButton
-            className="agent-create-ticket-action"
-            onClick={() => navigate('/agent/tickets/new')}
-            tone="primary"
-          >
-            <DeskseedIcon name="plus" size="sm" />새 티켓
-          </DsButton>
+          {canCreateTicket ? (
+            <NavLink
+              className="agent-create-ticket-action"
+              to="/agent/tickets/new"
+            >
+              <DeskseedIcon name="plus" size="sm" />새 티켓
+            </NavLink>
+          ) : null}
           <div className="agent-profile">
-            <DsAvatar name={displayName} size="sm" src={agentAvatar} />
+            <DsInitialAvatar
+              initials={toInitials(displayName)}
+              label={displayName}
+            />
             <span>
               <strong>{displayName}</strong>
-              <small>Available</small>
             </span>
-            <DsIconButton
-              icon="chevronDown"
-              label="로그아웃"
-              onClick={onSignOut}
-            />
+            {onSignOut ? (
+              <DsIconButton
+                icon="chevronDown"
+                label="로그아웃"
+                onClick={onSignOut}
+              />
+            ) : null}
           </div>
         </header>
         {children ?? outlet}

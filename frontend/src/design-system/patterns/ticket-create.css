@@ -189,4 +189,23 @@
   align-items: center;
   gap: var(--ds-ref-space-2);
   margin-left: auto;
+  min-height: var(--ds-ref-control-default);
+  padding: 0 var(--ds-ref-space-3);
+  border: 1px solid var(--ds-button-primary-background-default);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-button-primary-foreground);
+  background: var(--ds-button-primary-background-default);
+  font-size: var(--ds-ref-font-size-sm);
+  font-weight: var(--ds-ref-font-weight-semibold);
+  text-decoration: none;
+}
+
+.agent-create-ticket-action:hover {
+  border-color: var(--ds-button-primary-background-hover);
+  background: var(--ds-button-primary-background-hover);
+}
+
+.agent-create-ticket-action:focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
 }

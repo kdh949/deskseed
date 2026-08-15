@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   consumeCustomerMagicLink,
+  deleteCustomerSession,
   getCustomerAccessMode,
   requestCustomerMagicLink,
 } from './customerAuthClient'
@@ -57,5 +58,33 @@ describe('customer authentication API adapter', () => {
     await expect(getCustomerAccessMode()).rejects.toThrow(
       'customer-access-mode-response-invalid',
     )
+  })
+
+  it('uses a session-bound CSRF token for no-referrer logout', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'a'.repeat(32), headerName: 'X-CSRF-TOKEN' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await deleteCustomerSession()
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/customer/csrf')
+    expect(fetchMock.mock.calls[0]![1]).toMatchObject({
+      credentials: 'include',
+      referrerPolicy: 'no-referrer',
+    })
+    expect(fetchMock.mock.calls[1]![0]).toBe('/api/v1/customer/session')
+    expect(fetchMock.mock.calls[1]![1]).toMatchObject({
+      method: 'DELETE',
+      credentials: 'include',
+      referrerPolicy: 'no-referrer',
+      headers: { 'X-CSRF-TOKEN': 'a'.repeat(32) },
+    })
   })
 })

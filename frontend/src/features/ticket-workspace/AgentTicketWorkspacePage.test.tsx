@@ -117,7 +117,7 @@ afterEach(() => {
 })
 
 describe('AgentTicketWorkspacePage', () => {
-  it('renders the read-only three-panel staff projection with public and internal conversation', async () => {
+  it('renders the read-only server projection with public and internal conversation', async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(
         new Response(JSON.stringify(detail), {
@@ -131,23 +131,23 @@ describe('AgentTicketWorkspacePage', () => {
     renderPage()
 
     expect(
-      await screen.findByRole('heading', { name: /#1042.*결제 승인 오류/ }),
+      await screen.findByRole('heading', { name: '결제 승인 오류' }),
     ).toBeVisible()
+    expect(screen.getByText('티켓 #1042')).toBeVisible()
     expect(
       screen.getByRole('complementary', { name: '티켓 속성' }),
     ).toBeVisible()
     expect(
       screen.getByRole('region', { name: '티켓 대화 및 답변' }),
     ).toBeVisible()
-    expect(screen.getByRole('tabpanel', { name: 'Customer' })).toBeVisible()
     expect(screen.getByText('결제가 계속 실패합니다.')).toBeVisible()
     expect(screen.getByText('PG사 확인이 필요합니다.')).toBeVisible()
-    expect(screen.getByText('INTERNAL')).toBeVisible()
+    expect(screen.getByText('INTERNAL · 직원 전용')).toBeVisible()
     expect(
-      screen.getByRole('button', { name: '내부 메모 추가' }),
-    ).toBeDisabled()
+      screen.queryByRole('textbox', { name: '내부 메모 내용' }),
+    ).not.toBeInTheDocument()
     expect(
-      screen.getByRole('textbox', { name: '내부 메모 내용' }),
+      screen.getByText('현재 권한으로는 티켓을 수정할 수 없습니다.'),
     ).toBeVisible()
 
     const request = fetchMock.mock.calls[0]!
@@ -157,7 +157,7 @@ describe('AgentTicketWorkspacePage', () => {
     expect(requestOptions.headers['X-Interaction-Id']).toBeTruthy()
   })
 
-  it('reuses the navigation interaction for refetch and supports keyboard panel controls', async () => {
+  it('reuses the navigation interaction for a refresh and changes it per navigation', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(
@@ -170,8 +170,8 @@ describe('AgentTicketWorkspacePage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
-    await screen.findByRole('heading', { name: /#1042.*결제 승인 오류/ })
-    await user.click(screen.getByRole('button', { name: '티켓 새로고침' }))
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
+    await user.click(screen.getByRole('button', { name: '최신 정보 새로고침' }))
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const firstOptions = fetchMock.mock.calls[0]![1] as {
@@ -205,13 +205,6 @@ describe('AgentTicketWorkspacePage', () => {
     expect(fourthOptions.headers['X-Interaction-Id']).not.toBe(
       thirdOptions.headers['X-Interaction-Id'],
     )
-
-    await user.click(screen.getByRole('button', { name: '티켓 속성 접기' }))
-    expect(
-      screen.getByRole('button', { name: '티켓 속성 펼치기' }),
-    ).toBeVisible()
-    await user.click(screen.getByRole('button', { name: '고객 맥락 열기' }))
-    expect(screen.getByRole('button', { name: '고객 맥락 닫기' })).toBeVisible()
   })
 
   it('shows a safe denied state with a request id', async () => {
@@ -269,7 +262,7 @@ describe('AgentTicketWorkspacePage', () => {
     })
 
     renderPage()
-    await screen.findByRole('heading', { name: /#1042.*결제 승인 오류/ })
+    await screen.findByRole('heading', { name: '결제 승인 오류' })
 
     const request = fetchMock.mock.calls[0]!
     const options = request[1] as { headers: Record<string, string> }

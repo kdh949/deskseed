@@ -72,6 +72,71 @@ export interface UpdateCustomerAccessModeInput {
   expectedVersion: number
 }
 
+export type OutboundMailIntentStatus =
+  'QUEUED' | 'SENDING' | 'RETRY_WAIT' | 'SENT' | 'FAILED'
+
+export type OutboundMailAttemptStatus =
+  | 'IN_PROGRESS'
+  | 'SUCCEEDED'
+  | 'RETRYABLE_FAILED'
+  | 'PERMANENT_FAILED'
+  | 'ABANDONED'
+
+export type OutboundMailTemplate =
+  'CUSTOMER_MAGIC_LINK' | 'REQUEST_RECEIVED' | 'PUBLIC_AGENT_REPLY'
+
+/**
+ * Contract-validated administrative projection. `recipientMasked` is deliberately
+ * constrained to a star-only local part before it can reach a rendered screen.
+ */
+export interface OutboundMailIntent {
+  id: string
+  template: OutboundMailTemplate
+  templateVersion: number
+  status: OutboundMailIntentStatus
+  recipientMasked: string
+  attemptCount: number
+  maxAttempts: number
+  retryCycle: number
+  manualRetryCount: number
+  nextAttemptAt: string | null
+  leaseExpiresAt: string | null
+  lastErrorCode: string | null
+  queuedAt: string
+  sentAt: string | null
+  failedAt: string | null
+  attempts: OutboundMailAttempt[]
+}
+
+export interface OutboundMailAttempt {
+  attemptNumber: number
+  retryCycle: number
+  cycleAttemptNumber: number
+  status: OutboundMailAttemptStatus
+  failureClass: string | null
+  failureCode: string | null
+  startedAt: string
+  finishedAt: string | null
+  nextRetryAt: string | null
+}
+
+export interface OutboundMailIntentPage {
+  items: OutboundMailIntent[]
+  nextCursor: string | null
+}
+
+export interface OutboundMailOperationsSummary {
+  deliveryEnabled: boolean
+  schedulingEnabled: boolean
+  transport: 'DISABLED' | 'SMTP' | 'FAKE'
+  queuedCount: number
+  sendingCount: number
+  retryWaitCount: number
+  failedCount: number
+  sentCount: number
+  oldestPendingAt: string | null
+}
+
 export interface CurrentStaff {
   id: string
   email: string

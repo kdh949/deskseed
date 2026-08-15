@@ -18,8 +18,8 @@
     "test": "vitest run --project unit",
     "test:storybook": "vitest run --project storybook",
     "test:e2e": "playwright test",
-    "test:e2e:dev": "playwright test access-surface.spec.ts agent-views-workspace.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts",
-    "test:e2e:update": "playwright test access-surface.spec.ts agent-views-workspace.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts --update-snapshots=all",
+    "test:e2e:dev": "playwright test access-surface.spec.ts admin-operations.spec.ts agent-views-workspace.spec.ts agent-ticket-write.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts",
+    "test:e2e:update": "playwright test access-surface.spec.ts admin-operations.spec.ts agent-views-workspace.spec.ts agent-ticket-write.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts --update-snapshots=all",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },

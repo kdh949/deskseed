@@ -751,6 +751,211 @@
   line-height: var(--ds-ref-line-height-sm);
 }
 
+/* Production agent editor: the server-owned ticket projection has no fixture
+ * controls, fallback people, or synthetic context. */
+.ticket-workspace--production .ticket-panel-heading {
+  display: grid;
+  align-content: center;
+  min-height: 76px;
+}
+
+.ticket-workspace--production .ticket-panel-heading p {
+  margin: var(--ds-ref-space-1) 0 0;
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+  line-height: var(--ds-ref-line-height-xs);
+}
+
+.agent-ticket-editor-content {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.agent-ticket-editor-content .conversation-timeline {
+  grid-row: 3;
+}
+
+.agent-ticket-editor-content > .ds-notification,
+.agent-ticket-conflict {
+  margin: var(--ds-ref-space-3) var(--ds-ref-space-5) 0;
+}
+
+.agent-ticket-editor-select {
+  width: 100%;
+  min-height: var(--ds-ref-control-default);
+  padding: 0 var(--ds-ref-space-2);
+  border: 1px solid var(--ds-input-border);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-foreground-default);
+  background: var(--ds-input-background);
+  font: inherit;
+}
+
+.agent-ticket-editor-select:focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
+}
+
+.agent-ticket-editor-select:disabled {
+  color: var(--ds-foreground-muted);
+  background: var(--ds-background-recessed);
+}
+
+.agent-ticket-property-value {
+  margin: 0;
+  color: var(--ds-foreground-default);
+  font-size: var(--ds-ref-font-size-sm);
+}
+
+.agent-ticket-properties-readonly,
+.agent-ticket-editor-context dl {
+  display: grid;
+  gap: var(--ds-ref-space-3);
+  margin: 0;
+}
+
+.agent-ticket-properties-readonly {
+  padding: 0 var(--ds-ref-space-5) var(--ds-ref-space-4);
+}
+
+.agent-ticket-properties-readonly div,
+.agent-ticket-editor-context dl div {
+  display: grid;
+  gap: var(--ds-ref-space-1);
+}
+
+.agent-ticket-properties-readonly dt,
+.agent-ticket-editor-context dt {
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+}
+
+.agent-ticket-properties-readonly dd,
+.agent-ticket-editor-context dd {
+  margin: 0;
+  color: var(--ds-foreground-default);
+  font-size: var(--ds-ref-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.agent-ticket-editor-eyebrow,
+.agent-ticket-editor-mode,
+.agent-ticket-editor-mode-hint {
+  margin: 0;
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+  line-height: var(--ds-ref-line-height-xs);
+}
+
+.agent-ticket-editor-mode,
+.agent-ticket-editor-mode-hint {
+  padding: var(--ds-ref-space-3) var(--ds-ref-space-3) 0;
+}
+
+.agent-ticket-editor-context {
+  min-width: 0;
+  padding: var(--ds-ref-space-5);
+  border-left: 1px solid var(--ds-border-default);
+  background: var(--ds-background-raised);
+}
+
+.agent-ticket-editor-context h2 {
+  margin: 0 0 var(--ds-ref-space-4);
+  color: var(--ds-foreground-default);
+  font-size: var(--ds-ref-font-size-sm);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.agent-ticket-conflict {
+  display: grid;
+  gap: var(--ds-ref-space-3);
+  padding-bottom: var(--ds-ref-space-3);
+  border-bottom: 1px solid var(--ds-border-danger);
+}
+
+.agent-ticket-conflict:focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
+}
+
+.agent-ticket-conflict-fields {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-ticket-conflict-fields > li {
+  padding: var(--ds-ref-space-3);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+  background: var(--ds-background-raised);
+}
+
+.agent-ticket-conflict-fields h3 {
+  margin: 0;
+  color: var(--ds-foreground-default);
+  font-size: var(--ds-ref-font-size-sm);
+}
+
+.agent-ticket-conflict-fields dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ds-ref-space-2);
+  margin: var(--ds-ref-space-2) 0;
+}
+
+.agent-ticket-conflict-fields dt {
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+}
+
+.agent-ticket-conflict-fields dd {
+  margin: var(--ds-ref-space-1) 0 0;
+  color: var(--ds-foreground-default);
+  font-size: var(--ds-ref-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.agent-ticket-conflict-actions,
+.agent-ticket-navigation-guard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-ref-space-2);
+}
+
+.agent-ticket-navigation-guard {
+  position: fixed;
+  z-index: 20;
+  right: var(--ds-ref-space-5);
+  bottom: var(--ds-ref-space-5);
+  width: min(420px, calc(100vw - 2 * var(--ds-ref-space-5)));
+  padding: var(--ds-ref-space-4);
+  border: 1px solid var(--ds-border-emphasis);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-foreground-default);
+  background: var(--ds-background-raised);
+}
+
+.agent-ticket-navigation-guard h2,
+.agent-ticket-navigation-guard p {
+  margin: 0;
+}
+
+.agent-ticket-navigation-guard p {
+  margin-top: var(--ds-ref-space-2);
+  color: var(--ds-foreground-subtle);
+  font-size: var(--ds-ref-font-size-sm);
+  line-height: var(--ds-ref-line-height-sm);
+}
+
+.agent-ticket-navigation-guard-actions {
+  margin-top: var(--ds-ref-space-4);
+}
+
 @media (max-width: 1500px) {
   .ticket-workspace {
     grid-template-columns: var(--ds-layout-property-panel-width) minmax(
@@ -791,6 +996,12 @@
     white-space: nowrap;
     cursor: pointer;
   }
+
+  .ticket-workspace--production .agent-ticket-editor-context {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--ds-border-default);
+    border-left: 0;
+  }
 }
 
 @media (max-width: 1080px) {
@@ -806,5 +1017,13 @@
   .ticket-conversation {
     max-height: none;
     min-height: calc(100vh - var(--ds-layout-top-chrome-height));
+  }
+
+  .ticket-workspace--production .agent-ticket-editor-context {
+    grid-column: auto;
+  }
+
+  .agent-ticket-conflict-fields dl {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
