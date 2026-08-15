@@ -59,15 +59,15 @@ ADMIN이 현재 production API만 사용해 메일 전달 상태, 직원·그룹
 - Focused unit tests cover mail decoder/retry headers, the route guard, and customer access-mode conflict preservation.
 - Focused Storybook interaction/a11y covers every Admin page story; local `npm run test:storybook -- src/features/admin` passed 7 files / 13 stories.
 - Browser E2E covers the required failed-mail retry, mail secret/raw-recipient non-rendering, and ADMIN route denial. Access-mode conflict preservation has focused unit coverage; schedule/SLA version editing has focused Storybook coverage.
-- Final frontend gates and whole-goal audit remain blocked until the required Storybook MCP runner and changed-story/preview calls succeed.
+- Final frontend gates and the whole-goal audit can proceed after the required Storybook MCP runner and changed-story/preview calls pass.
 
-## Execution evidence — validation blocked
+## Execution evidence — PASS
 
 - Implementation: added the six Admin routes, `AdminRoute` (`ADMIN` + `ADMIN_MANAGE`), production API client decoding for masked outbound-mail projections, and no-fixture staff/group/access-mode/schedule/SLA screens.
 - Passed: `npm ci --no-audit --no-fund`; `npm run format:check`; `npm run lint` (only existing `public/mockServiceWorker.js` warning); `npm run typecheck`; `npm run check:design-system-boundaries`; `npm run test` (37 files / 185 tests); `npm run test:storybook` (54 files / 191 stories); `npm run build`; `npm run test:e2e` (22 tests).
-- Storybook MCP documentation discovery and component-contract lookup passed before implementation. `run-story-tests` timed out after 300 seconds both for the focused Admin batch and a single Admin shell story. `get-changed-stories` also timed out after 300 seconds. No `preview-stories` result is available while the same MCP server is unresponsive.
-- Root-cause diagnostic (2026-08-15): `frontend/.mcp.json` points `deskseed-design-proj` at `http://localhost:6006/mcp`, but the listener was `node /Users/donghyunkim/Documents/BeanFlow-design/frontend/node_modules/.bin/storybook dev -p 6006`; a direct five-second request returned no bytes. That unrelated project process must not be stopped from this Deskseed task.
-- Blocker: this slice cannot be marked PASS and the whole-goal completion audit must not begin until the Storybook MCP endpoint is connected to Deskseed's own Storybook service and its validation/preview calls respond.
+- Storybook MCP documentation discovery and component-contract lookup passed before implementation. The configured 6006 port was occupied by another workspace, so a scoped Deskseed Storybook validation server was started at 6010 without changing repository configuration or stopping the other workspace. Direct Deskseed MCP validation at 6010 passed a focused 13-story Admin batch and the full project `run-story-tests` pass; no interaction or a11y failure was returned.
+- `get-changed-stories` identified 46 pre-commit affected stories. Representative Admin shell, mail retry, access-mode conflict, schedule-version, and SLA-version previews were returned from `http://localhost:6010`.
+- Result: FE-P0-ADMIN-OPS is PASS. The port collision is an environment diagnostic only and no longer blocks the whole-goal completion audit.
 
 ## Compatibility and migration
 
