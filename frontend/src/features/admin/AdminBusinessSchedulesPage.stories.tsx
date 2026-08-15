@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { AdminBusinessSchedulesPage } from './AdminBusinessSchedulesPage'
 
 const schedule = {
@@ -118,9 +118,11 @@ export const VersionReviewAndEdit: Story = {
     await expect(
       await canvas.findByRole('heading', { name: '한국 고객지원 운영시간' }),
     ).toBeVisible()
-    await userEvent.click(
-      canvas.getByRole('button', { name: '새 version 작성' }),
-    )
+    const newVersionButton = await canvas.findByRole('button', {
+      name: '새 version 작성',
+    })
+    await waitFor(() => expect(newVersionButton).toBeEnabled())
+    await userEvent.click(newVersionButton)
     await expect(
       canvas.getByRole('heading', {
         name: '한국 고객지원 운영시간 새 version',
@@ -131,6 +133,51 @@ export const VersionReviewAndEdit: Story = {
     await expect(
       canvas.getAllByRole('button', { name: '시간 구간 제거' }),
     ).toHaveLength(6)
+  },
+}
+
+export const AmbiguousVersionSave: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/admin/business-schedules', () =>
+          HttpResponse.json([schedule]),
+        ),
+        http.get(
+          `/api/v1/admin/business-schedules/${schedule.id}/versions`,
+          () => HttpResponse.json([schedule]),
+        ),
+        http.get('/api/v1/agent/csrf', () =>
+          HttpResponse.json({
+            token: 'storybook-csrf',
+            headerName: 'X-CSRF-TOKEN',
+          }),
+        ),
+        http.post(
+          `/api/v1/admin/business-schedules/${schedule.id}/versions`,
+          () => HttpResponse.json({ status: 503 }, { status: 503 }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '시간표 관리' }),
+    )
+    const newVersionButton = await canvas.findByRole('button', {
+      name: '새 version 작성',
+    })
+    await waitFor(() => expect(newVersionButton).toBeEnabled())
+    await userEvent.click(newVersionButton)
+    await userEvent.click(
+      canvas.getByRole('button', { name: '새 version 저장' }),
+    )
+    await expect(
+      await canvas.findByText('시간표 저장 결과를 확인할 수 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '새 version 저장' }),
+    ).toBeDisabled()
   },
 }
 

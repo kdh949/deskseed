@@ -83,6 +83,7 @@ export function AdminGroupsPage() {
     mutationFn: disableGroup,
     onSuccess: async () => {
       setSelectedGroup(null)
+      setRemoveCandidate(null)
       setDisableOpen(false)
       await refreshGroups()
     },
@@ -110,6 +111,10 @@ export function AdminGroupsPage() {
       (group) => group.id === selectedGroup.id,
     )
     if (current) setSelectedGroup(current)
+    else {
+      setSelectedGroup(null)
+      setRemoveCandidate(null)
+    }
   }, [groupsQuery.data, selectedGroup])
 
   if (groupsQuery.isPending) {
@@ -171,6 +176,19 @@ export function AdminGroupsPage() {
   const activeStaff = (staffQuery.data?.items ?? []).filter(
     (staff) => staff.status === 'ACTIVE' && !memberIds.has(staff.id),
   )
+  const selectedRemoveCandidate =
+    selectedGroup && removeCandidate?.groupId === selectedGroup.id
+      ? removeCandidate
+      : null
+  const closeSelectedGroup = () => {
+    setSelectedGroup(null)
+    setRemoveCandidate(null)
+    setDisableOpen(false)
+  }
+  const changeGroupPage = (nextPage: number) => {
+    setPage(nextPage)
+    closeSelectedGroup()
+  }
 
   return (
     <main aria-label="그룹 관리" className="admin-page">
@@ -255,6 +273,7 @@ export function AdminGroupsPage() {
                         aria-expanded={selectedGroup?.id === group.id}
                         onClick={() => {
                           setSelectedGroup(group)
+                          setRemoveCandidate(null)
                           setRenamedGroup(group.name)
                           setNewMemberId('')
                           setGroupValidationError(null)
@@ -275,7 +294,7 @@ export function AdminGroupsPage() {
           <div className="admin-inline-actions">
             <DsButton
               disabled={page === 0}
-              onClick={() => setPage((current) => current - 1)}
+              onClick={() => changeGroupPage(page - 1)}
               tone="secondary"
             >
               이전 페이지
@@ -283,7 +302,7 @@ export function AdminGroupsPage() {
             <span className="admin-muted">{`${page + 1} / ${groupPage.totalPages} 페이지`}</span>
             <DsButton
               disabled={page + 1 >= groupPage.totalPages}
-              onClick={() => setPage((current) => current + 1)}
+              onClick={() => changeGroupPage(page + 1)}
               tone="secondary"
             >
               다음 페이지
@@ -306,7 +325,7 @@ export function AdminGroupsPage() {
                   : '비활성 그룹'}
               </p>
             </div>
-            <DsButton onClick={() => setSelectedGroup(null)} tone="secondary">
+            <DsButton onClick={closeSelectedGroup} tone="secondary">
               닫기
             </DsButton>
           </div>
@@ -390,7 +409,7 @@ export function AdminGroupsPage() {
                                 <td>
                                   <DsButton
                                     aria-expanded={
-                                      removeCandidate?.staffId ===
+                                      selectedRemoveCandidate?.staffId ===
                                       member.staffId
                                     }
                                     onClick={() => setRemoveCandidate(member)}
@@ -569,19 +588,19 @@ export function AdminGroupsPage() {
               </p>
             </Notification>
           )}
-          {removeCandidate ? (
+          {selectedRemoveCandidate ? (
             <div
               className="admin-confirmation"
               role="group"
               aria-label="구성원 제거 최종 확인"
             >
-              <p>{`${removeCandidate.staffDisplayName}을(를) 이 그룹에서 제거할까요?`}</p>
+              <p>{`${selectedRemoveCandidate.staffDisplayName}을(를) ${selectedGroup.name} 그룹에서 제거할까요?`}</p>
               <DsButton
                 disabled={removeMemberMutation.isPending}
                 onClick={() =>
                   removeMemberMutation.mutate({
-                    groupId: removeCandidate.groupId,
-                    staffId: removeCandidate.staffId,
+                    groupId: selectedRemoveCandidate.groupId,
+                    staffId: selectedRemoveCandidate.staffId,
                   })
                 }
                 tone="primary"

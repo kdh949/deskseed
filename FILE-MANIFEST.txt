@@ -126,9 +126,9 @@ b1b7618986dc18412b85ca5f502cb76ca466aa12499663fd8ee25ac6a7c48d52        2875  do
 d157f2305cfc4523afe5d0832e422cba92aff4c9c741e15b3ad0dad6c0dd7401        6854  docs/evidence/p0/FE-P0-ADMIN-OPS.md
 6af4f48284da11fa4f2fbfddf28fbf97fe11897ffa405106aa79210dfe94dbb1        7133  docs/evidence/p0/FE-P0-AGENT-WRITE.md
 8cba04d2e75735fb15bb7a496f81e341cc831268ac99d9adff581438429151ae        6460  docs/evidence/p0/FE-P0-CUSTOMER.md
-b9ac0cf9f009af7cfdd823ab573a267a18f83c452ed4f35207e00de3149e8497        8348  docs/evidence/p0/FE-P0-GOAL-COMPLETION-AUDIT.md
+0e4b88be09acf3d54c9fa254fce569f48210c84787bbf08c2b6bf89db3deb580       10811  docs/evidence/p0/FE-P0-GOAL-COMPLETION-AUDIT.md
 34f815ce5f30363bcad22d002c31b78dc20b07e002e6bebbf2c1093360fdfb9d       16510  docs/evidence/p0/backend-goal-progress.md
-bb89dc0ee62d51644d2e8c5f11b8706558d210bffc3c792fd38c2ec094899066        5720  docs/evidence/p0/frontend-goal-progress.md
+c0fd28b15664e90c1768dbabf3ac3f0dd517732fd8d011cd6cea5dfec5c91706        6525  docs/evidence/p0/frontend-goal-progress.md
 4d249184a8ab250e1e5366c3327f7febad7c6152b63a70c4293a3aea05b2b779        2173  docs/evidence/release/README.md
 35d6ff0b3a7790b15a4c71750b0397a0af139a32f66eb9b3abe8ad942d10e113        4379  docs/evidence/release/operations/2026-08-12-macos-arm64-cleanup-smoke.md
 b1db656e42be6f7677fa693047181f064b358a257540c7ffca592176f1120ebf       12229  docs/evidence/release/operations/2026-08-12-macos-arm64-full.md

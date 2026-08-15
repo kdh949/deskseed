@@ -36,6 +36,7 @@ import {
   RetryButton,
   ScreenState,
 } from '../../design-system'
+import { recoverAmbiguousAdminMutationOutcome } from './adminMutationRecovery'
 
 const WEEKDAYS: Array<{ label: string; value: BusinessWeekday }> = [
   { value: 'MONDAY', label: '월요일' },
@@ -96,6 +97,7 @@ export function AdminBusinessSchedulesPage() {
   const [draft, setDraft] =
     useState<BusinessScheduleDefinition>(blankDefinition)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveOutcomeUnknown, setSaveOutcomeUnknown] = useState(false)
   const [previewStart, setPreviewStart] = useState('')
   const [previewEnd, setPreviewEnd] = useState('')
   const [previewMinutes, setPreviewMinutes] = useState('')
@@ -140,7 +142,13 @@ export function AdminBusinessSchedulesPage() {
       setSelectedVersionNumber(schedule.version)
       setDraft(copyDefinition(schedule))
       setSaveError(null)
+      setSaveOutcomeUnknown(false)
       await refresh()
+    },
+    onError: async (error) => {
+      setSaveOutcomeUnknown(
+        await recoverAmbiguousAdminMutationOutcome(error, refresh),
+      )
     },
   })
   const previewMutation = useMutation({ mutationFn: previewBusinessSchedule })
@@ -224,6 +232,7 @@ export function AdminBusinessSchedulesPage() {
 
   const submitSchedule = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (saveOutcomeUnknown) return
     if (!draft.name.trim() || !draft.timeZone.trim()) {
       setSaveError('시간표 이름과 IANA timezone을 입력해 주세요.')
       return
@@ -254,21 +263,30 @@ export function AdminBusinessSchedulesPage() {
   }
 
   const openNewSchedule = () => {
+    if (saveOutcomeUnknown) return
     setSelectedSchedule(null)
     setSelectedVersionNumber(null)
     setDraft(blankDefinition())
     setEditorOpen(true)
     setSaveError(null)
+    setSaveOutcomeUnknown(false)
     saveMutation.reset()
     previewMutation.reset()
   }
   const openNewVersion = () => {
     if (!selectedVersion) return
+    if (saveOutcomeUnknown) return
     setDraft(copyDefinition(selectedVersion))
     setEditorOpen(true)
     setSaveError(null)
+    setSaveOutcomeUnknown(false)
     saveMutation.reset()
     previewMutation.reset()
+  }
+  const closeEditor = () => {
+    setEditorOpen(false)
+    setSaveOutcomeUnknown(false)
+    saveMutation.reset()
   }
 
   return (
@@ -282,7 +300,11 @@ export function AdminBusinessSchedulesPage() {
           </p>
         </div>
         <div className="admin-inline-actions">
-          <DsButton onClick={openNewSchedule} tone="primary">
+          <DsButton
+            disabled={saveOutcomeUnknown}
+            onClick={openNewSchedule}
+            tone="primary"
+          >
             새 영업 시간표
           </DsButton>
           <DsButton
@@ -334,7 +356,7 @@ export function AdminBusinessSchedulesPage() {
                         onClick={() => {
                           setSelectedSchedule(schedule)
                           setSelectedVersionNumber(schedule.version)
-                          setEditorOpen(false)
+                          closeEditor()
                           setActivationOpen(false)
                         }}
                         tone="secondary"
@@ -362,7 +384,7 @@ export function AdminBusinessSchedulesPage() {
             </div>
             <div className="admin-inline-actions">
               <DsButton
-                disabled={versionsQuery.isPending}
+                disabled={versionsQuery.isPending || saveOutcomeUnknown}
                 onClick={openNewVersion}
                 tone="primary"
               >
@@ -486,7 +508,7 @@ export function AdminBusinessSchedulesPage() {
               </h2>
               <p>저장 전 미리보기는 입력을 저장하거나 활성화하지 않습니다.</p>
             </div>
-            <DsButton onClick={() => setEditorOpen(false)} tone="secondary">
+            <DsButton onClick={closeEditor} tone="secondary">
               작성 닫기
             </DsButton>
           </div>
@@ -587,7 +609,19 @@ export function AdminBusinessSchedulesPage() {
             {saveError ? (
               <Notification title={saveError} tone="warning" />
             ) : null}
-            {saveMutation.isError ? (
+            {saveOutcomeUnknown ? (
+              <Notification
+                title="시간표 저장 결과를 확인할 수 없습니다."
+                tone="warning"
+              >
+                <p>
+                  서버 응답이 유실되었을 수 있어 같은 요청을 다시 제출하지
+                  않습니다. 시간표 목록과 version 이력을 다시 읽었습니다. 서버
+                  상태를 확인한 뒤 이 작성 화면을 닫고 다음 작업을 선택해
+                  주세요.
+                </p>
+              </Notification>
+            ) : saveMutation.isError ? (
               <ScheduleMutationNotification
                 action="시간표를 저장"
                 error={saveMutation.error}
@@ -601,7 +635,7 @@ export function AdminBusinessSchedulesPage() {
             ) : null}
             <div className="admin-form-actions">
               <DsButton
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || saveOutcomeUnknown}
                 tone="primary"
                 type="submit"
               >

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { AdminFirstReplySlaPage } from './AdminFirstReplySlaPage'
 
 const schedule = {
@@ -167,9 +167,11 @@ export const VersionReviewAndEdit: Story = {
         name: '결제 문의 기본 First Reply SLA',
       }),
     ).toBeVisible()
-    await userEvent.click(
-      canvas.getByRole('button', { name: '새 version 작성' }),
-    )
+    const newVersionButton = await canvas.findByRole('button', {
+      name: '새 version 작성',
+    })
+    await waitFor(() => expect(newVersionButton).toBeEnabled())
+    await userEvent.click(newVersionButton)
     await expect(
       canvas.getByRole('heading', {
         name: '결제 문의 기본 First Reply SLA 새 version',
@@ -178,6 +180,67 @@ export const VersionReviewAndEdit: Story = {
     await expect(
       canvas.getByRole('checkbox', { name: '고객 답변 대기' }),
     ).toBeChecked()
+  },
+}
+
+export const AmbiguousVersionSave: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/admin/sla-policies', () =>
+          HttpResponse.json([policy]),
+        ),
+        http.get(`/api/v1/admin/sla-policies/${policy.id}/versions`, () =>
+          HttpResponse.json([policy]),
+        ),
+        http.get('/api/v1/admin/business-schedules', () =>
+          HttpResponse.json([schedule]),
+        ),
+        http.get('/api/v1/admin/groups', () => HttpResponse.json([group])),
+        http.get('/api/v1/analytics/first-reply-sla', () =>
+          HttpResponse.json({
+            metric: 'FIRST_REPLY',
+            calculationVersion: 'v1',
+            active: 3,
+            paused: 1,
+            achieved: 20,
+            breached: 2,
+            cancelled: 0,
+            noPolicy: 1,
+            achievedRateDenominator: 22,
+            achievedRate: 0.909,
+          }),
+        ),
+        http.get('/api/v1/agent/csrf', () =>
+          HttpResponse.json({
+            token: 'storybook-csrf',
+            headerName: 'X-CSRF-TOKEN',
+          }),
+        ),
+        http.post(`/api/v1/admin/sla-policies/${policy.id}/versions`, () =>
+          HttpResponse.json({ status: 503 }, { status: 503 }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'SLA 정책 관리' }),
+    )
+    const newVersionButton = await canvas.findByRole('button', {
+      name: '새 version 작성',
+    })
+    await waitFor(() => expect(newVersionButton).toBeEnabled())
+    await userEvent.click(newVersionButton)
+    await userEvent.click(
+      canvas.getByRole('button', { name: '새 version 저장' }),
+    )
+    await expect(
+      await canvas.findByText('SLA 정책 저장 결과를 확인할 수 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '새 version 저장' }),
+    ).toBeDisabled()
   },
 }
 

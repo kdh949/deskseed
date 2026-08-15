@@ -118,7 +118,7 @@ export function AdminCustomerAccessModePage() {
           </p>
         </div>
         <DsButton
-          disabled={settingsQuery.isFetching}
+          disabled={settingsQuery.isFetching || updateMutation.isPending}
           onClick={() => void settingsQuery.refetch()}
           tone="secondary"
         >
@@ -144,6 +144,7 @@ export function AdminCustomerAccessModePage() {
           <label className="admin-field" htmlFor="customer-access-mode">
             <span>고객 접근 모드</span>
             <select
+              disabled={updateMutation.isPending}
               id="customer-access-mode"
               onChange={(event) => {
                 setLocalMode(event.target.value as CustomerAccessMode)

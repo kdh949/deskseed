@@ -30,6 +30,7 @@ import type {
   FirstReplySlaPolicyDefinition,
   FirstReplySlaPreview,
   FirstReplySlaPreviewInput,
+  SupportGroup,
   TicketChannel,
   TicketPriority,
 } from '../../api/types'
@@ -39,6 +40,7 @@ import {
   RetryButton,
   ScreenState,
 } from '../../design-system'
+import { recoverAmbiguousAdminMutationOutcome } from './adminMutationRecovery'
 
 const PRIORITIES: Array<{ label: string; value: TicketPriority }> = [
   { value: 'LOW', label: '낮음' },
@@ -65,6 +67,9 @@ const PAUSE_STATUSES: Array<{
   { value: 'ON_HOLD', label: '보류' },
 ]
 
+const SLA_GROUP_PAGE_SIZE = 100
+const SLA_GROUP_PAGE_CONCURRENCY = 4
+
 function blankPolicy(scheduleId = ''): FirstReplySlaPolicyDefinition {
   return {
     name: '',
@@ -89,6 +94,36 @@ function copyPolicy(
   }
 }
 
+async function listAllSlaGroups(): Promise<SupportGroup[]> {
+  const firstPage = await listGroups(0, SLA_GROUP_PAGE_SIZE)
+  const additionalPages: SupportGroup[][] = []
+  for (
+    let page = 1;
+    page < firstPage.totalPages;
+    page += SLA_GROUP_PAGE_CONCURRENCY
+  ) {
+    const pages = await Promise.all(
+      Array.from(
+        {
+          length: Math.min(
+            SLA_GROUP_PAGE_CONCURRENCY,
+            firstPage.totalPages - page,
+          ),
+        },
+        (_, offset) => listGroups(page + offset, SLA_GROUP_PAGE_SIZE),
+      ),
+    )
+    additionalPages.push(...pages.map((result) => result.items))
+  }
+  return Array.from(
+    new Map(
+      [firstPage.items, ...additionalPages]
+        .flat()
+        .map((group) => [group.id, group]),
+    ).values(),
+  )
+}
+
 export function AdminFirstReplySlaPage() {
   const queryClient = useQueryClient()
   const [selectedPolicy, setSelectedPolicy] =
@@ -100,6 +135,7 @@ export function AdminFirstReplySlaPage() {
   const [draft, setDraft] =
     useState<FirstReplySlaPolicyDefinition>(blankPolicy())
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveOutcomeUnknown, setSaveOutcomeUnknown] = useState(false)
   const [activationOpen, setActivationOpen] = useState(false)
   const [previewPriority, setPreviewPriority] =
     useState<TicketPriority>('NORMAL')
@@ -119,7 +155,7 @@ export function AdminFirstReplySlaPage() {
   })
   const groupsQuery = useQuery({
     queryKey: ['admin-first-reply-sla-groups'],
-    queryFn: () => listGroups(0, 100),
+    queryFn: listAllSlaGroups,
     retry: false,
   })
   const analyticsQuery = useQuery({
@@ -166,7 +202,13 @@ export function AdminFirstReplySlaPage() {
       setSelectedVersionNumber(policy.version)
       setDraft(copyPolicy(policy))
       setSaveError(null)
+      setSaveOutcomeUnknown(false)
       await refresh()
+    },
+    onError: async (error) => {
+      setSaveOutcomeUnknown(
+        await recoverAmbiguousAdminMutationOutcome(error, refresh),
+      )
     },
   })
   const activateMutation = useMutation({
@@ -251,11 +293,16 @@ export function AdminFirstReplySlaPage() {
   }
 
   const scheduleOptions = schedulesQuery.data ?? []
-  const groupOptions = (groupsQuery.data?.items ?? []).filter(
+  const allGroupOptions = groupsQuery.data ?? []
+  const groupOptions = allGroupOptions.filter(
     (group) => group.status === 'ACTIVE',
   )
+  const preservedConditionGroup = draft.conditions.groupId
+    ? allGroupOptions.find((group) => group.id === draft.conditions.groupId)
+    : undefined
   const submitPolicy = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (saveOutcomeUnknown) return
     if (!draft.name.trim() || !draft.scheduleId) {
       setSaveError('정책 이름과 적용할 영업 시간표를 선택해 주세요.')
       return
@@ -271,21 +318,30 @@ export function AdminFirstReplySlaPage() {
     })
   }
   const openNewPolicy = () => {
+    if (saveOutcomeUnknown) return
     setSelectedPolicy(null)
     setSelectedVersionNumber(null)
     setDraft(blankPolicy(scheduleOptions[0]?.id ?? ''))
     setEditorOpen(true)
     setSaveError(null)
+    setSaveOutcomeUnknown(false)
     saveMutation.reset()
     previewMutation.reset()
   }
   const openNewVersion = () => {
     if (!selectedVersion) return
+    if (saveOutcomeUnknown) return
     setDraft(copyPolicy(selectedVersion))
     setEditorOpen(true)
     setSaveError(null)
+    setSaveOutcomeUnknown(false)
     saveMutation.reset()
     previewMutation.reset()
+  }
+  const closeEditor = () => {
+    setEditorOpen(false)
+    setSaveOutcomeUnknown(false)
+    saveMutation.reset()
   }
 
   return (
@@ -300,7 +356,11 @@ export function AdminFirstReplySlaPage() {
         </div>
         <div className="admin-inline-actions">
           <DsButton
-            disabled={schedulesQuery.isPending || schedulesQuery.isError}
+            disabled={
+              schedulesQuery.isPending ||
+              schedulesQuery.isError ||
+              saveOutcomeUnknown
+            }
             onClick={openNewPolicy}
             tone="primary"
           >
@@ -376,7 +436,7 @@ export function AdminFirstReplySlaPage() {
                         onClick={() => {
                           setSelectedPolicy(policy)
                           setSelectedVersionNumber(policy.version)
-                          setEditorOpen(false)
+                          closeEditor()
                           setActivationOpen(false)
                         }}
                         tone="secondary"
@@ -404,7 +464,7 @@ export function AdminFirstReplySlaPage() {
             </div>
             <div className="admin-inline-actions">
               <DsButton
-                disabled={versionsQuery.isPending}
+                disabled={versionsQuery.isPending || saveOutcomeUnknown}
                 onClick={openNewVersion}
                 tone="primary"
               >
@@ -458,7 +518,7 @@ export function AdminFirstReplySlaPage() {
               </ul>
               {selectedVersion ? (
                 <SlaReadModel
-                  groupOptions={groupOptions}
+                  groupOptions={allGroupOptions}
                   onActivate={() => setActivationOpen(true)}
                   policy={selectedVersion}
                   showActivate={
@@ -530,7 +590,7 @@ export function AdminFirstReplySlaPage() {
                 만들지 않습니다.
               </p>
             </div>
-            <DsButton onClick={() => setEditorOpen(false)} tone="secondary">
+            <DsButton onClick={closeEditor} tone="secondary">
               작성 닫기
             </DsButton>
           </div>
@@ -611,6 +671,16 @@ export function AdminFirstReplySlaPage() {
                       value={draft.conditions.groupId ?? ''}
                     >
                       <option value="">모든 그룹</option>
+                      {draft.conditions.groupId &&
+                      !groupOptions.some(
+                        (group) => group.id === draft.conditions.groupId,
+                      ) ? (
+                        <option disabled value={draft.conditions.groupId}>
+                          {preservedConditionGroup
+                            ? `현재 조건: ${preservedConditionGroup.name} (비활성)`
+                            : `현재 조건: ${draft.conditions.groupId} (조회 불가)`}
+                        </option>
+                      ) : null}
                       {groupOptions.map((group) => (
                         <option key={group.id} value={group.id}>
                           {group.name}
@@ -706,7 +776,19 @@ export function AdminFirstReplySlaPage() {
                 {saveError ? (
                   <Notification title={saveError} tone="warning" />
                 ) : null}
-                {saveMutation.isError ? (
+                {saveOutcomeUnknown ? (
+                  <Notification
+                    title="SLA 정책 저장 결과를 확인할 수 없습니다."
+                    tone="warning"
+                  >
+                    <p>
+                      서버 응답이 유실되었을 수 있어 같은 요청을 다시 제출하지
+                      않습니다. 정책 목록과 version 이력을 다시 읽었습니다. 서버
+                      상태를 확인한 뒤 이 작성 화면을 닫고 다음 작업을 선택해
+                      주세요.
+                    </p>
+                  </Notification>
+                ) : saveMutation.isError ? (
                   <SlaMutationNotification
                     action="SLA 정책을 저장"
                     error={saveMutation.error}
@@ -720,7 +802,7 @@ export function AdminFirstReplySlaPage() {
                 ) : null}
                 <div className="admin-form-actions">
                   <DsButton
-                    disabled={saveMutation.isPending}
+                    disabled={saveMutation.isPending || saveOutcomeUnknown}
                     tone="primary"
                     type="submit"
                   >

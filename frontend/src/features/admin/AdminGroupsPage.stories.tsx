@@ -28,6 +28,31 @@ const staff = {
   lastLoginAt: null,
 }
 
+const secondGroup = {
+  id: '33333333-3333-4333-8333-333333333333',
+  name: '배송 지원',
+  status: 'ACTIVE',
+  memberCount: 1,
+}
+
+const secondMember = {
+  groupId: secondGroup.id,
+  staffId: '44444444-4444-4444-8444-444444444444',
+  staffDisplayName: '상담사 B',
+  role: 'AGENT',
+}
+
+const secondStaff = {
+  id: secondMember.staffId,
+  email: 'agent-b@example.test',
+  displayName: secondMember.staffDisplayName,
+  role: secondMember.role,
+  status: 'ACTIVE',
+  memberships: [{ id: secondGroup.id, name: secondGroup.name }],
+  auditAuthorities: [],
+  lastLoginAt: null,
+}
+
 const handlers = [
   http.get('/api/v1/admin/groups', () => HttpResponse.json([group])),
   http.get(`/api/v1/admin/groups/${group.id}/members`, () =>
@@ -88,6 +113,48 @@ export const ManageMembers: Story = {
     await expect(
       canvas.getByRole('group', { name: '구성원 제거 최종 확인' }),
     ).toBeVisible()
+  },
+}
+
+export const SwitchingGroupsClearsMemberRemoval: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/admin/groups', () =>
+          HttpResponse.json([group, secondGroup]),
+        ),
+        http.get(`/api/v1/admin/groups/${group.id}/members`, () =>
+          HttpResponse.json([member]),
+        ),
+        http.get(`/api/v1/admin/groups/${secondGroup.id}/members`, () =>
+          HttpResponse.json([secondMember]),
+        ),
+        http.get('/api/v1/admin/staff', () =>
+          HttpResponse.json([staff, secondStaff]),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    const manageButtons = await canvas.findAllByRole('button', {
+      name: '그룹 관리',
+    })
+    await userEvent.click(manageButtons[0]!)
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '구성원 제거' }),
+    )
+    await expect(
+      canvas.getByRole('group', { name: '구성원 제거 최종 확인' }),
+    ).toBeVisible()
+    await userEvent.click(
+      canvas.getAllByRole('button', { name: '그룹 관리' })[1]!,
+    )
+    await expect(
+      await canvas.findByRole('heading', { name: secondGroup.name }),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('group', { name: '구성원 제거 최종 확인' }),
+    ).not.toBeInTheDocument()
   },
 }
 

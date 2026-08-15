@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { expect, userEvent } from 'storybook/test'
 import { AdminCustomerAccessModePage } from './AdminCustomerAccessModePage'
 
@@ -53,6 +53,49 @@ export const SavePolicy: Story = {
       'REGISTRATION_OPTIONAL',
     )
     await userEvent.click(canvas.getByRole('button', { name: '정책 저장' }))
+    await expect(
+      await canvas.findByText('고객 접근 정책을 저장했습니다.'),
+    ).toBeVisible()
+  },
+}
+
+export const SaveLocksSelection: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/admin/settings/customer-access-mode', () =>
+          HttpResponse.json(setting),
+        ),
+        http.get('/api/v1/agent/csrf', () =>
+          HttpResponse.json({
+            token: 'storybook-csrf',
+            headerName: 'X-CSRF-TOKEN',
+          }),
+        ),
+        http.put('/api/v1/admin/settings/customer-access-mode', async () => {
+          await delay(250)
+          return HttpResponse.json({
+            ...setting,
+            mode: 'REGISTRATION_OPTIONAL',
+            version: 4,
+          })
+        }),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('heading', { name: '고객 접근 모드' }),
+    ).toBeVisible()
+    await userEvent.selectOptions(
+      canvas.getByLabelText('고객 접근 모드'),
+      'REGISTRATION_OPTIONAL',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '정책 저장' }))
+    await expect(canvas.getByLabelText('고객 접근 모드')).toBeDisabled()
+    await expect(
+      canvas.getByRole('button', { name: '서버 값 새로고침' }),
+    ).toBeDisabled()
     await expect(
       await canvas.findByText('고객 접근 정책을 저장했습니다.'),
     ).toBeVisible()
