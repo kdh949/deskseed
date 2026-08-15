@@ -123,6 +123,7 @@ describe('customer request API client', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/customer/csrf', {
       credentials: 'include',
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     })
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
@@ -229,7 +230,9 @@ describe('customer request API client', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/requests/1042', {
       headers: { 'X-Request-Access-Token': 'opaque-secret-token' },
+      credentials: 'include',
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     })
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
       'requests/1042?access=',

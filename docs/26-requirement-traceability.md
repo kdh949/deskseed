@@ -29,8 +29,8 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | `CustomerMagicLinkAuthIntegrationTest`의 expiry/replay/race/enumeration/session/CSRF/rollback, `MailpitApiE2ETest`의 실제 전달·단일 소비 |
-| REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | `CustomerRequestPortalIntegrationTest`의 request-token/signed-grant 성공·tamper·expiry·replay·different-email 및 ownership/audit 원자성 |
+| REQ-AUTH-001 | 고객 계정 인증은 DB-backed single-use email magic link로 시작한다 | IMPLEMENTATION_READY | P1 | 37, 49, 53 | `CustomerMagicLinkAuthIntegrationTest`의 expiry/replay/race/enumeration/session/CSRF/rollback, `MailpitApiE2ETest`의 실제 전달·단일 소비, `customer-portal.spec.ts` magic-link→My Requests→logout |
+| REQ-AUTH-002 | 같은 이메일만으로 익명 티켓을 자동 claim하지 않는다 | IMPLEMENTATION_READY | P1 | 37, 53 | `CustomerRequestPortalIntegrationTest`의 request-token/signed-grant 성공·tamper·expiry·replay·different-email 및 ownership/audit 원자성; FE-P0-CUSTOMER는 claim UI를 만들지 않고 matching email을 proof로 사용하지 않음 |
 | REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session 또는 browser expected-actor 불일치는 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 25, 30, 31, 33, 35 ADR, 39, 52 | `StaffAuthIntegrationTest`의 invalid/mismatch·activity/controller/mutation/audit 비진입, `client.test.ts`의 held-CSRF actor snapshot, `StaffSessionContext.test.tsx`의 교차 탭 owner 보존, `staff-auth-admin.spec.ts` |
 | REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
 | REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | `AgentTicketReadIntegrationTest`의 cross-group queue/direct URL 및 inactive/customer 거부; 검색은 후속 |
@@ -40,14 +40,14 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E |
+| REQ-TKT-001 | 최초 채널은 고객 웹 문의 폼이다 | IMPLEMENTATION_READY | M1 | 01, 04, 30, 37 | 익명 접수 E2E, FE-P0-CUSTOMER `/requests/new` browser flow |
 | REQ-TKT-002 | 익명 고객은 이름·이메일로 접수할 수 있다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 37, ADR 0006 | `PublicRequestIntegrationTest`의 동일 미검증 이메일별 Customer 격리·동시 생성·토큰 교차 접근 거부, `PublicRequestRateLimitIntegrationTest`의 대상/client/global PostgreSQL bucket·forwarded spoof/fail-closed·429/503, `Issue24RemediationMigrationTest`의 V15→V17 verified-only unique constraint |
-| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37, 39 ADR, 55 | `PublicRequestIntegrationTest`의 token-scoped 익명 PUBLIC follow-up/replay/mismatch·expiry·rollback과 `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection; UI는 `DEFERRED_UI` |
+| REQ-TKT-003 | 고객이 자신의 요청과 공개 답변을 조회할 수 있다 | IMPLEMENTATION_READY | M1/M6 | 01, 30, 37, 39 ADR, 55 | `PublicRequestIntegrationTest`의 token-scoped 익명 PUBLIC follow-up/replay/mismatch·expiry·rollback과 `CustomerRequestPortalIntegrationTest` 고객 A/B 격리·PUBLIC-only projection; FE-P0-CUSTOMER anonymous/account detail과 `customer-portal.spec.ts` |
 | REQ-TKT-004 | 관리자 설정으로 익명·선택 가입·가입 필수 모드를 바꿀 수 있다 | IMPLEMENTATION_READY | P1 | 01, 37, 52, 53, 55 | `CustomerAccessModeIntegrationTest` submit/view 행렬·optimistic conflict·감사 원자성, `customerAuthClient.test.ts`; UI는 `DEFERRED_UI` |
-| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53, 55 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox와 `PublicRequestIntegrationTest`의 anonymous capability follow-up; UI는 `DEFERRED_UI` |
+| REQ-TKT-005 | email magic link로 로그인하고 기존 익명 티켓을 명시적으로 연결한다 | IMPLEMENTATION_READY | P1 | 02, 37, 49, 53, 55 | `CustomerRequestPortalIntegrationTest` single-use proof claim·격리·PUBLIC follow-up audit/outbox와 `PublicRequestIntegrationTest`의 anonymous capability follow-up; FE-P0-CUSTOMER magic-link/session UI는 구현했고 explicit anonymous-ticket claim UI는 `DEFERRED_UI` |
 | REQ-TKT-006 | 문의 본문은 Ticket.description이 아니라 첫 PUBLIC Comment다 | IMPLEMENTATION_READY | M1 | 01, 02, 32, 34 | TKT-001 |
 | REQ-TKT-007 | 상담사는 공개 답변과 내부 메모를 모두 본다 | IMPLEMENTATION_READY | M3 | 01, 30, 33, 55 | `AgentTicketReadIntegrationTest`의 PUBLIC/INTERNAL projection, exact ON_HOLD/CLOSED status, createdAt 및 server-authorized capability; `AgentTicketWorkspacePage.test.tsx`, Workspace projection/Storybook의 PUBLIC/INTERNAL 구분 |
-| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37, 55 | 고객 API PUBLIC-only integration test와 token-scoped anonymous follow-up regression, `customerPortalClient.test.ts`; UI는 `DEFERRED_UI` |
+| REQ-TKT-008 | 고객은 공개 코멘트만 본다 | IMPLEMENTATION_READY | M1/M3 | 04, 30, 33, 37, 55 | 고객 API PUBLIC-only integration test와 token-scoped anonymous follow-up regression, `customerPortalClient.test.ts`, FE-P0-CUSTOMER allowlist projection/DOM/E2E |
 | REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다(`/agent/tickets/new`). 검색으로 찾은 기존 고객을 `customerId`로 재사용하거나, 생성 시점에 활성 그룹/구성원(`GET /api/v1/agent/assignment-options`)을 지정할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39, 55 | `AgentTicketCommandIntegrationTest`(customerId 재사용/미존재/혼합 요청 포함), `AgentTicketReadIntegrationTest`(assignment-options), `CreateAgentTicketPage.test.tsx` |
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34, 55 | transition/permission integration tests, `ticketEditorModel.test.ts`; 운영 Workspace는 읽기 전용 |
 | REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34, ADR 0038 | `TransferChildTicketIntegrationTest`의 active group/member 거부·원자적 rollback 및 `OrganizationConcurrencyIntegrationTest`의 ticket assignment/group disable 공유 잠금 |

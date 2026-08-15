@@ -27,7 +27,9 @@ test('removed and unknown routes use the canonical not-found state', async ({
   await expect(
     page.getByRole('heading', { name: '페이지를 찾을 수 없습니다.' }),
   ).toBeVisible()
-  await expect(page.getByRole('link', { name: '티켓 큐로 이동' })).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: '고객 지원 홈으로 이동' }),
+  ).toBeVisible()
 })
 
 test('SECURITY_AUDITOR remains denied from the Agent Workspace', async ({

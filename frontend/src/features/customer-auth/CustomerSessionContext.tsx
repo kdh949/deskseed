@@ -19,6 +19,7 @@ export type CustomerSessionStatus =
   'loading' | 'authenticated' | 'anonymous' | 'error'
 
 interface CustomerSessionValue {
+  acceptAuthenticatedCustomer: (customer: CurrentCustomer) => void
   customer: CurrentCustomer | null
   retry: () => Promise<void>
   signOut: () => Promise<void>
@@ -72,9 +73,32 @@ export function CustomerSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const acceptAuthenticatedCustomer = useCallback(
+    (current: CurrentCustomer) => {
+      requestVersion.current += 1
+      setCustomer(current)
+      setStatus('authenticated')
+    },
+    [],
+  )
+
   const value = useMemo(
-    () => ({ customer, retry: refresh, signOut, signingOut, status }),
-    [customer, refresh, signOut, signingOut, status],
+    () => ({
+      acceptAuthenticatedCustomer,
+      customer,
+      retry: refresh,
+      signOut,
+      signingOut,
+      status,
+    }),
+    [
+      acceptAuthenticatedCustomer,
+      customer,
+      refresh,
+      signOut,
+      signingOut,
+      status,
+    ],
   )
 
   return (

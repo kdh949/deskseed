@@ -19,6 +19,15 @@ function TestApp() {
 function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
+    if (url.endsWith('/api/v1/customer/me')) {
+      return new Response(
+        JSON.stringify({ title: 'Unauthorized', status: 401 }),
+        {
+          status: 401,
+          headers: { 'Content-Type': 'application/problem+json' },
+        },
+      )
+    }
     if (url.endsWith('/api/v1/agent/me')) {
       return new Response(
         JSON.stringify({
@@ -80,7 +89,7 @@ function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
 describe('App', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('redirects the root route to the Agent Queue', async () => {
+  it('renders the root route as the customer support home instead of the Agent Queue', async () => {
     vi.stubGlobal('fetch', sessionFetch('AGENT'))
     render(
       <DeskseedThemeProvider>
@@ -90,13 +99,14 @@ describe('App', () => {
       </DeskseedThemeProvider>,
     )
 
-    expect(await screen.findByRole('main', { name: '티켓 큐' })).toBeVisible()
-    expect(screen.getByRole('heading', { name: '내 티켓' })).toBeVisible()
     expect(
-      screen.getByRole('navigation', { name: '상담사 전역 탐색' }),
+      await screen.findByRole('heading', {
+        name: '문의부터 답변 확인까지 한곳에서',
+      }),
     ).toBeVisible()
+    expect(screen.getByRole('navigation', { name: '고객 탐색' })).toBeVisible()
     expect(
-      screen.queryByRole('navigation', { name: '주요 메뉴' }),
+      screen.queryByRole('navigation', { name: '상담사 전역 탐색' }),
     ).not.toBeInTheDocument()
   })
 

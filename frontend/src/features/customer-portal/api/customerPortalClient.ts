@@ -125,6 +125,7 @@ async function unsafeCustomerFetch(
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
+    referrerPolicy: 'no-referrer',
     headers: {
       'Content-Type': 'application/json',
       'X-CSRF-TOKEN': csrfBody.token,
@@ -137,6 +138,7 @@ async function customerFetch(path: string): Promise<Response> {
   return fetch(`${API_BASE_URL}${path}`, {
     credentials: 'include',
     cache: 'no-store',
+    referrerPolicy: 'no-referrer',
   })
 }
 

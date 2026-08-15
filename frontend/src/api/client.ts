@@ -458,6 +458,7 @@ export async function submitRequest(
     const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
       credentials: 'include',
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     })
     const csrfBody = await successfulResponseBody(csrfResponse)
     if (!isRecord(csrfBody) || !isNonBlankString(csrfBody.token)) {

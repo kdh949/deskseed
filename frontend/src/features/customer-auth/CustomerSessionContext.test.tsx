@@ -17,9 +17,55 @@ function SessionProbe() {
   )
 }
 
+function MagicLinkSessionProbe() {
+  const session = useCustomerSession()
+  return (
+    <section aria-label="매직 링크 고객 세션 검사">
+      <p>{session.status}</p>
+      <p>{session.customer?.displayName ?? 'anonymous'}</p>
+      <button
+        onClick={() =>
+          session.acceptAuthenticatedCustomer({
+            id: '11111111-1111-4111-8111-111111111111',
+            email: 'customer@example.test',
+            displayName: '매직 링크 고객',
+            verifiedAt: '2026-08-15T00:00:00Z',
+          })
+        }
+      >
+        매직 링크 세션 반영
+      </button>
+    </section>
+  )
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('CustomerSessionProvider', () => {
+  it('accepts a decoded magic-link session result without persisting a client token', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    )
+    const user = userEvent.setup()
+
+    render(
+      <CustomerSessionProvider>
+        <MagicLinkSessionProbe />
+      </CustomerSessionProvider>,
+    )
+
+    await screen.findByText('anonymous')
+    await user.click(
+      screen.getByRole('button', { name: '매직 링크 세션 반영' }),
+    )
+
+    expect(screen.getByText('매직 링크 고객')).toBeVisible()
+    expect(screen.getByText('authenticated')).toBeVisible()
+    expect(localStorage.length).toBe(0)
+    expect(sessionStorage.length).toBe(0)
+  })
+
   it('confirms the server session and clears local state only after CSRF-protected logout', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
