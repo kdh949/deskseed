@@ -330,6 +330,74 @@ class CustomerRequestPortalIntegrationTest {
             .andExpect(jsonPath("$.comments[1].body").value("추가 정보를 남깁니다."))
     }
 
+    @Test
+    fun `authenticated and token follow-ups share one lock order and replay a command without a deadlock`() {
+        val session = customerSession("follow-up-lock-order@example.com")
+        val request = submitAuthenticated(session, "동일 명령 동시 후속 답변")
+        val ticketId = ticketId(request.ticketNumber)
+        val commandId = UUID.randomUUID().toString()
+        val csrfToken = csrf(session.cookie)
+        val executor = Executors.newFixedThreadPool(2)
+        val ticketLock = requireNotNull(jdbcTemplate.dataSource).connection
+
+        try {
+            ticketLock.autoCommit = false
+            ticketLock.prepareStatement("select id from tickets where id = ? for update").use { statement ->
+                statement.setObject(1, ticketId)
+                statement.executeQuery().use { resultSet -> assertThat(resultSet.next()).isTrue() }
+            }
+
+            val anonymous = executor.submit(
+                Callable {
+                    addAnonymousFollowUp(
+                        ticketNumber = request.ticketNumber,
+                        accessToken = request.accessToken,
+                        commandId = commandId,
+                        body = "동시에 저장되는 공개 후속 답변",
+                    ).andReturn().response.status
+                },
+            )
+            awaitTicketLockWaiters(1)
+
+            val authenticated = executor.submit(
+                Callable {
+                    addFollowUp(
+                        session = session,
+                        ticketNumber = request.ticketNumber,
+                        commandId = commandId,
+                        body = "동시에 저장되는 공개 후속 답변",
+                        csrfToken = csrfToken,
+                    ).andReturn().response.status
+                },
+            )
+            awaitTicketLockWaiters(2)
+            ticketLock.commit()
+
+            assertThat(listOf(anonymous.get(20, TimeUnit.SECONDS), authenticated.get(20, TimeUnit.SECONDS)))
+                .containsOnly(201)
+        } finally {
+            runCatching(ticketLock::rollback)
+            ticketLock.close()
+            executor.shutdownNow()
+        }
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ?",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+        assertThat(ticketAuditEventCount(request.ticketNumber, "COMMENT_CREATED")).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from outbound_mail_intents where ticket_id = ?",
+                Long::class.java,
+                ticketId,
+            ),
+        ).isEqualTo(2)
+    }
+
     private fun claimWithAccessToken(session: CustomerSessionFixture, ticketNumber: Long, token: String) =
         mockMvc.perform(
             post("/api/v1/customer/requests/{ticketNumber}/claim", ticketNumber)
@@ -369,10 +437,23 @@ class CustomerRequestPortalIntegrationTest {
         ticketNumber: Long,
         commandId: String,
         body: String,
+        csrfToken: String = csrf(session.cookie),
     ) = mockMvc.perform(
         post("/api/v1/customer/requests/{ticketNumber}/comments", ticketNumber)
             .cookie(session.cookie)
-            .header("X-CSRF-TOKEN", csrf(session.cookie))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(mapOf("body" to body, "clientCommandId" to commandId))),
+    )
+
+    private fun addAnonymousFollowUp(
+        ticketNumber: Long,
+        accessToken: String,
+        commandId: String,
+        body: String,
+    ) = mockMvc.perform(
+        post("/api/v1/requests/{ticketNumber}/comments", ticketNumber)
+            .header("X-Request-Access-Token", accessToken)
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsString(mapOf("body" to body, "clientCommandId" to commandId))),
     )
@@ -447,6 +528,18 @@ class CustomerRequestPortalIntegrationTest {
                         ),
                     ),
                 ),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val json = objectMapper.readTree(response)
+        return AnonymousRequestFixture(json.get("ticketNumber").asLong(), json.get("accessToken").asText())
+    }
+
+    private fun submitAuthenticated(session: CustomerSessionFixture, subject: String): AnonymousRequestFixture {
+        val response = mockMvc.perform(
+            post("/api/v1/requests")
+                .cookie(session.cookie)
+                .header("X-CSRF-TOKEN", csrf(session.cookie))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestJson("spoofed@example.com", subject)),
         ).andExpect(status().isCreated).andReturn().response.contentAsString
         val json = objectMapper.readTree(response)
         return AnonymousRequestFixture(json.get("ticketNumber").asLong(), json.get("accessToken").asText())
@@ -545,6 +638,24 @@ class CustomerRequestPortalIntegrationTest {
         Long::class.java,
         eventType,
     )!!
+
+    private fun awaitTicketLockWaiters(expectedCount: Int) {
+        repeat(200) {
+            val waiters = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from pg_stat_activity
+                where datname = current_database()
+                  and wait_event_type = 'Lock'
+                  and query ilike '%tickets%'
+                """.trimIndent(),
+                Long::class.java,
+            ) ?: 0L
+            if (waiters >= expectedCount) return
+            Thread.sleep(25)
+        }
+        error("Timed out waiting for $expectedCount ticket lock waiter(s)")
+    }
 
     private fun tamper(token: String): String = token.dropLast(1) + if (token.last() == 'A') 'B' else 'A'
 
