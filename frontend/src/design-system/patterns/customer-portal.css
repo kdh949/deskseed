@@ -1,0 +1,175 @@
+.customer-site {
+  min-height: 100vh;
+  color: var(--ds-foreground-default);
+  background: var(--ds-background-subtle);
+}
+
+.customer-site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-ref-space-4);
+  min-height: var(--ds-layout-top-chrome-height);
+  padding: 0 var(--ds-ref-space-6);
+  border-bottom: 1px solid var(--ds-border-default);
+  background: var(--ds-background-raised);
+}
+
+.customer-site-brand,
+.customer-site-navigation {
+  display: flex;
+  align-items: center;
+}
+
+.customer-site-brand {
+  gap: var(--ds-ref-space-2);
+  color: var(--ds-foreground-primary);
+  font-size: var(--ds-ref-font-size-sm);
+  font-weight: var(--ds-ref-font-weight-semibold);
+  text-decoration: none;
+}
+
+.customer-site-navigation {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ds-ref-space-3);
+  color: var(--ds-foreground-subtle);
+  font-size: var(--ds-ref-font-size-sm);
+}
+
+.customer-site-navigation a {
+  text-decoration: none;
+}
+
+.customer-site-navigation a:hover,
+.customer-site-navigation a:focus-visible {
+  color: var(--ds-foreground-primary);
+  text-decoration: underline;
+}
+
+.customer-site-identity {
+  color: var(--ds-foreground-default);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.customer-site-session-status {
+  color: var(--ds-foreground-muted);
+}
+
+.customer-site :focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
+}
+
+.customer-page {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: var(--ds-ref-space-8) var(--ds-ref-space-6);
+}
+
+.customer-page-header {
+  margin-bottom: var(--ds-ref-space-6);
+}
+
+.customer-page-header h1 {
+  margin: var(--ds-ref-space-1) 0 var(--ds-ref-space-2);
+  font-size: var(--ds-ref-font-size-xl);
+  line-height: var(--ds-ref-line-height-lg);
+}
+
+.customer-page-header p {
+  margin: 0;
+  color: var(--ds-foreground-subtle);
+  line-height: var(--ds-ref-line-height-md);
+}
+
+.customer-page-eyebrow {
+  color: var(--ds-foreground-primary) !important;
+  font-size: var(--ds-ref-font-size-xs);
+  font-weight: var(--ds-ref-font-weight-bold);
+  letter-spacing: 0.08em;
+}
+
+.customer-form {
+  display: grid;
+  gap: var(--ds-ref-space-5);
+  padding: var(--ds-ref-space-6);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-container);
+  background: var(--ds-background-raised);
+}
+
+.customer-field {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  color: var(--ds-foreground-subtle);
+  font-size: var(--ds-ref-font-size-sm);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.customer-field input,
+.customer-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--ds-ref-space-3);
+  border: 1px solid var(--ds-input-border);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-foreground-default);
+  font: inherit;
+  font-weight: var(--ds-ref-font-weight-regular);
+  line-height: var(--ds-ref-line-height-md);
+  background: var(--ds-input-background);
+}
+
+.customer-field textarea {
+  resize: vertical;
+}
+
+.customer-field input:focus-visible,
+.customer-field textarea:focus-visible {
+  border-color: var(--ds-input-border-focus);
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
+}
+
+.customer-field [aria-invalid='true'] {
+  border-color: var(--ds-border-danger);
+}
+
+.customer-field small {
+  color: var(--ds-foreground-danger);
+  font-weight: var(--ds-ref-font-weight-regular);
+}
+
+.customer-form-actions {
+  display: grid;
+  gap: var(--ds-ref-space-3);
+  align-items: center;
+}
+
+.customer-form-actions p {
+  margin: 0;
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-sm);
+  line-height: var(--ds-ref-line-height-sm);
+}
+
+@media (max-width: 640px) {
+  .customer-site-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: var(--ds-ref-space-3) var(--ds-ref-space-4);
+  }
+
+  .customer-site-navigation {
+    justify-content: flex-start;
+  }
+
+  .customer-page {
+    padding: var(--ds-ref-space-6) var(--ds-ref-space-4);
+  }
+
+  .customer-form {
+    padding: var(--ds-ref-space-4);
+  }
+}
