@@ -20,6 +20,8 @@ internal class MailDeliveryConfigurationValidator(
         requirePositive(properties.workerFixedDelay, "outbound mail worker fixed delay")
         require(!properties.workerInitialDelay.isNegative) { "outbound mail worker initial delay must not be negative" }
         requirePositive(properties.leaseDuration, "outbound mail lease duration")
+        // Public request and public-reply flows enqueue PROTECTED intents even while delivery is disabled.
+        properties.protectedContent.requireActiveKey()
         if (!properties.deliveryEnabled) {
             require(properties.transport == "disabled") { "disabled outbound delivery requires the disabled transport" }
             return
@@ -28,7 +30,6 @@ internal class MailDeliveryConfigurationValidator(
         require(properties.transport != "disabled") { "enabled outbound delivery requires a transport" }
         safety.requireMailbox(properties.fromAddress)
         safety.requireAbsoluteHttpUrl(properties.publicBaseUrl.removeSuffix("/"), "public base URL")
-        properties.protectedContent.requireActiveKey()
 
         if (environment.acceptsProfiles(Profiles.of("production"))) validateProductionSmtp()
     }

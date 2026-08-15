@@ -2,6 +2,7 @@ package dev.deskseed.portal.internal
 
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.outboundmail.internal.MailDeliveryWorker
 import dev.deskseed.portal.RequestNotFoundException
 import dev.deskseed.settings.AnonymousSubmissionDisabledException
 import org.assertj.core.api.Assertions.assertThat
@@ -14,6 +15,7 @@ import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.context.ApplicationContext
 import org.springframework.dao.DataAccessException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -53,6 +55,9 @@ class PublicRequestIntegrationTest {
 
     @Autowired
     private lateinit var mockMvc: MockMvc
+
+    @Autowired
+    private lateinit var applicationContext: ApplicationContext
 
     @Test
     fun `http submission persists trusted customer actor and accepted command context`() {
@@ -873,13 +878,15 @@ class PublicRequestIntegrationTest {
     }
 
     @Test
-    fun `anonymous submission commits one provider neutral request received mail intent`() {
+    fun `delivery-disabled anonymous submission commits an encrypted protected request intent without a mail worker`() {
         val submitted = submitUniqueRequest("request-received-mail")
 
         val intent = jdbcTemplate.queryForMap(
             """
             select template_key, template_version, recipient_address, status,
-                   attempt_count, ticket_id, customer_id, request_id, correlation_id
+                   attempt_count, ticket_id, customer_id, request_id, correlation_id,
+                   text_body, protected_body_ciphertext is not null as protected,
+                   protected_body_nonce is not null as nonce, protected_body_key_version
             from outbound_mail_intents
             where ticket_id = ?
             """.trimIndent(),
@@ -894,6 +901,11 @@ class PublicRequestIntegrationTest {
         assertThat(intent["customer_id"]).isEqualTo(ticketRequesterId(submitted.ticketNumber))
         assertThat(intent).containsEntry("request_id", "request-request-received-mail")
         assertThat(intent).containsEntry("correlation_id", "correlation-request-received-mail")
+        assertThat(intent).containsEntry("text_body", "[protected customer authentication content]")
+        assertThat(intent).containsEntry("protected", true)
+        assertThat(intent).containsEntry("nonce", true)
+        assertThat(intent["protected_body_key_version"].toString()).isNotBlank()
+        assertThat(applicationContext.getBeansOfType(MailDeliveryWorker::class.java)).isEmpty()
         assertThat(
             jdbcTemplate.queryForObject(
                 "select count(*) from outbound_mail_attempts where intent_id = (select id from outbound_mail_intents where ticket_id = ?)",

@@ -15,14 +15,13 @@ class MailDeliveryConfigurationValidatorTest {
         .withUserConfiguration(OutboundMailConfiguration::class.java)
 
     @Test
-    fun `production profile with disabled delivery starts without SMTP or protected content configuration`() {
+    fun `disabled delivery still requires a protected content key for queued protected intents`() {
         val properties = properties(deliveryEnabled = false, transport = "disabled", protectedKey = null)
         val environment = MockEnvironment().apply { setActiveProfiles("production") }
 
-        assertThatCode {
+        assertThatThrownBy {
             MailDeliveryConfigurationValidator(properties, environment, OutboundMailSafety()).afterPropertiesSet()
-            ProtectedMailContentCipher(properties.protectedContent, validateActiveKeyAtStartup = false)
-        }.doesNotThrowAnyException()
+        }.isInstanceOf(IllegalStateException::class.java)
         contextRunner
             .withInitializer { context -> context.environment.setActiveProfiles("production") }
             .withPropertyValues(
@@ -31,6 +30,18 @@ class MailDeliveryConfigurationValidatorTest {
                 "deskseed.mail.from-address=",
                 "deskseed.mail.public-base-url=",
                 "deskseed.mail.protected-content.active-key-version=v1",
+            )
+            .run { context ->
+                assertThat(context).hasFailed()
+                assertThat(context.startupFailure).hasRootCauseInstanceOf(IllegalStateException::class.java)
+            }
+        contextRunner
+            .withInitializer { context -> context.environment.setActiveProfiles("production") }
+            .withPropertyValues(
+                "deskseed.mail.delivery-enabled=false",
+                "deskseed.mail.transport=disabled",
+                "deskseed.mail.protected-content.active-key-version=v1",
+                "deskseed.mail.protected-content.keys.v1=$protectedKey",
             )
             .run { context ->
                 assertThat(context).hasNotFailed()
@@ -78,7 +89,7 @@ class MailDeliveryConfigurationValidatorTest {
         assertThatCode {
             MailDeliveryConfigurationValidator(properties(deliveryEnabled = true, transport = "smtp"), environment, OutboundMailSafety())
                 .afterPropertiesSet()
-            ProtectedMailContentCipher(properties(deliveryEnabled = true, transport = "smtp").protectedContent, true)
+            ProtectedMailContentCipher(properties(deliveryEnabled = true, transport = "smtp").protectedContent)
         }.doesNotThrowAnyException()
     }
 
