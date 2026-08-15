@@ -116,6 +116,7 @@ export function useTicketEditor({
   }, [conflict?.currentVersion])
 
   const updateDraft = (visibility: TicketVisibility, value: string) => {
+    if (submitting) return
     const nextComments = { ...comments, [visibility]: value }
     invalidatePendingCommand({ comments: nextComments })
     setComments(nextComments)
@@ -127,6 +128,7 @@ export function useTicketEditor({
     field: TicketFieldName,
     value: EditableTicketFields[TicketFieldName],
   ) => {
+    if (submitting) return
     const nextFields = { ...localFields }
     assignEditableField(nextFields, field, value)
     if (field === 'groupId') {

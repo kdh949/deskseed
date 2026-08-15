@@ -47,7 +47,7 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 1cb5de486728eb8740a92b7abf6bbfb082c3f5bc28604708d0ca8746dccc5ed3        8603  docs/25-implementation-decision-register.md
-be1b0dfd9a297da410a0f6ae3f224b5a9ee4d9cf861300745ee188808cf74b0d       22700  docs/26-requirement-traceability.md
+d20ce00e2b60f526965b24b6733ae815dc67d5a252aa047fd0c3faf67423519f       23967  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -76,7 +76,7 @@ bc5279f7b27c99f6ab0508d4475409f0c7a4a58c0508cfd528923cf404f268c2       10301  do
 4227ab13e8cdc20368d59719a5ea468095039730b8fedb038b89b2cfd44d07ff       11664  docs/52-admin-settings-catalog.md
 c19c074d3a32d0986e86c27ec8bcbfbc3f32a2ee536746226f8d33dbf9fb0402        6241  docs/53-accepted-decisions-2026-08-10.md
 1dd6d96b7d15e1bc298989082b04d38fd7d82a80279b6b31d0bb26af3c8cb22b        1864  docs/54-next-decision-gates.md
-3f4532148e693290b92229bd13a5a44ecee511fbb3f038b628d3307cbd1fc2d3        8427  docs/55-frontend-capability-recomposition-matrix.md
+6a97855744acc5b478113028b8ae459d665a749b85992f71d181c4ad44b3c7bc       10660  docs/55-frontend-capability-recomposition-matrix.md
 027301f0e5da1824d14551ad602c7d3620c1e1f8b8067bc3def50d009615d144        1222  docs/adr/0001-kotlin-spring.md
 a60752cda4485dd1bf13168c30e3d337ad94eee6d262ce94e49ef01cfc09bcde        1189  docs/adr/0002-modular-monolith.md
 04ce88fcb2ab9f9f9337fee7d34fb727552475916253943643b481bb099f2792         899  docs/adr/0003-first-comment-no-description.md
@@ -123,7 +123,12 @@ f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  do
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md
 389bbe2bea0c975b3f358f53d6eafc24cf3efac751aa080a3c972f680ec2edf9        5096  docs/evidence/p0/BE-P0-PRODUCTION-CONSISTENCY.md
 b1b7618986dc18412b85ca5f502cb76ca466aa12499663fd8ee25ac6a7c48d52        2875  docs/evidence/p0/BE-P0-PUBLIC-ABUSE.md
+d157f2305cfc4523afe5d0832e422cba92aff4c9c741e15b3ad0dad6c0dd7401        6854  docs/evidence/p0/FE-P0-ADMIN-OPS.md
+6af4f48284da11fa4f2fbfddf28fbf97fe11897ffa405106aa79210dfe94dbb1        7133  docs/evidence/p0/FE-P0-AGENT-WRITE.md
+8cba04d2e75735fb15bb7a496f81e341cc831268ac99d9adff581438429151ae        6460  docs/evidence/p0/FE-P0-CUSTOMER.md
+b9ac0cf9f009af7cfdd823ab573a267a18f83c452ed4f35207e00de3149e8497        8348  docs/evidence/p0/FE-P0-GOAL-COMPLETION-AUDIT.md
 34f815ce5f30363bcad22d002c31b78dc20b07e002e6bebbf2c1093360fdfb9d       16510  docs/evidence/p0/backend-goal-progress.md
+bb89dc0ee62d51644d2e8c5f11b8706558d210bffc3c792fd38c2ec094899066        5720  docs/evidence/p0/frontend-goal-progress.md
 4d249184a8ab250e1e5366c3327f7febad7c6152b63a70c4293a3aea05b2b779        2173  docs/evidence/release/README.md
 35d6ff0b3a7790b15a4c71750b0397a0af139a32f66eb9b3abe8ad942d10e113        4379  docs/evidence/release/operations/2026-08-12-macos-arm64-cleanup-smoke.md
 b1db656e42be6f7677fa693047181f064b358a257540c7ffca592176f1120ebf       12229  docs/evidence/release/operations/2026-08-12-macos-arm64-full.md

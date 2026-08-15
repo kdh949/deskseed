@@ -105,7 +105,9 @@ function renderWorkspace({
   }
 }
 
-function installMutationFetch(commandResponses: Array<Response | Error>) {
+function installMutationFetch(
+  commandResponses: Array<Response | Error | Promise<Response>>,
+) {
   const commands: Array<Record<string, unknown>> = []
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -128,6 +130,20 @@ function installMutationFetch(commandResponses: Array<Response | Error>) {
   )
   vi.stubGlobal('fetch', fetchMock)
   return { commands, fetchMock }
+}
+
+function deferredResponse() {
+  let resolve: ((response: Response) => void) | undefined
+  let reject: ((reason?: unknown) => void) | undefined
+  const promise = new Promise<Response>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return {
+    promise,
+    resolve: (response: Response) => resolve?.(response),
+    reject: (reason?: unknown) => reject?.(reason),
+  }
 }
 
 afterEach(() => {
@@ -210,6 +226,84 @@ describe('AgentTicketEditorWorkspace', () => {
     expect(
       await screen.findByText(/저장 결과를 확인할 수 없습니다/),
     ).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await waitFor(() => expect(commands).toHaveLength(2))
+    expect(commands[1]?.clientCommandId).toBe(commands[0]?.clientCommandId)
+    expect(commands[1]?.comment).toEqual(commands[0]?.comment)
+  })
+
+  it('locks reply and property inputs during a save, then accepts a later draft after the confirmed result', async () => {
+    const user = userEvent.setup()
+    const pending = deferredResponse()
+    const { commands } = installMutationFetch([pending.promise])
+    renderWorkspace()
+
+    const reply = screen.getByRole('textbox', { name: '공개 답변 내용' })
+    await user.type(reply, '저장 중인 답변입니다.')
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '우선순위' }),
+      'HIGH',
+    )
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+
+    await waitFor(() => expect(commands).toHaveLength(1))
+    expect(reply).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '상태' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '우선순위' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '그룹' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '담당자' })).toBeDisabled()
+
+    pending.resolve(
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          version: 4,
+          auditId: '22222222-2222-4222-8222-222222222222',
+          warnings: [],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    expect(
+      await screen.findByText('공개 답변과 변경사항을 저장했습니다.'),
+    ).toBeVisible()
+    expect(reply).toBeEnabled()
+    await user.type(reply, '저장 완료 뒤의 새 답변입니다.')
+    expect(reply).toHaveValue('저장 완료 뒤의 새 답변입니다.')
+  })
+
+  it('keeps the submitted command ID when a pending save loses its response', async () => {
+    const user = userEvent.setup()
+    const pending = deferredResponse()
+    const { commands } = installMutationFetch([
+      pending.promise,
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          version: 4,
+          auditId: '22222222-2222-4222-8222-222222222222',
+          warnings: [],
+        }),
+        { status: 200 },
+      ),
+    ])
+    renderWorkspace()
+
+    const reply = screen.getByRole('textbox', { name: '공개 답변 내용' })
+    await user.type(reply, '응답 유실에도 같은 명령을 사용합니다.')
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+
+    await waitFor(() => expect(commands).toHaveLength(1))
+    expect(reply).toBeDisabled()
+    pending.reject(new Error('response lost after commit'))
+
+    expect(
+      await screen.findByText(/저장 결과를 확인할 수 없습니다/),
+    ).toBeVisible()
+    expect(reply).toBeEnabled()
+    expect(reply).toHaveValue('응답 유실에도 같은 명령을 사용합니다.')
 
     await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
     await waitFor(() => expect(commands).toHaveLength(2))

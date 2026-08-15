@@ -9,7 +9,7 @@
 - Decision IDs: `D-003`, `D-006`, `D-018`, `D-040`, `D-046`, `D-053`
 - Accepted ADRs: `0039`
 - Requirements: `REQ-TKT-007`, `REQ-TKT-010`, `REQ-TKT-011`, `REQ-TKT-013`, `REQ-TKT-014`, `REQ-TKT-015`, `REQ-CHILD-002`, `REQ-AUD-001`, `REQ-UI-001`, `REQ-UI-002`, `REQ-UI-003`, `REQ-UI-005`
-- Screen/route IDs: `AGT-004`, `/agent/tickets/:ticketNumber`
+- Screen/route ID: AGT-004; `/agent/tickets/:ticketNumber`
 - Frozen operations: `getAgentTicket`, `updateAgentTicket`, `listTicketAssignmentOptions`, `getCurrentStaff`
 - Checked but intentionally not surfaced: `transferAgentTicket`, `createChildTicket` (no partial UI)
 - Verification gates: `TKT-002`, `TKT-003`, `TKT-006`, `CHG-001`, `CHG-002`, `UI-002`, `UI-003`, `UI-004`, `UI-005`

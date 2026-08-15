@@ -107,7 +107,7 @@ function WritableTicketWorkspace({
               계속 작성
             </DsButton>
             <DsButton onClick={() => editor.blocker.proceed?.()} tone="primary">
-              변경사항 버리고 나가기
+              서버에 저장하지 않고 나가기
             </DsButton>
           </div>
         </section>
@@ -277,6 +277,7 @@ function WritableProperties({
           <select
             aria-label="상태"
             className="agent-ticket-editor-select"
+            disabled={editor.submitting}
             onChange={(event) =>
               editor.updateField(
                 'status',
@@ -296,6 +297,7 @@ function WritableProperties({
           <select
             aria-label="우선순위"
             className="agent-ticket-editor-select"
+            disabled={editor.submitting}
             onChange={(event) =>
               editor.updateField(
                 'priority',
@@ -315,6 +317,7 @@ function WritableProperties({
           <select
             aria-label="그룹"
             className="agent-ticket-editor-select"
+            disabled={editor.submitting}
             onChange={(event) =>
               editor.updateField('groupId', event.currentTarget.value || null)
             }
@@ -337,7 +340,7 @@ function WritableProperties({
           <select
             aria-label="담당자"
             className="agent-ticket-editor-select"
-            disabled={editor.localFields.groupId === null}
+            disabled={editor.submitting || editor.localFields.groupId === null}
             onChange={(event) =>
               editor.updateField(
                 'assigneeId',
@@ -490,6 +493,7 @@ function ReplyComposer({
           <span className="sr-only">{inputLabel}</span>
           <textarea
             aria-label={inputLabel}
+            disabled={editor.submitting}
             maxLength={20_000}
             onChange={(event) => editor.updateDraft(mode, event.target.value)}
             placeholder={

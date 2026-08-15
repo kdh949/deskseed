@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { http, HttpResponse } from 'msw'
 import { expect, userEvent } from 'storybook/test'
 import type { AgentTicketDetail } from '../../api/types'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
@@ -92,6 +93,50 @@ export const Writable: Story = {
       canvas.getByRole('textbox', { name: '공개 답변 내용' }),
     ).toBeVisible()
     await expect(canvas.getByLabelText('그룹')).toHaveValue('group-payments')
+  },
+}
+
+export const SavingLocksInputs: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/agent/csrf', () =>
+          HttpResponse.json({
+            token: 'a'.repeat(32),
+            headerName: 'X-CSRF-TOKEN',
+          }),
+        ),
+        http.post('/api/v1/agent/tickets/3001/commands', async () => {
+          await new Promise((resolve) => window.setTimeout(resolve, 1_000))
+          return HttpResponse.json({
+            ticketNumber: 3001,
+            version: 4,
+            auditId: '22222222-2222-4222-8222-222222222222',
+            warnings: [],
+          })
+        }),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      canvas.getByRole('textbox', { name: '공개 답변 내용' }),
+      '저장 중 입력 잠금 확인',
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: '공개 답변 저장' }),
+    )
+    await expect(
+      canvas.getByRole('textbox', { name: '공개 답변 내용' }),
+    ).toBeDisabled()
+    await expect(canvas.getByRole('combobox', { name: '상태' })).toBeDisabled()
+    await expect(
+      canvas.getByRole('combobox', { name: '우선순위' }),
+    ).toBeDisabled()
+    await expect(canvas.getByRole('combobox', { name: '그룹' })).toBeDisabled()
+    await expect(
+      canvas.getByRole('combobox', { name: '담당자' }),
+    ).toBeDisabled()
   },
 }
 
