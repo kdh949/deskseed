@@ -1,4 +1,3 @@
-import { lazy, Suspense } from 'react'
 import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
 import { ScreenState } from './design-system'
 import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
@@ -24,14 +23,6 @@ import { CreateAgentTicketPage } from './features/ticket-create/CreateAgentTicke
 import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
-
-const FrontendSystemFixturePage = import.meta.env.DEV
-  ? lazy(() =>
-      import('./features/frontend-system-fixtures/FrontendSystemFixturePage').then(
-        (module) => ({ default: module.FrontendSystemFixturePage }),
-      ),
-    )
-  : null
 
 const agentChildren: RouteObject[] = [
   { index: true, element: <Navigate to="/agent/views/my-open" replace /> },
@@ -75,18 +66,6 @@ const customerChildren: RouteObject[] = [
 ]
 
 export const appRoutes: RouteObject[] = [
-  ...(import.meta.env.DEV
-    ? [
-        {
-          path: '/__fixtures__/frontend-system/:fixtureName',
-          element: FrontendSystemFixturePage ? (
-            <Suspense fallback={null}>
-              <FrontendSystemFixturePage />
-            </Suspense>
-          ) : null,
-        },
-      ]
-    : []),
   {
     element: <CustomerRouteLayout />,
     children: customerChildren,

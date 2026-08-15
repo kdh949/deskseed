@@ -33,4 +33,10 @@ describe('customer production route inventory', () => {
       ]),
     )
   })
+
+  it('does not expose the legacy frontend fixture route in the production router', () => {
+    expect(routePaths(appRoutes)).not.toContain(
+      '/__fixtures__/frontend-system/:fixtureName',
+    )
+  })
 })

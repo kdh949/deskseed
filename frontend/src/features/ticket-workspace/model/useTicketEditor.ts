@@ -355,11 +355,13 @@ export function useTicketEditor({
         })
         await loadLatestForConflict(new Set(apiError.problem.conflictingFields))
       } else {
-        if (!isAmbiguousCommandFailure(cause)) invalidatePendingCommand()
+        const ambiguous = isAmbiguousCommandFailure(cause)
+        if (!ambiguous) invalidatePendingCommand()
         setError({
-          message:
-            apiError?.message ??
-            '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.',
+          message: ambiguous
+            ? '저장 결과를 확인할 수 없습니다. 같은 변경사항을 다시 저장해 중복 없이 확인해 주세요.'
+            : (apiError?.message ??
+              '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.'),
           requestId: apiError?.requestId,
         })
       }

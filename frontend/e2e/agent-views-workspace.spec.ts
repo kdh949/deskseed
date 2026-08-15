@@ -275,7 +275,7 @@ for (const viewport of [
       page.getByRole('main', { name: '티켓 #1042 작업 공간' }),
     ).toBeVisible()
     await expect(
-      page.getByText('INTERNAL', { exact: true }).first(),
+      page.getByText('INTERNAL · 직원 전용', { exact: true }).first(),
     ).toBeVisible()
     expect(detailHeaders).toHaveLength(1)
     expect(detailHeaders[0]?.['x-deskseed-read-intent']).toBe('NAVIGATION')
@@ -342,23 +342,15 @@ test('Personal view configuration stays local and returns focus to its trigger',
   await expectNoAxeViolations(page)
 })
 
-test('Workspace refresh reuses its navigation interaction and panel controls work', async ({
+test('Workspace refresh reuses its navigation interaction without creating a second view event', async ({
   page,
 }) => {
   const { detailHeaders } = await mockAgentReadApi(page)
   await page.goto('/agent/tickets/1042')
-  await page.getByRole('button', { name: '티켓 새로고침' }).click()
+  await page.getByRole('button', { name: '최신 정보 새로고침' }).click()
   await expect.poll(() => detailHeaders.length).toBe(2)
   expect(detailHeaders[1]?.['x-interaction-id']).toBe(
     detailHeaders[0]?.['x-interaction-id'],
   )
   expect(detailHeaders[1]?.['x-deskseed-read-intent']).toBe('BACKGROUND')
-  await page.getByRole('button', { name: '티켓 속성 접기' }).click()
-  await expect(
-    page.getByRole('button', { name: '티켓 속성 펼치기' }),
-  ).toBeVisible()
-  await page.getByRole('button', { name: '고객 맥락 열기' }).click()
-  await expect(
-    page.getByRole('button', { name: '고객 맥락 닫기' }),
-  ).toBeVisible()
 })

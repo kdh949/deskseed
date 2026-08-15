@@ -1,80 +1,118 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
-const primaryFixtures = [
-  ['view-queue', '내 티켓'],
-  ['workspace', /#1042.*결제 버튼을 누르면 오류가 납니다/],
-] as const
-
-for (const [fixture, heading] of primaryFixtures) {
-  test(`${fixture} uses production components`, async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    const response = await page.goto(`/__fixtures__/frontend-system/${fixture}`)
-    expect(response?.ok()).toBe(true)
-    await expect(
-      page.getByRole('heading', { name: heading }).first(),
-    ).toBeVisible()
-    await expect(
-      page.getByRole('navigation', { name: '상담사 전역 탐색' }),
-    ).toBeVisible()
-    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-  })
-}
-
-for (const fixture of [
-  'view-queue-loading',
-  'view-queue-empty',
-  'view-queue-no-results',
-  'view-queue-error',
-  'view-queue-denied',
-  'view-queue-bulk',
-  'workspace-loading',
-  'workspace-empty',
-  'workspace-error',
-  'workspace-denied',
-  'workspace-conflict',
-]) {
-  test(`${fixture} canonical state`, async ({ page }) => {
-    await page.goto(`/__fixtures__/frontend-system/${fixture}`)
-    if (fixture === 'view-queue-bulk') {
-      await expect(
-        page.getByRole('region', { name: '선택된 티켓' }),
-      ).toContainText('2개 선택됨')
-    } else if (fixture === 'workspace-conflict') {
-      await expect(
-        page.getByRole('region', { name: '담당자 저장 충돌' }),
-      ).toBeVisible()
-    } else {
-      await expect(
-        page.getByRole('status').or(page.getByRole('alert')).first(),
-      ).toBeVisible()
+async function mockReadOnlyTicket(page: Page) {
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/v1/agent/me') {
+      return route.fulfill({
+        status: 200,
+        json: {
+          id: '11111111-1111-4111-8111-111111111111',
+          email: 'agent@example.test',
+          displayName: '상담사 A',
+          role: 'AGENT',
+          capabilities: ['AGENT_WORKSPACE'],
+        },
+      })
     }
+    if (url.pathname === '/api/v1/agent/tickets/3001') {
+      return route.fulfill({
+        status: 200,
+        json: {
+          ticket: {
+            ticketNumber: 3001,
+            subject: '실제 API 응답만 표시하는 티켓',
+            status: 'CLOSED',
+            priority: 'NORMAL',
+            requester: {
+              id: 'customer-3001',
+              type: 'CUSTOMER',
+              displayName: '고객 A',
+            },
+            group: null,
+            assignee: null,
+            updatedAt: '2026-08-15T10:02:00Z',
+            version: 8,
+            isChild: false,
+            openChildCount: 0,
+            sla: null,
+          },
+          comments: [
+            {
+              id: 'comment-3001-public',
+              visibility: 'PUBLIC',
+              actor: {
+                id: 'customer-3001',
+                type: 'CUSTOMER',
+                displayName: '고객 A',
+              },
+              body: '이 본문은 API에서 왔습니다.',
+              createdAt: '2026-08-15T09:00:00Z',
+              source: 'WEB',
+              attachments: [],
+            },
+          ],
+          capabilities: ['READ'],
+          assignmentOptions: { groups: [] },
+          context: {
+            customer: {
+              id: 'customer-3001',
+              displayName: '고객 A',
+              email: 'customer-a@example.test',
+            },
+            parent: null,
+            children: [],
+            externalReferences: [],
+          },
+          history: [],
+          warnings: [],
+        },
+      })
+    }
+    return route.abort()
   })
 }
 
-test('view queue fixture exposes the selected view, toolbar controls, and sorting', async ({
+test('legacy frontend fixture paths are not routable in the production application', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/__fixtures__/frontend-system/view-queue')
+  await page.goto('/__fixtures__/frontend-system/workspace')
 
-  await expect(page.getByRole('link', { name: 'Views' })).toHaveAttribute(
-    'aria-current',
-    'page',
-  )
   await expect(
-    page.locator('.ds-view-navigation a[aria-current="page"]'),
-  ).toHaveCount(1)
-  await expect(page.getByRole('button', { name: '필터 열기' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '작업' })).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: '티켓 ID 내림차순' }),
+    page.getByRole('heading', { name: '페이지를 찾을 수 없습니다.' }),
   ).toBeVisible()
-
-  await page.getByRole('button', { name: '필터 열기' }).click()
-  await expect(page.getByLabel('내 티켓 필터')).toBeVisible()
-  await page.getByRole('button', { name: '티켓 ID 내림차순' }).click()
   await expect(
-    page.getByRole('columnheader', { name: '티켓 ID' }),
-  ).toHaveAttribute('aria-sort', 'ascending')
+    page.getByRole('main', { name: '티켓 #1042 작업 공간' }),
+  ).toHaveCount(0)
+})
+
+test('production agent UI renders only the ticket API projection and its capability surface', async ({
+  page,
+}) => {
+  await mockReadOnlyTicket(page)
+  await page.goto('/agent/tickets/3001')
+
+  await expect(
+    page.getByRole('heading', { name: '실제 API 응답만 표시하는 티켓' }),
+  ).toBeVisible()
+  await expect(
+    page.getByLabel('티켓 대화 및 답변').getByText('종료', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText('이 본문은 API에서 왔습니다.')).toBeVisible()
+  await expect(
+    page.getByText('현재 권한으로는 티켓을 수정할 수 없습니다.'),
+  ).toBeVisible()
+  await expect(page.getByText('김지연')).toHaveCount(0)
+  await expect(page.getByText('카드사 승인 로그')).toHaveCount(0)
+  await expect(page.getByText('Available', { exact: true })).toHaveCount(0)
+  await expect(page.locator('img[src*="agent-mina-park"]')).toHaveCount(0)
+  await expect(
+    page.getByRole('navigation', { name: '열린 티켓 탭' }),
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /이관|자식/ })).toHaveCount(0)
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })
