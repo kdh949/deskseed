@@ -58,7 +58,7 @@ const detail: AgentTicketDetail = {
     },
     parent: null,
     children: [],
-    externalReferences: [],
+    externalReferenceCount: 0,
   },
   history: [],
   warnings: [],

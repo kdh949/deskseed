@@ -4,14 +4,15 @@ This directory holds bounded, sanitized evidence for exact Agent View queue quer
 unified Audit Explorer paths, and required sensitive-read audit overhead. It measures the
 current PostgreSQL schema; it does not introduce a cache, search engine, or new service.
 
-> **Current artifact status:** both `smoke/` and `release/` were regenerated on
-> 2026-08-12 from the current runner and V1-V15 schema. The release artifact is `PASS`,
-> records 34 relevant source hashes with no mismatch at six freeze checkpoints, and covers
-> all five `DefaultStaffView` shapes, four Audit Explorer page reads, the exact O(1)
-> projection-status read, and the staff-command replay lookup. Its host-filesystem preflight
-> passed with 44.68 GiB free against a 17 GiB guard; no low-disk override was used. Exact
-> container, anonymous data-volume, and scratch cleanup passed. Docker Desktop VM quota
-> remains a separately stated operator check rather than a measured guarantee.
+> **Current artifact status:** `release/` was regenerated on 2026-08-16 (Asia/Seoul) from
+> the current runner and V1-V33 schema. The release artifact is `PASS`, records 54 relevant
+> source hashes with no mismatch at six freeze checkpoints, and covers all five
+> `DefaultStaffView` shapes, two P1 Agent Workspace search plans, four Audit Explorer page
+> reads, the exact O(1) projection-status read, and the staff-command replay lookup. Its
+> host-filesystem preflight passed with 33.29 GiB free against a 17 GiB guard; no low-disk
+> override was used. Exact container, anonymous data-volume, and scratch cleanup passed.
+> Docker Desktop VM quota remains a separately stated operator check rather than a measured
+> guarantee.
 
 ## Reproduce
 
@@ -125,11 +126,11 @@ component gate, not a production SLO.
 
 | Exact production View | Eligible rows | First page | After p95 (ms) | After-plan observation |
 |---|---:|---:|---:|---|
-| `MY_OPEN` | 2,200 | 51 | 0.536 | `tickets_assignee_status_cursor_idx`; bounded `LIMIT 51` |
-| `UNASSIGNED_MY_GROUPS` | 1,600 | 51 | 9.367 | membership query plus bounded top-N first page |
-| `PENDING` | 200,000 | 51 | 0.670 | `tickets_status_cursor_idx`; stops after the first 51 rows |
-| `RECENTLY_SOLVED` | 2,200 | 51 | 0.367 | assignee/status/cursor index with the 30-day predicate |
-| `MY_CHILD_TASKS` | 8,000 | 51 | 0.362 | exact child-kind/actor/non-terminal predicate; bounded first page |
+| `MY_OPEN` | 2,200 | 51 | 0.761 | `tickets_assignee_status_cursor_idx`; bounded `LIMIT 51` |
+| `UNASSIGNED_MY_GROUPS` | 1,600 | 51 | 14.032 | membership query plus bounded top-N first page |
+| `PENDING` | 200,000 | 51 | 0.884 | `tickets_status_cursor_idx`; stops after the first 51 rows |
+| `RECENTLY_SOLVED` | 2,200 | 51 | 0.501 | assignee/status/cursor index with the 30-day predicate |
+| `MY_CHILD_TASKS` | 8,000 | 51 | 0.479 | exact child-kind/actor/non-terminal predicate; bounded first page |
 
 These numbers come directly from
 [`release/latency-after.csv`](release/latency-after.csv), while eligible and returned rows
@@ -145,9 +146,19 @@ The raw budget table is
 not retroactively reclassified.
 
 The current list-endpoint status query is separately captured as
-`audit_projection_status`: its release p95 is 0.017 ms and the raw plan reads the single
+`audit_projection_status`: its release p95 is 0.020 ms and the raw plan reads the single
 `audit_activity_projection_state` row plus advisory-lock state. It does not scan or count
 the 1.6-million-row projection.
+
+## P1 Agent Workspace search baseline
+
+The current PostgreSQL implementation keeps its authorization predicate in SQL and runs
+the exact count and stable `score,ticketNumber` first page independently. The 2026-08-16
+one-million-ticket evidence measures the numeric-query count at 5,371.400 ms and its
+score cursor first page at 6,374.443 ms. These broad substring/comment-matching plans are
+recorded for an architectural decision, not reclassified as the queue gate or presented as
+a production SLO. See [P1 Agent Workspace Search — one-million-ticket evidence](p1-agent-search-1m.md)
+for the raw-plan links, source fingerprint, and the bounded follow-up decision.
 
 Admin organization lists are guarded separately at the PostgreSQL integration-test layer.
 Staff, group and active-member endpoints retain the frozen array body but accept zero-based
@@ -174,8 +185,9 @@ ticket detail is not returned successfully. The benchmark runs after fixture cou
 candidate-index sizes are captured, so its additional synthetic audit rows do not alter
 those fixture assertions.
 
-The raw files are intentionally small: eleven plan shapes (five queues, four Audit Explorer
-page reads, the exact projection-status read, and the staff-command replay lookup), query cardinality, aggregated latency
+The raw files are intentionally small: thirteen plan shapes (five queues, two P1 Agent
+Workspace search statements, four Audit Explorer page reads, the exact projection-status
+read, and the staff-command replay lookup), query cardinality, aggregated latency
 percentiles, the access-write comparison, object sizes, exact fixture counts,
 database settings, image digest, harness/migration/production-query-source SHA-256 values
 and phase durations. They contain no credentials, request tokens, comment bodies, raw

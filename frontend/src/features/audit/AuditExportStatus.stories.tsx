@@ -10,7 +10,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'AUD-002 내보내기 작업 상태 화면. 백엔드에 파일 생성 워커가 아직 없어 상태는 생성 직후 계속 REQUESTED로 고정된다. 자동 폴링이 소진되면 수동 새로고침 버튼이 나타난다.',
+          'AUD-002 내보내기 작업 상태 화면. worker가 private CSV/JSONL artifact를 만들며, READY download와 terminal FAILED/EXPIRED 상태를 명시적으로 구분한다.',
       },
     },
   },
@@ -26,10 +26,34 @@ const job: AuditExportJob = {
   createdAt: '2026-08-14T09:00:00Z',
   format: 'CSV',
   fields: ['occurredAt', 'action', 'actor'],
-  artifact: { state: 'NOT_CREATED', generationAvailable: false },
+  artifact: {
+    state: 'PENDING',
+    rowCount: null,
+    sizeBytes: null,
+    checksumSha256: null,
+    expiresAt: null,
+    contentType: null,
+    failureCode: null,
+  },
+}
+
+const readyJob: AuditExportJob = {
+  ...job,
+  status: 'READY',
+  artifact: {
+    state: 'READY',
+    rowCount: 184,
+    sizeBytes: 24576,
+    checksumSha256:
+      'ea3582c0eacf31ba0ad2157f7e8cc8b5c16d21a1c74b4740269f349da1c9d2d2',
+    expiresAt: '2026-08-14T10:00:00Z',
+    contentType: 'text/csv',
+    failureCode: null,
+  },
 }
 
 const baseArgs = {
+  onDownload: fn(),
   onRefresh: fn(),
   onRetry: fn(),
 }
@@ -87,5 +111,44 @@ export const PollingExhausted: Story = {
   play: async ({ args, canvas }) => {
     await userEvent.click(canvas.getByRole('button', { name: '새로고침' }))
     await expect(args.onRefresh).toHaveBeenCalled()
+  },
+}
+
+export const ReadyForDownload: Story = {
+  args: {
+    ...baseArgs,
+    state: { status: 'ready', job: readyJob, polling: false },
+  },
+  play: async ({ args, canvas }) => {
+    await expect(canvas.getByText('파일이 준비되었습니다.')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '다운로드' }))
+    await expect(args.onDownload).toHaveBeenCalled()
+  },
+}
+
+export const Expired: Story = {
+  args: {
+    ...baseArgs,
+    state: {
+      status: 'ready',
+      job: {
+        ...readyJob,
+        status: 'EXPIRED',
+        artifact: {
+          ...readyJob.artifact,
+          state: 'EXPIRED',
+          failureCode: 'EXPIRED',
+        },
+      },
+      polling: false,
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByText('내보내기 파일이 만료되었습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: '다운로드' }),
+    ).not.toBeInTheDocument()
   },
 }

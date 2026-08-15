@@ -1,6 +1,6 @@
 phase,category,object_name,bytes,pretty_size,index_scans
 after,candidate_index,audit_activity_projection_actor_cursor_idx,94273536,90 MB,32
-after,candidate_index,tickets_assignee_status_cursor_idx,57221120,55 MB,224
+after,candidate_index,tickets_assignee_status_cursor_idx,57221120,55 MB,228
 after,table_heap,access_audit_events,183910400,175 MB,
 after,table_heap,admin_security_audit_events,30343168,29 MB,
 after,table_heap,audit_activity_projection,627236864,598 MB,
@@ -12,8 +12,8 @@ after,table_heap,tickets,194183168,185 MB,
 after,table_indexes,access_audit_events,198787072,190 MB,
 after,table_indexes,admin_security_audit_events,45187072,43 MB,
 after,table_indexes,audit_activity_projection,1223393280,1167 MB,
-after,table_indexes,customers,16302080,16 MB,
+after,table_indexes,customers,47448064,45 MB,
 after,table_indexes,ticket_audit_events,91848704,88 MB,
-after,table_indexes,ticket_audits,304594944,290 MB,
+after,table_indexes,ticket_audits,304603136,290 MB,
 after,table_indexes,ticket_comments,267091968,255 MB,
-after,table_indexes,tickets,522215424,498 MB,
+after,table_indexes,tickets,589914112,563 MB,

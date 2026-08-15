@@ -5,38 +5,63 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentViewsPage } from './AgentViewsPage'
 
+const viewContract = {
+  active: true,
+  definitionVersion: 1,
+  orderVersion: 1,
+  conditions: {
+    version: 1,
+    all: [{ field: 'STATUS', operator: 'LESS_THAN_SOLVED', values: [] }],
+    any: [],
+  },
+  columns: ['TICKET_NUMBER', 'SUBJECT', 'STATUS'],
+  sort: 'updatedAt:desc,ticketNumber:desc',
+  ticketCountState: 'EXACT',
+  readScope: 'ALL_TICKETS',
+  createdAt: '2026-08-10T00:00:00Z',
+  updatedAt: '2026-08-10T00:00:00Z',
+} as const
+
 const views = [
   {
+    ...viewContract,
+    id: '00000000-0000-4000-8000-000000000001',
     key: 'my-open',
     name: '내 open',
     scope: 'SYSTEM',
+    ownerStaffId: null,
     categoryPath: ['Views'],
     ticketCount: null,
-    readScope: 'ALL_TICKETS',
   },
   {
+    ...viewContract,
+    id: '00000000-0000-4000-8000-000000000002',
     key: 'pending',
     name: 'Pending',
     scope: 'SHARED',
+    ownerStaffId: null,
     categoryPath: ['Views'],
     ticketCount: null,
-    readScope: 'ALL_TICKETS',
   },
   {
+    ...viewContract,
+    id: '00000000-0000-4000-8000-000000000003',
     key: 'follow-up',
     name: '내가 팔로우 중인 티켓',
     scope: 'PERSONAL',
+    ownerStaffId: '00000000-0000-4000-8000-000000000099',
     categoryPath: ['Views'],
     ticketCount: 2,
-    readScope: 'ALL_TICKETS',
   },
   {
+    ...viewContract,
+    id: '00000000-0000-4000-8000-000000000004',
     key: 'drafts',
     name: '임시 보관함',
     scope: 'PERSONAL',
+    ownerStaffId: '00000000-0000-4000-8000-000000000099',
     categoryPath: ['Views'],
     ticketCount: 1,
-    readScope: 'ALL_TICKETS',
   },
 ]
 

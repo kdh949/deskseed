@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   advanceStaffSessionGeneration,
+  addAnonymousRequestComment,
   ApiError,
   createAgentTicket,
+  createAgentSavedView,
   createChildTicket,
+  deleteAgentSavedView,
+  downloadAgentAttachment,
+  downloadAnonymousRequestAttachment,
+  downloadAuditExport,
+  executeAgentTicketBatch,
   getAgentTicket,
   getAuditExport,
   getCurrentStaff,
@@ -16,15 +23,21 @@ import {
   listOutboundMailIntents,
   listStaff,
   listTicketsInView,
+  previewAgentSavedView,
+  reorderAgentSavedViews,
   searchAgentCustomers,
   searchAgentTickets,
   setConfirmedStaffActor,
   STAFF_SESSION_ACTOR_MISMATCH_EVENT,
   STAFF_SESSION_INVALID_EVENT,
   submitRequest,
+  submitRequestWithAttachments,
   retryOutboundMailIntent,
   transferAgentTicket,
+  updateAgentSavedView,
   updateAgentTicket,
+  uploadAnonymousRequestAttachment,
+  uploadAgentAttachment,
 } from './client'
 
 const submitInput = {
@@ -32,6 +45,39 @@ const submitInput = {
   email: 'customer@example.com',
   subject: '결제 오류',
   message: '결제 버튼을 누르면 오류가 납니다.',
+}
+
+function savedViewResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    id: '11111111-1111-4111-8111-111111111111',
+    key: 'pv-01J7SAVEDVIEW001',
+    name: '내 위험 SLA',
+    scope: 'PERSONAL',
+    ownerStaffId: '22222222-2222-4222-8222-222222222222',
+    active: true,
+    definitionVersion: 1,
+    orderVersion: 1,
+    categoryPath: ['내 보기'],
+    conditions: {
+      version: 1,
+      all: [
+        {
+          field: 'FIRST_REPLY_SLA_STATE',
+          operator: 'IN',
+          values: ['AT_RISK', 'BREACHED'],
+        },
+      ],
+      any: [],
+    },
+    columns: ['TICKET_NUMBER', 'SUBJECT', 'FIRST_REPLY_SLA', 'UPDATED_AT'],
+    sort: 'updatedAt:desc,ticketNumber:desc',
+    ticketCount: 3,
+    ticketCountState: 'EXACT',
+    readScope: 'ALL_TICKETS',
+    createdAt: '2026-08-16T00:00:00Z',
+    updatedAt: '2026-08-16T00:00:00Z',
+    ...overrides,
+  }
 }
 
 afterEach(() => {
@@ -489,6 +535,7 @@ describe('customer request API client', () => {
                 authorDisplayName: '김고객',
                 body: '공개 문의',
                 createdAt: '2026-08-10T00:00:00Z',
+                attachments: [],
                 staffMetadata: 'comment-private-marker',
               },
             ],
@@ -516,6 +563,7 @@ describe('customer request API client', () => {
     ])
     expect(firstComment).toBeDefined()
     expect(Object.keys(firstComment!).sort()).toEqual([
+      'attachments',
       'authorDisplayName',
       'body',
       'createdAt',
@@ -815,7 +863,8 @@ describe('agent ticket read API client', () => {
             searchInteractionId: '22222222-2222-4222-8222-222222222222',
             items: [],
             resultCount: 0,
-            sort: 'updatedAt:desc,ticketNumber:desc',
+            sort: 'score:desc,ticketNumber:desc',
+            nextCursor: 'opaque-next-cursor',
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         ),
@@ -826,8 +875,9 @@ describe('agent ticket read API client', () => {
       searchAgentTickets(
         {
           query: 'customer@example.com secret value',
-          filters: { status: 'OPEN', assigneeId: 'me' },
-          sort: 'updatedAt:desc,ticketNumber:desc',
+          filters: { status: 'OPEN', assigneeId: 'me', slaState: 'AT_RISK' },
+          sort: 'score:desc,ticketNumber:desc',
+          cursor: 'opaque-cursor',
           limit: 25,
         },
         '22222222-2222-4222-8222-222222222222',
@@ -835,6 +885,7 @@ describe('agent ticket read API client', () => {
     ).resolves.toMatchObject({
       searchEventId: '11111111-1111-4111-8111-111111111111',
       resultCount: 0,
+      nextCursor: 'opaque-next-cursor',
     })
 
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/agent/search')
@@ -849,8 +900,9 @@ describe('agent ticket read API client', () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain('customer')
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
       query: 'customer@example.com secret value',
-      filters: { status: 'OPEN', assigneeId: 'me' },
-      sort: 'updatedAt:desc,ticketNumber:desc',
+      filters: { status: 'OPEN', assigneeId: 'me', slaState: 'AT_RISK' },
+      sort: 'score:desc,ticketNumber:desc',
+      cursor: 'opaque-cursor',
       limit: 25,
     })
   })
@@ -865,9 +917,26 @@ describe('agent ticket read API client', () => {
               key: 'my-open',
               name: '내 open',
               scope: 'SYSTEM',
+              id: '11111111-1111-4111-8111-111111111111',
+              ownerStaffId: null,
+              active: true,
+              definitionVersion: 1,
+              orderVersion: 1,
               categoryPath: ['내 작업'],
+              conditions: {
+                version: 1,
+                all: [
+                  { field: 'STATUS', operator: 'LESS_THAN_SOLVED', values: [] },
+                ],
+                any: [],
+              },
+              columns: ['TICKET_NUMBER', 'SUBJECT', 'STATUS'],
+              sort: 'updatedAt:desc,ticketNumber:desc',
               ticketCount: null,
+              ticketCountState: 'EXACT',
               readScope: 'ALL_TICKETS',
+              createdAt: '2026-08-10T00:00:00Z',
+              updatedAt: '2026-08-10T00:00:00Z',
             },
           ]),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -906,6 +975,132 @@ describe('agent ticket read API client', () => {
     expect(queueUrl).toContain('assigneeId=me')
     expect(queueUrl).toContain('cursor=opaque-cursor')
     expect(queueUrl).toContain('limit=25')
+  })
+
+  it('uses only the versioned allowlisted saved-view contract for CRUD, preview, and reorder', async () => {
+    const definition = {
+      name: '내 위험 SLA',
+      conditions: {
+        version: 1 as const,
+        all: [
+          {
+            field: 'FIRST_REPLY_SLA_STATE' as const,
+            operator: 'IN' as const,
+            values: ['AT_RISK', 'BREACHED'],
+          },
+        ],
+        any: [],
+      },
+      columns: [
+        'TICKET_NUMBER',
+        'SUBJECT',
+        'FIRST_REPLY_SLA',
+        'UPDATED_AT',
+      ] as const,
+      sort: 'updatedAt:desc,ticketNumber:desc' as const,
+    }
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/csrf')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (url.endsWith('/preview')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              ticketCount: 3,
+              sort: 'updatedAt:desc,ticketNumber:desc',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (url.endsWith('/reorder')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              scope: 'PERSONAL',
+              orderVersion: 2,
+              viewKeys: ['pv-01J7SAVEDVIEW001'],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (init?.method === 'DELETE') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify(savedViewResponse({ definitionVersion: 2 })),
+          {
+            status: init?.method === 'POST' ? 201 : 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      createAgentSavedView({
+        ...definition,
+        columns: [...definition.columns],
+        scope: 'PERSONAL',
+      }),
+    ).resolves.toMatchObject({
+      key: 'pv-01J7SAVEDVIEW001',
+      definitionVersion: 2,
+    })
+    await expect(
+      previewAgentSavedView(
+        { ...definition, columns: [...definition.columns] },
+        '33333333-3333-4333-8333-333333333333',
+      ),
+    ).resolves.toEqual({
+      items: [],
+      ticketCount: 3,
+      sort: 'updatedAt:desc,ticketNumber:desc',
+    })
+    await expect(
+      reorderAgentSavedViews({
+        scope: 'PERSONAL',
+        expectedOrderVersion: 1,
+        viewKeys: ['pv-01J7SAVEDVIEW001'],
+      }),
+    ).resolves.toEqual({
+      scope: 'PERSONAL',
+      orderVersion: 2,
+      viewKeys: ['pv-01J7SAVEDVIEW001'],
+    })
+    await expect(
+      updateAgentSavedView('pv-01J7SAVEDVIEW001', {
+        ...definition,
+        columns: [...definition.columns],
+        expectedVersion: 1,
+      }),
+    ).resolves.toMatchObject({ definitionVersion: 2 })
+    await expect(
+      deleteAgentSavedView('pv-01J7SAVEDVIEW001', 2),
+    ).resolves.toBeUndefined()
+
+    const previewRequest = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/v1/agent/views/preview'),
+    )
+    expect(JSON.parse(String(previewRequest?.[1]?.body))).toEqual({
+      ...definition,
+      columns: [...definition.columns],
+    })
+    const deleteRequest = fetchMock.mock.calls.find(
+      ([, init]) => init?.method === 'DELETE',
+    )
+    expect(deleteRequest?.[1]?.headers).toMatchObject({ 'If-Match': '"2"' })
   })
 
   it('sends navigation metadata and decodes an on-hold staff detail projection', async () => {
@@ -963,7 +1158,7 @@ describe('agent ticket read API client', () => {
             },
             parent: null,
             children: [],
-            externalReferences: [],
+            externalReferenceCount: 2,
           },
           history: [
             {
@@ -1548,7 +1743,15 @@ describe('audit export status API client', () => {
           createdAt: '2026-08-14T00:00:00Z',
           format: 'CSV',
           fields: ['occurredAt', 'action'],
-          artifact: { state: 'NOT_CREATED', generationAvailable: false },
+          artifact: {
+            state: 'PENDING',
+            rowCount: null,
+            sizeBytes: null,
+            checksumSha256: null,
+            expiresAt: null,
+            contentType: null,
+            failureCode: null,
+          },
         }),
         { status: 200 },
       ),
@@ -1566,7 +1769,15 @@ describe('audit export status API client', () => {
       createdAt: '2026-08-14T00:00:00Z',
       format: 'CSV',
       fields: ['occurredAt', 'action'],
-      artifact: { state: 'NOT_CREATED', generationAvailable: false },
+      artifact: {
+        state: 'PENDING',
+        rowCount: null,
+        sizeBytes: null,
+        checksumSha256: null,
+        expiresAt: null,
+        contentType: null,
+        failureCode: null,
+      },
     })
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
@@ -1616,5 +1827,320 @@ describe('audit export status API client', () => {
         '22222222-2222-4222-8222-222222222222',
       ),
     ).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe('P1 headless contract fixture', () => {
+  it('keeps customer upload bytes and access proof out of URLs for initial and follow-up attachments', async () => {
+    const accessToken = 'a'.repeat(43)
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/v1/requests') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ticketNumber: 1042,
+              status: 'NEW',
+              accessToken,
+              createdAt: '2026-08-16T00:00:00Z',
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (url.endsWith('/uploads')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: '11111111-1111-4111-8111-111111111111',
+              fileName: 'approval.pdf',
+              sizeBytes: 17,
+              contentType: 'application/pdf',
+              scanStatus: 'CLEAN',
+              expiresAt: '2026-08-16T01:00:00Z',
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (url.endsWith('/comments')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: '22222222-2222-4222-8222-222222222222',
+              authorDisplayName: '고객',
+              body: '승인 내역을 첨부합니다.',
+              createdAt: '2026-08-16T00:05:00Z',
+              attachments: [
+                {
+                  id: '11111111-1111-4111-8111-111111111111',
+                  fileName: 'approval.pdf',
+                  sizeBytes: 17,
+                  contentType: 'application/pdf',
+                },
+              ],
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      return Promise.resolve(
+        new Response('%PDF-private', {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="approval.pdf"',
+            'Cache-Control': 'no-store',
+          },
+        }),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File(['%PDF-private'], 'approval.pdf', {
+      type: 'application/pdf',
+    })
+
+    await expect(
+      submitRequestWithAttachments({ ...submitInput, privacyConsent: true }, [
+        file,
+      ]),
+    ).resolves.toMatchObject({ ticketNumber: 1042, accessToken })
+    await expect(
+      uploadAnonymousRequestAttachment(1042, accessToken, file),
+    ).resolves.toMatchObject({
+      scanStatus: 'CLEAN',
+    })
+    await expect(
+      addAnonymousRequestComment(
+        1042,
+        accessToken,
+        '승인 내역을 첨부합니다.',
+        'follow-up-1042-attachment',
+        ['11111111-1111-4111-8111-111111111111'],
+      ),
+    ).resolves.toMatchObject({ attachments: [{ fileName: 'approval.pdf' }] })
+    await expect(
+      downloadAnonymousRequestAttachment(
+        1042,
+        '11111111-1111-4111-8111-111111111111',
+        accessToken,
+      ),
+    ).resolves.toMatchObject({ fileName: 'approval.pdf' })
+
+    const recordedCalls = fetchMock.mock.calls as unknown as Array<
+      [RequestInfo | URL, RequestInit?]
+    >
+    const initialBody = recordedCalls[0]?.[1]?.body
+    expect(initialBody).toBeInstanceOf(FormData)
+    expect((initialBody as FormData).getAll('attachments')).toHaveLength(1)
+    const commentRequest = recordedCalls.find(([url]) =>
+      String(url).endsWith('/comments'),
+    )
+    expect(JSON.parse(String(commentRequest?.[1]?.body))).toMatchObject({
+      attachmentIds: ['11111111-1111-4111-8111-111111111111'],
+      clientCommandId: 'follow-up-1042-attachment',
+    })
+    for (const [url] of recordedCalls) {
+      expect(String(url)).not.toContain(accessToken)
+    }
+  })
+
+  it('sends bounded explicit batch items and preserves per-item partial outcomes', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            correlationId: 'batch-correlation-1',
+            results: [
+              {
+                ticketNumber: 1042,
+                clientCommandId: 'bulk-1042-priority',
+                outcome: 'SUCCEEDED',
+                replayed: false,
+                resultVersion: 8,
+                auditId: '11111111-1111-4111-8111-111111111111',
+                code: null,
+              },
+              {
+                ticketNumber: 1043,
+                clientCommandId: 'bulk-1043-transfer',
+                outcome: 'CONFLICT',
+                replayed: false,
+                resultVersion: null,
+                auditId: null,
+                code: 'TICKET_FIELD_CONFLICT',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      executeAgentTicketBatch({
+        items: [
+          {
+            ticketNumber: 1042,
+            expectedVersion: 7,
+            clientCommandId: 'bulk-1042-priority',
+            command: {
+              type: 'UPDATE',
+              changedFields: ['priority'],
+              priority: 'HIGH',
+            },
+          },
+          {
+            ticketNumber: 1043,
+            expectedVersion: 3,
+            clientCommandId: 'bulk-1043-transfer',
+            command: {
+              type: 'TRANSFER',
+              groupId: '22222222-2222-4222-8222-222222222222',
+              assigneeId: null,
+              reason: '배송 전담 그룹으로 이관',
+            },
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      correlationId: 'batch-correlation-1',
+      results: [
+        { outcome: 'SUCCEEDED', resultVersion: 8 },
+        { outcome: 'CONFLICT', code: 'TICKET_FIELD_CONFLICT' },
+      ],
+    })
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      '/api/v1/agent/tickets/batch-commands',
+    )
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      items: [
+        {
+          ticketNumber: 1042,
+          expectedVersion: 7,
+          clientCommandId: 'bulk-1042-priority',
+          command: {
+            type: 'UPDATE',
+            changedFields: ['priority'],
+            priority: 'HIGH',
+          },
+        },
+        {
+          ticketNumber: 1043,
+          expectedVersion: 3,
+          clientCommandId: 'bulk-1043-transfer',
+          command: {
+            type: 'TRANSFER',
+            groupId: '22222222-2222-4222-8222-222222222222',
+            assigneeId: null,
+            reason: '배송 전담 그룹으로 이관',
+          },
+        },
+      ],
+    })
+  })
+
+  it('uses private multipart upload handles and authorized no-store downloads', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/csrf')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ token: 'csrf-token', headerName: 'X-CSRF-TOKEN' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (url.endsWith('/uploads')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: '11111111-1111-4111-8111-111111111111',
+              fileName: 'approval.pdf',
+              sizeBytes: 17,
+              contentType: 'application/pdf',
+              scanStatus: 'CLEAN',
+              expiresAt: '2026-08-16T01:00:00Z',
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      return Promise.resolve(
+        new Response('%PDF-private', {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="approval.pdf"',
+            'Cache-Control': 'no-store',
+          },
+        }),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const file = new File(['%PDF-private'], 'approval.pdf', {
+      type: 'application/pdf',
+    })
+    await expect(uploadAgentAttachment(file)).resolves.toMatchObject({
+      scanStatus: 'CLEAN',
+      fileName: 'approval.pdf',
+    })
+    const recordedCalls = fetchMock.mock.calls as unknown as Array<
+      [RequestInfo | URL, RequestInit?]
+    >
+    const uploadedBody = recordedCalls[1]?.[1]?.body
+    expect(uploadedBody).toBeInstanceOf(FormData)
+    expect((uploadedBody as FormData).get('file')).toBeInstanceOf(File)
+
+    const downloaded = await downloadAgentAttachment(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    )
+    expect(downloaded.contentType).toBe('application/pdf')
+    expect(downloaded.fileName).toBe('approval.pdf')
+    expect(await downloaded.content.text()).toBe('%PDF-private')
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      '/api/v1/agent/attachments/11111111-1111-4111-8111-111111111111/download',
+    )
+  })
+
+  it('decodes a READY export artifact and validates its private download headers', async () => {
+    const checksum = 'a'.repeat(64)
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('occurredAt,action\n2026-08-16T00:00:00Z,VIEW_EXECUTED\n', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition': "attachment; filename*=UTF-8''audit.csv",
+          'Cache-Control': 'no-store',
+          'X-Content-Checksum-SHA256': checksum,
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const download = await downloadAuditExport(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    )
+
+    expect(download).toMatchObject({
+      contentType: 'text/csv',
+      fileName: 'audit.csv',
+      checksumSha256: checksum,
+    })
+    expect(await download.content.text()).toContain('VIEW_EXECUTED')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/v1/audit/exports/11111111-1111-4111-8111-111111111111/download',
+    )
   })
 })

@@ -49,6 +49,7 @@ describe('AnonymousRequestDetailPage', () => {
                 authorDisplayName: '김민아',
                 body: '결제 승인 내역을 확인해 주세요.',
                 createdAt: '2026-08-15T00:00:00Z',
+                attachments: [],
                 internalNote: 'must-not-render',
               },
             ],

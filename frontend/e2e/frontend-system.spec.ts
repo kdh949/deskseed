@@ -63,7 +63,7 @@ async function mockReadOnlyTicket(page: Page) {
             },
             parent: null,
             children: [],
-            externalReferences: [],
+            externalReferenceCount: 0,
           },
           history: [],
           warnings: [],

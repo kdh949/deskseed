@@ -38,27 +38,27 @@ The fixed acceptance boundary declared before this run is warm-cache database-co
 
 | Query | After p95 (ms) | Budget (ms) | Pass |
 |---|---:|---:|:---:|
-| `queue_my_child_tasks_first_page` | 0.362 | 50 | t |
-| `queue_my_open_first_page` | 0.536 | 50 | t |
-| `queue_pending_first_page` | 0.670 | 50 | t |
-| `queue_recently_solved_first_page` | 0.367 | 50 | t |
-| `queue_unassigned_my_groups_first_page` | 9.367 | 50 | t |
+| `queue_my_child_tasks_first_page` | 0.400 | 50 | t |
+| `queue_my_open_first_page` | 0.643 | 50 | t |
+| `queue_pending_first_page` | 0.813 | 50 | t |
+| `queue_recently_solved_first_page` | 0.421 | 50 | t |
+| `queue_unassigned_my_groups_first_page` | 15.368 | 50 | t |
 
 ## Warm-cache server-side latency
 
 | Query | Before p50 (ms) | Before p95 (ms) | After p50 (ms) | After p95 (ms) | p95 change |
 |---|---:|---:|---:|---:|---:|
-| `audit_action_and_date` | 0.074 | 0.081 | 0.075 | 0.081 | +0.0% |
-| `audit_actor_and_date` | 6.018 | 12.666 | 0.074 | 0.079 | -99.4% |
-| `audit_first_cursor_page` | 0.068 | 0.074 | 0.069 | 0.075 | +1.4% |
-| `audit_projection_status` | 0.012 | 0.016 | 0.013 | 0.017 | +6.3% |
-| `audit_ticket_and_date` | 0.061 | 0.068 | 0.063 | 0.069 | +1.5% |
-| `queue_my_child_tasks_first_page` | 0.339 | 0.353 | 0.346 | 0.362 | +2.5% |
-| `queue_my_open_first_page` | 0.651 | 0.769 | 0.368 | 0.536 | -30.3% |
-| `queue_pending_first_page` | 0.637 | 0.888 | 0.650 | 0.670 | -24.5% |
-| `queue_recently_solved_first_page` | 0.620 | 0.717 | 0.354 | 0.367 | -48.8% |
-| `queue_unassigned_my_groups_first_page` | 36.560 | 40.168 | 8.440 | 9.367 | -76.7% |
-| `staff_command_replay_lookup` | 0.128 | 0.138 | 0.128 | 0.141 | +2.2% |
+| `audit_action_and_date` | 0.072 | 0.087 | 0.074 | 0.098 | +12.6% |
+| `audit_actor_and_date` | 11.543 | 14.284 | 0.072 | 0.088 | -99.4% |
+| `audit_first_cursor_page` | 0.070 | 0.077 | 0.070 | 0.082 | +6.5% |
+| `audit_projection_status` | 0.014 | 0.021 | 0.013 | 0.015 | -28.6% |
+| `audit_ticket_and_date` | 0.063 | 0.086 | 0.064 | 0.071 | -17.4% |
+| `queue_my_child_tasks_first_page` | 0.368 | 0.417 | 0.367 | 0.400 | -4.1% |
+| `queue_my_open_first_page` | 0.735 | 1.281 | 0.400 | 0.643 | -49.8% |
+| `queue_pending_first_page` | 0.698 | 0.810 | 0.719 | 0.813 | +0.4% |
+| `queue_recently_solved_first_page` | 0.667 | 0.766 | 0.371 | 0.421 | -45.0% |
+| `queue_unassigned_my_groups_first_page` | 44.729 | 54.604 | 11.683 | 15.368 | -71.9% |
+| `staff_command_replay_lookup` | 0.144 | 0.196 | 0.136 | 0.149 | -24.0% |
 
 All five queue rows are exact current `StaffTicketQueryRepository.list` shapes with empty optional filters, `cursor = null`, and the API default `limit + 1 = 51`. The measured `DefaultStaffView` cases are `MY_OPEN`, `UNASSIGNED_MY_GROUPS`, `PENDING`, `RECENTLY_SOLVED`, and `MY_CHILD_TASKS`; there is no `PENDING_OR_ON_HOLD` or `RECENTLY_UPDATED` view. No synthetic queue control query is mixed into this table.
 
@@ -72,10 +72,10 @@ The `before` phase temporarily removes only `tickets_assignee_status_cursor_idx`
 
 | Phase | Samples | p50 (ms) | p95 (ms) | Throughput (ops/s) | Rows/op | Relation B/op | WAL B/op |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `without_required_access_audit` | 100 | 0.148 | 0.315 | 6065.017 | 0.000 | 0.000 | 40.000 |
-| `with_required_access_audit` | 100 | 0.646 | 1.950 | 1270.003 | 2.000 | 2457.600 | 22262.560 |
+| `without_required_access_audit` | 100 | 0.151 | 0.325 | 5822.077 | 0.000 | 0.000 | 40.000 |
+| `with_required_access_audit` | 100 | 0.827 | 1.885 | 960.670 | 2.000 | 2457.600 | 22222.880 |
 
-Recorded deltas: p50 +336.5%, p95 +519.0%, throughput -79.1%.
+Recorded deltas: p50 +447.7%, p95 +480.0%, throughput -83.5%.
 
 This is a single-client database-component comparison, not an HTTP benchmark. Each sample commits the production repository’s three ticket-detail SELECT shapes; the audited phase adds the production `API_RESOURCE_READ` INSERT column/value shape and its projection trigger, using deterministic synthetic identifiers and a synthetic session fingerprint. It excludes Spring/JDBC mapping, authorization objects, assignment-option loading, JSON, network and browser time. The without-audit path is counterfactual only: Deskseed keeps strict availability semantics, so a sensitive read succeeds only after its required canonical audit write commits. `relation_bytes_delta` has PostgreSQL page-allocation granularity; `wal_bytes_delta` captures the transaction-level byte cost. The audited row amplification is one immutable `access_audit_events` row plus one `audit_activity_projection` row per successful read.
 

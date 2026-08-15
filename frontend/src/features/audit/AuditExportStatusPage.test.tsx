@@ -13,7 +13,15 @@ const job = {
   createdAt: '2026-08-14T09:00:00Z',
   format: 'CSV',
   fields: ['occurredAt', 'action'],
-  artifact: { state: 'NOT_CREATED', generationAvailable: false },
+  artifact: {
+    state: 'PENDING',
+    rowCount: null,
+    sizeBytes: null,
+    checksumSha256: null,
+    expiresAt: null,
+    contentType: null,
+    failureCode: null,
+  },
 }
 
 function jsonResponse(body: unknown, status = 200) {

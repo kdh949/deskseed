@@ -12,7 +12,15 @@ const job = {
   createdAt: '2026-08-14T09:00:00Z',
   format: 'CSV',
   fields: ['occurredAt'],
-  artifact: { state: 'NOT_CREATED', generationAvailable: false },
+  artifact: {
+    state: 'PENDING',
+    rowCount: null,
+    sizeBytes: null,
+    checksumSha256: null,
+    expiresAt: null,
+    contentType: null,
+    failureCode: null,
+  },
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -62,6 +70,37 @@ describe('useAuditExportStatus', () => {
     await act(() => vi.advanceTimersByTimeAsync(3000))
     await act(() => vi.advanceTimersByTimeAsync(3000))
     expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
+
+  it('stops auto-polling as soon as the worker reports a terminal artifact state', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          ...job,
+          status: 'READY',
+          artifact: {
+            state: 'READY',
+            rowCount: 1,
+            sizeBytes: 42,
+            checksumSha256:
+              'ea3582c0eacf31ba0ad2157f7e8cc8b5c16d21a1c74b4740269f349da1c9d2d2',
+            expiresAt: '2026-08-14T01:00:00Z',
+            contentType: 'text/csv',
+            failureCode: null,
+          },
+        }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useAuditExportStatus(jobId), {
+      wrapper,
+    })
+
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(result.current.pollingExhausted).toBe(true)
+    await act(() => vi.advanceTimersByTimeAsync(6000))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('stops auto-polling immediately after a failed fetch', async () => {

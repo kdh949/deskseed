@@ -2,6 +2,9 @@ import type {
   ActorSummary,
   AgentComment,
   AgentReadIntent,
+  AgentTicketBatchCommand,
+  AgentTicketBatchItemResult,
+  AgentTicketBatchResult,
   AgentTicketStatus,
   AgentTicketDetail,
   AgentTicketFilters,
@@ -16,6 +19,8 @@ import type {
   AuditActivityDetail,
   AuditActivityFilters,
   AuditActivityPage,
+  AuditExportArtifact,
+  AuditExportDownload,
   AuditExportJob,
   AuditProjectionRebuildResult,
   AuditProjectionStatus,
@@ -27,6 +32,7 @@ import type {
   BusinessSchedulePreviewInput,
   BusinessWeekday,
   CreateAuditExportInput,
+  CreateSavedViewInput,
   CreateAgentTicketCommand,
   CreateChildTicketCommand,
   CreateChildTicketResult,
@@ -82,7 +88,18 @@ import type {
   SubmittedRequest,
   SupportGroup,
   SavedAgentView,
+  SavedViewCondition,
+  SavedViewConditionField,
+  SavedViewConditionOperator,
+  SavedViewConditions,
+  SavedViewDefinition,
+  SavedViewOrder,
+  SavedViewPreview,
+  SavedViewScope,
+  SavedViewSort,
+  ReorderSavedViewsInput,
   SearchQueryRevealResult,
+  TicketAttachment,
   TicketHistoryItem,
   TicketAssignmentGroupOption,
   TicketAssignmentOptions,
@@ -92,7 +109,10 @@ import type {
   TicketStatus,
   TicketVisibility,
   TransferTicketCommand,
+  UpdateSavedViewInput,
   UpdateTicketCommand,
+  AttachmentUpload,
+  AttachmentDownload,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -159,6 +179,60 @@ const FIRST_REPLY_SLA_STATES = new Set<FirstReplySlaBadge['state']>([
   'CANCELLED',
   'NO_POLICY',
 ])
+const SAVED_VIEW_SCOPES = new Set<SavedViewScope>([
+  'PERSONAL',
+  'SHARED',
+  'SYSTEM',
+])
+const SAVED_VIEW_CONDITION_FIELDS = new Set<SavedViewConditionField>([
+  'STATUS',
+  'PRIORITY',
+  'GROUP',
+  'ASSIGNEE',
+  'FIRST_REPLY_SLA_STATE',
+  'TICKET_KIND',
+  'UPDATED_AT',
+])
+const SAVED_VIEW_CONDITION_OPERATORS = new Set<SavedViewConditionOperator>([
+  'EQUALS',
+  'NOT_EQUALS',
+  'IN',
+  'NOT_IN',
+  'IS_CURRENT_ACTOR',
+  'IS_UNASSIGNED',
+  'IS_CURRENT_ACTOR_GROUP',
+  'LESS_THAN_SOLVED',
+  'WITHIN_LAST_DAYS',
+])
+const SAVED_VIEW_COLUMNS = new Set([
+  'TICKET_NUMBER',
+  'SUBJECT',
+  'STATUS',
+  'PRIORITY',
+  'GROUP',
+  'ASSIGNEE',
+  'UPDATED_AT',
+  'FIRST_REPLY_SLA',
+])
+const AGENT_TICKET_SEARCH_SORTS = new Set([
+  'updatedAt:desc,ticketNumber:desc',
+  'score:desc,ticketNumber:desc',
+])
+const AUDIT_EXPORT_STATUSES = new Set([
+  'REQUESTED',
+  'RUNNING',
+  'READY',
+  'FAILED',
+  'EXPIRED',
+])
+const AUDIT_EXPORT_ARTIFACT_STATES = new Set([
+  'PENDING',
+  'READY',
+  'FAILED',
+  'EXPIRED',
+  'DELETED',
+])
+const AUDIT_EXPORT_CONTENT_TYPES = new Set(['text/csv', 'application/x-ndjson'])
 const ACTOR_TYPES = new Set<ActorSummary['type']>([
   'CUSTOMER',
   'STAFF',
@@ -388,13 +462,52 @@ function decodeSubmittedRequest(value: unknown): SubmittedRequest | undefined {
   }
 }
 
+function decodeTicketAttachment(value: unknown): TicketAttachment | undefined {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.id) ||
+    !isNonBlankString(value.fileName) ||
+    typeof value.sizeBytes !== 'number' ||
+    !Number.isSafeInteger(value.sizeBytes) ||
+    value.sizeBytes < 0 ||
+    !isNonBlankString(value.contentType)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    fileName: value.fileName,
+    sizeBytes: value.sizeBytes,
+    contentType: value.contentType,
+  }
+}
+
+function decodeAttachmentUpload(value: unknown): AttachmentUpload | undefined {
+  const attachment = decodeTicketAttachment(value)
+  if (
+    !attachment ||
+    !isRecord(value) ||
+    value.scanStatus !== 'CLEAN' ||
+    !isTimestamp(value.expiresAt)
+  ) {
+    return undefined
+  }
+  return {
+    ...attachment,
+    scanStatus: 'CLEAN',
+    expiresAt: value.expiresAt,
+  }
+}
+
 function decodePublicComment(value: unknown): PublicComment | undefined {
-  if (!isRecord(value)) return undefined
+  if (!isRecord(value) || !Array.isArray(value.attachments)) return undefined
+  const attachments = value.attachments.map(decodeTicketAttachment)
   if (
     !isNonBlankString(value.id) ||
     !isNonBlankString(value.authorDisplayName) ||
     !isNonBlankString(value.body) ||
-    !isTimestamp(value.createdAt)
+    !isTimestamp(value.createdAt) ||
+    attachments.some((attachment) => !attachment)
   ) {
     return undefined
   }
@@ -403,6 +516,7 @@ function decodePublicComment(value: unknown): PublicComment | undefined {
     authorDisplayName: value.authorDisplayName,
     body: value.body,
     createdAt: value.createdAt,
+    attachments: attachments as TicketAttachment[],
   }
 }
 
@@ -509,6 +623,51 @@ export async function submitRequest(
   return submitted
 }
 
+/**
+ * Keeps initial customer attachment bytes out of JSON while preserving the same
+ * request-token response contract as the JSON-only submission path.
+ */
+export async function submitRequestWithAttachments(
+  input: SubmitRequestInput,
+  files: File[],
+  authenticatedCustomer = false,
+): Promise<SubmittedRequest> {
+  let csrfToken: string | undefined
+  if (authenticatedCustomer) {
+    const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+    })
+    const csrfBody = await successfulResponseBody(csrfResponse)
+    if (!isRecord(csrfBody) || !isNonBlankString(csrfBody.token)) {
+      throw malformedSuccess(csrfResponse)
+    }
+    csrfToken = csrfBody.token
+  }
+  const form = new FormData()
+  form.set('name', input.name)
+  form.set('email', input.email)
+  form.set('subject', input.subject)
+  form.set('message', input.message)
+  if (input.privacyConsent !== undefined) {
+    form.set('privacyConsent', String(input.privacyConsent))
+  }
+  files.forEach((file) => form.append('attachments', file, file.name))
+  const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : undefined,
+    cache: 'no-store',
+    referrerPolicy: 'no-referrer',
+    body: form,
+  })
+  const body = await successfulResponseBody(response)
+  const submitted = decodeSubmittedRequest(body)
+  if (!submitted) throw malformedSuccess(response)
+  return submitted
+}
+
 export async function getPublicRequest(
   ticketNumber: number,
   accessToken: string,
@@ -533,6 +692,7 @@ export async function addAnonymousRequestComment(
   accessToken: string,
   body: string,
   clientCommandId: string,
+  attachmentIds: string[] = [],
 ): Promise<PublicComment> {
   const response = await fetch(
     `${API_BASE_URL}/api/v1/requests/${ticketNumber}/comments`,
@@ -545,13 +705,67 @@ export async function addAnonymousRequestComment(
         'Content-Type': 'application/json',
         'X-Request-Access-Token': accessToken,
       },
-      body: JSON.stringify({ body, clientCommandId }),
+      body: JSON.stringify({
+        body,
+        ...(attachmentIds.length ? { attachmentIds } : {}),
+        clientCommandId,
+      }),
     },
   )
   const responseBody = await successfulResponseBody(response)
   const comment = decodePublicComment(responseBody)
   if (!comment) throw malformedSuccess(response)
   return comment
+}
+
+export async function uploadAnonymousRequestAttachment(
+  ticketNumber: number,
+  accessToken: string,
+  file: File,
+): Promise<AttachmentUpload> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/requests/${ticketNumber}/attachments/uploads`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'X-Request-Access-Token': accessToken },
+      body: form,
+    },
+  )
+  const uploaded = decodeAttachmentUpload(
+    await successfulResponseBody(response),
+  )
+  if (!uploaded) throw malformedSuccess(response)
+  return uploaded
+}
+
+export async function downloadAnonymousRequestAttachment(
+  ticketNumber: number,
+  attachmentId: string,
+  accessToken: string,
+): Promise<AttachmentDownload> {
+  const response = await checkedBinary(
+    await fetch(
+      `${API_BASE_URL}/api/v1/requests/${ticketNumber}/attachments/${encodeURIComponent(attachmentId)}/download`,
+      {
+        credentials: 'include',
+        cache: 'no-store',
+        referrerPolicy: 'no-referrer',
+        headers: { 'X-Request-Access-Token': accessToken },
+      },
+    ),
+  )
+  const contentType = responseContentType(response)
+  if (!contentType) throw malformedSuccess(response)
+  return {
+    content: await response.blob(),
+    contentType,
+    fileName: responseFileName(response),
+  }
 }
 
 const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT', 'SECURITY_AUDITOR'])
@@ -1055,6 +1269,32 @@ async function checkedEmpty(response: Response): Promise<void> {
   throw failure(response, decodeProblem(await readJson(response)))
 }
 
+async function checkedBinary(response: Response): Promise<Response> {
+  if (response.ok) return response
+  throw failure(response, decodeProblem(await readJson(response)))
+}
+
+function responseContentType(response: Response): string | null {
+  const header = response.headers.get('Content-Type')
+  if (!header) return null
+  const [contentType] = header.split(';', 1)
+  return contentType?.trim().toLocaleLowerCase('en-US') || null
+}
+
+function responseFileName(response: Response): string | null {
+  const contentDisposition = response.headers.get('Content-Disposition')
+  if (!contentDisposition) return null
+  const encoded = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      return null
+    }
+  }
+  return contentDisposition.match(/filename="?([^";]+)"?/i)?.[1] ?? null
+}
+
 async function csrfHeaders(
   options: StaffFetchOptions = {},
   requestSnapshot = captureStaffRequestSnapshot(),
@@ -1102,6 +1342,33 @@ async function unsafeStaffFetch(
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    },
+    options,
+    requestSnapshot,
+  )
+}
+
+async function unsafeStaffMultipartFetch(
+  path: string,
+  form: FormData,
+  additionalHeaders: Record<string, string> = {},
+  options: StaffFetchOptions = {},
+) {
+  const requestSnapshot = captureStaffRequestSnapshot()
+  const csrf = await csrfHeaders(options, requestSnapshot)
+  if (!isCurrentStaffRequestSnapshot(requestSnapshot)) {
+    throw new Error('Staff session changed before mutation')
+  }
+  options.onMutationRequestStart?.()
+  if (!isCurrentStaffRequestSnapshot(requestSnapshot)) {
+    throw new Error('Staff session changed before mutation')
+  }
+  return staffFetch(
+    path,
+    {
+      method: 'POST',
+      headers: { ...csrf, ...additionalHeaders },
+      body: form,
     },
     options,
     requestSnapshot,
@@ -2278,38 +2545,204 @@ function decodeAgentTicketSummary(
   }
 }
 
-function decodeSavedAgentView(value: unknown): SavedAgentView | undefined {
-  if (!isRecord(value) || !Array.isArray(value.categoryPath)) return undefined
+function decodeSavedViewCondition(
+  value: unknown,
+): SavedViewCondition | undefined {
   if (
-    !isNonBlankString(value.key) ||
-    !isNonBlankString(value.name) ||
-    !['PERSONAL', 'SHARED', 'SYSTEM'].includes(String(value.scope)) ||
-    !value.categoryPath.every(isNonBlankString) ||
-    (value.ticketCount !== null && typeof value.ticketCount !== 'number') ||
-    value.readScope !== 'ALL_TICKETS'
+    !isRecord(value) ||
+    typeof value.field !== 'string' ||
+    !SAVED_VIEW_CONDITION_FIELDS.has(value.field as SavedViewConditionField) ||
+    typeof value.operator !== 'string' ||
+    !SAVED_VIEW_CONDITION_OPERATORS.has(
+      value.operator as SavedViewConditionOperator,
+    ) ||
+    !Array.isArray(value.values) ||
+    value.values.length > 10 ||
+    !value.values.every(isNonBlankString)
   ) {
     return undefined
   }
   return {
-    key: value.key,
+    field: value.field as SavedViewConditionField,
+    operator: value.operator as SavedViewConditionOperator,
+    values: value.values,
+  }
+}
+
+function decodeSavedViewConditions(
+  value: unknown,
+): SavedViewConditions | undefined {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    !Array.isArray(value.all) ||
+    !Array.isArray(value.any) ||
+    value.all.length > 12 ||
+    value.any.length > 12
+  ) {
+    return undefined
+  }
+  const all = value.all.map(decodeSavedViewCondition)
+  const any = value.any.map(decodeSavedViewCondition)
+  if (
+    all.some((condition) => !condition) ||
+    any.some((condition) => !condition)
+  ) {
+    return undefined
+  }
+  return {
+    version: 1,
+    all: all as SavedViewCondition[],
+    any: any as SavedViewCondition[],
+  }
+}
+
+function decodeSavedViewDefinition(
+  value: unknown,
+): SavedViewDefinition | undefined {
+  if (!isRecord(value) || !Array.isArray(value.columns)) return undefined
+  const conditions = decodeSavedViewConditions(value.conditions)
+  if (
+    !isNonBlankString(value.name) ||
+    !conditions ||
+    value.columns.length < 1 ||
+    value.columns.length > 12 ||
+    !value.columns.every(
+      (column) => typeof column === 'string' && SAVED_VIEW_COLUMNS.has(column),
+    ) ||
+    new Set(value.columns).size !== value.columns.length ||
+    value.sort !== 'updatedAt:desc,ticketNumber:desc'
+  ) {
+    return undefined
+  }
+  return {
     name: value.name,
-    scope: value.scope as SavedAgentView['scope'],
+    conditions,
+    columns: value.columns as SavedViewDefinition['columns'],
+    sort: value.sort as SavedViewSort,
+  }
+}
+
+function decodeSavedAgentView(value: unknown): SavedAgentView | undefined {
+  if (!isRecord(value) || !Array.isArray(value.categoryPath)) return undefined
+  const definition = decodeSavedViewDefinition(value)
+  if (
+    !definition ||
+    !isUuid(value.id) ||
+    !isNonBlankString(value.key) ||
+    typeof value.scope !== 'string' ||
+    !SAVED_VIEW_SCOPES.has(value.scope as SavedViewScope) ||
+    (value.ownerStaffId !== null && !isUuid(value.ownerStaffId)) ||
+    typeof value.active !== 'boolean' ||
+    typeof value.definitionVersion !== 'number' ||
+    !Number.isSafeInteger(value.definitionVersion) ||
+    value.definitionVersion < 1 ||
+    typeof value.orderVersion !== 'number' ||
+    !Number.isSafeInteger(value.orderVersion) ||
+    value.orderVersion < 1 ||
+    !value.categoryPath.every(isNonBlankString) ||
+    (value.ticketCount !== null &&
+      (typeof value.ticketCount !== 'number' ||
+        !Number.isSafeInteger(value.ticketCount) ||
+        value.ticketCount < 0)) ||
+    (value.ticketCountState !== 'EXACT' &&
+      value.ticketCountState !== 'OMITTED_VISIBLE_LIMIT') ||
+    value.readScope !== 'ALL_TICKETS' ||
+    !isTimestamp(value.createdAt) ||
+    !isTimestamp(value.updatedAt)
+  ) {
+    return undefined
+  }
+  return {
+    ...definition,
+    id: value.id,
+    key: value.key,
+    scope: value.scope as SavedViewScope,
+    ownerStaffId: value.ownerStaffId,
+    active: value.active,
+    definitionVersion: value.definitionVersion,
+    orderVersion: value.orderVersion,
     categoryPath: value.categoryPath,
     ticketCount: value.ticketCount,
-    readScope: value.readScope,
+    ticketCountState: value.ticketCountState,
+    readScope: 'ALL_TICKETS',
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  }
+}
+
+function decodeAgentTicketPage(value: unknown): AgentTicketPage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(decodeAgentTicketSummary)
+  if (
+    items.some((ticket) => !ticket) ||
+    (value.nextCursor !== null && !isNonBlankString(value.nextCursor)) ||
+    (value.totalApproximate !== null &&
+      (typeof value.totalApproximate !== 'number' ||
+        !Number.isSafeInteger(value.totalApproximate) ||
+        value.totalApproximate < 0)) ||
+    value.sort !== 'updatedAt:desc,ticketNumber:desc'
+  ) {
+    return undefined
+  }
+  return {
+    items: items as AgentTicketSummary[],
+    nextCursor: value.nextCursor,
+    totalApproximate: value.totalApproximate,
+    sort: 'updatedAt:desc,ticketNumber:desc',
+  }
+}
+
+function decodeSavedViewPreview(value: unknown): SavedViewPreview | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(decodeAgentTicketSummary)
+  if (
+    items.some((ticket) => !ticket) ||
+    typeof value.ticketCount !== 'number' ||
+    !Number.isSafeInteger(value.ticketCount) ||
+    value.ticketCount < 0 ||
+    value.sort !== 'updatedAt:desc,ticketNumber:desc'
+  ) {
+    return undefined
+  }
+  return {
+    items: items as AgentTicketSummary[],
+    ticketCount: value.ticketCount,
+    sort: 'updatedAt:desc,ticketNumber:desc',
+  }
+}
+
+function decodeSavedViewOrder(value: unknown): SavedViewOrder | undefined {
+  if (
+    !isRecord(value) ||
+    (value.scope !== 'PERSONAL' && value.scope !== 'SHARED') ||
+    typeof value.orderVersion !== 'number' ||
+    !Number.isSafeInteger(value.orderVersion) ||
+    value.orderVersion < 1 ||
+    !Array.isArray(value.viewKeys) ||
+    value.viewKeys.some((key) => !isNonBlankString(key))
+  ) {
+    return undefined
+  }
+  return {
+    scope: value.scope,
+    orderVersion: value.orderVersion,
+    viewKeys: value.viewKeys,
   }
 }
 
 function decodeAgentComment(value: unknown): AgentComment | undefined {
   if (!isRecord(value) || !Array.isArray(value.attachments)) return undefined
   const actor = decodeActorSummary(value.actor)
+  const attachments = value.attachments.map(decodeTicketAttachment)
   if (
     !isNonBlankString(value.id) ||
     !isTicketVisibility(value.visibility) ||
     !actor ||
     !isNonBlankString(value.body) ||
     !isTimestamp(value.createdAt) ||
-    !isNonBlankString(value.source)
+    !isNonBlankString(value.source) ||
+    attachments.some((attachment) => !attachment)
   ) {
     return undefined
   }
@@ -2320,7 +2753,7 @@ function decodeAgentComment(value: unknown): AgentComment | undefined {
     body: value.body,
     createdAt: value.createdAt,
     source: value.source,
-    attachments: [...value.attachments],
+    attachments: attachments as TicketAttachment[],
   }
 }
 
@@ -2391,7 +2824,9 @@ function decodeAgentTicketDetail(
     parent === undefined ||
     !Array.isArray(value.context.children) ||
     children.some((child) => !child) ||
-    !Array.isArray(value.context.externalReferences) ||
+    typeof value.context.externalReferenceCount !== 'number' ||
+    !Number.isSafeInteger(value.context.externalReferenceCount) ||
+    value.context.externalReferenceCount < 0 ||
     history.some((item) => !item) ||
     !assignmentOptions ||
     !value.capabilities.every(isNonBlankString)
@@ -2407,7 +2842,7 @@ function decodeAgentTicketDetail(
       customer,
       parent,
       children: children as AgentTicketSummary[],
-      externalReferences: [...value.context.externalReferences],
+      externalReferenceCount: value.context.externalReferenceCount,
     },
     history: history as TicketHistoryItem[],
     warnings: [...value.warnings],
@@ -2494,6 +2929,73 @@ function decodeTicketCommandResult(
   }
 }
 
+function decodeAgentTicketBatchItemResult(
+  value: unknown,
+): AgentTicketBatchItemResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isTicketNumber(value.ticketNumber) ||
+    !isNonBlankString(value.clientCommandId) ||
+    ![
+      'SUCCEEDED',
+      'CONFLICT',
+      'DENIED',
+      'NOT_FOUND',
+      'VALIDATION_FAILED',
+    ].includes(String(value.outcome)) ||
+    typeof value.replayed !== 'boolean' ||
+    (value.resultVersion !== null &&
+      (typeof value.resultVersion !== 'number' ||
+        !Number.isSafeInteger(value.resultVersion) ||
+        value.resultVersion < 0)) ||
+    (value.auditId !== null && !isUuid(value.auditId)) ||
+    (value.code !== null &&
+      ![
+        'TICKET_FIELD_CONFLICT',
+        'VERSION_PRECONDITION_FAILED',
+        'CLIENT_COMMAND_ID_REUSED',
+        'TICKET_WRITE_FORBIDDEN',
+        'TICKET_NOT_FOUND',
+        'VALIDATION_FAILED',
+      ].includes(String(value.code)))
+  ) {
+    return undefined
+  }
+  return {
+    ticketNumber: value.ticketNumber,
+    clientCommandId: value.clientCommandId,
+    outcome: value.outcome as AgentTicketBatchItemResult['outcome'],
+    replayed: value.replayed,
+    resultVersion: value.resultVersion,
+    auditId: value.auditId,
+    code: value.code as AgentTicketBatchItemResult['code'],
+  }
+}
+
+function decodeAgentTicketBatchResult(
+  value: unknown,
+): AgentTicketBatchResult | undefined {
+  if (
+    !isRecord(value) ||
+    !isNonBlankString(value.correlationId) ||
+    !Array.isArray(value.results)
+  ) {
+    return undefined
+  }
+  const results = value.results.map(decodeAgentTicketBatchItemResult)
+  if (
+    results.length < 1 ||
+    results.length > 100 ||
+    results.some((result) => !result)
+  ) {
+    return undefined
+  }
+  return {
+    correlationId: value.correlationId,
+    results: results as AgentTicketBatchItemResult[],
+  }
+}
+
 function decodeCreateChildTicketResult(
   value: unknown,
 ): CreateChildTicketResult | undefined {
@@ -2545,6 +3047,70 @@ export async function listAgentViews(): Promise<SavedAgentView[]> {
   return views as SavedAgentView[]
 }
 
+export async function createAgentSavedView(
+  input: CreateSavedViewInput,
+): Promise<SavedAgentView> {
+  const response = await unsafeStaffFetch('/api/v1/agent/views', 'POST', input)
+  const decoded = decodeSavedAgentView(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function previewAgentSavedView(
+  input: SavedViewDefinition,
+  interactionId: string,
+): Promise<SavedViewPreview> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/views/preview',
+    'POST',
+    input,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const decoded = decodeSavedViewPreview(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function reorderAgentSavedViews(
+  input: ReorderSavedViewsInput,
+): Promise<SavedViewOrder> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/views/reorder',
+    'POST',
+    input,
+  )
+  const decoded = decodeSavedViewOrder(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function updateAgentSavedView(
+  viewKey: string,
+  input: UpdateSavedViewInput,
+): Promise<SavedAgentView> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/views/${encodeURIComponent(viewKey)}`,
+    'PATCH',
+    input,
+  )
+  const decoded = decodeSavedAgentView(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function deleteAgentSavedView(
+  viewKey: string,
+  expectedVersion: number,
+): Promise<void> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/views/${encodeURIComponent(viewKey)}`,
+    'DELETE',
+    undefined,
+    { 'If-Match': `"${expectedVersion}"` },
+  )
+  await checkedEmpty(response)
+}
+
 export async function listTicketsInView(
   viewKey: string,
   filters: AgentTicketFilters = {},
@@ -2561,25 +3127,9 @@ export async function listTicketsInView(
   const response = await staffFetch(
     `/api/v1/agent/views/${encodeURIComponent(viewKey)}/tickets${query}`,
   )
-  const body = await checkedBody(response)
-  if (!isRecord(body) || !Array.isArray(body.items))
-    throw malformedSuccess(response)
-  const items = body.items.map(decodeAgentTicketSummary)
-  if (
-    items.some((ticket) => !ticket) ||
-    (body.nextCursor !== null && typeof body.nextCursor !== 'string') ||
-    (body.totalApproximate !== null &&
-      typeof body.totalApproximate !== 'number') ||
-    body.sort !== 'updatedAt:desc,ticketNumber:desc'
-  ) {
-    throw malformedSuccess(response)
-  }
-  return {
-    items: items as AgentTicketSummary[],
-    nextCursor: body.nextCursor,
-    totalApproximate: body.totalApproximate,
-    sort: body.sort,
-  }
+  const decoded = decodeAgentTicketPage(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
 }
 
 export async function searchAgentTickets(
@@ -2604,7 +3154,9 @@ export async function searchAgentTickets(
     typeof body.resultCount !== 'number' ||
     !Number.isSafeInteger(body.resultCount) ||
     body.resultCount < 0 ||
-    body.sort !== 'updatedAt:desc,ticketNumber:desc'
+    typeof body.sort !== 'string' ||
+    !AGENT_TICKET_SEARCH_SORTS.has(body.sort) ||
+    (body.nextCursor !== null && !isNonBlankString(body.nextCursor))
   ) {
     throw malformedSuccess(response)
   }
@@ -2613,7 +3165,8 @@ export async function searchAgentTickets(
     searchInteractionId: body.searchInteractionId,
     items: items as AgentTicketSummary[],
     resultCount: body.resultCount,
-    sort: body.sort,
+    sort: body.sort as AgentTicketSearchPage['sort'],
+    nextCursor: body.nextCursor,
   }
 }
 
@@ -2635,6 +3188,39 @@ export async function getAgentTicket(
   const detail = decodeAgentTicketDetail(await checkedBody(response))
   if (!detail) throw malformedSuccess(response)
   return detail
+}
+
+export async function uploadAgentAttachment(
+  file: File,
+): Promise<AttachmentUpload> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  const response = await unsafeStaffMultipartFetch(
+    '/api/v1/agent/attachments/uploads',
+    form,
+  )
+  const decoded = decodeAttachmentUpload(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function downloadAgentAttachment(
+  attachmentId: string,
+  interactionId: string,
+): Promise<AttachmentDownload> {
+  const response = await checkedBinary(
+    await staffFetch(
+      `/api/v1/agent/attachments/${encodeURIComponent(attachmentId)}/download`,
+      { headers: { 'X-Interaction-Id': interactionId } },
+    ),
+  )
+  const contentType = responseContentType(response)
+  if (!contentType) throw malformedSuccess(response)
+  return {
+    content: await response.blob(),
+    contentType,
+    fileName: responseFileName(response),
+  }
 }
 
 export async function updateAgentTicket(
@@ -2664,6 +3250,19 @@ export async function transferAgentTicket(
   const result = decodeTicketCommandResult(await checkedBody(response))
   if (!result) throw malformedSuccess(response)
   return result
+}
+
+export async function executeAgentTicketBatch(
+  command: AgentTicketBatchCommand,
+): Promise<AgentTicketBatchResult> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/agent/tickets/batch-commands',
+    'POST',
+    command,
+  )
+  const decoded = decodeAgentTicketBatchResult(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
 }
 
 export async function createChildTicket(
@@ -3016,28 +3615,68 @@ function decodeSearchQueryRevealResult(
   }
 }
 
-function decodeAuditExportJob(value: unknown): AuditExportJob | undefined {
+function decodeAuditExportArtifact(
+  value: unknown,
+): AuditExportArtifact | undefined {
   if (
     !isRecord(value) ||
-    !isCanonicalUuid(value.id) ||
-    value.status !== 'REQUESTED' ||
-    !isTimestamp(value.createdAt) ||
-    !['CSV', 'JSONL'].includes(String(value.format)) ||
-    !Array.isArray(value.fields) ||
-    !value.fields.every(isNonBlankString) ||
-    !isRecord(value.artifact) ||
-    value.artifact.state !== 'NOT_CREATED' ||
-    value.artifact.generationAvailable !== false
+    typeof value.state !== 'string' ||
+    !AUDIT_EXPORT_ARTIFACT_STATES.has(value.state) ||
+    (value.rowCount !== null &&
+      (typeof value.rowCount !== 'number' ||
+        !Number.isSafeInteger(value.rowCount) ||
+        value.rowCount < 0)) ||
+    (value.sizeBytes !== null &&
+      (typeof value.sizeBytes !== 'number' ||
+        !Number.isSafeInteger(value.sizeBytes) ||
+        value.sizeBytes < 0)) ||
+    (value.checksumSha256 !== null &&
+      (typeof value.checksumSha256 !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(value.checksumSha256))) ||
+    (value.expiresAt !== null && !isTimestamp(value.expiresAt)) ||
+    (value.contentType !== null &&
+      (typeof value.contentType !== 'string' ||
+        !AUDIT_EXPORT_CONTENT_TYPES.has(value.contentType))) ||
+    (value.failureCode !== null &&
+      !['GENERATION_FAILED', 'ARTIFACT_STORE_UNAVAILABLE', 'EXPIRED'].includes(
+        String(value.failureCode),
+      ))
   ) {
     return undefined
   }
   return {
+    state: value.state as AuditExportArtifact['state'],
+    rowCount: value.rowCount,
+    sizeBytes: value.sizeBytes,
+    checksumSha256: value.checksumSha256,
+    expiresAt: value.expiresAt,
+    contentType: value.contentType as AuditExportArtifact['contentType'],
+    failureCode: value.failureCode as AuditExportArtifact['failureCode'],
+  }
+}
+
+function decodeAuditExportJob(value: unknown): AuditExportJob | undefined {
+  if (
+    !isRecord(value) ||
+    !isCanonicalUuid(value.id) ||
+    typeof value.status !== 'string' ||
+    !AUDIT_EXPORT_STATUSES.has(value.status) ||
+    !isTimestamp(value.createdAt) ||
+    !['CSV', 'JSONL'].includes(String(value.format)) ||
+    !Array.isArray(value.fields) ||
+    !value.fields.every(isNonBlankString)
+  ) {
+    return undefined
+  }
+  const artifact = decodeAuditExportArtifact(value.artifact)
+  if (!artifact) return undefined
+  return {
     id: value.id,
-    status: 'REQUESTED',
+    status: value.status as AuditExportJob['status'],
     createdAt: value.createdAt,
     format: value.format as AuditExportJob['format'],
     fields: value.fields,
-    artifact: { state: 'NOT_CREATED', generationAvailable: false },
+    artifact,
   }
 }
 
@@ -3121,6 +3760,34 @@ export async function getAuditExport(
   const decoded = decodeAuditExportJob(await checkedBody(response))
   if (!decoded) throw malformedSuccess(response)
   return decoded
+}
+
+export async function downloadAuditExport(
+  jobId: string,
+  interactionId: string,
+): Promise<AuditExportDownload> {
+  const response = await checkedBinary(
+    await staffFetch(
+      `/api/v1/audit/exports/${encodeURIComponent(jobId)}/download`,
+      { headers: { 'X-Interaction-Id': interactionId } },
+    ),
+  )
+  const contentType = responseContentType(response)
+  const checksumSha256 = response.headers.get('X-Content-Checksum-SHA256')
+  if (
+    !contentType ||
+    !AUDIT_EXPORT_CONTENT_TYPES.has(contentType) ||
+    !checksumSha256 ||
+    !/^[0-9a-f]{64}$/.test(checksumSha256)
+  ) {
+    throw malformedSuccess(response)
+  }
+  return {
+    content: await response.blob(),
+    contentType: contentType as AuditExportDownload['contentType'],
+    fileName: responseFileName(response),
+    checksumSha256,
+  }
 }
 
 export async function rebuildAuditProjection(

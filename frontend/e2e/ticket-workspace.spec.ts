@@ -61,7 +61,7 @@ const detail = {
     },
     parent: null,
     children: [],
-    externalReferences: [],
+    externalReferenceCount: 0,
   },
   history: [],
   warnings: [],
