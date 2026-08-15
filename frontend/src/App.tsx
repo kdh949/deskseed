@@ -1,6 +1,13 @@
 import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
 import { ScreenState } from './design-system'
 import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
+import { AdminBusinessSchedulesPage } from './features/admin/AdminBusinessSchedulesPage'
+import { AdminCustomerAccessModePage } from './features/admin/AdminCustomerAccessModePage'
+import { AdminFirstReplySlaPage } from './features/admin/AdminFirstReplySlaPage'
+import { AdminGroupsPage } from './features/admin/AdminGroupsPage'
+import { AdminMailPage } from './features/admin/AdminMailPage'
+import { AdminShellLayout } from './features/admin/AdminShellLayout'
+import { AdminStaffPage } from './features/admin/AdminStaffPage'
 import { AuditExplorerPage } from './features/audit/AuditExplorerPage'
 import { AuditExportStatusPage } from './features/audit/AuditExportStatusPage'
 import { CustomerAccountRoute } from './features/customer-auth/CustomerAccountRoute'
@@ -15,6 +22,7 @@ import { CustomerRequestCreatePage } from './features/customer-requests/Customer
 import { CustomerRequestLookupPage } from './features/customer-requests/CustomerRequestLookupPage'
 import {
   AgentRoute,
+  AdminRoute,
   AuditRoute,
   StaffRoute,
   StaffSessionLayout,
@@ -37,6 +45,20 @@ const agentChildren: RouteObject[] = [
 const auditChildren: RouteObject[] = [
   { path: 'audit', element: <AuditExplorerPage /> },
   { path: 'audit/exports/:jobId', element: <AuditExportStatusPage /> },
+]
+
+const adminChildren: RouteObject[] = [
+  { index: true, element: <Navigate to="operations/mail" replace /> },
+  { path: 'operations/mail', element: <AdminMailPage /> },
+  { path: 'staff', element: <AdminStaffPage /> },
+  { path: 'groups', element: <AdminGroupsPage /> },
+  {
+    path: 'settings/customer-access-mode',
+    element: <AdminCustomerAccessModePage />,
+  },
+  { path: 'business-rules/schedules', element: <AdminBusinessSchedulesPage /> },
+  { path: 'business-rules/sla', element: <AdminFirstReplySlaPage /> },
+  { path: '*', element: <Navigate to="operations/mail" replace /> },
 ]
 
 const customerChildren: RouteObject[] = [
@@ -94,6 +116,16 @@ export const appRoutes: RouteObject[] = [
                 path: '/agent',
                 element: <AgentShellLayout />,
                 children: auditChildren,
+              },
+            ],
+          },
+          {
+            element: <AdminRoute />,
+            children: [
+              {
+                path: '/admin',
+                element: <AdminShellLayout />,
+                children: adminChildren,
               },
             ],
           },
