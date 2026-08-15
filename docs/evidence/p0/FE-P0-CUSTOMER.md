@@ -9,7 +9,7 @@
 - Decision IDs: `D-003`, `D-006`, `D-018`, `D-040`, `D-046`, `D-053`
 - Accepted ADRs: `0039`
 - Requirements: `REQ-TKT-001`, `REQ-TKT-003`, `REQ-TKT-005`, `REQ-TKT-006`, `REQ-TKT-008`, `REQ-AUTH-001`, `REQ-AUTH-002`, `REQ-UI-005`, `REQ-UI-006`
-- Screen/route IDs: `PUB-001` through `PUB-004`; `/`, `/requests/new`, `/requests/lookup`, `/requests/:ticketNumber`, `/customer/sign-in`, `/customer/sign-in/consume`, `/account/requests`, `/account/requests/:ticketNumber`
+- Screen/route IDs: PUB-001 through PUB-004; `/`, `/requests/new`, `/requests/lookup`, `/requests/:ticketNumber`, `/customer/sign-in`, `/customer/sign-in/consume`, `/account/requests`, `/account/requests/:ticketNumber`
 - Frozen operations: `createCustomerRequest`, `getAnonymousRequest`, `addCustomerRequestComment`, `requestCustomerMagicLink`, `consumeCustomerMagicLink`, `getCustomerCsrfToken`, `deleteCustomerSession`, `getCurrentCustomer`, `listCustomerRequests`, `getCustomerRequest`, `addAuthenticatedCustomerComment`
 - Verification gates: `TKT-002`, `UI-002`, `UI-004`, `AUTH-001`, `AUTH-002`, `AUTH-003`, `UI-005`
 

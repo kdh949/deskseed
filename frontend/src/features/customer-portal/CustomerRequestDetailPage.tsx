@@ -3,18 +3,22 @@ import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { RetryButton, ScreenState } from '../../design-system'
 import { CustomerRequestConversation } from '../customer-requests/CustomerRequestConversation'
+import { useCustomerSession } from '../customer-auth/CustomerSessionContext'
 import {
   addCustomerFollowUp,
   ApiError,
   getCustomerRequest,
 } from './api/customerPortalClient'
+import { customerRequestQueryKeys } from './customerRequestQueryKeys'
 
 export function CustomerRequestDetailPage() {
   const { ticketNumber: ticketNumberParameter } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParameter)
+  const session = useCustomerSession()
+  const customerId = session.customer?.id ?? 'anonymous'
   const query = useQuery({
-    enabled: ticketNumber !== null,
-    queryKey: ['customer-request-detail', ticketNumber],
+    enabled: ticketNumber !== null && session.customer !== null,
+    queryKey: customerRequestQueryKeys.detail(customerId, ticketNumber ?? 0),
     queryFn: () => {
       if (ticketNumber === null) throw new Error('invalid-ticket-number')
       return getCustomerRequest(ticketNumber)
@@ -28,6 +32,24 @@ export function CustomerRequestDetailPage() {
         description="문의 번호를 확인한 뒤 내 문의 목록으로 돌아가 주세요."
         kind="not-found"
         title="올바른 문의 번호가 아닙니다."
+      />
+    )
+  }
+  if (session.status === 'loading') {
+    return (
+      <CustomerDetailState
+        kind="loading"
+        title="문의 내용을 불러오고 있습니다."
+      />
+    )
+  }
+  if (session.customer === null) {
+    return (
+      <CustomerDetailState
+        action={<Link to="/customer/sign-in">고객 로그인</Link>}
+        description="내 문의는 로그인한 고객 계정에서만 볼 수 있습니다."
+        kind="denied"
+        title="내 문의 접근이 허용되지 않았습니다."
       />
     )
   }

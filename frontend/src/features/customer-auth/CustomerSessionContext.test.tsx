@@ -1,10 +1,27 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CustomerSessionProvider,
   useCustomerSession,
 } from './CustomerSessionContext'
+import { customerRequestQueryKeys } from '../customer-portal/customerRequestQueryKeys'
+
+function renderSession(children: ReactNode, queryClient = createQueryClient()) {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <CustomerSessionProvider>{children}</CustomerSessionProvider>
+    </QueryClientProvider>,
+  )
+}
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+}
 
 function SessionProbe() {
   const session = useCustomerSession()
@@ -49,11 +66,7 @@ describe('CustomerSessionProvider', () => {
     )
     const user = userEvent.setup()
 
-    render(
-      <CustomerSessionProvider>
-        <MagicLinkSessionProbe />
-      </CustomerSessionProvider>,
-    )
+    renderSession(<MagicLinkSessionProbe />)
 
     await screen.findByText('anonymous')
     await user.click(
@@ -104,14 +117,15 @@ describe('CustomerSessionProvider', () => {
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
 
-    render(
-      <CustomerSessionProvider>
-        <SessionProbe />
-      </CustomerSessionProvider>,
-    )
+    const queryClient = createQueryClient()
+    renderSession(<SessionProbe />, queryClient)
 
     expect(await screen.findByText('고객')).toBeVisible()
     expect(screen.getByText('authenticated')).toBeVisible()
+    queryClient.setQueryData(
+      customerRequestQueryKeys.list('11111111-1111-4111-8111-111111111111'),
+      { pages: [], pageParams: [] },
+    )
 
     await user.click(screen.getByRole('button', { name: '로그아웃' }))
 
@@ -125,5 +139,10 @@ describe('CustomerSessionProvider', () => {
         headers: { 'X-CSRF-TOKEN': 'a'.repeat(32) },
       }),
     )
+    expect(
+      queryClient.getQueryData(
+        customerRequestQueryKeys.list('11111111-1111-4111-8111-111111111111'),
+      ),
+    ).toBeUndefined()
   })
 })

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import {
   createContext,
   useCallback,
@@ -8,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { customerRequestQueryKeys } from '../customer-portal/customerRequestQueryKeys'
 import {
   CustomerAuthApiError,
   deleteCustomerSession,
@@ -30,10 +32,35 @@ interface CustomerSessionValue {
 const CustomerSessionContext = createContext<CustomerSessionValue | null>(null)
 
 export function CustomerSessionProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const [customer, setCustomer] = useState<CurrentCustomer | null>(null)
   const [status, setStatus] = useState<CustomerSessionStatus>('loading')
   const [signingOut, setSigningOut] = useState(false)
+  const customerIdRef = useRef<string | null>(null)
   const requestVersion = useRef(0)
+
+  const clearOwnedRequestQueries = useCallback(() => {
+    void queryClient.cancelQueries({
+      queryKey: customerRequestQueryKeys.listRoot,
+    })
+    void queryClient.cancelQueries({
+      queryKey: customerRequestQueryKeys.detailRoot,
+    })
+    queryClient.removeQueries({ queryKey: customerRequestQueryKeys.listRoot })
+    queryClient.removeQueries({ queryKey: customerRequestQueryKeys.detailRoot })
+  }, [queryClient])
+
+  const replaceCustomer = useCallback(
+    (nextCustomer: CurrentCustomer | null) => {
+      const nextCustomerId = nextCustomer?.id ?? null
+      if (customerIdRef.current !== nextCustomerId) {
+        clearOwnedRequestQueries()
+        customerIdRef.current = nextCustomerId
+      }
+      setCustomer(nextCustomer)
+    },
+    [clearOwnedRequestQueries],
+  )
 
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current
@@ -41,14 +68,14 @@ export function CustomerSessionProvider({ children }: { children: ReactNode }) {
     try {
       const current = await getCurrentCustomer()
       if (version !== requestVersion.current) return
-      setCustomer(current)
+      replaceCustomer(current)
       setStatus(current ? 'authenticated' : 'anonymous')
     } catch {
       if (version !== requestVersion.current) return
-      setCustomer(null)
+      replaceCustomer(null)
       setStatus('error')
     }
-  }, [])
+  }, [replaceCustomer])
 
   useEffect(() => {
     void refresh()
@@ -59,27 +86,28 @@ export function CustomerSessionProvider({ children }: { children: ReactNode }) {
     try {
       await deleteCustomerSession()
       requestVersion.current += 1
-      setCustomer(null)
+      replaceCustomer(null)
       setStatus('anonymous')
     } catch (error) {
       if (error instanceof CustomerAuthApiError && error.status === 401) {
         requestVersion.current += 1
-        setCustomer(null)
+        replaceCustomer(null)
         setStatus('anonymous')
+        return
       }
       throw error
     } finally {
       setSigningOut(false)
     }
-  }, [])
+  }, [replaceCustomer])
 
   const acceptAuthenticatedCustomer = useCallback(
     (current: CurrentCustomer) => {
       requestVersion.current += 1
-      setCustomer(current)
+      replaceCustomer(current)
       setStatus('authenticated')
     },
-    [],
+    [replaceCustomer],
   )
 
   const value = useMemo(

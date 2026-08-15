@@ -1,24 +1,29 @@
 import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { RetryButton, ScreenState } from '../../design-system'
+import { useCustomerSession } from '../customer-auth/CustomerSessionContext'
 import {
   ApiError,
   listCustomerRequests,
   type CustomerRequestPage,
 } from './api/customerPortalClient'
 import { CustomerRequestList } from './CustomerRequestList'
+import { customerRequestQueryKeys } from './customerRequestQueryKeys'
 
 export function CustomerRequestListPage() {
+  const session = useCustomerSession()
+  const customerId = session.customer?.id ?? 'anonymous'
   const query = useInfiniteQuery<
     CustomerRequestPage,
     ApiError,
     InfiniteData<CustomerRequestPage>,
-    readonly ['customer-request-list'],
+    readonly ['customer-request-list', string],
     string | undefined
   >({
+    enabled: session.customer !== null,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     initialPageParam: undefined as string | undefined,
-    queryKey: ['customer-request-list'] as const,
+    queryKey: customerRequestQueryKeys.list(customerId),
     queryFn: ({ pageParam }) => listCustomerRequests(undefined, pageParam),
     retry: false,
   })
@@ -26,6 +31,22 @@ export function CustomerRequestListPage() {
   const nextCursor = query.hasNextPage
     ? (query.data?.pages.at(-1)?.nextCursor ?? null)
     : null
+
+  if (session.status === 'loading') {
+    return (
+      <CustomerListState kind="loading" title="내 문의를 불러오고 있습니다." />
+    )
+  }
+
+  if (session.customer === null) {
+    return (
+      <CustomerListState
+        description="내 문의를 보려면 고객 로그인이 필요합니다."
+        kind="denied"
+        title="내 문의 접근이 허용되지 않았습니다."
+      />
+    )
+  }
 
   if (query.isPending) {
     return (
