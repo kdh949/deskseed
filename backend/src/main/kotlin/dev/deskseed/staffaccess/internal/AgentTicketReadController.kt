@@ -1,7 +1,12 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.foundation.RequestIdFilter
-import dev.deskseed.ticketing.DefaultStaffView
+import dev.deskseed.attachments.TicketAttachment
+import dev.deskseed.ticketing.SavedTicketView
+import dev.deskseed.ticketing.SavedViewColumn
+import dev.deskseed.ticketing.SavedViewConditions
+import dev.deskseed.ticketing.SavedViewDefinition
+import dev.deskseed.ticketing.SavedViewScope
 import dev.deskseed.ticketing.StaffActorSummary
 import dev.deskseed.ticketing.StaffCommentView
 import dev.deskseed.ticketing.StaffTicketHistoryItem
@@ -16,12 +21,15 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
+import jakarta.validation.constraints.PositiveOrZero
 import jakarta.validation.constraints.Size
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -36,21 +44,84 @@ import java.util.UUID
 @Validated
 internal class AgentTicketReadController(
     private val applicationService: AgentTicketReadApplicationService,
+    private val savedViewApplicationService: SavedViewApplicationService,
     private val searchApplicationService: AgentTicketSearchApplicationService,
     private val customerSearchApplicationService: AgentCustomerSearchApplicationService,
 ) {
     @GetMapping("/views")
     fun views(@AuthenticationPrincipal principal: StaffPrincipal): List<SavedViewResponse> =
-        applicationService.listViews(principal).map {
-            SavedViewResponse(
-                key = it.key,
-                name = it.name,
-                scope = it.scope,
-                categoryPath = listOf(it.category),
-                ticketCount = null,
-                readScope = it.readScope.name,
-            )
-        }
+        savedViewApplicationService.list(principal).map { item -> item.toResponse() }
+
+    @PostMapping("/views")
+    fun createView(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @Valid @RequestBody body: CreateSavedViewRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<SavedViewResponse> {
+        val view = savedViewApplicationService.create(principal, body.scope, body.toDefinition(), request.readContext())
+        return ResponseEntity.status(201).eTag(view.definitionVersion.toString()).body(
+            SavedViewListItem(view, null, "OMITTED_VISIBLE_LIMIT").toResponse(),
+        )
+    }
+
+    @PostMapping("/views/preview")
+    fun previewView(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @RequestHeader("X-Interaction-Id") interactionId: UUID,
+        @Valid @RequestBody body: SavedViewDefinitionRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<SavedViewPreviewResponse> {
+        val preview = savedViewApplicationService.preview(principal, body.toDefinition(), interactionId, request.readContext())
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+            SavedViewPreviewResponse(preview.items.map(::ticketResponse), preview.ticketCount, preview.sort),
+        )
+    }
+
+    @PostMapping("/views/reorder")
+    fun reorderViews(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @Valid @RequestBody body: ReorderSavedViewsRequest,
+        request: HttpServletRequest,
+    ): SavedViewOrderResponse {
+        val result = savedViewApplicationService.reorder(
+            principal,
+            body.scope,
+            body.expectedOrderVersion,
+            body.viewKeys,
+            request.readContext(),
+        )
+        return SavedViewOrderResponse(result.scope.name, result.orderVersion, result.viewKeys)
+    }
+
+    @PatchMapping("/views/{viewKey}")
+    fun updateView(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @PathVariable viewKey: String,
+        @Valid @RequestBody body: UpdateSavedViewRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<SavedViewResponse> {
+        val view = savedViewApplicationService.update(
+            principal,
+            viewKey,
+            body.expectedVersion,
+            body.toDefinition(),
+            request.readContext(),
+        )
+        return ResponseEntity.ok().eTag(view.definitionVersion.toString()).body(
+            SavedViewListItem(view, null, "OMITTED_VISIBLE_LIMIT").toResponse(),
+        )
+    }
+
+    @DeleteMapping("/views/{viewKey}")
+    fun deleteView(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @PathVariable viewKey: String,
+        @RequestHeader("If-Match") ifMatch: String,
+        request: HttpServletRequest,
+    ): ResponseEntity<Void> {
+        savedViewApplicationService.delete(principal, viewKey, parseViewVersion(ifMatch), request.readContext())
+        return ResponseEntity.noContent().build()
+    }
 
     @GetMapping("/assignment-options")
     fun assignmentOptions(
@@ -86,21 +157,23 @@ internal class AgentTicketReadController(
         @RequestParam(required = false) groupId: UUID?,
         @RequestParam(required = false) assigneeId: String?,
         @RequestParam(required = false) slaState: StaffSlaDisplayState?,
+        request: HttpServletRequest,
     ): TicketSummaryPageResponse {
         require(sort == STABLE_SORT) { "Unsupported ticket sort" }
-        val view = DefaultStaffView.fromKey(viewKey) ?: throw AgentTicketNotFoundException()
-        val page = applicationService.listTickets(
+        val page = savedViewApplicationService.listTickets(
             principal = principal,
-            view = view,
+            viewKey = viewKey,
             filters = StaffTicketListFilter(status, priority, groupId, assigneeId, slaState),
             cursor = cursor,
             limit = limit,
+            interactionId = UUID.randomUUID(),
+            context = request.readContext(),
         )
         return TicketSummaryPageResponse(
             items = page.items.map(::ticketResponse),
             nextCursor = page.nextCursor,
             totalApproximate = null,
-            sort = STABLE_SORT,
+            sort = page.sort,
         )
     }
 
@@ -156,7 +229,7 @@ internal class AgentTicketReadController(
                         },
                         parent = workspace.detail.parent?.let(::ticketResponse),
                         children = workspace.detail.children.map(::ticketResponse),
-                        externalReferences = emptyList(),
+                        externalReferenceCount = workspace.detail.externalReferenceCount,
                     ),
                     history = workspace.detail.history.map(::historyResponse),
                     warnings = emptyList(),
@@ -181,8 +254,10 @@ internal class AgentTicketReadController(
                     priority = body.filters.priority,
                     groupId = body.filters.groupId,
                     assigneeId = body.filters.assigneeId,
+                    slaState = body.filters.slaState,
                 ),
                 sort = body.sort,
+                cursor = body.cursor,
                 limit = body.limit,
             ),
             context = AgentReadRequestContext(
@@ -202,6 +277,7 @@ internal class AgentTicketReadController(
                     items = page.items.map(::ticketResponse),
                     resultCount = page.resultCount,
                     sort = page.sort,
+                    nextCursor = page.nextCursor,
                 ),
             )
     }
@@ -279,7 +355,7 @@ internal class AgentTicketReadController(
         body = comment.body,
         createdAt = comment.createdAt.toString(),
         source = comment.source,
-        attachments = emptyList(),
+        attachments = comment.attachments,
     )
 
     private fun historyResponse(item: StaffTicketHistoryItem) = TicketHistoryResponse(
@@ -291,6 +367,36 @@ internal class AgentTicketReadController(
 
     private fun actorResponse(actor: StaffActorSummary) =
         ActorSummaryResponse(actor.id, actor.type, actor.displayName)
+
+    private fun SavedViewListItem.toResponse() = SavedViewResponse(
+        id = view.id,
+        key = view.key,
+        name = view.definition.name,
+        scope = view.scope.name,
+        ownerStaffId = view.ownerStaffId,
+        active = view.active,
+        definitionVersion = view.definitionVersion,
+        orderVersion = view.orderVersion,
+        categoryPath = view.categoryPath,
+        conditions = view.definition.conditions,
+        columns = view.definition.columns,
+        sort = view.definition.sort,
+        ticketCount = ticketCount,
+        ticketCountState = ticketCountState,
+        readScope = "ALL_TICKETS",
+    )
+
+    private fun HttpServletRequest.readContext() = AgentReadRequestContext(
+        requestId = getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
+        correlationId = getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+        sessionId = authenticatedSessionId(this),
+        ipAddress = remoteAddr,
+        userAgent = getHeader("User-Agent"),
+    )
+
+    private fun parseViewVersion(ifMatch: String): Long = ifMatch.trim().removeSurrounding("\"").toLongOrNull()
+        ?.takeIf { it >= 1 }
+        ?: throw IllegalArgumentException("If-Match must contain a positive saved view definition version")
 
     private fun authenticatedSessionId(request: HttpServletRequest): String =
         request.getSession(false)?.id
@@ -307,6 +413,7 @@ internal data class AgentTicketSearchFiltersRequest(
     val groupId: UUID? = null,
     @field:Size(max = 64)
     val assigneeId: String? = null,
+    val slaState: StaffSlaDisplayState? = null,
 )
 
 internal data class AgentTicketSearchRequestBody(
@@ -317,6 +424,8 @@ internal data class AgentTicketSearchRequestBody(
     val filters: AgentTicketSearchFiltersRequest,
     @field:NotBlank
     val sort: String,
+    @field:Size(max = 2048)
+    val cursor: String? = null,
     @field:Min(1)
     @field:Max(100)
     val limit: Int,
@@ -328,6 +437,7 @@ internal data class AgentTicketSearchPageResponse(
     val items: List<TicketSummaryResponse>,
     val resultCount: Long,
     val sort: String,
+    val nextCursor: String?,
 )
 
 internal data class AgentCustomerSearchRequestBody(
@@ -354,12 +464,78 @@ internal data class CustomerSummaryResponse(
 )
 
 internal data class SavedViewResponse(
+    val id: UUID,
     val key: String,
     val name: String,
     val scope: String,
+    val ownerStaffId: UUID?,
+    val active: Boolean,
+    val definitionVersion: Long,
+    val orderVersion: Long,
     val categoryPath: List<String>,
+    val conditions: SavedViewConditions,
+    val columns: List<SavedViewColumn>,
+    val sort: String,
     val ticketCount: Long?,
+    val ticketCountState: String,
     val readScope: String,
+)
+
+internal data class SavedViewDefinitionRequest(
+    @field:NotBlank @field:Size(max = 120)
+    val name: String,
+    val conditions: SavedViewConditions,
+    @field:Size(min = 1, max = 12)
+    val columns: List<SavedViewColumn>,
+    @field:NotBlank @field:Size(max = 80)
+    val sort: String,
+) {
+    fun toDefinition() = SavedViewDefinition(name, conditions, columns, sort)
+}
+
+internal data class CreateSavedViewRequest(
+    val scope: SavedViewScope,
+    @field:NotBlank @field:Size(max = 120)
+    val name: String,
+    val conditions: SavedViewConditions,
+    @field:Size(min = 1, max = 12)
+    val columns: List<SavedViewColumn>,
+    @field:NotBlank @field:Size(max = 80)
+    val sort: String,
+) {
+    fun toDefinition() = SavedViewDefinition(name, conditions, columns, sort)
+}
+
+internal data class UpdateSavedViewRequest(
+    @field:Positive val expectedVersion: Long,
+    @field:NotBlank @field:Size(max = 120)
+    val name: String,
+    val conditions: SavedViewConditions,
+    @field:Size(min = 1, max = 12)
+    val columns: List<SavedViewColumn>,
+    @field:NotBlank @field:Size(max = 80)
+    val sort: String,
+) {
+    fun toDefinition() = SavedViewDefinition(name, conditions, columns, sort)
+}
+
+internal data class ReorderSavedViewsRequest(
+    val scope: SavedViewScope,
+    @field:Positive val expectedOrderVersion: Long,
+    @field:Size(min = 1, max = 50)
+    val viewKeys: List<@NotBlank @Size(max = 100) String>,
+)
+
+internal data class SavedViewPreviewResponse(
+    val items: List<TicketSummaryResponse>,
+    val ticketCount: Long,
+    val sort: String,
+)
+
+internal data class SavedViewOrderResponse(
+    val scope: String,
+    val orderVersion: Long,
+    val viewKeys: List<String>,
 )
 
 internal data class TicketSummaryPageResponse(
@@ -407,7 +583,7 @@ internal data class AgentCommentResponse(
     val body: String,
     val createdAt: String,
     val source: String,
-    val attachments: List<Any>,
+    val attachments: List<TicketAttachment>,
 )
 
 internal data class TicketCustomerResponse(val id: UUID, val displayName: String, val email: String)
@@ -416,7 +592,7 @@ internal data class TicketContextResponse(
     val customer: TicketCustomerResponse?,
     val parent: TicketSummaryResponse?,
     val children: List<TicketSummaryResponse>,
-    val externalReferences: List<Any>,
+    val externalReferenceCount: Int,
 )
 
 internal data class TicketAssignmentStaffOptionResponse(

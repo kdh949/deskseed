@@ -55,6 +55,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketCommandIntegrationTest`의 exact/misuse/concurrent replay와 `AgentTicketEditorWorkspace`의 persisted command-ID retry·exact `changedFields`·comment 통합 요청/E2E |
 | REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34, 55 | `AgentTicketCommandIntegrationTest`, `ticketEditorModel.test.ts`, production editor conflict Storybook/E2E의 draft 보존 및 필드별 resolution |
 | REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31, 55 | production editor conflict region, Storybook과 headless/browser draft 보존 테스트 |
+| REQ-BULK-001 | 상담사는 명시 선택한 최대 100개 티켓에 상태·우선순위·담당자 또는 transfer를 부분 성공 방식으로 적용한다 | IMPLEMENTATION_READY | P1 | 31, 33, 34, 39, 50 | PostgreSQL `AgentTicketCommandIntegrationTest`의 100 상한/duplicate item 거부/독립 transaction/authorization/audit rollback/idempotent replay/optimistic conflict/transfer reason·partial result; CHG-001, CONC-001, IDEM-001 |
 
 ## 4. 부모·자식 티켓 협업
 
@@ -81,6 +82,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-AUD-007 | Ticket change audit은 변경과 같은 트랜잭션에 기록한다 | IMPLEMENTATION_READY | M3 | 03, 19, 32 | CHG-001 |
 | REQ-AUD-008 | 민감 조회 감사 저장 실패 시 성공 응답을 보내지 않는다 | IMPLEMENTATION_READY | R1 | 03, 19 | ticket detail/search와 Explorer list/detail/reveal self-audit 장애 주입 시 503·민감 원문/projection 미반환, retention audit 장애 시 delete rollback |
 | REQ-AUD-009 | 감사 보존 기간·원문 공개 정책을 관리자 설정으로 관리한다 | PROVISIONAL | R2/P2 | 23, 36 | retention job·권한 테스트 |
+| REQ-AUDX-001 | 권한 있는 요청자가 감사 활동 projection을 단기 보관 CSV/JSONL artifact로 내보내고 재검증된 다운로드를 받는다 | IMPLEMENTATION_READY | P1 | 19, 30, 33, 34, 39, 46, 50, 54 | PostgreSQL `AuditExplorerIntegrationTest`의 owner/current capability/lease recovery/streaming checksum/CSV formula escaping/expiry·delete/download audit·audit failure; ANA-007, AUD-003/004, RET-001 |
 
 ## 6. 외부 전산·API·SDK
 
@@ -107,8 +109,8 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-ANL-001 | Zendesk Explore 유사 통계와 대시보드를 제공한다 | BLUEPRINT_READY | P5 | 12, 16, 30, 46 | ANA-001~008 |
 | REQ-AUT-001 | 티켓 이벤트 조건 기반 trigger를 제공한다 | BLUEPRINT_READY | P4 | 12, 34, 45 | AUT-001~008 |
 | REQ-AUT-002 | 시간 경과 기반 automation을 제공한다 | BLUEPRINT_READY | P4 | 12, 45 | AUT-009 |
-| REQ-EXP-001 | 티켓 상세·변경 이력·필터 결과를 추출한다 | BLUEPRINT_READY | P5 | 18, 20, 30, 46 | ANA-007, EXP-001/002 |
-| REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | IMPLEMENTATION_READY | P6/P9 | 03, 11, 47 | frozen POST search contract, parameterized PostgreSQL authorized query, exact count/stable sort, fixed 2-SQL query-count test, component+real-stack E2E |
+| REQ-EXP-001 | 티켓 상세·변경 이력·필터 결과를 추출한다 | BLUEPRINT_READY | P5 | 18, 20, 30, 46 | ANA-007, EXP-001/002. 이번 P1의 감사 활동 artifact export만으로는 이 넓은 요구사항을 완료 처리하지 않는다. |
+| REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | IMPLEMENTATION_READY | P6/P9 | 03, 11, 47 | frozen POST search contract, SQL authorization, exact count, score/ticketNumber stable cursor, query protection/audit, fixed query-count test, real-stack E2E, 1M EXPLAIN evidence |
 | REQ-SRCH-002 | 상담사가 신규 티켓 생성 화면에서 기존 고객을 이름·이메일로 검색해 요청자로 선택할 수 있다 | IMPLEMENTATION_READY | M3 | 30, 33, 39, 55 | `AgentCustomerSearchIntegrationTest`(검색·빈 결과·검증·fail-closed·감사 불변성), `RequesterSearchField.stories.tsx`, `CreateAgentTicketPage.test.tsx` |
 | REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35, 39 | release fixture/query-plan evidence와 `AdminOrganizationIntegrationTest`의 100-row max page, staff/group/member row 증가 전후 동일 SQL statement count(각 10 이하) |
 
@@ -117,10 +119,11 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-CFG-001 | 태그와 조건 기반 saved view를 제공한다 | BLUEPRINT_READY | P2/P6 | 38, 47 | view query/permission/audit 테스트 |
+| REQ-CFG-001 | 태그와 조건 기반 saved view를 제공한다 | BLUEPRINT_READY | P2/P6 | 38, 47 | view query/permission/audit 테스트. 이번 P1은 태그 조건을 의도적으로 제외하므로 이 넓은 요구사항을 완료 처리하지 않는다. |
+| REQ-VIEW-001 | 태그를 제외한 allowlisted condition AST 기반의 versioned SYSTEM/PERSONAL/SHARED saved view를 제공한다 | IMPLEMENTATION_READY | P1 | 33, 34, 39, 47, 50 | PostgreSQL `AgentTicketReadIntegrationTest`의 AST allowlist/owner·shared capability/version conflict/reorder/preview/authorization·audit/동일 compiler row-count/UNION ALL count; PERF-001 |
 | REQ-CFG-002 | typed custom field와 form을 제공한다 | BLUEPRINT_READY | P6 | 38, 47 | type validation/migration/projection 테스트 |
 | REQ-CFG-003 | 상담사가 macro를 preview한 뒤 하나의 command로 적용한다 | BLUEPRINT_READY | P6 | 38, 45, 47 | preview/no-side-effect/one-audit 테스트 |
-| REQ-FILE-001 | private object storage 기반 첨부파일을 제공한다 | BLUEPRINT_READY | P8 | 38, 48 | upload/scan/download/access 테스트 |
+| REQ-FILE-001 | private object storage 기반 첨부파일을 제공한다 | IMPLEMENTATION_READY | P1 | 38, 39, 48, 50 | PostgreSQL `AttachmentPipelineIntegrationTest`의 bounded stream/quarantine/SHA-256/MIME mismatch/deterministic malware/clean-only link/PUBLIC-INTERNAL isolation/expiry cleanup/audit failure; FILE-001/003/004/006 |
 | REQ-FILE-002 | rich text와 redaction은 안전한 canonical format과 별도 권한을 사용한다 | BLUEPRINT_READY | P8 | 48 | XSS/redaction/audit 테스트 |
 | REQ-CHAN-001 | 이메일 수신·발신을 Ticket/Comment channel adapter로 제공한다 | BLUEPRINT_READY | P8 | 38, 49 | threading/dedup/outbox/bounce 테스트 |
 | REQ-CHAN-002 | 채팅·메시징은 나중에 같은 conversation model 위에 추가한다 | DEFERRED | P8+ | 38, 49 | session/transcript/channel adapter 테스트 |

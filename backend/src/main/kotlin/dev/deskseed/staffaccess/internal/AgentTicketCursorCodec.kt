@@ -45,10 +45,13 @@ internal class AgentTicketCursorConfiguration
 internal class AgentTicketCursorCodec(
     private val properties: AgentTicketCursorProperties,
 ) {
-    fun encode(view: DefaultStaffView, filters: StaffTicketListFilter, cursor: StaffTicketCursor): String {
+    fun encode(view: DefaultStaffView, filters: StaffTicketListFilter, cursor: StaffTicketCursor): String =
+        encode(view.key, filters, cursor)
+
+    fun encode(viewKey: String, filters: StaffTicketListFilter, cursor: StaffTicketCursor): String {
         val payload = listOf(
             VERSION,
-            view.key,
+            viewKey,
             fingerprint(filters),
             cursor.updatedAt.toString(),
             cursor.ticketNumber.toString(),
@@ -58,7 +61,10 @@ internal class AgentTicketCursorCodec(
         return listOf(keyId, encodedPayload, encodeBase64(signature(keyId, encodedPayload))).joinToString(ENVELOPE_SEPARATOR)
     }
 
-    fun decode(view: DefaultStaffView, filters: StaffTicketListFilter, cursor: String): StaffTicketCursor {
+    fun decode(view: DefaultStaffView, filters: StaffTicketListFilter, cursor: String): StaffTicketCursor =
+        decode(view.key, filters, cursor)
+
+    fun decode(viewKey: String, filters: StaffTicketListFilter, cursor: String): StaffTicketCursor {
         val parts = cursor.split(ENVELOPE_SEPARATOR)
         if (parts.size != 3 || parts.any(String::isEmpty)) throw IllegalArgumentException("Invalid ticket cursor")
         val (keyId, encodedPayload, encodedSignature) = parts
@@ -70,7 +76,7 @@ internal class AgentTicketCursorCodec(
         }
         val decoded = String(decodeBase64(encodedPayload), StandardCharsets.UTF_8)
         val values = decoded.split(SEPARATOR)
-        if (values.size != 5 || values[0] != VERSION || values[1] != view.key || values[2] != fingerprint(filters)) {
+        if (values.size != 5 || values[0] != VERSION || values[1] != viewKey || values[2] != fingerprint(filters)) {
             throw IllegalArgumentException("Ticket cursor does not match the selected view and filters")
         }
         return runCatching {
@@ -84,6 +90,7 @@ internal class AgentTicketCursorCodec(
             filters.priority?.name.orEmpty(),
             filters.groupId?.toString().orEmpty(),
             filters.assignee.orEmpty(),
+            filters.slaState?.name.orEmpty(),
         ).joinToString("|")
         return MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(StandardCharsets.UTF_8))

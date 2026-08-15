@@ -2,6 +2,7 @@ package dev.deskseed.audit
 
 import dev.deskseed.foundation.ActorType
 import java.time.Instant
+import java.io.InputStream
 import java.util.UUID
 
 enum class AuditLedgerType {
@@ -168,6 +169,12 @@ data class CreateAuditExportCommand(
 data class AuditExportArtifact(
     val state: String,
     val generationAvailable: Boolean,
+    val rowCount: Long? = null,
+    val sizeBytes: Long? = null,
+    val checksumSha256: String? = null,
+    val expiresAt: Instant? = null,
+    val contentType: String? = null,
+    val failureCode: String? = null,
 )
 
 data class AuditExportJob(
@@ -177,6 +184,13 @@ data class AuditExportJob(
     val format: AuditExportFormat,
     val fields: List<String>,
     val artifact: AuditExportArtifact,
+)
+
+data class AuditExportDownload(
+    val fileName: String,
+    val contentType: String,
+    val checksumSha256: String,
+    val stream: InputStream,
 )
 
 interface AuditExplorer {
@@ -199,6 +213,9 @@ interface AuditExplorer {
 
     fun getExport(jobId: UUID, context: AuditRequestContext): AuditExportJob
 
+    /** Revalidates owner and current capability before returning a private artifact stream. */
+    fun openExport(jobId: UUID, context: AuditRequestContext): AuditExportDownload
+
     fun rebuild(context: AuditRequestContext): AuditProjectionRebuildResult
 }
 
@@ -219,3 +236,5 @@ class AuditProtectedContentInvalidException(cause: Throwable) :
     IllegalStateException("Protected audit content authentication failed", cause)
 
 class AuditExportNotFoundException : NoSuchElementException("Audit export was not found")
+
+class AuditExportExpiredException : IllegalStateException("Audit export artifact has expired")

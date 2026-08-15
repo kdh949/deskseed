@@ -397,6 +397,83 @@ class AgentTicketSearchIntegrationTest {
         ).isEqualTo(1)
     }
 
+    @Test
+    fun `score cursor keeps a stable snapshot binds query and SLA filter and returns exact count`() {
+        val agent = insertStaff("stable-cursor@example.com", "Agent password 42", "Cursor 상담사")
+        val group = insertGroup("Cursor 그룹", agent)
+        (1L..4L).forEach { offset ->
+            insertTicket(
+                8600 + offset,
+                "stable cursor result $offset",
+                "OPEN",
+                "NORMAL",
+                group,
+                agent,
+            )
+        }
+        val browser = login("stable-cursor@example.com", "Agent password 42")
+        val first = mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {"query":"stable cursor","filters":{"slaState":"NO_POLICY"},"sort":"score:desc,ticketNumber:desc","limit":2}
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(4))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8604))
+            .andExpect(jsonPath("$.items[1].ticketNumber").value(8603))
+            .andReturn().response.contentAsString
+        val cursor = stringField(first, "nextCursor")
+        assertThat(cursor).doesNotContain("stable cursor")
+
+        // This ticket matches the words but was created after the signed first-page snapshot.
+        insertTicket(
+            8700,
+            "stable cursor late result",
+            "OPEN",
+            "NORMAL",
+            group,
+            agent,
+            updatedAt = Instant.now().plusSeconds(60),
+        )
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {"query":"stable cursor","filters":{"slaState":"NO_POLICY"},"sort":"score:desc,ticketNumber:desc","cursor":"$cursor","limit":2}
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(4))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8602))
+            .andExpect(jsonPath("$.items[1].ticketNumber").value(8601))
+            .andExpect(jsonPath("$.nextCursor").isEmpty)
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {"query":"other query","filters":{"slaState":"NO_POLICY"},"sort":"score:desc,ticketNumber:desc","cursor":"$cursor","limit":2}
+                """.trimIndent(),
+            ),
+        ).andExpect(status().isBadRequest)
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {"query":"stable cursor","filters":{"slaState":"BREACHED"},"sort":"score:desc,ticketNumber:desc","cursor":"$cursor","limit":2}
+                """.trimIndent(),
+            ),
+        ).andExpect(status().isBadRequest)
+    }
+
     private fun search(session: MockHttpSession, interactionId: UUID, body: String) =
         post("/api/v1/agent/search")
             .session(session)
@@ -486,10 +563,10 @@ class AgentTicketSearchIntegrationTest {
         priority: String,
         groupId: UUID,
         assigneeId: UUID,
+        updatedAt: Instant = Instant.parse("2026-08-11T00:00:00Z").plusSeconds(number),
     ) {
         val customerId = UUID.randomUUID()
         val ticketId = UUID.randomUUID()
-        val updatedAt = Instant.parse("2026-08-11T00:00:00Z").plusSeconds(number)
         jdbcTemplate.update(
             """
             insert into customers (id, name, email_normalized, email_display, created_at, updated_at)

@@ -83,6 +83,7 @@ internal class CustomerRequestPortalApplicationService(
         principal: CustomerPrincipal,
         ticketNumber: Long,
         body: String,
+        attachmentIds: List<java.util.UUID>,
         clientCommandId: String,
         context: CommandContext,
     ): CustomerFollowUpResult {
@@ -92,6 +93,7 @@ internal class CustomerRequestPortalApplicationService(
                 requesterId = principal.customerId,
                 requesterEmail = principal.email,
                 body = body,
+                attachmentIds = uniqueAttachmentIds(attachmentIds),
                 clientCommandId = clientCommandId,
                 context = context,
             ),
@@ -116,6 +118,11 @@ internal class CustomerRequestPortalApplicationService(
 
     @Transactional(readOnly = true)
     fun accessMode(): CustomerAccessMode = customerAccessPolicy.currentMode()
+
+    private fun uniqueAttachmentIds(ids: List<java.util.UUID>): Set<java.util.UUID> {
+        require(ids.size <= 5 && ids.size == ids.toSet().size) { "attachmentIds must be unique and limited to five" }
+        return ids.toSet()
+    }
 
     @Transactional
     fun issueClaimGrant(ticketNumber: Long, rawAccessToken: String): IssuedClaimGrant {

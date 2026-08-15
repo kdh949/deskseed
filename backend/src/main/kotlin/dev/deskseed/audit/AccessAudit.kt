@@ -13,6 +13,7 @@ enum class AccessAuditOutcome {
 
 enum class AccessAuditAuthType {
     STAFF_SESSION,
+    CUSTOMER_CAPABILITY,
     API_KEY,
     OAUTH,
     SYSTEM,
@@ -47,6 +48,25 @@ data class TicketResourceReadAccessAudit(
     val ticketId: UUID,
     val ticketNumber: Long,
     val interactionId: UUID,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
+data class SavedViewExecutedAccessAudit(
+    val context: AccessAuditContext,
+    val viewId: UUID,
+    val interactionId: UUID,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
+data class AttachmentDownloadAccessAudit(
+    val context: AccessAuditContext,
+    val attachmentId: UUID,
+    val ticketNumber: Long,
+    val interactionId: UUID?,
     val outcome: AccessAuditOutcome,
     val httpStatus: Int,
     val occurredAt: Instant,
@@ -132,6 +152,12 @@ fun interface AccessAuditSessionFingerprint {
 interface AccessAuditWriter {
     /** Appends one required access audit for every successful protected ticket-detail read. */
     fun appendTicketResourceRead(event: TicketResourceReadAccessAudit)
+
+    /** Appends the required explicit execution/preview access audit for a saved view definition. */
+    fun appendSavedViewExecuted(event: SavedViewExecutedAccessAudit)
+
+    /** Required access audit for a private attachment byte stream; failure withholds bytes. */
+    fun appendAttachmentDownloaded(event: AttachmentDownloadAccessAudit)
 
     /** Returns true when a new semantic view was appended, false for a duplicate interaction. */
     fun appendTicketViewed(event: TicketViewAccessAudit): Boolean

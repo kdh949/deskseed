@@ -157,6 +157,8 @@ performance_source_files=(
   "$repository_root/backend/src/main/kotlin/dev/deskseed/ticketing/internal/StaffTicketCommandReplayStore.kt"
   "$repository_root/backend/src/main/kotlin/dev/deskseed/staffaccess/internal/AgentTicketReadApplicationService.kt"
   "$repository_root/backend/src/main/kotlin/dev/deskseed/staffaccess/internal/AgentTicketReadController.kt"
+  "$repository_root/backend/src/main/kotlin/dev/deskseed/staffaccess/internal/AgentTicketSearchApplicationService.kt"
+  "$repository_root/backend/src/main/kotlin/dev/deskseed/staffaccess/internal/AgentTicketSearchCursorCodec.kt"
   "$repository_root/backend/src/main/kotlin/dev/deskseed/audit/internal/JpaAccessAuditWriter.kt"
 )
 

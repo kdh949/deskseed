@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.audit.SearchQueryProtector
+import dev.deskseed.audit.internal.AuditExportWorker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -27,7 +28,13 @@ import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
+@SpringBootTest(
+    properties = [
+        "deskseed.staff-auth.bootstrap.enabled=false",
+        "deskseed.audit-export.worker-initial-delay=1d",
+        "deskseed.audit-export.cleanup-initial-delay=1d",
+    ],
+)
 @AutoConfigureMockMvc
 @Testcontainers
 class AuditExplorerIntegrationTest {
@@ -39,6 +46,9 @@ class AuditExplorerIntegrationTest {
 
     @Autowired
     private lateinit var searchQueryProtector: SearchQueryProtector
+
+    @Autowired
+    private lateinit var auditExportWorker: AuditExportWorker
 
     @BeforeEach
     fun clearState() {
@@ -561,7 +571,7 @@ class AuditExplorerIntegrationTest {
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.status").value("REQUESTED"))
             .andExpect(jsonPath("$.format").value("CSV"))
-            .andExpect(jsonPath("$.artifact.state").value("NOT_CREATED"))
+            .andExpect(jsonPath("$.artifact.state").value("PENDING"))
             .andExpect(jsonPath("$.artifact.generationAvailable").value(false))
             .andReturn()
         val jobId = UUID.fromString(stringField(create.response.contentAsString, "id"))
@@ -579,7 +589,7 @@ class AuditExplorerIntegrationTest {
         )
         assertThat(persisted["reason"]).isEqualTo("case 2042 review")
         assertThat(persisted["permissions"].toString()).contains("audit:export", "audit:activity:read")
-        assertThat(persisted["state"]).isEqualTo("NOT_CREATED")
+        assertThat(persisted["state"]).isEqualTo("PENDING")
         assertThat(persisted["generation_available"]).isEqualTo(false)
         assertThat(selfAuditCount("AUDIT_EXPORT_REQUESTED", auditorId)).isEqualTo(1)
 
@@ -648,6 +658,95 @@ class AuditExplorerIntegrationTest {
         }
         assertThat(jdbcTemplate.queryForObject("select count(*) from audit_export_jobs", Long::class.java)).isZero()
         assertThat(selfAuditCount("AUDIT_EXPORT_REQUESTED", auditorId)).isZero()
+    }
+
+    @Test
+    fun `export worker recovers expired lease streams formula-safe CSV audits download and expires artifact`() {
+        val auditorId = insertStaff("auditor-export-worker@example.com")
+        val session = login("auditor-export-worker@example.com")
+        insertFormulaProjectionRow(auditorId)
+
+        val create = mockMvc.perform(
+            post("/api/v1/audit/exports")
+                .session(session)
+                .header("X-CSRF-TOKEN", csrf(session))
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"format":"CSV","filters":{"action":"=SUM(1,1)"},"fields":["action"],"reason":"formula-safe export fixture"}
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isAccepted)
+            .andReturn()
+        val jobId = UUID.fromString(stringField(create.response.contentAsString, "id"))
+
+        // A crashed owner left a valid RUNNING lease behind. The next worker must recover it atomically.
+        jdbcTemplate.update(
+            """
+            update audit_export_jobs
+            set status = 'RUNNING', lease_owner = 'lost-worker',
+                lease_expires_at = clock_timestamp() - interval '1 second'
+            where id = ?
+            """.trimIndent(),
+            jobId,
+        )
+
+        assertThat(auditExportWorker.processAvailable()).isEqualTo(1)
+        mockMvc.perform(
+            get("/api/v1/audit/exports/{jobId}", jobId)
+                .session(session)
+                .header("X-Interaction-Id", UUID.randomUUID()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.status").value("READY"))
+            .andExpect(jsonPath("$.artifact.state").value("READY"))
+            .andExpect(jsonPath("$.artifact.rowCount").value(1))
+            .andExpect(jsonPath("$.artifact.sizeBytes").isNumber)
+            .andExpect(jsonPath("$.artifact.checksumSha256").isNotEmpty)
+            .andExpect(jsonPath("$.artifact.expiresAt").exists())
+
+        val downloaded = mockMvc.perform(
+            get("/api/v1/audit/exports/{jobId}/download", jobId)
+                .session(session)
+                .header("X-Interaction-Id", UUID.randomUUID()),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Content-Type", "text/csv"))
+            .andExpect(header().exists("Content-Disposition"))
+            .andReturn()
+        assertThat(downloaded.response.contentAsString).contains("action", "'=SUM(1,1)")
+        assertThat(selfAuditCount("AUDIT_EXPORT_DOWNLOADED", auditorId)).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select attempt_count from audit_export_jobs where id = ?",
+                Int::class.java,
+                jobId,
+            ),
+        ).isEqualTo(1)
+
+        jdbcTemplate.update(
+            "update audit_export_artifacts set expires_at = clock_timestamp() - interval '1 second' where job_id = ?",
+            jobId,
+        )
+        assertThat(auditExportWorker.purgeExpired()).isEqualTo(1)
+        mockMvc.perform(
+            get("/api/v1/audit/exports/{jobId}/download", jobId)
+                .session(session)
+                .header("X-Interaction-Id", UUID.randomUUID()),
+        )
+            .andExpect(status().isGone)
+            .andExpect(header().string("Cache-Control", "no-store"))
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select status from audit_export_jobs where id = ?",
+                String::class.java,
+                jobId,
+            ),
+        ).isEqualTo("EXPIRED")
     }
 
     @Test
@@ -783,6 +882,24 @@ class AuditExplorerIntegrationTest {
             Timestamp.from(occurredAt),
         )
         return projectionId(eventId)
+    }
+
+    private fun insertFormulaProjectionRow(actorId: UUID) {
+        val occurredAt = Instant.now().minusSeconds(1)
+        jdbcTemplate.update(
+            """
+            insert into audit_activity_projection (
+                id, ledger_type, source_event_id, occurred_at, actor_type, actor_id,
+                actor_display_snapshot, source, action, outcome, metadata_json, projected_at
+            ) values (?, 'ADMIN_SECURITY', ?, ?, 'STAFF', ?, '감사 담당자', 'SYSTEM_JOB',
+                '=SUM(1,1)', 'SUCCEEDED', '{}'::jsonb, ?)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            Timestamp.from(occurredAt),
+            actorId,
+            Timestamp.from(occurredAt),
+        )
     }
 
     private fun auditPage(session: MockHttpSession, interactionId: UUID, cursor: String?): String {

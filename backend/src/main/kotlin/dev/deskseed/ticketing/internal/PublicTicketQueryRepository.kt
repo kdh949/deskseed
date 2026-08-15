@@ -1,5 +1,7 @@
 package dev.deskseed.ticketing.internal
 
+import dev.deskseed.attachments.AttachmentVisibility
+import dev.deskseed.attachments.TicketAttachmentReadProjection
 import dev.deskseed.ticketing.CustomerRequestStatus
 import dev.deskseed.ticketing.PublicCommentView
 import dev.deskseed.ticketing.PublicTicketView
@@ -10,6 +12,7 @@ import java.util.UUID
 @Repository
 internal class PublicTicketQueryRepository(
     private val jdbcTemplate: JdbcTemplate,
+    private val attachmentReadProjection: TicketAttachmentReadProjection,
 ) {
     fun find(ticketId: UUID, ticketNumber: Long): PublicTicketView? {
         val ticket = jdbcTemplate.query(
@@ -65,6 +68,10 @@ internal class PublicTicketQueryRepository(
             ticketId,
         )
 
-        return ticket.copy(comments = comments)
+        val attachmentsByComment = attachmentReadProjection.listForComments(
+            comments.map(PublicCommentView::id),
+            setOf(AttachmentVisibility.PUBLIC),
+        )
+        return ticket.copy(comments = comments.map { it.copy(attachments = attachmentsByComment[it.id].orEmpty()) })
     }
 }

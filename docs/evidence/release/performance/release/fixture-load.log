@@ -1,90 +1,90 @@
 Timing is on.
-Time: 0.244 ms
+Time: 0.439 ms
 SET
-Time: 0.017 ms
+Time: 0.069 ms
 SET
-Time: 0.007 ms
+Time: 0.070 ms
 FIXTURE_SUPPORT_GROUPS
 INSERT 0 100
-Time: 1.702 ms
+Time: 1.524 ms
 FIXTURE_STAFF
 INSERT 0 1000
-Time: 5.591 ms
+Time: 6.305 ms
 INSERT 0 1000
-Time: 17.828 ms
+Time: 18.303 ms
 FIXTURE_CUSTOMERS
 INSERT 0 100000
-Time: 402.403 ms
+Time: 2061.487 ms (00:02.061)
 FIXTURE_TICKETS
 INSERT 0 1000000
-Time: 29047.975 ms (00:29.048)
+Time: 42909.868 ms (00:42.910)
  setval
 ---------
  1001000
 (1 row)
 
-Time: 0.527 ms
+Time: 1.537 ms
 INSERT 0 10000
-Time: 284.408 ms
+Time: 409.069 ms
 FIXTURE_COMMENTS
 INSERT 0 2000000
-Time: 25202.148 ms (00:25.202)
+Time: 35205.277 ms (00:35.205)
 ALTER TABLE
-Time: 1.113 ms
+Time: 1.443 ms
 ALTER TABLE
-Time: 0.375 ms
+Time: 0.381 ms
 ALTER TABLE
-Time: 0.205 ms
+Time: 0.291 ms
 ALTER TABLE
-Time: 0.139 ms
+Time: 0.248 ms
 ALTER TABLE
-Time: 0.176 ms
+Time: 0.302 ms
 FIXTURE_TICKET_AUDITS
 INSERT 0 1000000
-Time: 27822.458 ms (00:27.822)
+Time: 34686.443 ms (00:34.686)
 INSERT 0 1000000
-Time: 12411.371 ms (00:12.411)
+Time: 14893.564 ms (00:14.894)
 FIXTURE_ACCESS_AUDITS
 INSERT 0 500000
-Time: 9732.916 ms (00:09.733)
+Time: 13108.746 ms (00:13.109)
 INSERT 0 50000
-Time: 489.336 ms
+Time: 650.244 ms
 FIXTURE_ADMIN_AUDITS
 INSERT 0 100000
-Time: 1505.812 ms (00:01.506)
+Time: 1831.724 ms (00:01.832)
 ALTER TABLE
-Time: 2.951 ms
+Time: 0.884 ms
 ALTER TABLE
-Time: 0.167 ms
+Time: 0.302 ms
 ALTER TABLE
-Time: 0.179 ms
+Time: 0.161 ms
 ALTER TABLE
-Time: 0.171 ms
+Time: 0.194 ms
 ALTER TABLE
-Time: 0.106 ms
+Time: 0.214 ms
 REBUILD_AUDIT_ACTIVITY_PROJECTION
  ticket_change_count | access_search_count | admin_security_count | total_count
 ---------------------+---------------------+----------------------+-------------
              1000000 |              500000 |               100000 |     1600000
 (1 row)
 
-Time: 53541.204 ms (00:53.541)
+Time: 82406.894 ms (01:22.407)
 VACUUM_ANALYZE_RELEASE_FIXTURE
 VACUUM
-Time: 117.787 ms
+Time: 176.444 ms
 VACUUM
-Time: 337.545 ms
+Time: 416.183 ms
 VACUUM
-Time: 265.657 ms
+Time: 314.462 ms
 VACUUM
-Time: 275.262 ms
+Time: 379.741 ms
 VACUUM
-Time: 100.160 ms
+Time: 156.622 ms
 VACUUM
-Time: 1340.048 ms (00:01.340)
+Time: 320.541 ms
 VACUUM
-Time: 44.269 ms
+Time: 64.759 ms
 VACUUM
-Time: 165.941 ms
+Time: 203.036 ms
 VACUUM
-Time: 749.259 ms
+Time: 1417.093 ms (00:01.417)

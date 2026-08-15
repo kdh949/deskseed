@@ -12,6 +12,9 @@ import dev.deskseed.audit.AuditExplorer
 import dev.deskseed.audit.AuditExplorerActor
 import dev.deskseed.audit.AuditExplorerOutcome
 import dev.deskseed.audit.AuditExportArtifact
+import dev.deskseed.audit.AuditExportArtifactStore
+import dev.deskseed.audit.AuditExportDownload
+import dev.deskseed.audit.AuditExportExpiredException
 import dev.deskseed.audit.AuditExportFormat
 import dev.deskseed.audit.AuditExportJob
 import dev.deskseed.audit.AuditExportNotFoundException
@@ -60,6 +63,8 @@ internal class JdbcAuditExplorer(
     private val searchQueryRevealer: SearchQueryRevealer,
     private val auditWriter: AdminSecurityAuditWriter,
     private val selfAuditWriter: AuditExplorerSelfAuditWriter,
+    private val exportJobStore: JdbcAuditExportJobStore,
+    private val exportArtifactStore: AuditExportArtifactStore,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
 ) : AuditExplorer {
@@ -352,11 +357,11 @@ internal class JdbcAuditExplorer(
             """
             insert into audit_export_jobs (
                 id, requester_id, status, format, filters_json, fields_json, reason,
-                permission_snapshot_json, request_id, correlation_id, interaction_id, created_at
+                permission_snapshot_json, request_id, correlation_id, interaction_id, created_at, snapshot_at
             ) values (
                 :id, :requesterId, 'REQUESTED', :format, cast(:filtersJson as jsonb),
                 cast(:fieldsJson as jsonb), :reason, cast(:permissionSnapshotJson as jsonb),
-                :requestId, :correlationId, :interactionId, :createdAt
+                :requestId, :correlationId, :interactionId, :createdAt, :snapshotAt
             )
             """.trimIndent(),
             mapOf(
@@ -371,12 +376,13 @@ internal class JdbcAuditExplorer(
                 "correlationId" to context.correlationId,
                 "interactionId" to context.interactionId,
                 "createdAt" to Timestamp.from(now),
+                "snapshotAt" to Timestamp.from(now),
             ),
         )
         jdbcTemplate.update(
             """
             insert into audit_export_artifacts (job_id, state, generation_available, created_at)
-            values (:jobId, 'NOT_CREATED', false, :createdAt)
+            values (:jobId, 'PENDING', false, :createdAt)
             """.trimIndent(),
             mapOf("jobId" to id, "createdAt" to Timestamp.from(now)),
         )
@@ -400,37 +406,14 @@ internal class JdbcAuditExplorer(
             createdAt = now,
             format = command.format,
             fields = command.fields,
-            artifact = AuditExportArtifact("NOT_CREATED", false),
+            artifact = AuditExportArtifact("PENDING", false),
         )
     }
 
     @Transactional(noRollbackFor = [AuditExportNotFoundException::class])
     override fun getExport(jobId: UUID, context: AuditRequestContext): AuditExportJob {
         require(context.authorities.contains("audit:export")) { "Audit export authority is required" }
-        val job = jdbcTemplate.query(
-            """
-            select job.id, job.status, job.created_at, job.format, job.fields_json::text,
-                   artifact.state, artifact.generation_available
-            from audit_export_jobs job
-            join audit_export_artifacts artifact on artifact.job_id = job.id
-            where job.id = :jobId and job.requester_id = :requesterId
-            """.trimIndent(),
-            mapOf("jobId" to jobId, "requesterId" to context.actorId),
-        ) { result, _ ->
-            @Suppress("UNCHECKED_CAST")
-            val fields = objectMapper.readValue(result.getString("fields_json"), List::class.java) as List<String>
-            AuditExportJob(
-                id = result.getObject("id", UUID::class.java),
-                status = result.getString("status"),
-                createdAt = result.getTimestamp("created_at").toInstant(),
-                format = AuditExportFormat.valueOf(result.getString("format")),
-                fields = fields,
-                artifact = AuditExportArtifact(
-                    state = result.getString("state"),
-                    generationAvailable = result.getBoolean("generation_available"),
-                ),
-            )
-        }.singleOrNull() ?: run {
+        val job = exportJobStore.getForRequester(jobId, context.actorId) ?: run {
             appendAdminAudit(
                 context = context,
                 eventType = "AUDIT_LOG_VIEWED",
@@ -460,6 +443,46 @@ internal class JdbcAuditExplorer(
             ),
         )
         return job
+    }
+
+    @Transactional(noRollbackFor = [AuditExportNotFoundException::class, AuditExportExpiredException::class])
+    override fun openExport(jobId: UUID, context: AuditRequestContext): AuditExportDownload {
+        require(context.authorities.contains("audit:export")) { "Audit export authority is required" }
+        val now = Instant.now(clock)
+        val handle = exportJobStore.readyForRequester(jobId, context.actorId, now) ?: run {
+            if (exportJobStore.expiredOrMissingForRequester(jobId, context.actorId, now)) {
+                appendAdminAudit(
+                    context, "AUDIT_EXPORT_DOWNLOADED", "AUDIT_EXPORT_JOB", jobId, AdminSecurityOutcome.DENIED,
+                    mapOf("interactionId" to context.interactionId.toString(), "state" to "EXPIRED"),
+                )
+                throw AuditExportExpiredException()
+            }
+            appendAdminAudit(
+                context, "AUDIT_EXPORT_DOWNLOADED", "AUDIT_EXPORT_JOB", jobId, AdminSecurityOutcome.DENIED,
+                mapOf("interactionId" to context.interactionId.toString(), "state" to "NOT_READY_OR_NOT_OWNED"),
+            )
+            throw AuditExportNotFoundException()
+        }
+        val stream = exportArtifactStore.openPrivate(handle.objectKey)
+        try {
+            appendAdminAudit(
+                context, "AUDIT_EXPORT_DOWNLOADED", "AUDIT_EXPORT_JOB", jobId, AdminSecurityOutcome.SUCCEEDED,
+                mapOf(
+                    "interactionId" to context.interactionId.toString(),
+                    "format" to handle.format.name,
+                    "checksumPrefix" to handle.checksumSha256.take(12),
+                ),
+            )
+        } catch (exception: RuntimeException) {
+            runCatching { stream.close() }
+            throw exception
+        }
+        return AuditExportDownload(
+            fileName = "audit-export-$jobId.${if (handle.format == AuditExportFormat.CSV) "csv" else "jsonl"}",
+            contentType = handle.contentType,
+            checksumSha256 = handle.checksumSha256,
+            stream = stream,
+        )
     }
 
     @Transactional

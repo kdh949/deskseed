@@ -6,6 +6,7 @@ const magicLinkToken = 'opaque-magic-link-token'
 const customerCsrfToken = 'c'.repeat(32)
 
 type PublicComment = {
+  attachments: []
   authorDisplayName: string
   body: string
   createdAt: string
@@ -28,6 +29,7 @@ function initialDetail(): {
     updatedAt: '2026-08-15T01:00:00Z',
     comments: [
       {
+        attachments: [],
         id: 'comment-public-1',
         authorDisplayName: '김민아',
         body: '결제 승인 내역을 확인해 주세요.',
@@ -102,6 +104,7 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
         requestAccessToken,
       )
       const comment = {
+        attachments: [],
         id: 'comment-public-2',
         authorDisplayName: '김민아',
         body: command.body,
@@ -236,6 +239,7 @@ test('magic link → My Requests → authenticated PUBLIC follow-up → logout u
       expect(request.headers()['x-csrf-token']).toBe(customerCsrfToken)
       expect(command.clientCommandId).toMatch(/^[0-9a-f-]{36}$/i)
       const comment = {
+        attachments: [],
         id: 'comment-public-authenticated',
         authorDisplayName: '김민아',
         body: command.body,

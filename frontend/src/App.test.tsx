@@ -60,12 +60,29 @@ function sessionFetch(role: 'ADMIN' | 'AGENT' | 'SECURITY_AUDITOR') {
       return new Response(
         JSON.stringify([
           {
+            id: '00000000-0000-4000-8000-000000000001',
             key: 'my-open',
             name: '내 open',
             scope: 'SYSTEM',
+            ownerStaffId: null,
+            active: true,
+            definitionVersion: 1,
+            orderVersion: 1,
             categoryPath: ['Views'],
+            conditions: {
+              version: 1,
+              all: [
+                { field: 'STATUS', operator: 'LESS_THAN_SOLVED', values: [] },
+              ],
+              any: [],
+            },
+            columns: ['TICKET_NUMBER', 'SUBJECT', 'STATUS'],
+            sort: 'updatedAt:desc,ticketNumber:desc',
             ticketCount: 0,
+            ticketCountState: 'EXACT',
             readScope: 'ALL_TICKETS',
+            createdAt: '2026-08-10T00:00:00Z',
+            updatedAt: '2026-08-10T00:00:00Z',
           },
         ]),
         { status: 200, headers: { 'Content-Type': 'application/json' } },

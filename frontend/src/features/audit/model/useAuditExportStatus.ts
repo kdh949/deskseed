@@ -20,7 +20,14 @@ export function useAuditExportStatus(jobId: string) {
       try {
         const result = await getAuditExport(jobId, interactionId)
         attemptsRef.current += 1
-        if (attemptsRef.current >= MAX_POLL_ATTEMPTS) setPollingExhausted(true)
+        if (
+          result.status === 'READY' ||
+          result.status === 'FAILED' ||
+          result.status === 'EXPIRED' ||
+          attemptsRef.current >= MAX_POLL_ATTEMPTS
+        ) {
+          setPollingExhausted(true)
+        }
         return result
       } catch (error) {
         // Count every real polling cycle, not just successes, and stop

@@ -13,6 +13,7 @@ describe('anonymous customer request API adapter', () => {
           authorDisplayName: '고객',
           body: '추가 정보입니다.',
           createdAt: '2026-08-15T00:00:00Z',
+          attachments: [],
         }),
         { status: 201 },
       ),

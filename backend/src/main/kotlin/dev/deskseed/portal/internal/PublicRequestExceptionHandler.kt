@@ -1,6 +1,12 @@
 package dev.deskseed.portal.internal
 
 import dev.deskseed.foundation.RequestIdFilter
+import dev.deskseed.attachments.AttachmentInfectedException
+import dev.deskseed.attachments.AttachmentLinkInvalidException
+import dev.deskseed.attachments.AttachmentMimeMismatchException
+import dev.deskseed.attachments.AttachmentNotFoundException
+import dev.deskseed.attachments.AttachmentTooLargeException
+import dev.deskseed.attachments.AttachmentUnavailableException
 import dev.deskseed.portal.RequestNotFoundException
 import dev.deskseed.settings.AnonymousSubmissionDisabledException
 import dev.deskseed.ticketing.CustomerCommandIdReusedException
@@ -159,6 +165,37 @@ internal class PublicRequestExceptionHandler {
         ),
     )
 
+    @ExceptionHandler(AttachmentNotFoundException::class)
+    fun handleAttachmentNotFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(
+            status = HttpStatus.NOT_FOUND,
+            title = "Attachment not found",
+            detail = "The requested attachment is not available.",
+            type = "/problems/attachment-not-found",
+            request = request,
+        ),
+    )
+
+    @ExceptionHandler(AttachmentTooLargeException::class)
+    fun handleAttachmentTooLarge(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(HttpStatus.PAYLOAD_TOO_LARGE, "Attachment too large", "The upload exceeds the configured limit.", "/problems/attachment-too-large", request),
+    )
+
+    @ExceptionHandler(AttachmentMimeMismatchException::class)
+    fun handleAttachmentMimeMismatch(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Attachment type rejected", "The declared and detected types are incompatible.", "/problems/attachment-mime-mismatch", request),
+    )
+
+    @ExceptionHandler(AttachmentInfectedException::class)
+    fun handleAttachmentInfected(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(HttpStatus.UNPROCESSABLE_CONTENT, "Attachment rejected", "The attachment did not pass the malware scan.", "/problems/attachment-infected", request),
+    )
+
+    @ExceptionHandler(AttachmentUnavailableException::class)
+    fun handleAttachmentUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
+        problem(HttpStatus.SERVICE_UNAVAILABLE, "Attachment service unavailable", "The attachment operation could not be completed safely.", "/problems/attachment-unavailable", request),
+    )
+
     @ExceptionHandler(CustomerTicketNotFoundException::class)
     fun handleCustomerTicketNotFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
         problem(
@@ -192,7 +229,7 @@ internal class PublicRequestExceptionHandler {
         ),
     )
 
-    @ExceptionHandler(IllegalArgumentException::class)
+    @ExceptionHandler(IllegalArgumentException::class, AttachmentLinkInvalidException::class)
     fun handleIllegalArgument(request: HttpServletRequest): ResponseEntity<ProblemDetail> = respond(
         problem(
             status = HttpStatus.BAD_REQUEST,

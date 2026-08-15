@@ -85,7 +85,7 @@ const detailFixture: AgentTicketDetail = {
       email: 'jiyeon.kim@example.com',
       id: 'customer-kim',
     },
-    externalReferences: [],
+    externalReferenceCount: 2,
     parent: null,
   },
   history: [

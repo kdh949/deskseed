@@ -8,6 +8,7 @@ export interface SubmitRequestInput {
   email: string
   subject: string
   message: string
+  privacyConsent?: boolean
 }
 
 export interface SubmittedRequest {
@@ -22,6 +23,34 @@ export interface PublicComment {
   authorDisplayName: string
   body: string
   createdAt: string
+  attachments: TicketAttachment[]
+}
+
+/**
+ * Metadata for a CLEAN attachment that is already linked to a visible comment.
+ * The browser never receives an object key, scan result, checksum, or public URL.
+ */
+export interface TicketAttachment {
+  id: string
+  fileName: string
+  sizeBytes: number
+  contentType: string
+}
+
+/** A clean, unlinked private upload handle. It is valid only until `expiresAt`. */
+export interface AttachmentUpload {
+  id: string
+  fileName: string
+  sizeBytes: number
+  contentType: string
+  scanStatus: 'CLEAN'
+  expiresAt: string
+}
+
+export interface AttachmentDownload {
+  content: Blob
+  contentType: string
+  fileName: string | null
 }
 
 export interface PublicRequest {
@@ -474,13 +503,96 @@ export interface ExternalReferenceCommandResult {
   reference: ExternalReference
 }
 
-export interface SavedAgentView {
-  key: string
+export type SavedViewScope = 'PERSONAL' | 'SHARED' | 'SYSTEM'
+export type SavedViewConditionField =
+  | 'STATUS'
+  | 'PRIORITY'
+  | 'GROUP'
+  | 'ASSIGNEE'
+  | 'FIRST_REPLY_SLA_STATE'
+  | 'TICKET_KIND'
+  | 'UPDATED_AT'
+export type SavedViewConditionOperator =
+  | 'EQUALS'
+  | 'NOT_EQUALS'
+  | 'IN'
+  | 'NOT_IN'
+  | 'IS_CURRENT_ACTOR'
+  | 'IS_UNASSIGNED'
+  | 'IS_CURRENT_ACTOR_GROUP'
+  | 'LESS_THAN_SOLVED'
+  | 'WITHIN_LAST_DAYS'
+export type SavedViewColumn =
+  | 'TICKET_NUMBER'
+  | 'SUBJECT'
+  | 'STATUS'
+  | 'PRIORITY'
+  | 'GROUP'
+  | 'ASSIGNEE'
+  | 'UPDATED_AT'
+  | 'FIRST_REPLY_SLA'
+export type SavedViewSort = 'updatedAt:desc,ticketNumber:desc'
+
+export interface SavedViewCondition {
+  field: SavedViewConditionField
+  operator: SavedViewConditionOperator
+  values: string[]
+}
+
+/** Versioned, non-executable allowlisted condition AST. */
+export interface SavedViewConditions {
+  version: 1
+  all: SavedViewCondition[]
+  any: SavedViewCondition[]
+}
+
+export interface SavedViewDefinition {
   name: string
-  scope: 'PERSONAL' | 'SHARED' | 'SYSTEM'
+  conditions: SavedViewConditions
+  columns: SavedViewColumn[]
+  sort: SavedViewSort
+}
+
+export interface SavedAgentView extends SavedViewDefinition {
+  id: string
+  key: string
+  scope: SavedViewScope
+  ownerStaffId: string | null
+  active: boolean
+  definitionVersion: number
+  orderVersion: number
   categoryPath: string[]
   ticketCount: number | null
+  ticketCountState: 'EXACT' | 'OMITTED_VISIBLE_LIMIT'
   readScope: 'ALL_TICKETS'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateSavedViewInput extends SavedViewDefinition {
+  scope: Exclude<SavedViewScope, 'SYSTEM'>
+}
+
+export interface UpdateSavedViewInput extends SavedViewDefinition {
+  expectedVersion: number
+}
+
+export interface SavedViewPreview {
+  items: AgentTicketSummary[]
+  ticketCount: number
+  sort: SavedViewSort
+}
+
+export interface ReorderSavedViewsInput {
+  scope: Exclude<SavedViewScope, 'SYSTEM'>
+  expectedOrderVersion: number
+  viewKeys: string[]
+}
+
+export interface SavedViewOrder {
+  scope: Exclude<SavedViewScope, 'SYSTEM'>
+  orderVersion: number
+  viewKeys: string[]
 }
 
 export interface ActorSummary {
@@ -527,12 +639,17 @@ export interface AgentTicketSearchFilters {
   priority?: TicketPriority
   groupId?: string
   assigneeId?: string
+  slaState?: FirstReplySlaState
 }
+
+export type AgentTicketSearchSort =
+  'updatedAt:desc,ticketNumber:desc' | 'score:desc,ticketNumber:desc'
 
 export interface AgentTicketSearchInput {
   query: string
   filters: AgentTicketSearchFilters
-  sort: 'updatedAt:desc,ticketNumber:desc'
+  sort: AgentTicketSearchSort
+  cursor?: string | null
   limit: number
 }
 
@@ -541,7 +658,8 @@ export interface AgentTicketSearchPage {
   searchInteractionId: string
   items: AgentTicketSummary[]
   resultCount: number
-  sort: 'updatedAt:desc,ticketNumber:desc'
+  sort: AgentTicketSearchSort
+  nextCursor: string | null
 }
 
 export interface AgentComment {
@@ -551,7 +669,7 @@ export interface AgentComment {
   body: string
   createdAt: string
   source: string
-  attachments: unknown[]
+  attachments: TicketAttachment[]
 }
 
 export interface TicketCustomerContext {
@@ -576,7 +694,8 @@ export interface AgentTicketDetail {
     customer: TicketCustomerContext | null
     parent: AgentTicketSummary | null
     children: AgentTicketSummary[]
-    externalReferences: unknown[]
+    /** Lightweight detail projection; fetch the lazy external-reference API for rows. */
+    externalReferenceCount: number
   }
   history: TicketHistoryItem[]
   warnings: unknown[]
@@ -614,6 +733,7 @@ export interface TicketAssignmentOptions {
 export interface TicketCommentDraft {
   visibility: TicketVisibility
   body: string
+  attachmentIds?: string[]
 }
 
 export interface UpdateTicketCommand {
@@ -643,6 +763,57 @@ export interface CreateChildTicketCommand {
   assigneeId: string | null
   priority: TicketPriority
   clientCommandId: string
+}
+
+export type BatchTicketCommand =
+  | {
+      type: 'UPDATE'
+      changedFields: Array<'status' | 'priority' | 'assigneeId'>
+      status?: AgentTicketStatus
+      priority?: TicketPriority
+      assigneeId?: string | null
+    }
+  | {
+      type: 'TRANSFER'
+      groupId: string
+      assigneeId?: string | null
+      reason: string
+    }
+
+export interface AgentTicketBatchItem {
+  ticketNumber: number
+  expectedVersion: number
+  clientCommandId: string
+  command: BatchTicketCommand
+}
+
+export interface AgentTicketBatchCommand {
+  items: AgentTicketBatchItem[]
+}
+
+export type AgentTicketBatchOutcome =
+  'SUCCEEDED' | 'CONFLICT' | 'DENIED' | 'NOT_FOUND' | 'VALIDATION_FAILED'
+
+export interface AgentTicketBatchItemResult {
+  ticketNumber: number
+  clientCommandId: string
+  outcome: AgentTicketBatchOutcome
+  replayed: boolean
+  resultVersion: number | null
+  auditId: string | null
+  code:
+    | 'TICKET_FIELD_CONFLICT'
+    | 'VERSION_PRECONDITION_FAILED'
+    | 'CLIENT_COMMAND_ID_REUSED'
+    | 'TICKET_WRITE_FORBIDDEN'
+    | 'TICKET_NOT_FOUND'
+    | 'VALIDATION_FAILED'
+    | null
+}
+
+export interface AgentTicketBatchResult {
+  correlationId: string
+  results: AgentTicketBatchItemResult[]
 }
 
 export interface CustomerSummary {
@@ -805,16 +976,34 @@ export interface CreateAuditExportInput {
   reason: string
 }
 
+export type AuditExportStatus =
+  'REQUESTED' | 'RUNNING' | 'READY' | 'FAILED' | 'EXPIRED'
+
+export interface AuditExportArtifact {
+  state: 'PENDING' | 'READY' | 'FAILED' | 'EXPIRED' | 'DELETED'
+  rowCount: number | null
+  sizeBytes: number | null
+  checksumSha256: string | null
+  expiresAt: string | null
+  contentType: 'text/csv' | 'application/x-ndjson' | null
+  failureCode:
+    'GENERATION_FAILED' | 'ARTIFACT_STORE_UNAVAILABLE' | 'EXPIRED' | null
+}
+
 export interface AuditExportJob {
   id: string
-  status: 'REQUESTED'
+  status: AuditExportStatus
   createdAt: string
   format: 'CSV' | 'JSONL'
   fields: string[]
-  artifact: {
-    state: 'NOT_CREATED'
-    generationAvailable: false
-  }
+  artifact: AuditExportArtifact
+}
+
+export interface AuditExportDownload {
+  content: Blob
+  contentType: 'text/csv' | 'application/x-ndjson'
+  fileName: string | null
+  checksumSha256: string
 }
 
 export interface AuditProjectionRebuildResult {

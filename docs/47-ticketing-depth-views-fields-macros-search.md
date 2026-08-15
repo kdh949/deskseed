@@ -4,6 +4,16 @@ Status: Staged implementation specification v0.6
 
 These capabilities are intentionally after Core MVP. The seams are documented now so they can be added without weakening ticket visibility, audit, or command semantics.
 
+## 0. P1 implemented baseline
+
+The following narrow P1 slices are implemented without changing the broader staged decisions below.
+
+- V30 seeds five read-only SYSTEM definitions and stores versioned PERSONAL/SHARED definitions. The P1 AST allowlists status, priority, group, assignee/current actor, First Reply SLA state, ticket kind, and bounded updated-age predicates. It rejects tags, raw SQL, SpEL, JavaScript, and scripts.
+- View rows, preview, and counts share the condition compiler and SQL authorization predicate. The first 20 visible views receive exact counts with one parameterized `UNION ALL` database round-trip; queue rows remain authoritative.
+- `searchAgentWorkspace` is PostgreSQL-first with SQL-side authorization, an opaque query/filter/sort/snapshot-bound cursor, score plus ticket-number tie breaking, exact count, SLA-state filtering, and protected query/audit handling.
+- Tags, custom fields, forms, macros, and any separate count/search projection remain out of this slice. In particular, `REQ-CFG-001` stays `BLUEPRINT_READY` because P1 deliberately excludes tag conditions.
+- The committed 1M evidence records the current PostgreSQL plan and latency rather than introducing a cache or external search engine. A future projection needs a separate measured decision.
+
 ## 1. Saved Views
 
 ### 1.1 Purpose
@@ -39,16 +49,21 @@ SavedView
 }
 ```
 
-Initial fields:
+P1 fields:
 
 - status
 - priority
 - group
 - assignee/current user
+- First Reply SLA state
+- ticket kind
+- bounded updated time
+
+Future fields requiring their own vertical slice:
+
 - requester
 - channel
-- created/updated time
-- tags later in same release
+- tags
 - selected custom fields when queryable
 
 Operators are allowlisted per field type. No raw SQL or script.
@@ -64,9 +79,9 @@ Operators are allowlisted per field type. No raw SQL or script.
 ### 1.5 UI
 
 - shared/personal/system groups in left pane
-- counts may be eventually consistent but list rows are authoritative
+- P1 counts are exact for the first 20 visible definitions; list rows remain authoritative
 - admin view builder: all/any conditions, columns up to a configured limit, group/sort, preview
-- agent personal views later
+- PERSONAL views are available in P1; later UI work may add broader builder ergonomics without changing the server AST contract
 
 ### 1.6 Audit
 

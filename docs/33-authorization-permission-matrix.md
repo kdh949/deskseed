@@ -50,6 +50,11 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | create child | D | D | C | A | D | explicit scope C |
 | read ticket external references | D | D | staff ticket read C | A | D | D |
 | create/remove ticket external reference | D | D | ticket write C | A | D | D |
+| execute saved view / preview | D | D | server ticket-read C | A | D | D |
+| manage PERSONAL saved view | D | D | owner only C | owner only C | D | D |
+| manage SHARED saved view | D | D | D | explicit capability C | D | D |
+| upload/link/download PUBLIC attachment | ticket scoped C | own ticket C | ticket policy C | A | D | D |
+| download INTERNAL attachment | D | D | staff ticket policy C | A | D | D |
 | manage staff/groups | D | D | D | A | D | D |
 | read Audit Explorer | D | D | D | explicit grant C | A | D |
 | reveal protected audit content | D | D | D | explicit C | separate grant C | D |
@@ -161,6 +166,17 @@ authorities from the role. `audit:search-query:reveal`, `audit:export`, and
 serialized with organization mutation, and commit `STAFF_AUTHORITY_GRANTED` or
 `STAFF_AUTHORITY_REVOKED` in the canonical admin/security ledger. A changed grant set
 invalidates an older staff session on its next protected request.
+
+## 9.1 Saved-view management capability
+
+```text
+saved-view:shared:manage
+```
+
+`PERSONAL` definition is owner-only and does not use this capability. `SHARED` create,
+update, delete and reorder require an active `STAFF_ADMIN` plus the explicit current
+capability; a SYSTEM definition is immutable to every interactive actor. View execution
+uses the existing server-side ticket read policy, not this management capability.
 
 ## 10. Integration scopes
 

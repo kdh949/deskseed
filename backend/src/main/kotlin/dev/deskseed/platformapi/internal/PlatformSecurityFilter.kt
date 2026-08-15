@@ -84,7 +84,19 @@ internal class PlatformSecurityFilter(
         }
 
         val principal = authentication.principal
-        val rate = rateLimiter.consume(principal.id)
+        val rate = try {
+            rateLimiter.consume(principal.id)
+        } catch (_: PlatformRateLimitUnavailableException) {
+            problemWriter.write(
+                request,
+                response,
+                503,
+                "/problems/platform-rate-limit-unavailable",
+                "Platform rate limit unavailable",
+                "The shared rate-limit store is unavailable, so this request was not accepted.",
+            )
+            return
+        }
         response.setHeader("X-RateLimit-Limit", rate.limit.toString())
         response.setHeader("X-RateLimit-Remaining", rate.remaining.toString())
         response.setHeader("X-RateLimit-Reset", rate.resetAtEpochSecond.toString())

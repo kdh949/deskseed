@@ -6,6 +6,11 @@ Keep reproducible fixture definitions, the exact query, `EXPLAIN (ANALYZE, BUFFE
 - [Unified Audit Explorer one-million-row query plans](audit-explorer-1m-query-plan.md)
 - [Release-scale exact Agent View queries, Audit Explorer plans, and strict access-write overhead](../evidence/release/performance/README.md)
 
+The release harness also captures the P1 `searchAgentWorkspace` numeric score-cursor
+first page and its exact-count query at the same one-million-ticket scale. It is
+evidence for the PostgreSQL baseline, not justification for a cache, projection, or
+external search service.
+
 ## PERF-001 acceptance boundary
 
 The 2026-08-12 08:22 artifact established a reproducible baseline but did not have a

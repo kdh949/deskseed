@@ -14,8 +14,10 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.mock.web.MockHttpSession
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -40,6 +42,13 @@ class AgentTicketReadIntegrationTest {
 
     @BeforeEach
     fun clearState() {
+        // SYSTEM seeds intentionally survive staff cleanup. Remove only test-created mutable definitions so
+        // their non-cascading ownership identity cannot leak across test cases.
+        jdbcTemplate.update("delete from saved_ticket_views where scope <> 'SYSTEM'")
+        jdbcTemplate.update("delete from saved_view_order_states where scope = 'PERSONAL'")
+        jdbcTemplate.update(
+            "update saved_view_order_states set order_version = 1, updated_at = clock_timestamp() where scope = 'SHARED'",
+        )
         // truncate (not delete) so this cascades through the append-only ticket_audit_events/ticket_audits
         // triggers and any search_audit_* child tables referencing access_audit_events, regardless of
         // whether a given test populated them or not.
@@ -264,6 +273,170 @@ class AgentTicketReadIntegrationTest {
     }
 
     @Test
+    fun `versioned saved views use allowlisted conditions exact counts owner shared capability and execution audit`() {
+        val owner = insertStaff("saved-view-owner@example.com", "Agent password 42", "AGENT", "뷰 소유 상담사")
+        val other = insertStaff("saved-view-other@example.com", "Agent password 42", "AGENT", "다른 상담사")
+        val admin = insertStaff("saved-view-admin@example.com", "Admin password 42", "ADMIN", "뷰 관리자")
+        val ownerGroup = insertGroup("뷰 소유 그룹", owner)
+        insertTicket(3601, "OPEN view row", status = "OPEN", groupId = ownerGroup, assigneeId = owner)
+        insertTicket(3602, "PENDING not in view", status = "PENDING", groupId = ownerGroup, assigneeId = owner)
+        val ownerSession = login("saved-view-owner@example.com", "Agent password 42")
+        val otherSession = login("saved-view-other@example.com", "Agent password 42")
+        val adminSession = login("saved-view-admin@example.com", "Admin password 42")
+
+        val personal = mockMvc.perform(
+            post("/api/v1/agent/views")
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewCreateBody("PERSONAL", "내 OPEN", "OPEN")),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(header().string("ETag", "\"1\""))
+            .andExpect(jsonPath("$.scope").value("PERSONAL"))
+            .andExpect(jsonPath("$.definitionVersion").value(1))
+            .andReturn().response.contentAsString
+        val personalId = UUID.fromString(stringField(personal, "id"))
+        val personalKey = stringField(personal, "key")
+
+        val listed = mockMvc.perform(get("/api/v1/agent/views").session(ownerSession))
+            .andExpect(status().isOk)
+            .andReturn().response.contentAsString
+        assertThat(listed)
+            .contains("\"key\":\"$personalKey\"", "\"ticketCount\":1", "\"ticketCountState\":\"EXACT\"")
+
+        mockMvc.perform(
+            post("/api/v1/agent/views/preview")
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewDefinitionBody("미리보기 OPEN", "OPEN")),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.ticketCount").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(3601))
+
+        mockMvc.perform(
+            get("/api/v1/agent/views/{viewKey}/tickets", personalKey)
+                .session(ownerSession)
+                .queryParam("limit", "25"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(3601))
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from access_audit_events where action = 'VIEW_EXECUTED' and resource_id = ?",
+                Long::class.java,
+                personalId,
+            ),
+        ).isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from admin_security_audit_events where event_type = 'SAVED_VIEW_CREATED' and target_id = ?",
+                Long::class.java,
+                personalId,
+            ),
+        ).isEqualTo(1)
+
+        mockMvc.perform(
+            patch("/api/v1/agent/views/{viewKey}", personalKey)
+                .session(otherSession)
+                .header("X-CSRF-TOKEN", csrf(otherSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewUpdateBody(1, "다른 상담사 수정", "PENDING")),
+        )
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.type").value("/problems/saved-view-not-found"))
+
+        val updated = mockMvc.perform(
+            patch("/api/v1/agent/views/{viewKey}", personalKey)
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewUpdateBody(1, "내 PENDING", "PENDING")),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"2\""))
+            .andExpect(jsonPath("$.definitionVersion").value(2))
+            .andReturn().response.contentAsString
+        assertThat(updated).contains("\"name\":\"내 PENDING\"")
+
+        mockMvc.perform(
+            patch("/api/v1/agent/views/{viewKey}", personalKey)
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewUpdateBody(1, "오래된 버전", "OPEN")),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/saved-view-conflict"))
+
+        mockMvc.perform(
+            post("/api/v1/agent/views/reorder")
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"scope":"PERSONAL","expectedOrderVersion":2,"viewKeys":["$personalKey"]}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.scope").value("PERSONAL"))
+            .andExpect(jsonPath("$.orderVersion").value(3))
+
+        mockMvc.perform(
+            post("/api/v1/agent/views")
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewCreateBody("SHARED", "상담사 공유 시도", "OPEN")),
+        )
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.type").value("/problems/saved-view-forbidden"))
+
+        val shared = mockMvc.perform(
+            post("/api/v1/agent/views")
+                .session(adminSession)
+                .header("X-CSRF-TOKEN", csrf(adminSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewCreateBody("SHARED", "관리자 공유", "OPEN")),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.scope").value("SHARED"))
+            .andReturn().response.contentAsString
+        val sharedKey = stringField(shared, "key")
+
+        mockMvc.perform(
+            patch("/api/v1/agent/views/{viewKey}", sharedKey)
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewUpdateBody(1, "권한 없는 공유 수정", "PENDING")),
+        )
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.type").value("/problems/saved-view-forbidden"))
+
+        mockMvc.perform(
+            patch("/api/v1/agent/views/{viewKey}", "my-open")
+                .session(adminSession)
+                .header("X-CSRF-TOKEN", csrf(adminSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewUpdateBody(1, "시스템 변경", "PENDING")),
+        )
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.type").value("/problems/saved-view-forbidden"))
+
+        mockMvc.perform(
+            delete("/api/v1/agent/views/{viewKey}", personalKey)
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .header("If-Match", "\"2\""),
+        ).andExpect(status().isNoContent)
+    }
+
+    @Test
     fun `agent reads record every protected resource access while navigation writes one semantic view`() {
         val agent = insertStaff("agent@example.com", "Agent password 42", "AGENT", "상담사")
         val group = insertGroup("감사 그룹", agent)
@@ -477,6 +650,26 @@ class AgentTicketReadIntegrationTest {
                 .content("""{"email":"$email","password":"$password"}"""),
         ).andExpect(status().isNoContent).andReturn().request.session as MockHttpSession
     }
+
+    private fun csrf(session: MockHttpSession): String = mockMvc.perform(
+        get("/api/v1/agent/csrf").session(session),
+    ).andExpect(status().isOk).andReturn().response.contentAsString.let { stringField(it, "token") }
+
+    private fun savedViewCreateBody(scope: String, name: String, status: String): String =
+        """{"scope":"$scope",${savedViewDefinitionBody(name, status).removePrefix("{").removeSuffix("}")}}"""
+
+    private fun savedViewUpdateBody(expectedVersion: Long, name: String, status: String): String =
+        """{"expectedVersion":$expectedVersion,${savedViewDefinitionBody(name, status).removePrefix("{").removeSuffix("}")}}"""
+
+    private fun savedViewDefinitionBody(name: String, status: String): String =
+        """
+        {
+          "name":"$name",
+          "conditions":{"version":1,"all":[{"field":"STATUS","operator":"EQUALS","values":["$status"]}],"any":[]},
+          "columns":["TICKET_NUMBER","SUBJECT","STATUS","UPDATED_AT"],
+          "sort":"updatedAt:desc,ticketNumber:desc"
+        }
+        """.trimIndent()
 
     private fun insertStaff(email: String, password: String, role: String, displayName: String): UUID {
         val id = UUID.randomUUID()

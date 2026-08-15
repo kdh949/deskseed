@@ -2,6 +2,7 @@ package dev.deskseed.ticketing
 
 import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.CommandContext
+import dev.deskseed.attachments.TicketAttachment
 import java.time.Instant
 import java.util.UUID
 
@@ -60,6 +61,7 @@ data class SubmitPublicRequestCommand(
     val requesterId: UUID,
     val subject: String,
     val message: String,
+    val attachmentIds: Set<UUID> = emptySet(),
     val actor: ActorRef,
     val context: CommandContext,
 )
@@ -76,6 +78,7 @@ data class PublicCommentView(
     val authorDisplayName: String,
     val body: String,
     val createdAt: Instant,
+    val attachments: List<TicketAttachment> = emptyList(),
 )
 
 data class PublicTicketView(

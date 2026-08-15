@@ -124,6 +124,101 @@ where t.kind = 'INTERNAL_CHILD'
 order by t.updated_at desc, t.ticket_number desc
 limit 51;
 
+-- These two statements mirror StaffTicketQueryRepository.search for the P1
+-- score/ticketNumber cursor mode with a numeric query. They retain the SQL
+-- authorization predicate and the same matching/score expression as runtime.
+\set search_query '6242'
+
+\echo SEARCH_AGENT_WORKSPACE_EXACT_COUNT
+explain (analyze, buffers, settings)
+select count(*)
+from tickets t
+left join customers c on c.id = t.requester_id
+left join support_groups g on g.id = t.group_id
+left join staff_accounts s on s.id = t.assignee_id
+left join analytics_first_reply_facts fact on fact.ticket_id = t.id
+where exists (
+    select 1 from staff_accounts authorized_actor
+    where authorized_actor.id = md5(:'seed' || ':staff:42')::uuid
+      and authorized_actor.status = 'ACTIVE'
+)
+  and t.updated_at <= :'base_time'::timestamptz
+  and (
+      (cast(:'search_query' as bigint) is not null
+          and t.ticket_number = cast(:'search_query' as bigint))
+      or strpos(lower(t.subject), lower(:'search_query')) > 0
+      or strpos(lower(c.name), lower(:'search_query')) > 0
+      or strpos(lower(c.email_normalized), lower(:'search_query')) > 0
+      or strpos(lower(g.name), lower(:'search_query')) > 0
+      or strpos(lower(s.display_name), lower(:'search_query')) > 0
+      or exists (
+          select 1 from ticket_comments search_comment
+          where search_comment.ticket_id = t.id
+            and strpos(lower(search_comment.body), lower(:'search_query')) > 0
+      )
+  );
+
+\echo SEARCH_AGENT_WORKSPACE_SCORE_FIRST_PAGE
+explain (analyze, buffers, settings)
+with ranked as (
+    select t.id, t.ticket_number, t.subject, t.status, t.priority,
+           t.created_at, t.updated_at, t.version, t.kind,
+           c.id as customer_id, c.name as customer_name,
+           g.id as group_id, g.name as group_name,
+           s.id as assignee_id, s.display_name as assignee_name,
+           fact.outcome as sla_outcome, fact.due_at as sla_due_at,
+           fact.target_minutes as sla_target_minutes, fact.policy_version as sla_policy_version,
+           fact.schedule_version as sla_schedule_version,
+           (
+               case when cast(:'search_query' as bigint) is not null
+                           and t.ticket_number = cast(:'search_query' as bigint) then 1000 else 0 end
+               + case when lower(t.subject) = lower(:'search_query') then 500
+                      when strpos(lower(t.subject), lower(:'search_query')) > 0 then 250 else 0 end
+               + case when lower(c.name) = lower(:'search_query') then 180
+                      when strpos(lower(c.name), lower(:'search_query')) > 0 then 90 else 0 end
+               + case when lower(c.email_normalized) = lower(:'search_query') then 160
+                      when strpos(lower(c.email_normalized), lower(:'search_query')) > 0 then 80 else 0 end
+               + case when lower(g.name) = lower(:'search_query') then 80
+                      when strpos(lower(g.name), lower(:'search_query')) > 0 then 40 else 0 end
+               + case when lower(s.display_name) = lower(:'search_query') then 80
+                      when strpos(lower(s.display_name), lower(:'search_query')) > 0 then 40 else 0 end
+               + case when exists (
+                       select 1 from ticket_comments scored_comment
+                       where scored_comment.ticket_id = t.id
+                         and strpos(lower(scored_comment.body), lower(:'search_query')) > 0
+                   ) then 20 else 0 end
+           ) as search_score
+    from tickets t
+    left join customers c on c.id = t.requester_id
+    left join support_groups g on g.id = t.group_id
+    left join staff_accounts s on s.id = t.assignee_id
+    left join analytics_first_reply_facts fact on fact.ticket_id = t.id
+    where exists (
+        select 1 from staff_accounts authorized_actor
+        where authorized_actor.id = md5(:'seed' || ':staff:42')::uuid
+          and authorized_actor.status = 'ACTIVE'
+    )
+      and t.updated_at <= :'base_time'::timestamptz
+      and (
+          (cast(:'search_query' as bigint) is not null
+              and t.ticket_number = cast(:'search_query' as bigint))
+          or strpos(lower(t.subject), lower(:'search_query')) > 0
+          or strpos(lower(c.name), lower(:'search_query')) > 0
+          or strpos(lower(c.email_normalized), lower(:'search_query')) > 0
+          or strpos(lower(g.name), lower(:'search_query')) > 0
+          or strpos(lower(s.display_name), lower(:'search_query')) > 0
+          or exists (
+              select 1 from ticket_comments search_comment
+              where search_comment.ticket_id = t.id
+                and strpos(lower(search_comment.body), lower(:'search_query')) > 0
+          )
+      )
+)
+select *
+from ranked
+order by search_score desc, ticket_number desc
+limit 51;
+
 \echo AUDIT_FIRST_CURSOR_PAGE
 explain (analyze, buffers, settings)
 select *

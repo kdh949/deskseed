@@ -73,6 +73,7 @@ internal class CustomerRequestPortalController(
             principal,
             ticketNumber,
             body.body,
+            body.attachmentIds,
             body.clientCommandId,
             CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
@@ -163,6 +164,7 @@ internal data class CustomerPublicCommentResponse(
     val authorDisplayName: String,
     val body: String,
     val createdAt: Instant,
+    val attachments: List<dev.deskseed.attachments.TicketAttachment> = emptyList(),
 ) {
     companion object {
         fun from(value: PublicCommentView) = CustomerPublicCommentResponse(
@@ -170,12 +172,14 @@ internal data class CustomerPublicCommentResponse(
             value.authorDisplayName,
             value.body,
             value.createdAt,
+            value.attachments,
         )
     }
 }
 
 internal data class CustomerFollowUpRequest(
     @field:NotBlank @field:Size(max = 20_000) val body: String,
+    @field:Size(max = 5) val attachmentIds: List<UUID> = emptyList(),
     @field:NotBlank @field:Size(max = 100) val clientCommandId: String,
 )
 

@@ -30,6 +30,7 @@ data class CustomerFollowUpCommand(
     val requesterId: UUID,
     val requesterEmail: String,
     val body: String,
+    val attachmentIds: Set<UUID> = emptySet(),
     val clientCommandId: String,
     val context: CommandContext,
 )
@@ -38,6 +39,7 @@ data class AnonymousCustomerFollowUpCommand(
     val ticketId: UUID,
     val ticketNumber: Long,
     val body: String,
+    val attachmentIds: Set<UUID> = emptySet(),
     val clientCommandId: String,
     val context: CommandContext,
 )
@@ -75,6 +77,9 @@ interface CustomerTicketPortal {
     fun list(query: CustomerTicketPageQuery): CustomerTicketPage
 
     fun detail(requesterId: UUID, ticketNumber: Long): PublicTicketView?
+
+    /** Token-capability callers use this only after the token has resolved the exact ticket id. */
+    fun findRequesterId(ticketId: UUID, ticketNumber: Long): UUID?
 
     fun addFollowUp(command: CustomerFollowUpCommand): CustomerFollowUpResult
 

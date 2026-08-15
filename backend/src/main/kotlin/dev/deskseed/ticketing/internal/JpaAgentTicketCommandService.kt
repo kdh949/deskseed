@@ -1,6 +1,9 @@
 package dev.deskseed.ticketing.internal
 
 import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.attachments.AttachmentVisibility
+import dev.deskseed.attachments.TicketAttachmentLinkCommand
+import dev.deskseed.attachments.TicketAttachmentLinker
 import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
@@ -135,6 +138,7 @@ internal class AgentTicketCommandTransaction(
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val authorizationPolicy: TicketWriteAuthorizationPolicy,
     private val externalReferenceStore: ExternalReferenceStore,
+    private val attachmentLinker: TicketAttachmentLinker,
     private val customerDirectory: CustomerDirectory,
     private val objectMapper: ObjectMapper,
     private val eventPublisher: ApplicationEventPublisher,
@@ -192,6 +196,13 @@ internal class AgentTicketCommandTransaction(
                 createdAt = ticket.firstComment.createdAt,
             ),
         )
+        val firstCommentAttachmentEvents = linkAttachments(
+            ticket = ticketEntity,
+            commentId = ticket.firstComment.id,
+            draft = command.firstComment,
+            actorId = command.actor.id,
+            linkedAt = now,
+        )
         val auditId = appendAudit(
             ticket = ticketEntity,
             expectedVersion = 0,
@@ -216,6 +227,7 @@ internal class AgentTicketCommandTransaction(
                     ),
                 ),
                 commentAuditEvent(ticket.firstComment.id, command.firstComment, now),
+                *firstCommentAttachmentEvents.toTypedArray(),
             ),
         )
         if (command.firstComment.visibility == CommentVisibility.PUBLIC) {
@@ -265,7 +277,7 @@ internal class AgentTicketCommandTransaction(
             ) {
                 throw TicketCommandIdReusedException()
             }
-            return original.result
+            return original.result.copy(replayed = true)
         }
         val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
             ?: throw AgentTicketNotFoundException()
@@ -326,6 +338,7 @@ internal class AgentTicketCommandTransaction(
                 ),
             )
             events += commentAuditEvent(commentId, draft, now)
+            events += linkAttachments(ticket, commentId, draft, command.actor.id, now)
             if (draft.visibility == CommentVisibility.PUBLIC) {
                 publicReply = PublicReply(commentId, draft.body.trim())
             }
@@ -435,10 +448,18 @@ internal class AgentTicketCommandTransaction(
         command.reason?.let { reason ->
             if (reason.length > 2_000) throw TicketCommandInvalidException("reason must not exceed 2000 characters")
         }
+        val requestDescriptor = transferRequestDescriptor(command)
         organizationConsistencyGuard.acquire()
         commandReplayStore.lock(command.actor.id, command.context.commandId)
-        if (commandReplayStore.find(command.actor.id, command.context.commandId) != null) {
-            throw TicketCommandIdReusedException()
+        commandReplayStore.find(command.actor.id, command.context.commandId)?.let { original ->
+            if (
+                original.result.ticketNumber != command.ticketNumber ||
+                original.operation != TRANSFER_TICKET_OPERATION ||
+                original.requestDescriptor != requestDescriptor
+            ) {
+                throw TicketCommandIdReusedException()
+            }
+            return original.result.copy(replayed = true)
         }
         val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
             ?: throw AgentTicketNotFoundException()
@@ -491,6 +512,18 @@ internal class AgentTicketCommandTransaction(
         ticket.assigneeId = command.assigneeId
         ticket.updatedAt = now
         ticketRepository.saveAndFlush(ticket)
+        val eventsWithResult = events.mapIndexed { index, event ->
+            if (index != 0) {
+                event
+            } else {
+                event.copy(
+                    metadata = event.metadata + mapOf(
+                        "commandOperation" to TRANSFER_TICKET_OPERATION,
+                        "commandRequestDescriptor" to requestDescriptor,
+                    ),
+                )
+            }
+        }
         val auditId = appendAudit(
             ticket = ticket,
             expectedVersion = command.expectedVersion,
@@ -498,7 +531,7 @@ internal class AgentTicketCommandTransaction(
             actorId = command.actor.id,
             context = command.context.toAuditContext(),
             now = now,
-            events = events,
+            events = eventsWithResult,
         )
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId)
     }
@@ -829,6 +862,7 @@ internal class AgentTicketCommandTransaction(
             linkedMapOf(
                 "visibility" to it.visibility.name,
                 "contentSha256" to sha256(it.body.trim()),
+                "attachmentIds" to it.attachmentIds.map(UUID::toString).sorted(),
             )
         }
         return objectMapper.writeValueAsString(
@@ -842,6 +876,19 @@ internal class AgentTicketCommandTransaction(
             ),
         )
     }
+
+    private fun transferRequestDescriptor(command: TransferTicketCommand): String = objectMapper.writeValueAsString(
+        linkedMapOf(
+            "operation" to TRANSFER_TICKET_OPERATION,
+            "ticketNumber" to command.ticketNumber,
+            "expectedVersion" to command.expectedVersion,
+            "groupId" to command.groupId.toString(),
+            "assigneeId" to command.assigneeId?.toString(),
+            // A reason becomes an INTERNAL comment.  The replay descriptor must bind the
+            // semantic content without persisting the comment body in ordinary metadata.
+            "reasonSha256" to command.reason?.trim()?.takeIf(String::isNotEmpty)?.let(::sha256),
+        ),
+    )
 
     private fun requireExactVersion(expectedVersion: Long, currentVersion: Long) {
         if (expectedVersion != currentVersion) {
@@ -870,6 +917,9 @@ internal class AgentTicketCommandTransaction(
 
     private fun validateComment(comment: AgentCommentDraft) {
         validateText(comment.body, "comment.body", 20_000)
+        if (comment.attachmentIds.size > MAX_ATTACHMENTS) {
+            throw TicketCommandInvalidException("A comment can link at most five attachments")
+        }
     }
 
     private fun validateStatusChange(old: TicketStatus, new: TicketStatus, requested: Boolean) {
@@ -969,6 +1019,30 @@ internal class AgentTicketCommandTransaction(
             occurredAt = now,
         )
 
+    private fun linkAttachments(
+        ticket: TicketEntity,
+        commentId: UUID,
+        draft: AgentCommentDraft,
+        actorId: UUID,
+        linkedAt: Instant,
+    ): List<NewAuditEvent> = attachmentLinker.linkCleanAttachments(
+        TicketAttachmentLinkCommand(
+            ticketId = ticket.id,
+            commentId = commentId,
+            visibility = AttachmentVisibility.valueOf(draft.visibility.name),
+            actor = ActorRef(ActorType.STAFF, actorId),
+            attachmentIds = draft.attachmentIds,
+            linkedAt = linkedAt,
+        ),
+    ).map { linked ->
+        NewAuditEvent(
+            type = "ATTACHMENT_LINKED",
+            after = objectMapper.writeValueAsString(mapOf("id" to linked.attachment.id.toString())),
+            metadata = mapOf("visibility" to linked.visibility.name),
+            occurredAt = linkedAt,
+        )
+    }
+
     private fun emitPublicReply(
         ticket: TicketEntity,
         commentId: UUID,
@@ -1046,5 +1120,7 @@ internal class AgentTicketCommandTransaction(
 
     private companion object {
         const val UPDATE_TICKET_OPERATION = "UPDATE_TICKET"
+        const val TRANSFER_TICKET_OPERATION = "TRANSFER_TICKET"
+        const val MAX_ATTACHMENTS = 5
     }
 }

@@ -68,7 +68,7 @@ function createDetail(
       },
       parent: null,
       children: [],
-      externalReferences: [],
+      externalReferenceCount: 0,
     },
     history: [],
     warnings: [],

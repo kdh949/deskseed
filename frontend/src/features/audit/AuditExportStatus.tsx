@@ -9,6 +9,9 @@ export type AuditExportStatusState =
   | { status: 'ready'; job: AuditExportJob; polling: boolean }
 
 export interface AuditExportStatusProps {
+  downloading?: boolean
+  downloadError?: string
+  onDownload: () => void
   onRefresh: () => void
   onRetry: () => void
   state: AuditExportStatusState
@@ -20,6 +23,9 @@ const FORMAT_LABELS: Record<AuditExportJob['format'], string> = {
 }
 
 export function AuditExportStatus({
+  downloading = false,
+  downloadError,
+  onDownload,
   onRefresh,
   onRetry,
   state,
@@ -72,6 +78,16 @@ export function AuditExportStatus({
   }
 
   const { job } = state
+  const terminal =
+    job.status === 'READY' ||
+    job.status === 'FAILED' ||
+    job.status === 'EXPIRED'
+  const readyForDownload =
+    job.status === 'READY' && job.artifact.state === 'READY'
+  const expired =
+    job.status === 'EXPIRED' ||
+    job.artifact.state === 'EXPIRED' ||
+    job.artifact.state === 'DELETED'
   return (
     <main className="audit-export-status" aria-label="감사 내보내기 작업 상태">
       <header>
@@ -91,17 +107,78 @@ export function AuditExportStatus({
           <dt>필드</dt>
           <dd>{job.fields.join(', ')}</dd>
         </div>
+        <div>
+          <dt>상태</dt>
+          <dd>{statusLabel(job.status)}</dd>
+        </div>
       </dl>
-      <ScreenState
-        action={
-          !state.polling ? (
-            <DsButton onClick={onRefresh}>새로고침</DsButton>
-          ) : undefined
-        }
-        compact
-        kind="loading"
-        title="생성 중…"
-      />
+      {readyForDownload ? (
+        <section
+          aria-label="준비된 내보내기 파일"
+          className="audit-export-ready"
+        >
+          <p>파일이 준비되었습니다.</p>
+          <dl className="audit-export-status-summary">
+            <div>
+              <dt>행 수</dt>
+              <dd>{job.artifact.rowCount?.toLocaleString('ko-KR') ?? '-'}</dd>
+            </div>
+            <div>
+              <dt>파일 크기</dt>
+              <dd>{formatSize(job.artifact.sizeBytes)}</dd>
+            </div>
+            <div>
+              <dt>만료 시각</dt>
+              <dd>
+                {job.artifact.expiresAt
+                  ? formatCreatedAt(job.artifact.expiresAt)
+                  : '-'}
+              </dd>
+            </div>
+          </dl>
+          <DsButton disabled={downloading} onClick={onDownload} tone="primary">
+            {downloading ? '다운로드 준비 중…' : '다운로드'}
+          </DsButton>
+          {downloadError ? (
+            <ScreenState
+              compact
+              description={downloadError}
+              kind="error"
+              title="파일을 다운로드하지 못했습니다."
+            />
+          ) : null}
+        </section>
+      ) : expired ? (
+        <ScreenState
+          compact
+          description="보호된 내보내기 artifact는 만료 또는 삭제되어 다시 다운로드할 수 없습니다."
+          kind="stale"
+          title="내보내기 파일이 만료되었습니다."
+        />
+      ) : job.status === 'FAILED' || job.artifact.state === 'FAILED' ? (
+        <ScreenState
+          action={<DsButton onClick={onRefresh}>상태 새로고침</DsButton>}
+          compact
+          description={
+            job.artifact.failureCode
+              ? `생성 실패 코드: ${job.artifact.failureCode}`
+              : '파일 생성이 완료되지 않았습니다.'
+          }
+          kind="error"
+          title="내보내기 파일 생성에 실패했습니다."
+        />
+      ) : (
+        <ScreenState
+          action={
+            !state.polling || terminal ? (
+              <DsButton onClick={onRefresh}>새로고침</DsButton>
+            ) : undefined
+          }
+          compact
+          kind="loading"
+          title="생성 중…"
+        />
+      )}
     </main>
   )
 }
@@ -111,4 +188,22 @@ function formatCreatedAt(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))
+}
+
+function formatSize(value: number | null) {
+  if (value === null) return '-'
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function statusLabel(status: AuditExportJob['status']) {
+  const labels: Record<AuditExportJob['status'], string> = {
+    REQUESTED: '요청됨',
+    RUNNING: '생성 중',
+    READY: '준비됨',
+    FAILED: '실패',
+    EXPIRED: '만료됨',
+  }
+  return labels[status]
 }

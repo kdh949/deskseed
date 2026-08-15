@@ -205,7 +205,12 @@ internal class AgentTicketCommandController(
         childAuditId = childAuditId,
     )
 
-    private fun CommentDraftRequest.toDraft() = AgentCommentDraft(visibility, body)
+    private fun CommentDraftRequest.toDraft(): AgentCommentDraft {
+        if (attachmentIds.size != attachmentIds.toSet().size) {
+            throw TicketCommandInvalidException("attachmentIds must be unique")
+        }
+        return AgentCommentDraft(visibility, body, attachmentIds.toSet())
+    }
 }
 
 internal data class AgentRequesterRequest(
@@ -230,6 +235,7 @@ internal data class AgentRequesterRequest(
 internal data class CommentDraftRequest(
     val visibility: CommentVisibility,
     @field:NotBlank @field:Size(max = 20_000) val body: String,
+    @field:Size(max = 5) val attachmentIds: List<UUID> = emptyList(),
 )
 
 internal data class CreateAgentTicketRequest(

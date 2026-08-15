@@ -87,7 +87,7 @@ function CustomerContext({ detail }: { detail?: AgentTicketDetail }) {
           </div>
           <div>
             <dt>외부 참조</dt>
-            <dd>{detail?.context.externalReferences.length ?? 0}</dd>
+            <dd>{detail?.context.externalReferenceCount ?? 0}</dd>
           </div>
         </dl>
       </section>
@@ -124,8 +124,8 @@ function RelatedContext({ detail }: { detail?: AgentTicketDetail }) {
       <section className="context-section">
         <h2>외부 참조</h2>
         <p>
-          {detail?.context.externalReferences.length
-            ? `${detail.context.externalReferences.length}개의 참조가 연결되어 있습니다.`
+          {detail?.context.externalReferenceCount
+            ? `${detail.context.externalReferenceCount}개의 참조가 연결되어 있습니다.`
             : '연결된 외부 참조가 없습니다.'}
         </p>
       </section>
