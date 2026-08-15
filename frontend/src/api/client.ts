@@ -473,6 +473,7 @@ export async function submitRequest(
       ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
     },
     cache: 'no-store',
+    referrerPolicy: 'no-referrer',
     body: JSON.stringify(input),
   })
   const body = await successfulResponseBody(response)
@@ -488,14 +489,42 @@ export async function getPublicRequest(
   const response = await fetch(
     `${API_BASE_URL}/api/v1/requests/${ticketNumber}`,
     {
+      credentials: 'include',
       headers: { 'X-Request-Access-Token': accessToken },
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
     },
   )
   const body = await successfulResponseBody(response)
   const request = decodePublicRequest(body)
   if (!request) throw malformedSuccess(response)
   return request
+}
+
+export async function addAnonymousRequestComment(
+  ticketNumber: number,
+  accessToken: string,
+  body: string,
+  clientCommandId: string,
+): Promise<PublicComment> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/requests/${ticketNumber}/comments`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Request-Access-Token': accessToken,
+      },
+      body: JSON.stringify({ body, clientCommandId }),
+    },
+  )
+  const responseBody = await successfulResponseBody(response)
+  const comment = decodePublicComment(responseBody)
+  if (!comment) throw malformedSuccess(response)
+  return comment
 }
 
 const STAFF_ROLES = new Set<StaffRole>(['ADMIN', 'AGENT', 'SECURITY_AUDITOR'])
