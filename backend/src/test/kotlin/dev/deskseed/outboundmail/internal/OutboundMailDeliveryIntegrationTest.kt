@@ -97,7 +97,7 @@ class OutboundMailDeliveryIntegrationTest {
         assertThat(commentCount(ticketId)).isEqualTo(1)
         assertThat(transport.deliveredMessages).isEmpty()
         jdbcTemplate.update(
-            "update outbound_mail_intents set next_attempt_at = now() where ticket_id = ?",
+            "update outbound_mail_intents set next_attempt_at = now() - interval '1 second' where ticket_id = ?",
             ticketId,
         )
 
@@ -123,7 +123,7 @@ class OutboundMailDeliveryIntegrationTest {
         val intentId = intentId(ticketId)
         transport.failNext(MailTransportException(true, "SMTP_TEMPORARY_FAILURE"))
         worker.runDueBatch()
-        jdbcTemplate.update("update outbound_mail_intents set next_attempt_at = now() where id = ?", intentId)
+        jdbcTemplate.update("update outbound_mail_intents set next_attempt_at = now() - interval '1 second' where id = ?", intentId)
         transport.failNext(MailTransportException(false, "RECIPIENT_REJECTED"))
         worker.runDueBatch()
 

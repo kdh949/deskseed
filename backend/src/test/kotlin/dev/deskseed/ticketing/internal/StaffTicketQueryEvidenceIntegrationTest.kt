@@ -128,7 +128,7 @@ class StaffTicketQueryEvidenceIntegrationTest {
     }
 
     @Test
-    fun `list uses one SQL statement and detail uses three regardless of comment count`() {
+    fun `list uses one SQL statement and detail uses four bounded statements regardless of comment count`() {
         queryCounter.reset()
         val page = ticketStore.list(
             view = DefaultStaffView.MY_OPEN,
@@ -144,7 +144,8 @@ class StaffTicketQueryEvidenceIntegrationTest {
         queryCounter.reset()
         val detail = ticketStore.findDetail(6001)
         assertThat(detail?.comments).hasSize(100)
-        assertThat(queryCounter.count()).isEqualTo(3)
+        // P1 adds one bulk attachment projection query; it must not grow with comment count.
+        assertThat(queryCounter.count()).isEqualTo(4)
     }
 
     @Test

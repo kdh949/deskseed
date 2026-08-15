@@ -1,6 +1,14 @@
 package dev.deskseed.portal.internal
 
 import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.attachments.AttachmentContent
+import dev.deskseed.attachments.AttachmentDownloadCommand
+import dev.deskseed.attachments.AttachmentDownloadService
+import dev.deskseed.attachments.AttachmentUploadCommand
+import dev.deskseed.attachments.AttachmentUploadResult
+import dev.deskseed.attachments.AttachmentUploadService
+import dev.deskseed.attachments.AttachmentVisibility
+import dev.deskseed.audit.AccessAuditContext
 import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
@@ -21,6 +29,7 @@ import dev.deskseed.ticketing.TicketingFacade
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.io.InputStream
 import java.util.Locale
 import java.util.UUID
 
@@ -33,6 +42,8 @@ internal class PublicRequestApplicationService(
     private val accessTokenStore: RequestAccessTokenStore,
     private val outboundMailPort: OutboundMailPort,
     private val rateLimiter: PublicRequestRateLimiter,
+    private val attachmentUploadService: AttachmentUploadService,
+    private val attachmentDownloadService: AttachmentDownloadService,
 ) {
     @Transactional
     fun submit(command: SubmitAnonymousRequest): AnonymousRequestSubmitted {
@@ -97,6 +108,7 @@ internal class PublicRequestApplicationService(
         ticketNumber: Long,
         rawAccessToken: String,
         body: String,
+        attachmentIds: List<UUID>,
         clientCommandId: String,
         context: CommandContext,
     ): CustomerFollowUpResult {
@@ -108,6 +120,7 @@ internal class PublicRequestApplicationService(
                     ticketId = ticketId,
                     ticketNumber = ticketNumber,
                     body = body,
+                    attachmentIds = uniqueAttachmentIds(attachmentIds),
                     clientCommandId = clientCommandId,
                     context = context,
                 ),
@@ -132,6 +145,128 @@ internal class PublicRequestApplicationService(
         return result
     }
 
+    /** Resolves the capability to its exact ticket before the private attachment boundary is entered. */
+    fun authorizeAttachmentTicket(ticketNumber: Long, rawAccessToken: String): PublicAttachmentAuthorizedTicket {
+        val ticketId = accessTokenStore.resolveTicketId(rawAccessToken) ?: throw RequestNotFoundException()
+        val requesterId = ticketPortal.findRequesterId(ticketId, ticketNumber) ?: throw RequestNotFoundException()
+        return PublicAttachmentAuthorizedTicket(ticketId, ticketNumber, requesterId)
+    }
+
+    fun uploadAttachment(
+        ticket: PublicAttachmentAuthorizedTicket,
+        fileName: String,
+        declaredContentType: String?,
+        content: InputStream,
+        context: CommandContext,
+    ): AttachmentUploadResult = attachmentUploadService.upload(
+        AttachmentUploadCommand(
+            actor = ActorRef(ActorType.CUSTOMER, ticket.requesterId),
+            actorDisplayName = "고객",
+            source = dev.deskseed.foundation.RequestSource.CUSTOMER_PORTAL,
+            context = context,
+            boundTicketId = ticket.ticketId,
+            allowedVisibility = AttachmentVisibility.PUBLIC,
+            fileName = fileName,
+            declaredContentType = declaredContentType,
+            content = content,
+        ),
+    )
+
+    /**
+     * The first request comment has no ticket id yet. This preparation transaction intentionally commits only the
+     * customer/rate-limit decision, then the controller scans files outside a ticket transaction before finalizing.
+     */
+    @Transactional
+    fun prepareInitialSubmission(command: SubmitAnonymousRequest): PreparedInitialSubmission {
+        rateLimiter.consume(
+            destination = command.authenticatedEmail ?: command.email,
+            clientAddress = command.effectiveClientAddress,
+        )
+        val customer = if (command.authenticatedCustomerId == null) {
+            customerAccessPolicy.requireAnonymousSubmissionAllowed()
+            customerDirectory.createUnverified(name = command.name, email = command.email)
+        } else {
+            customerDirectory.findById(command.authenticatedCustomerId)
+                ?.takeIf {
+                    it.verifiedAt != null && it.email.trim().lowercase(Locale.ROOT) ==
+                        command.authenticatedEmail?.trim()?.lowercase(Locale.ROOT)
+                }
+                ?: throw IllegalArgumentException("Authenticated customer is unavailable")
+        }
+        return PreparedInitialSubmission(customer.id, customer.name, customer.email)
+    }
+
+    fun uploadInitialAttachment(
+        prepared: PreparedInitialSubmission,
+        fileName: String,
+        declaredContentType: String?,
+        content: InputStream,
+        context: CommandContext,
+    ): AttachmentUploadResult = attachmentUploadService.upload(
+        AttachmentUploadCommand(
+            actor = ActorRef(ActorType.CUSTOMER, prepared.customerId),
+            actorDisplayName = prepared.customerName,
+            source = dev.deskseed.foundation.RequestSource.CUSTOMER_PORTAL,
+            context = context,
+            boundTicketId = null,
+            allowedVisibility = AttachmentVisibility.PUBLIC,
+            initialPublicSubmission = true,
+            fileName = fileName,
+            declaredContentType = declaredContentType,
+            content = content,
+        ),
+    )
+
+    @Transactional
+    fun finishInitialSubmission(
+        prepared: PreparedInitialSubmission,
+        subject: String,
+        message: String,
+        attachmentIds: Set<UUID>,
+        context: CommandContext,
+    ): AnonymousRequestSubmitted {
+        require(attachmentIds.size <= 5) { "Initial request can link at most five attachments" }
+        val ticket = ticketingFacade.submitPublicRequest(
+            SubmitPublicRequestCommand(
+                requesterId = prepared.customerId,
+                subject = subject,
+                message = message,
+                attachmentIds = attachmentIds,
+                actor = ActorRef(ActorType.CUSTOMER, prepared.customerId),
+                context = context,
+            ),
+        )
+        val rawAccessToken = accessTokenStore.issue(ticket.ticketId)
+        enqueueRequestReceivedMail(
+            ticketId = ticket.ticketId,
+            ticketNumber = ticket.ticketNumber,
+            commentId = null,
+            customerId = prepared.customerId,
+            customerEmail = prepared.customerEmail,
+            rawAccessToken = rawAccessToken,
+            idempotencyKey = "request-received:${ticket.ticketId}",
+            context = context,
+        )
+        return AnonymousRequestSubmitted(ticket.ticketNumber, ticket.status, rawAccessToken, ticket.createdAt)
+    }
+
+    fun downloadAttachment(
+        ticket: PublicAttachmentAuthorizedTicket,
+        attachmentId: UUID,
+        accessContext: AccessAuditContext,
+        occurredAt: Instant,
+    ): AttachmentContent = attachmentDownloadService.openForDownload(
+        AttachmentDownloadCommand(
+            attachmentId = attachmentId,
+            ticketId = ticket.ticketId,
+            ticketNumber = ticket.ticketNumber,
+            allowedVisibilities = setOf(AttachmentVisibility.PUBLIC),
+            accessContext = accessContext,
+            interactionId = null,
+            occurredAt = occurredAt,
+        ),
+    )
+
     private fun enqueueRequestReceivedMail(
         ticketId: UUID,
         ticketNumber: Long,
@@ -155,6 +290,11 @@ internal class PublicRequestApplicationService(
             ),
         )
     }
+
+    private fun uniqueAttachmentIds(ids: List<UUID>): Set<UUID> {
+        require(ids.size <= 5 && ids.size == ids.toSet().size) { "attachmentIds must be unique and limited to five" }
+        return ids.toSet()
+    }
 }
 
 internal data class SubmitAnonymousRequest(
@@ -174,4 +314,16 @@ internal data class AnonymousRequestSubmitted(
     val status: CustomerRequestStatus,
     val accessToken: String,
     val createdAt: Instant,
+)
+
+internal data class PublicAttachmentAuthorizedTicket(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val requesterId: UUID,
+)
+
+internal data class PreparedInitialSubmission(
+    val customerId: UUID,
+    val customerName: String,
+    val customerEmail: String,
 )

@@ -42,7 +42,7 @@ class PlatformRateLimitIntegrationTest {
     @Test
     fun `third request is rate limited with headers and audited without key material`() {
         jdbcTemplate.execute(
-            "truncate table platform_idempotency_records, integration_credentials, integration_clients, " +
+            "truncate table platform_rate_limit_buckets, platform_idempotency_records, integration_credentials, integration_clients, " +
                 "access_audit_events, admin_security_audit_events, ticket_audit_events, ticket_audits, " +
                 "ticket_comments, tickets, staff_authority_grants, staff_accounts, customers cascade",
         )
@@ -74,6 +74,42 @@ class PlatformRateLimitIntegrationTest {
             String::class.java,
         )!!
         assertThat(audit).contains("RATE_LIMITED").doesNotContain(apiKey).doesNotContain(apiKey.substringAfter('.'))
+    }
+
+    @Test
+    fun `rate limit database failure is fail closed with documented 503`() {
+        jdbcTemplate.execute("truncate table platform_rate_limit_buckets")
+        val adminId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into staff_accounts (
+                id, email_normalized, email_display, display_name, role, status, password_hash, created_at, updated_at
+            ) values (?, 'rate-failure-admin@example.com', 'rate-failure-admin@example.com', 'Admin', 'ADMIN', 'ACTIVE', 'unused', now(), now())
+            """.trimIndent(),
+            adminId,
+        )
+        val apiKey = issueClient(adminId)
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_platform_rate_limit_insert() returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected platform rate-limit database failure'; end; ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_platform_rate_limit before insert on platform_rate_limit_buckets " +
+                "for each row execute function fail_platform_rate_limit_insert()",
+        )
+        try {
+            val response = mockMvc.perform(
+                get("/api/v1/platform/tickets/999999").header("Authorization", "Bearer $apiKey"),
+            ).andReturn().response
+            assertThat(response.status).isEqualTo(503)
+            assertThat(response.contentAsString).contains("/problems/platform-rate-limit-unavailable")
+            assertThat(response.getHeader("X-RateLimit-Limit")).isNull()
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_platform_rate_limit on platform_rate_limit_buckets")
+            jdbcTemplate.execute("drop function if exists fail_platform_rate_limit_insert()")
+        }
     }
 
     private fun issueClient(adminId: UUID): String {

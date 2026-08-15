@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.foundation.RequestIdFilter
+import dev.deskseed.attachments.AttachmentLinkInvalidException
 import dev.deskseed.integration.ExternalReferenceConflictException
 import dev.deskseed.integration.ExternalReferenceNotFoundException
 import dev.deskseed.integration.ExternalSystemNotFoundException
@@ -28,7 +29,13 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.net.URI
 
-@RestControllerAdvice(assignableTypes = [AgentTicketCommandController::class, AgentExternalReferenceController::class])
+@RestControllerAdvice(
+    assignableTypes = [
+        AgentTicketCommandController::class,
+        AgentTicketBatchController::class,
+        AgentExternalReferenceController::class,
+    ],
+)
 internal class AgentTicketCommandExceptionHandler {
     @ExceptionHandler(AgentTicketNotFoundException::class)
     fun notFound(request: HttpServletRequest) = problem(
@@ -155,6 +162,7 @@ internal class AgentTicketCommandExceptionHandler {
 
     @ExceptionHandler(
         TicketCommandInvalidException::class,
+        AttachmentLinkInvalidException::class,
         IllegalArgumentException::class,
         ConstraintViolationException::class,
         MethodArgumentNotValidException::class,

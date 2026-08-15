@@ -1122,6 +1122,126 @@ class AgentTicketCommandIntegrationTest {
         assertThat(eventTypes(auditId)).containsExactly("TICKET_CREATED", "COMMENT_CREATED")
     }
 
+    @Test
+    fun `batch command commits explicit items independently returns every terminal outcome and replays successes`() {
+        val agent = insertStaff("batch-agent@example.com", "일괄 처리 상담사", "AGENT")
+        val otherAgent = insertStaff("batch-other@example.com", "다른 그룹 상담사", "AGENT")
+        val sourceGroup = insertGroup("일괄 원본 그룹", agent)
+        val targetGroup = insertGroup("일괄 이동 그룹", agent)
+        val deniedGroup = insertGroup("일괄 차단 그룹", otherAgent)
+        val browser = login("batch-agent@example.com")
+        val otherBrowser = login("batch-other@example.com")
+        val updated = createAssignedTicket(browser, agent, sourceGroup, "batch-updated@example.com")
+        val conflicted = createAssignedTicket(browser, agent, sourceGroup, "batch-conflict@example.com")
+        val transferred = createAssignedTicket(browser, agent, sourceGroup, "batch-transfer@example.com")
+        val denied = createAssignedTicket(otherBrowser, otherAgent, deniedGroup, "batch-denied@example.com")
+        val invalid = createAssignedTicket(browser, agent, sourceGroup, "batch-invalid@example.com")
+        performCommand(
+            browser,
+            conflicted.ticketNumber,
+            "batch-conflict-prior-write",
+            """
+            {"expectedVersion":0,"changedFields":["priority"],"priority":"HIGH"}
+            """.trimIndent(),
+        ).andExpect(status().isOk)
+        val body =
+            """
+            {
+              "items": [
+                {
+                  "ticketNumber": ${updated.ticketNumber}, "expectedVersion": 0, "clientCommandId": "batch-update-001",
+                  "command": {"type":"UPDATE","changedFields":["priority"],"priority":"HIGH"}
+                },
+                {
+                  "ticketNumber": ${conflicted.ticketNumber}, "expectedVersion": 0, "clientCommandId": "batch-conflict-001",
+                  "command": {"type":"UPDATE","changedFields":["priority"],"priority":"HIGH"}
+                },
+                {
+                  "ticketNumber": ${transferred.ticketNumber}, "expectedVersion": 0, "clientCommandId": "batch-transfer-001",
+                  "command": {"type":"TRANSFER","groupId":"$targetGroup","assigneeId":"$agent","reason":"결제 전담 그룹으로 이관"}
+                },
+                {
+                  "ticketNumber": ${denied.ticketNumber}, "expectedVersion": 0, "clientCommandId": "batch-denied-001",
+                  "command": {"type":"UPDATE","changedFields":["priority"],"priority":"HIGH"}
+                },
+                {
+                  "ticketNumber": ${invalid.ticketNumber}, "expectedVersion": 0, "clientCommandId": "batch-invalid-001",
+                  "command": {"type":"UPDATE","changedFields":[]}
+                },
+                {
+                  "ticketNumber": 999999, "expectedVersion": 0, "clientCommandId": "batch-missing-001",
+                  "command": {"type":"UPDATE","changedFields":["priority"],"priority":"HIGH"}
+                }
+              ]
+            }
+            """.trimIndent()
+
+        mockMvc.perform(batchCommandRequest(browser, "batch-request-001", body))
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.results.length()").value(6))
+            .andExpect(jsonPath("$.results[0].outcome").value("SUCCEEDED"))
+            .andExpect(jsonPath("$.results[0].replayed").value(false))
+            .andExpect(jsonPath("$.results[0].resultVersion").value(1))
+            .andExpect(jsonPath("$.results[1].outcome").value("CONFLICT"))
+            .andExpect(jsonPath("$.results[2].outcome").value("SUCCEEDED"))
+            .andExpect(jsonPath("$.results[3].outcome").value("DENIED"))
+            .andExpect(jsonPath("$.results[4].outcome").value("VALIDATION_FAILED"))
+            .andExpect(jsonPath("$.results[5].outcome").value("NOT_FOUND"))
+
+        assertThat(
+            jdbcTemplate.queryForObject("select priority from tickets where id = ?", String::class.java, updated.ticketId),
+        ).isEqualTo("HIGH")
+        assertThat(
+            jdbcTemplate.queryForObject("select group_id from tickets where id = ?", UUID::class.java, transferred.ticketId),
+        ).isEqualTo(targetGroup)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ? and visibility = 'INTERNAL' and body = ?",
+                Long::class.java,
+                transferred.ticketId,
+                "결제 전담 그룹으로 이관",
+            ),
+        ).isEqualTo(1)
+        assertThat(auditCount(updated.ticketId)).isEqualTo(2)
+        assertThat(auditCount(conflicted.ticketId)).isEqualTo(2)
+        assertThat(auditCount(transferred.ticketId)).isEqualTo(2)
+        assertThat(auditCount(denied.ticketId)).isEqualTo(1)
+        assertThat(auditCount(invalid.ticketId)).isEqualTo(1)
+
+        mockMvc.perform(batchCommandRequest(browser, "batch-request-replay", body))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.results[0].outcome").value("SUCCEEDED"))
+            .andExpect(jsonPath("$.results[0].replayed").value(true))
+            .andExpect(jsonPath("$.results[1].outcome").value("CONFLICT"))
+            .andExpect(jsonPath("$.results[2].outcome").value("SUCCEEDED"))
+            .andExpect(jsonPath("$.results[2].replayed").value(true))
+        assertThat(auditCount(updated.ticketId)).isEqualTo(2)
+        assertThat(auditCount(transferred.ticketId)).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ? and visibility = 'INTERNAL' and body = ?",
+                Long::class.java,
+                transferred.ticketId,
+                "결제 전담 그룹으로 이관",
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
+    fun `batch command rejects more than one hundred explicit items before any item transaction starts`() {
+        val agent = insertStaff("batch-limit@example.com", "일괄 상한 상담사", "AGENT")
+        val browser = login("batch-limit@example.com")
+        val items = (1..101).joinToString(",") { index ->
+            """{"ticketNumber":$index,"expectedVersion":0,"clientCommandId":"batch-limit-$index","command":{}}"""
+        }
+
+        mockMvc.perform(batchCommandRequest(browser, "batch-limit-request", "{\"items\":[$items]}"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from ticket_audits", Long::class.java)).isZero()
+    }
+
     private fun createAssignedTicket(
         browser: Browser,
         assigneeId: UUID,
@@ -1186,6 +1306,18 @@ class AgentTicketCommandIntegrationTest {
             .header("X-Correlation-Id", "correlation-ticket-command")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body)
+
+    private fun batchCommandRequest(
+        browser: Browser,
+        requestId: String,
+        body: String,
+    ) = post("/api/v1/agent/tickets/batch-commands")
+        .session(browser.session)
+        .header("X-CSRF-TOKEN", browser.csrfToken)
+        .header("X-Request-Id", requestId)
+        .header("X-Correlation-Id", "batch-ticket-command")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(body)
 
     private fun commandResponse(
         browser: Browser,

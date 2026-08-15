@@ -25,6 +25,9 @@ import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import org.springframework.http.CacheControl
+import org.springframework.http.ContentDisposition
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
@@ -36,6 +39,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.UUID
 
@@ -149,6 +154,25 @@ internal class AuditExplorerController(
     ): ResponseEntity<AuditExportJob> = ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
         .body(auditExplorer.getExport(jobId, request.auditContext(principal, interactionId)))
+
+    @GetMapping("/exports/{jobId}/download")
+    fun downloadExport(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @PathVariable jobId: UUID,
+        @RequestHeader("X-Interaction-Id") interactionId: UUID,
+        request: HttpServletRequest,
+    ): ResponseEntity<StreamingResponseBody> {
+        val artifact = auditExplorer.openExport(jobId, request.auditContext(principal, interactionId))
+        return ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
+            .contentType(MediaType.parseMediaType(artifact.contentType))
+            .header(
+                HttpHeaders.CONTENT_DISPOSITION,
+                ContentDisposition.attachment().filename(artifact.fileName, StandardCharsets.UTF_8).build().toString(),
+            )
+            .header("X-Content-Checksum-SHA256", artifact.checksumSha256)
+            .body(StreamingResponseBody { output -> artifact.stream.use { it.copyTo(output) } })
+    }
 
     @PostMapping("/projection/rebuild")
     fun rebuild(

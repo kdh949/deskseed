@@ -3,6 +3,8 @@ package dev.deskseed.staffaccess.internal
 import dev.deskseed.audit.AccessAuditProtectionException
 import dev.deskseed.audit.AuditActivityNotFoundException
 import dev.deskseed.audit.AuditExportNotFoundException
+import dev.deskseed.audit.AuditExportExpiredException
+import dev.deskseed.audit.AuditExportArtifactStoreUnavailableException
 import dev.deskseed.audit.AuditProtectedContentInvalidException
 import dev.deskseed.audit.AuditRevealDeniedException
 import dev.deskseed.audit.AuditRevealForbiddenException
@@ -88,6 +90,15 @@ internal class AuditExplorerExceptionHandler {
         "The requested audit export does not exist.",
     )
 
+    @ExceptionHandler(AuditExportExpiredException::class)
+    fun exportExpired(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request,
+        HttpStatus.GONE,
+        "/problems/audit-export-expired",
+        "Audit export expired",
+        "The private export artifact is no longer available.",
+    )
+
     @ExceptionHandler(AuditProjectionRebuildConflictException::class)
     fun rebuildConflict(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
         request,
@@ -114,6 +125,7 @@ internal class AuditExplorerExceptionHandler {
         DataAccessException::class,
         TransactionException::class,
         AccessAuditProtectionException::class,
+        AuditExportArtifactStoreUnavailableException::class,
     )
     fun persistenceUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
         request,

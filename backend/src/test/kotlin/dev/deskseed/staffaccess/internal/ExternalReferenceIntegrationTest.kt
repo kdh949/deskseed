@@ -224,6 +224,17 @@ class ExternalReferenceIntegrationTest {
             ),
         ).isZero()
 
+        // Detail keeps only a cheap, server-authorized count. The full reference list
+        // remains on its separately audited lazy endpoint above.
+        mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}", customer.ticketNumber)
+                .session(agent.session)
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .header("X-Deskseed-Read-Intent", "BACKGROUND"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.context.externalReferenceCount").value(1))
+
         createReference(admin, customer.ticketNumber, systemId, 1, "order-100")
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.code").value("EXTERNAL_REFERENCE_EXISTS"))

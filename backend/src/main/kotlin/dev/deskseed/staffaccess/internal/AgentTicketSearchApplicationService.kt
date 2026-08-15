@@ -14,7 +14,9 @@ import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSearchFilter
+import dev.deskseed.ticketing.StaffTicketSearchCursor
 import dev.deskseed.ticketing.StaffTicketSummary
+import dev.deskseed.ticketing.StaffSlaDisplayState
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import org.springframework.dao.DataAccessException
@@ -28,6 +30,7 @@ internal data class AgentTicketSearchRequest(
     val query: String,
     val filters: AgentTicketSearchFilter,
     val sort: String,
+    val cursor: String?,
     val limit: Int,
 )
 
@@ -36,6 +39,7 @@ internal data class AgentTicketSearchFilter(
     val priority: TicketPriority?,
     val groupId: UUID?,
     val assigneeId: String?,
+    val slaState: StaffSlaDisplayState?,
 )
 
 internal data class AgentTicketSearchPage(
@@ -44,6 +48,7 @@ internal data class AgentTicketSearchPage(
     val items: List<StaffTicketSummary>,
     val resultCount: Long,
     val sort: String,
+    val nextCursor: String?,
 )
 
 @Service
@@ -52,6 +57,7 @@ internal class AgentTicketSearchApplicationService(
     private val queryProtector: SearchQueryProtector,
     private val sessionFingerprint: AccessAuditSessionFingerprint,
     private val accessAuditWriter: AccessAuditWriter,
+    private val cursorCodec: AgentTicketSearchCursorCodec,
     private val clock: Clock,
 ) {
     @Transactional
@@ -65,9 +71,15 @@ internal class AgentTicketSearchApplicationService(
         require(request.query.isNotBlank() && request.query.length <= 500) {
             "Search query must contain between 1 and 500 characters"
         }
-        require(request.sort == STABLE_SORT) { "Unsupported ticket search sort" }
+        require(request.sort in SUPPORTED_SORTS) { "Unsupported ticket search sort" }
         require(request.limit in 1..100) { "Search limit must be between 1 and 100" }
         validateAssignee(request.filters.assigneeId)
+
+        val decodedCursor = request.cursor?.let {
+            cursorCodec.decode(request.query, request.filters, request.sort, it)
+        }
+        val occurredAt = Instant.now(clock)
+        val snapshotAt = decodedCursor?.snapshotAt ?: occurredAt
 
         val result = ticketStore.search(
             query = request.query,
@@ -78,11 +90,31 @@ internal class AgentTicketSearchApplicationService(
                 priority = request.filters.priority,
                 groupId = request.filters.groupId,
                 assignee = request.filters.assigneeId,
+                slaState = request.filters.slaState,
             ),
-            limit = request.limit,
+            sort = request.sort,
+            snapshotAt = snapshotAt,
+            cursor = decodedCursor,
+            limit = request.limit + 1,
         )
+        val items = result.hits.take(request.limit)
+        val nextCursor = if (result.hits.size > request.limit) {
+            val last = checkNotNull(items.lastOrNull())
+            cursorCodec.encode(
+                query = request.query,
+                filters = request.filters,
+                sort = request.sort,
+                cursor = StaffTicketSearchCursor(
+                    snapshotAt = snapshotAt,
+                    lastScore = last.score.takeIf { request.sort == SCORE_SORT },
+                    lastUpdatedAt = last.ticket.updatedAt.takeIf { request.sort == UPDATED_SORT },
+                    lastTicketNumber = last.ticket.ticketNumber,
+                ),
+            )
+        } else {
+            null
+        }
         val searchEventId = UUID.randomUUID()
-        val occurredAt = Instant.now(clock)
         try {
             val auditContext = context.toAccessAuditContext(
                 principal,
@@ -98,8 +130,8 @@ internal class AgentTicketSearchApplicationService(
                     normalizedFilters = normalizedFilters(request.filters),
                     sort = request.sort,
                     resultCount = result.resultCount,
-                    resultItems = result.items.mapIndexed { ordinal, ticket ->
-                        SearchResultAuditItem(ticket.id, ticket.ticketNumber, ordinal)
+                    resultItems = items.mapIndexed { ordinal, hit ->
+                        SearchResultAuditItem(hit.ticket.id, hit.ticket.ticketNumber, ordinal)
                     },
                     outcome = AccessAuditOutcome.SUCCEEDED,
                     httpStatus = 200,
@@ -114,9 +146,10 @@ internal class AgentTicketSearchApplicationService(
         return AgentTicketSearchPage(
             searchEventId = searchEventId,
             searchInteractionId = interactionId,
-            items = result.items,
+            items = items.map { it.ticket },
             resultCount = result.resultCount,
             sort = request.sort,
+            nextCursor = nextCursor,
         )
     }
 
@@ -125,6 +158,7 @@ internal class AgentTicketSearchApplicationService(
         filters.priority?.let { put("priority", it.name) }
         filters.groupId?.let { put("groupId", it.toString()) }
         filters.assigneeId?.let { put("assigneeId", it) }
+        filters.slaState?.let { put("slaState", it.name) }
     }
 
     private fun validateAssignee(assignee: String?) {
@@ -134,7 +168,9 @@ internal class AgentTicketSearchApplicationService(
     }
 
     private companion object {
-        const val STABLE_SORT = "updatedAt:desc,ticketNumber:desc"
+        const val UPDATED_SORT = "updatedAt:desc,ticketNumber:desc"
+        const val SCORE_SORT = "score:desc,ticketNumber:desc"
+        val SUPPORTED_SORTS = setOf(UPDATED_SORT, SCORE_SORT)
     }
 }
 

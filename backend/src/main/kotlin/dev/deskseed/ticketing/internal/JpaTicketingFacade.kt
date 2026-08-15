@@ -1,5 +1,8 @@
 package dev.deskseed.ticketing.internal
 
+import dev.deskseed.attachments.AttachmentVisibility
+import dev.deskseed.attachments.TicketAttachmentLinkCommand
+import dev.deskseed.attachments.TicketAttachmentLinker
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.CustomerRequestStatus
@@ -23,6 +26,7 @@ internal class JpaTicketingFacade(
     private val auditRepository: TicketAuditRepository,
     private val auditEventRepository: TicketAuditEventRepository,
     private val publicTicketQueryRepository: PublicTicketQueryRepository,
+    private val attachmentLinker: TicketAttachmentLinker,
     private val ticketNumberGenerator: TicketNumberGenerator,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
@@ -63,7 +67,10 @@ internal class JpaTicketingFacade(
             ),
         )
 
-        commentRepository.save(
+        // The attachment linker uses JDBC and its link row has a comment FK. Flush the
+        // first comment before crossing that persistence boundary, while preserving the
+        // encompassing ticket transaction's all-or-nothing behavior.
+        commentRepository.saveAndFlush(
             TicketCommentEntity(
                 id = ticket.firstComment.id,
                 ticketId = ticket.firstComment.ticketId,
@@ -72,6 +79,17 @@ internal class JpaTicketingFacade(
                 visibility = ticket.firstComment.visibility,
                 body = ticket.firstComment.body,
                 createdAt = ticket.firstComment.createdAt,
+            ),
+        )
+        require(command.attachmentIds.size <= MAX_ATTACHMENTS) { "A request can link at most five attachments" }
+        val linkedAttachments = attachmentLinker.linkCleanAttachments(
+            TicketAttachmentLinkCommand(
+                ticketId = ticket.id,
+                commentId = ticket.firstComment.id,
+                visibility = AttachmentVisibility.PUBLIC,
+                actor = command.actor,
+                attachmentIds = command.attachmentIds,
+                linkedAt = now,
             ),
         )
 
@@ -93,7 +111,8 @@ internal class JpaTicketingFacade(
         )
 
         auditEventRepository.saveAllAndFlush(
-            listOf(
+            buildList {
+                add(
                 TicketAuditEventEntity(
                     id = UUID.randomUUID(),
                     auditId = auditId,
@@ -102,6 +121,8 @@ internal class JpaTicketingFacade(
                     metadataJson = "{\"channel\":\"WEB\",\"kind\":\"CUSTOMER_REQUEST\"}",
                     occurredAt = now,
                 ),
+                )
+                add(
                 TicketAuditEventEntity(
                     id = UUID.randomUUID(),
                     auditId = auditId,
@@ -112,7 +133,22 @@ internal class JpaTicketingFacade(
                     metadataJson = "{\"visibility\":\"PUBLIC\",\"authorType\":\"CUSTOMER\"}",
                     occurredAt = now,
                 ),
-            ),
+                )
+                linkedAttachments.forEach { linked ->
+                    add(
+                        TicketAuditEventEntity(
+                            id = UUID.randomUUID(),
+                            auditId = auditId,
+                            eventOrder = size + 1,
+                            eventType = "ATTACHMENT_LINKED",
+                            fieldName = "attachments",
+                            newValueJson = jsonString(linked.attachment.id.toString()),
+                            metadataJson = "{\"visibility\":\"PUBLIC\"}",
+                            occurredAt = now,
+                        ),
+                    )
+                }
+            },
         )
 
         eventPublisher.publishEvent(
@@ -150,4 +186,8 @@ internal class JpaTicketingFacade(
 
     private fun jsonString(value: String): String =
         "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+    private companion object {
+        const val MAX_ATTACHMENTS = 5
+    }
 }

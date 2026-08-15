@@ -26,6 +26,8 @@ data class StaffTicketCommandActor(
 data class AgentCommentDraft(
     val visibility: CommentVisibility,
     val body: String,
+    /** Handles returned only by the private attachment upload boundary. */
+    val attachmentIds: Set<UUID> = emptySet(),
 )
 
 data class CreateAgentTicketCommand(
@@ -87,6 +89,8 @@ data class TicketCommandResult(
     val version: Long,
     val auditId: UUID,
     val warnings: List<TicketCommandWarning> = emptyList(),
+    /** True only when an exact client-command replay returned the original committed result. */
+    val replayed: Boolean = false,
 )
 
 data class CreateChildTicketResult(

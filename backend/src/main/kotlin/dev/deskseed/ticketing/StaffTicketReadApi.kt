@@ -1,5 +1,7 @@
 package dev.deskseed.ticketing
 
+import dev.deskseed.attachments.TicketAttachment
+
 import java.time.Instant
 import java.util.UUID
 
@@ -35,12 +37,28 @@ data class StaffTicketSearchFilter(
     val priority: TicketPriority? = null,
     val groupId: UUID? = null,
     val assignee: String? = null,
+    val slaState: StaffSlaDisplayState? = null,
+)
+
+data class StaffTicketSearchCursor(
+    val snapshotAt: Instant,
+    val lastScore: Int? = null,
+    val lastUpdatedAt: Instant? = null,
+    val lastTicketNumber: Long,
+)
+
+data class StaffTicketSearchHit(
+    val ticket: StaffTicketSummary,
+    val score: Int?,
 )
 
 data class StaffTicketSearchResult(
-    val items: List<StaffTicketSummary>,
+    val hits: List<StaffTicketSearchHit>,
     val resultCount: Long,
-)
+) {
+    /** Legacy internal callers consume summaries; cursor-aware callers use [hits]. */
+    val items: List<StaffTicketSummary> get() = hits.map(StaffTicketSearchHit::ticket)
+}
 
 data class StaffTicketCursor(
     val updatedAt: Instant,
@@ -100,6 +118,7 @@ data class StaffCommentView(
     val body: String,
     val createdAt: Instant,
     val source: String,
+    val attachments: List<TicketAttachment> = emptyList(),
 )
 
 data class StaffTicketCustomer(
@@ -122,6 +141,7 @@ data class StaffTicketDetail(
     val history: List<StaffTicketHistoryItem>,
     val parent: StaffTicketSummary?,
     val children: List<StaffTicketSummary>,
+    val externalReferenceCount: Int = 0,
 )
 
 interface StaffTicketReadStore {
@@ -141,8 +161,43 @@ interface StaffTicketReadStore {
         scope: StaffTicketReadScope,
         actorId: UUID,
         filters: StaffTicketSearchFilter,
+        sort: String,
+        snapshotAt: Instant,
+        cursor: StaffTicketSearchCursor?,
         limit: Int,
     ): StaffTicketSearchResult
+
+    /**
+     * Source-compatible internal helper for pre-cursor callers. HTTP search always
+     * supplies its signed cursor snapshot explicitly through the overload above.
+     */
+    fun search(
+        query: String,
+        scope: StaffTicketReadScope,
+        actorId: UUID,
+        filters: StaffTicketSearchFilter,
+        limit: Int,
+    ): StaffTicketSearchResult = search(
+        query = query,
+        scope = scope,
+        actorId = actorId,
+        filters = filters,
+        sort = "updatedAt:desc,ticketNumber:desc",
+        snapshotAt = Instant.now(),
+        cursor = null,
+        limit = limit,
+    )
+
+    fun listSavedView(
+        actorId: UUID,
+        conditions: SavedViewConditions,
+        filters: StaffTicketListFilter,
+        cursor: StaffTicketCursor?,
+        limit: Int,
+    ): List<StaffTicketSummary>
+
+    /** Executes all count branches in one parameterized UNION ALL statement. */
+    fun countSavedViews(actorId: UUID, views: List<SavedTicketView>): Map<UUID, Long>
 
     fun hasRelationReadGrant(ticketId: UUID, actorId: UUID): Boolean
 }
