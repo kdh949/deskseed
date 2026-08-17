@@ -197,7 +197,7 @@ interface StaffTicketReadStore {
     ): List<StaffTicketSummary>
 
     /** Executes all count branches in one parameterized UNION ALL statement. */
-    fun countSavedViews(actorId: UUID, views: List<SavedTicketView>): Map<UUID, Long>
+    fun countSavedViews(actorId: UUID, views: List<SavedTicketView>): SavedViewCountBatch?
 
     fun hasRelationReadGrant(ticketId: UUID, actorId: UUID): Boolean
 }

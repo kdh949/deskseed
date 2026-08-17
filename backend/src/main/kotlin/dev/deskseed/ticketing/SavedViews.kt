@@ -71,6 +71,7 @@ data class SavedViewConditions(
 
 data class SavedViewDefinition(
     val name: String,
+    val description: String = "",
     val conditions: SavedViewConditions,
     val columns: List<SavedViewColumn>,
     val sort: String,
@@ -94,6 +95,11 @@ data class SavedViewOrder(
     val scope: SavedViewScope,
     val orderVersion: Long,
     val viewKeys: List<String>,
+)
+
+data class SavedViewCountBatch(
+    val counts: Map<UUID, Long>,
+    val asOf: Instant,
 )
 
 interface SavedViewStore {
@@ -134,6 +140,9 @@ object SavedViewDefinitionRules {
     fun validate(definition: SavedViewDefinition) {
         require(definition.name.trim().isNotEmpty() && definition.name.length <= 120) {
             "Saved view name must contain between 1 and 120 characters"
+        }
+        require(definition.description.length <= 500 && definition.description.none(Char::isISOControl)) {
+            "Saved view description must contain at most 500 characters without control characters"
         }
         require(definition.columns.size in 1..12 && definition.columns.distinct().size == definition.columns.size) {
             "Saved view columns must be unique and contain between 1 and 12 values"

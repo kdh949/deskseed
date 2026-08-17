@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.time.Instant
 import java.util.UUID
 
 @RestController
@@ -60,7 +61,7 @@ internal class AgentTicketReadController(
     ): ResponseEntity<SavedViewResponse> {
         val view = savedViewApplicationService.create(principal, body.scope, body.toDefinition(), request.readContext())
         return ResponseEntity.status(201).eTag(view.definitionVersion.toString()).body(
-            SavedViewListItem(view, null, "OMITTED_VISIBLE_LIMIT").toResponse(),
+            SavedViewListItem(view, null, "OMITTED_VISIBLE_LIMIT", null).toResponse(),
         )
     }
 
@@ -73,7 +74,12 @@ internal class AgentTicketReadController(
     ): ResponseEntity<SavedViewPreviewResponse> {
         val preview = savedViewApplicationService.preview(principal, body.toDefinition(), interactionId, request.readContext())
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
-            SavedViewPreviewResponse(preview.items.map(::ticketResponse), preview.ticketCount, preview.sort),
+            SavedViewPreviewResponse(
+                preview.items.map(::ticketResponse),
+                preview.ticketCount,
+                preview.sort,
+                preview.ticketCountAsOf,
+            ),
         )
     }
 
@@ -108,7 +114,7 @@ internal class AgentTicketReadController(
             request.readContext(),
         )
         return ResponseEntity.ok().eTag(view.definitionVersion.toString()).body(
-            SavedViewListItem(view, null, "OMITTED_VISIBLE_LIMIT").toResponse(),
+            SavedViewListItem(view, null, "OMITTED_VISIBLE_LIMIT", null).toResponse(),
         )
     }
 
@@ -372,6 +378,7 @@ internal class AgentTicketReadController(
         id = view.id,
         key = view.key,
         name = view.definition.name,
+        description = view.definition.description,
         scope = view.scope.name,
         ownerStaffId = view.ownerStaffId,
         active = view.active,
@@ -383,6 +390,7 @@ internal class AgentTicketReadController(
         sort = view.definition.sort,
         ticketCount = ticketCount,
         ticketCountState = ticketCountState,
+        ticketCountAsOf = ticketCountAsOf,
         readScope = "ALL_TICKETS",
     )
 
@@ -467,6 +475,7 @@ internal data class SavedViewResponse(
     val id: UUID,
     val key: String,
     val name: String,
+    val description: String,
     val scope: String,
     val ownerStaffId: UUID?,
     val active: Boolean,
@@ -478,45 +487,52 @@ internal data class SavedViewResponse(
     val sort: String,
     val ticketCount: Long?,
     val ticketCountState: String,
+    val ticketCountAsOf: Instant?,
     val readScope: String,
 )
 
 internal data class SavedViewDefinitionRequest(
     @field:NotBlank @field:Size(max = 120)
     val name: String,
+    @field:Size(max = 500)
+    val description: String = "",
     val conditions: SavedViewConditions,
     @field:Size(min = 1, max = 12)
     val columns: List<SavedViewColumn>,
     @field:NotBlank @field:Size(max = 80)
     val sort: String,
 ) {
-    fun toDefinition() = SavedViewDefinition(name, conditions, columns, sort)
+    fun toDefinition() = SavedViewDefinition(name, description, conditions, columns, sort)
 }
 
 internal data class CreateSavedViewRequest(
     val scope: SavedViewScope,
     @field:NotBlank @field:Size(max = 120)
     val name: String,
+    @field:Size(max = 500)
+    val description: String = "",
     val conditions: SavedViewConditions,
     @field:Size(min = 1, max = 12)
     val columns: List<SavedViewColumn>,
     @field:NotBlank @field:Size(max = 80)
     val sort: String,
 ) {
-    fun toDefinition() = SavedViewDefinition(name, conditions, columns, sort)
+    fun toDefinition() = SavedViewDefinition(name, description, conditions, columns, sort)
 }
 
 internal data class UpdateSavedViewRequest(
     @field:Positive val expectedVersion: Long,
     @field:NotBlank @field:Size(max = 120)
     val name: String,
+    @field:Size(max = 500)
+    val description: String = "",
     val conditions: SavedViewConditions,
     @field:Size(min = 1, max = 12)
     val columns: List<SavedViewColumn>,
     @field:NotBlank @field:Size(max = 80)
     val sort: String,
 ) {
-    fun toDefinition() = SavedViewDefinition(name, conditions, columns, sort)
+    fun toDefinition() = SavedViewDefinition(name, description, conditions, columns, sort)
 }
 
 internal data class ReorderSavedViewsRequest(
@@ -530,6 +546,7 @@ internal data class SavedViewPreviewResponse(
     val items: List<TicketSummaryResponse>,
     val ticketCount: Long,
     val sort: String,
+    val ticketCountAsOf: Instant,
 )
 
 internal data class SavedViewOrderResponse(
