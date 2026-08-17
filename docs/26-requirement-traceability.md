@@ -25,6 +25,15 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TECH-004 | 커밋된 OpenAPI 계약을 사람이 검토한 한국어 도메인 설명·합성 예시와 함께 탐색 가능한 API Reference로 제공한다 | IMPLEMENTATION_READY | M0 | 21, 22, 39, D-054 | `ApiDocumentationIntegrationTest`, `DOC-001`, `make docs-check` |
 | REQ-PORT-001 | 먼저 작동하는 포트폴리오를 만들고 이후 성능·Kafka까지 깊게 확장한다 | IMPLEMENTATION_READY | 전체 | 05, 11, 27, 41 | 릴리스별 증거 문서 |
 
+## 2.0 Wave 1 knowledge base
+
+| ID | 요구사항 | 상태 | 구현 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-KB-001 | 고객·상담사·관리자가 Category→Section→Article과 immutable revision lifecycle을 audience에 맞게 사용한다 | IMPLEMENTATION_READY | Wave 1 | Goal 03, 02, 03, 25, 32, 33, 34, ADR 0013, 0018, 0040 | hierarchy/FK/order/slug·revision/publish conflict·public/agent/admin lifecycle PostgreSQL tests |
+| REQ-KB-002 | 상담사는 PUBLIC·INTERNAL·selected group 문서를 권한으로 검색·열람하고 결과 열람은 required access audit 뒤에 반환한다 | IMPLEMENTATION_READY | Wave 1 | Goal 03, 19, 33, 34, ADR 0018 | audience matrix, restricted detail/search audit failure injection, no count/snippet leakage tests |
+| REQ-KB-003 | PostgreSQL FTS/GIN/trigram search는 hidden 문서가 rank/count/excerpt에 영향을 주지 않고 stable cursor·corpus·latency evidence를 제공한다 | IMPLEMENTATION_READY | Wave 1 | Goal 03, 08, 25, 32, ADR 0008, 0025 | Korean/English/identifier corpus, permission boundary, cursor, rebuild and p95 evidence |
+| REQ-KB-004 | canonical Deskseed block document와 safe renderer는 XSS를 차단하고 publish/cache revision 일관성을 보장한다 | IMPLEMENTATION_READY | Wave 1 | Goal 03, 23, 39, 40, ADR 0018 | unsafe URL/HTML/unknown block rejection, canonical adapter round-trip, ETag 304/publish and audience cache tests |
+
 ## 2.1 인증·초기 상담원 가시성
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
