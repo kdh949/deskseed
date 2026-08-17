@@ -49,6 +49,7 @@
 - Saved-view description persistence: the FROZEN `SavedViewDefinition`, `CreateSavedView`, and `UpdateSavedView` schemas have no description property. Adding it requires a separately reviewed contract/backend slice; this UI must not send an undocumented field.
 - Saved-view count basis timestamp: the FROZEN `SavedViewCount` projection exposes `count` but no counted-at/basis timestamp, so the UI can label the server count but cannot display an authoritative basis time.
 - Authenticated customer follow-up attachments: the FROZEN contract exposes a request-token upload/download surface and authenticated comment `attachmentIds`, but no authenticated-customer attachment upload/download operations. Initial customer intake and request-token follow-up attachments are implemented; the authenticated follow-up UI stays text-only until that contract is frozen.
+- Attachment deletion: the FROZEN attachment surface exposes quarantine upload and authorized download but no delete operation or linked-attachment lifecycle projection. The UI can remove an unlinked CLEAN handle from the current draft and surfaces deleted/expired download denial, but cannot delete an already linked attachment.
 
 ## Invariants and failure semantics
 
