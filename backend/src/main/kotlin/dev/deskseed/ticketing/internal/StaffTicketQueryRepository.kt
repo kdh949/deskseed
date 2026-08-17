@@ -23,6 +23,7 @@ import dev.deskseed.ticketing.StaffTicketSummary
 import dev.deskseed.ticketing.StaffSlaBadge
 import dev.deskseed.ticketing.StaffSlaDisplayState
 import dev.deskseed.ticketing.SavedTicketView
+import dev.deskseed.ticketing.SavedViewCountBatch
 import dev.deskseed.ticketing.SavedViewCondition
 import dev.deskseed.ticketing.SavedViewConditionField
 import dev.deskseed.ticketing.SavedViewConditionOperator
@@ -327,9 +328,9 @@ internal class StaffTicketQueryRepository(
         ) { result, _ -> ticketSummary(result, now, riskAt) }
     }
 
-    override fun countSavedViews(actorId: UUID, views: List<SavedTicketView>): Map<UUID, Long> {
+    override fun countSavedViews(actorId: UUID, views: List<SavedTicketView>): SavedViewCountBatch? {
         val countable = views.take(SavedViewDefinitionRules.MAX_VISIBLE_COUNTED_VIEWS)
-        if (countable.isEmpty()) return emptyMap()
+        if (countable.isEmpty()) return null
         val now = clock.instant()
         val riskAt = now.plusSeconds(30 * 60)
         val parameters = MapSqlParameterSource().addValue("actorId", actorId)
@@ -353,9 +354,10 @@ internal class StaffTicketQueryRepository(
             ${ticketFromClause(where.joinToString("\n  and "))}
             """.trimIndent()
         }
-        return jdbcTemplate.query(branches.joinToString("\nunion all\n"), parameters) { result, _ ->
+        val counts = jdbcTemplate.query(branches.joinToString("\nunion all\n"), parameters) { result, _ ->
             result.getObject("view_id", UUID::class.java) to result.getLong("ticket_count")
         }.toMap()
+        return SavedViewCountBatch(counts = counts, asOf = now)
     }
 
     override fun findDetail(ticketNumber: Long): StaffTicketDetail? {

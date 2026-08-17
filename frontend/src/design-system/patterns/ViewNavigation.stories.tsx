@@ -29,6 +29,7 @@ export const Default: Story = {
         items: [
           {
             count: 12,
+            countAsOf: '2026-08-18T03:04:05Z',
             editable: true,
             icon: 'inbox',
             key: 'my-open',
@@ -53,6 +54,7 @@ export const Default: Story = {
       canvas.getByRole('button', { name: '내 담당 티켓 편집' }),
     )
     await expect(args.onEditItem).toHaveBeenCalled()
+    await expect(canvas.getByText(/기준/)).toBeVisible()
   },
 }
 

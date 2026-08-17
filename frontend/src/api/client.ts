@@ -2602,8 +2602,12 @@ function decodeSavedViewDefinition(
 ): SavedViewDefinition | undefined {
   if (!isRecord(value) || !Array.isArray(value.columns)) return undefined
   const conditions = decodeSavedViewConditions(value.conditions)
+  const description = value.description === undefined ? '' : value.description
   if (
     !isNonBlankString(value.name) ||
+    typeof description !== 'string' ||
+    description.length > 500 ||
+    hasIsoControlCharacters(description) ||
     !conditions ||
     value.columns.length < 1 ||
     value.columns.length > 12 ||
@@ -2617,15 +2621,24 @@ function decodeSavedViewDefinition(
   }
   return {
     name: value.name,
+    description,
     conditions,
     columns: value.columns as SavedViewDefinition['columns'],
     sort: value.sort as SavedViewSort,
   }
 }
 
+function hasIsoControlCharacters(value: string) {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint <= 31 || (codePoint >= 127 && codePoint <= 159)
+  })
+}
+
 function decodeSavedAgentView(value: unknown): SavedAgentView | undefined {
   if (!isRecord(value) || !Array.isArray(value.categoryPath)) return undefined
   const definition = decodeSavedViewDefinition(value)
+  const ticketCountAsOf = value.ticketCountAsOf ?? null
   if (
     !definition ||
     !isUuid(value.id) ||
@@ -2647,6 +2660,7 @@ function decodeSavedAgentView(value: unknown): SavedAgentView | undefined {
         value.ticketCount < 0)) ||
     (value.ticketCountState !== 'EXACT' &&
       value.ticketCountState !== 'OMITTED_VISIBLE_LIMIT') ||
+    (ticketCountAsOf !== null && !isTimestamp(ticketCountAsOf)) ||
     value.readScope !== 'ALL_TICKETS' ||
     !isTimestamp(value.createdAt) ||
     !isTimestamp(value.updatedAt)
@@ -2665,6 +2679,7 @@ function decodeSavedAgentView(value: unknown): SavedAgentView | undefined {
     categoryPath: value.categoryPath,
     ticketCount: value.ticketCount,
     ticketCountState: value.ticketCountState,
+    ticketCountAsOf,
     readScope: 'ALL_TICKETS',
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
@@ -2701,6 +2716,7 @@ function decodeSavedViewPreview(value: unknown): SavedViewPreview | undefined {
     typeof value.ticketCount !== 'number' ||
     !Number.isSafeInteger(value.ticketCount) ||
     value.ticketCount < 0 ||
+    !isTimestamp(value.ticketCountAsOf) ||
     value.sort !== 'updatedAt:desc,ticketNumber:desc'
   ) {
     return undefined
@@ -2708,6 +2724,7 @@ function decodeSavedViewPreview(value: unknown): SavedViewPreview | undefined {
   return {
     items: items as AgentTicketSummary[],
     ticketCount: value.ticketCount,
+    ticketCountAsOf: value.ticketCountAsOf,
     sort: 'updatedAt:desc,ticketNumber:desc',
   }
 }

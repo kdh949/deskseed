@@ -476,6 +476,15 @@ export function AgentViewsPage() {
     navigate('/agent/views/my-open')
   }
 
+  const reloadEditedView = async () => {
+    if (editor?.mode !== 'edit') return
+    const refreshed = await viewQuery.refetch()
+    const latest = refreshed.data?.find((view) => view.key === editor.view.key)
+    if (!latest) throw new Error('Saved view no longer exists')
+    setPendingPersonalOrder(null)
+    setEditor({ mode: 'edit', view: latest })
+  }
+
   return (
     <main className="agent-queue-workspace" aria-label="티켓 큐">
       <ViewNavigation
@@ -500,6 +509,11 @@ export function AgentViewsPage() {
                 </span>
               ) : null}
             </div>
+            {currentServerView?.description ? (
+              <p className="agent-queue-view-description">
+                {currentServerView.description}
+              </p>
+            ) : null}
             <DsButton
               aria-expanded={filtersOpen}
               aria-label="필터 열기"
@@ -753,6 +767,7 @@ export function AgentViewsPage() {
         onPreview={(definition) =>
           previewAgentSavedView(definition, createOpaqueUuid())
         }
+        onReload={reloadEditedView}
         onSave={handleSaveView}
         position={
           editorPosition && editorPosition.index >= 0
@@ -862,7 +877,8 @@ function toNavigationItem(view: SavedAgentView): ViewNavigationItem {
     label: presentation.name,
     icon: presentation.icon,
     iconTone: presentation.iconTone,
-    count: view.ticketCount,
+    count: view.ticketCountState === 'EXACT' ? view.ticketCount : null,
+    countAsOf: view.ticketCountState === 'EXACT' ? view.ticketCountAsOf : null,
     to: `/agent/views/${view.key}`,
     editable: view.scope !== 'SYSTEM',
   }

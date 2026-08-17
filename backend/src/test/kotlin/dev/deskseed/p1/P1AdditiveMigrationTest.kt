@@ -29,11 +29,11 @@ class P1AdditiveMigrationTest {
     }
 
     @Test
-    fun `versions thirty through thirty three preserve V29 export data and add P1 structures`() {
+    fun `versions thirty through thirty four preserve V29 data and backfill saved view descriptions`() {
         migrateTo("29")
         insertV29ExportFixture()
 
-        migrateTo("33")
+        migrateTo("34")
 
         connection().use { jdbc ->
             jdbc.createStatement().use { statement ->
@@ -45,6 +45,21 @@ class P1AdditiveMigrationTest {
                     .isEqualTo("PENDING")
                 assertThat(queryLong(statement, "select count(*) from saved_ticket_views where scope = 'SYSTEM'"))
                     .isEqualTo(5)
+                assertThat(queryLong(statement, "select count(*) from saved_ticket_views where description = ''"))
+                    .isEqualTo(5)
+                assertThat(queryLong(statement, "select count(*) from information_schema.columns where table_name = 'saved_ticket_views' and column_name = 'ticket_count_as_of'"))
+                    .isZero()
+
+                statement.executeUpdate(
+                    "update saved_ticket_views set description = '  고객 이관 전 확인  ' where view_key = 'my-open'",
+                )
+                assertThat(queryString(statement, "select description from saved_ticket_views where view_key = 'my-open'"))
+                    .isEqualTo("  고객 이관 전 확인  ")
+                org.assertj.core.api.Assertions.assertThatThrownBy {
+                    statement.executeUpdate(
+                        "update saved_ticket_views set description = E'잘못된\\n설명' where view_key = 'my-open'",
+                    )
+                }.hasMessageContaining("saved_ticket_views_description_bounded")
 
                 listOf(
                     "platform_rate_limit_buckets",
@@ -59,8 +74,8 @@ class P1AdditiveMigrationTest {
                     .isEqualTo(1)
                 assertThat(queryLong(statement, "select count(*) from information_schema.columns where table_name = 'audit_export_artifacts' and column_name = 'checksum_sha256'"))
                     .isEqualTo(1)
-                assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version in ('30', '31', '32', '33') and success"))
-                    .isEqualTo(4)
+                assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version in ('30', '31', '32', '33', '34') and success"))
+                    .isEqualTo(5)
             }
         }
     }
