@@ -61,7 +61,8 @@ export function newestRecoverableDraft(
   now = Date.now(),
 ): LocalTicketDraft | TicketDraft | null {
   const usableLocal = local && Date.parse(local.expiresAt) > now ? local : null
-  const usableRemote = remote && Date.parse(remote.expiresAt) > now ? remote : null
+  const usableRemote =
+    remote && Date.parse(remote.expiresAt) > now ? remote : null
   if (!usableLocal) return usableRemote
   if (!usableRemote) return usableLocal
   return Date.parse(usableLocal.updatedAt) >= Date.parse(usableRemote.updatedAt)
@@ -77,7 +78,10 @@ export async function readLocalTicketDraft(
   const database = await openDatabase()
   const key = localDraftKey(staffId, ticketNumber, channel)
   const draft = await request<LocalTicketDraft | undefined>(
-    database.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key),
+    database
+      .transaction(STORE_NAME, 'readonly')
+      .objectStore(STORE_NAME)
+      .get(key),
   )
   if (!draft) return null
   if (Date.parse(draft.expiresAt) <= Date.now()) {
@@ -90,10 +94,13 @@ export async function readLocalTicketDraft(
 export async function writeLocalTicketDraft(draft: LocalTicketDraft) {
   const database = await openDatabase()
   await request(
-    database.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({
-      ...draft,
-      id: localDraftKey(draft.staffId, draft.ticketNumber, draft.channel),
-    }),
+    database
+      .transaction(STORE_NAME, 'readwrite')
+      .objectStore(STORE_NAME)
+      .put({
+        ...draft,
+        id: localDraftKey(draft.staffId, draft.ticketNumber, draft.channel),
+      }),
   )
 }
 

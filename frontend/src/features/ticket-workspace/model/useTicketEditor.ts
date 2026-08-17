@@ -519,11 +519,10 @@ export function useTicketEditor({
     setPendingCommand(null)
   }
 
-  function writeEditorState(
-    snapshot: Parameters<typeof writeTicketDraft>[2],
-  ) {
+  function writeEditorState(snapshot: Parameters<typeof writeTicketDraft>[2]) {
     const preserveAmbiguousCommand =
-      snapshot.pendingCommandId !== undefined || snapshot.pendingCommand !== undefined
+      snapshot.pendingCommandId !== undefined ||
+      snapshot.pendingCommand !== undefined
     writeTicketDraft(localStorage, storageKey, {
       ...snapshot,
       comments: preserveAmbiguousCommand
