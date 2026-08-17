@@ -65,10 +65,13 @@ internal class AdminWebhookController(
     }
 
     @GetMapping("/{endpointId}")
-    fun get(@PathVariable endpointId: UUID): ResponseEntity<WebhookEndpointResponse> = ResponseEntity.ok()
-        .cacheControl(CacheControl.noStore())
-        .eTag(administration.get(endpointId).etag())
-        .body(administration.get(endpointId).toResponse())
+    fun get(@PathVariable endpointId: UUID): ResponseEntity<WebhookEndpointResponse> {
+        val endpoint = administration.get(endpointId)
+        return ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
+            .eTag(endpoint.etag())
+            .body(endpoint.toResponse())
+    }
 
     @PatchMapping("/{endpointId}")
     fun update(

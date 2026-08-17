@@ -43,6 +43,11 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 - PostgreSQL migration/integration tests for fan-out uniqueness, lease recovery, retry/backoff, circuit isolation, replay and audit rollback.
 - Contract bundle and ownership validation, docs check, architecture test, and real-stack mock receiver E2E after worker implementation.
 
+### Executed evidence
+
+- Passed: `./gradlew --no-daemon test --tests dev.deskseed.webhook.WebhookSecurityContractTest --tests dev.deskseed.webhook.internal.WebhookOutboxMaterializerIntegrationTest --tests dev.deskseed.architecture.ArchitectureTest`
+- Not run yet: delivery lease recovery, retry/backoff, circuit, HTTP receiver, real-stack and frontend Storybook checks. The Storybook MCP is unavailable in this session, so no undocumented UI contract has been inferred.
+
 ## Compatibility and migration
 
 - Core API fragment is source; generated `core-api-outline-v1.yaml` is refreshed deterministically. The first runtime endpoint slice freezes its matching admin operations together with controller and PostgreSQL integration evidence.
