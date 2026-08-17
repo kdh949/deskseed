@@ -2661,6 +2661,14 @@ function decodeSavedAgentView(value: unknown): SavedAgentView | undefined {
     (value.ticketCountState !== 'EXACT' &&
       value.ticketCountState !== 'OMITTED_VISIBLE_LIMIT') ||
     (ticketCountAsOf !== null && !isTimestamp(ticketCountAsOf)) ||
+    !(
+      (value.ticketCountState === 'EXACT' &&
+        value.ticketCount !== null &&
+        ticketCountAsOf !== null) ||
+      (value.ticketCountState === 'OMITTED_VISIBLE_LIMIT' &&
+        value.ticketCount === null &&
+        ticketCountAsOf === null)
+    ) ||
     value.readScope !== 'ALL_TICKETS' ||
     !isTimestamp(value.createdAt) ||
     !isTimestamp(value.updatedAt)
