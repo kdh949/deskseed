@@ -10,6 +10,7 @@ import type {
 } from '../../../api/types'
 import type { AttachmentDraftState } from '../../attachments/AttachmentUploadField'
 import { createOpaqueUuid } from '../../../api/uuid'
+import { useTicketDraftSync } from '../../collaboration/useTicketDraftSync'
 import {
   buildUpdateTicketCommand,
   changedTicketFields,
@@ -75,6 +76,49 @@ export function useTicketEditor({
   >(() =>
     initialAttachmentStates(initial.pendingCommand, initial.attachmentIds),
   )
+  const composerDrafts = useMemo(
+    () => ({
+      PUBLIC: {
+        body: comments.PUBLIC,
+        attachmentIds: attachmentStates.PUBLIC.ids,
+      },
+      INTERNAL: {
+        body: comments.INTERNAL,
+        attachmentIds: attachmentStates.INTERNAL.ids,
+      },
+    }),
+    [attachmentStates, comments],
+  )
+  const draftSync = useTicketDraftSync({
+    staffId,
+    ticketNumber: detail.ticket.ticketNumber,
+    baseTicketVersion: baseVersion,
+    drafts: composerDrafts,
+    migrateLegacy: initial.hasLegacyComposerDraft,
+    onRecover: (recovered) => {
+      setComments((current) => ({
+        PUBLIC:
+          current.PUBLIC.trim() === ''
+            ? (recovered.PUBLIC?.body ?? current.PUBLIC)
+            : current.PUBLIC,
+        INTERNAL:
+          current.INTERNAL.trim() === ''
+            ? (recovered.INTERNAL?.body ?? current.INTERNAL)
+            : current.INTERNAL,
+      }))
+      setAttachmentStates((current) => ({
+        PUBLIC:
+          current.PUBLIC.ids.length === 0 && recovered.PUBLIC
+            ? { ...current.PUBLIC, ids: recovered.PUBLIC.attachmentIds }
+            : current.PUBLIC,
+        INTERNAL:
+          current.INTERNAL.ids.length === 0 && recovered.INTERNAL
+            ? { ...current.INTERNAL, ids: recovered.INTERNAL.attachmentIds }
+            : current.INTERNAL,
+      }))
+    },
+    onFailure: (message, requestId) => setError({ message, requestId }),
+  })
   const conflictRef = useRef<HTMLDivElement>(null)
   const storageKey = ticketDraftStorageKey(staffId, detail.ticket.ticketNumber)
   const dirtyFields = useMemo(
@@ -110,7 +154,7 @@ export function useTicketEditor({
       removeTicketDraft(localStorage, storageKey)
       return
     }
-    writeTicketDraft(localStorage, storageKey, {
+    writeEditorState({
       mode,
       comments,
       fields: localFields,
@@ -314,7 +358,7 @@ export function useTicketEditor({
     if (pendingCommandId === null) {
       setPendingCommandId(clientCommandId)
       setPendingCommand(command)
-      writeTicketDraft(localStorage, storageKey, {
+      writeEditorState({
         mode,
         comments,
         fields: localFields,
@@ -331,7 +375,7 @@ export function useTicketEditor({
         command,
       )
       const confirmedComments = { ...comments, [submittedMode]: '' }
-      writeTicketDraft(localStorage, storageKey, {
+      writeEditorState({
         mode,
         comments: confirmedComments,
         fields: localFields,
@@ -443,6 +487,7 @@ export function useTicketEditor({
     error,
     success,
     warnings,
+    draftSyncState: draftSync.state,
     isUnsaved,
     blocker,
     canSubmit: hasActiveSubmit && !submitting && !unresolvedConflict,
@@ -457,7 +502,7 @@ export function useTicketEditor({
     } = {},
   ) {
     if (pendingCommandId) {
-      writeTicketDraft(localStorage, storageKey, {
+      writeEditorState({
         mode: next.mode ?? mode,
         comments: next.comments ?? comments,
         fields: next.fields ?? localFields,
@@ -472,6 +517,22 @@ export function useTicketEditor({
     }
     setPendingCommandId(null)
     setPendingCommand(null)
+  }
+
+  function writeEditorState(
+    snapshot: Parameters<typeof writeTicketDraft>[2],
+  ) {
+    const preserveAmbiguousCommand =
+      snapshot.pendingCommandId !== undefined || snapshot.pendingCommand !== undefined
+    writeTicketDraft(localStorage, storageKey, {
+      ...snapshot,
+      comments: preserveAmbiguousCommand
+        ? snapshot.comments
+        : { PUBLIC: '', INTERNAL: '' },
+      attachmentIds: preserveAmbiguousCommand
+        ? snapshot.attachmentIds
+        : undefined,
+    })
   }
 }
 
@@ -491,6 +552,7 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
       attachmentIds: undefined,
       pendingCommandId: undefined,
       pendingCommand: undefined,
+      hasLegacyComposerDraft: false,
     }
   }
   if (stored.pendingCommandId) {
@@ -499,8 +561,9 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
           ...stored,
           mode: 'INTERNAL' as const,
           comments: { ...stored.comments, PUBLIC: '' },
+          hasLegacyComposerDraft: hasComposerDraft(stored),
         }
-      : stored
+      : { ...stored, hasLegacyComposerDraft: hasComposerDraft(stored) }
   }
   const storedDirty = changedTicketFields(stored.serverFields, stored.fields)
   if (storedDirty.length === 0) {
@@ -513,6 +576,7 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
       fields: freshFields,
       serverFields: freshFields,
       baseVersion: detail.ticket.version,
+      hasLegacyComposerDraft: hasComposerDraft(stored),
     }
   }
   return detail.ticket.isChild
@@ -520,8 +584,21 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
         ...stored,
         mode: 'INTERNAL' as const,
         comments: { ...stored.comments, PUBLIC: '' },
+        hasLegacyComposerDraft: hasComposerDraft(stored),
       }
-    : stored
+    : { ...stored, hasLegacyComposerDraft: hasComposerDraft(stored) }
+}
+
+function hasComposerDraft(stored: {
+  comments: TicketCommentDrafts
+  attachmentIds?: Partial<Record<TicketVisibility, string[]>>
+}) {
+  return (
+    stored.comments.PUBLIC.trim() !== '' ||
+    stored.comments.INTERNAL.trim() !== '' ||
+    (stored.attachmentIds?.PUBLIC?.length ?? 0) > 0 ||
+    (stored.attachmentIds?.INTERNAL?.length ?? 0) > 0
+  )
 }
 
 function initialAttachmentStates(

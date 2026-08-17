@@ -175,3 +175,9 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-FND-002 | 조건·액션·템플릿 변수·검색 predicate·analytics dimension은 versioned descriptor registry로 확장하며 unknown/duplicate/incompatible input은 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F1 | ADR 0040, 34, 45, 46, 47 | duplicate descriptor startup failure, AST bound/unknown-type rejection, action external-I/O separation, ARCH-001 |
 | REQ-FND-003 | 공개 가능한 integration event intent는 ticket mutation과 원자적으로 PostgreSQL outbox에 기록되고 worker replay/lease 실패는 committed ticket mutation을 되돌리지 않는다 | IMPLEMENTATION_READY | Wave 0 F2 | ADR 0040, 18, 32, 34, 45 | PostgreSQL outbox atomicity, lease recovery, payload redaction/visibility, ARCH-002/003 |
 | REQ-FND-004 | feature lane은 central App/shell을 수정하지 않고 deterministic route/navigation/workspace contribution을 추가하며 duplicate/권한/extension failure를 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F3 | ADR 0040, 28–31, 40, 51, 55 | discovery order, duplicate rejection, denied route/nav, error isolation, typecheck and Storybook gate |
+
+## 12. Wave 1 drafts and presence
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-COL-001 | 상담사는 티켓별 PUBLIC/INTERNAL 초안을 분리해 최대 30일 서버와 7일 브라우저에 복구할 수 있고, 다른 직원·다른 channel·CLOSED ticket·낡은 버전의 쓰기는 안전하게 격리한다 | IMPLEMENTATION_READY | Wave 1 D1 | ADR 0040, 31, 34, 48, 50, 55 | `AgentTicketDraftIntegrationTest` owner/channel/CLOSED/conflict/attachment-owner/no-ticket-audit; `JdbcTicketDraftStoreIntegrationTest` TTL/lease; client decoder and local recovery unit tests; ARCH-001/002/004, FILE-001 |
