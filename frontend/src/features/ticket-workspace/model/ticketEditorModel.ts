@@ -86,12 +86,14 @@ export function buildUpdateTicketCommand({
   serverFields,
   localFields,
   comment,
+  attachmentIds = [],
   clientCommandId,
 }: {
   expectedVersion: number
   serverFields: EditableTicketFields
   localFields: EditableTicketFields
   comment: { visibility: TicketVisibility; body: string }
+  attachmentIds?: string[]
   clientCommandId: string
 }): UpdateTicketCommand {
   const changedFields = changedTicketFields(serverFields, localFields)
@@ -100,7 +102,11 @@ export function buildUpdateTicketCommand({
     expectedVersion,
     changedFields,
     comment: trimmedComment
-      ? { visibility: comment.visibility, body: trimmedComment }
+      ? {
+          visibility: comment.visibility,
+          body: trimmedComment,
+          ...(attachmentIds.length ? { attachmentIds } : {}),
+        }
       : null,
     clientCommandId,
   }

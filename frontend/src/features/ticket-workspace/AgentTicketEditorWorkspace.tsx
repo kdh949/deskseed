@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import type {
   AgentComment,
   AgentTicketDetail,
@@ -9,6 +9,10 @@ import type {
   TicketVisibility,
 } from '../../api/types'
 import {
+  downloadAgentAttachment,
+  uploadAgentAttachment,
+} from '../../api/client'
+import {
   DsButton,
   DsPropertyField,
   DsTabs,
@@ -18,6 +22,12 @@ import {
   ScreenState,
   StatusBadge,
 } from '../../design-system'
+import { AttachmentList } from '../attachments/AttachmentList'
+import {
+  AttachmentUploadField,
+  type AttachmentDraftState,
+} from '../attachments/AttachmentUploadField'
+import { createOpaqueUuid } from '../../api/uuid'
 import type { EditableTicketFields } from './model/ticketEditorModel'
 import { useTicketEditor } from './model/useTicketEditor'
 import { TicketContextPanel, type ContextTab } from './TicketContextPanel'
@@ -436,6 +446,12 @@ function Conversation({ comments }: { comments: AgentComment[] }) {
             {comment.body.split(/\n{2,}/).map((paragraph, index) => (
               <p key={`${comment.id}-${index}`}>{paragraph}</p>
             ))}
+            <AttachmentList
+              attachments={comment.attachments}
+              download={(attachmentId) =>
+                downloadAgentAttachment(attachmentId, createOpaqueUuid())
+              }
+            />
           </div>
         </article>
       ))}
@@ -457,6 +473,35 @@ function ReplyComposer({
   const isInternal = mode === 'INTERNAL'
   const actionLabel = isInternal ? '내부 메모 저장' : '공개 답변 저장'
   const inputLabel = isInternal ? '내부 메모 내용' : '공개 답변 내용'
+  const [attachments, setAttachments] = useState<
+    Record<TicketVisibility, AttachmentDraftState>
+  >({
+    PUBLIC: { blocked: false, ids: [] },
+    INTERNAL: { blocked: false, ids: [] },
+  })
+  const [resetVersions, setResetVersions] = useState<
+    Record<TicketVisibility, number>
+  >({ PUBLIC: 0, INTERNAL: 0 })
+  const updatePublicAttachments = useCallback(
+    (state: AttachmentDraftState) =>
+      setAttachments((current) => ({ ...current, PUBLIC: state })),
+    [],
+  )
+  const updateInternalAttachments = useCallback(
+    (state: AttachmentDraftState) =>
+      setAttachments((current) => ({ ...current, INTERNAL: state })),
+    [],
+  )
+  const submit = async () => {
+    if (attachments[mode].blocked) return
+    const saved = await editor.submit(attachments[mode].ids)
+    if (saved) {
+      setResetVersions((current) => ({
+        ...current,
+        [mode]: current[mode] + 1,
+      }))
+    }
+  }
 
   return (
     <section
@@ -512,6 +557,15 @@ function ReplyComposer({
             value={editor.comments[mode]}
           />
         </label>
+        <AttachmentUploadField
+          disabled={editor.submitting}
+          label={isInternal ? 'INTERNAL 첨부 파일' : 'PUBLIC 첨부 파일'}
+          onStateChange={
+            isInternal ? updateInternalAttachments : updatePublicAttachments
+          }
+          resetVersion={resetVersions[mode]}
+          upload={uploadAgentAttachment}
+        />
         <div className="reply-composer-footer">
           <p aria-live="polite" className="reply-composer-draft-status">
             {editor.submitting
@@ -521,8 +575,8 @@ function ReplyComposer({
                 : '저장하지 않은 초안이 없습니다.'}
           </p>
           <DsButton
-            disabled={!editor.canSubmit}
-            onClick={() => void editor.submit()}
+            disabled={!editor.canSubmit || attachments[mode].blocked}
+            onClick={() => void submit()}
             tone="primary"
           >
             {actionLabel}

@@ -46,6 +46,23 @@ describe('ticket editor model', () => {
     })
   })
 
+  it('links only the CLEAN attachment handles supplied by the composer', () => {
+    const command = buildUpdateTicketCommand({
+      expectedVersion: 7,
+      serverFields,
+      localFields: serverFields,
+      comment: { visibility: 'PUBLIC', body: '첨부 파일을 확인해 주세요.' },
+      attachmentIds: ['55555555-5555-4555-8555-555555555555'],
+      clientCommandId: '44444444-4444-4444-8444-444444444444',
+    })
+
+    expect(command.comment).toEqual({
+      visibility: 'PUBLIC',
+      body: '첨부 파일을 확인해 주세요.',
+      attachmentIds: ['55555555-5555-4555-8555-555555555555'],
+    })
+  })
+
   it('merges refreshed server values only into clean fields', () => {
     expect(
       mergeLatestFields({

@@ -1,4 +1,10 @@
+import type {
+  AttachmentDownload,
+  AttachmentUpload,
+  TicketAttachment,
+} from '../../api/types'
 import { DsStatusIndicator, ScreenState } from '../../design-system'
+import { AttachmentList } from '../attachments/AttachmentList'
 import { CustomerFollowUpForm } from './CustomerFollowUpForm'
 
 export interface CustomerVisibleComment {
@@ -6,6 +12,7 @@ export interface CustomerVisibleComment {
   body: string
   createdAt: string
   id: string
+  attachments?: TicketAttachment[]
 }
 
 export interface CustomerVisibleRequest {
@@ -22,11 +29,19 @@ export function CustomerRequestConversation({
   onFollowUpSubmitted,
   onSubmitFollowUp,
   request,
+  downloadAttachment,
+  uploadAttachment,
 }: {
+  downloadAttachment?: (attachmentId: string) => Promise<AttachmentDownload>
   onFollowUpConflict?: () => void
   onFollowUpSubmitted?: () => void
-  onSubmitFollowUp?: (body: string, clientCommandId: string) => Promise<unknown>
+  onSubmitFollowUp?: (
+    body: string,
+    clientCommandId: string,
+    attachmentIds: string[],
+  ) => Promise<unknown>
   request: CustomerVisibleRequest
+  uploadAttachment?: (file: File) => Promise<AttachmentUpload>
 }) {
   return (
     <main
@@ -73,6 +88,12 @@ export function CustomerRequestConversation({
                     </time>
                   </header>
                   <p>{comment.body}</p>
+                  {downloadAttachment ? (
+                    <AttachmentList
+                      attachments={comment.attachments ?? []}
+                      download={downloadAttachment}
+                    />
+                  ) : null}
                 </article>
               </li>
             ))}
@@ -85,6 +106,7 @@ export function CustomerRequestConversation({
           onConflict={onFollowUpConflict}
           onSubmitted={onFollowUpSubmitted}
           onSubmit={onSubmitFollowUp}
+          uploadAttachment={uploadAttachment}
         />
       ) : null}
     </main>

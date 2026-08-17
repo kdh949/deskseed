@@ -48,3 +48,30 @@ export const AmbiguousRetry: Story = {
     ).toBeVisible()
   },
 }
+
+export const WithCleanAttachment: Story = {
+  args: {
+    onSubmit: async () => undefined,
+    uploadAttachment: async (file) => ({
+      id: '11111111-1111-4111-8111-111111111111',
+      fileName: file.name,
+      sizeBytes: file.size,
+      contentType: file.type || 'application/octet-stream',
+      scanStatus: 'CLEAN',
+      expiresAt: '2099-08-17T05:00:00Z',
+    }),
+  },
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      canvas.getByLabelText('추가 답변'),
+      '첨부 자료를 전달합니다.',
+    )
+    await userEvent.upload(
+      canvas.getByLabelText('PUBLIC 첨부 파일'),
+      new File(['safe'], 'evidence.png', { type: 'image/png' }),
+    )
+    await expect(await canvas.findByText(/CLEAN/)).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
+    await expect(canvas.getByText('답변이 저장되었습니다.')).toBeVisible()
+  },
+}

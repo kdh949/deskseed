@@ -1,26 +1,46 @@
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useId, useRef, useState, type FormEvent } from 'react'
+import type { AttachmentUpload } from '../../api/types'
 import { DsButton, Notification } from '../../design-system'
 import { createOpaqueUuid } from '../../api/uuid'
+import {
+  AttachmentUploadField,
+  type AttachmentDraftState,
+} from '../attachments/AttachmentUploadField'
 
 export function CustomerFollowUpForm({
   onConflict,
   onSubmitted,
   onSubmit,
+  uploadAttachment,
 }: {
   onConflict?: () => void
   onSubmitted?: () => void
-  onSubmit: (body: string, clientCommandId: string) => Promise<unknown>
+  onSubmit: (
+    body: string,
+    clientCommandId: string,
+    attachmentIds: string[],
+  ) => Promise<unknown>
+  uploadAttachment?: (file: File) => Promise<AttachmentUpload>
 }) {
   const [body, setBody] = useState('')
   const [attempted, setAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState<FollowUpNotice | null>(null)
+  const [attachments, setAttachments] = useState<AttachmentDraftState>({
+    blocked: false,
+    ids: [],
+  })
+  const [attachmentResetVersion, setAttachmentResetVersion] = useState(0)
   const commandIdRef = useRef<string | null>(null)
   const submittedBodyRef = useRef<string | null>(null)
   const bodyId = useId()
   const errorId = `${bodyId}-error`
   const bodyError =
     attempted && !body.trim() ? '답변 내용을 입력해 주세요.' : null
+  const updateAttachments = useCallback(
+    (state: AttachmentDraftState) => setAttachments(state),
+    [],
+  )
 
   const updateBody = (nextBody: string) => {
     if (
@@ -37,7 +57,7 @@ export function CustomerFollowUpForm({
   const submitFollowUp = async () => {
     setAttempted(true)
     const submittedBody = body.trim()
-    if (!submittedBody || submitting) return
+    if (!submittedBody || submitting || attachments.blocked) return
 
     const clientCommandId = commandIdRef.current ?? createOpaqueUuid()
     commandIdRef.current = clientCommandId
@@ -45,12 +65,13 @@ export function CustomerFollowUpForm({
     setSubmitting(true)
     setNotice(null)
     try {
-      await onSubmit(submittedBody, clientCommandId)
+      await onSubmit(submittedBody, clientCommandId, attachments.ids)
       commandIdRef.current = null
       submittedBodyRef.current = null
       setBody('')
       setAttempted(false)
       setNotice({ kind: 'success' })
+      setAttachmentResetVersion((current) => current + 1)
       onSubmitted?.()
     } catch (error) {
       const nextNotice = toFollowUpNotice(error)
@@ -94,9 +115,18 @@ export function CustomerFollowUpForm({
             {bodyError}
           </small>
         ) : null}
+        {uploadAttachment ? (
+          <AttachmentUploadField
+            disabled={submitting}
+            label="PUBLIC 첨부 파일"
+            onStateChange={updateAttachments}
+            resetVersion={attachmentResetVersion}
+            upload={uploadAttachment}
+          />
+        ) : null}
         <div className="customer-follow-up-actions">
           <DsButton
-            disabled={submitting}
+            disabled={submitting || attachments.blocked}
             onClick={() => void submitFollowUp()}
             tone="primary"
           >

@@ -269,8 +269,8 @@ export function useTicketEditor({
     }
   }
 
-  const submit = async () => {
-    if (submitting || unresolvedConflict || !hasActiveSubmit) return
+  const submit = async (attachmentIds: string[] = []) => {
+    if (submitting || unresolvedConflict || !hasActiveSubmit) return false
     setSubmitting(true)
     setError(null)
     setSuccess(null)
@@ -294,6 +294,7 @@ export function useTicketEditor({
       serverFields,
       localFields,
       comment: { visibility: submittedMode, body: comments[submittedMode] },
+      attachmentIds,
       clientCommandId,
     })
     try {
@@ -340,6 +341,7 @@ export function useTicketEditor({
           requestId: apiError?.requestId,
         })
       }
+      return true
     } catch (cause) {
       const apiError = cause instanceof ApiError ? cause : null
       if (
@@ -367,6 +369,7 @@ export function useTicketEditor({
           requestId: apiError?.requestId,
         })
       }
+      return false
     } finally {
       setSubmitting(false)
     }
