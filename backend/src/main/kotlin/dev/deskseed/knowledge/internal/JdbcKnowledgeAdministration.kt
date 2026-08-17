@@ -21,6 +21,9 @@ import dev.deskseed.knowledge.KnowledgeCategoryInput
 import dev.deskseed.knowledge.KnowledgeCategoryView
 import dev.deskseed.knowledge.KnowledgeConflictException
 import dev.deskseed.knowledge.KnowledgeNotFoundException
+import dev.deskseed.knowledge.KnowledgeLifecycleAction
+import dev.deskseed.knowledge.KnowledgePreconditionFailedException
+import dev.deskseed.knowledge.KnowledgeRevisionView
 import dev.deskseed.knowledge.KnowledgeSectionInput
 import dev.deskseed.knowledge.KnowledgeSectionView
 import org.springframework.dao.DuplicateKeyException
@@ -235,6 +238,112 @@ internal class JdbcKnowledgeAdministration(
         return article(articleId)
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun getArticle(articleId: UUID, actor: KnowledgeAdminActor): KnowledgeArticleView {
+        val view = article(articleId)
+        audit(
+            eventType = "KNOWLEDGE_ARTICLE_VIEWED",
+            actor = actor,
+            targetType = "KNOWLEDGE_ARTICLE",
+            targetId = articleId,
+            metadata = emptyMap(),
+        )
+        return view
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun listRevisions(articleId: UUID, actor: KnowledgeAdminActor): List<KnowledgeRevisionView> {
+        article(articleId)
+        val revisions = jdbc.query(
+            """
+            select id, revision_number, title, document_json::text as document_json, summary, change_note,
+                   content_checksum, created_at
+              from knowledge_article_revisions
+             where article_id = ?
+             order by revision_number desc
+            """.trimIndent(),
+            ::revisionView,
+            articleId,
+        )
+        audit(
+            eventType = "KNOWLEDGE_ARTICLE_REVISIONS_LISTED",
+            actor = actor,
+            targetType = "KNOWLEDGE_ARTICLE",
+            targetId = articleId,
+            metadata = mapOf("count" to revisions.size.toString()),
+        )
+        return revisions
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun transition(
+        articleId: UUID,
+        action: KnowledgeLifecycleAction,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleView {
+        val root = lockedArticle(articleId)
+        if (root.version != expectedVersion) throw KnowledgePreconditionFailedException(root.version)
+        val now = Instant.now(clock)
+        val nextLifecycle = when (action) {
+            KnowledgeLifecycleAction.SUBMIT_REVIEW -> {
+                require(root.lifecycle == KnowledgeArticleLifecycle.DRAFT) { "Only DRAFT articles can enter review" }
+                KnowledgeArticleLifecycle.IN_REVIEW
+            }
+            KnowledgeLifecycleAction.PUBLISH -> {
+                require(root.lifecycle == KnowledgeArticleLifecycle.IN_REVIEW) { "Only IN_REVIEW articles can publish" }
+                KnowledgeArticleLifecycle.PUBLISHED
+            }
+            KnowledgeLifecycleAction.UNPUBLISH -> {
+                require(root.lifecycle == KnowledgeArticleLifecycle.PUBLISHED) { "Only PUBLISHED articles can unpublish" }
+                KnowledgeArticleLifecycle.UNPUBLISHED
+            }
+            KnowledgeLifecycleAction.ARCHIVE -> {
+                require(root.lifecycle != KnowledgeArticleLifecycle.ARCHIVED) { "ARCHIVED article cannot transition" }
+                KnowledgeArticleLifecycle.ARCHIVED
+            }
+        }
+        val publishedRevisionId = if (nextLifecycle == KnowledgeArticleLifecycle.PUBLISHED) {
+            latestRevisionId(articleId)
+        } else {
+            null
+        }
+        jdbc.update(
+            """
+            update knowledge_articles
+               set lifecycle = ?, current_published_revision_id = ?, reviewer_id = ?,
+                   published_at = ?, archived_at = ?, version = version + 1, updated_at = ?
+             where id = ? and version = ?
+            """.trimIndent(),
+            nextLifecycle.name,
+            publishedRevisionId,
+            if (action == KnowledgeLifecycleAction.PUBLISH) actor.staffId else root.reviewerId,
+            if (nextLifecycle == KnowledgeArticleLifecycle.PUBLISHED) Timestamp.from(now) else null,
+            if (nextLifecycle == KnowledgeArticleLifecycle.ARCHIVED) Timestamp.from(now) else null,
+            Timestamp.from(now),
+            articleId,
+            expectedVersion,
+        ).also { changed -> if (changed != 1) throw KnowledgePreconditionFailedException(root.version) }
+        audit(
+            eventType = "KNOWLEDGE_ARTICLE_LIFECYCLE_CHANGED",
+            actor = actor,
+            targetType = "KNOWLEDGE_ARTICLE",
+            targetId = articleId,
+            metadata = mapOf("action" to action.name, "lifecycle" to nextLifecycle.name),
+        )
+        publish(
+            type = "knowledge.article.lifecycle-changed",
+            subject = "knowledge-article:$articleId",
+            actor = actor,
+            data = mapOf("articleId" to articleId.toString(), "lifecycle" to nextLifecycle.name),
+            occurredAt = now,
+        )
+        return article(articleId)
+    }
+
     private fun requireActiveCategory(categoryId: UUID) {
         val active = jdbc.queryForObject(
             "select count(*) from knowledge_categories where id = ? and status = 'ACTIVE'",
@@ -289,7 +398,7 @@ internal class JdbcKnowledgeAdministration(
 
     private fun article(id: UUID): KnowledgeArticleView = jdbc.query(
         """
-        select id, section_id, slug, lifecycle, audience_type, audience_version, version
+        select id, section_id, slug, lifecycle, audience_type, audience_version, current_published_revision_id, version
           from knowledge_articles where id = ?
         """.trimIndent(),
         { row, _ ->
@@ -303,7 +412,8 @@ internal class JdbcKnowledgeAdministration(
                     audienceGroups(row.getObject("id", UUID::class.java)),
                 ),
                 audienceVersion = row.getInt("audience_version"),
-                currentPublishedRevision = null,
+                currentPublishedRevision = row.getObject("current_published_revision_id", UUID::class.java)
+                    ?.let(::revision),
                 version = row.getLong("version"),
             )
         },
@@ -315,6 +425,56 @@ internal class JdbcKnowledgeAdministration(
         { row, _ -> row.getObject("group_id", UUID::class.java) },
         articleId,
     ).toSet()
+
+    private fun revision(id: UUID): KnowledgeRevisionView = jdbc.query(
+        """
+        select id, revision_number, title, document_json::text as document_json, summary, change_note,
+               content_checksum, created_at
+          from knowledge_article_revisions where id = ?
+        """.trimIndent(),
+        ::revisionView,
+        id,
+    ).singleOrNull() ?: throw KnowledgeNotFoundException("REVISION_NOT_FOUND")
+
+    private fun revisionView(row: ResultSet, @Suppress("UNUSED_PARAMETER") index: Int) = KnowledgeRevisionView(
+        id = row.getObject("id", UUID::class.java),
+        revisionNumber = row.getInt("revision_number"),
+        title = row.getString("title"),
+        document = documentCodec.decodeJson(row.getString("document_json"), objectMapper),
+        summary = row.getString("summary"),
+        changeNote = row.getString("change_note"),
+        contentChecksum = row.getString("content_checksum"),
+        createdAt = row.getTimestamp("created_at").toInstant(),
+    )
+
+    private fun latestRevisionId(articleId: UUID): UUID = jdbc.query(
+        """
+        select id from knowledge_article_revisions
+         where article_id = ?
+         order by revision_number desc
+         limit 1
+        """.trimIndent(),
+        { row, _ -> row.getObject("id", UUID::class.java) },
+        articleId,
+    ).singleOrNull() ?: throw KnowledgeNotFoundException("ARTICLE_REVISION_NOT_FOUND")
+
+    private fun lockedArticle(articleId: UUID): LockedArticle = jdbc.query(
+        """
+        select id, lifecycle, version, reviewer_id
+          from knowledge_articles
+         where id = ?
+         for update
+        """.trimIndent(),
+        { row, _ ->
+            LockedArticle(
+                id = row.getObject("id", UUID::class.java),
+                lifecycle = KnowledgeArticleLifecycle.valueOf(row.getString("lifecycle")),
+                version = row.getLong("version"),
+                reviewerId = row.getObject("reviewer_id", UUID::class.java),
+            )
+        },
+        articleId,
+    ).singleOrNull() ?: throw KnowledgeNotFoundException("ARTICLE_NOT_FOUND")
 
     private fun categoryView(row: ResultSet, @Suppress("UNUSED_PARAMETER") index: Int) = KnowledgeCategoryView(
         id = row.getObject("id", UUID::class.java),
@@ -425,6 +585,13 @@ internal class JdbcKnowledgeAdministration(
     private companion object {
         val SLUG = Regex("[a-z0-9]+(?:-[a-z0-9]+)*")
     }
+
+    private data class LockedArticle(
+        val id: UUID,
+        val lifecycle: KnowledgeArticleLifecycle,
+        val version: Long,
+        val reviewerId: UUID?,
+    )
 }
 
 private object KnowledgeAudienceFactory {

@@ -23,6 +23,13 @@ enum class KnowledgeArticleLifecycle {
     ARCHIVED,
 }
 
+enum class KnowledgeLifecycleAction {
+    SUBMIT_REVIEW,
+    PUBLISH,
+    UNPUBLISH,
+    ARCHIVE,
+}
+
 data class KnowledgeCategoryInput(
     val slug: String,
     val title: String,
@@ -99,6 +106,17 @@ interface KnowledgeAdministration {
     fun createSection(input: KnowledgeSectionInput, actor: KnowledgeAdminActor): KnowledgeSectionView
 
     fun createDraft(input: CreateKnowledgeArticleDraft, actor: KnowledgeAdminActor): KnowledgeArticleView
+
+    fun getArticle(articleId: UUID, actor: KnowledgeAdminActor): KnowledgeArticleView
+
+    fun listRevisions(articleId: UUID, actor: KnowledgeAdminActor): List<KnowledgeRevisionView>
+
+    fun transition(
+        articleId: UUID,
+        action: KnowledgeLifecycleAction,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleView
 }
 
 class KnowledgeNotFoundException(val code: String) : RuntimeException()

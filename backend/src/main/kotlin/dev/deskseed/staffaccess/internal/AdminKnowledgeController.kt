@@ -12,6 +12,8 @@ import dev.deskseed.knowledge.KnowledgeAudienceType
 import dev.deskseed.knowledge.KnowledgeCategoryInput
 import dev.deskseed.knowledge.KnowledgeCategoryView
 import dev.deskseed.knowledge.KnowledgeArticleView
+import dev.deskseed.knowledge.KnowledgeLifecycleAction
+import dev.deskseed.knowledge.KnowledgeRevisionView
 import dev.deskseed.knowledge.KnowledgeSectionInput
 import dev.deskseed.knowledge.KnowledgeSectionView
 import jakarta.servlet.http.HttpServletRequest
@@ -25,7 +27,9 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
@@ -93,6 +97,45 @@ internal class AdminKnowledgeController(
             .body(created)
     }
 
+    @GetMapping("/articles/{articleId}")
+    fun getArticle(
+        @PathVariable articleId: UUID,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeArticleView> {
+        val article = administration.getArticle(articleId, request.actor(principal, expectedActor))
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(article.version.toString()).body(article)
+    }
+
+    @GetMapping("/articles/{articleId}/revisions")
+    fun listRevisions(
+        @PathVariable articleId: UUID,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<List<KnowledgeRevisionView>> = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(administration.listRevisions(articleId, request.actor(principal, expectedActor)))
+
+    @PostMapping("/articles/{articleId}/{action}")
+    fun transition(
+        @PathVariable articleId: UUID,
+        @PathVariable action: String,
+        @RequestHeader("If-Match") ifMatch: String,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeArticleView> {
+        val result = administration.transition(
+            articleId = articleId,
+            action = action.toLifecycleAction(),
+            expectedVersion = parseVersion(ifMatch),
+            actor = request.actor(principal, expectedActor),
+        )
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
+    }
+
     private fun HttpServletRequest.actor(principal: StaffPrincipal, expectedActor: UUID): KnowledgeAdminActor {
         require(expectedActor == principal.id) { "expected staff actor must match the authenticated staff session" }
         return KnowledgeAdminActor(
@@ -101,6 +144,18 @@ internal class AdminKnowledgeController(
             context = CommandContexts.from(this, RequestSource.ADMIN_UI),
         )
     }
+
+    private fun String.toLifecycleAction(): KnowledgeLifecycleAction = when (this) {
+        "submit-review" -> KnowledgeLifecycleAction.SUBMIT_REVIEW
+        "publish" -> KnowledgeLifecycleAction.PUBLISH
+        "unpublish" -> KnowledgeLifecycleAction.UNPUBLISH
+        "archive" -> KnowledgeLifecycleAction.ARCHIVE
+        else -> throw IllegalArgumentException("knowledge lifecycle action is not allowlisted")
+    }
+
+    private fun parseVersion(value: String): Long = value.trim().removeSurrounding("\"").toLongOrNull()
+        ?.takeIf { it >= 0 }
+        ?: throw IllegalArgumentException("If-Match must contain a non-negative resource version")
 }
 
 internal data class KnowledgeCategoryRequest(

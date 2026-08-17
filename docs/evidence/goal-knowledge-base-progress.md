@@ -17,6 +17,6 @@ OpenSearch/Elasticsearch, Redis cache, ltree, community, generative answers, arb
 
 ## Implemented vertical slice evidence
 
-- Admin-only POST category, section, and article-draft commands require the staff session actor header and CSRF boundary, validate the fixed hierarchy, write a required `AdminSecurityAudit`, and append an INTERNAL durable event intent in one transaction.
-- `AdminKnowledgeIntegrationTest` proves a category→section→draft flow and injects an audit-table failure to prove both the mutation and outbox intent roll back.
+- Admin-only POST category, section, article-draft and lifecycle commands require the staff session actor header and CSRF boundary, validate the fixed hierarchy/state transition, write a required `AdminSecurityAudit`, and append an INTERNAL durable event intent in one transaction.
+- `AdminKnowledgeIntegrationTest` proves a category→section→draft→review→publish flow, optimistic version transition, immutable published revision pointer, and an injected audit-table failure that rolls both the mutation and outbox intent back.
 - This evidence does not claim public/agent read/search, lifecycle transitions, cache validators, UI, Storybook, or remote CI as complete.

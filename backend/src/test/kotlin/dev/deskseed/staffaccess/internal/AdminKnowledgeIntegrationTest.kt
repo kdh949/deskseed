@@ -95,6 +95,27 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.audience.type").value("PUBLIC"))
             .andReturn().response.contentAsString.uuidField("id")
 
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/submit-review", articleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"0\""),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.lifecycle").value("IN_REVIEW"))
+            .andExpect(jsonPath("$.version").value(1))
+
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/publish", articleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"1\""),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.lifecycle").value("PUBLISHED"))
+            .andExpect(jsonPath("$.currentPublishedRevision.revisionNumber").value(1))
+            .andExpect(jsonPath("$.version").value(2))
+
         assertThat(
             jdbc.queryForObject(
                 "select count(*) from knowledge_article_revisions where article_id = ? and revision_number = 1",
@@ -108,15 +129,20 @@ class AdminKnowledgeIntegrationTest {
                 String::class.java,
                 articleId,
             ),
-        ).containsExactly("KNOWLEDGE_ARTICLE_DRAFT_CREATED")
+        ).containsExactlyInAnyOrder(
+            "KNOWLEDGE_ARTICLE_DRAFT_CREATED",
+            "KNOWLEDGE_ARTICLE_LIFECYCLE_CHANGED",
+            "KNOWLEDGE_ARTICLE_LIFECYCLE_CHANGED",
+        )
         assertThat(
-            jdbc.queryForMap(
+            jdbc.queryForList(
                 "select event_type, visibility, data_json::text as data from domain_event_outbox where subject = ?",
                 "knowledge-article:$articleId",
             ),
-        ).containsEntry("event_type", "knowledge.article.draft-created")
-            .containsEntry("visibility", "INTERNAL")
-            .doesNotContainValue("카드 결제가 거절될 때")
+        ).allSatisfy { event ->
+            assertThat(event).containsEntry("visibility", "INTERNAL")
+                .doesNotContainValue("카드 결제가 거절될 때")
+        }
     }
 
     @Test

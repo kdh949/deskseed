@@ -1,10 +1,13 @@
 package dev.deskseed.knowledge
 
 import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 
 /** Strict JSON boundary for the frozen vendor-neutral block contract. */
 class CanonicalKnowledgeDocumentCodec {
+    fun decodeJson(json: String, objectMapper: ObjectMapper): CanonicalKnowledgeDocument = decode(objectMapper.readTree(json))
+
     fun decode(node: JsonNode): CanonicalKnowledgeDocument {
         require(node.isObject) { "knowledge document must be an object" }
         node.requireOnly("schemaVersion", "blocks")
