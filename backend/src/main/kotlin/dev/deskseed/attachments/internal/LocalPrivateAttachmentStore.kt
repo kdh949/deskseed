@@ -8,6 +8,7 @@ import dev.deskseed.attachments.MalwareScanner
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
@@ -38,6 +39,7 @@ internal class AttachmentStorageConfiguration
 
 /** Local, private CI/development adapter. Production may replace this port with a private S3-compatible adapter. */
 @Component
+@Profile("!production")
 internal class LocalPrivateAttachmentStore(
     private val properties: AttachmentStorageProperties,
 ) : AttachmentObjectStore {
@@ -94,6 +96,7 @@ internal class LocalPrivateAttachmentStore(
 
 /** Deterministic scanner used only for local/CI wiring; scanner errors are represented by thrown exceptions. */
 @Component
+@Profile("!production")
 internal class DeterministicMalwareScanner : MalwareScanner {
     override fun scan(content: InputStream, fileName: String, contentType: String): MalwareScanResult = try {
         var tail = ""
