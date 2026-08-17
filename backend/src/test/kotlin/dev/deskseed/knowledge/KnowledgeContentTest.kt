@@ -3,6 +3,7 @@ package dev.deskseed.knowledge
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.json.JsonMapper
 import java.util.UUID
 
 class KnowledgeContentTest {
@@ -59,5 +60,37 @@ class KnowledgeContentTest {
                 KnowledgeAudience.public(),
             )
         }.isInstanceOf(InvalidKnowledgeDocumentException::class.java)
+    }
+
+    @Test
+    fun `checksum captures canonical structure as well as extracted text`() {
+        val paragraph = validator.validate(
+            CanonicalKnowledgeDocument(1, listOf(KnowledgeBlock.Paragraph("같은 텍스트"))),
+        )
+        val quote = validator.validate(
+            CanonicalKnowledgeDocument(1, listOf(KnowledgeBlock.Quote("같은 텍스트"))),
+        )
+
+        assertThat(paragraph.plainText).isEqualTo(quote.plainText)
+        assertThat(paragraph.checksumSha256).isNotEqualTo(quote.checksumSha256)
+    }
+
+    @Test
+    fun `strict codec preserves only supported canonical block fields`() {
+        val codec = CanonicalKnowledgeDocumentCodec()
+        val document = codec.decode(
+            JsonMapper.builder().build().readTree(
+                """{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"안전한 본문"}]}""",
+            ),
+        )
+
+        assertThat(document.blocks).containsExactly(KnowledgeBlock.Paragraph("안전한 본문"))
+        assertThatThrownBy {
+            codec.decode(
+                JsonMapper.builder().build().readTree(
+                    """{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"본문","html":"<script>"}]}""",
+                ),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
     }
 }

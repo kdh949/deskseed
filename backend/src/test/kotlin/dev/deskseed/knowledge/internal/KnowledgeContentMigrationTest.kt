@@ -7,14 +7,15 @@ import org.junit.jupiter.api.Test
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 
 @Testcontainers
 class KnowledgeContentMigrationTest {
     @Test
-    fun `V50 creates a fixed hierarchy and immutable revisions without altering prior history`() {
+    fun `V50 and V51 create a fixed hierarchy and canonical multi-block revision storage without altering prior history`() {
         migrateTo("36")
-        migrateTo("50")
+        migrateTo("51")
 
         connection().use { jdbc ->
             jdbc.createStatement().use { statement ->
@@ -29,6 +30,8 @@ class KnowledgeContentMigrationTest {
                 assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version = '36' and success"))
                     .isEqualTo(1)
                 assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version = '50' and success"))
+                    .isEqualTo(1)
+                assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version = '51' and success"))
                     .isEqualTo(1)
 
                 assertThatThrownBy {
@@ -66,6 +69,6 @@ class KnowledgeContentMigrationTest {
     private companion object {
         @Container
         @JvmStatic
-        val postgres = PostgreSQLContainer("postgres:17-alpine")
+        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

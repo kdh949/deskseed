@@ -12,6 +12,7 @@ enum class KnowledgeAudienceType {
     SELECTED_STAFF_GROUPS,
 }
 
+@ConsistentCopyVisibility
 data class KnowledgeAudience private constructor(
     val type: KnowledgeAudienceType,
     val groupIds: Set<UUID>,
@@ -117,7 +118,7 @@ class CanonicalKnowledgeDocumentValidator {
         return ValidatedKnowledgeDocument(
             document = document,
             plainText = text,
-            checksumSha256 = sha256(document.schemaVersion.toString() + "\n" + text),
+            checksumSha256 = sha256(canonicalChecksumMaterial(document)),
         )
     }
 
@@ -161,6 +162,34 @@ class CanonicalKnowledgeDocumentValidator {
         }
         if (value.length > MAX_URL_LENGTH || uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null) {
             throw InvalidKnowledgeDocumentException("Knowledge link URL is not allowlisted")
+        }
+    }
+
+    /**
+     * The checksum must change when the canonical structure changes, not only when its
+     * extracted search text happens to match. It is intentionally an internal,
+     * delimiter-separated representation: persisted document JSON remains the source
+     * representation, while this value is a deterministic integrity marker.
+     */
+    private fun canonicalChecksumMaterial(document: CanonicalKnowledgeDocument): String = buildString {
+        append(document.schemaVersion)
+        document.blocks.forEach { block ->
+            append('\u001e')
+            when (block) {
+                is KnowledgeBlock.Paragraph -> append("paragraph\u001f").append(boundedText(block.text))
+                is KnowledgeBlock.Heading -> append("heading\u001f").append(block.level).append('\u001f').append(boundedText(block.text))
+                is KnowledgeBlock.ListBlock -> {
+                    append("list\u001f").append(block.ordered)
+                    block.items.forEach { append('\u001f').append(boundedText(it)) }
+                }
+                is KnowledgeBlock.Code -> append("code\u001f").append(block.language ?: "").append('\u001f').append(boundedText(block.text))
+                is KnowledgeBlock.Callout -> append("callout\u001f").append(boundedText(block.text))
+                is KnowledgeBlock.Quote -> append("quote\u001f").append(boundedText(block.text))
+                KnowledgeBlock.Divider -> append("divider")
+                is KnowledgeBlock.Link -> append("link\u001f").append(boundedText(block.text)).append('\u001f').append(block.url)
+                is KnowledgeBlock.Attachment -> append("attachment\u001f").append(block.attachmentId)
+                is KnowledgeBlock.Html -> throw InvalidKnowledgeDocumentException("HTML blocks are not canonical knowledge content")
+            }
         }
     }
 
