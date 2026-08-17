@@ -227,6 +227,7 @@ ddbb2605834f6d2bcc2b4a47577720154607f50d4ee30932614808fe858aa6c0        1622  sc
 c16d522f6854b2f51ea3acbefd7d6b808eaecbd6757f37bc5adfa7d89f732682          35  scripts/requirements-docs.txt
 0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a          14  scripts/requirements.txt
 eeb254520a57811577cabd62d1eb3360aa0c15611d55952ef0d3ba8f72ecfa4b         953  scripts/run-audit-explorer-performance.sh
+b4762bce6877932aa4342539f2e961f9e82869691e88501837a52098b9e27f9e        4657  scripts/run-authenticated-customer-attachment-e2e.sh
 55d12d8df696000a83899ae065d8a76f621db9f2e643c8f22adb752c0cf29b1a         583  scripts/run-frontend-browser-e2e.sh
 e56cd07dc2e7022988c82aaf8df563dc107baebd1720de5787a8ded42661934c      126581  scripts/run-operations-rehearsal.sh
 6a69940eb1da68f87444acd2b5ed79b14d1b4d67e2a94557720639b9a89c8f91       12038  scripts/run-p1-contract-e2e.sh
