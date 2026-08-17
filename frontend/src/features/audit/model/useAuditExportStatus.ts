@@ -1,51 +1,34 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { getAuditExport } from '../../../api/client'
+import type { AuditExportJob } from '../../../api/types'
 import { createOpaqueUuid } from '../../../api/uuid'
 
-const MAX_POLL_ATTEMPTS = 5
 const POLL_INTERVAL_MS = 3000
 
 export function useAuditExportStatus(jobId: string) {
-  // Stable for the lifetime of this route mount; reused across background
-  // polling of the same job, but a fresh mount always mints a new one so a
-  // cached response can't be served without a corresponding self-audit call.
+  // Reuse one deliberate-read interaction across this route mount. Unmounting
+  // disposes the query observer, which also stops its polling timer.
   const interactionId = useMemo(createOpaqueUuid, [jobId])
-  const attemptsRef = useRef(0)
-  const [pollingExhausted, setPollingExhausted] = useState(false)
-
   const query = useQuery({
     queryKey: ['audit-export', jobId, interactionId],
-    queryFn: async () => {
-      try {
-        const result = await getAuditExport(jobId, interactionId)
-        attemptsRef.current += 1
-        if (
-          result.status === 'READY' ||
-          result.status === 'FAILED' ||
-          result.status === 'EXPIRED' ||
-          attemptsRef.current >= MAX_POLL_ATTEMPTS
-        ) {
-          setPollingExhausted(true)
-        }
-        return result
-      } catch (error) {
-        // Count every real polling cycle, not just successes, and stop
-        // immediately on failure rather than retrying a stable error every
-        // 3 seconds indefinitely.
-        attemptsRef.current += 1
-        setPollingExhausted(true)
-        throw error
-      }
+    queryFn: () => getAuditExport(jobId, interactionId),
+    retry: false,
+    refetchInterval: (currentQuery) => {
+      if (currentQuery.state.status === 'error') return false
+      return isTerminal(currentQuery.state.data) ? false : POLL_INTERVAL_MS
     },
-    refetchInterval: pollingExhausted ? false : POLL_INTERVAL_MS,
   })
+  const polling =
+    query.isPending || (query.data !== undefined && !isTerminal(query.data))
 
-  const refresh = () => {
-    attemptsRef.current = 0
-    setPollingExhausted(false)
-    query.refetch()
-  }
+  return { ...query, polling, refresh: () => query.refetch() }
+}
 
-  return { ...query, pollingExhausted, refresh }
+function isTerminal(job: AuditExportJob | undefined) {
+  return (
+    job?.status === 'READY' ||
+    job?.status === 'FAILED' ||
+    job?.status === 'EXPIRED'
+  )
 }

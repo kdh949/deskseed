@@ -50,7 +50,7 @@ afterEach(() => {
 })
 
 describe('useAuditExportStatus', () => {
-  it('stops auto-polling after 5 attempts on repeated success', async () => {
+  it('keeps polling REQUESTED and RUNNING jobs beyond five attempts', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(job)))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -63,13 +63,12 @@ describe('useAuditExportStatus', () => {
       await act(() => vi.advanceTimersByTimeAsync(3000))
     }
 
-    expect(result.current.pollingExhausted).toBe(true)
+    expect(result.current.polling).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(5)
 
-    // Further time passing must not trigger additional automatic fetches.
     await act(() => vi.advanceTimersByTimeAsync(3000))
     await act(() => vi.advanceTimersByTimeAsync(3000))
-    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(fetchMock).toHaveBeenCalledTimes(7)
   })
 
   it('stops auto-polling as soon as the worker reports a terminal artifact state', async () => {
@@ -98,7 +97,7 @@ describe('useAuditExportStatus', () => {
     })
 
     await act(() => vi.advanceTimersByTimeAsync(0))
-    expect(result.current.pollingExhausted).toBe(true)
+    expect(result.current.polling).toBe(false)
     await act(() => vi.advanceTimersByTimeAsync(6000))
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
@@ -116,7 +115,7 @@ describe('useAuditExportStatus', () => {
     await act(() => vi.advanceTimersByTimeAsync(0))
 
     expect(result.current.isError).toBe(true)
-    expect(result.current.pollingExhausted).toBe(true)
+    expect(result.current.polling).toBe(false)
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     // Further time passing must not trigger additional automatic fetches.
