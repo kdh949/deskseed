@@ -153,3 +153,12 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
    - 최소 테스트 시나리오
    - 운영·보안 영향 기록
 4. 구현되지 않은 기능을 README에서 완성 기능처럼 표현하지 않는다.
+
+## 11. Wave 0 and Wave 1 extension foundation
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-FND-001 | 병렬 Wave lane은 소유한 OpenAPI fragment·migration 범위·progress/traceability 영역만 변경하고, 생성된 Core bundle이나 다른 lane의 공용 계약을 직접 수정하지 않는다 | IMPLEMENTATION_READY | Wave 0 F1 | ADR 0040, 39, 41, 50 | deterministic bundle parity, duplicate path/method/component rejection, ownership range validator, documentation contract gate |
+| REQ-FND-002 | 조건·액션·템플릿 변수·검색 predicate·analytics dimension은 versioned descriptor registry로 확장하며 unknown/duplicate/incompatible input은 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F1 | ADR 0040, 34, 45, 46, 47 | duplicate descriptor startup failure, AST bound/unknown-type rejection, action external-I/O separation, ARCH-001 |
+| REQ-FND-003 | 공개 가능한 integration event intent는 ticket mutation과 원자적으로 PostgreSQL outbox에 기록되고 worker replay/lease 실패는 committed ticket mutation을 되돌리지 않는다 | IMPLEMENTATION_READY | Wave 0 F2 | ADR 0040, 18, 32, 34, 45 | PostgreSQL outbox atomicity, lease recovery, payload redaction/visibility, ARCH-002/003 |
+| REQ-FND-004 | feature lane은 central App/shell을 수정하지 않고 deterministic route/navigation/workspace contribution을 추가하며 duplicate/권한/extension failure를 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F3 | ADR 0040, 28–31, 40, 51, 55 | discovery order, duplicate rejection, denied route/nav, error isolation, typecheck and Storybook gate |
