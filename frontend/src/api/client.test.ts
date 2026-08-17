@@ -167,7 +167,8 @@ describe('agent ticket draft API client', () => {
         method: 'PUT',
         headers: expect.objectContaining({
           'X-CSRF-TOKEN': 'csrf-save',
-          'X-Deskseed-Expected-Staff-Id': '22222222-2222-4222-8222-222222222222',
+          'X-Deskseed-Expected-Staff-Id':
+            '22222222-2222-4222-8222-222222222222',
         }),
       }),
     )
