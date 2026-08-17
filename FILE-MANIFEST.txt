@@ -47,7 +47,7 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 1cb5de486728eb8740a92b7abf6bbfb082c3f5bc28604708d0ca8746dccc5ed3        8603  docs/25-implementation-decision-register.md
-423f3df2e7a043853537c26d62f5e7556de9d8c6fdf398d4f5342e7cbe9cd0a9       25666  docs/26-requirement-traceability.md
+1b5d4520c101369d505e171658888746c053ddfccada98e9d9a9244eba73f2e6       26278  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -76,7 +76,7 @@ bc5279f7b27c99f6ab0508d4475409f0c7a4a58c0508cfd528923cf404f268c2       10301  do
 4227ab13e8cdc20368d59719a5ea468095039730b8fedb038b89b2cfd44d07ff       11664  docs/52-admin-settings-catalog.md
 c19c074d3a32d0986e86c27ec8bcbfbc3f32a2ee536746226f8d33dbf9fb0402        6241  docs/53-accepted-decisions-2026-08-10.md
 1dd6d96b7d15e1bc298989082b04d38fd7d82a80279b6b31d0bb26af3c8cb22b        1864  docs/54-next-decision-gates.md
-4b70e4e2d7c065fbdece7841c00ef0f3b10372523a0bbf260aa229c60b6ab983       10800  docs/55-frontend-capability-recomposition-matrix.md
+370866f958fd734cf28b7368576e15c83921e4f37925f1485922c066c5e712ee       11681  docs/55-frontend-capability-recomposition-matrix.md
 027301f0e5da1824d14551ad602c7d3620c1e1f8b8067bc3def50d009615d144        1222  docs/adr/0001-kotlin-spring.md
 a60752cda4485dd1bf13168c30e3d337ad94eee6d262ce94e49ef01cfc09bcde        1189  docs/adr/0002-modular-monolith.md
 04ce88fcb2ab9f9f9337fee7d34fb727552475916253943643b481bb099f2792         899  docs/adr/0003-first-comment-no-description.md
@@ -273,11 +273,17 @@ f421d310db5313a028de26e7d84c5c30c994e2e18df33923778d0be6438befa1        8003  ta
 ac362594888ac24f3e3925f9a739495de6ee02494f48157c1ad4e485936d2274        6458  tasks/briefs/frontend-system-hardening.md
 a440d49ef2a6885f45e727e954ab2878d13319586065651adb8512d1728a144e        4971  tasks/briefs/integration-client-management.md
 7928256db634523d0ae40396641fdc934e61edd7b0eb8e1948bc35aadf29fccd        6645  tasks/briefs/issue-24-review-remediation.md
+55a7432c4b6d311344381db93ab93c643b2bfb8e72827af8a4ccf09793da4967       15791  tasks/briefs/p1-authenticated-customer-attachments.md
 9ab5b37db4398506b7778a7187e37ba9b67068838ed5bf455555a777aee3fa6c        8678  tasks/briefs/p1-backend-operations.md
 3790b9f3a233695dc94d50960ef50005a265eb13464e7aa4e0dc7671b4a5c304        8756  tasks/briefs/p1-contract-freeze.md
+82ff241205e1ebc61007a0e65b27e33919fc125c088ef85403184b0aa07dfa4e       10446  tasks/briefs/p1-frontend-operations-ui.md
+04172e337b3fe233addd429060cc76182bbdcb12d556a97c859a0f739f0ea5b6        9160  tasks/briefs/p1-parallel-followup-coordination.md
+4faaf48f54538db8dfc54770ca982d727b53ab67999dab07e89c49be15007a12       13598  tasks/briefs/p1-saved-view-metadata.md
 8bf4a7fd763175bb6ad4f745aec5a115d823c16b81acf820b0c137836d86cb93        6017  tasks/briefs/pr17-pr18-review-followup.md
 b03ee99605722a4b7998dec7a07751af597aa29d1044f5e8ee9ff7e3a9442ccb       12469  tasks/briefs/release-hardening.md
 873569578766d25ee6f9864670ba7a81e8bc6b9aaff681c07eeee80c4103ae42        5181  tasks/briefs/storybook-design-system-catalog.md
 3b869e69ab417aa64154989cd6436b1add4ab385bb4d4c9e32e0447a38256f43        8715  tasks/briefs/ticket-composer-conflict-ui.md
 9cfc7e8776993be2ac2553c283e41f786d3ce7b9ba4514ea2a912266d10924b7        8022  tasks/briefs/ticket-update-audit-concurrency.md
 c48cdc9dbadd8956ad03602c1256e803385b6489d53dbc6d01c47d8b5f0d9f59        8979  tasks/briefs/transfer-child-tickets.md
+2fd67729dff45b64ec809d7c4d9d8d82e7adcc73f3613d855aefc7ade42fd772        7090  tasks/prompts/p1-authenticated-customer-attachments.md
+91905dfdba0078f538e38fffeaa6882e5997d7ad280e1f5d4a5530c157ee67e7        5643  tasks/prompts/p1-saved-view-metadata.md
