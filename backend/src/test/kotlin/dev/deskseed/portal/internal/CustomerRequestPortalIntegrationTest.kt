@@ -13,8 +13,10 @@ import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.mock.web.MockMultipartFile
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -39,6 +41,7 @@ import java.util.concurrent.TimeUnit
         "deskseed.customer-portal.claim-grant-ttl=15m",
         "deskseed.customer-portal.claim-signing-key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
         "deskseed.customer-portal.claim-fingerprint-key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+        "deskseed.attachments.cleanup-initial-delay=1d",
     ],
 )
 @AutoConfigureMockMvc
@@ -54,6 +57,9 @@ class CustomerRequestPortalIntegrationTest {
         jdbcTemplate.execute(
             """
             truncate table
+                access_audit_events,
+                ticket_comment_attachments,
+                attachment_objects,
                 outbound_mail_delivery_events,
                 outbound_mail_attempts,
                 outbound_mail_intents,
@@ -169,6 +175,191 @@ class CustomerRequestPortalIntegrationTest {
         mockMvc.perform(
             get("/api/v1/customer/requests/{ticketNumber}", firstRequest.ticketNumber + 99_999).cookie(first.cookie),
         ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `authenticated customer uploads links and downloads own PUBLIC attachment with session audit`(output: CapturedOutput) {
+        val session = customerSession("authenticated-attachment@example.com")
+        val request = submitAuthenticated(session, "인증 고객 첨부 문의")
+        val csrfToken = csrf(session.cookie)
+
+        mockMvc.perform(
+            multipart("/api/v1/customer/requests/{ticketNumber}/attachments/uploads", request.ticketNumber)
+                .file(MockMultipartFile("file", "evidence.pdf", "application/pdf", PDF_BYTES))
+                .cookie(session.cookie),
+        ).andExpect(status().isForbidden)
+        assertThat(attachmentObjectCount()).isZero()
+
+        val uploadResponse = uploadAttachment(session, request.ticketNumber, csrfToken)
+            .andExpect(status().isCreated)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.scanStatus").value("CLEAN"))
+            .andExpect(jsonPath("$.objectKey").doesNotExist())
+            .andExpect(jsonPath("$.checksum").doesNotExist())
+            .andReturn().response.contentAsString
+        val attachmentId = UUID.fromString(objectMapper.readTree(uploadResponse).path("id").asText())
+
+        val stored = jdbcTemplate.queryForMap(
+            """
+            select uploaded_actor_type, uploaded_actor_id, bound_ticket_id, allowed_visibility,
+                   storage_key, scan_status
+            from attachment_objects where id = ?
+            """.trimIndent(),
+            attachmentId,
+        )
+        assertThat(stored["uploaded_actor_type"]).isEqualTo("CUSTOMER")
+        assertThat(stored["uploaded_actor_id"]).isEqualTo(session.customerId)
+        assertThat(stored["bound_ticket_id"]).isEqualTo(ticketId(request.ticketNumber))
+        assertThat(stored["allowed_visibility"]).isEqualTo("PUBLIC")
+        assertThat(stored["scan_status"]).isEqualTo("CLEAN")
+
+        addFollowUp(
+            session = session,
+            ticketNumber = request.ticketNumber,
+            commandId = UUID.randomUUID().toString(),
+            body = "PUBLIC 첨부를 추가합니다.",
+            attachmentIds = listOf(attachmentId),
+            csrfToken = csrfToken,
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.attachments[0].id").value(attachmentId.toString()))
+
+        mockMvc.perform(
+            get("/api/v1/customer/requests/{ticketNumber}", request.ticketNumber).cookie(session.cookie),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.comments[1].attachments[0].id").value(attachmentId.toString()))
+            .andExpect(jsonPath("$.comments[1].attachments[0].objectKey").doesNotExist())
+
+        val download = downloadAttachment(session, request.ticketNumber, attachmentId)
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Content-Type", MediaType.APPLICATION_OCTET_STREAM_VALUE))
+            .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("evidence.pdf")))
+            .andReturn().response
+        assertThat(download.contentAsByteArray).isEqualTo(PDF_BYTES)
+
+        val audit = jdbcTemplate.queryForMap(
+            """
+            select actor_type, actor_id, source, action, auth_type, session_fingerprint
+            from access_audit_events
+            where resource_id = ? and action = 'ATTACHMENT_DOWNLOADED'
+            """.trimIndent(),
+            attachmentId,
+        )
+        val fingerprint = audit["session_fingerprint"].toString()
+        assertThat(audit["actor_type"]).isEqualTo("CUSTOMER")
+        assertThat(audit["actor_id"]).isEqualTo(session.customerId)
+        assertThat(audit["source"]).isEqualTo("CUSTOMER_PORTAL")
+        assertThat(audit["auth_type"]).isEqualTo("CUSTOMER_SESSION")
+        assertThat(fingerprint).matches("v1:[A-Za-z0-9_-]{43}")
+        assertThat(fingerprint).doesNotContain(session.rawSession, session.sessionId.toString())
+        assertThat(uploadResponse).doesNotContain(stored["storage_key"].toString())
+        assertThat(output.all).doesNotContain(
+            session.rawSession,
+            csrfToken,
+            stored["storage_key"].toString(),
+        )
+    }
+
+    @Test
+    fun `authenticated download is not found safe across customers tickets visibility and unsafe states`() {
+        val owner = customerSession("attachment-owner@example.com")
+        val other = customerSession("attachment-other@example.com")
+        val request = submitAuthenticated(owner, "다운로드 격리 문의")
+        val otherOwnerRequest = submitAuthenticated(owner, "같은 고객의 다른 문의")
+        val csrfToken = csrf(owner.cookie)
+        val attachmentId = uploadedAttachmentId(owner, request.ticketNumber, csrfToken)
+        addFollowUp(
+            owner,
+            request.ticketNumber,
+            UUID.randomUUID().toString(),
+            "격리 조건 검증 첨부",
+            listOf(attachmentId),
+            csrfToken,
+        ).andExpect(status().isCreated)
+
+        downloadAttachment(other, request.ticketNumber, attachmentId).andExpect(status().isNotFound)
+        downloadAttachment(owner, otherOwnerRequest.ticketNumber, attachmentId).andExpect(status().isNotFound)
+        downloadAttachment(owner, request.ticketNumber, UUID.randomUUID()).andExpect(status().isNotFound)
+
+        listOf("QUARANTINED", "INFECTED", "FAILED", "DELETED", "EXPIRED").forEach { unsafeStatus ->
+            jdbcTemplate.update("update attachment_objects set scan_status = ? where id = ?", unsafeStatus, attachmentId)
+            downloadAttachment(owner, request.ticketNumber, attachmentId).andExpect(status().isNotFound)
+        }
+        jdbcTemplate.update("update attachment_objects set scan_status = 'CLEAN' where id = ?", attachmentId)
+
+        jdbcTemplate.update(
+            "update ticket_comment_attachments set visibility = 'INTERNAL' where attachment_id = ?",
+            attachmentId,
+        )
+        downloadAttachment(owner, request.ticketNumber, attachmentId).andExpect(status().isNotFound)
+        jdbcTemplate.update(
+            "update ticket_comment_attachments set visibility = 'PUBLIC' where attachment_id = ?",
+            attachmentId,
+        )
+
+        jdbcTemplate.update("update attachment_objects set linked_at = null where id = ?", attachmentId)
+        downloadAttachment(owner, request.ticketNumber, attachmentId).andExpect(status().isNotFound)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from access_audit_events where resource_id = ?",
+                Long::class.java,
+                attachmentId,
+            ),
+        ).isZero()
+    }
+
+    @Test
+    fun `required customer session download audit failure withholds attachment bytes`() {
+        val session = customerSession("attachment-audit-failure@example.com")
+        val request = submitAuthenticated(session, "감사 실패 첨부 문의")
+        val csrfToken = csrf(session.cookie)
+        val attachmentId = uploadedAttachmentId(session, request.ticketNumber, csrfToken)
+        addFollowUp(
+            session,
+            request.ticketNumber,
+            UUID.randomUUID().toString(),
+            "감사 실패 검증 첨부",
+            listOf(attachmentId),
+            csrfToken,
+        ).andExpect(status().isCreated)
+
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_customer_session_attachment_audit() returns trigger as ${'$'}${'$'}
+            begin
+                if new.action = 'ATTACHMENT_DOWNLOADED' and new.auth_type = 'CUSTOMER_SESSION' then
+                    raise exception 'forced customer attachment audit failure';
+                end if;
+                return new;
+            end;
+            ${'$'}${'$'} language plpgsql
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create trigger fail_customer_session_attachment_audit
+            before insert on access_audit_events
+            for each row execute function fail_customer_session_attachment_audit()
+            """.trimIndent(),
+        )
+        try {
+            val response = downloadAttachment(session, request.ticketNumber, attachmentId)
+                .andExpect(status().isServiceUnavailable)
+                .andReturn().response
+            assertThat(response.contentAsByteArray).isNotEqualTo(PDF_BYTES)
+            assertThat(
+                jdbcTemplate.queryForObject(
+                    "select count(*) from access_audit_events where resource_id = ?",
+                    Long::class.java,
+                    attachmentId,
+                ),
+            ).isZero()
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_customer_session_attachment_audit on access_audit_events")
+            jdbcTemplate.execute("drop function if exists fail_customer_session_attachment_audit()")
+        }
     }
 
     @Test
@@ -297,13 +488,28 @@ class CustomerRequestPortalIntegrationTest {
         val request = submitAnonymous("follow-up@example.com", "후속 답변 문의")
         claimOwnershipForFixture(request.ticketNumber, session.customerId)
         val commandId = UUID.randomUUID().toString()
+        val attachmentId = uploadedAttachmentId(session, request.ticketNumber, csrf(session.cookie))
 
-        val first = addFollowUp(session, request.ticketNumber, commandId, "추가 정보를 남깁니다.")
+        val first = addFollowUp(
+            session,
+            request.ticketNumber,
+            commandId,
+            "추가 정보를 남깁니다.",
+            listOf(attachmentId),
+        )
             .andExpect(status().isCreated)
             .andReturn().response.contentAsString
-        val replay = addFollowUp(session, request.ticketNumber, commandId, "추가 정보를 남깁니다.")
+        val replay = addFollowUp(
+            session,
+            request.ticketNumber,
+            commandId,
+            "추가 정보를 남깁니다.",
+            listOf(attachmentId),
+        )
             .andExpect(status().isCreated)
             .andReturn().response.contentAsString
+        addFollowUp(session, request.ticketNumber, commandId, "추가 정보를 남깁니다.")
+            .andExpect(status().isConflict)
 
         assertThat(replay).isEqualTo(first)
         val ticketId = ticketId(request.ticketNumber)
@@ -337,6 +543,7 @@ class CustomerRequestPortalIntegrationTest {
         val ticketId = ticketId(request.ticketNumber)
         val commandId = UUID.randomUUID().toString()
         val csrfToken = csrf(session.cookie)
+        val attachmentId = uploadedAttachmentId(session, request.ticketNumber, csrfToken)
         val executor = Executors.newFixedThreadPool(2)
         val ticketLock = requireNotNull(jdbcTemplate.dataSource).connection
 
@@ -354,6 +561,7 @@ class CustomerRequestPortalIntegrationTest {
                         accessToken = request.accessToken,
                         commandId = commandId,
                         body = "동시에 저장되는 공개 후속 답변",
+                        attachmentIds = listOf(attachmentId),
                     ).andReturn().response.status
                 },
             )
@@ -366,6 +574,7 @@ class CustomerRequestPortalIntegrationTest {
                         ticketNumber = request.ticketNumber,
                         commandId = commandId,
                         body = "동시에 저장되는 공개 후속 답변",
+                        attachmentIds = listOf(attachmentId),
                         csrfToken = csrfToken,
                     ).andReturn().response.status
                 },
@@ -389,6 +598,13 @@ class CustomerRequestPortalIntegrationTest {
             ),
         ).isEqualTo(2)
         assertThat(ticketAuditEventCount(request.ticketNumber, "COMMENT_CREATED")).isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comment_attachments where attachment_id = ?",
+                Long::class.java,
+                attachmentId,
+            ),
+        ).isEqualTo(1)
         assertThat(
             jdbcTemplate.queryForObject(
                 "select count(*) from outbound_mail_intents where ticket_id = ?",
@@ -437,13 +653,22 @@ class CustomerRequestPortalIntegrationTest {
         ticketNumber: Long,
         commandId: String,
         body: String,
+        attachmentIds: List<UUID> = emptyList(),
         csrfToken: String = csrf(session.cookie),
     ) = mockMvc.perform(
         post("/api/v1/customer/requests/{ticketNumber}/comments", ticketNumber)
             .cookie(session.cookie)
             .header("X-CSRF-TOKEN", csrfToken)
             .contentType(MediaType.APPLICATION_JSON)
-            .content(objectMapper.writeValueAsString(mapOf("body" to body, "clientCommandId" to commandId))),
+            .content(
+                objectMapper.writeValueAsString(
+                    mapOf(
+                        "body" to body,
+                        "attachmentIds" to attachmentIds,
+                        "clientCommandId" to commandId,
+                    ),
+                ),
+            ),
     )
 
     private fun addAnonymousFollowUp(
@@ -451,11 +676,54 @@ class CustomerRequestPortalIntegrationTest {
         accessToken: String,
         commandId: String,
         body: String,
+        attachmentIds: List<UUID> = emptyList(),
     ) = mockMvc.perform(
         post("/api/v1/requests/{ticketNumber}/comments", ticketNumber)
             .header("X-Request-Access-Token", accessToken)
             .contentType(MediaType.APPLICATION_JSON)
-            .content(objectMapper.writeValueAsString(mapOf("body" to body, "clientCommandId" to commandId))),
+            .content(
+                objectMapper.writeValueAsString(
+                    mapOf(
+                        "body" to body,
+                        "attachmentIds" to attachmentIds,
+                        "clientCommandId" to commandId,
+                    ),
+                ),
+            ),
+    )
+
+    private fun uploadAttachment(
+        session: CustomerSessionFixture,
+        ticketNumber: Long,
+        csrfToken: String = csrf(session.cookie),
+    ) = mockMvc.perform(
+        multipart("/api/v1/customer/requests/{ticketNumber}/attachments/uploads", ticketNumber)
+            .file(MockMultipartFile("file", "evidence.pdf", "application/pdf", PDF_BYTES))
+            .cookie(session.cookie)
+            .header("X-CSRF-TOKEN", csrfToken),
+    )
+
+    private fun uploadedAttachmentId(
+        session: CustomerSessionFixture,
+        ticketNumber: Long,
+        csrfToken: String = csrf(session.cookie),
+    ): UUID {
+        val body = uploadAttachment(session, ticketNumber, csrfToken)
+            .andExpect(status().isCreated)
+            .andReturn().response.contentAsString
+        return UUID.fromString(objectMapper.readTree(body).path("id").asText())
+    }
+
+    private fun downloadAttachment(
+        session: CustomerSessionFixture,
+        ticketNumber: Long,
+        attachmentId: UUID,
+    ) = mockMvc.perform(
+        get(
+            "/api/v1/customer/requests/{ticketNumber}/attachments/{attachmentId}/download",
+            ticketNumber,
+            attachmentId,
+        ).cookie(session.cookie),
     )
 
     private fun csrf(cookie: Cookie): String {
@@ -469,6 +737,7 @@ class CustomerRequestPortalIntegrationTest {
         val customerId = UUID.randomUUID()
         val accountId = UUID.randomUUID()
         val rawSession = UUID.randomUUID().toString() + "-token"
+        val sessionId = UUID.randomUUID()
         jdbcTemplate.update(
             """
             insert into customers (id, name, email_normalized, email_display, verified_at, created_at, updated_at)
@@ -503,7 +772,7 @@ class CustomerRequestPortalIntegrationTest {
                  expires_at, absolute_expires_at, revoked_at)
             values (?, ?, ?, ?, ?, ?, ?, null)
             """.trimIndent(),
-            UUID.randomUUID(),
+            sessionId,
             accountId,
             sha256(rawSession),
             Timestamp.from(now),
@@ -511,7 +780,7 @@ class CustomerRequestPortalIntegrationTest {
             Timestamp.from(now.plusSeconds(1800)),
             Timestamp.from(now.plusSeconds(3600)),
         )
-        return CustomerSessionFixture(customerId, Cookie(CUSTOMER_COOKIE, rawSession))
+        return CustomerSessionFixture(customerId, sessionId, rawSession, Cookie(CUSTOMER_COOKIE, rawSession))
     }
 
     private fun submitAnonymous(email: String, subject: String): AnonymousRequestFixture {
@@ -621,6 +890,11 @@ class CustomerRequestPortalIntegrationTest {
         ticketNumber,
     )!!
 
+    private fun attachmentObjectCount(): Long = jdbcTemplate.queryForObject(
+        "select count(*) from attachment_objects",
+        Long::class.java,
+    )!!
+
     private fun ticketAuditEventCount(ticketNumber: Long, eventType: String): Long = jdbcTemplate.queryForObject(
         """
         select count(*) from ticket_audit_events event
@@ -663,11 +937,17 @@ class CustomerRequestPortalIntegrationTest {
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray()),
     )
 
-    private data class CustomerSessionFixture(val customerId: UUID, val cookie: Cookie)
+    private data class CustomerSessionFixture(
+        val customerId: UUID,
+        val sessionId: UUID,
+        val rawSession: String,
+        val cookie: Cookie,
+    )
     private data class AnonymousRequestFixture(val ticketNumber: Long, val accessToken: String)
 
     companion object {
         private const val CUSTOMER_COOKIE = "DESKSEED_CUSTOMER_SESSION"
+        private val PDF_BYTES = "%PDF-1.4\nclean authenticated customer attachment".toByteArray()
 
         @Container
         @ServiceConnection
