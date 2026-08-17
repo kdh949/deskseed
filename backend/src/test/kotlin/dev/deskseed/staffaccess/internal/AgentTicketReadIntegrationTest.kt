@@ -289,11 +289,13 @@ class AgentTicketReadIntegrationTest {
                 .session(ownerSession)
                 .header("X-CSRF-TOKEN", csrf(ownerSession))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(savedViewCreateBody("PERSONAL", "내 OPEN", "OPEN")),
+                .content(savedViewCreateBody("PERSONAL", "내 OPEN", "OPEN", "  고객 응대 집중 View  ")),
         )
             .andExpect(status().isCreated)
             .andExpect(header().string("ETag", "\"1\""))
             .andExpect(jsonPath("$.scope").value("PERSONAL"))
+            .andExpect(jsonPath("$.description").value("고객 응대 집중 View"))
+            .andExpect(jsonPath("$.ticketCountAsOf").isEmpty)
             .andExpect(jsonPath("$.definitionVersion").value(1))
             .andReturn().response.contentAsString
         val personalId = UUID.fromString(stringField(personal, "id"))
@@ -303,7 +305,18 @@ class AgentTicketReadIntegrationTest {
             .andExpect(status().isOk)
             .andReturn().response.contentAsString
         assertThat(listed)
-            .contains("\"key\":\"$personalKey\"", "\"ticketCount\":1", "\"ticketCountState\":\"EXACT\"")
+            .contains(
+                "\"key\":\"$personalKey\"",
+                "\"description\":\"고객 응대 집중 View\"",
+                "\"ticketCount\":1",
+                "\"ticketCountState\":\"EXACT\"",
+            )
+        val countBasis = Regex("\\\"ticketCountAsOf\\\":\\\"([^\\\"]+)\\\"")
+            .findAll(listed)
+            .map { match -> Instant.parse(match.groupValues[1]) }
+            .toList()
+        assertThat(countBasis).isNotEmpty
+        assertThat(countBasis.distinct()).hasSize(1)
 
         mockMvc.perform(
             post("/api/v1/agent/views/preview")
@@ -311,11 +324,12 @@ class AgentTicketReadIntegrationTest {
                 .header("X-CSRF-TOKEN", csrf(ownerSession))
                 .header("X-Interaction-Id", UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(savedViewDefinitionBody("미리보기 OPEN", "OPEN")),
+                .content(savedViewDefinitionBody("미리보기 OPEN", "OPEN", "저장하지 않는 설명")),
         )
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.ticketCount").value(1))
+            .andExpect(jsonPath("$.ticketCountAsOf").isNotEmpty)
             .andExpect(jsonPath("$.items[0].ticketNumber").value(3601))
 
         mockMvc.perform(
@@ -357,10 +371,11 @@ class AgentTicketReadIntegrationTest {
                 .session(ownerSession)
                 .header("X-CSRF-TOKEN", csrf(ownerSession))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(savedViewUpdateBody(1, "내 PENDING", "PENDING")),
+                .content(savedViewUpdateBody(1, "내 PENDING", "PENDING", "  새 설명  ")),
         )
             .andExpect(status().isOk)
             .andExpect(header().string("ETag", "\"2\""))
+            .andExpect(jsonPath("$.description").value("새 설명"))
             .andExpect(jsonPath("$.definitionVersion").value(2))
             .andReturn().response.contentAsString
         assertThat(updated).contains("\"name\":\"내 PENDING\"")
@@ -370,10 +385,37 @@ class AgentTicketReadIntegrationTest {
                 .session(ownerSession)
                 .header("X-CSRF-TOKEN", csrf(ownerSession))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(savedViewUpdateBody(1, "오래된 버전", "OPEN")),
+                .content(savedViewUpdateBody(2, "내 PENDING", "PENDING", "설명만 변경")),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"3\""))
+            .andExpect(jsonPath("$.description").value("설명만 변경"))
+            .andExpect(jsonPath("$.definitionVersion").value(3))
+
+        mockMvc.perform(
+            patch("/api/v1/agent/views/{viewKey}", personalKey)
+                .session(ownerSession)
+                .header("X-CSRF-TOKEN", csrf(ownerSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewUpdateBody(2, "오래된 버전", "OPEN", "유실되면 안 되는 초안")),
         )
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.type").value("/problems/saved-view-conflict"))
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select description from saved_ticket_views where id = ?",
+                String::class.java,
+                personalId,
+            ),
+        ).isEqualTo("설명만 변경")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select string_agg(metadata_json, ' ') from admin_security_audit_events where target_id = ?",
+                String::class.java,
+                personalId,
+            ),
+        ).doesNotContain("고객 응대 집중 View", "새 설명", "설명만 변경")
 
         mockMvc.perform(
             post("/api/v1/agent/views/reorder")
@@ -432,8 +474,69 @@ class AgentTicketReadIntegrationTest {
             delete("/api/v1/agent/views/{viewKey}", personalKey)
                 .session(ownerSession)
                 .header("X-CSRF-TOKEN", csrf(ownerSession))
-                .header("If-Match", "\"2\""),
+                .header("If-Match", "\"3\""),
         ).andExpect(status().isNoContent)
+    }
+
+    @Test
+    fun `saved view description defaults to empty and rejects oversized or control characters`() {
+        insertStaff("saved-view-validation@example.com", "Agent password 42", "AGENT", "검증 상담사")
+        val session = login("saved-view-validation@example.com", "Agent password 42")
+        val csrf = csrf(session)
+
+        mockMvc.perform(
+            post("/api/v1/agent/views")
+                .session(session)
+                .header("X-CSRF-TOKEN", csrf)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(savedViewCreateBody("PERSONAL", "기본 설명", "OPEN")),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.description").value(""))
+
+        listOf("x".repeat(501), "잘못된\\n설명").forEach { description ->
+            mockMvc.perform(
+                post("/api/v1/agent/views")
+                    .session(session)
+                    .header("X-CSRF-TOKEN", csrf)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(savedViewCreateBody("PERSONAL", "거부 설명", "OPEN", description)),
+            ).andExpect(status().isBadRequest)
+        }
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from saved_ticket_views where scope = 'PERSONAL'",
+                Long::class.java,
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
+    fun `twenty first visible saved view omits count and count basis`() {
+        insertStaff("saved-view-limit@example.com", "Agent password 42", "AGENT", "보기 제한 상담사")
+        val session = login("saved-view-limit@example.com", "Agent password 42")
+        val csrf = csrf(session)
+
+        repeat(16) { index ->
+            mockMvc.perform(
+                post("/api/v1/agent/views")
+                    .session(session)
+                    .header("X-CSRF-TOKEN", csrf)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(savedViewCreateBody("PERSONAL", "개인 보기 ${index + 1}", "OPEN")),
+            ).andExpect(status().isCreated)
+        }
+
+        mockMvc.perform(get("/api/v1/agent/views").session(session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(21))
+            .andExpect(jsonPath("$[19].ticketCountState").value("EXACT"))
+            .andExpect(jsonPath("$[19].ticketCount").value(0))
+            .andExpect(jsonPath("$[19].ticketCountAsOf").isNotEmpty)
+            .andExpect(jsonPath("$[20].ticketCountState").value("OMITTED_VISIBLE_LIMIT"))
+            .andExpect(jsonPath("$[20].ticketCount").isEmpty)
+            .andExpect(jsonPath("$[20].ticketCountAsOf").isEmpty)
     }
 
     @Test
@@ -655,16 +758,27 @@ class AgentTicketReadIntegrationTest {
         get("/api/v1/agent/csrf").session(session),
     ).andExpect(status().isOk).andReturn().response.contentAsString.let { stringField(it, "token") }
 
-    private fun savedViewCreateBody(scope: String, name: String, status: String): String =
-        """{"scope":"$scope",${savedViewDefinitionBody(name, status).removePrefix("{").removeSuffix("}")}}"""
+    private fun savedViewCreateBody(
+        scope: String,
+        name: String,
+        status: String,
+        description: String? = null,
+    ): String =
+        """{"scope":"$scope",${savedViewDefinitionBody(name, status, description).removePrefix("{").removeSuffix("}")}}"""
 
-    private fun savedViewUpdateBody(expectedVersion: Long, name: String, status: String): String =
-        """{"expectedVersion":$expectedVersion,${savedViewDefinitionBody(name, status).removePrefix("{").removeSuffix("}")}}"""
+    private fun savedViewUpdateBody(
+        expectedVersion: Long,
+        name: String,
+        status: String,
+        description: String? = null,
+    ): String =
+        """{"expectedVersion":$expectedVersion,${savedViewDefinitionBody(name, status, description).removePrefix("{").removeSuffix("}")}}"""
 
-    private fun savedViewDefinitionBody(name: String, status: String): String =
+    private fun savedViewDefinitionBody(name: String, status: String, description: String? = null): String =
         """
         {
           "name":"$name",
+          ${description?.let { "\"description\":\"$it\"," }.orEmpty()}
           "conditions":{"version":1,"all":[{"field":"STATUS","operator":"EQUALS","values":["$status"]}],"any":[]},
           "columns":["TICKET_NUMBER","SUBJECT","STATUS","UPDATED_AT"],
           "sort":"updatedAt:desc,ticketNumber:desc"

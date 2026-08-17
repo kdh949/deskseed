@@ -548,6 +548,7 @@ export interface SavedViewConditions {
 
 export interface SavedViewDefinition {
   name: string
+  description: string
   conditions: SavedViewConditions
   columns: SavedViewColumn[]
   sort: SavedViewSort
@@ -564,6 +565,7 @@ export interface SavedAgentView extends SavedViewDefinition {
   categoryPath: string[]
   ticketCount: number | null
   ticketCountState: 'EXACT' | 'OMITTED_VISIBLE_LIMIT'
+  ticketCountAsOf: string | null
   readScope: 'ALL_TICKETS'
   createdAt: string
   updatedAt: string
@@ -580,6 +582,7 @@ export interface UpdateSavedViewInput extends SavedViewDefinition {
 export interface SavedViewPreview {
   items: AgentTicketSummary[]
   ticketCount: number
+  ticketCountAsOf: string
   sort: SavedViewSort
 }
 

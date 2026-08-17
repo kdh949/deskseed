@@ -85,10 +85,10 @@ internal class JdbcSavedViewStore(
         jdbcTemplate.update(
             """
             insert into saved_ticket_views (
-                id, view_key, scope, owner_staff_id, name, category, conditions_json, columns_json,
+                id, view_key, scope, owner_staff_id, name, description, category, conditions_json, columns_json,
                 sort, sort_position, active, definition_version, created_at, updated_at
             ) values (
-                :id, :key, :scope, :ownerStaffId, :name, :category, cast(:conditionsJson as jsonb),
+                :id, :key, :scope, :ownerStaffId, :name, :description, :category, cast(:conditionsJson as jsonb),
                 cast(:columnsJson as jsonb), :sort, :position, true, 1, :createdAt, :createdAt
             )
             """.trimIndent(),
@@ -98,6 +98,7 @@ internal class JdbcSavedViewStore(
                 "scope" to scope.name,
                 "ownerStaffId" to ownerStaffId,
                 "name" to definition.name.trim(),
+                "description" to definition.description.trim(),
                 "category" to category(scope),
                 "conditionsJson" to objectMapper.writeValueAsString(definition.conditions),
                 "columnsJson" to objectMapper.writeValueAsString(definition.columns),
@@ -112,7 +113,7 @@ internal class JdbcSavedViewStore(
             key = key,
             scope = scope,
             ownerStaffId = ownerStaffId,
-            definition = definition.copy(name = definition.name.trim()),
+            definition = definition.copy(name = definition.name.trim(), description = definition.description.trim()),
             active = true,
             definitionVersion = 1,
             orderVersion = orderVersion,
@@ -132,6 +133,7 @@ internal class JdbcSavedViewStore(
             """
             update saved_ticket_views
             set name = :name,
+                description = :description,
                 conditions_json = cast(:conditionsJson as jsonb),
                 columns_json = cast(:columnsJson as jsonb),
                 sort = :sort,
@@ -143,6 +145,7 @@ internal class JdbcSavedViewStore(
                 "id" to id,
                 "expectedVersion" to expectedVersion,
                 "name" to definition.name.trim(),
+                "description" to definition.description.trim(),
                 "conditionsJson" to objectMapper.writeValueAsString(definition.conditions),
                 "columnsJson" to objectMapper.writeValueAsString(definition.columns),
                 "sort" to definition.sort,
@@ -305,6 +308,7 @@ internal class JdbcSavedViewStore(
         val columns = objectMapper.readValue(result.getString("columns_json"), Array<dev.deskseed.ticketing.SavedViewColumn>::class.java).toList()
         val definition = SavedViewDefinition(
             name = result.getString("name"),
+            description = result.getString("description"),
             conditions = conditions,
             columns = columns,
             sort = result.getString("sort"),
@@ -326,7 +330,7 @@ internal class JdbcSavedViewStore(
     }
 
     private fun viewColumns(alias: String): String = """
-        $alias.id, $alias.view_key, $alias.scope, $alias.owner_staff_id, $alias.name, $alias.category,
+        $alias.id, $alias.view_key, $alias.scope, $alias.owner_staff_id, $alias.name, $alias.description, $alias.category,
         $alias.conditions_json::text as conditions_json, $alias.columns_json::text as columns_json,
         $alias.sort, $alias.active, $alias.definition_version, $alias.created_at, $alias.updated_at,
         coalesce(state.order_version, 1) as order_version

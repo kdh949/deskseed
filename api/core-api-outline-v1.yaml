@@ -4993,6 +4993,10 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+          description: 상담사가 View의 목적과 사용 범위를 기록하는 plain-text 설명입니다. 검색 조건으로 해석하지 않으며 제어문자를 허용하지 않습니다.
         scope:
           $ref: '#/components/schemas/SavedViewScope'
         ownerStaffId:
@@ -5038,6 +5042,12 @@ components:
           enum:
           - EXACT
           - OMITTED_VISIBLE_LIMIT
+        ticketCountAsOf:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: EXACT 건수를 같은 batch에서 평가할 때 서버가 사용한 기준 시각입니다. 건수를 생략한 항목과 create/update 응답에서는 null입니다.
         readScope:
           type: string
           enum:
@@ -5149,6 +5159,10 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+          description: 상담사가 View의 목적과 사용 범위를 기록하는 plain-text 설명입니다. 검색 조건으로 해석하지 않으며 제어문자를 허용하지 않습니다.
         conditions:
           $ref: '#/components/schemas/SavedViewConditions'
         columns:
@@ -5164,6 +5178,7 @@ components:
       x-deskseed-documentation-review: MANUAL
       example:
         name: 우선 처리할 위험 SLA
+        description: 첫 답변 SLA가 임박했거나 위반된 티켓을 우선 확인합니다.
         conditions:
           version: 1
           all:
@@ -5198,6 +5213,10 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+          description: 상담사가 View의 목적과 사용 범위를 기록하는 plain-text 설명입니다. 검색 조건으로 해석하지 않으며 제어문자를 허용하지 않습니다.
         conditions:
           $ref: '#/components/schemas/SavedViewConditions'
         columns:
@@ -5214,6 +5233,7 @@ components:
       example:
         scope: PERSONAL
         name: 내 위험 SLA
+        description: 내가 우선 확인할 위험 SLA 티켓입니다.
         conditions:
           version: 1
           all:
@@ -5247,6 +5267,10 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+          description: 상담사가 View의 목적과 사용 범위를 기록하는 plain-text 설명입니다. 검색 조건으로 해석하지 않으며 제어문자를 허용하지 않습니다.
         conditions:
           $ref: '#/components/schemas/SavedViewConditions'
         columns:
@@ -5263,6 +5287,7 @@ components:
       example:
         expectedVersion: 3
         name: 내 위험 SLA
+        description: SLA 위험 티켓 중 아직 해결되지 않은 요청을 확인합니다.
         conditions:
           version: 1
           all:
@@ -5293,6 +5318,10 @@ components:
           type: integer
           format: int64
           minimum: 0
+        ticketCountAsOf:
+          type: string
+          format: date-time
+          description: preview의 exact 건수를 평가할 때 서버가 사용한 기준 시각입니다.
         sort:
           $ref: '#/components/schemas/SavedViewSort'
     ReorderSavedViews:

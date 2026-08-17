@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn } from 'storybook/test'
+import { ApiError } from '../../api/client'
 import { ViewConfigurationDrawer } from './ViewConfigurationDrawer'
 
 const meta = {
@@ -26,6 +27,7 @@ export const Create: Story = {
     onPreview: fn(async () => ({
       items: [],
       ticketCount: 3,
+      ticketCountAsOf: '2026-08-18T03:04:05Z',
       sort: 'updatedAt:desc,ticketNumber:desc' as const,
     })),
     onSave: fn(async () => undefined),
@@ -35,10 +37,17 @@ export const Create: Story = {
       '보기 이름을 입력하세요.',
     )
     await userEvent.type(canvas.getByLabelText('보기 이름'), '결제 문의')
+    await userEvent.type(canvas.getByLabelText('설명'), '결제 문의 검토용')
     await userEvent.click(canvas.getByRole('button', { name: 'Preview' }))
     await expect(canvas.getByText('Preview: 정확히 3개')).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: '보기 만들기' }))
-    await expect(args.onSave).toHaveBeenCalled()
+    await expect(args.onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        definition: expect.objectContaining({
+          description: '결제 문의 검토용',
+        }),
+      }),
+    )
   },
 }
 
@@ -50,6 +59,7 @@ export const Edit: Story = {
         id: '11111111-1111-4111-8111-111111111111',
         key: 'personal-risk',
         name: '내 위험 SLA',
+        description: '최초 답변 SLA 위험 티켓을 모읍니다.',
         scope: 'PERSONAL',
         ownerStaffId: '22222222-2222-4222-8222-222222222222',
         active: true,
@@ -71,6 +81,7 @@ export const Edit: Story = {
         sort: 'updatedAt:desc,ticketNumber:desc',
         ticketCount: 3,
         ticketCountState: 'EXACT',
+        ticketCountAsOf: '2026-08-18T03:04:05Z',
         readScope: 'ALL_TICKETS',
         createdAt: '2026-08-17T00:00:00Z',
         updatedAt: '2026-08-17T01:00:00Z',
@@ -81,6 +92,7 @@ export const Edit: Story = {
     onPreview: fn(async () => ({
       items: [],
       ticketCount: 3,
+      ticketCountAsOf: '2026-08-18T03:04:05Z',
       sort: 'updatedAt:desc,ticketNumber:desc' as const,
     })),
     onSave: fn(async () => undefined),
@@ -95,8 +107,31 @@ export const Closed: Story = {
     onPreview: fn(async () => ({
       items: [],
       ticketCount: 0,
+      ticketCountAsOf: '2026-08-18T03:04:05Z',
       sort: 'updatedAt:desc,ticketNumber:desc' as const,
     })),
     onSave: fn(async () => undefined),
+  },
+}
+
+export const ConflictRecovery: Story = {
+  args: {
+    ...Edit.args,
+    onReload: fn(async () => undefined),
+    onSave: fn(async () => {
+      throw new ApiError('conflict', 409)
+    }),
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    const description = canvas.getByLabelText('설명')
+    await userEvent.clear(description)
+    await userEvent.type(description, '저장 전 초안')
+    await userEvent.click(canvas.getByRole('button', { name: '변경 저장' }))
+    await expect(canvas.getByText('보기 버전 충돌')).toBeVisible()
+    await expect(description).toHaveValue('저장 전 초안')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '최신 버전 다시 불러오기' }),
+    )
+    await expect(args.onReload).toHaveBeenCalled()
   },
 }

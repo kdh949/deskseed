@@ -65,6 +65,7 @@ type ViewConfigurationDrawerProps = {
   onDelete?: (view: SavedAgentView) => Promise<void>
   onMove?: (direction: 'down' | 'up') => Promise<void> | void
   onPreview: (definition: SavedViewDefinition) => Promise<SavedViewPreview>
+  onReload?: () => Promise<void>
   onSave: (values: SavedViewEditorSave) => Promise<void>
   position?: { index: number; total: number }
   returnFocusRef?: RefObject<HTMLElement | null>
@@ -76,11 +77,13 @@ export function ViewConfigurationDrawer({
   onDelete,
   onMove,
   onPreview,
+  onReload,
   onSave,
   position,
   returnFocusRef,
 }: ViewConfigurationDrawerProps) {
   const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
   const [scope, setScope] =
     useState<Exclude<SavedViewScope, 'SYSTEM'>>('PERSONAL')
   const [all, setAll] = useState<SavedViewCondition[]>([EMPTY_CONDITION])
@@ -92,19 +95,23 @@ export function ViewConfigurationDrawer({
     'FIRST_REPLY_SLA',
   ])
   const [preview, setPreview] = useState<SavedViewPreview | null>(null)
-  const [busy, setBusy] = useState<'delete' | 'preview' | 'save' | null>(null)
+  const [busy, setBusy] = useState<
+    'delete' | 'preview' | 'reload' | 'save' | null
+  >(null)
   const [error, setError] = useState<{
     message: string
     conflict: boolean
   } | null>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const nameId = useId()
+  const descriptionId = useId()
   const editingView = editor?.mode === 'edit' ? editor.view : null
 
   useEffect(() => {
     if (!editor) return
     const saved = editor.mode === 'edit' ? editor.view : null
     setName(saved?.name ?? '')
+    setDescription(saved?.description ?? '')
     setScope(
       saved?.scope === 'SHARED' || saved?.scope === 'PERSONAL'
         ? saved.scope
@@ -131,6 +138,7 @@ export function ViewConfigurationDrawer({
 
   const definition = (): SavedViewDefinition => ({
     name: name.trim(),
+    description: description.trim(),
     conditions: { version: 1, all, any },
     columns,
     sort: 'updatedAt:desc,ticketNumber:desc',
@@ -138,7 +146,7 @@ export function ViewConfigurationDrawer({
   const validationError = validate(definition())
 
   const run = async (
-    kind: 'delete' | 'preview' | 'save',
+    kind: 'delete' | 'preview' | 'reload' | 'save',
     action: () => Promise<void>,
   ) => {
     setBusy(kind)
@@ -200,7 +208,18 @@ export function ViewConfigurationDrawer({
               }
               tone={error.conflict ? 'conflict' : 'danger'}
             >
-              {error.message}
+              <p>{error.message}</p>
+              {error.conflict && onReload ? (
+                <DsButton
+                  disabled={Boolean(busy)}
+                  onClick={() => void run('reload', onReload)}
+                  type="button"
+                >
+                  {busy === 'reload'
+                    ? '불러오는 중…'
+                    : '최신 버전 다시 불러오기'}
+                </DsButton>
+              ) : null}
             </Notification>
           </div>
         ) : null}
@@ -214,6 +233,20 @@ export function ViewConfigurationDrawer({
             onChange={(event) => setName(event.target.value)}
             value={name}
           />
+        </label>
+        <label className="view-configuration-field" htmlFor={descriptionId}>
+          <span>설명</span>
+          <textarea
+            aria-label="설명"
+            id={descriptionId}
+            maxLength={500}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={4}
+            value={description}
+          />
+          <small className="view-configuration-field-hint">
+            {description.length.toLocaleString('ko-KR')} / 500자
+          </small>
         </label>
         <label className="view-configuration-field">
           <span>공유 범위</span>
@@ -229,11 +262,6 @@ export function ViewConfigurationDrawer({
             <option value="SHARED">SHARED · 권한 있는 상담사</option>
           </DsSelect>
         </label>
-        <Notification title="설명 필드는 아직 저장되지 않습니다." tone="info">
-          FROZEN SavedView schema에 description이 없어 이 화면에서 임의 필드를
-          전송하지 않습니다.
-        </Notification>
-
         <ConditionGroup
           conditions={all}
           label="모든 조건 (all)"
@@ -283,8 +311,11 @@ export function ViewConfigurationDrawer({
             title={`Preview: 정확히 ${preview.ticketCount.toLocaleString('ko-KR')}개`}
             tone="success"
           >
-            샘플 {preview.items.length}개 · 서버 권한 predicate와 같은 조건
-            compiler를 사용했습니다.
+            샘플 {preview.items.length}개 ·{' '}
+            <time dateTime={preview.ticketCountAsOf}>
+              {formatCountBasis(preview.ticketCountAsOf)} 기준
+            </time>{' '}
+            · 서버 권한 predicate와 같은 조건 compiler를 사용했습니다.
           </Notification>
         ) : null}
 
@@ -462,10 +493,26 @@ function operatorNeedsNoValues(operator: SavedViewConditionOperator) {
 
 function validate(definition: SavedViewDefinition) {
   if (!definition.name) return '보기 이름을 입력하세요.'
+  if (hasIsoControlCharacters(definition.description))
+    return '설명에는 제어 문자를 입력할 수 없습니다.'
   if (!definition.conditions.all.length && !definition.conditions.any.length)
     return 'all 또는 any 조건을 하나 이상 추가하세요.'
   if (!definition.columns.length) return '표시 컬럼을 하나 이상 선택하세요.'
   return ''
+}
+
+function hasIsoControlCharacters(value: string) {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint <= 31 || (codePoint >= 127 && codePoint <= 159)
+  })
+}
+
+function formatCountBasis(value: string) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
 export function toCreateSavedViewInput(

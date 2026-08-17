@@ -52,6 +52,7 @@ function savedViewResponse(overrides: Record<string, unknown> = {}) {
     id: '11111111-1111-4111-8111-111111111111',
     key: 'pv-01J7SAVEDVIEW001',
     name: '내 위험 SLA',
+    description: '최초 답변 SLA 위험 티켓을 모읍니다.',
     scope: 'PERSONAL',
     ownerStaffId: '22222222-2222-4222-8222-222222222222',
     active: true,
@@ -73,6 +74,7 @@ function savedViewResponse(overrides: Record<string, unknown> = {}) {
     sort: 'updatedAt:desc,ticketNumber:desc',
     ticketCount: 3,
     ticketCountState: 'EXACT',
+    ticketCountAsOf: '2026-08-18T03:04:05Z',
     readScope: 'ALL_TICKETS',
     createdAt: '2026-08-16T00:00:00Z',
     updatedAt: '2026-08-16T00:00:00Z',
@@ -956,7 +958,12 @@ describe('agent ticket read API client', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(listAgentViews()).resolves.toMatchObject([
-      { key: 'my-open', readScope: 'ALL_TICKETS' },
+      {
+        key: 'my-open',
+        description: '',
+        ticketCountAsOf: null,
+        readScope: 'ALL_TICKETS',
+      },
     ])
     await listTicketsInView('pending', {
       status: 'PENDING',
@@ -980,6 +987,7 @@ describe('agent ticket read API client', () => {
   it('uses only the versioned allowlisted saved-view contract for CRUD, preview, and reorder', async () => {
     const definition = {
       name: '내 위험 SLA',
+      description: '최초 답변 SLA 위험 티켓을 모읍니다.',
       conditions: {
         version: 1 as const,
         all: [
@@ -1015,6 +1023,7 @@ describe('agent ticket read API client', () => {
             JSON.stringify({
               items: [],
               ticketCount: 3,
+              ticketCountAsOf: '2026-08-18T03:04:05Z',
               sort: 'updatedAt:desc,ticketNumber:desc',
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -1066,6 +1075,7 @@ describe('agent ticket read API client', () => {
     ).resolves.toEqual({
       items: [],
       ticketCount: 3,
+      ticketCountAsOf: '2026-08-18T03:04:05Z',
       sort: 'updatedAt:desc,ticketNumber:desc',
     })
     await expect(
@@ -1101,6 +1111,27 @@ describe('agent ticket read API client', () => {
       ([, init]) => init?.method === 'DELETE',
     )
     expect(deleteRequest?.[1]?.headers).toMatchObject({ 'If-Match': '"2"' })
+  })
+
+  it('rejects malformed saved-view count basis timestamps', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify([
+              savedViewResponse({ ticketCountAsOf: 'not-a-timestamp' }),
+            ]),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        ),
+    )
+
+    await expect(listAgentViews()).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 200,
+    })
   })
 
   it('sends navigation metadata and decodes an on-hold staff detail projection', async () => {

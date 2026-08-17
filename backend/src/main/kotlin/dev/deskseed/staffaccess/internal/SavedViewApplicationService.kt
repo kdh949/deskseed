@@ -34,6 +34,7 @@ internal data class SavedViewListItem(
     val view: SavedTicketView,
     val ticketCount: Long?,
     val ticketCountState: String,
+    val ticketCountAsOf: Instant?,
 )
 
 internal data class SavedViewTicketPage(
@@ -46,6 +47,7 @@ internal data class SavedViewPreview(
     val items: List<StaffTicketSummary>,
     val ticketCount: Long,
     val sort: String,
+    val ticketCountAsOf: Instant,
 )
 
 @Service
@@ -62,18 +64,23 @@ internal class SavedViewApplicationService(
     fun list(principal: StaffPrincipal): List<SavedViewListItem> {
         requireActive(principal)
         val views = savedViewStore.listVisible(principal.id)
-        val counts = ticketStore.countSavedViews(
+        val countBatch = ticketStore.countSavedViews(
             principal.id,
             views.take(SavedViewDefinitionRules.MAX_VISIBLE_COUNTED_VIEWS),
         )
         return views.mapIndexed { index, view ->
             SavedViewListItem(
                 view = view,
-                ticketCount = counts[view.id],
+                ticketCount = countBatch?.counts?.get(view.id),
                 ticketCountState = if (index < SavedViewDefinitionRules.MAX_VISIBLE_COUNTED_VIEWS) {
                     "EXACT"
                 } else {
                     "OMITTED_VISIBLE_LIMIT"
+                },
+                ticketCountAsOf = if (index < SavedViewDefinitionRules.MAX_VISIBLE_COUNTED_VIEWS) {
+                    checkNotNull(countBatch).asOf
+                } else {
+                    null
                 },
             )
         }
@@ -189,9 +196,10 @@ internal class SavedViewApplicationService(
             cursor = null,
             limit = PREVIEW_LIMIT,
         )
-        val count = ticketStore.countSavedViews(principal.id, listOf(virtualView))[previewId] ?: 0L
+        val countBatch = checkNotNull(ticketStore.countSavedViews(principal.id, listOf(virtualView)))
+        val count = countBatch.counts[previewId] ?: 0L
         appendExecutionAudit(principal, previewId, interactionId, context, now)
-        return SavedViewPreview(rows, count, definition.sort)
+        return SavedViewPreview(rows, count, definition.sort, countBatch.asOf)
     }
 
     @Transactional
