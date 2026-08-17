@@ -28,6 +28,7 @@ internal class JpaTicketingFacade(
     private val publicTicketQueryRepository: PublicTicketQueryRepository,
     private val attachmentLinker: TicketAttachmentLinker,
     private val ticketNumberGenerator: TicketNumberGenerator,
+    private val ticketIntegrationEvents: TicketIntegrationEventPublisher,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
 ) : TicketingFacade {
@@ -149,6 +150,20 @@ internal class JpaTicketingFacade(
                     )
                 }
             },
+        )
+
+        ticketIntegrationEvents.ticketCreated(
+            ticketId = ticket.id,
+            ticketNumber = ticket.ticketNumber,
+            kind = ticket.kind,
+            priority = ticket.priority,
+            channel = ticket.channel,
+            status = ticket.status,
+            firstCommentId = ticket.firstComment.id,
+            firstCommentVisibility = ticket.firstComment.visibility,
+            actor = command.actor,
+            context = command.context,
+            occurredAt = now,
         )
 
         eventPublisher.publishEvent(

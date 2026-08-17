@@ -16,7 +16,7 @@ c6d33dc1ac04cabe22f077c9aed80d04a461966f5a8e3ff2d1f396400d89a63d          80  ap
 320bbfad1795a69006b7a347e98dae7d1b55175dd3d77c519850a8e76d12db92          82  api/core-api-fragments/70-analytics.yaml
 318078c24d6dcaaac11d9f73dfcae91930c3773a938c8dfe2395f40030f3a6e9      263453  api/core-api-outline-v1.yaml
 3fed2202173278118ddc6eb8e5d8ada47772b752f0d36a93e5b18d6301e538e8       13735  api/customer-identity-api-v1.yaml
-5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
+4d5d1e754da5cdd1e6600bb2dbcb654d7cb65e8699a53daadedb8a6fb19212a4        2315  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
 aa62e24c2ea979697aa8f378ec6f9d250902c26a7b71a51c67282e81a7a2aa5f        9399  api/openapi-v1.yaml
 217e6e5440ee29cd471ab9b3ff6551c9160765853b7fc1d59a48b92fc3fdb3d7       17440  api/platform-api-outline-v1.yaml
@@ -127,7 +127,7 @@ eb8fd5cb2d295e6e988b35fe88ad39a2f475b9e3357f7014556a3901eba656a9        2326  do
 d871c58a59556300b186c0422e8c771aa863b10f4061457c2f29a70e4579a604        2463  docs/adr/0040-additive-extension-foundation.md
 3f992b30c1d71ad638898428b2e9c6dc6edeca7ac31fa03bf702d6e0decb9136        5827  docs/evidence/business-schedule-admin.md
 1862e8c41d4bb42c091e1fd7eed206e31c4d884b05ccff3f37d7c49a42fd71fe        7161  docs/evidence/customer-my-requests-portal.md
-86b6604697ad85a943a3e16bd64da6024751b5d9d2e361fd1a4c0aafe7bbef2e        2328  docs/evidence/goal-foundation-progress.md
+a13e88977da4ab84a56b126b82f708cbe63e08d0fc26ca2ca46ee524c9da42f9        2661  docs/evidence/goal-foundation-progress.md
 f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  docs/evidence/outbound-mail-mailpit-foundation.md
 36d43d6d66f816434f4d3701dda086aa9cc830edc37aba91936501e54f919e90        4966  docs/evidence/p0/BE-P0-CUSTOMER-ACCESS.md
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md
@@ -291,6 +291,7 @@ f421d310db5313a028de26e7d84c5c30c994e2e18df33923778d0be6438befa1        8003  ta
 6a5ac042b83f63a187043eba51aeacf77ceb4021e2009d1076bd1e4cb041c405        8422  tasks/briefs/external-reference.md
 ac362594888ac24f3e3925f9a739495de6ee02494f48157c1ad4e485936d2274        6458  tasks/briefs/frontend-system-hardening.md
 24b8c9193002c4cab9803841d41d7ec849a764fc9ca9ec76a4918c2cae1545d0        2551  tasks/briefs/goal-foundation-contract-kernel.md
+48d0a537f97fa763b7cd0649f5efd6331b8ffe2e116db100785734e8d51716f7        3106  tasks/briefs/goal-foundation-outbox.md
 a440d49ef2a6885f45e727e954ab2878d13319586065651adb8512d1728a144e        4971  tasks/briefs/integration-client-management.md
 7928256db634523d0ae40396641fdc934e61edd7b0eb8e1948bc35aadf29fccd        6645  tasks/briefs/issue-24-review-remediation.md
 55a7432c4b6d311344381db93ab93c643b2bfb8e72827af8a4ccf09793da4967       15791  tasks/briefs/p1-authenticated-customer-attachments.md

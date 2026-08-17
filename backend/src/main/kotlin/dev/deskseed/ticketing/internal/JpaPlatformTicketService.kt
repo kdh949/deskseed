@@ -1,6 +1,7 @@
 package dev.deskseed.ticketing.internal
 
 import dev.deskseed.foundation.ActorType
+import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.AddPlatformInternalCommentCommand
 import dev.deskseed.ticketing.CommentAuthorType
@@ -44,6 +45,7 @@ internal class JpaPlatformTicketService(
     private val assignmentPolicy: TicketAssignmentPolicy,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
+    private val ticketIntegrationEvents: TicketIntegrationEventPublisher,
     private val eventPublisher: ApplicationEventPublisher,
 ) : PlatformTicketService {
     @Transactional(noRollbackFor = [PlatformTicketInvalidException::class])
@@ -134,6 +136,19 @@ internal class JpaPlatformTicketService(
                     ),
                 ),
             ),
+        )
+        ticketIntegrationEvents.ticketCreated(
+            ticketId = ticket.id,
+            ticketNumber = ticket.ticketNumber,
+            kind = ticket.kind,
+            priority = ticket.priority,
+            channel = ticket.channel,
+            status = ticket.status,
+            firstCommentId = commentId,
+            firstCommentVisibility = visibility,
+            actor = ActorRef(ActorType.INTEGRATION_CLIENT, command.actor.id),
+            context = command.context,
+            occurredAt = now,
         )
         eventPublisher.publishEvent(
             TicketSubmitted(
@@ -239,6 +254,26 @@ internal class JpaPlatformTicketService(
             now,
             events,
         )
+        val actor = ActorRef(ActorType.INTEGRATION_CLIENT, command.actor.id)
+        ticketIntegrationEvents.ticketUpdated(
+            ticketId = saved.id,
+            ticketNumber = saved.ticketNumber,
+            kind = saved.kind,
+            changedFields = command.changedFields.map(TicketField::externalName).toSet(),
+            actor = actor,
+            context = command.context,
+            occurredAt = now,
+        )
+        ticketIntegrationEvents.statusChanged(
+            ticketId = saved.id,
+            ticketNumber = saved.ticketNumber,
+            kind = saved.kind,
+            previousStatus = oldStatus,
+            currentStatus = saved.status,
+            actor = actor,
+            context = command.context,
+            occurredAt = now,
+        )
         saved.toPlatformView()
     }
 
@@ -282,6 +317,24 @@ internal class JpaPlatformTicketService(
                         ),
                     ),
                 ),
+            )
+            ticketIntegrationEvents.ticketUpdated(
+                ticketId = saved.id,
+                ticketNumber = saved.ticketNumber,
+                kind = saved.kind,
+                changedFields = setOf("comments"),
+                actor = ActorRef(ActorType.INTEGRATION_CLIENT, command.actor.id),
+                context = command.context,
+                occurredAt = now,
+            )
+            ticketIntegrationEvents.commentCreated(
+                ticketId = saved.id,
+                ticketNumber = saved.ticketNumber,
+                commentId = comment.id,
+                visibility = comment.visibility,
+                actor = ActorRef(ActorType.INTEGRATION_CLIENT, command.actor.id),
+                context = command.context,
+                occurredAt = now,
             )
             PlatformInternalCommentView(
                 comment.id,

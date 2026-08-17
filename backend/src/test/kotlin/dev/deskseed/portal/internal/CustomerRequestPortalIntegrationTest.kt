@@ -63,6 +63,7 @@ class CustomerRequestPortalIntegrationTest {
                 outbound_mail_delivery_events,
                 outbound_mail_attempts,
                 outbound_mail_intents,
+                domain_event_outbox,
                 customer_sessions,
                 customer_magic_link_request_limits,
                 customer_magic_link_tokens,
@@ -80,6 +81,26 @@ class CustomerRequestPortalIntegrationTest {
         jdbcTemplate.update(
             "update system_settings set customer_access_mode = 'ANONYMOUS_ALLOWED', version = 0, updated_at = now() where id = 1",
         )
+    }
+
+    @Test
+    fun `public ticket submission commits metadata-only integration intents with the ticket`() {
+        val submitted = submitAnonymous("outbox-event@example.com", "Outbox integration event")
+
+        val events = jdbcTemplate.query(
+            """
+            select event_type, visibility, data_json::text
+            from domain_event_outbox
+            where subject = concat('ticket:', (select id::text from tickets where ticket_number = ?))
+            order by subject_sequence
+            """.trimIndent(),
+            { row, _ -> Triple(row.getString(1), row.getString(2), row.getString(3)) },
+            submitted.ticketNumber,
+        )
+
+        assertThat(events.map { it.first }).containsExactly("ticket.created", "ticket.comment.created")
+        assertThat(events.map { it.second }).containsOnly("PUBLIC")
+        assertThat(events.map { it.third }.joinToString()).doesNotContain("최초 공개 문의입니다.")
     }
 
     @Test
