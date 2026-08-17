@@ -6,7 +6,7 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 2237c4385694db59ce55172dedec325ca31d8560011946544419827fa3f9994c        6279  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
-57be5b4989ce012a76741af66632a62ee629b85dff60dbb98c6e32b67699864b      257121  api/core-api-outline-v1.yaml
+a60acd7fc530183743246b062cee9d8251b42fa535e772f1508dccc03a7cf5ba      261634  api/core-api-outline-v1.yaml
 3fed2202173278118ddc6eb8e5d8ada47772b752f0d36a93e5b18d6301e538e8       13735  api/customer-identity-api-v1.yaml
 5c920a185fb437e0cf4845839b08ee9a13af14586111db5199878c740a06aaa3        1369  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -47,7 +47,7 @@ e8a16860e8ba939b282edd70320ea51e113a4ef6cc9176f45aceae3d915a3cb4        5982  do
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 1cb5de486728eb8740a92b7abf6bbfb082c3f5bc28604708d0ca8746dccc5ed3        8603  docs/25-implementation-decision-register.md
-1b5d4520c101369d505e171658888746c053ddfccada98e9d9a9244eba73f2e6       26278  docs/26-requirement-traceability.md
+8c0cfde6895fd0322e3ba86cdb86bb42d726560937c8a15391a37cdf6cfb348b       26454  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -76,7 +76,7 @@ bc5279f7b27c99f6ab0508d4475409f0c7a4a58c0508cfd528923cf404f268c2       10301  do
 4227ab13e8cdc20368d59719a5ea468095039730b8fedb038b89b2cfd44d07ff       11664  docs/52-admin-settings-catalog.md
 c19c074d3a32d0986e86c27ec8bcbfbc3f32a2ee536746226f8d33dbf9fb0402        6241  docs/53-accepted-decisions-2026-08-10.md
 1dd6d96b7d15e1bc298989082b04d38fd7d82a80279b6b31d0bb26af3c8cb22b        1864  docs/54-next-decision-gates.md
-370866f958fd734cf28b7368576e15c83921e4f37925f1485922c066c5e712ee       11681  docs/55-frontend-capability-recomposition-matrix.md
+c51a8fd71fcea0fe1ac17a52f9231ebadff3073f353c23fd821870f9c237359a       12295  docs/55-frontend-capability-recomposition-matrix.md
 027301f0e5da1824d14551ad602c7d3620c1e1f8b8067bc3def50d009615d144        1222  docs/adr/0001-kotlin-spring.md
 a60752cda4485dd1bf13168c30e3d337ad94eee6d262ce94e49ef01cfc09bcde        1189  docs/adr/0002-modular-monolith.md
 04ce88fcb2ab9f9f9337fee7d34fb727552475916253943643b481bb099f2792         899  docs/adr/0003-first-comment-no-description.md
