@@ -47,13 +47,15 @@
 - Frontend construction of external URLs or backend fetch of external systems.
 - P0 screen redesign.
 - Saved-view description persistence: the FROZEN `SavedViewDefinition`, `CreateSavedView`, and `UpdateSavedView` schemas have no description property. Adding it requires a separately reviewed contract/backend slice; this UI must not send an undocumented field.
+- Saved-view count basis timestamp: the FROZEN `SavedViewCount` projection exposes `count` but no counted-at/basis timestamp, so the UI can label the server count but cannot display an authoritative basis time.
+- Authenticated customer follow-up attachments: the FROZEN contract exposes a request-token upload/download surface and authenticated comment `attachmentIds`, but no authenticated-customer attachment upload/download operations. Initial customer intake and request-token follow-up attachments are implemented; the authenticated follow-up UI stays text-only until that contract is frozen.
 
 ## Invariants and failure semantics
 
 - PUBLIC/INTERNAL boundaries remain server projections; customer UI never renders INTERNAL attachments.
 - Bulk contains 1-100 explicitly selected unique ticket numbers, one expected version and stable command ID per item; transfer always requires a reason.
 - CLEAN attachment handles alone can be submitted; pending/rejected uploads block comment/request submission.
-- External links use only `safeUrl` returned by the backend and open with `noopener,noreferrer`.
+- External links use only `safeDeepLink` returned by the backend and open with `noopener,noreferrer`.
 - Saved-view update/delete uses the current definition version; conflicts preserve the local draft and offer reload/retry.
 - Polling stops at READY, FAILED, EXPIRED, or unmount.
 - Ordinary URL, analytics, and logs never receive a raw ticket search query.
