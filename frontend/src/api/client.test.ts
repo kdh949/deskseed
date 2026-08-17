@@ -934,8 +934,9 @@ describe('agent ticket read API client', () => {
               },
               columns: ['TICKET_NUMBER', 'SUBJECT', 'STATUS'],
               sort: 'updatedAt:desc,ticketNumber:desc',
-              ticketCount: null,
+              ticketCount: 0,
               ticketCountState: 'EXACT',
+              ticketCountAsOf: '2026-08-18T03:04:05Z',
               readScope: 'ALL_TICKETS',
               createdAt: '2026-08-10T00:00:00Z',
               updatedAt: '2026-08-10T00:00:00Z',
@@ -961,7 +962,7 @@ describe('agent ticket read API client', () => {
       {
         key: 'my-open',
         description: '',
-        ticketCountAsOf: null,
+        ticketCountAsOf: '2026-08-18T03:04:05Z',
         readScope: 'ALL_TICKETS',
       },
     ])
@@ -1133,6 +1134,51 @@ describe('agent ticket read API client', () => {
       status: 200,
     })
   })
+
+  it.each([
+    [
+      'EXACT without ticketCount',
+      { ticketCountState: 'EXACT', ticketCount: null },
+    ],
+    [
+      'EXACT without ticketCountAsOf',
+      { ticketCountState: 'EXACT', ticketCountAsOf: null },
+    ],
+    [
+      'OMITTED_VISIBLE_LIMIT with ticketCount',
+      {
+        ticketCountState: 'OMITTED_VISIBLE_LIMIT',
+        ticketCount: 3,
+        ticketCountAsOf: null,
+      },
+    ],
+    [
+      'OMITTED_VISIBLE_LIMIT with ticketCountAsOf',
+      {
+        ticketCountState: 'OMITTED_VISIBLE_LIMIT',
+        ticketCount: null,
+        ticketCountAsOf: '2026-08-18T03:04:05Z',
+      },
+    ],
+  ])(
+    'rejects inconsistent saved-view count metadata: %s',
+    async (_, overrides) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify([savedViewResponse(overrides)]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+      )
+
+      await expect(listAgentViews()).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 200,
+      })
+    },
+  )
 
   it('sends navigation metadata and decodes an on-hold staff detail projection', async () => {
     const fetchMock = vi.fn().mockResolvedValue(

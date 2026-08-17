@@ -34,6 +34,8 @@ const views = [
     ownerStaffId: null,
     categoryPath: ['Views'],
     ticketCount: null,
+    ticketCountState: 'OMITTED_VISIBLE_LIMIT',
+    ticketCountAsOf: null,
   },
   {
     ...viewContract,
@@ -44,6 +46,8 @@ const views = [
     ownerStaffId: null,
     categoryPath: ['Views'],
     ticketCount: null,
+    ticketCountState: 'OMITTED_VISIBLE_LIMIT',
+    ticketCountAsOf: null,
   },
   {
     ...viewContract,
