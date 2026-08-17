@@ -1,5 +1,6 @@
 phase,category,object_name,bytes,pretty_size,index_scans
 before,candidate_index,audit_activity_projection_actor_cursor_idx,0,0 bytes,0
+before,candidate_index,ticket_search_documents_staff_trgm_idx,6832128,6672 kB,0
 before,candidate_index,tickets_assignee_status_cursor_idx,0,0 bytes,0
 before,table_heap,access_audit_events,1843200,1800 kB,
 before,table_heap,admin_security_audit_events,311296,304 kB,
@@ -8,12 +9,14 @@ before,table_heap,customers,188416,184 kB,
 before,table_heap,ticket_audit_events,1343488,1312 kB,
 before,table_heap,ticket_audits,2211840,2160 kB,
 before,table_heap,ticket_comments,2981888,2912 kB,
+before,table_heap,ticket_search_documents,5169152,5048 kB,
 before,table_heap,tickets,1933312,1888 kB,
 before,table_indexes,access_audit_events,2113536,2064 kB,
 before,table_indexes,admin_security_audit_events,507904,496 kB,
 before,table_indexes,audit_activity_projection,12263424,12 MB,
-before,table_indexes,customers,188416,184 kB,
+before,table_indexes,customers,2056192,2008 kB,
 before,table_indexes,ticket_audit_events,983040,960 kB,
-before,table_indexes,ticket_audits,2957312,2888 kB,
+before,table_indexes,ticket_audits,2965504,2896 kB,
 before,table_indexes,ticket_comments,2801664,2736 kB,
-before,table_indexes,tickets,4169728,4072 kB,
+before,table_indexes,ticket_search_documents,7503872,7328 kB,
+before,table_indexes,tickets,4784128,4672 kB,

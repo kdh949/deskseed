@@ -11,8 +11,10 @@ The following narrow P1 slices are implemented without changing the broader stag
 - V30 seeds five read-only SYSTEM definitions and stores versioned PERSONAL/SHARED definitions. The P1 AST allowlists status, priority, group, assignee/current actor, First Reply SLA state, ticket kind, and bounded updated-age predicates. It rejects tags, raw SQL, SpEL, JavaScript, and scripts.
 - View rows, preview, and counts share the condition compiler and SQL authorization predicate. The first 20 visible views receive exact counts with one parameterized `UNION ALL` database round-trip; queue rows remain authoritative.
 - `searchAgentWorkspace` is PostgreSQL-first with SQL-side authorization, an opaque query/filter/sort/snapshot-bound cursor, score plus ticket-number tie breaking, exact count, SLA-state filtering, and protected query/audit handling.
-- Tags, custom fields, forms, macros, and any separate count/search projection remain out of this slice. In particular, `REQ-CFG-001` stays `BLUEPRINT_READY` because P1 deliberately excludes tag conditions.
-- The committed 1M evidence records the current PostgreSQL plan and latency rather than introducing a cache or external search engine. A future projection needs a separate measured decision.
+- V35 adds a versioned staff-only search document with distinct PUBLIC/INTERNAL comment segments, a `pg_trgm` GIN index, and same-transaction refresh for canonical searchable fields. Exact ticket-number rank and literal substring behavior are unchanged.
+- Canonical writes take a shared transaction advisory lock while `rebuild_ticket_search_documents()` takes the exclusive form. A committed write therefore has zero projection lag, and an atomic rebuild cannot overwrite a concurrent refresh. Operators invoke `scripts/rebuild-ticket-search-documents.sql`; no runtime HTTP rebuild endpoint is exposed.
+- Tags, custom fields, forms, and macros remain out of this slice. In particular, `REQ-CFG-001` stays `BLUEPRINT_READY` because P1 deliberately excludes tag conditions.
+- The committed 1M evidence records both the former full-scan baseline and the V35 projection result. PostgreSQL remains the only search store until a measured relevance, concurrency, size, or latency limit justifies an external engine.
 
 ## 1. Saved Views
 
@@ -232,6 +234,8 @@ Ticket/comment audit facts
 ```
 
 The projection may denormalize authorized searchable text but must preserve visibility classes so customer/staff/internal queries cannot mix.
+
+V35 uses one `ticket_search_documents` row with lower-cased field segments and separate `public_comment_text` and `internal_comment_text`. Its generated `staff_document` combines both only for the staff endpoint. There is no customer ticket-search consumer of this table. Primary-row delete cascades and comment refresh remove retained text; backup deletion follows the existing retention policy rather than claiming immediate physical erasure.
 
 Possible separation:
 

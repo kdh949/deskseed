@@ -10,6 +10,10 @@ from (
            (select count(*) from tickets),
            :ticket_count::bigint
     union all
+    select 'ticket_search_documents',
+           (select count(*) from ticket_search_documents),
+           :ticket_count::bigint
+    union all
     select 'ticket_comments',
            (select count(*) from ticket_comments),
            :ticket_count::bigint * :comments_per_ticket::bigint

@@ -125,6 +125,14 @@ select
 from generate_series(1, :customer_count) as fixture(sequence);
 
 \echo FIXTURE_TICKETS
+-- The deterministic fixture is a bulk load, not an ingestion benchmark. Keep
+-- canonical constraints active, pause only the per-row search projection
+-- triggers, and perform one transactional rebuild after comments are loaded.
+alter table tickets disable trigger tickets_search_document_inserted;
+alter table tickets disable trigger tickets_search_document_changed;
+alter table ticket_comments disable trigger ticket_comments_search_document_inserted;
+alter table ticket_comments disable trigger ticket_comments_search_document_changed;
+
 insert into tickets (
     id, ticket_number, requester_id, kind, subject, status, priority,
     group_id, assignee_id, channel, version, created_at, updated_at, solved_at
@@ -226,6 +234,13 @@ select
         + (comment_sequence * interval '1 millisecond')
 from generate_series(1, :ticket_count) as tickets(ticket_sequence)
 cross join generate_series(1, :comments_per_ticket) as comments(comment_sequence);
+
+select rebuild_ticket_search_documents();
+
+alter table ticket_comments enable trigger ticket_comments_search_document_changed;
+alter table ticket_comments enable trigger ticket_comments_search_document_inserted;
+alter table tickets enable trigger tickets_search_document_changed;
+alter table tickets enable trigger tickets_search_document_inserted;
 
 -- Canonical rows are loaded with all integrity constraints active. Only the five
 -- per-row projection refresh triggers are paused; one canonical rebuild follows.

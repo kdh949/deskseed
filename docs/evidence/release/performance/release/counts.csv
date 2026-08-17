@@ -10,4 +10,5 @@ ticket_audit_events,1000000,1000000,t
 ticket_audits,1000000,1000000,t
 ticket_comments,2000000,2000000,t
 ticket_relations,10000,10000,t
+ticket_search_documents,1000000,1000000,t
 tickets,1000000,1000000,t

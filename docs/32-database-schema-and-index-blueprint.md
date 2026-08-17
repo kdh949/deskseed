@@ -191,6 +191,31 @@ created_at
 - MVP comment immutable.
 - body full-text index는 검색 단계에서 결정.
 
+### ticket_search_documents
+
+V35의 staff-only PostgreSQL search projection이다.
+
+```text
+ticket_id PK/FK -> tickets on delete cascade
+document_version = 1
+ticket_number
+subject_text
+requester_name_text
+requester_email_text
+group_name_text
+assignee_name_text
+public_comment_text
+internal_comment_text
+staff_document generated
+refreshed_at
+```
+
+- `public_comment_text`와 `internal_comment_text`를 분리하고 staff endpoint만 generated `staff_document`를 조회한다.
+- `staff_document gin_trgm_ops`는 기존 literal substring 의미를 유지한다. `%`, `_`, `\`는 application에서 literal로 escape한다.
+- ticket/comment/requester/group/assignee의 검색 필드 변경은 canonical transaction 안에서 projection도 갱신한다.
+- refresh는 shared advisory transaction lock, rebuild는 같은 key의 exclusive lock을 사용한다. PostgreSQL row가 source of truth이고 projection은 `rebuild_ticket_search_documents()`로 재생성 가능하다.
+- 검색 원문, fingerprint, ciphertext, audit metadata는 이 table에 저장하지 않는다.
+
 ### ticket_relations
 
 ```text
