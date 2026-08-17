@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.PutMapping
 import tools.jackson.databind.JsonNode
 import java.net.URI
 import java.util.UUID
@@ -171,6 +172,24 @@ internal class AdminKnowledgeController(
             action = action.toLifecycleAction(),
             expectedVersion = parseVersion(ifMatch),
             actor = request.actor(principal, expectedActor),
+        )
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
+    }
+
+    @PutMapping("/articles/{articleId}/audience")
+    fun replaceAudience(
+        @PathVariable articleId: UUID,
+        @RequestHeader("If-Match") ifMatch: String,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @Valid @RequestBody body: KnowledgeAudienceRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeArticleView> {
+        val result = administration.replaceAudience(
+            articleId,
+            body.toAudience(),
+            parseVersion(ifMatch),
+            request.actor(principal, expectedActor),
         )
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
     }

@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
@@ -138,6 +139,19 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.currentPublishedRevision.revisionNumber").value(1))
             .andExpect(jsonPath("$.version").value(2))
 
+        mockMvc.perform(
+            put("/api/v1/admin/knowledge/articles/{articleId}/audience", articleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"2\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"type":"STAFF"}"""),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.audience.type").value("STAFF"))
+            .andExpect(jsonPath("$.audienceVersion").value(2))
+            .andExpect(jsonPath("$.version").value(3))
+
         assertThat(
             jdbc.queryForObject(
                 "select count(*) from knowledge_article_revisions where article_id = ? and revision_number = 1",
@@ -155,6 +169,7 @@ class AdminKnowledgeIntegrationTest {
             "KNOWLEDGE_ARTICLE_DRAFT_CREATED",
             "KNOWLEDGE_ARTICLE_LIFECYCLE_CHANGED",
             "KNOWLEDGE_ARTICLE_LIFECYCLE_CHANGED",
+            "KNOWLEDGE_ARTICLE_AUDIENCE_REPLACED",
         )
         assertThat(
             jdbc.queryForList(

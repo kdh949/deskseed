@@ -128,7 +128,7 @@ d871c58a59556300b186c0422e8c771aa863b10f4061457c2f29a70e4579a604        2463  do
 3f992b30c1d71ad638898428b2e9c6dc6edeca7ac31fa03bf702d6e0decb9136        5827  docs/evidence/business-schedule-admin.md
 1862e8c41d4bb42c091e1fd7eed206e31c4d884b05ccff3f37d7c49a42fd71fe        7161  docs/evidence/customer-my-requests-portal.md
 a138e5c6ccd889cdd5dcc87b88032b97d02efa1006ca202c52cf818bce3643d7        3115  docs/evidence/goal-foundation-progress.md
-e6203a70f36df491aa6a3d58ebacf88227b650924a5b33ffb5a4a32779c5b9f8        2297  docs/evidence/goal-knowledge-base-progress.md
+cf400a2db29dd32ebd20d0709419369bb5dec36b9662becfd11586dd099227e7        2348  docs/evidence/goal-knowledge-base-progress.md
 f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  docs/evidence/outbound-mail-mailpit-foundation.md
 36d43d6d66f816434f4d3701dda086aa9cc830edc37aba91936501e54f919e90        4966  docs/evidence/p0/BE-P0-CUSTOMER-ACCESS.md
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md

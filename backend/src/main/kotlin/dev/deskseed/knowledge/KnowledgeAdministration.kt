@@ -133,6 +133,13 @@ interface KnowledgeAdministration {
         expectedVersion: Long,
         actor: KnowledgeAdminActor,
     ): KnowledgeArticleView
+
+    fun replaceAudience(
+        articleId: UUID,
+        audience: KnowledgeAudience,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleView
 }
 
 class KnowledgeNotFoundException(val code: String) : RuntimeException()

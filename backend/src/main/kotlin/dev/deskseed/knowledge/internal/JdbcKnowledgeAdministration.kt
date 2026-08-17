@@ -448,6 +448,55 @@ internal class JdbcKnowledgeAdministration(
         return article(articleId)
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun replaceAudience(
+        articleId: UUID,
+        audience: KnowledgeAudience,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleView {
+        val root = lockedArticle(articleId)
+        if (root.version != expectedVersion) throw KnowledgePreconditionFailedException(root.version)
+        requireAudienceGroupsActive(audience)
+        val now = Instant.now(clock)
+        jdbc.update("delete from knowledge_article_audience_groups where article_id = ?", articleId)
+        audience.groupIds.sortedBy(UUID::toString).forEach { groupId ->
+            jdbc.update(
+                "insert into knowledge_article_audience_groups (article_id, group_id) values (?, ?)",
+                articleId,
+                groupId,
+            )
+        }
+        jdbc.update(
+            """
+            update knowledge_articles
+               set audience_type = ?, audience_version = audience_version + 1,
+                   version = version + 1, updated_at = ?
+             where id = ? and version = ?
+            """.trimIndent(),
+            audience.type.name,
+            Timestamp.from(now),
+            articleId,
+            expectedVersion,
+        ).also { changed -> if (changed != 1) throw KnowledgePreconditionFailedException(root.version) }
+        audit(
+            "KNOWLEDGE_ARTICLE_AUDIENCE_REPLACED",
+            actor,
+            "KNOWLEDGE_ARTICLE",
+            articleId,
+            mapOf("audience" to audience.type.name, "groupCount" to audience.groupIds.size.toString()),
+        )
+        publish(
+            "knowledge.article.audience-replaced",
+            "knowledge-article:$articleId",
+            actor,
+            mapOf("articleId" to articleId.toString(), "audience" to audience.type.name),
+            now,
+        )
+        return article(articleId)
+    }
+
     private fun requireActiveCategory(categoryId: UUID) {
         val active = jdbc.queryForObject(
             "select count(*) from knowledge_categories where id = ? and status = 'ACTIVE'",

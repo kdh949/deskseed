@@ -17,6 +17,6 @@ OpenSearch/Elasticsearch, Redis cache, ltree, community, generative answers, arb
 
 ## Implemented vertical slice evidence
 
-- Admin-only category/section update, article-draft and lifecycle commands require the staff session actor header and CSRF boundary, validate the fixed hierarchy/state transition, write a required `AdminSecurityAudit`, and append an INTERNAL durable event intent in one transaction.
-- `AdminKnowledgeIntegrationTest` proves category optimistic update/stale rejection, category→section→draft→review→publish, immutable published revision pointer, and an injected audit-table failure that rolls both the mutation and outbox intent back.
+- Admin-only category/section update, article-draft, lifecycle, and audience replacement commands require the staff session actor header and CSRF boundary, validate the fixed hierarchy/state transition, write a required `AdminSecurityAudit`, and append an INTERNAL durable event intent in one transaction.
+- `AdminKnowledgeIntegrationTest` proves category optimistic update/stale rejection, category→section→draft→review→publish, immutable published revision pointer, audience-version increment, and an injected audit-table failure that rolls both the mutation and outbox intent back.
 - This evidence does not claim public/agent read/search, lifecycle transitions, cache validators, UI, Storybook, or remote CI as complete.
