@@ -157,15 +157,14 @@ internal class AttachmentApplicationService(
             allowedVisibilities = command.allowedVisibilities,
             now = command.occurredAt,
         ) ?: throw AttachmentNotFoundException()
-        val stream = try {
-            objectStore.openPrivate(row.storageKey)
-        } catch (exception: RuntimeException) {
-            throw AttachmentUnavailableException(exception)
-        }
         try {
             transitions.recordDownload(row, command)
         } catch (exception: RuntimeException) {
-            runCatching { stream.close() }
+            throw AttachmentUnavailableException(exception)
+        }
+        val stream = try {
+            objectStore.openPrivate(row.storageKey)
+        } catch (exception: RuntimeException) {
             throw AttachmentUnavailableException(exception)
         }
         return AttachmentContent(
