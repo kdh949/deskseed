@@ -77,7 +77,7 @@ export const SearchResults: Story = {
     await userEvent.click(
       canvas.getByRole('button', { name: '서버 전체 검색' }),
     )
-    await expect(canvas.getByText('정확한 전체 결과 1개')).toBeVisible()
+    await expect(await canvas.findByText('정확한 전체 결과 1개')).toBeVisible()
     await expect(canvas.getByLabelText('최초 답변 SLA 위험')).toBeVisible()
   },
 }

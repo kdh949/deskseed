@@ -36,7 +36,7 @@ export const UploadAndScanClean: Story = {
       type: 'image/png',
     })
     await userEvent.upload(canvas.getByLabelText('첨부 파일'), file)
-    await expect(await canvas.findByText(/CLEAN/)).toBeVisible()
+    await expect(await canvas.findByText(/^CLEAN/)).toBeVisible()
     await expect(
       canvas.getByRole('button', { name: '초안에서 제거' }),
     ).toBeEnabled()

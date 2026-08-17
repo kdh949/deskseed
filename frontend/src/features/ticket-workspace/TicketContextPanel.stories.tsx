@@ -55,7 +55,7 @@ export const ExternalReferences: Story = {
             availableSystems: [externalSystem],
             items: [
               {
-                  id: '11111111-1111-4111-8111-111111111111',
+                id: '11111111-1111-4111-8111-111111111111',
                 system: externalSystem,
                 objectType: 'ORDER',
                 externalId: 'ORD-2026-0042',
@@ -65,7 +65,7 @@ export const ExternalReferences: Story = {
                 metadata: { state: 'PAID' },
                 metadataObservedAt: '2026-08-17T03:10:00Z',
                 createdBy: {
-                    actorId: '22222222-2222-4222-8222-222222222222',
+                  actorId: '22222222-2222-4222-8222-222222222222',
                   displayName: 'Mina Park',
                 },
                 createdAt: '2026-08-17T03:11:00Z',

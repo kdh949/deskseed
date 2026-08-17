@@ -8,12 +8,17 @@ const contractPath = fileURLToPath(
 const manifestPath = fileURLToPath(
   new URL('../src/api/p1-contract-manifest.json', import.meta.url),
 )
+const fixtureOperationsPath = fileURLToPath(
+  new URL('../src/api/p1-msw-fixture-operations.json', import.meta.url),
+)
 
-const [contract, manifestSource] = await Promise.all([
+const [contract, manifestSource, fixtureOperationsSource] = await Promise.all([
   readFile(contractPath, 'utf8'),
   readFile(manifestPath, 'utf8'),
+  readFile(fixtureOperationsPath, 'utf8'),
 ])
 const manifest = JSON.parse(manifestSource)
+const fixtureOperations = JSON.parse(fixtureOperationsSource)
 
 for (const entry of manifest) {
   const pathMarker = `  ${entry.path}:\n`
@@ -56,8 +61,15 @@ assert(
   `Duplicate operationIds in manifest: ${duplicateOperationIds.join(', ')}`,
 )
 
+const contractOperationIds = manifest.map((entry) => entry.operationId).sort()
+const fixtureOperationIds = [...fixtureOperations].sort()
+assert(
+  JSON.stringify(fixtureOperationIds) === JSON.stringify(contractOperationIds),
+  `MSW fixture operation coverage mismatch. Contract: ${contractOperationIds.join(', ')}; fixtures: ${fixtureOperationIds.join(', ')}`,
+)
+
 console.log(
-  `P1 OpenAPI contract check passed (${manifest.length} FROZEN operations, root ${frontendRoot}).`,
+  `P1 OpenAPI/MSW fixture contract check passed (${manifest.length} FROZEN operations, root ${frontendRoot}).`,
 )
 
 function findNextMethod(block, from) {
