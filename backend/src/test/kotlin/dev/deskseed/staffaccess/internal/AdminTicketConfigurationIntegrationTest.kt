@@ -38,6 +38,7 @@ class AdminTicketConfigurationIntegrationTest {
     @BeforeEach
     fun clearConfiguration() {
         jdbc.execute("truncate table ticket_custom_field_values, ticket_tag_assignments, ticket_field_options, ticket_field_definitions cascade")
+        jdbc.execute("truncate table ticket_tag_definitions, custom_ticket_statuses cascade")
         jdbc.execute("truncate table admin_security_audit_events")
     }
 
@@ -208,6 +209,70 @@ class AdminTicketConfigurationIntegrationTest {
         )).containsExactly("TICKET_FORM_DRAFT_CREATED", "TICKET_FORM_PUBLISHED")
     }
 
+    @Test
+    fun `admin normalizes tag catalog and preserves fixed status categories`() {
+        val browser = browser("ADMIN")
+        val fieldResponse = mockMvc.perform(
+            post("/api/v1/admin/ticket-fields")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(fieldJson("status.form-field")),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val formFieldId = UUID.fromString(stringField(fieldResponse, "id"))
+        val formResponse = mockMvc.perform(
+            post("/api/v1/admin/ticket-forms")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(formJson(formFieldId)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val formId = UUID.fromString(stringField(formResponse, "id"))
+        val tagResponse = mockMvc.perform(
+            post("/api/v1/admin/ticket-tags")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"value":"Payment","label":"결제","active":true}"""),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(header().string("ETag", "\"1\""))
+            .andExpect(jsonPath("$.value").value("payment"))
+            .andReturn().response.contentAsString
+        val tagId = UUID.fromString(stringField(tagResponse, "id"))
+        mockMvc.perform(
+            put("/api/v1/admin/ticket-tags/{tagId}", tagId)
+                .session(browser.session).csrf(browser).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"value":"payment","label":"결제 확인","active":false}"""),
+        ).andExpect(status().isOk).andExpect(header().string("ETag", "\"2\""))
+            .andExpect(jsonPath("$.active").value(false))
+
+        val pendingResponse = mockMvc.perform(
+            post("/api/v1/admin/ticket-statuses")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(statusJson("waiting-for-customer", "PENDING", 20, true, formId)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val pendingId = UUID.fromString(stringField(pendingResponse, "id"))
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-statuses")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(statusJson("also-pending", "PENDING", 30, true)),
+        ).andExpect(status().isConflict)
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-statuses")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(statusJson("under-review", "OPEN", 10, false)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.let { response ->
+            val openId = UUID.fromString(stringField(response, "id"))
+            mockMvc.perform(
+                put("/api/v1/admin/ticket-statuses/order")
+                    .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"ids":["$openId","$pendingId"]}"""),
+            ).andExpect(status().isOk).andExpect(jsonPath("$[0].id").value(openId.toString()))
+                .andExpect(jsonPath("$[1].id").value(pendingId.toString()))
+        }
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-statuses")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(statusJson("closed-label", "CLOSED", 40, false)),
+        ).andExpect(status().isBadRequest)
+    }
+
     private fun fieldJson(machineKey: String) =
         """{"machineKey":"$machineKey","type":"SINGLE_SELECT","staffLabel":"결제 수단","customerLabel":"결제 수단","customerVisible":true,"customerEditable":true,"agentVisible":true,"agentEditable":true,"searchable":true,"analyticsEligible":false,"sensitive":false,"validation":{}}"""
 
@@ -216,6 +281,15 @@ class AdminTicketConfigurationIntegrationTest {
 
     private fun cyclicFormJson(fieldId: UUID) =
         """{"name":"순환 검증","placements":[{"fieldId":"$fieldId","order":10,"customer":{"visible":true,"editable":true,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"field.$fieldId","equals":"true"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]}]}"""
+
+    private fun statusJson(
+        machineKey: String,
+        category: String,
+        order: Int,
+        defaultForCategory: Boolean,
+        allowedFormId: UUID? = null,
+    ) =
+        """{"machineKey":"$machineKey","agentLabel":"$machineKey","customerLabel":"$machineKey","statusCategory":"$category","active":true,"order":$order,"defaultForCategory":$defaultForCategory,"allowedFormIds":${allowedFormId?.let { "[\"$it\"]" } ?: "[]"}}"""
 
     private fun browser(role: String): Browser {
         val email = "configuration-${role.lowercase()}-${UUID.randomUUID()}@example.com"
