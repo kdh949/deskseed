@@ -35,6 +35,7 @@ import dev.deskseed.ticketing.TicketKind
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.PublicAgentReplyRecorded
 import dev.deskseed.ticketing.TicketRelationInvalidException
+import dev.deskseed.ticketing.TicketCollaborationUpdated
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.TicketSlaLifecycleChanged
 import dev.deskseed.ticketing.TicketSubmitted
@@ -432,15 +433,25 @@ internal class AgentTicketCommandTransaction(
         )
         if (hasMutation) {
             val actor = ActorRef(ActorType.STAFF, command.actor.id)
+            val changedFields = command.changedFields.map(TicketField::externalName).toSet() +
+                if (createdComment != null) setOf("comments") else emptySet()
             ticketIntegrationEvents.ticketUpdated(
                 ticketId = ticket.id,
                 ticketNumber = ticket.ticketNumber,
                 kind = ticket.kind,
-                changedFields = command.changedFields.map(TicketField::externalName).toSet() +
-                    if (createdComment != null) setOf("comments") else emptySet(),
+                changedFields = changedFields,
                 actor = actor,
                 context = command.context,
                 occurredAt = now,
+            )
+            eventPublisher.publishEvent(
+                TicketCollaborationUpdated(
+                    ticketNumber = ticket.ticketNumber,
+                    ticketVersion = ticket.version,
+                    changedFields = changedFields,
+                    actorStaffId = command.actor.id,
+                    occurredAt = now,
+                ),
             )
             createdComment?.let { comment ->
                 ticketIntegrationEvents.commentCreated(
