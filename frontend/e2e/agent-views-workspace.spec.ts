@@ -123,6 +123,7 @@ const ticketDetail = {
 
 const viewContract = {
   active: true,
+  description: '',
   definitionVersion: 1,
   orderVersion: 1,
   conditions: {
@@ -133,6 +134,7 @@ const viewContract = {
   columns: ['TICKET_NUMBER', 'SUBJECT', 'STATUS'],
   sort: 'updatedAt:desc,ticketNumber:desc',
   ticketCountState: 'EXACT',
+  ticketCountAsOf: '2026-08-18T03:04:05Z',
   readScope: 'ALL_TICKETS',
   createdAt: '2026-08-10T00:00:00Z',
   updatedAt: '2026-08-10T00:00:00Z',
@@ -198,7 +200,9 @@ async function mockAgentReadApi(page: Page) {
         key: 'review-only',
         ownerStaffId: '00000000-0000-4000-8000-000000000099',
         categoryPath: ['Views'],
-        ticketCount: 0,
+        ticketCount: null,
+        ticketCountState: 'OMITTED_VISIBLE_LIMIT',
+        ticketCountAsOf: null,
       }
       serverViews = [...serverViews, created]
       return route.fulfill({ status: 201, json: created })
@@ -312,16 +316,19 @@ test('Personal view configuration persists on the server and returns focus to it
   await createButton.click()
   const dialog = page.getByRole('dialog', { name: '새 보기 만들기' })
   await dialog.getByLabel('보기 이름').fill('검토 전용 보기')
+  await dialog.getByLabel('설명').fill('결제 문의 검토가 필요한 티켓')
   await dialog.getByRole('button', { name: '보기 만들기', exact: true }).click()
 
   await expect(page.getByRole('link', { name: '검토 전용 보기' })).toBeVisible()
   expect(savedViewWrites).toHaveLength(1)
   expect(savedViewWrites[0]).toMatchObject({
     name: '검토 전용 보기',
+    description: '결제 문의 검토가 필요한 티켓',
     scope: 'PERSONAL',
   })
   await page.reload()
   await expect(page.getByRole('link', { name: '검토 전용 보기' })).toBeVisible()
+  await expect(page.getByText('결제 문의 검토가 필요한 티켓')).toBeVisible()
   await expectNoAxeViolations(page)
 })
 

@@ -7,6 +7,7 @@ import { AgentViewsPage } from './AgentViewsPage'
 
 const viewContract = {
   active: true,
+  description: '상담 운영에 사용하는 보기입니다.',
   definitionVersion: 1,
   orderVersion: 1,
   conditions: {
@@ -17,6 +18,7 @@ const viewContract = {
   columns: ['TICKET_NUMBER', 'SUBJECT', 'STATUS'],
   sort: 'updatedAt:desc,ticketNumber:desc',
   ticketCountState: 'EXACT',
+  ticketCountAsOf: '2026-08-18T03:04:05Z',
   readScope: 'ALL_TICKETS',
   createdAt: '2026-08-10T00:00:00Z',
   updatedAt: '2026-08-10T00:00:00Z',
@@ -126,7 +128,12 @@ function mockReadApi(
       )
     if (url.endsWith('/api/v1/agent/views/preview'))
       return Promise.resolve(
-        jsonResponse({ items: [], ticketCount: 2, sort: viewContract.sort }),
+        jsonResponse({
+          items: [],
+          ticketCount: 2,
+          ticketCountAsOf: '2026-08-18T03:04:05Z',
+          sort: viewContract.sort,
+        }),
       )
     if (url.endsWith('/api/v1/agent/views/reorder')) {
       const body = JSON.parse(String(init?.body))
@@ -329,6 +336,10 @@ describe('AgentViewsPage', () => {
       within(dialog).getByRole('textbox', { name: '보기 이름' }),
       '검토 전용 보기',
     )
+    await user.type(
+      within(dialog).getByRole('textbox', { name: '설명' }),
+      '결제 문의 검토용',
+    )
     await user.click(
       within(dialog).getByRole('button', { name: '보기 만들기' }),
     )
@@ -347,6 +358,13 @@ describe('AgentViewsPage', () => {
     expect(ticketRequestUrls(fetchMock).at(-1)).toContain(
       '/agent/views/created-view/tickets',
     )
+    const createCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith('/api/v1/agent/views') && init?.method === 'POST',
+    )
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+      description: '결제 문의 검토용',
+    })
   })
 
   it('keeps one active view and exposes only applicable view actions', async () => {
@@ -360,6 +378,7 @@ describe('AgentViewsPage', () => {
       'aria-current',
       'page',
     )
+    expect(screen.getByText('상담 운영에 사용하는 보기입니다.')).toBeVisible()
     expect(
       screen.getByRole('link', { name: '고객 답변 대기' }),
     ).not.toHaveAttribute('aria-current')
@@ -438,6 +457,109 @@ describe('AgentViewsPage', () => {
       expectedVersion: 1,
       name: '검토 예정',
     })
+  })
+
+  it('updates only the description with the current definition version', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockReadApi()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage('/agent/views/follow-up')
+    await screen.findByRole('table', { name: '내가 팔로우 중인 티켓 티켓' })
+    await user.click(
+      screen.getByRole('button', { name: '내가 팔로우 중인 티켓 편집' }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: '내가 팔로우 중인 티켓 편집',
+    })
+    const description = within(dialog).getByRole('textbox', { name: '설명' })
+    await user.clear(description)
+    await user.type(description, '후속 응답만 확인합니다.')
+    await user.click(within(dialog).getByRole('button', { name: '변경 저장' }))
+
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith('/api/v1/agent/views/follow-up') &&
+        init?.method === 'PATCH',
+    )
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
+      expectedVersion: 1,
+      name: '내가 팔로우 중인 티켓',
+      description: '후속 응답만 확인합니다.',
+    })
+  })
+
+  it('preserves a conflicting description draft until explicit reload', async () => {
+    const user = userEvent.setup()
+    const baseFetch = mockReadApi()
+    let conflicted = false
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.endsWith('/api/v1/agent/views/follow-up') && method === 'PATCH') {
+        conflicted = true
+        return Promise.resolve(
+          jsonResponse({ title: 'Conflict', status: 409 }, 409),
+        )
+      }
+      if (
+        conflicted &&
+        url.endsWith('/api/v1/agent/views') &&
+        method === 'GET'
+      ) {
+        return Promise.resolve(
+          jsonResponse(
+            views.map((view) =>
+              view.key === 'follow-up'
+                ? {
+                    ...view,
+                    description: '서버의 최신 설명',
+                    definitionVersion: 2,
+                  }
+                : view,
+            ),
+          ),
+        )
+      }
+      return baseFetch(input, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPage('/agent/views/follow-up')
+    await screen.findByRole('table', { name: '내가 팔로우 중인 티켓 티켓' })
+    await user.click(
+      screen.getByRole('button', { name: '내가 팔로우 중인 티켓 편집' }),
+    )
+    const description = screen.getByRole('textbox', { name: '설명' })
+    await user.clear(description)
+    await user.type(description, '충돌한 로컬 초안')
+    await user.click(screen.getByRole('button', { name: '변경 저장' }))
+
+    expect(await screen.findByText('보기 버전 충돌')).toBeVisible()
+    expect(description).toHaveValue('충돌한 로컬 초안')
+    await user.click(
+      screen.getByRole('button', { name: '최신 버전 다시 불러오기' }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: '설명' })).toHaveValue(
+        '서버의 최신 설명',
+      ),
+    )
+  })
+
+  it('shows an exact count basis without inventing one for omitted counts', async () => {
+    vi.stubGlobal('fetch', mockReadApi())
+
+    renderPage('/agent/views/follow-up')
+
+    expect(
+      await screen.findByRole('link', {
+        name: /내가 팔로우 중인 티켓.*티켓 2개.*기준/,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '내 티켓' })).not.toHaveTextContent(
+      '기준',
+    )
   })
 
   it('keeps a committed definition and retries only reorder with the latest order version', async () => {
