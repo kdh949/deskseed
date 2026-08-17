@@ -46,6 +46,8 @@ class StaffTicketQueryEvidenceIntegrationTest {
     private lateinit var queryCounter: JdbcQueryCounter
 
     private lateinit var staffId: UUID
+    private lateinit var groupId: UUID
+    private lateinit var customerId: UUID
     private lateinit var ticketId: UUID
 
     @BeforeEach
@@ -65,8 +67,8 @@ class StaffTicketQueryEvidenceIntegrationTest {
         jdbcTemplate.update("delete from staff_accounts")
 
         staffId = UUID.randomUUID()
-        val groupId = UUID.randomUUID()
-        val customerId = UUID.randomUUID()
+        groupId = UUID.randomUUID()
+        customerId = UUID.randomUUID()
         ticketId = UUID.randomUUID()
         jdbcTemplate.update(
             """
@@ -163,6 +165,101 @@ class StaffTicketQueryEvidenceIntegrationTest {
         assertThat(result.resultCount).isEqualTo(1)
         assertThat(result.items.map { it.ticketNumber }).containsExactly(6001)
         assertThat(queryCounter.count()).isEqualTo(2)
+    }
+
+    @Test
+    @Transactional
+    fun `staff search projection separates visibility stays transactionally fresh and uses its trigram index`() {
+        val internalCommentId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments
+                (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AGENT', ?, 'INTERNAL', '내부 전용 초기 단어', now())
+            """.trimIndent(),
+            internalCommentId,
+            ticketId,
+            staffId,
+        )
+
+        val initial = jdbcTemplate.queryForMap(
+            """
+            select document_version, public_comment_text, internal_comment_text, staff_document
+            from ticket_search_documents where ticket_id = ?
+            """.trimIndent(),
+            ticketId,
+        )
+        assertThat(initial["document_version"]).isEqualTo(1)
+        assertThat(initial["public_comment_text"].toString()).contains("대화 99")
+            .doesNotContain("내부 전용 초기 단어")
+        assertThat(initial["internal_comment_text"].toString()).contains("내부 전용 초기 단어")
+        assertThat(initial["staff_document"].toString()).contains("대화 99", "내부 전용 초기 단어")
+
+        jdbcTemplate.update(
+            "update ticket_comments set body = '내부 전용 변경 단어' where id = ?",
+            internalCommentId,
+        )
+        jdbcTemplate.update("update tickets set subject = '변경된 검색 제목' where id = ?", ticketId)
+        jdbcTemplate.update(
+            "update customers set name = '변경된 요청자', email_normalized = 'changed@example.com' where id = ?",
+            customerId,
+        )
+        jdbcTemplate.update("update support_groups set name = '변경된 검색 그룹' where id = ?", groupId)
+        jdbcTemplate.update("update staff_accounts set display_name = '변경된 담당자' where id = ?", staffId)
+
+        val refreshed = jdbcTemplate.queryForMap(
+            """
+            select subject_text, requester_name_text, requester_email_text,
+                   group_name_text, assignee_name_text, internal_comment_text, staff_document
+            from ticket_search_documents where ticket_id = ?
+            """.trimIndent(),
+            ticketId,
+        )
+        assertThat(refreshed["subject_text"]).isEqualTo("변경된 검색 제목")
+        assertThat(refreshed["requester_name_text"]).isEqualTo("변경된 요청자")
+        assertThat(refreshed["requester_email_text"]).isEqualTo("changed@example.com")
+        assertThat(refreshed["group_name_text"]).isEqualTo("변경된 검색 그룹")
+        assertThat(refreshed["assignee_name_text"]).isEqualTo("변경된 담당자")
+        assertThat(refreshed["internal_comment_text"].toString())
+            .contains("내부 전용 변경 단어")
+            .doesNotContain("내부 전용 초기 단어")
+        assertThat(refreshed["staff_document"].toString())
+            .contains("변경된 검색 제목", "변경된 요청자", "변경된 검색 그룹", "변경된 담당자")
+
+        jdbcTemplate.execute("set local enable_seqscan = off")
+        val plan = jdbcTemplate.queryForList(
+            """
+            explain (costs off)
+            select ticket_id from ticket_search_documents
+            where staff_document like '%대화 99%' escape '\'
+            """.trimIndent(),
+            String::class.java,
+        ).joinToString("\n")
+        assertThat(plan).contains("ticket_search_documents_staff_trgm_idx")
+
+        jdbcTemplate.update("delete from ticket_comments where id = ?", internalCommentId)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select internal_comment_text from ticket_search_documents where ticket_id = ?",
+                String::class.java,
+                ticketId,
+            ),
+        ).doesNotContain("내부 전용 변경 단어")
+
+        jdbcTemplate.update(
+            "update ticket_search_documents set subject_text = '의도적 drift' where ticket_id = ?",
+            ticketId,
+        )
+        assertThat(
+            jdbcTemplate.queryForObject("select rebuild_ticket_search_documents()", Long::class.java),
+        ).isEqualTo(40L)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select subject_text from ticket_search_documents where ticket_id = ?",
+                String::class.java,
+                ticketId,
+            ),
+        ).isEqualTo("변경된 검색 제목")
     }
 
     @Test

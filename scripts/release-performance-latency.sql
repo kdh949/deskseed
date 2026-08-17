@@ -31,6 +31,8 @@ declare
         'queue_pending_first_page',
         'queue_recently_solved_first_page',
         'queue_my_child_tasks_first_page',
+        'search_agent_workspace_exact_count',
+        'search_agent_workspace_score_first_page',
         'audit_first_cursor_page',
         'audit_projection_status',
         'staff_command_replay_lookup',
@@ -164,6 +166,71 @@ begin
             order by t.updated_at desc, t.ticket_number desc
             limit 51
         $query$, md5(p_seed || ':staff:42')::uuid),
+        format($query$
+            select count(*)
+            from tickets t
+            join ticket_search_documents search_document on search_document.ticket_id = t.id
+            left join customers c on c.id = t.requester_id
+            left join support_groups g on g.id = t.group_id
+            left join staff_accounts s on s.id = t.assignee_id
+            left join analytics_first_reply_facts fact on fact.ticket_id = t.id
+            where exists (
+                select 1 from staff_accounts authorized_actor
+                where authorized_actor.id = %L::uuid and authorized_actor.status = 'ACTIVE'
+            )
+              and t.updated_at <= %L::timestamptz
+              and (
+                  search_document.ticket_number = 6242
+                  or search_document.staff_document like '%%6242%%'
+              )
+        $query$, md5(p_seed || ':staff:42')::uuid, p_base_time),
+        format($query$
+            with ranked as (
+                select t.id, t.ticket_number, t.subject, t.status, t.priority,
+                       t.created_at, t.updated_at, t.version, t.kind,
+                       c.id as customer_id, c.name as customer_name,
+                       g.id as group_id, g.name as group_name,
+                       s.id as assignee_id, s.display_name as assignee_name,
+                       fact.outcome as sla_outcome, fact.due_at as sla_due_at,
+                       fact.target_minutes as sla_target_minutes,
+                       fact.policy_version as sla_policy_version,
+                       fact.schedule_version as sla_schedule_version,
+                       (
+                           case when search_document.ticket_number = 6242 then 1000 else 0 end
+                           + case when search_document.subject_text = '6242' then 500
+                                  when strpos(search_document.subject_text, '6242') > 0 then 250 else 0 end
+                           + case when search_document.requester_name_text = '6242' then 180
+                                  when strpos(search_document.requester_name_text, '6242') > 0 then 90 else 0 end
+                           + case when search_document.requester_email_text = '6242' then 160
+                                  when strpos(search_document.requester_email_text, '6242') > 0 then 80 else 0 end
+                           + case when search_document.group_name_text = '6242' then 80
+                                  when strpos(search_document.group_name_text, '6242') > 0 then 40 else 0 end
+                           + case when search_document.assignee_name_text = '6242' then 80
+                                  when strpos(search_document.assignee_name_text, '6242') > 0 then 40 else 0 end
+                           + case when strpos(search_document.public_comment_text, '6242') > 0
+                                        or strpos(search_document.internal_comment_text, '6242') > 0
+                                  then 20 else 0 end
+                       ) as search_score
+                from tickets t
+                join ticket_search_documents search_document on search_document.ticket_id = t.id
+                left join customers c on c.id = t.requester_id
+                left join support_groups g on g.id = t.group_id
+                left join staff_accounts s on s.id = t.assignee_id
+                left join analytics_first_reply_facts fact on fact.ticket_id = t.id
+                where exists (
+                    select 1 from staff_accounts authorized_actor
+                    where authorized_actor.id = %L::uuid and authorized_actor.status = 'ACTIVE'
+                )
+                  and t.updated_at <= %L::timestamptz
+                  and (
+                      search_document.ticket_number = 6242
+                      or search_document.staff_document like '%%6242%%'
+                  )
+            )
+            select * from ranked
+            order by search_score desc, ticket_number desc
+            limit 51
+        $query$, md5(p_seed || ':staff:42')::uuid, p_base_time),
         format($query$
             select *
             from audit_activity_projection

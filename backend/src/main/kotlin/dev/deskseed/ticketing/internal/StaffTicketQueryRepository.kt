@@ -201,6 +201,7 @@ internal class StaffTicketQueryRepository(
             .addValue("actorId", actorId)
             .addValue("ticketNumberQuery", trimmedQuery.toLongOrNull())
             .addValue("queryText", trimmedQuery)
+            .addValue("queryPattern", likeLiteralPattern(trimmedQuery))
             .addValue("limit", limit)
             .addValue("now", Timestamp.from(now))
             .addValue("riskAt", Timestamp.from(riskAt))
@@ -218,23 +219,15 @@ internal class StaffTicketQueryRepository(
         conditions += """
             (
                 (cast(:ticketNumberQuery as bigint) is not null
-                    and t.ticket_number = cast(:ticketNumberQuery as bigint))
-                or strpos(lower(t.subject), lower(:queryText)) > 0
-                or strpos(lower(c.name), lower(:queryText)) > 0
-                or strpos(lower(c.email_normalized), lower(:queryText)) > 0
-                or strpos(lower(g.name), lower(:queryText)) > 0
-                or strpos(lower(s.display_name), lower(:queryText)) > 0
-                or exists (
-                    select 1 from ticket_comments search_comment
-                    where search_comment.ticket_id = t.id
-                      and strpos(lower(search_comment.body), lower(:queryText)) > 0
-                )
+                    and search_document.ticket_number = cast(:ticketNumberQuery as bigint))
+                or search_document.staff_document like lower(:queryPattern) escape '\'
             )
         """.trimIndent()
         conditions += compileFilters(filters.toListFilter(), parameters, "search", now, riskAt)
         val whereClause = conditions.joinToString("\n  and ")
         val fromClause = """
             from tickets t
+            join ticket_search_documents search_document on search_document.ticket_id = t.id
             left join customers c on c.id = t.requester_id
             left join support_groups g on g.id = t.group_id
             left join staff_accounts s on s.id = t.assignee_id
@@ -834,24 +827,26 @@ internal class StaffTicketQueryRepository(
     private fun searchScoreExpression(): String = """
         (
             case when cast(:ticketNumberQuery as bigint) is not null
-                    and t.ticket_number = cast(:ticketNumberQuery as bigint) then 1000 else 0 end
-            + case when lower(t.subject) = lower(:queryText) then 500
-                   when strpos(lower(t.subject), lower(:queryText)) > 0 then 250 else 0 end
-            + case when lower(c.name) = lower(:queryText) then 180
-                   when strpos(lower(c.name), lower(:queryText)) > 0 then 90 else 0 end
-            + case when lower(c.email_normalized) = lower(:queryText) then 160
-                   when strpos(lower(c.email_normalized), lower(:queryText)) > 0 then 80 else 0 end
-            + case when lower(g.name) = lower(:queryText) then 80
-                   when strpos(lower(g.name), lower(:queryText)) > 0 then 40 else 0 end
-            + case when lower(s.display_name) = lower(:queryText) then 80
-                   when strpos(lower(s.display_name), lower(:queryText)) > 0 then 40 else 0 end
-            + case when exists (
-                    select 1 from ticket_comments scored_comment
-                    where scored_comment.ticket_id = t.id
-                      and strpos(lower(scored_comment.body), lower(:queryText)) > 0
-                ) then 20 else 0 end
+                    and search_document.ticket_number = cast(:ticketNumberQuery as bigint) then 1000 else 0 end
+            + case when search_document.subject_text = lower(:queryText) then 500
+                   when strpos(search_document.subject_text, lower(:queryText)) > 0 then 250 else 0 end
+            + case when search_document.requester_name_text = lower(:queryText) then 180
+                   when strpos(search_document.requester_name_text, lower(:queryText)) > 0 then 90 else 0 end
+            + case when search_document.requester_email_text = lower(:queryText) then 160
+                   when strpos(search_document.requester_email_text, lower(:queryText)) > 0 then 80 else 0 end
+            + case when search_document.group_name_text = lower(:queryText) then 80
+                   when strpos(search_document.group_name_text, lower(:queryText)) > 0 then 40 else 0 end
+            + case when search_document.assignee_name_text = lower(:queryText) then 80
+                   when strpos(search_document.assignee_name_text, lower(:queryText)) > 0 then 40 else 0 end
+            + case when strpos(search_document.public_comment_text, lower(:queryText)) > 0
+                         or strpos(search_document.internal_comment_text, lower(:queryText)) > 0
+                   then 20 else 0 end
         )
     """.trimIndent()
+
+    private fun likeLiteralPattern(query: String): String = "%${
+        query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    }%"
 
     private data class DetailRow(
         val summary: StaffTicketSummary,

@@ -474,6 +474,87 @@ class AgentTicketSearchIntegrationTest {
         ).andExpect(status().isBadRequest)
     }
 
+    @Test
+    fun `projection quality corpus preserves internal exact rank and literal wildcard behavior`() {
+        val agent = insertStaff("projection-corpus@example.com", "Agent password 42", "Corpus 상담사")
+        val group = insertGroup("Corpus 그룹", agent)
+        val commentTicket = insertTicket(8801, "한국어 공개 제목", "OPEN", "NORMAL", group, agent)
+        insertTicket(8802, "정확 번호 대상", "OPEN", "NORMAL", group, agent)
+        insertTicket(8803, "8802 reference in subject", "OPEN", "NORMAL", group, agent)
+        insertTicket(8804, "literal 100%_done", "OPEN", "NORMAL", group, agent)
+        insertTicket(8805, "literal 100xxdone", "OPEN", "NORMAL", group, agent)
+        insertTicket(8806, "payment refund", "OPEN", "NORMAL", group, agent)
+        insertTicket(8807, "요청자 이메일 대상", "OPEN", "NORMAL", group, agent)
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments
+                (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AGENT', ?, 'INTERNAL', '내부전용 corpus-marker', now())
+            """.trimIndent(),
+            UUID.randomUUID(),
+            commentTicket,
+            agent,
+        )
+        val browser = login("projection-corpus@example.com", "Agent password 42")
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """{"query":"내부전용 corpus-marker","filters":{},"sort":"score:desc,ticketNumber:desc","limit":25}""",
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8801))
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """{"query":"8802","filters":{},"sort":"score:desc,ticketNumber:desc","limit":25}""",
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(2))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8802))
+            .andExpect(jsonPath("$.items[1].ticketNumber").value(8803))
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """{"query":"100%_","filters":{},"sort":"score:desc,ticketNumber:desc","limit":25}""",
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8804))
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """{"query":"customer-8807@example.com","filters":{},"sort":"score:desc,ticketNumber:desc","limit":25}""",
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8807))
+
+        // V35 deliberately preserves literal substring semantics; fuzzy typo correction is not claimed.
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """{"query":"paymant","filters":{},"sort":"score:desc,ticketNumber:desc","limit":25}""",
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(0))
+            .andExpect(jsonPath("$.items").isEmpty)
+    }
+
     private fun search(session: MockHttpSession, interactionId: UUID, body: String) =
         post("/api/v1/agent/search")
             .session(session)
@@ -564,7 +645,7 @@ class AgentTicketSearchIntegrationTest {
         groupId: UUID,
         assigneeId: UUID,
         updatedAt: Instant = Instant.parse("2026-08-11T00:00:00Z").plusSeconds(number),
-    ) {
+    ): UUID {
         val customerId = UUID.randomUUID()
         val ticketId = UUID.randomUUID()
         jdbcTemplate.update(
@@ -597,6 +678,7 @@ class AgentTicketSearchIntegrationTest {
             Timestamp.from(updatedAt.minusSeconds(60)),
             Timestamp.from(updatedAt),
         )
+        return ticketId
     }
 
     private fun insertSearchAuditCiphertext(createdAt: Instant, expiresAt: Instant): UUID {

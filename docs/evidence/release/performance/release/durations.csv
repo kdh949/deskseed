@@ -1,6 +1,6 @@
 phase,duration_seconds
 apply_schema_migrations,2
-load_fixture_and_rebuild_projection,232
-drop_candidate_indexes,1
+load_fixture_and_rebuild_projection,223
+drop_candidate_indexes,0
 create_candidate_indexes,2
-total,271
+total,236

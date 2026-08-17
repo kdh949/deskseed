@@ -20,6 +20,7 @@
 | `ticket_audits` | 10000 | 10000 | t |
 | `ticket_comments` | 20000 | 20000 | t |
 | `ticket_relations` | 100 | 100 | t |
+| `ticket_search_documents` | 10000 | 10000 | t |
 | `tickets` | 10000 | 10000 | t |
 
 ## Production queue cardinality
@@ -38,27 +39,38 @@ The fixed acceptance boundary declared before this run is warm-cache database-co
 
 | Query | After p95 (ms) | Budget (ms) | Pass |
 |---|---:|---:|:---:|
-| `queue_my_child_tasks_first_page` | 0.731 | 50 | t |
-| `queue_my_open_first_page` | 0.763 | 50 | t |
-| `queue_pending_first_page` | 0.798 | 50 | t |
-| `queue_recently_solved_first_page` | 0.685 | 50 | t |
-| `queue_unassigned_my_groups_first_page` | 1.715 | 50 | t |
+| `queue_my_child_tasks_first_page` | 0.966 | 50 | t |
+| `queue_my_open_first_page` | 1.098 | 50 | t |
+| `queue_pending_first_page` | 0.818 | 50 | t |
+| `queue_recently_solved_first_page` | 0.791 | 50 | t |
+| `queue_unassigned_my_groups_first_page` | 1.359 | 50 | t |
+
+## REQ-SRCH-001 local search latency budget
+
+The fixed acceptance boundary declared before this run is warm-cache database-component p95 <= `250 ms` for both the exact result count and first score page on the recorded 1M-ticket, 2M-comment, 2-CPU / 6-GiB PostgreSQL profile. It is not an HTTP SLO.
+
+| Query | After p95 (ms) | Budget (ms) | Pass |
+|---|---:|---:|:---:|
+| `search_agent_workspace_exact_count` | 3.558 | 250 | t |
+| `search_agent_workspace_score_first_page` | 5.385 | 250 | t |
 
 ## Warm-cache server-side latency
 
 | Query | Before p50 (ms) | Before p95 (ms) | After p50 (ms) | After p95 (ms) | p95 change |
 |---|---:|---:|---:|---:|---:|
-| `audit_action_and_date` | 0.070 | 0.078 | 0.076 | 0.081 | +3.8% |
-| `audit_actor_and_date` | 0.686 | 0.692 | 0.078 | 0.093 | -86.6% |
-| `audit_first_cursor_page` | 0.068 | 0.079 | 0.077 | 0.087 | +10.1% |
-| `audit_projection_status` | 0.012 | 0.016 | 0.013 | 0.018 | +12.5% |
-| `audit_ticket_and_date` | 0.062 | 0.067 | 0.068 | 0.075 | +11.9% |
-| `queue_my_child_tasks_first_page` | 0.595 | 0.648 | 0.587 | 0.731 | +12.8% |
-| `queue_my_open_first_page` | 0.682 | 0.882 | 0.579 | 0.763 | -13.5% |
-| `queue_pending_first_page` | 0.657 | 0.811 | 0.659 | 0.798 | -1.6% |
-| `queue_recently_solved_first_page` | 0.659 | 0.736 | 0.557 | 0.685 | -6.9% |
-| `queue_unassigned_my_groups_first_page` | 1.039 | 1.226 | 1.170 | 1.715 | +39.9% |
-| `staff_command_replay_lookup` | 0.114 | 0.134 | 0.125 | 0.222 | +65.7% |
+| `audit_action_and_date` | 0.073 | 0.082 | 0.094 | 0.245 | +198.8% |
+| `audit_actor_and_date` | 0.861 | 1.375 | 0.084 | 0.089 | -93.5% |
+| `audit_first_cursor_page` | 0.069 | 0.074 | 0.095 | 0.214 | +189.2% |
+| `audit_projection_status` | 0.020 | 0.137 | 0.013 | 0.018 | -86.9% |
+| `audit_ticket_and_date` | 0.067 | 0.077 | 0.080 | 0.116 | +50.6% |
+| `queue_my_child_tasks_first_page` | 0.665 | 0.852 | 0.678 | 0.966 | +13.4% |
+| `queue_my_open_first_page` | 0.754 | 0.870 | 0.795 | 1.098 | +26.2% |
+| `queue_pending_first_page` | 0.737 | 0.956 | 0.739 | 0.818 | -14.4% |
+| `queue_recently_solved_first_page` | 0.721 | 1.117 | 0.613 | 0.791 | -29.2% |
+| `queue_unassigned_my_groups_first_page` | 1.186 | 1.468 | 1.133 | 1.359 | -7.4% |
+| `search_agent_workspace_exact_count` | 3.330 | 3.620 | 3.253 | 3.558 | -1.7% |
+| `search_agent_workspace_score_first_page` | 4.931 | 5.262 | 5.029 | 5.385 | +2.3% |
+| `staff_command_replay_lookup` | 0.128 | 0.162 | 0.131 | 0.156 | -3.7% |
 
 All five queue rows are exact current `StaffTicketQueryRepository.list` shapes with empty optional filters, `cursor = null`, and the API default `limit + 1 = 51`. The measured `DefaultStaffView` cases are `MY_OPEN`, `UNASSIGNED_MY_GROUPS`, `PENDING`, `RECENTLY_SOLVED`, and `MY_CHILD_TASKS`; there is no `PENDING_OR_ON_HOLD` or `RECENTLY_UPDATED` view. No synthetic queue control query is mixed into this table.
 
@@ -72,10 +84,10 @@ The `before` phase temporarily removes only `tickets_assignee_status_cursor_idx`
 
 | Phase | Samples | p50 (ms) | p95 (ms) | Throughput (ops/s) | Rows/op | Relation B/op | WAL B/op |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `without_required_access_audit` | 50 | 0.168 | 0.381 | 4933.399 | 0.000 | 0.000 | 40.480 |
-| `with_required_access_audit` | 50 | 0.459 | 0.957 | 1887.149 | 2.000 | 2621.440 | 15342.080 |
+| `without_required_access_audit` | 50 | 0.179 | 0.438 | 4543.802 | 0.000 | 0.000 | 40.000 |
+| `with_required_access_audit` | 50 | 0.508 | 1.157 | 1663.340 | 2.000 | 2621.440 | 15342.080 |
 
-Recorded deltas: p50 +173.2%, p95 +151.2%, throughput -61.7%.
+Recorded deltas: p50 +183.8%, p95 +164.2%, throughput -63.4%.
 
 This is a single-client database-component comparison, not an HTTP benchmark. Each sample commits the production repository’s three ticket-detail SELECT shapes; the audited phase adds the production `API_RESOURCE_READ` INSERT column/value shape and its projection trigger, using deterministic synthetic identifiers and a synthetic session fingerprint. It excludes Spring/JDBC mapping, authorization objects, assignment-option loading, JSON, network and browser time. The without-audit path is counterfactual only: Deskseed keeps strict availability semantics, so a sensitive read succeeds only after its required canonical audit write commits. `relation_bytes_delta` has PostgreSQL page-allocation granularity; `wal_bytes_delta` captures the transaction-level byte cost. The audited row amplification is one immutable `access_audit_events` row plus one `audit_activity_projection` row per successful read.
 
@@ -85,6 +97,7 @@ This is a single-client database-component comparison, not an HTTP benchmark. Ea
 - `latency-before.csv` / `latency-after.csv`: p50/p95 from 15 measured executions after one warm-up
 - `query-cardinality.csv`: eligible and first-page rows for the exact production queue predicates
 - `queue-latency-budget.csv`: fixed PERF-001 p95 ceiling and per-View pass/fail
+- `search-latency-budget.csv`: fixed REQ-SRCH-001 p95 ceiling for exact count and first score page
 - `sizes-before.csv` / `sizes-after.csv`: heap, total-index and candidate-index sizes plus scan counts
 - `fixture-load.log`, `migrations.csv`, `durations.csv`: generation and phase timing
 - `environment.txt`, `database-settings.csv`: seed, exact image and database settings
@@ -94,4 +107,4 @@ This is a single-client database-component comparison, not an HTTP benchmark. Ea
 
 ## Representativeness limits
 
-The tables and indexes come from the repository migration SQL in numeric order, but this harness does not create Flyway history; migration upgrade behavior is an operations gate. Data is deterministic and synthetic, with deliberately regular cardinality rather than production skew. Latencies are server-side, warm-cache, single-client samples in an isolated local container; they are not an API SLO or production-capacity claim. Canonical audit rows are loaded with integrity constraints active while per-row projection refresh triggers are paused, followed by the real `rebuild_audit_activity_projection()` function. Fixture load duration therefore is not an online-ingestion benchmark.
+The tables and indexes come from the repository migration SQL in numeric order, but this harness does not create Flyway history; migration upgrade behavior is an operations gate. Data is deterministic and synthetic, with deliberately regular cardinality rather than production skew. Latencies are server-side, warm-cache, single-client samples in an isolated local container; they are not an API SLO or production-capacity claim. Canonical audit rows are loaded with integrity constraints active while per-row audit and ticket-search projection refresh triggers are paused, followed by the real `rebuild_audit_activity_projection()` and `rebuild_ticket_search_documents()` functions. Fixture load duration therefore is not an online-ingestion benchmark.

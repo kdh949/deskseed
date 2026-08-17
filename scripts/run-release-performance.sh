@@ -110,6 +110,9 @@ allow_low_disk="${DESKSEED_PERF_ALLOW_LOW_DISK:-0}"
 # Prospective PERF-001 acceptance boundary. This fixed local DB-component budget
 # is intentionally not user-overridable and is recorded before every run.
 queue_latency_budget_ms=50
+# Prospective REQ-SRCH-001 database-component boundary for the exact count and
+# first score page on the canonical 1M-ticket profile. This is not an HTTP SLO.
+search_latency_budget_ms=250
 
 validate_unsigned_integer() {
   local name="$1"
@@ -712,6 +715,7 @@ calculate_capacity() {
       function ratio(object_name) {
         if (object_name == "customers") return target_customers / source_customers
         if (object_name == "tickets") return target_tickets / source_tickets
+        if (object_name == "ticket_search_documents") return target_tickets / source_tickets
         if (object_name == "ticket_comments") return target_comments / source_comments
         if (object_name == "ticket_audits") return target_ticket_audits / source_ticket_audits
         if (object_name == "ticket_audit_events") return target_ticket_audits / source_ticket_audits
@@ -1031,6 +1035,8 @@ expected_query_names=(
   queue_pending_first_page
   queue_recently_solved_first_page
   queue_my_child_tasks_first_page
+  search_agent_workspace_exact_count
+  search_agent_workspace_score_first_page
   audit_first_cursor_page
   audit_projection_status
   staff_command_replay_lookup
@@ -1082,6 +1088,22 @@ if [[ "$(awk 'END { print NR - 1 }' "$working_output_directory/queue-latency-bud
        "$working_output_directory/queue-latency-budget.csv")" -ne 0 ]]; then
   printf 'A production queue query exceeded the fixed %s ms p95 budget.\n' \
     "$queue_latency_budget_ms" >&2
+  exit 1
+fi
+
+{
+  printf 'query_name,p95_ms,budget_ms,within_budget\n'
+  awk -F, -v budget="$search_latency_budget_ms" '
+    NR > 1 && $1 ~ /^search_agent_workspace_/ {
+      printf "%s,%s,%s,%s\n", $1, $6, budget, (($6 + 0) <= budget ? "t" : "f")
+    }
+  ' "$working_output_directory/latency-after.csv"
+} > "$working_output_directory/search-latency-budget.csv"
+if [[ "$(awk 'END { print NR - 1 }' "$working_output_directory/search-latency-budget.csv")" -ne 2 \
+   || "$(awk -F, 'NR > 1 && $4 == "f" { failures++ } END { print failures + 0 }' \
+       "$working_output_directory/search-latency-budget.csv")" -ne 0 ]]; then
+  printf 'An Agent Workspace search query exceeded the fixed %s ms p95 budget.\n' \
+    "$search_latency_budget_ms" >&2
   exit 1
 fi
 
@@ -1142,6 +1164,7 @@ fi
   printf 'latency_repetitions=%s\n' "$repetitions"
   printf 'access_overhead_repetitions=%s\n' "$access_repetitions"
   printf 'queue_p95_budget_ms=%s\n' "$queue_latency_budget_ms"
+  printf 'search_p95_budget_ms=%s\n' "$search_latency_budget_ms"
   printf 'allow_low_disk=%s\n' "$allow_low_disk"
   printf 'keep_container=%s\n' "$keep_container"
   printf 'captured_source_fingerprint=%s\n' "$captured_source_fingerprint"
@@ -1235,6 +1258,15 @@ failure_phase="render_summary"
   printf '|---|---:|---:|:---:|\n'
   awk -F, 'NR > 1 { printf "| `%s` | %s | %s | %s |\n", $1, $2, $3, $4 }' \
     "$working_output_directory/queue-latency-budget.csv"
+  printf '\n## REQ-SRCH-001 local search latency budget\n\n'
+  printf 'The fixed acceptance boundary declared before this run is warm-cache database-component '
+  printf 'p95 <= `%s ms` for both the exact result count and first score page on the recorded ' \
+    "$search_latency_budget_ms"
+  printf '1M-ticket, 2M-comment, 2-CPU / 6-GiB PostgreSQL profile. It is not an HTTP SLO.\n\n'
+  printf '| Query | After p95 (ms) | Budget (ms) | Pass |\n'
+  printf '|---|---:|---:|:---:|\n'
+  awk -F, 'NR > 1 { printf "| `%s` | %s | %s | %s |\n", $1, $2, $3, $4 }' \
+    "$working_output_directory/search-latency-budget.csv"
   printf '\n## Warm-cache server-side latency\n\n'
   printf '| Query | Before p50 (ms) | Before p95 (ms) | After p50 (ms) | After p95 (ms) | p95 change |\n'
   printf '|---|---:|---:|---:|---:|---:|\n'
@@ -1307,6 +1339,7 @@ failure_phase="render_summary"
   printf -- '- `latency-before.csv` / `latency-after.csv`: p50/p95 from %s measured executions after one warm-up\n' "$repetitions"
   printf -- '- `query-cardinality.csv`: eligible and first-page rows for the exact production queue predicates\n'
   printf -- '- `queue-latency-budget.csv`: fixed PERF-001 p95 ceiling and per-View pass/fail\n'
+  printf -- '- `search-latency-budget.csv`: fixed REQ-SRCH-001 p95 ceiling for exact count and first score page\n'
   printf -- '- `sizes-before.csv` / `sizes-after.csv`: heap, total-index and candidate-index sizes plus scan counts\n'
   printf -- '- `fixture-load.log`, `migrations.csv`, `durations.csv`: generation and phase timing\n'
   printf -- '- `environment.txt`, `database-settings.csv`: seed, exact image and database settings\n'
@@ -1320,8 +1353,8 @@ failure_phase="render_summary"
   printf 'cardinality rather than production skew. Latencies are server-side, warm-cache, '
   printf 'single-client samples in an isolated local container; they are not an API SLO or '
   printf 'production-capacity claim. Canonical audit rows are loaded with integrity constraints '
-  printf 'active while per-row projection refresh triggers are paused, followed by the real '
-  printf '`rebuild_audit_activity_projection()` function. Fixture load duration therefore is '
+  printf 'active while per-row audit and ticket-search projection refresh triggers are paused, followed by the real '
+  printf '`rebuild_audit_activity_projection()` and `rebuild_ticket_search_documents()` functions. Fixture load duration therefore is '
   printf 'not an online-ingestion benchmark.\n'
 } > "$working_output_directory/summary.md"
 

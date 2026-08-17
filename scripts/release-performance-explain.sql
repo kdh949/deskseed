@@ -126,13 +126,14 @@ limit 51;
 
 -- These two statements mirror StaffTicketQueryRepository.search for the P1
 -- score/ticketNumber cursor mode with a numeric query. They retain the SQL
--- authorization predicate and the same matching/score expression as runtime.
+-- authorization predicate and use the versioned staff-only trigram document.
 \set search_query '6242'
 
 \echo SEARCH_AGENT_WORKSPACE_EXACT_COUNT
 explain (analyze, buffers, settings)
 select count(*)
 from tickets t
+join ticket_search_documents search_document on search_document.ticket_id = t.id
 left join customers c on c.id = t.requester_id
 left join support_groups g on g.id = t.group_id
 left join staff_accounts s on s.id = t.assignee_id
@@ -145,17 +146,8 @@ where exists (
   and t.updated_at <= :'base_time'::timestamptz
   and (
       (cast(:'search_query' as bigint) is not null
-          and t.ticket_number = cast(:'search_query' as bigint))
-      or strpos(lower(t.subject), lower(:'search_query')) > 0
-      or strpos(lower(c.name), lower(:'search_query')) > 0
-      or strpos(lower(c.email_normalized), lower(:'search_query')) > 0
-      or strpos(lower(g.name), lower(:'search_query')) > 0
-      or strpos(lower(s.display_name), lower(:'search_query')) > 0
-      or exists (
-          select 1 from ticket_comments search_comment
-          where search_comment.ticket_id = t.id
-            and strpos(lower(search_comment.body), lower(:'search_query')) > 0
-      )
+          and search_document.ticket_number = cast(:'search_query' as bigint))
+      or search_document.staff_document like '%' || lower(:'search_query') || '%'
   );
 
 \echo SEARCH_AGENT_WORKSPACE_SCORE_FIRST_PAGE
@@ -171,24 +163,24 @@ with ranked as (
            fact.schedule_version as sla_schedule_version,
            (
                case when cast(:'search_query' as bigint) is not null
-                           and t.ticket_number = cast(:'search_query' as bigint) then 1000 else 0 end
-               + case when lower(t.subject) = lower(:'search_query') then 500
-                      when strpos(lower(t.subject), lower(:'search_query')) > 0 then 250 else 0 end
-               + case when lower(c.name) = lower(:'search_query') then 180
-                      when strpos(lower(c.name), lower(:'search_query')) > 0 then 90 else 0 end
-               + case when lower(c.email_normalized) = lower(:'search_query') then 160
-                      when strpos(lower(c.email_normalized), lower(:'search_query')) > 0 then 80 else 0 end
-               + case when lower(g.name) = lower(:'search_query') then 80
-                      when strpos(lower(g.name), lower(:'search_query')) > 0 then 40 else 0 end
-               + case when lower(s.display_name) = lower(:'search_query') then 80
-                      when strpos(lower(s.display_name), lower(:'search_query')) > 0 then 40 else 0 end
-               + case when exists (
-                       select 1 from ticket_comments scored_comment
-                       where scored_comment.ticket_id = t.id
-                         and strpos(lower(scored_comment.body), lower(:'search_query')) > 0
-                   ) then 20 else 0 end
+                           and search_document.ticket_number = cast(:'search_query' as bigint)
+                    then 1000 else 0 end
+               + case when search_document.subject_text = lower(:'search_query') then 500
+                      when strpos(search_document.subject_text, lower(:'search_query')) > 0 then 250 else 0 end
+               + case when search_document.requester_name_text = lower(:'search_query') then 180
+                      when strpos(search_document.requester_name_text, lower(:'search_query')) > 0 then 90 else 0 end
+               + case when search_document.requester_email_text = lower(:'search_query') then 160
+                      when strpos(search_document.requester_email_text, lower(:'search_query')) > 0 then 80 else 0 end
+               + case when search_document.group_name_text = lower(:'search_query') then 80
+                      when strpos(search_document.group_name_text, lower(:'search_query')) > 0 then 40 else 0 end
+               + case when search_document.assignee_name_text = lower(:'search_query') then 80
+                      when strpos(search_document.assignee_name_text, lower(:'search_query')) > 0 then 40 else 0 end
+               + case when strpos(search_document.public_comment_text, lower(:'search_query')) > 0
+                            or strpos(search_document.internal_comment_text, lower(:'search_query')) > 0
+                      then 20 else 0 end
            ) as search_score
     from tickets t
+    join ticket_search_documents search_document on search_document.ticket_id = t.id
     left join customers c on c.id = t.requester_id
     left join support_groups g on g.id = t.group_id
     left join staff_accounts s on s.id = t.assignee_id
@@ -201,17 +193,8 @@ with ranked as (
       and t.updated_at <= :'base_time'::timestamptz
       and (
           (cast(:'search_query' as bigint) is not null
-              and t.ticket_number = cast(:'search_query' as bigint))
-          or strpos(lower(t.subject), lower(:'search_query')) > 0
-          or strpos(lower(c.name), lower(:'search_query')) > 0
-          or strpos(lower(c.email_normalized), lower(:'search_query')) > 0
-          or strpos(lower(g.name), lower(:'search_query')) > 0
-          or strpos(lower(s.display_name), lower(:'search_query')) > 0
-          or exists (
-              select 1 from ticket_comments search_comment
-              where search_comment.ticket_id = t.id
-                and strpos(lower(search_comment.body), lower(:'search_query')) > 0
-          )
+              and search_document.ticket_number = cast(:'search_query' as bigint))
+          or search_document.staff_document like '%' || lower(:'search_query') || '%'
       )
 )
 select *

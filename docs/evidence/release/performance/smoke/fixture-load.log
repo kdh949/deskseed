@@ -1,90 +1,112 @@
 Timing is on.
-Time: 0.266 ms
+Time: 0.636 ms
 SET
-Time: 0.016 ms
+Time: 0.103 ms
 SET
-Time: 0.007 ms
+Time: 0.319 ms
 FIXTURE_SUPPORT_GROUPS
 INSERT 0 10
-Time: 1.055 ms
+Time: 1.275 ms
 FIXTURE_STAFF
 INSERT 0 100
-Time: 0.652 ms
+Time: 0.870 ms
 INSERT 0 100
-Time: 2.342 ms
+Time: 2.923 ms
 FIXTURE_CUSTOMERS
 INSERT 0 1000
-Time: 3.090 ms
+Time: 13.609 ms
 FIXTURE_TICKETS
+ALTER TABLE
+Time: 0.490 ms
+ALTER TABLE
+Time: 0.181 ms
+ALTER TABLE
+Time: 0.143 ms
+ALTER TABLE
+Time: 0.135 ms
 INSERT 0 10000
-Time: 243.861 ms
+Time: 273.220 ms
  setval
 --------
   11000
 (1 row)
 
-Time: 0.225 ms
+Time: 0.168 ms
 INSERT 0 100
-Time: 2.537 ms
+Time: 2.548 ms
 FIXTURE_COMMENTS
 INSERT 0 20000
-Time: 188.969 ms
+Time: 186.355 ms
+ rebuild_ticket_search_documents
+---------------------------------
+                           10000
+(1 row)
+
+Time: 382.387 ms
 ALTER TABLE
-Time: 0.416 ms
+Time: 0.179 ms
 ALTER TABLE
-Time: 0.119 ms
+Time: 0.176 ms
 ALTER TABLE
-Time: 0.095 ms
+Time: 0.134 ms
 ALTER TABLE
-Time: 0.130 ms
+Time: 0.136 ms
 ALTER TABLE
-Time: 0.327 ms
+Time: 0.159 ms
+ALTER TABLE
+Time: 0.189 ms
+ALTER TABLE
+Time: 0.120 ms
+ALTER TABLE
+Time: 0.115 ms
+ALTER TABLE
+Time: 0.150 ms
 FIXTURE_TICKET_AUDITS
 INSERT 0 10000
-Time: 188.242 ms
+Time: 218.511 ms
 INSERT 0 10000
-Time: 74.787 ms
+Time: 90.182 ms
 FIXTURE_ACCESS_AUDITS
 INSERT 0 5000
-Time: 70.567 ms
+Time: 79.604 ms
 INSERT 0 500
-Time: 5.762 ms
+Time: 6.571 ms
 FIXTURE_ADMIN_AUDITS
 INSERT 0 1000
-Time: 8.229 ms
+Time: 9.567 ms
 ALTER TABLE
-Time: 0.099 ms
+Time: 0.252 ms
 ALTER TABLE
-Time: 0.089 ms
+Time: 0.318 ms
 ALTER TABLE
-Time: 0.092 ms
+Time: 0.101 ms
 ALTER TABLE
-Time: 0.173 ms
+Time: 0.123 ms
 ALTER TABLE
-Time: 0.121 ms
+Time: 0.142 ms
 REBUILD_AUDIT_ACTIVITY_PROJECTION
  ticket_change_count | access_search_count | admin_security_count | total_count
 ---------------------+---------------------+----------------------+-------------
                10000 |                5000 |                 1000 |       16000
 (1 row)
 
-Time: 229.512 ms
+Time: 242.462 ms
 VACUUM_ANALYZE_RELEASE_FIXTURE
 VACUUM
-Time: 4.012 ms
+Time: 9.335 ms
 VACUUM
-Time: 32.284 ms
+Time: 27.601 ms
 VACUUM
-Time: 37.525 ms
+Time: 43.417 ms
 VACUUM
-Time: 29.440 ms
+Time: 35.616 ms
 VACUUM
-Time: 10.040 ms
+Time: 11.426 ms
 VACUUM
-Time: 20.236 ms
+Time: 24.149 ms
 VACUUM
-Time: 1.111 ms
+Time: 1.115 ms
 VACUUM
-Time: 3.551 ms
+Time: 4.310 ms
 VACUUM
-Time: 90.793 ms
+Time: 107.872 ms

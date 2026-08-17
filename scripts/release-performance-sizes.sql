@@ -17,6 +17,7 @@ from (
         values
             ('customers'),
             ('tickets'),
+            ('ticket_search_documents'),
             ('ticket_comments'),
             ('ticket_audits'),
             ('ticket_audit_events'),
@@ -34,6 +35,7 @@ from (
         values
             ('customers'),
             ('tickets'),
+            ('ticket_search_documents'),
             ('ticket_comments'),
             ('ticket_audits'),
             ('ticket_audit_events'),
@@ -50,6 +52,7 @@ from (
     from (
         values
             ('tickets_assignee_status_cursor_idx'),
+            ('ticket_search_documents_staff_trgm_idx'),
             ('audit_activity_projection_actor_cursor_idx')
     ) candidate(index_name)
     left join pg_stat_user_indexes stat on stat.indexrelname = candidate.index_name

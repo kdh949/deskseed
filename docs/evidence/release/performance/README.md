@@ -4,12 +4,12 @@ This directory holds bounded, sanitized evidence for exact Agent View queue quer
 unified Audit Explorer paths, and required sensitive-read audit overhead. It measures the
 current PostgreSQL schema; it does not introduce a cache, search engine, or new service.
 
-> **Current artifact status:** `release/` was regenerated on 2026-08-16 (Asia/Seoul) from
-> the current runner and V1-V33 schema. The release artifact is `PASS`, records 54 relevant
+> **Current artifact status:** `release/` was regenerated on 2026-08-18 (Asia/Seoul) from
+> the current runner and V1-V35 schema. The release artifact is `PASS`, records 56 relevant
 > source hashes with no mismatch at six freeze checkpoints, and covers all five
-> `DefaultStaffView` shapes, two P1 Agent Workspace search plans, four Audit Explorer page
+> `DefaultStaffView` shapes, two Agent Workspace search plans and p50/p95 samples, four Audit Explorer page
 > reads, the exact O(1) projection-status read, and the staff-command replay lookup. Its
-> host-filesystem preflight passed with 33.29 GiB free against a 17 GiB guard; no low-disk
+> host-filesystem preflight passed with 195.32 GiB free against a 21 GiB guard; no low-disk
 > override was used. Exact container, anonymous data-volume, and scratch cleanup passed.
 > Docker Desktop VM quota remains a separately stated operator check rather than a measured
 > guarantee.
@@ -23,7 +23,7 @@ bash scripts/run-release-performance.sh --scale smoke
 ```
 
 Then run the release fixture with at least the preflight value derived from the latest
-smoke evidence free in the filesystem used by Docker Desktop (currently 17 GiB; the
+smoke evidence free in the filesystem used by Docker Desktop (currently 21 GiB; the
 fixed floor is 16 GiB):
 
 ```bash
@@ -36,6 +36,7 @@ The release profile defaults are deterministic and intentionally explicit:
 |---|---:|
 | Customer | 100,000 |
 | Ticket | 1,000,000 |
+| TicketSearchDocument | 1,000,000 |
 | Comment | 2,000,000 (one PUBLIC and one INTERNAL per ticket) |
 | TicketAudit / TicketAuditEvent | 1,000,000 each |
 | AccessAuditEvent | 500,000 |
@@ -109,6 +110,8 @@ captures the `after` evidence. The p50/p95 samples run after one unrecorded warm
 measure server-side execution through PL/pgSQL; they exclude HTTP, JSON serialization,
 network and browser time.
 
+The V35 ticket-search trigram index remains installed in both queue candidate-index phases;
+it is a correctness/performance index for the production search path rather than a temporary candidate.
 Only `MY_OPEN`/`RECENTLY_SOLVED` are expected to respond directly to the ticket candidate
 index, and only actor+date is expected to respond directly to the audit candidate index.
 Sub-millisecond changes in unaffected queries are measurement noise, not optimization
@@ -126,11 +129,11 @@ component gate, not a production SLO.
 
 | Exact production View | Eligible rows | First page | After p95 (ms) | After-plan observation |
 |---|---:|---:|---:|---|
-| `MY_OPEN` | 2,200 | 51 | 0.761 | `tickets_assignee_status_cursor_idx`; bounded `LIMIT 51` |
-| `UNASSIGNED_MY_GROUPS` | 1,600 | 51 | 14.032 | membership query plus bounded top-N first page |
-| `PENDING` | 200,000 | 51 | 0.884 | `tickets_status_cursor_idx`; stops after the first 51 rows |
-| `RECENTLY_SOLVED` | 2,200 | 51 | 0.501 | assignee/status/cursor index with the 30-day predicate |
-| `MY_CHILD_TASKS` | 8,000 | 51 | 0.479 | exact child-kind/actor/non-terminal predicate; bounded first page |
+| `MY_OPEN` | 2,200 | 51 | 0.679 | `tickets_assignee_status_cursor_idx`; bounded `LIMIT 51` |
+| `UNASSIGNED_MY_GROUPS` | 1,600 | 51 | 10.494 | membership query plus bounded top-N first page |
+| `PENDING` | 200,000 | 51 | 0.797 | `tickets_status_cursor_idx`; stops after the first 51 rows |
+| `RECENTLY_SOLVED` | 2,200 | 51 | 0.453 | assignee/status/cursor index with the 30-day predicate |
+| `MY_CHILD_TASKS` | 8,000 | 51 | 0.374 | exact child-kind/actor/non-terminal predicate; bounded first page |
 
 These numbers come directly from
 [`release/latency-after.csv`](release/latency-after.csv), while eligible and returned rows
@@ -146,19 +149,21 @@ The raw budget table is
 not retroactively reclassified.
 
 The current list-endpoint status query is separately captured as
-`audit_projection_status`: its release p95 is 0.020 ms and the raw plan reads the single
+`audit_projection_status`: its release p95 is 0.016 ms and the raw plan reads the single
 `audit_activity_projection_state` row plus advisory-lock state. It does not scan or count
 the 1.6-million-row projection.
 
-## P1 Agent Workspace search baseline
+## Agent Workspace search projection
 
-The current PostgreSQL implementation keeps its authorization predicate in SQL and runs
-the exact count and stable `score,ticketNumber` first page independently. The 2026-08-16
-one-million-ticket evidence measures the numeric-query count at 5,371.400 ms and its
-score cursor first page at 6,374.443 ms. These broad substring/comment-matching plans are
-recorded for an architectural decision, not reclassified as the queue gate or presented as
-a production SLO. See [P1 Agent Workspace Search — one-million-ticket evidence](p1-agent-search-1m.md)
-for the raw-plan links, source fingerprint, and the bounded follow-up decision.
+The PostgreSQL implementation keeps its active-staff authorization predicate in SQL and
+runs the exact count and stable `score,ticketNumber` first page independently. V35 replaces
+the original broad canonical-table scans (5,371.400 ms / 6,374.443 ms) with a versioned,
+transactionally refreshed staff-only trigram projection. The same 301-result release query
+uses the ticket-number and GIN indexes and records warm-cache p95 of 0.699 ms for count and
+2.883 ms for the first score page, both below the prospective 250 ms local DB-component
+budget. This is not a production HTTP SLO. See
+[Agent Workspace Search — one-million-ticket baseline and V35 projection evidence](p1-agent-search-1m.md)
+for consistency, privacy, index-size, quality-corpus, and remaining write/concurrency limits.
 
 Admin organization lists are guarded separately at the PostgreSQL integration-test layer.
 Staff, group and active-member endpoints retain the frozen array body but accept zero-based

@@ -1,90 +1,112 @@
 Timing is on.
-Time: 0.439 ms
+Time: 0.390 ms
 SET
-Time: 0.069 ms
+Time: 0.017 ms
 SET
-Time: 0.070 ms
+Time: 0.007 ms
 FIXTURE_SUPPORT_GROUPS
 INSERT 0 100
-Time: 1.524 ms
+Time: 2.261 ms
 FIXTURE_STAFF
 INSERT 0 1000
-Time: 6.305 ms
+Time: 7.004 ms
 INSERT 0 1000
-Time: 18.303 ms
+Time: 21.081 ms
 FIXTURE_CUSTOMERS
 INSERT 0 100000
-Time: 2061.487 ms (00:02.061)
+Time: 1646.980 ms (00:01.647)
 FIXTURE_TICKETS
+ALTER TABLE
+Time: 0.513 ms
+ALTER TABLE
+Time: 0.158 ms
+ALTER TABLE
+Time: 0.214 ms
+ALTER TABLE
+Time: 0.277 ms
 INSERT 0 1000000
-Time: 42909.868 ms (00:42.910)
+Time: 35609.497 ms (00:35.609)
  setval
 ---------
  1001000
 (1 row)
 
-Time: 1.537 ms
+Time: 0.691 ms
 INSERT 0 10000
-Time: 409.069 ms
+Time: 272.536 ms
 FIXTURE_COMMENTS
 INSERT 0 2000000
-Time: 35205.277 ms (00:35.205)
+Time: 28261.104 ms (00:28.261)
+ rebuild_ticket_search_documents
+---------------------------------
+                         1000000
+(1 row)
+
+Time: 43624.866 ms (00:43.625)
 ALTER TABLE
-Time: 1.443 ms
+Time: 0.407 ms
 ALTER TABLE
-Time: 0.381 ms
+Time: 0.307 ms
 ALTER TABLE
-Time: 0.291 ms
+Time: 0.197 ms
+ALTER TABLE
+Time: 0.189 ms
+ALTER TABLE
+Time: 0.343 ms
+ALTER TABLE
+Time: 0.244 ms
+ALTER TABLE
+Time: 0.166 ms
+ALTER TABLE
+Time: 0.130 ms
 ALTER TABLE
 Time: 0.248 ms
-ALTER TABLE
-Time: 0.302 ms
 FIXTURE_TICKET_AUDITS
 INSERT 0 1000000
-Time: 34686.443 ms (00:34.686)
+Time: 28041.453 ms (00:28.041)
 INSERT 0 1000000
-Time: 14893.564 ms (00:14.894)
+Time: 12636.257 ms (00:12.636)
 FIXTURE_ACCESS_AUDITS
 INSERT 0 500000
-Time: 13108.746 ms (00:13.109)
+Time: 10049.978 ms (00:10.050)
 INSERT 0 50000
-Time: 650.244 ms
+Time: 529.277 ms
 FIXTURE_ADMIN_AUDITS
 INSERT 0 100000
-Time: 1831.724 ms (00:01.832)
+Time: 1335.945 ms (00:01.336)
 ALTER TABLE
-Time: 0.884 ms
+Time: 2.467 ms
 ALTER TABLE
-Time: 0.302 ms
+Time: 0.196 ms
 ALTER TABLE
-Time: 0.161 ms
+Time: 0.170 ms
 ALTER TABLE
-Time: 0.194 ms
+Time: 0.119 ms
 ALTER TABLE
-Time: 0.214 ms
+Time: 0.125 ms
 REBUILD_AUDIT_ACTIVITY_PROJECTION
  ticket_change_count | access_search_count | admin_security_count | total_count
 ---------------------+---------------------+----------------------+-------------
              1000000 |              500000 |               100000 |     1600000
 (1 row)
 
-Time: 82406.894 ms (01:22.407)
+Time: 57959.363 ms (00:57.959)
 VACUUM_ANALYZE_RELEASE_FIXTURE
 VACUUM
-Time: 176.444 ms
+Time: 129.514 ms
 VACUUM
-Time: 416.183 ms
+Time: 345.930 ms
 VACUUM
-Time: 314.462 ms
+Time: 265.519 ms
 VACUUM
-Time: 379.741 ms
+Time: 184.074 ms
 VACUUM
-Time: 156.622 ms
+Time: 87.668 ms
 VACUUM
-Time: 320.541 ms
+Time: 1267.964 ms (00:01.268)
 VACUUM
-Time: 64.759 ms
+Time: 46.221 ms
 VACUUM
-Time: 203.036 ms
+Time: 169.263 ms
 VACUUM
-Time: 1417.093 ms (00:01.417)
+Time: 441.949 ms
