@@ -47,7 +47,7 @@ e8a16860e8ba939b282edd70320ea51e113a4ef6cc9176f45aceae3d915a3cb4        5982  do
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 1cb5de486728eb8740a92b7abf6bbfb082c3f5bc28604708d0ca8746dccc5ed3        8603  docs/25-implementation-decision-register.md
-36ceaeb8a3b9fc5f6b030ad39468a2ecb9eb60990dcb6a1ba612cbaca4463848       26934  docs/26-requirement-traceability.md
+38519b4680701717ac82821704071fd67e4fc00890a688df12b1ba73179641e3       27025  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -289,6 +289,7 @@ ce559dc20c95fd9c7f9cda5cc09b7267b39e46b467f7e8036e1dce202ec1f2f5        6221  ta
 8bf4a7fd763175bb6ad4f745aec5a115d823c16b81acf820b0c137836d86cb93        6017  tasks/briefs/pr17-pr18-review-followup.md
 7e101546d06ac55d9056b735d269ee185150c1f8e84511d6f9f63fc31c06dffc        3799  tasks/briefs/production-attachment-adapter-boundary.md
 b03ee99605722a4b7998dec7a07751af597aa29d1044f5e8ee9ff7e3a9442ccb       12469  tasks/briefs/release-hardening.md
+6a49f01438dfdd4463fa2622a531fe95a73668feae5cef5c15eca7923e83cbbb        2871  tasks/briefs/saved-view-count-invariant-remediation.md
 873569578766d25ee6f9864670ba7a81e8bc6b9aaff681c07eeee80c4103ae42        5181  tasks/briefs/storybook-design-system-catalog.md
 3b869e69ab417aa64154989cd6436b1add4ab385bb4d4c9e32e0447a38256f43        8715  tasks/briefs/ticket-composer-conflict-ui.md
 9cfc7e8776993be2ac2553c283e41f786d3ce7b9ba4514ea2a912266d10924b7        8022  tasks/briefs/ticket-update-audit-concurrency.md
