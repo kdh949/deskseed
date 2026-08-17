@@ -109,6 +109,7 @@ function installMutationFetch(
   commandResponses: Array<Response | Error | Promise<Response>>,
 ) {
   const commands: Array<Record<string, unknown>> = []
+  let uploadCount = 0
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -124,6 +125,23 @@ function installMutationFetch(
         if (next instanceof Error) throw next
         if (!next) throw new Error('Unexpected ticket command')
         return next
+      }
+      if (url.endsWith('/api/v1/agent/attachments/uploads')) {
+        uploadCount += 1
+        return new Response(
+          JSON.stringify({
+            id:
+              uploadCount === 1
+                ? '33333333-3333-4333-8333-333333333333'
+                : '44444444-4444-4444-8444-444444444444',
+            fileName: uploadCount === 1 ? 'a.png' : 'b.png',
+            sizeBytes: 1,
+            contentType: 'image/png',
+            scanStatus: 'CLEAN',
+            expiresAt: '2099-08-17T05:00:00Z',
+          }),
+          { status: 200 },
+        )
       }
       throw new Error(`Unexpected request: ${url}`)
     },
@@ -231,6 +249,119 @@ describe('AgentTicketEditorWorkspace', () => {
     await waitFor(() => expect(commands).toHaveLength(2))
     expect(commands[1]?.clientCommandId).toBe(commands[0]?.clientCommandId)
     expect(commands[1]?.comment).toEqual(commands[0]?.comment)
+  })
+
+  it('rotates the complete command when attachments change after an ambiguous failure', async () => {
+    const user = userEvent.setup()
+    const { commands } = installMutationFetch([
+      new Error('network interrupted'),
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          version: 4,
+          auditId: '22222222-2222-4222-8222-222222222222',
+          warnings: [],
+        }),
+        { status: 200 },
+      ),
+    ])
+    renderWorkspace()
+    await user.type(
+      screen.getByRole('textbox', { name: '공개 답변 내용' }),
+      '첨부를 확인합니다.',
+    )
+    await user.upload(
+      screen.getByLabelText('PUBLIC 첨부 파일'),
+      new File(['a'], 'a.png', { type: 'image/png' }),
+    )
+    await screen.findByText(/^CLEAN/)
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await screen.findByText(/저장 결과를 확인할 수 없습니다/)
+    await user.click(screen.getByRole('button', { name: '초안에서 제거' }))
+    await user.upload(
+      screen.getByLabelText('PUBLIC 첨부 파일'),
+      new File(['b'], 'b.png', { type: 'image/png' }),
+    )
+    await screen.findByText(/^CLEAN/)
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await waitFor(() => expect(commands).toHaveLength(2))
+
+    expect(commands[1]?.clientCommandId).not.toBe(commands[0]?.clientCommandId)
+    expect(
+      (commands[0]?.comment as { attachmentIds: string[] }).attachmentIds,
+    ).toEqual(['33333333-3333-4333-8333-333333333333'])
+    expect(
+      (commands[1]?.comment as { attachmentIds: string[] }).attachmentIds,
+    ).toEqual(['44444444-4444-4444-8444-444444444444'])
+  })
+
+  it('restores the exact attachment command snapshot after reload', async () => {
+    const user = userEvent.setup()
+    const { commands } = installMutationFetch([
+      new Error('network interrupted'),
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          version: 4,
+          auditId: '22222222-2222-4222-8222-222222222222',
+          warnings: [],
+        }),
+        { status: 200 },
+      ),
+    ])
+    const first = renderWorkspace()
+    await user.type(
+      screen.getByRole('textbox', { name: '공개 답변 내용' }),
+      '새로고침 뒤 재시도합니다.',
+    )
+    await user.upload(
+      screen.getByLabelText('PUBLIC 첨부 파일'),
+      new File(['a'], 'a.png', { type: 'image/png' }),
+    )
+    await screen.findByText(/^CLEAN/)
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await screen.findByText(/저장 결과를 확인할 수 없습니다/)
+    first.unmount()
+
+    renderWorkspace()
+    expect(await screen.findByText(/이전 저장 시도에서 복원됨/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await waitFor(() => expect(commands).toHaveLength(2))
+    expect(commands[1]).toEqual(commands[0])
+  })
+
+  it('persists clean attachments before submit and restores them after reload', async () => {
+    const user = userEvent.setup()
+    const { commands } = installMutationFetch([
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          version: 4,
+          auditId: '22222222-2222-4222-8222-222222222222',
+          warnings: [],
+        }),
+        { status: 200 },
+      ),
+    ])
+    const first = renderWorkspace()
+    await user.type(
+      screen.getByRole('textbox', { name: '공개 답변 내용' }),
+      '첨부 초안을 복원합니다.',
+    )
+    await user.upload(
+      screen.getByLabelText('PUBLIC 첨부 파일'),
+      new File(['a'], 'a.png', { type: 'image/png' }),
+    )
+    await screen.findByText(/^CLEAN/)
+    first.unmount()
+
+    renderWorkspace()
+    expect(await screen.findByText(/이전 저장 시도에서 복원됨/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await waitFor(() => expect(commands).toHaveLength(1))
+    expect(
+      (commands[0]?.comment as { attachmentIds: string[] }).attachmentIds,
+    ).toEqual(['33333333-3333-4333-8333-333333333333'])
   })
 
   it('locks reply and property inputs during a save, then accepts a later draft after the confirmed result', async () => {

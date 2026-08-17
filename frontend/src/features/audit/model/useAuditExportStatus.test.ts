@@ -23,6 +23,22 @@ const job = {
   },
 }
 
+const runningJob = { ...job, status: 'RUNNING' }
+const readyJob = {
+  ...job,
+  status: 'READY',
+  artifact: {
+    state: 'READY',
+    rowCount: 1,
+    sizeBytes: 42,
+    checksumSha256:
+      'ea3582c0eacf31ba0ad2157f7e8cc8b5c16d21a1c74b4740269f349da1c9d2d2',
+    expiresAt: '2026-08-18T10:00:00Z',
+    contentType: 'text/csv',
+    failureCode: null,
+  },
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -50,7 +66,7 @@ afterEach(() => {
 })
 
 describe('useAuditExportStatus', () => {
-  it('stops auto-polling after 5 attempts on repeated success', async () => {
+  it('keeps polling REQUESTED and RUNNING jobs beyond five attempts', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(job)))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -63,13 +79,12 @@ describe('useAuditExportStatus', () => {
       await act(() => vi.advanceTimersByTimeAsync(3000))
     }
 
-    expect(result.current.pollingExhausted).toBe(true)
+    expect(result.current.polling).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(5)
 
-    // Further time passing must not trigger additional automatic fetches.
     await act(() => vi.advanceTimersByTimeAsync(3000))
     await act(() => vi.advanceTimersByTimeAsync(3000))
-    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(fetchMock).toHaveBeenCalledTimes(7)
   })
 
   it('stops auto-polling as soon as the worker reports a terminal artifact state', async () => {
@@ -98,15 +113,20 @@ describe('useAuditExportStatus', () => {
     })
 
     await act(() => vi.advanceTimersByTimeAsync(0))
-    expect(result.current.pollingExhausted).toBe(true)
+    expect(result.current.polling).toBe(false)
     await act(() => vi.advanceTimersByTimeAsync(6000))
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('stops auto-polling immediately after a failed fetch', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(jsonResponse({ title: 'unavailable', status: 503 }, 503)),
-    )
+  it('continues polling after a transient failure and stops only at READY', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(runningJob))
+      .mockResolvedValueOnce(
+        jsonResponse({ title: 'unavailable', status: 503 }, 503),
+      )
+      .mockResolvedValueOnce(jsonResponse(runningJob))
+      .mockResolvedValueOnce(jsonResponse(readyJob))
     vi.stubGlobal('fetch', fetchMock)
 
     const { result } = renderHook(() => useAuditExportStatus(jobId), {
@@ -115,13 +135,20 @@ describe('useAuditExportStatus', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(0))
 
-    expect(result.current.isError).toBe(true)
-    expect(result.current.pollingExhausted).toBe(true)
+    expect(result.current.data?.status).toBe('RUNNING')
+    expect(result.current.polling).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    // Further time passing must not trigger additional automatic fetches.
     await act(() => vi.advanceTimersByTimeAsync(3000))
+    expect(result.current.polling).toBe(true)
+    await act(() => vi.advanceTimersByTimeAsync(6000))
     await act(() => vi.advanceTimersByTimeAsync(3000))
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    await vi.waitFor(() => expect(result.current.data?.status).toBe('READY'))
+    expect(result.current.data?.status).toBe('READY')
+    expect(result.current.polling).toBe(false)
+    await act(() => vi.advanceTimersByTimeAsync(30000))
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 })

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router'
 import type { ReactNode } from 'react'
-import { submitRequest } from '../../api/client'
+import { submitRequest, submitRequestWithAttachments } from '../../api/client'
 import { RetryButton, ScreenState } from '../../design-system'
 import { useCustomerSession } from '../customer-auth/CustomerSessionContext'
 import { getCustomerAccessMode } from '../customer-auth/api/customerAuthClient'
@@ -78,8 +78,14 @@ export function CustomerRequestCreatePage() {
           `/requests/${submitted.ticketNumber}#token=${encodeURIComponent(submitted.accessToken)}`,
         )
       }}
-      submit={(input) =>
-        submitRequest(input, session.status === 'authenticated')
+      submit={(input, files = []) =>
+        files.length
+          ? submitRequestWithAttachments(
+              input,
+              files,
+              session.status === 'authenticated',
+            )
+          : submitRequest(input, session.status === 'authenticated')
       }
     />
   )

@@ -1,6 +1,8 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { DeskseedIcon } from '../primitives/DeskseedIcon'
 import { DsStatusIndicator } from '../primitives/DeskseedPrimitives'
+import { FirstReplySlaIndicator } from '../components/FirstReplySlaIndicator'
+import type { FirstReplySlaBadge } from '../../api/types'
 
 export type QueueTicketTableItem = {
   assignee: string
@@ -8,6 +10,7 @@ export type QueueTicketTableItem = {
   isChild?: boolean
   priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
   requester: string
+  sla?: FirstReplySlaBadge | null
   status: 'NEW' | 'OPEN' | 'PENDING' | 'ON_HOLD' | 'SOLVED' | 'CLOSED'
   subject: string
   ticketNumber: number
@@ -20,23 +23,27 @@ export type QueueTicketSortKey =
   | 'group'
   | 'priority'
   | 'requester'
+  | 'sla'
   | 'status'
   | 'subject'
   | 'ticketNumber'
   | 'updatedAt'
 
-type QueueTicketSort = {
+export type QueueTicketSort = {
   direction: 'ascending' | 'descending'
   key: QueueTicketSortKey
 }
 
-const sortableColumns: Array<{ key: QueueTicketSortKey; label: string }> = [
+export type QueueTicketColumn = QueueTicketSortKey
+
+const columns: Array<{ key: QueueTicketColumn; label: string }> = [
   { key: 'ticketNumber', label: '티켓 ID' },
   { key: 'requester', label: '요청자' },
   { key: 'status', label: '상태' },
   { key: 'priority', label: '우선순위' },
   { key: 'group', label: '그룹' },
   { key: 'assignee', label: '담당자' },
+  { key: 'sla', label: '최초 답변 SLA' },
   { key: 'updatedAt', label: '최근 업데이트' },
   { key: 'subject', label: '제목' },
 ]
@@ -65,7 +72,7 @@ function statusTone(status: QueueTicketTableItem['status']) {
   return 'solved' as const
 }
 
-type QueueTicketTableProps = {
+export type QueueTicketTableProps = {
   items: QueueTicketTableItem[]
   label: string
   onOpenTicket?: (ticketNumber: number) => void
@@ -75,7 +82,10 @@ type QueueTicketTableProps = {
     options: { orderedTicketNumbers: number[]; range: boolean },
   ) => void
   selectedTicketNumbers?: Set<number>
+  sort?: QueueTicketSort
   ticketHref?: (ticketNumber: number) => string
+  visibleColumns?: QueueTicketColumn[]
+  onSortChange?: (sort: QueueTicketSort) => void
 }
 
 export function QueueTicketTable({
@@ -84,28 +94,26 @@ export function QueueTicketTable({
   onOpenTicket,
   onSelectAll,
   onSelectionChange,
+  onSortChange,
   selectedTicketNumbers = new Set<number>(),
+  sort,
   ticketHref,
+  visibleColumns = columns.map((column) => column.key),
 }: QueueTicketTableProps) {
   const links = useRef<Array<HTMLAnchorElement | null>>([])
-  const [sort, setSort] = useState<QueueTicketSort>({
-    direction: 'descending',
-    key: 'ticketNumber',
-  })
-  const sortedItems = useMemo(
-    () => sortQueueTicketItems(items, sort),
-    [items, sort],
-  )
-  const orderedTicketNumbers = sortedItems.map((item) => item.ticketNumber)
+  const renderedColumns = visibleColumns
+    .map((key) => columns.find((column) => column.key === key))
+    .filter((column): column is (typeof columns)[number] => Boolean(column))
+  const orderedTicketNumbers = items.map((item) => item.ticketNumber)
 
   const toggleSort = (key: QueueTicketSortKey) => {
-    setSort((current) => ({
+    onSortChange?.({
       key,
       direction:
-        current.key === key && current.direction === 'descending'
+        sort?.key === key && sort.direction === 'descending'
           ? 'ascending'
           : 'descending',
-    }))
+    })
   }
 
   const handleKeyDown = (
@@ -115,10 +123,10 @@ export function QueueTicketTable({
   ) => {
     let nextIndex: number | null = null
     if (event.key === 'ArrowDown')
-      nextIndex = Math.min(index + 1, sortedItems.length - 1)
+      nextIndex = Math.min(index + 1, items.length - 1)
     if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0)
     if (event.key === 'Home') nextIndex = 0
-    if (event.key === 'End') nextIndex = sortedItems.length - 1
+    if (event.key === 'End') nextIndex = items.length - 1
     if (nextIndex !== null) {
       event.preventDefault()
       links.current[nextIndex]?.focus()
@@ -145,8 +153,8 @@ export function QueueTicketTable({
                 <input
                   aria-label="현재 페이지 티켓 전체 선택"
                   checked={
-                    sortedItems.length > 0 &&
-                    sortedItems.every((item) =>
+                    items.length > 0 &&
+                    items.every((item) =>
                       selectedTicketNumbers.has(item.ticketNumber),
                     )
                   }
@@ -155,8 +163,8 @@ export function QueueTicketTable({
                 />
               ) : null}
             </th>
-            {sortableColumns.map((column) => {
-              const active = sort.key === column.key
+            {renderedColumns.map((column) => {
+              const active = sort?.key === column.key
               const columnClassName =
                 column.key === 'group'
                   ? 'ds-queue-ticket-group-column'
@@ -164,30 +172,42 @@ export function QueueTicketTable({
                     ? 'ds-queue-ticket-assignee-column'
                     : column.key === 'subject'
                       ? 'ds-queue-ticket-subject-column'
-                      : undefined
+                      : column.key === 'sla'
+                        ? 'ds-queue-ticket-sla-column'
+                        : undefined
               return (
                 <th
-                  aria-sort={active ? sort.direction : 'none'}
+                  aria-sort={
+                    onSortChange
+                      ? active
+                        ? sort.direction
+                        : 'none'
+                      : undefined
+                  }
                   className={columnClassName}
                   key={column.key}
                   scope="col"
                 >
-                  <button
-                    aria-label={`${column.label} ${active ? (sort.direction === 'ascending' ? '오름차순' : '내림차순') : '정렬'}`}
-                    className="ds-queue-ticket-sort-button"
-                    onClick={() => toggleSort(column.key)}
-                    type="button"
-                  >
-                    <span>{column.label}</span>
-                    <DeskseedIcon name="sort" size="sm" />
-                  </button>
+                  {onSortChange ? (
+                    <button
+                      aria-label={`${column.label} ${active ? (sort?.direction === 'ascending' ? '오름차순' : '내림차순') : '정렬'}`}
+                      className="ds-queue-ticket-sort-button"
+                      onClick={() => toggleSort(column.key)}
+                      type="button"
+                    >
+                      <span>{column.label}</span>
+                      <DeskseedIcon name="sort" size="sm" />
+                    </button>
+                  ) : (
+                    column.label
+                  )}
                 </th>
               )
             })}
           </tr>
         </thead>
         <tbody>
-          {sortedItems.map((item, index) => {
+          {items.map((item, index) => {
             const selected = selectedTicketNumbers.has(item.ticketNumber)
             const href =
               ticketHref?.(item.ticketNumber) ??
@@ -214,55 +234,18 @@ export function QueueTicketTable({
                     />
                   ) : null}
                 </td>
-                <td>
-                  <strong>#{item.ticketNumber}</strong>
-                </td>
-                <td>{item.requester}</td>
-                <td>
-                  <DsStatusIndicator tone={statusTone(item.status)}>
-                    {statusLabels[item.status]}
-                  </DsStatusIndicator>
-                </td>
-                <td>
-                  <span
-                    className={
-                      item.priority === 'HIGH' || item.priority === 'URGENT'
-                        ? 'ds-queue-ticket-priority--attention'
-                        : 'ds-queue-ticket-priority'
-                    }
-                  >
-                    {item.priority === 'HIGH' || item.priority === 'URGENT' ? (
-                      <DeskseedIcon name="alertWarning" size="sm" />
-                    ) : null}
-                    {priorityLabels[item.priority]}
-                  </span>
-                </td>
-                <td className="ds-queue-ticket-group-column">{item.group}</td>
-                <td className="ds-queue-ticket-assignee-column">
-                  {item.assignee}
-                </td>
-                <td>{item.updatedLabel}</td>
-                <td className="ds-queue-ticket-subject-column">
-                  <a
-                    aria-label={`티켓 #${item.ticketNumber} ${item.subject}`}
+                {renderedColumns.map((column) => (
+                  <TicketCell
+                    column={column.key}
+                    item={item}
+                    key={column.key}
+                    index={index}
                     href={href}
-                    onClick={(event) => {
-                      if (!onOpenTicket) return
-                      event.preventDefault()
-                      onOpenTicket(item.ticketNumber)
-                    }}
-                    onKeyDown={(event) =>
-                      handleKeyDown(event, index, item.ticketNumber)
-                    }
-                    ref={(element) => {
-                      links.current[index] = element
-                    }}
-                    tabIndex={index === 0 ? 0 : -1}
-                  >
-                    <span>{item.subject}</span>
-                    {item.isChild ? <small>내부 작업</small> : null}
-                  </a>
-                </td>
+                    links={links}
+                    onOpenTicket={onOpenTicket}
+                    onKeyDown={handleKeyDown}
+                  />
+                ))}
               </tr>
             )
           })}
@@ -272,24 +255,91 @@ export function QueueTicketTable({
   )
 }
 
-function sortQueueTicketItems(
-  items: QueueTicketTableItem[],
-  sort: QueueTicketSort,
-) {
-  const getValue = (item: QueueTicketTableItem) =>
-    sort.key === 'updatedAt'
-      ? (item.updatedAt ?? item.updatedLabel)
-      : item[sort.key]
-
-  return [...items].sort((left, right) => {
-    const leftValue = getValue(left)
-    const rightValue = getValue(right)
-    const comparison =
-      typeof leftValue === 'number' && typeof rightValue === 'number'
-        ? leftValue - rightValue
-        : String(leftValue).localeCompare(String(rightValue), 'ko-KR', {
-            numeric: true,
-          })
-    return sort.direction === 'ascending' ? comparison : -comparison
-  })
+function TicketCell({
+  column,
+  item,
+  index,
+  href,
+  links,
+  onOpenTicket,
+  onKeyDown,
+}: {
+  column: QueueTicketColumn
+  item: QueueTicketTableItem
+  index: number
+  href: string
+  links: React.MutableRefObject<Array<HTMLAnchorElement | null>>
+  onOpenTicket?: (ticketNumber: number) => void
+  onKeyDown: (
+    event: KeyboardEvent<HTMLAnchorElement>,
+    index: number,
+    ticketNumber: number,
+  ) => void
+}) {
+  let content: ReactNode
+  if (column === 'ticketNumber') content = <strong>#{item.ticketNumber}</strong>
+  else if (column === 'requester') content = item.requester
+  else if (column === 'status')
+    content = (
+      <DsStatusIndicator tone={statusTone(item.status)}>
+        {statusLabels[item.status]}
+      </DsStatusIndicator>
+    )
+  else if (column === 'priority')
+    content = (
+      <span
+        className={
+          item.priority === 'HIGH' || item.priority === 'URGENT'
+            ? 'ds-queue-ticket-priority--attention'
+            : 'ds-queue-ticket-priority'
+        }
+      >
+        {item.priority === 'HIGH' || item.priority === 'URGENT' ? (
+          <DeskseedIcon name="alertWarning" size="sm" />
+        ) : null}
+        {priorityLabels[item.priority]}
+      </span>
+    )
+  else if (column === 'group') content = item.group
+  else if (column === 'assignee') content = item.assignee
+  else if (column === 'sla')
+    content = <FirstReplySlaIndicator sla={item.sla ?? null} />
+  else if (column === 'updatedAt') content = item.updatedLabel
+  else
+    content = (
+      <a
+        aria-label={`티켓 #${item.ticketNumber} ${item.subject}`}
+        href={href}
+        onClick={(event) => {
+          if (!onOpenTicket) return
+          event.preventDefault()
+          onOpenTicket(item.ticketNumber)
+        }}
+        onKeyDown={(event) => onKeyDown(event, index, item.ticketNumber)}
+        ref={(element) => {
+          links.current[index] = element
+        }}
+        tabIndex={index === 0 ? 0 : -1}
+      >
+        <span>{item.subject}</span>
+        {item.isChild ? <small>내부 작업</small> : null}
+      </a>
+    )
+  return (
+    <td
+      className={
+        column === 'group'
+          ? 'ds-queue-ticket-group-column'
+          : column === 'assignee'
+            ? 'ds-queue-ticket-assignee-column'
+            : column === 'subject'
+              ? 'ds-queue-ticket-subject-column'
+              : column === 'sla'
+                ? 'ds-queue-ticket-sla-column'
+                : undefined
+      }
+    >
+      {content}
+    </td>
+  )
 }

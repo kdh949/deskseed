@@ -1,6 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn } from 'storybook/test'
-import { QueueTicketTable } from './QueueTicketTable'
+import { useState } from 'react'
+import {
+  QueueTicketTable,
+  type QueueTicketSort,
+  type QueueTicketTableProps,
+} from './QueueTicketTable'
 
 const items = [
   {
@@ -8,6 +13,14 @@ const items = [
     group: '고객지원',
     priority: 'HIGH' as const,
     requester: '홍길동',
+    sla: {
+      metric: 'FIRST_REPLY' as const,
+      state: 'AT_RISK' as const,
+      dueAt: '2026-08-17T04:30:00Z',
+      targetMinutes: 60,
+      policyVersion: 3,
+      scheduleVersion: 7,
+    },
     status: 'OPEN' as const,
     subject: '결제 영수증을 다시 받을 수 있나요?',
     ticketNumber: 1042,
@@ -20,6 +33,7 @@ const items = [
     isChild: true,
     priority: 'NORMAL' as const,
     requester: '이하늘',
+    sla: null,
     status: 'PENDING' as const,
     subject: '계정 이메일 변경 요청',
     ticketNumber: 1041,
@@ -35,7 +49,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Agent Queue의 고밀도 ticket list에 사용한다. native table header와 정렬 상태를 유지하고, row open은 link semantics와 keyboard 이동을 제공하며 list/prefetch 자체는 semantic TICKET_VIEWED를 만들지 않는다.',
+          'Agent Queue의 고밀도 ticket list에 사용한다. 서버 pagination에서는 받은 item 순서를 보존한다. 정렬은 sort/onSortChange controlled props로 route가 서버 요청과 cursor 초기화를 함께 소유한다. visibleColumns는 저장된 순서대로 렌더링한다. row open은 link semantics와 keyboard 이동을 제공하며 list/prefetch 자체는 semantic TICKET_VIEWED를 만들지 않는다.',
       },
     },
   },
@@ -50,13 +64,27 @@ export const Default: Story = {
     items,
     label: '내 담당 티켓',
   },
+  play: async ({ canvas }) => {
+    const rows = canvas.getAllByRole('row')
+    await expect(rows[1]).toHaveTextContent('#1042')
+    await expect(rows[2]).toHaveTextContent('#1041')
+    await expect(canvas.queryByRole('button', { name: /티켓 ID/ })).toBeNull()
+  },
+}
+
+export const ServerControlledSortAndColumns: Story = {
+  args: {
+    items,
+    label: '서버 정렬 티켓',
+    visibleColumns: ['ticketNumber', 'subject', 'status'],
+  },
+  render: (args) => <ControlledQueue {...args} />,
   play: async ({ canvas, userEvent }) => {
+    await expect(canvas.getAllByRole('columnheader')).toHaveLength(4)
     await userEvent.click(
       canvas.getByRole('button', { name: '티켓 ID 내림차순' }),
     )
-    await expect(
-      canvas.getByRole('columnheader', { name: /티켓 id/i }),
-    ).toHaveAttribute('aria-sort', 'ascending')
+    await expect(canvas.getAllByRole('row')[1]).toHaveTextContent('#1041')
   },
 }
 
@@ -77,6 +105,28 @@ export const Selectable: Story = {
       range: false,
     })
   },
+}
+
+function ControlledQueue({
+  items: initialItems,
+  ...args
+}: QueueTicketTableProps) {
+  const [renderedItems, setRenderedItems] = useState(initialItems)
+  const [sort, setSort] = useState<QueueTicketSort>({
+    key: 'ticketNumber',
+    direction: 'descending',
+  })
+  return (
+    <QueueTicketTable
+      {...args}
+      items={renderedItems}
+      onSortChange={(nextSort) => {
+        setSort(nextSort)
+        setRenderedItems((current) => [...current].reverse())
+      }}
+      sort={sort}
+    />
+  )
 }
 
 export const LongContent: Story = {

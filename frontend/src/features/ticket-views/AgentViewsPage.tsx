@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   useEffect,
   useMemo,
@@ -9,10 +9,22 @@ import {
   type ReactNode,
 } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import { ApiError, listAgentViews, listTicketsInView } from '../../api/client'
+import {
+  ApiError,
+  createAgentSavedView,
+  deleteAgentSavedView,
+  listAgentViews,
+  listTicketAssignmentOptions,
+  listTicketsInView,
+  previewAgentSavedView,
+  reorderAgentSavedViews,
+  updateAgentSavedView,
+} from '../../api/client'
 import type {
   AgentTicketFilters,
   AgentTicketStatus,
+  FirstReplySlaState,
+  FirstReplySlaBadge,
   SavedAgentView,
   TicketPriority,
 } from '../../api/types'
@@ -26,16 +38,18 @@ import {
   ViewNavigation,
   type IconName,
   type QueueTicketTableItem,
+  type QueueTicketColumn,
   type ViewNavigationItem,
   type ViewNavigationSection,
 } from '../../design-system'
 import {
   ViewConfigurationDrawer,
-  type ConfigurableView,
+  toCreateSavedViewInput,
+  type SavedViewEditorSave,
   type ViewEditor,
 } from './ViewConfigurationDrawer'
-
-const LOCAL_VIEW_PREFIX = 'local-'
+import { BulkTicketActionPanel } from './BulkTicketActionPanel'
+import { createOpaqueUuid } from '../../api/uuid'
 
 const VIEW_NAVIGATION_COPY = {
   create: '새 보기 만들기',
@@ -125,17 +139,27 @@ const STATUSES: AgentTicketStatus[] = [
   'CLOSED',
 ]
 const PRIORITIES: TicketPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT']
-const SERVER_FILTER_KEYS = ['status', 'priority', 'groupId', 'assigneeId']
-
-type LocalView = ConfigurableView & {
-  count: null
-}
-
-type PersonalViewOverride = Pick<ConfigurableView, 'icon' | 'label'>
+const SLA_STATES: FirstReplySlaState[] = [
+  'ACTIVE',
+  'AT_RISK',
+  'PAUSED',
+  'ACHIEVED',
+  'BREACHED',
+  'CANCELLED',
+  'NO_POLICY',
+]
+const SERVER_FILTER_KEYS = [
+  'status',
+  'priority',
+  'groupId',
+  'assigneeId',
+  'slaState',
+]
 
 export function AgentViewsPage() {
   const { viewKey = 'my-open' } = useParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [currentPageSearch, setCurrentPageSearch] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(() =>
@@ -144,45 +168,43 @@ export function AgentViewsPage() {
   const [selectedTicketNumbers, setSelectedTicketNumbers] = useState<
     Set<number>
   >(() => new Set())
-  const [localViews, setLocalViews] = useState<LocalView[]>([])
-  const [personalOverrides, setPersonalOverrides] = useState<
-    Record<string, PersonalViewOverride>
-  >({})
-  const [personalOrder, setPersonalOrder] = useState<string[]>([])
-  const [personalOrderSnapshot, setPersonalOrderSnapshot] = useState<
+  const [editor, setEditor] = useState<ViewEditor | null>(null)
+  const [pendingPersonalOrder, setPendingPersonalOrder] = useState<
     string[] | null
   >(null)
-  const [editor, setEditor] = useState<ViewEditor | null>(null)
   const [actionsOpen, setActionsOpen] = useState(false)
-  const nextLocalViewId = useRef(0)
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([
+    null,
+  ])
+  const [cursorIndex, setCursorIndex] = useState(0)
   const selectionAnchor = useRef<number | null>(null)
   const editorTriggerRef = useRef<HTMLElement | null>(null)
-  const filters = filtersFrom(searchParams)
-  const isLocalRoute = viewKey.startsWith(LOCAL_VIEW_PREFIX)
+  const filters = {
+    ...filtersFrom(searchParams),
+    ...(cursorHistory[cursorIndex]
+      ? { cursor: cursorHistory[cursorIndex]! }
+      : {}),
+  }
   const viewQuery = useQuery({
     queryKey: ['agent-views'],
     queryFn: listAgentViews,
   })
+  const assignmentQuery = useQuery({
+    queryKey: ['agent-assignment-options'],
+    queryFn: listTicketAssignmentOptions,
+  })
   const query = useQuery({
-    enabled: !isLocalRoute,
     queryKey: ['agent-view', viewKey, filters],
     queryFn: () => listTicketsInView(viewKey, filters),
   })
-  const currentLocalView = localViews.find((view) => view.key === viewKey)
   const serverViews = viewQuery.data ?? []
   const personalItems = useMemo(
-    () =>
-      personalViewItems(
-        serverViews,
-        localViews,
-        personalOverrides,
-        personalOrder,
-      ),
-    [localViews, personalOrder, personalOverrides, serverViews],
+    () => personalViewItems(serverViews, pendingPersonalOrder),
+    [pendingPersonalOrder, serverViews],
   )
   const openCreateEditor = (event: ReactMouseEvent<HTMLButtonElement>) => {
     editorTriggerRef.current = event.currentTarget
-    setPersonalOrderSnapshot(null)
+    setPendingPersonalOrder(null)
     setEditor({ mode: 'create' })
   }
   const openEditEditor = (
@@ -190,33 +212,32 @@ export function AgentViewsPage() {
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
     editorTriggerRef.current = event.currentTarget
-    setPersonalOrderSnapshot(
-      personalItems.map((personalItem) => personalItem.key),
-    )
-    setEditor({
-      mode: 'edit',
-      view: { icon: item.icon, key: item.key, label: item.label },
-    })
+    const view = serverViews.find((candidate) => candidate.key === item.key)
+    if (view && view.scope !== 'SYSTEM') {
+      setPendingPersonalOrder(null)
+      setEditor({ mode: 'edit', view })
+    }
   }
   const closeEditor = () => {
-    if (personalOrderSnapshot) setPersonalOrder(personalOrderSnapshot)
-    setPersonalOrderSnapshot(null)
+    setPendingPersonalOrder(null)
     setEditor(null)
   }
-  const currentPersonalItem = personalItems.find((item) => item.key === viewKey)
+  const currentMutableView = serverViews.find(
+    (view) => view.key === viewKey && view.scope !== 'SYSTEM',
+  )
   const actionItems = [
     {
       id: 'create-ticket',
       label: '새 티켓 생성',
       onClick: () => navigate('/agent/tickets/new'),
     },
-    ...(currentPersonalItem
+    ...(currentMutableView
       ? [
           {
             id: 'edit-view',
             label: '보기 설정',
             onClick: (event: ReactMouseEvent<HTMLButtonElement>) =>
-              openEditEditor(currentPersonalItem, event),
+              openEditEditor(toNavigationItem(currentMutableView), event),
           },
         ]
       : []),
@@ -259,13 +280,10 @@ export function AgentViewsPage() {
   ]
   const currentServerView = serverViews.find((view) => view.key === viewKey)
   const currentPresentation = currentServerView
-    ? presentationFor(currentServerView, personalOverrides)
+    ? presentationFor(currentServerView)
     : null
   const title =
-    currentLocalView?.label ??
-    currentPresentation?.name ??
-    VIEW_PRESENTATION[viewKey]?.name ??
-    '티켓'
+    currentPresentation?.name ?? VIEW_PRESENTATION[viewKey]?.name ?? '티켓'
   const querySignature = `${viewKey}:${searchParams.toString()}`
 
   useEffect(() => {
@@ -273,16 +291,21 @@ export function AgentViewsPage() {
     setSelectedTicketNumbers(new Set())
   }, [querySignature])
 
-  const groups = uniqueBy(
-    query.data?.items.flatMap((ticket) =>
-      ticket.group ? [ticket.group] : [],
-    ) ?? [],
-    (group) => group.id,
-  )
+  useEffect(() => {
+    setCursorHistory([null])
+    setCursorIndex(0)
+  }, [
+    viewKey,
+    filters.status,
+    filters.priority,
+    filters.groupId,
+    filters.assigneeId,
+    filters.slaState,
+  ])
+
+  const groups = assignmentQuery.data?.groups ?? []
   const assignees = uniqueBy(
-    query.data?.items.flatMap((ticket) =>
-      ticket.assignee ? [ticket.assignee] : [],
-    ) ?? [],
+    groups.flatMap((group) => group.members),
     (assignee) => assignee.id,
   )
   const visibleTickets = useMemo(() => {
@@ -311,7 +334,9 @@ export function AgentViewsPage() {
     const next = new URLSearchParams(searchParams)
     if (value) next.set(key, value)
     else next.delete(key)
-    if (key !== 'cursor') next.delete('cursor')
+    next.delete('cursor')
+    setCursorHistory([null])
+    setCursorIndex(0)
     setSearchParams(next)
   }
 
@@ -345,7 +370,7 @@ export function AgentViewsPage() {
         }
       }
       if (next.has(ticketNumber)) next.delete(ticketNumber)
-      else next.add(ticketNumber)
+      else if (next.size < 100) next.add(ticketNumber)
       selectionAnchor.current = ticketNumber
       return next
     })
@@ -359,36 +384,65 @@ export function AgentViewsPage() {
       )
       visibleTickets.forEach((ticket) => {
         if (allSelected) next.delete(ticket.ticketNumber)
-        else next.add(ticket.ticketNumber)
+        else if (next.size < 100) next.add(ticket.ticketNumber)
       })
       selectionAnchor.current = visibleTickets[0]?.ticketNumber ?? null
       return next
     })
   }
 
-  const handleSaveView = (values: { icon: IconName; label: string }) => {
+  const handleSaveView = async (values: SavedViewEditorSave) => {
     if (editor?.mode === 'create') {
-      const key = `${LOCAL_VIEW_PREFIX}${++nextLocalViewId.current}`
-      setLocalViews((current) => [...current, { ...values, key, count: null }])
-      setPersonalOrder((current) => [...current, key])
-      setPersonalOrderSnapshot(null)
+      const created = await createAgentSavedView(toCreateSavedViewInput(values))
+      await queryClient.invalidateQueries({ queryKey: ['agent-views'] })
       setEditor(null)
-      navigate(`/agent/views/${key}`)
+      navigate(`/agent/views/${created.key}`)
       return
     }
     if (editor?.mode === 'edit') {
-      const { key } = editor.view
-      if (key.startsWith(LOCAL_VIEW_PREFIX)) {
-        setLocalViews((current) =>
-          current.map((view) =>
-            view.key === key ? { ...view, ...values } : view,
+      let savedView = editor.view
+      if (!editor.pendingOrderOnly) {
+        savedView = await updateAgentSavedView(editor.view.key, {
+          expectedVersion:
+            values.expectedVersion ?? editor.view.definitionVersion,
+          ...values.definition,
+        })
+        queryClient.setQueryData<SavedAgentView[]>(['agent-views'], (current) =>
+          current?.map((view) =>
+            view.key === savedView.key ? savedView : view,
           ),
         )
-      } else {
-        setPersonalOverrides((current) => ({ ...current, [key]: values }))
+        setEditor({ mode: 'edit', view: savedView })
+        await queryClient.invalidateQueries({
+          queryKey: ['agent-view', editor.view.key],
+        })
       }
+      if (pendingPersonalOrder) {
+        try {
+          await reorderAgentSavedViews({
+            scope: 'PERSONAL',
+            expectedOrderVersion: savedView.orderVersion,
+            viewKeys: pendingPersonalOrder,
+          })
+        } catch (error) {
+          const refreshed = await viewQuery.refetch()
+          const latest = refreshed.data?.find(
+            (view) => view.key === savedView.key,
+          )
+          setEditor({
+            mode: 'edit',
+            view: latest ?? savedView,
+            pendingOrderOnly: true,
+          })
+          throw new SavedViewOrderSaveError(error)
+        }
+      }
+      await queryClient.invalidateQueries({ queryKey: ['agent-views'] })
+      await queryClient.invalidateQueries({
+        queryKey: ['agent-view', editor.view.key],
+      })
     }
-    setPersonalOrderSnapshot(null)
+    setPendingPersonalOrder(null)
     setEditor(null)
   }
 
@@ -412,7 +466,14 @@ export function AgentViewsPage() {
     const next = [...currentOrder]
     const [moved] = next.splice(index, 1)
     if (moved) next.splice(destination, 0, moved)
-    setPersonalOrder(next)
+    setPendingPersonalOrder(next)
+  }
+
+  const deleteEditedView = async (view: SavedAgentView) => {
+    await deleteAgentSavedView(view.key, view.definitionVersion)
+    await queryClient.invalidateQueries({ queryKey: ['agent-views'] })
+    setEditor(null)
+    navigate('/agent/views/my-open')
   }
 
   return (
@@ -433,7 +494,7 @@ export function AgentViewsPage() {
           <div>
             <div className="agent-queue-title-row">
               <h1 id="agent-view-title">{title}</h1>
-              {!isLocalRoute && query.data ? (
+              {query.data ? (
                 <span>
                   {query.data.totalApproximate ?? query.data.items.length}개
                 </span>
@@ -450,22 +511,15 @@ export function AgentViewsPage() {
             </DsButton>
           </div>
           <div className="agent-queue-header-actions">
-            {!isLocalRoute ? (
-              <DsButton
-                className="agent-queue-toolbar-action"
-                onClick={() => query.refetch()}
-                tone="ghost"
-              >
-                <DeskseedIcon name="reload" size="sm" />
-                새로고침
-              </DsButton>
-            ) : null}
-            {!isLocalRoute ? (
-              <span
-                aria-hidden="true"
-                className="agent-queue-toolbar-divider"
-              />
-            ) : null}
+            <DsButton
+              className="agent-queue-toolbar-action"
+              onClick={() => query.refetch()}
+              tone="ghost"
+            >
+              <DeskseedIcon name="reload" size="sm" />
+              새로고침
+            </DsButton>
+            <span aria-hidden="true" className="agent-queue-toolbar-divider" />
             <div
               className="agent-queue-actions-menu"
               onBlur={closeActionsWhenFocusLeaves}
@@ -505,7 +559,7 @@ export function AgentViewsPage() {
           </div>
         </header>
 
-        {filtersOpen && !isLocalRoute ? (
+        {filtersOpen ? (
           <section aria-label={`${title} 필터`} className="agent-queue-filters">
             <label className="agent-queue-filter agent-queue-search">
               <span>현재 목록 검색</span>
@@ -529,6 +583,18 @@ export function AgentViewsPage() {
               {STATUSES.map((status) => (
                 <option key={status} value={status}>
                   {STATUS_LABELS[status]}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect
+              label="최초 답변 SLA"
+              onChange={(value) => updateFilter('slaState', value)}
+              value={filters.slaState ?? ''}
+            >
+              <option value="">전체</option>
+              {SLA_STATES.map((state) => (
+                <option key={state} value={state}>
+                  {state}
                 </option>
               ))}
             </FilterSelect>
@@ -573,7 +639,7 @@ export function AgentViewsPage() {
           </section>
         ) : null}
 
-        {hasActiveFilters && !isLocalRoute ? (
+        {hasActiveFilters ? (
           <section
             aria-label="적용된 필터"
             className="agent-queue-filter-summary"
@@ -592,21 +658,7 @@ export function AgentViewsPage() {
           </section>
         ) : null}
 
-        {isLocalRoute ? (
-          currentLocalView ? (
-            <ScreenState
-              description="이 프로토타입에서는 이름·아이콘·순서만 설정합니다. 티켓 조건을 연결하면 이 보기에 결과가 표시됩니다."
-              kind="empty"
-              title="아직 연결된 티켓 조건이 없습니다."
-            />
-          ) : (
-            <ScreenState
-              description="개인 보기 설정은 새로고침 후 초기 상태로 돌아갑니다."
-              kind="not-found"
-              title="개인 보기를 찾을 수 없습니다."
-            />
-          )
-        ) : query.isLoading ? (
+        {query.isLoading ? (
           <TableSkeleton label={`${title} 불러오는 중`} />
         ) : query.isError ? (
           <QueueError error={query.error} onRetry={() => query.refetch()} />
@@ -632,21 +684,21 @@ export function AgentViewsPage() {
         ) : (
           <>
             {selectedCount ? (
-              <section
-                aria-label="선택된 티켓"
-                className="agent-queue-bulk-action"
-              >
-                <div>
-                  <strong>{selectedCount}개 선택됨</strong>
-                  <p>선택한 티켓은 같은 보기 안에서 계속 비교할 수 있습니다.</p>
-                </div>
+              <>
+                <BulkTicketActionPanel
+                  onComplete={() => void query.refetch()}
+                  options={assignmentQuery.data ?? { groups: [] }}
+                  tickets={visibleTickets.filter((ticket) =>
+                    selectedTicketNumbers.has(ticket.ticketNumber),
+                  )}
+                />
                 <DsButton
                   onClick={() => setSelectedTicketNumbers(new Set())}
                   tone="ghost"
                 >
                   선택 해제
                 </DsButton>
-              </section>
+              </>
             ) : null}
             <QueueTicketTable
               items={visibleTickets.map(toQueueTicketItem)}
@@ -658,18 +710,37 @@ export function AgentViewsPage() {
               onSelectionChange={toggleTicketSelection}
               selectedTicketNumbers={selectedTicketNumbers}
               ticketHref={(ticketNumber) => `/agent/tickets/${ticketNumber}`}
+              visibleColumns={toQueueColumns(currentServerView?.columns)}
             />
             <footer className="agent-queue-pagination">
               <p>{visibleTickets.length}개 표시</p>
-              {query.data?.nextCursor ? (
+              <div>
                 <DsButton
-                  onClick={() =>
-                    updateFilter('cursor', query.data?.nextCursor ?? '')
-                  }
+                  disabled={cursorIndex === 0}
+                  onClick={() => {
+                    setCursorIndex((current) => Math.max(0, current - 1))
+                    setSelectedTicketNumbers(new Set())
+                  }}
                 >
-                  다음 페이지
+                  이전 페이지
                 </DsButton>
-              ) : null}
+                {query.data?.nextCursor ? (
+                  <DsButton
+                    onClick={() => {
+                      const nextCursor = query.data?.nextCursor
+                      if (!nextCursor) return
+                      setCursorHistory((current) => [
+                        ...current.slice(0, cursorIndex + 1),
+                        nextCursor,
+                      ])
+                      setCursorIndex((current) => current + 1)
+                      setSelectedTicketNumbers(new Set())
+                    }}
+                  >
+                    다음 페이지
+                  </DsButton>
+                ) : null}
+              </div>
             </footer>
           </>
         )}
@@ -677,7 +748,11 @@ export function AgentViewsPage() {
       <ViewConfigurationDrawer
         editor={editor}
         onClose={closeEditor}
+        onDelete={deleteEditedView}
         onMove={moveEditedView}
+        onPreview={(definition) =>
+          previewAgentSavedView(definition, createOpaqueUuid())
+        }
         onSave={handleSaveView}
         position={
           editorPosition && editorPosition.index >= 0
@@ -687,6 +762,34 @@ export function AgentViewsPage() {
         returnFocusRef={editorTriggerRef}
       />
     </main>
+  )
+}
+
+class SavedViewOrderSaveError extends Error {
+  cause: unknown
+
+  constructor(cause: unknown) {
+    super('Saved view definition committed but order save failed')
+    this.name = 'SavedViewOrderSaveError'
+    this.cause = cause
+  }
+}
+
+const SAVED_VIEW_COLUMN_MAP = {
+  TICKET_NUMBER: 'ticketNumber',
+  SUBJECT: 'subject',
+  STATUS: 'status',
+  PRIORITY: 'priority',
+  GROUP: 'group',
+  ASSIGNEE: 'assignee',
+  UPDATED_AT: 'updatedAt',
+  FIRST_REPLY_SLA: 'sla',
+} as const satisfies Record<string, QueueTicketColumn>
+
+function toQueueColumns(columns: SavedAgentView['columns'] | undefined) {
+  return (columns ?? Object.keys(SAVED_VIEW_COLUMN_MAP)).map(
+    (column) =>
+      SAVED_VIEW_COLUMN_MAP[column as keyof typeof SAVED_VIEW_COLUMN_MAP],
   )
 }
 
@@ -741,38 +844,19 @@ function QueueError({
 
 function personalViewItems(
   serverViews: SavedAgentView[],
-  localViews: LocalView[],
-  overrides: Record<string, PersonalViewOverride>,
-  order: string[],
+  order: string[] | null,
 ) {
-  const items = [
-    ...serverViews
-      .filter((view) => view.scope === 'PERSONAL')
-      .map((view) => toNavigationItem(view, overrides)),
-    ...localViews.map((view) => ({
-      key: view.key,
-      label: view.label,
-      icon: view.icon,
-      count: view.count,
-      to: `/agent/views/${view.key}`,
-      editable: true,
-    })),
-  ]
-  return [...items].sort((left, right) => {
-    const leftIndex = order.indexOf(left.key)
-    const rightIndex = order.indexOf(right.key)
-    if (leftIndex < 0 && rightIndex < 0) return 0
-    if (leftIndex < 0) return 1
-    if (rightIndex < 0) return -1
-    return leftIndex - rightIndex
-  })
+  const items = serverViews
+    .filter((view) => view.scope === 'PERSONAL')
+    .map((view) => toNavigationItem(view))
+  if (!order) return items
+  return [...items].sort(
+    (left, right) => order.indexOf(left.key) - order.indexOf(right.key),
+  )
 }
 
-function toNavigationItem(
-  view: SavedAgentView,
-  overrides: Record<string, PersonalViewOverride> = {},
-): ViewNavigationItem {
-  const presentation = presentationFor(view, overrides)
+function toNavigationItem(view: SavedAgentView): ViewNavigationItem {
+  const presentation = presentationFor(view)
   return {
     key: view.key,
     label: presentation.name,
@@ -780,24 +864,16 @@ function toNavigationItem(
     iconTone: presentation.iconTone,
     count: view.ticketCount,
     to: `/agent/views/${view.key}`,
-    editable: view.scope === 'PERSONAL',
+    editable: view.scope !== 'SYSTEM',
   }
 }
 
-function presentationFor(
-  view: SavedAgentView,
-  overrides: Record<string, PersonalViewOverride>,
-) {
+function presentationFor(view: SavedAgentView) {
   const base = VIEW_PRESENTATION[view.key] ?? {
     name: view.name,
     icon: (view.scope === 'PERSONAL' ? 'bookmark' : 'inbox') as IconName,
   }
-  const override = overrides[view.key]
-  return {
-    ...base,
-    name: override?.label ?? base.name,
-    icon: override?.icon ?? base.icon,
-  }
+  return base
 }
 
 function toQueueTicketItem(ticket: {
@@ -810,6 +886,7 @@ function toQueueTicketItem(ticket: {
   assignee: { displayName: string } | null
   updatedAt: string
   isChild: boolean
+  sla: FirstReplySlaBadge | null
 }): QueueTicketTableItem {
   return {
     ticketNumber: ticket.ticketNumber,
@@ -822,6 +899,7 @@ function toQueueTicketItem(ticket: {
     updatedAt: ticket.updatedAt,
     updatedLabel: formatUpdatedAt(ticket.updatedAt),
     isChild: ticket.isChild,
+    sla: ticket.sla,
   }
 }
 
@@ -841,8 +919,9 @@ function filtersFrom(searchParams: URLSearchParams): AgentTicketFilters {
     ...(searchParams.get('assigneeId')
       ? { assigneeId: searchParams.get('assigneeId')! }
       : {}),
-    ...(searchParams.get('cursor')
-      ? { cursor: searchParams.get('cursor')! }
+    ...(searchParams.get('slaState') &&
+    SLA_STATES.includes(searchParams.get('slaState') as FirstReplySlaState)
+      ? { slaState: searchParams.get('slaState') as FirstReplySlaState }
       : {}),
     limit: 50,
   }
@@ -873,6 +952,11 @@ function filterSummary(
     labels.push({
       key: 'assigneeId',
       label: `담당자: ${filters.assigneeId === 'me' ? '나' : filters.assigneeId === 'unassigned' ? '미배정' : (assignees.find((assignee) => assignee.id === filters.assigneeId)?.displayName ?? '선택됨')}`,
+    })
+  if (filters.slaState)
+    labels.push({
+      key: 'slaState',
+      label: `최초 답변 SLA: ${filters.slaState}`,
     })
   return labels
 }

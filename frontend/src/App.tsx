@@ -30,6 +30,7 @@ import {
 import { CreateAgentTicketPage } from './features/ticket-create/CreateAgentTicketPage'
 import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicketWorkspacePage'
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
+import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
 
 const agentChildren: RouteObject[] = [
@@ -37,6 +38,7 @@ const agentChildren: RouteObject[] = [
   { path: 'home', element: <Navigate to="/agent/views/my-open" replace /> },
   { path: 'views', element: <Navigate to="/agent/views/my-open" replace /> },
   { path: 'views/:viewKey', element: <AgentViewsPage /> },
+  { path: 'search', element: <AgentSearchPage /> },
   { path: 'tickets/new', element: <CreateAgentTicketPage /> },
   { path: 'tickets/:ticketNumber', element: <AgentTicketWorkspacePage /> },
   { path: '*', element: <Navigate to="/agent/views/my-open" replace /> },

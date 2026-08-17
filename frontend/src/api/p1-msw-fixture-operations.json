@@ -1,0 +1,23 @@
+[
+  "createCustomerAttachmentUpload",
+  "downloadCustomerAttachment",
+  "listAgentViews",
+  "createAgentSavedView",
+  "previewAgentSavedView",
+  "reorderAgentSavedViews",
+  "updateAgentSavedView",
+  "deleteAgentSavedView",
+  "listTicketsInView",
+  "executeAgentTicketBatch",
+  "createAgentAttachmentUpload",
+  "downloadAgentAttachment",
+  "getAgentTicket",
+  "listAgentTicketExternalReferences",
+  "createAgentTicketExternalReference",
+  "deleteAgentTicketExternalReference",
+  "searchAgentWorkspace",
+  "listTicketAssignmentOptions",
+  "createAuditExport",
+  "getAuditExport",
+  "downloadAuditExport"
+]

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo, useRef } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
 import { DsButton, ScreenState } from '../../design-system'
@@ -11,10 +11,17 @@ export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
   const ticketNumber = parseTicketNumber(ticketNumberParam)
   const session = useStaffSession()
+  const location = useLocation()
+  const originSearchEventId = readOriginSearchEventId(location.state)
   const interactionId = useMemo(createOpaqueUuid, [ticketNumber])
   const successfulInteractionId = useRef<string | null>(null)
   const query = useQuery({
-    queryKey: ['agent-ticket', ticketNumber, interactionId],
+    queryKey: [
+      'agent-ticket',
+      ticketNumber,
+      interactionId,
+      originSearchEventId,
+    ],
     queryFn: async () => {
       const readIntent =
         successfulInteractionId.current === interactionId
@@ -24,6 +31,7 @@ export function AgentTicketWorkspacePage() {
         ticketNumber ?? 0,
         interactionId,
         readIntent,
+        originSearchEventId,
       )
       successfulInteractionId.current = interactionId
       return detail
@@ -52,6 +60,13 @@ export function AgentTicketWorkspacePage() {
       staffId={session.staff.id}
     />
   )
+}
+
+function readOriginSearchEventId(state: unknown) {
+  if (!state || typeof state !== 'object' || !('originSearchEventId' in state))
+    return undefined
+  const value = (state as { originSearchEventId?: unknown }).originSearchEventId
+  return typeof value === 'string' ? value : undefined
 }
 
 function WorkspaceLoading() {

@@ -1,0 +1,107 @@
+[
+  {
+    "operationId": "createCustomerAttachmentUpload",
+    "method": "post",
+    "path": "/api/v1/requests/{ticketNumber}/attachments/uploads"
+  },
+  {
+    "operationId": "downloadCustomerAttachment",
+    "method": "get",
+    "path": "/api/v1/requests/{ticketNumber}/attachments/{attachmentId}/download"
+  },
+  {
+    "operationId": "listAgentViews",
+    "method": "get",
+    "path": "/api/v1/agent/views"
+  },
+  {
+    "operationId": "createAgentSavedView",
+    "method": "post",
+    "path": "/api/v1/agent/views"
+  },
+  {
+    "operationId": "previewAgentSavedView",
+    "method": "post",
+    "path": "/api/v1/agent/views/preview"
+  },
+  {
+    "operationId": "reorderAgentSavedViews",
+    "method": "post",
+    "path": "/api/v1/agent/views/reorder"
+  },
+  {
+    "operationId": "updateAgentSavedView",
+    "method": "patch",
+    "path": "/api/v1/agent/views/{viewKey}"
+  },
+  {
+    "operationId": "deleteAgentSavedView",
+    "method": "delete",
+    "path": "/api/v1/agent/views/{viewKey}"
+  },
+  {
+    "operationId": "listTicketsInView",
+    "method": "get",
+    "path": "/api/v1/agent/views/{viewKey}/tickets"
+  },
+  {
+    "operationId": "executeAgentTicketBatch",
+    "method": "post",
+    "path": "/api/v1/agent/tickets/batch-commands"
+  },
+  {
+    "operationId": "createAgentAttachmentUpload",
+    "method": "post",
+    "path": "/api/v1/agent/attachments/uploads"
+  },
+  {
+    "operationId": "downloadAgentAttachment",
+    "method": "get",
+    "path": "/api/v1/agent/attachments/{attachmentId}/download"
+  },
+  {
+    "operationId": "getAgentTicket",
+    "method": "get",
+    "path": "/api/v1/agent/tickets/{ticketNumber}"
+  },
+  {
+    "operationId": "listAgentTicketExternalReferences",
+    "method": "get",
+    "path": "/api/v1/agent/tickets/{ticketNumber}/external-references"
+  },
+  {
+    "operationId": "createAgentTicketExternalReference",
+    "method": "post",
+    "path": "/api/v1/agent/tickets/{ticketNumber}/external-references"
+  },
+  {
+    "operationId": "deleteAgentTicketExternalReference",
+    "method": "delete",
+    "path": "/api/v1/agent/tickets/{ticketNumber}/external-references/{referenceId}"
+  },
+  {
+    "operationId": "searchAgentWorkspace",
+    "method": "post",
+    "path": "/api/v1/agent/search"
+  },
+  {
+    "operationId": "listTicketAssignmentOptions",
+    "method": "get",
+    "path": "/api/v1/agent/assignment-options"
+  },
+  {
+    "operationId": "createAuditExport",
+    "method": "post",
+    "path": "/api/v1/audit/exports"
+  },
+  {
+    "operationId": "getAuditExport",
+    "method": "get",
+    "path": "/api/v1/audit/exports/{jobId}"
+  },
+  {
+    "operationId": "downloadAuditExport",
+    "method": "get",
+    "path": "/api/v1/audit/exports/{jobId}/download"
+  }
+]

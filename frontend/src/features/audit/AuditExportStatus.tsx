@@ -12,6 +12,7 @@ export interface AuditExportStatusProps {
   downloading?: boolean
   downloadError?: string
   onDownload: () => void
+  onRegenerate: () => void
   onRefresh: () => void
   onRetry: () => void
   state: AuditExportStatusState
@@ -26,6 +27,7 @@ export function AuditExportStatus({
   downloading = false,
   downloadError,
   onDownload,
+  onRegenerate,
   onRefresh,
   onRetry,
   state,
@@ -150,6 +152,7 @@ export function AuditExportStatus({
         </section>
       ) : expired ? (
         <ScreenState
+          action={<DsButton onClick={onRegenerate}>새 내보내기 요청</DsButton>}
           compact
           description="보호된 내보내기 artifact는 만료 또는 삭제되어 다시 다운로드할 수 없습니다."
           kind="stale"

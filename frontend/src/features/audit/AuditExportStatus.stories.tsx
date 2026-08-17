@@ -54,6 +54,7 @@ const readyJob: AuditExportJob = {
 
 const baseArgs = {
   onDownload: fn(),
+  onRegenerate: fn(),
   onRefresh: fn(),
   onRetry: fn(),
 }
@@ -106,11 +107,18 @@ export const Polling: Story = {
   },
 }
 
-export const PollingExhausted: Story = {
-  args: { ...baseArgs, state: { status: 'ready', job, polling: false } },
-  play: async ({ args, canvas }) => {
-    await userEvent.click(canvas.getByRole('button', { name: '새로고침' }))
-    await expect(args.onRefresh).toHaveBeenCalled()
+export const Running: Story = {
+  args: {
+    ...baseArgs,
+    state: {
+      status: 'ready',
+      job: { ...job, status: 'RUNNING' },
+      polling: true,
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText('생성 중')).toBeVisible()
+    await expect(canvas.getByText('생성 중…')).toBeVisible()
   },
 }
 
@@ -143,12 +151,16 @@ export const Expired: Story = {
       polling: false,
     },
   },
-  play: async ({ canvas }) => {
+  play: async ({ args, canvas }) => {
     await expect(
       canvas.getByText('내보내기 파일이 만료되었습니다.'),
     ).toBeVisible()
     await expect(
       canvas.queryByRole('button', { name: '다운로드' }),
     ).not.toBeInTheDocument()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '새 내보내기 요청' }),
+    )
+    await expect(args.onRegenerate).toHaveBeenCalled()
   },
 }

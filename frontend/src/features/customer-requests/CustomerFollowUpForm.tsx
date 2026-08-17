@@ -1,34 +1,66 @@
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useId, useRef, useState, type FormEvent } from 'react'
+import { useBeforeUnload, useBlocker } from 'react-router'
+import type { AttachmentUpload } from '../../api/types'
 import { DsButton, Notification } from '../../design-system'
 import { createOpaqueUuid } from '../../api/uuid'
+import {
+  AttachmentUploadField,
+  type AttachmentDraftState,
+} from '../attachments/AttachmentUploadField'
 
 export function CustomerFollowUpForm({
   onConflict,
   onSubmitted,
   onSubmit,
+  uploadAttachment,
 }: {
   onConflict?: () => void
   onSubmitted?: () => void
-  onSubmit: (body: string, clientCommandId: string) => Promise<unknown>
+  onSubmit: (
+    body: string,
+    clientCommandId: string,
+    attachmentIds: string[],
+  ) => Promise<unknown>
+  uploadAttachment?: (file: File) => Promise<AttachmentUpload>
 }) {
   const [body, setBody] = useState('')
   const [attempted, setAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState<FollowUpNotice | null>(null)
-  const commandIdRef = useRef<string | null>(null)
-  const submittedBodyRef = useRef<string | null>(null)
+  const [attachments, setAttachments] = useState<AttachmentDraftState>({
+    blocked: false,
+    ids: [],
+    needsNavigationWarning: false,
+  })
+  const [attachmentResetVersion, setAttachmentResetVersion] = useState(0)
+  const pendingAttemptRef = useRef<{
+    body: string
+    clientCommandId: string
+    attachmentIds: string[]
+  } | null>(null)
   const bodyId = useId()
   const errorId = `${bodyId}-error`
   const bodyError =
     attempted && !body.trim() ? '답변 내용을 입력해 주세요.' : null
+  useBeforeUnload((event) => {
+    if (!attachments.needsNavigationWarning) return
+    event.preventDefault()
+    event.returnValue = ''
+  })
+  const updateAttachments = useCallback((state: AttachmentDraftState) => {
+    const pending = pendingAttemptRef.current
+    if (pending && !sameIds(pending.attachmentIds, state.ids)) {
+      pendingAttemptRef.current = null
+    }
+    setAttachments(state)
+  }, [])
 
   const updateBody = (nextBody: string) => {
     if (
-      commandIdRef.current !== null &&
-      submittedBodyRef.current !== nextBody.trim()
+      pendingAttemptRef.current !== null &&
+      pendingAttemptRef.current.body !== nextBody.trim()
     ) {
-      commandIdRef.current = null
-      submittedBodyRef.current = null
+      pendingAttemptRef.current = null
     }
     setBody(nextBody)
     setNotice(null)
@@ -37,26 +69,32 @@ export function CustomerFollowUpForm({
   const submitFollowUp = async () => {
     setAttempted(true)
     const submittedBody = body.trim()
-    if (!submittedBody || submitting) return
+    if (!submittedBody || submitting || attachments.blocked) return
 
-    const clientCommandId = commandIdRef.current ?? createOpaqueUuid()
-    commandIdRef.current = clientCommandId
-    submittedBodyRef.current = submittedBody
+    const attempt = pendingAttemptRef.current ?? {
+      body: submittedBody,
+      clientCommandId: createOpaqueUuid(),
+      attachmentIds: [...attachments.ids],
+    }
+    pendingAttemptRef.current = attempt
     setSubmitting(true)
     setNotice(null)
     try {
-      await onSubmit(submittedBody, clientCommandId)
-      commandIdRef.current = null
-      submittedBodyRef.current = null
+      await onSubmit(
+        attempt.body,
+        attempt.clientCommandId,
+        attempt.attachmentIds,
+      )
+      pendingAttemptRef.current = null
       setBody('')
       setAttempted(false)
       setNotice({ kind: 'success' })
+      setAttachmentResetVersion((current) => current + 1)
       onSubmitted?.()
     } catch (error) {
       const nextNotice = toFollowUpNotice(error)
       if (nextNotice.kind !== 'unavailable') {
-        commandIdRef.current = null
-        submittedBodyRef.current = null
+        pendingAttemptRef.current = null
       }
       setNotice(nextNotice)
       if (nextNotice.kind === 'conflict') onConflict?.()
@@ -75,6 +113,9 @@ export function CustomerFollowUpForm({
       <h2 id="customer-follow-up-title">추가 답변</h2>
       <p>답변은 담당자와 공유되는 공개 대화에만 추가됩니다.</p>
       {notice ? <FollowUpNoticeView notice={notice} /> : null}
+      {attachments.needsNavigationWarning ? (
+        <AttachmentNavigationGuard />
+      ) : null}
       <form onSubmit={handleSubmit}>
         <label htmlFor={bodyId}>
           <span className="sr-only">추가 답변</span>
@@ -94,9 +135,18 @@ export function CustomerFollowUpForm({
             {bodyError}
           </small>
         ) : null}
+        {uploadAttachment ? (
+          <AttachmentUploadField
+            disabled={submitting}
+            label="PUBLIC 첨부 파일"
+            onStateChange={updateAttachments}
+            resetVersion={attachmentResetVersion}
+            upload={uploadAttachment}
+          />
+        ) : null}
         <div className="customer-follow-up-actions">
           <DsButton
-            disabled={submitting}
+            disabled={submitting || attachments.blocked}
             onClick={() => void submitFollowUp()}
             tone="primary"
           >
@@ -109,6 +159,27 @@ export function CustomerFollowUpForm({
         </div>
       </form>
     </section>
+  )
+}
+
+function AttachmentNavigationGuard() {
+  const blocker = useBlocker(true)
+  if (blocker.state !== 'blocked') return null
+  return (
+    <div aria-label="첨부 파일 이동 경고" role="alertdialog">
+      <p>업로드 중이거나 거부된 첨부 파일이 있습니다. 페이지를 떠날까요?</p>
+      <DsButton onClick={() => blocker.reset()}>계속 작성</DsButton>
+      <DsButton onClick={() => blocker.proceed()} tone="primary">
+        페이지 떠나기
+      </DsButton>
+    </div>
+  )
+}
+
+function sameIds(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((id, index) => id === right[index])
   )
 }
 

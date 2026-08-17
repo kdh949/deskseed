@@ -121,9 +121,49 @@ const ticketDetail = {
   warnings: [],
 }
 
+const viewContract = {
+  active: true,
+  definitionVersion: 1,
+  orderVersion: 1,
+  conditions: {
+    version: 1,
+    all: [{ field: 'STATUS', operator: 'LESS_THAN_SOLVED', values: [] }],
+    any: [],
+  },
+  columns: ['TICKET_NUMBER', 'SUBJECT', 'STATUS'],
+  sort: 'updatedAt:desc,ticketNumber:desc',
+  ticketCountState: 'EXACT',
+  readScope: 'ALL_TICKETS',
+  createdAt: '2026-08-10T00:00:00Z',
+  updatedAt: '2026-08-10T00:00:00Z',
+} as const
+
 async function mockAgentReadApi(page: Page) {
   const detailHeaders: Array<Record<string, string>> = []
   const viewRequestUrls: string[] = []
+  const savedViewWrites: unknown[] = []
+  let serverViews = [
+    ['my-open', '내 open', 'SYSTEM', 28],
+    ['unassigned-my-groups', '미배정 티켓', 'SYSTEM', 16],
+    ['all-open', '모든 미해결 티켓', 'SYSTEM', 142],
+    ['urgent', '긴급 티켓', 'SHARED', 12],
+    ['today-updated', '오늘 업데이트된 티켓', 'SHARED', 36],
+    ['recently-solved', '최근 해결된 티켓', 'SYSTEM', 24],
+    ['customer-reply-pending', '고객 응답 대기', 'SHARED', 18],
+    ['created-by-me', '내가 생성한 티켓', 'PERSONAL', 7],
+    ['following', '내가 팔로우 중인 티켓', 'PERSONAL', 5],
+    ['drafts', '임시 보관함', 'PERSONAL', 3],
+  ].map(([key, name, scope, ticketCount], index) => ({
+    ...viewContract,
+    id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    key,
+    name,
+    scope,
+    ownerStaffId:
+      scope === 'PERSONAL' ? '00000000-0000-4000-8000-000000000099' : null,
+    categoryPath: ['Views'],
+    ticketCount,
+  }))
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -139,91 +179,34 @@ async function mockAgentReadApi(page: Page) {
         },
       })
     }
+    if (url.pathname === '/api/v1/agent/csrf') {
+      return route.fulfill({
+        status: 200,
+        json: { token: 'csrf', headerName: 'X-CSRF-TOKEN' },
+      })
+    }
+    if (url.pathname === '/api/v1/agent/assignment-options') {
+      return route.fulfill({ status: 200, json: { groups: [] } })
+    }
+    if (url.pathname === '/api/v1/agent/views' && request.method() === 'POST') {
+      const body = request.postDataJSON()
+      savedViewWrites.push(body)
+      const created = {
+        ...viewContract,
+        ...body,
+        id: '00000000-0000-4000-8000-000000000011',
+        key: 'review-only',
+        ownerStaffId: '00000000-0000-4000-8000-000000000099',
+        categoryPath: ['Views'],
+        ticketCount: 0,
+      }
+      serverViews = [...serverViews, created]
+      return route.fulfill({ status: 201, json: created })
+    }
     if (url.pathname === '/api/v1/agent/views') {
       return route.fulfill({
         status: 200,
-        json: [
-          {
-            key: 'my-open',
-            name: '내 open',
-            ticketCount: 28,
-            scope: 'SYSTEM',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'unassigned-my-groups',
-            name: '미배정 티켓',
-            ticketCount: 16,
-            scope: 'SYSTEM',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'all-open',
-            name: '모든 미해결 티켓',
-            ticketCount: 142,
-            scope: 'SYSTEM',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'urgent',
-            name: '긴급 티켓',
-            ticketCount: 12,
-            scope: 'SHARED',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'today-updated',
-            name: '오늘 업데이트된 티켓',
-            ticketCount: 36,
-            scope: 'SHARED',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'recently-solved',
-            name: '최근 해결된 티켓',
-            ticketCount: 24,
-            scope: 'SYSTEM',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'customer-reply-pending',
-            name: '고객 응답 대기',
-            ticketCount: 18,
-            scope: 'SHARED',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'created-by-me',
-            name: '내가 생성한 티켓',
-            ticketCount: 7,
-            scope: 'PERSONAL',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'following',
-            name: '내가 팔로우 중인 티켓',
-            ticketCount: 5,
-            scope: 'PERSONAL',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-          {
-            key: 'drafts',
-            name: '임시 보관함',
-            ticketCount: 3,
-            scope: 'PERSONAL',
-            categoryPath: ['Views'],
-            readScope: 'ALL_TICKETS',
-          },
-        ],
+        json: serverViews,
       })
     }
     if (
@@ -239,7 +222,7 @@ async function mockAgentReadApi(page: Page) {
     }
     return route.abort()
   })
-  return { detailHeaders, viewRequestUrls }
+  return { detailHeaders, savedViewWrites, viewRequestUrls }
 }
 
 async function expectNoAxeViolations(page: Page) {
@@ -312,33 +295,33 @@ test('Queue filters and keyboard selection keep their product behavior', async (
   )
 })
 
-test('Personal view configuration stays local and returns focus to its trigger', async ({
+test('Personal view configuration persists on the server and returns focus to its trigger', async ({
   page,
 }) => {
-  const { viewRequestUrls } = await mockAgentReadApi(page)
+  const { savedViewWrites } = await mockAgentReadApi(page)
   await page.goto('/agent/views/my-open')
   await expect(page.getByRole('table', { name: '내 티켓 티켓' })).toBeVisible()
   const createButton = page.getByRole('button', { name: '새 보기 만들기' })
-  const initialTicketRequestCount = viewRequestUrls.length
-
   await createButton.click()
   await expect(
-    page.getByRole('dialog', { name: '새 개인 보기 만들기' }),
+    page.getByRole('dialog', { name: '새 보기 만들기' }),
   ).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(createButton).toBeFocused()
 
   await createButton.click()
-  const dialog = page.getByRole('dialog', { name: '새 개인 보기 만들기' })
+  const dialog = page.getByRole('dialog', { name: '새 보기 만들기' })
   await dialog.getByLabel('보기 이름').fill('검토 전용 보기')
-  await dialog.getByRole('button', { name: '중요 아이콘 선택' }).click()
   await dialog.getByRole('button', { name: '보기 만들기', exact: true }).click()
 
-  await expect(
-    page.getByRole('heading', { name: '아직 연결된 티켓 조건이 없습니다.' }),
-  ).toBeVisible()
   await expect(page.getByRole('link', { name: '검토 전용 보기' })).toBeVisible()
-  expect(viewRequestUrls).toHaveLength(initialTicketRequestCount)
+  expect(savedViewWrites).toHaveLength(1)
+  expect(savedViewWrites[0]).toMatchObject({
+    name: '검토 전용 보기',
+    scope: 'PERSONAL',
+  })
+  await page.reload()
+  await expect(page.getByRole('link', { name: '검토 전용 보기' })).toBeVisible()
   await expectNoAxeViolations(page)
 })
 

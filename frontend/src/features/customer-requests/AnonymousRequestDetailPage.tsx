@@ -4,7 +4,9 @@ import { Link, useParams } from 'react-router'
 import {
   addAnonymousRequestComment,
   ApiError,
+  downloadAnonymousRequestAttachment,
   getPublicRequest,
+  uploadAnonymousRequestAttachment,
 } from '../../api/client'
 import { RetryButton, ScreenState } from '../../design-system'
 import {
@@ -79,9 +81,21 @@ export function AnonymousRequestDetailPage() {
 
   return (
     <CustomerRequestConversation
+      downloadAttachment={async (attachmentId) => {
+        const token = readRequestAccessToken(
+          window.sessionStorage,
+          ticketNumber,
+        )
+        if (!token) throw new ApiError('request-access-token-unavailable', 404)
+        return downloadAnonymousRequestAttachment(
+          ticketNumber,
+          attachmentId,
+          token,
+        )
+      }}
       onFollowUpConflict={() => void query.refetch()}
       onFollowUpSubmitted={() => void query.refetch()}
-      onSubmitFollowUp={async (body, clientCommandId) => {
+      onSubmitFollowUp={async (body, clientCommandId, attachmentIds) => {
         const token = readRequestAccessToken(
           window.sessionStorage,
           ticketNumber,
@@ -92,9 +106,18 @@ export function AnonymousRequestDetailPage() {
           token,
           body,
           clientCommandId,
+          attachmentIds,
         )
       }}
       request={query.data}
+      uploadAttachment={async (file) => {
+        const token = readRequestAccessToken(
+          window.sessionStorage,
+          ticketNumber,
+        )
+        if (!token) throw new ApiError('request-access-token-unavailable', 404)
+        return uploadAnonymousRequestAttachment(ticketNumber, token, file)
+      }}
     />
   )
 }

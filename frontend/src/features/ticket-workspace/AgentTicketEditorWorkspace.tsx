@@ -9,16 +9,25 @@ import type {
   TicketVisibility,
 } from '../../api/types'
 import {
+  downloadAgentAttachment,
+  uploadAgentAttachment,
+} from '../../api/client'
+import {
   DsButton,
   DsPropertyField,
   DsTabs,
+  FirstReplySlaIndicator,
   Notification,
   RetryButton,
   ScreenState,
   StatusBadge,
 } from '../../design-system'
+import { AttachmentList } from '../attachments/AttachmentList'
+import { AttachmentUploadField } from '../attachments/AttachmentUploadField'
+import { createOpaqueUuid } from '../../api/uuid'
 import type { EditableTicketFields } from './model/ticketEditorModel'
 import { useTicketEditor } from './model/useTicketEditor'
+import { TicketContextPanel, type ContextTab } from './TicketContextPanel'
 
 const STATUS_LABELS: Record<AgentTicketStatus, string> = {
   NEW: '신규',
@@ -168,6 +177,7 @@ function WorkspaceLayout({
   onRefresh?: () => void
   properties: ReactNode
 }) {
+  const [contextTab, setContextTab] = useState<ContextTab>('customer')
   return (
     <main
       aria-label={`티켓 #${detail.ticket.ticketNumber} 작업 공간`}
@@ -180,7 +190,11 @@ function WorkspaceLayout({
         <TicketHeader detail={detail} onRefresh={onRefresh} />
         {children}
       </section>
-      <CustomerContext detail={detail} />
+      <TicketContextPanel
+        activeTab={contextTab}
+        detail={detail}
+        onTabChange={setContextTab}
+      />
     </main>
   )
 }
@@ -209,6 +223,7 @@ function TicketHeader({
         </div>
       </div>
       <div className="ticket-heading-actions">
+        <FirstReplySlaIndicator detail sla={detail.ticket.sla} />
         <StatusBadge status={detail.ticket.status} />
         {onRefresh ? (
           <DsButton onClick={onRefresh} tone="secondary">
@@ -428,6 +443,12 @@ function Conversation({ comments }: { comments: AgentComment[] }) {
             {comment.body.split(/\n{2,}/).map((paragraph, index) => (
               <p key={`${comment.id}-${index}`}>{paragraph}</p>
             ))}
+            <AttachmentList
+              attachments={comment.attachments}
+              download={(attachmentId) =>
+                downloadAgentAttachment(attachmentId, createOpaqueUuid())
+              }
+            />
           </div>
         </article>
       ))}
@@ -449,6 +470,19 @@ function ReplyComposer({
   const isInternal = mode === 'INTERNAL'
   const actionLabel = isInternal ? '내부 메모 저장' : '공개 답변 저장'
   const inputLabel = isInternal ? '내부 메모 내용' : '공개 답변 내용'
+  const [resetVersions, setResetVersions] = useState<
+    Record<TicketVisibility, number>
+  >({ PUBLIC: 0, INTERNAL: 0 })
+  const submit = async () => {
+    if (editor.attachmentStates[mode].blocked) return
+    const saved = await editor.submit(editor.attachmentStates[mode].ids)
+    if (saved) {
+      setResetVersions((current) => ({
+        ...current,
+        [mode]: current[mode] + 1,
+      }))
+    }
+  }
 
   return (
     <section
@@ -504,6 +538,15 @@ function ReplyComposer({
             value={editor.comments[mode]}
           />
         </label>
+        <AttachmentUploadField
+          disabled={editor.submitting}
+          initialAttachmentIds={editor.attachmentStates[mode].ids}
+          key={mode}
+          label={isInternal ? 'INTERNAL 첨부 파일' : 'PUBLIC 첨부 파일'}
+          onStateChange={(state) => editor.updateAttachmentState(mode, state)}
+          resetVersion={resetVersions[mode]}
+          upload={uploadAgentAttachment}
+        />
         <div className="reply-composer-footer">
           <p aria-live="polite" className="reply-composer-draft-status">
             {editor.submitting
@@ -513,8 +556,10 @@ function ReplyComposer({
                 : '저장하지 않은 초안이 없습니다.'}
           </p>
           <DsButton
-            disabled={!editor.canSubmit}
-            onClick={() => void editor.submit()}
+            disabled={
+              !editor.canSubmit || editor.attachmentStates[mode].blocked
+            }
+            onClick={() => void submit()}
             tone="primary"
           >
             {actionLabel}
@@ -652,29 +697,6 @@ function ConflictResolution({
         </ol>
       )}
     </div>
-  )
-}
-
-function CustomerContext({ detail }: { detail: AgentTicketDetail }) {
-  const customer = detail.context.customer
-  return (
-    <aside aria-label="고객 정보" className="agent-ticket-editor-context">
-      <h2>고객 정보</h2>
-      {customer ? (
-        <dl>
-          <div>
-            <dt>이름</dt>
-            <dd>{customer.displayName}</dd>
-          </div>
-          <div>
-            <dt>이메일</dt>
-            <dd>{customer.email}</dd>
-          </div>
-        </dl>
-      ) : (
-        <p>연결된 고객 정보가 없습니다.</p>
-      )}
-    </aside>
   )
 }
 

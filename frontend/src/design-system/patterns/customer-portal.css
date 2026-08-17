@@ -464,3 +464,20 @@
     padding: var(--ds-ref-space-4);
   }
 }
+.customer-attachment-selection {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.customer-attachment-selection li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-ref-space-3);
+  padding: var(--ds-ref-space-2) var(--ds-ref-space-3);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+}

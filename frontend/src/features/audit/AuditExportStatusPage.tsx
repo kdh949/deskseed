@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { ApiError, downloadAuditExport } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
 import {
@@ -10,25 +10,28 @@ import { useAuditExportStatus } from './model/useAuditExportStatus'
 
 export function AuditExportStatusPage() {
   const { jobId = '' } = useParams()
+  const navigate = useNavigate()
   const query = useAuditExportStatus(jobId)
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | undefined>()
 
-  const state: AuditExportStatusState = query.isPending
-    ? { status: 'loading' }
-    : query.isError
-      ? query.error instanceof ApiError && query.error.status === 404
-        ? { status: 'not-found' }
-        : query.error instanceof ApiError && query.error.status === 403
-          ? { status: 'denied' }
-          : {
-              status: 'error',
-              requestId:
-                query.error instanceof ApiError
-                  ? query.error.requestId
-                  : undefined,
-            }
-      : { status: 'ready', job: query.data, polling: !query.pollingExhausted }
+  const state: AuditExportStatusState = query.data
+    ? { status: 'ready', job: query.data, polling: query.polling }
+    : query.isPending
+      ? { status: 'loading' }
+      : query.isError
+        ? query.error instanceof ApiError && query.error.status === 404
+          ? { status: 'not-found' }
+          : query.error instanceof ApiError && query.error.status === 403
+            ? { status: 'denied' }
+            : {
+                status: 'error',
+                requestId:
+                  query.error instanceof ApiError
+                    ? query.error.requestId
+                    : undefined,
+              }
+        : { status: 'loading' }
 
   return (
     <AuditExportStatus
@@ -39,6 +42,7 @@ export function AuditExportStatusPage() {
         void download(jobId)
       }}
       onRefresh={query.refresh}
+      onRegenerate={() => navigate('/agent/audit')}
       onRetry={() => query.refetch()}
       state={state}
     />
@@ -61,7 +65,7 @@ export function AuditExportStatusPage() {
       document.body.append(anchor)
       anchor.click()
       anchor.remove()
-      URL.revokeObjectURL(url)
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
     } catch (error) {
       setDownloadError(
         error instanceof ApiError

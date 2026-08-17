@@ -19,7 +19,7 @@ import {
 import type { AgentTicketDetail } from '../../api/types'
 
 type DraftsByTicket = Record<string, Record<ComposerMode, string>>
-type ContextTab = 'customer' | 'related' | 'activity'
+type ContextTab = 'customer' | 'related' | 'external' | 'activity'
 
 type TicketWorkspaceProps = {
   initialState?: WorkspaceState
