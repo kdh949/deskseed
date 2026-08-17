@@ -22,10 +22,11 @@ An ADMIN can safely define typed ticket fields, versioned forms, normalized tags
 
 - owned Core OpenAPI fragment, accepted data/status/rule decision, requirement reservation, evidence record, and deterministic generated bundle;
 - all required admin and core runtime operation families as a frozen reviewer-visible contract.
+- V40 additive persistence foundation and the first ADMIN vertical slice: typed field definition and stable single-select option lifecycle, `If-Match` precondition, CSRF/session authorization, and atomic Admin/Security audit.
 
 ## Out of scope
 
-- persistence/controllers/UI, Platform API additions, migrations, outbox payload additions, View/Search SQL contributors, and a customer form rendering change;
+- form/tag/custom-status administration, runtime field values/tags/status ticket command, customer/agent projection, Platform API additions, outbox payload additions, View/Search SQL contributors, and a customer form rendering change;
 - generated Core bundle is never edited manually.
 
 ## Invariants and failure semantics
@@ -48,4 +49,4 @@ Sensitive field values remain out of ordinary logs, customer projection, default
 
 ## Compatibility and rollback
 
-The Core API additions are additive. No migration is in this contract checkpoint. Later V40–V49 migrations are forward-only; rollback is an application rollback or a reviewed additive repair, never an applied Flyway edit.
+The Core API additions and V40 schema are additive. V40 is forward-only; rollback is an application rollback or a reviewed additive repair, never an applied Flyway edit. Configuration rows are lifecycle-deactivated rather than deleted.
