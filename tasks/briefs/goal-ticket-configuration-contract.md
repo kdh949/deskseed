@@ -22,11 +22,11 @@ An ADMIN can safely define typed ticket fields, versioned forms, normalized tags
 
 - owned Core OpenAPI fragment, accepted data/status/rule decision, requirement reservation, evidence record, and deterministic generated bundle;
 - all required admin and core runtime operation families as a frozen reviewer-visible contract.
-- V40 additive persistence foundation and the first ADMIN vertical slice: typed field definition and stable single-select option lifecycle, `If-Match` precondition, CSRF/session authorization, and atomic Admin/Security audit.
+- V40 additive persistence foundation and ADMIN vertical slices: typed field definition/stable single-select option lifecycle plus versioned form draft/preview/validation/publish/archive; `If-Match` precondition, CSRF/session authorization, Foundation `WorkflowCatalog` condition contribution, and atomic Admin/Security audit.
 
 ## Out of scope
 
-- form/tag/custom-status administration, runtime field values/tags/status ticket command, customer/agent projection, Platform API additions, outbox payload additions, View/Search SQL contributors, and a customer form rendering change;
+- tag/custom-status administration, runtime field values/tags/status ticket command, customer/agent projection, Platform API additions, outbox payload additions, View/Search SQL contributors, and a customer form rendering change;
 - generated Core bundle is never edited manually.
 
 ## Invariants and failure semantics

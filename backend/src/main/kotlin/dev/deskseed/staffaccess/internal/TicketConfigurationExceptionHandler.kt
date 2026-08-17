@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.net.URI
 
-@RestControllerAdvice(assignableTypes = [AdminTicketConfigurationController::class])
+@RestControllerAdvice(assignableTypes = [AdminTicketConfigurationController::class, AdminTicketFormController::class])
 internal class TicketConfigurationExceptionHandler {
     @ExceptionHandler(TicketConfigurationNotFoundException::class)
     fun notFound(request: HttpServletRequest) = problem(

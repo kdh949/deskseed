@@ -7,14 +7,14 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 2237c4385694db59ce55172dedec325ca31d8560011946544419827fa3f9994c        6279  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
 318078c24d6dcaaac11d9f73dfcae91930c3773a938c8dfe2395f40030f3a6e9      263453  api/core-api-base-v1.yaml
-ca65e40502d28a479470aff75791cbc2cabe613b5e7b56d9693cb1c859d91b0f       54388  api/core-api-fragments/10-ticket-configuration.yaml
+27876bd5715e815deb1cb44a5259cb8666716d6105a011df2ce239fd27ac2be4       54627  api/core-api-fragments/10-ticket-configuration.yaml
 f2ed5f86e7373a7fb779ee26116597a92bb073c9f85564eac4a73d6a45d345cb          79  api/core-api-fragments/20-knowledge-base.yaml
 af830fd8edc0d24105fee18186f2c6c9ed1a6c62269a7f760697d9899fa66476          90  api/core-api-fragments/30-integrations.yaml
 c6d33dc1ac04cabe22f077c9aed80d04a461966f5a8e3ff2d1f396400d89a63d          80  api/core-api-fragments/40-collaboration.yaml
 432a4a1413187f4608f644aa63dd0bae1798386d79ad905e1de1941703d77358          77  api/core-api-fragments/50-views-macros.yaml
 90a9e4466fdd8100051f41d80b18b786997f29029cbdced085eca3320152dbd9          85  api/core-api-fragments/60-triggers-automations.yaml
 320bbfad1795a69006b7a347e98dae7d1b55175dd3d77c519850a8e76d12db92          82  api/core-api-fragments/70-analytics.yaml
-c01077df0d3d72afd8df2d6e61484fb3ab914dbc8269f1b3b7e46c584f36bbfc      326836  api/core-api-outline-v1.yaml
+2cfa55a76113da4af0260d975b79d79e6fb824a82a9c47f2a4e076c325d6a42c      327082  api/core-api-outline-v1.yaml
 3fed2202173278118ddc6eb8e5d8ada47772b752f0d36a93e5b18d6301e538e8       13735  api/customer-identity-api-v1.yaml
 4d5d1e754da5cdd1e6600bb2dbcb654d7cb65e8699a53daadedb8a6fb19212a4        2315  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -129,7 +129,7 @@ c150b9d4ada696d7c9374d603750707dabf6833679adc47348231fbe6313bea7        4090  do
 3f992b30c1d71ad638898428b2e9c6dc6edeca7ac31fa03bf702d6e0decb9136        5827  docs/evidence/business-schedule-admin.md
 1862e8c41d4bb42c091e1fd7eed206e31c4d884b05ccff3f37d7c49a42fd71fe        7161  docs/evidence/customer-my-requests-portal.md
 a138e5c6ccd889cdd5dcc87b88032b97d02efa1006ca202c52cf818bce3643d7        3115  docs/evidence/goal-foundation-progress.md
-938e57dc3a9bffe1b506643d61ab414e23a0146eb52efdcd465ae6b8bf814f86        2137  docs/evidence/goal-ticket-configuration-progress.md
+5e6c283725ae59d7e3283acea9e2478d2fabce123c0cf82a5785ba2bbb677a8b        2449  docs/evidence/goal-ticket-configuration-progress.md
 f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  docs/evidence/outbound-mail-mailpit-foundation.md
 36d43d6d66f816434f4d3701dda086aa9cc830edc37aba91936501e54f919e90        4966  docs/evidence/p0/BE-P0-CUSTOMER-ACCESS.md
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md
@@ -295,7 +295,7 @@ ac362594888ac24f3e3925f9a739495de6ee02494f48157c1ad4e485936d2274        6458  ta
 24b8c9193002c4cab9803841d41d7ec849a764fc9ca9ec76a4918c2cae1545d0        2551  tasks/briefs/goal-foundation-contract-kernel.md
 16c07ea30c14034b671f12ce7e772eaddb8fd27b346eb6620a3935f4ca71f47f        3727  tasks/briefs/goal-foundation-extension-host.md
 48d0a537f97fa763b7cd0649f5efd6331b8ffe2e116db100785734e8d51716f7        3106  tasks/briefs/goal-foundation-outbox.md
-a0e42e240ec6e3d72322b89d6488d6d5d1a3fc38c7d01dbd8b1b7cfbbeaefa6c        3581  tasks/briefs/goal-ticket-configuration-contract.md
+5dec8eb77609d53c2172d63b45764fe8c7523b11ef8a499cb12cc5581ae31208        3677  tasks/briefs/goal-ticket-configuration-contract.md
 a440d49ef2a6885f45e727e954ab2878d13319586065651adb8512d1728a144e        4971  tasks/briefs/integration-client-management.md
 7928256db634523d0ae40396641fdc934e61edd7b0eb8e1948bc35aadf29fccd        6645  tasks/briefs/issue-24-review-remediation.md
 55a7432c4b6d311344381db93ab93c643b2bfb8e72827af8a4ccf09793da4967       15791  tasks/briefs/p1-authenticated-customer-attachments.md

@@ -116,6 +116,17 @@ alter table ticket_forms
     references ticket_form_versions(form_id, version)
     deferrable initially deferred;
 
+create or replace function reject_ticket_form_version_mutation()
+returns trigger language plpgsql as $$
+begin
+    raise exception 'ticket_form_versions rows are immutable';
+end;
+$$;
+
+create trigger ticket_form_versions_immutable
+before update or delete on ticket_form_versions
+for each row execute function reject_ticket_form_version_mutation();
+
 create table ticket_tag_definitions (
     id uuid primary key,
     normalized_value varchar(80) not null unique,

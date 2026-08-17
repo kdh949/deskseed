@@ -764,7 +764,9 @@ components:
       required: [schemaVersion, root]
       properties:
         schemaVersion: {type: integer, const: 1}
-        root: {type: object, description: Foundation workflow AST node를 표현하며 raw executable expression은 허용하지 않습니다.}
+        root:
+          type: object
+          description: Foundation workflow AST node입니다. `kind`는 `ALL`/`ANY` (`children`), `NOT` (`child`), 또는 `LEAF` (`typeKey`, `schemaVersion`, object `config`)만 허용하며 raw executable expression은 허용하지 않습니다. LEAF의 typeKey/schemaVersion은 등록된 TICKET_FORM ConditionHandler와 일치해야 합니다.
     TicketFormFieldEffect:
       type: object
       required: [fieldId, behavior]

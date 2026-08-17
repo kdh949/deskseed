@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -153,8 +154,68 @@ class AdminTicketConfigurationIntegrationTest {
         )).isZero()
     }
 
+    @Test
+    fun `admin previews validates and publishes immutable conditional form versions`() {
+        val browser = browser("ADMIN")
+        val fieldResponse = mockMvc.perform(
+            post("/api/v1/admin/ticket-fields")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(fieldJson("payment.confirmed")),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val fieldId = UUID.fromString(stringField(fieldResponse, "id"))
+        val formResponse = mockMvc.perform(
+            post("/api/v1/admin/ticket-forms")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(formJson(fieldId)),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(header().string("ETag", "\"1\""))
+            .andExpect(jsonPath("$.lifecycle").value("DRAFT"))
+            .andReturn().response.contentAsString
+        val formId = UUID.fromString(stringField(formResponse, "id"))
+
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-forms/{formId}/preview", formId)
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"actorKind":"CUSTOMER","ticketKind":"CUSTOMER_REQUEST","statusCategory":"NEW"}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.fields[0].visible").value(true))
+            .andExpect(jsonPath("$.fields[0].editable").value(false))
+
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-forms/validate")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(cyclicFormJson(fieldId)),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.valid").value(false))
+            .andExpect(jsonPath("$.issues[0].code").value("CONDITIONAL_FIELD_CYCLE"))
+
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-forms/{formId}/publish", formId)
+                .session(browser.session).csrf(browser).header("If-Match", "\"1\""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"2\""))
+            .andExpect(jsonPath("$.lifecycle").value("PUBLISHED"))
+
+        assertThatThrownBy {
+            jdbc.update("update ticket_form_versions set definition_json = '{}'::jsonb where form_id = ? and version = 1", formId)
+        }.hasMessageContaining("ticket_form_versions rows are immutable")
+        assertThat(jdbc.queryForList(
+            "select event_type from admin_security_audit_events where target_id = ? order by occurred_at, id",
+            String::class.java,
+            formId,
+        )).containsExactly("TICKET_FORM_DRAFT_CREATED", "TICKET_FORM_PUBLISHED")
+    }
+
     private fun fieldJson(machineKey: String) =
         """{"machineKey":"$machineKey","type":"SINGLE_SELECT","staffLabel":"결제 수단","customerLabel":"결제 수단","customerVisible":true,"customerEditable":true,"agentVisible":true,"agentEditable":true,"searchable":true,"analyticsEligible":false,"sensitive":false,"validation":{}}"""
+
+    private fun formJson(fieldId: UUID) =
+        """{"name":"결제 문의","description":"결제 확인","defaultForCustomer":true,"defaultForAgent":false,"placements":[{"fieldId":"$fieldId","order":10,"customer":{"visible":true,"editable":true,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"actorKind","equals":"CUSTOMER"}}},"effects":[{"fieldId":"$fieldId","behavior":"READ_ONLY"}]}],"allowedCustomStatusIds":[]}"""
+
+    private fun cyclicFormJson(fieldId: UUID) =
+        """{"name":"순환 검증","placements":[{"fieldId":"$fieldId","order":10,"customer":{"visible":true,"editable":true,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"field.$fieldId","equals":"true"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]}]}"""
 
     private fun browser(role: String): Browser {
         val email = "configuration-${role.lowercase()}-${UUID.randomUUID()}@example.com"
