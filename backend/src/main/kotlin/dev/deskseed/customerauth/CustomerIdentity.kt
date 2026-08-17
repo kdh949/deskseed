@@ -9,4 +9,6 @@ data class CustomerPrincipal(
     val email: String,
     val displayName: String,
     val verifiedAt: Instant,
+    /** Purpose-bound HMAC identity for access audit. Never contains the raw customer session token. */
+    val sessionFingerprint: String? = null,
 )

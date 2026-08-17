@@ -5,6 +5,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.HexFormat
+import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -33,6 +34,11 @@ internal object CustomerAuthSecrets {
         )
     }
 
+    fun customerSessionFingerprint(keyBase64: String, sessionId: UUID): String =
+        "v1:" + Base64.getUrlEncoder().withoutPadding().encodeToString(
+            hmac(keyBase64, "customer-session:$sessionId"),
+        )
+
     fun constantTimeEquals(left: String, right: String): Boolean = MessageDigest.isEqual(
         left.toByteArray(StandardCharsets.US_ASCII),
         right.toByteArray(StandardCharsets.US_ASCII),
@@ -40,5 +46,11 @@ internal object CustomerAuthSecrets {
 
     private fun decodeKey(value: String): ByteArray = Base64.getDecoder().decode(value).also {
         require(it.size >= 32) { "customer authentication keys must contain at least 32 bytes" }
+    }
+
+    private fun hmac(keyBase64: String, value: String): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(decodeKey(keyBase64), "HmacSHA256"))
+        return mac.doFinal(value.toByteArray(StandardCharsets.UTF_8))
     }
 }

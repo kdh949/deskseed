@@ -7,7 +7,9 @@ import { useCustomerSession } from '../customer-auth/CustomerSessionContext'
 import {
   addCustomerFollowUp,
   ApiError,
+  downloadAuthenticatedCustomerAttachment,
   getCustomerRequest,
+  uploadAuthenticatedCustomerAttachment,
 } from './api/customerPortalClient'
 import { customerRequestQueryKeys } from './customerRequestQueryKeys'
 
@@ -72,12 +74,18 @@ export function CustomerRequestDetailPage() {
 
   return (
     <CustomerRequestConversation
+      downloadAttachment={(attachmentId) =>
+        downloadAuthenticatedCustomerAttachment(ticketNumber, attachmentId)
+      }
       onFollowUpConflict={() => void query.refetch()}
       onFollowUpSubmitted={() => void query.refetch()}
-      onSubmitFollowUp={(body, clientCommandId) =>
-        addCustomerFollowUp(ticketNumber, body, clientCommandId)
+      onSubmitFollowUp={(body, clientCommandId, attachmentIds) =>
+        addCustomerFollowUp(ticketNumber, body, clientCommandId, attachmentIds)
       }
       request={query.data}
+      uploadAttachment={(file) =>
+        uploadAuthenticatedCustomerAttachment(ticketNumber, file)
+      }
     />
   )
 }

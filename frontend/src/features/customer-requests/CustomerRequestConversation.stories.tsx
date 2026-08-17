@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent } from 'storybook/test'
 import { CustomerRequestConversation } from './CustomerRequestConversation'
 
 const request = {
@@ -66,5 +66,38 @@ export const EmptyConversation: Story = {
     await expect(
       canvas.getByRole('heading', { name: '공개 대화가 비어 있습니다.' }),
     ).toBeVisible()
+  },
+}
+
+export const AttachmentDownloadDenied: Story = {
+  args: {
+    downloadAttachment: async () => {
+      throw Object.assign(new Error('not found'), {
+        status: 404,
+        requestId: 'request-attachment-denied',
+      })
+    },
+    request: {
+      ...request,
+      comments: [
+        {
+          ...request.comments[0]!,
+          attachments: [
+            {
+              id: '55555555-5555-4555-8555-555555555555',
+              fileName: 'approval-history.pdf',
+              sizeBytes: 4096,
+              contentType: 'application/pdf',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(canvas.getByRole('button', { name: '다운로드' }))
+    await expect(canvas.getByRole('alert')).toHaveTextContent(
+      '요청 ID: request-attachment-denied',
+    )
   },
 }

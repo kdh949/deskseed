@@ -69,6 +69,7 @@ internal class CustomerAccountSessionStore(
             )
         }
         val raw = CustomerAuthSecrets.randomBearer()
+        val sessionId = UUID.randomUUID()
         jdbcTemplate.update(
             """
             insert into customer_sessions
@@ -76,7 +77,7 @@ internal class CustomerAccountSessionStore(
                  expires_at, absolute_expires_at, revoked_at)
             values (?, ?, ?, ?, ?, ?, ?, null)
             """.trimIndent(),
-            UUID.randomUUID(),
+            sessionId,
             account.accountId,
             CustomerAuthSecrets.digest(raw),
             Timestamp.from(now),
@@ -84,7 +85,12 @@ internal class CustomerAccountSessionStore(
             Timestamp.from(now.plus(properties.sessionIdle)),
             Timestamp.from(now.plus(properties.sessionAbsolute)),
         )
-        return NewCustomerSession(raw, account.principal)
+        return NewCustomerSession(
+            raw,
+            account.principal.copy(
+                sessionFingerprint = CustomerAuthSecrets.customerSessionFingerprint(properties.fingerprintKey, sessionId),
+            ),
+        )
     }
 
     fun resolveSession(rawToken: String): CustomerPrincipal? {
@@ -102,7 +108,7 @@ internal class CustomerAccountSessionStore(
                and account.id = session.account_id
                and account.status = 'ACTIVE'
                and customer.id = account.customer_id
-            returning account.id as account_id, customer.id as customer_id,
+            returning session.id as session_id, account.id as account_id, customer.id as customer_id,
                       account.email_normalized, customer.name, account.verified_at
             """.trimIndent(),
             { resultSet, _ ->
@@ -112,6 +118,10 @@ internal class CustomerAccountSessionStore(
                     email = resultSet.getString("email_normalized"),
                     displayName = resultSet.getString("name"),
                     verifiedAt = resultSet.getTimestamp("verified_at").toInstant(),
+                    sessionFingerprint = CustomerAuthSecrets.customerSessionFingerprint(
+                        properties.fingerprintKey,
+                        resultSet.getObject("session_id", UUID::class.java),
+                    ),
                 )
             },
             Timestamp.from(now),

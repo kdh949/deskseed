@@ -413,11 +413,18 @@ internal class JpaAccessAuditWriter(
             require(context.source == RequestSource.CUSTOMER_PORTAL) {
                 "Customer attachment audit requires CUSTOMER_PORTAL source"
             }
-            require(context.authType == dev.deskseed.audit.AccessAuditAuthType.CUSTOMER_CAPABILITY) {
-                "Customer attachment audit requires CUSTOMER_CAPABILITY authentication"
-            }
-            require(context.sessionFingerprint == null) {
-                "Customer attachment audit cannot contain a staff session fingerprint"
+            when (context.authType) {
+                dev.deskseed.audit.AccessAuditAuthType.CUSTOMER_CAPABILITY -> require(context.sessionFingerprint == null) {
+                    "Customer capability attachment audit cannot contain a session fingerprint"
+                }
+                dev.deskseed.audit.AccessAuditAuthType.CUSTOMER_SESSION -> require(
+                    context.sessionFingerprint?.matches(SESSION_FINGERPRINT) == true,
+                ) {
+                    "Customer session attachment audit requires a valid session fingerprint"
+                }
+                else -> throw IllegalArgumentException(
+                    "Customer attachment audit requires CUSTOMER_CAPABILITY or CUSTOMER_SESSION authentication",
+                )
             }
             return
         }

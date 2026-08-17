@@ -13,6 +13,7 @@ enum class AccessAuditOutcome {
 
 enum class AccessAuditAuthType {
     STAFF_SESSION,
+    CUSTOMER_SESSION,
     CUSTOMER_CAPABILITY,
     API_KEY,
     OAUTH,

@@ -1,7 +1,10 @@
 package dev.deskseed.portal.internal
 
+import dev.deskseed.attachments.AttachmentContent
+import dev.deskseed.attachments.AttachmentUploadResult
 import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.foundation.CommandContexts
+import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.settings.CustomerAccessMode
 import dev.deskseed.ticketing.CustomerRequestStatus
@@ -16,6 +19,9 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import org.springframework.http.CacheControl
+import org.springframework.http.ContentDisposition
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
@@ -26,8 +32,12 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
 import java.net.URI
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.UUID
 
@@ -81,6 +91,64 @@ internal class CustomerRequestPortalController(
             URI.create("/api/v1/customer/requests/$ticketNumber/comments/${result.comment.id}"),
         ).cacheControl(CacheControl.noStore()).body(CustomerPublicCommentResponse.from(result.comment))
     }
+
+    @PostMapping(
+        "/api/v1/customer/requests/{ticketNumber}/attachments/uploads",
+        consumes = [MediaType.MULTIPART_FORM_DATA_VALUE],
+    )
+    fun uploadAttachment(
+        @AuthenticationPrincipal principal: CustomerPrincipal,
+        @PathVariable @Positive ticketNumber: Long,
+        @RequestPart("file") file: MultipartFile,
+        request: HttpServletRequest,
+    ): ResponseEntity<CustomerAttachmentUploadResponse> {
+        val result = file.inputStream.use { content ->
+            applicationService.uploadAttachment(
+                principal = principal,
+                ticketNumber = ticketNumber,
+                fileName = file.originalFilename.orEmpty(),
+                declaredContentType = file.contentType,
+                content = content,
+                context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
+            )
+        }
+        return ResponseEntity.status(201)
+            .cacheControl(CacheControl.noStore())
+            .body(CustomerAttachmentUploadResponse.from(result))
+    }
+
+    @GetMapping("/api/v1/customer/requests/{ticketNumber}/attachments/{attachmentId}/download")
+    fun downloadAttachment(
+        @AuthenticationPrincipal principal: CustomerPrincipal,
+        @PathVariable @Positive ticketNumber: Long,
+        @PathVariable attachmentId: UUID,
+        request: HttpServletRequest,
+    ): ResponseEntity<StreamingResponseBody> {
+        val content = applicationService.downloadAttachment(
+            principal = principal,
+            ticketNumber = ticketNumber,
+            attachmentId = attachmentId,
+            requestContext = CustomerAttachmentRequestContext(
+                requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
+                correlationId = request.getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+                ipAddress = request.remoteAddr,
+                userAgent = request.getHeader("User-Agent"),
+            ),
+        )
+        return stream(content)
+    }
+
+    private fun stream(content: AttachmentContent): ResponseEntity<StreamingResponseBody> = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+        .header(
+            HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment()
+                .filename(content.attachment.fileName, StandardCharsets.UTF_8)
+                .build()
+                .toString(),
+        )
+        .body(StreamingResponseBody { output -> content.stream.use { it.copyTo(output) } })
 
     @PostMapping("/api/v1/requests/{ticketNumber}/claim-grants")
     fun issueClaimGrant(
@@ -182,6 +250,26 @@ internal data class CustomerFollowUpRequest(
     @field:Size(max = 5) val attachmentIds: List<UUID> = emptyList(),
     @field:NotBlank @field:Size(max = 100) val clientCommandId: String,
 )
+
+internal data class CustomerAttachmentUploadResponse(
+    val id: UUID,
+    val fileName: String,
+    val sizeBytes: Long,
+    val contentType: String,
+    val scanStatus: String,
+    val expiresAt: Instant,
+) {
+    companion object {
+        fun from(result: AttachmentUploadResult) = CustomerAttachmentUploadResponse(
+            id = result.attachment.id,
+            fileName = result.attachment.fileName,
+            sizeBytes = result.attachment.sizeBytes,
+            contentType = result.attachment.contentType,
+            scanStatus = result.scanStatus.name,
+            expiresAt = result.expiresAt,
+        )
+    }
+}
 
 internal data class ClaimCustomerRequestBody(
     @field:Size(min = 32, max = 1000) val requestAccessToken: String? = null,

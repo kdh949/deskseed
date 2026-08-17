@@ -78,6 +78,9 @@ interface CustomerTicketPortal {
 
     fun detail(requesterId: UUID, ticketNumber: Long): PublicTicketView?
 
+    /** Resolves an authenticated customer's path ticket before any attachment id is consulted. */
+    fun findOwnedTicketId(requesterId: UUID, ticketNumber: Long): UUID?
+
     /** Token-capability callers use this only after the token has resolved the exact ticket id. */
     fun findRequesterId(ticketId: UUID, ticketNumber: Long): UUID?
 

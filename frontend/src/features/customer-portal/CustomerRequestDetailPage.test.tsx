@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CustomerSessionProvider,
@@ -23,6 +23,14 @@ const detail = {
       authorDisplayName: '김민아',
       body: '결제 승인 내역을 확인해 주세요.',
       createdAt: '2026-08-15T00:00:00Z',
+      attachments: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          fileName: 'original.pdf',
+          sizeBytes: 1024,
+          contentType: 'application/pdf',
+        },
+      ],
       internalNote: 'must-not-render',
     },
   ],
@@ -51,17 +59,19 @@ function createQueryClient() {
 }
 
 function renderPage(queryClient = createQueryClient()) {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/account/requests/:ticketNumber',
+        element: <CustomerRequestDetailPage />,
+      },
+    ],
+    { initialEntries: ['/account/requests/1042'] },
+  )
   return render(
     <QueryClientProvider client={queryClient}>
       <CustomerSessionProvider>
-        <MemoryRouter initialEntries={['/account/requests/1042']}>
-          <Routes>
-            <Route
-              path="/account/requests/:ticketNumber"
-              element={<CustomerRequestDetailPage />}
-            />
-          </Routes>
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </CustomerSessionProvider>
     </QueryClientProvider>,
   )
@@ -85,18 +95,20 @@ function renderPageWithCustomerSwitch(
   queryClient: QueryClient,
   onSwitch: () => void,
 ) {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/account/requests/:ticketNumber',
+        element: <CustomerRequestDetailPage />,
+      },
+    ],
+    { initialEntries: ['/account/requests/1042'] },
+  )
   return render(
     <QueryClientProvider client={queryClient}>
       <CustomerSessionProvider>
         <CustomerSwitch onSwitch={onSwitch} />
-        <MemoryRouter initialEntries={['/account/requests/1042']}>
-          <Routes>
-            <Route
-              path="/account/requests/:ticketNumber"
-              element={<CustomerRequestDetailPage />}
-            />
-          </Routes>
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </CustomerSessionProvider>
     </QueryClientProvider>,
   )
@@ -109,11 +121,17 @@ function jsonResponse(body: unknown) {
   })
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('CustomerRequestDetailPage', () => {
   it('loads the owned PUBLIC detail, writes an authenticated follow-up through CSRF, and refreshes the projection after confirmed success', async () => {
     const user = userEvent.setup()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:attachment')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/v1/customer/me')) {
@@ -136,6 +154,39 @@ describe('CustomerRequestDetailPage', () => {
         )
       }
       if (
+        url.endsWith('/api/v1/customer/requests/1042/attachments/uploads') &&
+        init?.method === 'POST'
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: '55555555-5555-4555-8555-555555555555',
+              fileName: 'additional.pdf',
+              sizeBytes: 4,
+              contentType: 'application/pdf',
+              scanStatus: 'CLEAN',
+              expiresAt: '2099-08-17T05:00:00Z',
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      if (
+        url.endsWith(
+          '/api/v1/customer/requests/1042/attachments/44444444-4444-4444-8444-444444444444/download',
+        )
+      ) {
+        return Promise.resolve(
+          new Response('safe', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'Content-Disposition': 'attachment; filename="original.pdf"',
+            },
+          }),
+        )
+      }
+      if (
         url.endsWith('/api/v1/customer/requests/1042/comments') &&
         init?.method === 'POST'
       ) {
@@ -146,6 +197,14 @@ describe('CustomerRequestDetailPage', () => {
               authorDisplayName: '김민아',
               body: '추가 정보입니다.',
               createdAt: '2026-08-15T02:00:00Z',
+              attachments: [
+                {
+                  id: '55555555-5555-4555-8555-555555555555',
+                  fileName: 'additional.pdf',
+                  sizeBytes: 4,
+                  contentType: 'application/pdf',
+                },
+              ],
             }),
             { status: 201, headers: { 'Content-Type': 'application/json' } },
           ),
@@ -161,6 +220,13 @@ describe('CustomerRequestDetailPage', () => {
       await screen.findByRole('heading', { name: '#1042 결제 확인 요청' }),
     ).toBeVisible()
     expect(screen.queryByText('must-not-render')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '다운로드' }))
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1))
+    await user.upload(
+      screen.getByLabelText('PUBLIC 첨부 파일'),
+      new File(['safe'], 'additional.pdf', { type: 'application/pdf' }),
+    )
+    expect(await screen.findByText(/CLEAN/)).toBeVisible()
     await user.type(screen.getByLabelText('추가 답변'), '추가 정보입니다.')
     await user.click(screen.getByRole('button', { name: '답변 보내기' }))
 
@@ -181,6 +247,7 @@ describe('CustomerRequestDetailPage', () => {
     })
     expect(JSON.parse(String(writeCall?.[1]?.body))).toMatchObject({
       body: '추가 정보입니다.',
+      attachmentIds: ['55555555-5555-4555-8555-555555555555'],
       clientCommandId: expect.any(String),
     })
     await waitFor(() => {
