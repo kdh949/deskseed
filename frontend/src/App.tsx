@@ -32,6 +32,22 @@ import { AgentTicketWorkspacePage } from './features/ticket-workspace/AgentTicke
 import { AgentViewsPage } from './features/ticket-views/AgentViewsPage'
 import { AgentSearchPage } from './features/ticket-search/AgentSearchPage'
 import { StaffLoginPage } from './pages/StaffLoginPage'
+import { ExtensionRouteGate } from './extension-host/ExtensionRouteGate'
+import { frontendExtensions } from './extension-host/catalog'
+
+function extensionRoutes(
+  surface: 'customer' | 'agent' | 'admin',
+): RouteObject[] {
+  return frontendExtensions.routesFor(surface).map((contribution) => ({
+    path: contribution.path,
+    element:
+      surface === 'customer' ? (
+        contribution.element
+      ) : (
+        <ExtensionRouteGate contribution={contribution} />
+      ),
+  }))
+}
 
 const agentChildren: RouteObject[] = [
   { index: true, element: <Navigate to="/agent/views/my-open" replace /> },
@@ -41,6 +57,7 @@ const agentChildren: RouteObject[] = [
   { path: 'search', element: <AgentSearchPage /> },
   { path: 'tickets/new', element: <CreateAgentTicketPage /> },
   { path: 'tickets/:ticketNumber', element: <AgentTicketWorkspacePage /> },
+  ...extensionRoutes('agent'),
   { path: '*', element: <Navigate to="/agent/views/my-open" replace /> },
 ]
 
@@ -60,6 +77,7 @@ const adminChildren: RouteObject[] = [
   },
   { path: 'business-rules/schedules', element: <AdminBusinessSchedulesPage /> },
   { path: 'business-rules/sla', element: <AdminFirstReplySlaPage /> },
+  ...extensionRoutes('admin'),
   { path: '*', element: <Navigate to="operations/mail" replace /> },
 ]
 
@@ -87,6 +105,7 @@ const customerChildren: RouteObject[] = [
       },
     ],
   },
+  ...extensionRoutes('customer'),
 ]
 
 export const appRoutes: RouteObject[] = [

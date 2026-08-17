@@ -28,6 +28,8 @@ import { createOpaqueUuid } from '../../api/uuid'
 import type { EditableTicketFields } from './model/ticketEditorModel'
 import { useTicketEditor } from './model/useTicketEditor'
 import { TicketContextPanel, type ContextTab } from './TicketContextPanel'
+import { ExtensionSlot } from '../../extension-host/ExtensionSlot'
+import type { ExtensionAccess } from '../../extension-host/types'
 
 const STATUS_LABELS: Record<AgentTicketStatus, string> = {
   NEW: '신규',
@@ -54,20 +56,29 @@ const FIELD_LABELS: Record<TicketFieldName, string> = {
 
 export function AgentTicketEditorWorkspace({
   detail,
+  extensionAccess,
   refreshLatest,
   staffId,
 }: {
   detail: AgentTicketDetail
+  extensionAccess?: ExtensionAccess
   refreshLatest: () => Promise<AgentTicketDetail>
   staffId: string
 }) {
   if (!detail.capabilities.includes('UPDATE')) {
-    return <ReadOnlyTicketWorkspace detail={detail} onRefresh={refreshLatest} />
+    return (
+      <ReadOnlyTicketWorkspace
+        detail={detail}
+        extensionAccess={extensionAccess}
+        onRefresh={refreshLatest}
+      />
+    )
   }
 
   return (
     <WritableTicketWorkspace
       detail={detail}
+      extensionAccess={extensionAccess}
       refreshLatest={refreshLatest}
       staffId={staffId}
     />
@@ -76,10 +87,12 @@ export function AgentTicketEditorWorkspace({
 
 function WritableTicketWorkspace({
   detail,
+  extensionAccess,
   refreshLatest,
   staffId,
 }: {
   detail: AgentTicketDetail
+  extensionAccess?: ExtensionAccess
   refreshLatest: () => Promise<AgentTicketDetail>
   staffId: string
 }) {
@@ -88,6 +101,7 @@ function WritableTicketWorkspace({
   return (
     <WorkspaceLayout
       detail={detail}
+      extensionAccess={extensionAccess}
       onRefresh={() => void editor.refreshEditor()}
       properties={<WritableProperties detail={detail} editor={editor} />}
     >
@@ -98,7 +112,11 @@ function WritableTicketWorkspace({
         <EditorFeedback editor={editor} />
         <Conversation comments={detail.comments} />
       </div>
-      <ReplyComposer detail={detail} editor={editor} />
+      <ReplyComposer
+        detail={detail}
+        editor={editor}
+        extensionAccess={extensionAccess}
+      />
       {editor.blocker.state === 'blocked' ? (
         <section
           aria-labelledby="ticket-navigation-guard-title"
@@ -127,9 +145,11 @@ function WritableTicketWorkspace({
 
 function ReadOnlyTicketWorkspace({
   detail,
+  extensionAccess,
   onRefresh,
 }: {
   detail: AgentTicketDetail
+  extensionAccess?: ExtensionAccess
   onRefresh: () => Promise<AgentTicketDetail>
 }) {
   const [refreshError, setRefreshError] = useState<string | null>(null)
@@ -148,6 +168,7 @@ function ReadOnlyTicketWorkspace({
   return (
     <WorkspaceLayout
       detail={detail}
+      extensionAccess={extensionAccess}
       onRefresh={() => void refresh()}
       properties={<ReadOnlyProperties detail={detail} />}
     >
@@ -169,11 +190,13 @@ function ReadOnlyTicketWorkspace({
 function WorkspaceLayout({
   children,
   detail,
+  extensionAccess,
   onRefresh,
   properties,
 }: {
   children: ReactNode
   detail: AgentTicketDetail
+  extensionAccess?: ExtensionAccess
   onRefresh?: () => void
   properties: ReactNode
 }) {
@@ -195,6 +218,13 @@ function WorkspaceLayout({
         detail={detail}
         onTabChange={setContextTab}
       />
+      {extensionAccess ? (
+        <ExtensionSlot
+          access={extensionAccess}
+          context={{ ticketNumber: String(detail.ticket.ticketNumber) }}
+          slot="ticket-workspace.context"
+        />
+      ) : null}
     </main>
   )
 }
@@ -459,9 +489,11 @@ function Conversation({ comments }: { comments: AgentComment[] }) {
 function ReplyComposer({
   detail,
   editor,
+  extensionAccess,
 }: {
   detail: AgentTicketDetail
   editor: ReturnType<typeof useTicketEditor>
+  extensionAccess?: ExtensionAccess
 }) {
   const modes: TicketVisibility[] = detail.ticket.isChild
     ? ['INTERNAL']
@@ -511,6 +543,22 @@ function ReplyComposer({
       ) : (
         <p className="agent-ticket-editor-mode">INTERNAL · 직원 전용</p>
       )}
+      {extensionAccess ? (
+        <div
+          aria-label="답변 확장 도구"
+          className="reply-composer-toolbar"
+          role="toolbar"
+        >
+          <ExtensionSlot
+            access={extensionAccess}
+            context={{
+              ticketNumber: String(detail.ticket.ticketNumber),
+              composerMode: isInternal ? 'internal' : 'public',
+            }}
+            slot="ticket-composer.toolbar"
+          />
+        </div>
+      ) : null}
       <div
         aria-labelledby={
           modes.length > 1 ? `agent-ticket-composer-${mode}-tab` : undefined
@@ -555,6 +603,16 @@ function ReplyComposer({
                 ? '복구용 초안이 이 브라우저에 저장되었습니다.'
                 : '저장하지 않은 초안이 없습니다.'}
           </p>
+          {extensionAccess ? (
+            <ExtensionSlot
+              access={extensionAccess}
+              context={{
+                ticketNumber: String(detail.ticket.ticketNumber),
+                composerMode: isInternal ? 'internal' : 'public',
+              }}
+              slot="ticket-composer.status"
+            />
+          ) : null}
           <DsButton
             disabled={
               !editor.canSubmit || editor.attachmentStates[mode].blocked

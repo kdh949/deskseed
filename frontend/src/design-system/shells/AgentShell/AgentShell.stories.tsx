@@ -66,3 +66,24 @@ export const AuditOnly: Story = {
     ).not.toBeInTheDocument()
   },
 }
+
+export const ExtensionNavigation: Story = {
+  args: {
+    children: (
+      <main aria-label="지식 베이스" className="agent-queue-workspace">
+        <section className="agent-queue">
+          <h1>지식 베이스</h1>
+        </section>
+      </main>
+    ),
+    displayName: 'Mina Park',
+    extensionNavigationItems: [
+      { id: 'knowledge.base', label: 'Knowledge', to: '/agent/knowledge' },
+    ],
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole('link', { name: 'Knowledge' }),
+    ).toHaveAttribute('href', '/agent/knowledge')
+  },
+}

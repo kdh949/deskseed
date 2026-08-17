@@ -24,6 +24,11 @@ type AgentShellProps = {
   canCreateTicket?: boolean
   children?: ReactNode
   displayName: string
+  extensionNavigationItems?: readonly {
+    id: string
+    label: string
+    to: string
+  }[]
   onSignOut?: () => void
 }
 
@@ -46,6 +51,7 @@ export function AgentShell({
   canCreateTicket = false,
   children,
   displayName,
+  extensionNavigationItems = [],
   onSignOut,
 }: AgentShellProps) {
   const location = useLocation()
@@ -77,6 +83,17 @@ export function AgentShell({
               aria-label={item.label}
             >
               <DeskseedIcon name={item.icon} />
+              <span className="agent-nav-tooltip">{item.label}</span>
+            </NavLink>
+          ))}
+          {extensionNavigationItems.map((item) => (
+            <NavLink
+              aria-label={item.label}
+              className="agent-nav-link"
+              key={item.id}
+              to={item.to}
+            >
+              <span aria-hidden="true">{Array.from(item.label)[0]}</span>
               <span className="agent-nav-tooltip">{item.label}</span>
             </NavLink>
           ))}

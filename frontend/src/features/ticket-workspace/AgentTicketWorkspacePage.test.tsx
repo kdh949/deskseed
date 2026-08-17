@@ -8,7 +8,12 @@ import { AgentTicketWorkspacePage } from './AgentTicketWorkspacePage'
 vi.mock('../staff-auth/StaffSessionContext', () => ({
   useStaffSession: () => ({
     status: 'authenticated',
-    staff: { id: 'agent-id', displayName: '상담사', role: 'AGENT' },
+    staff: {
+      id: 'agent-id',
+      displayName: '상담사',
+      role: 'AGENT',
+      capabilities: ['AGENT_WORKSPACE'],
+    },
   }),
 }))
 
