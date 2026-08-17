@@ -59,17 +59,19 @@ tags:
   description: 최초 답변 SLA 정책의 불변 버전을 생성·검증·활성화하는 API입니다.
 - name: Analytics
   description: 감사 가능한 불변 사실을 기준으로 SLA 성과를 집계하는 API입니다.
+- name: Admin Ticket Configuration
+  description: ADMIN이 typed custom field, versioned form, tag, custom status를 관리하는 API입니다.
+- name: Ticket Configuration Runtime
+  description: 고객과 상담사가 서버가 투영한 form descriptor와 ticket configuration 값을 읽고 command로 변경하는 API입니다.
 paths:
   /api/v1/requests:
     post:
       summary: 고객 문의 접수
-      description: '고객 문의 접수 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
-        익명 접수는 격리된 미검증 Customer를 만들며 같은 이메일 입력만으로 기존 profile을 병합하거나 claim하지 않습니다. 유효한 고객 세션이
-        있으면 세션 Customer가 requester가 되고 body의 name/email은 인증된 identity를 바꾸지 않습니다. 설정된 고객 접근 모드는 익명 접수를
-        거부할 수 있습니다. 두 경우 모두 명시적인 ticket 범위 조회 또는 claim 흐름에만 쓰는 일회성 request access token을 반환하고 ownership
-        claim 때 revoke합니다. 문의 대상 이메일·신뢰된 실제 클라이언트 주소·전체 요청 수에는 PostgreSQL 고정 창 제한을 적용합니다. 신뢰되지 않은
-        peer의 X-Forwarded-For는 client identity를 바꾸지 않으며, 제한 시 429와 초 단위 Retry-After를 반환합니다. 제한 버킷에는 원문 이메일이나
-        IP를 저장하지 않습니다.'
+      description: 고객 문의 접수 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다. 익명 접수는 격리된 미검증
+        Customer를 만들며 같은 이메일 입력만으로 기존 profile을 병합하거나 claim하지 않습니다. 유효한 고객 세션이 있으면 세션 Customer가 requester가 되고 body의 name/email은
+        인증된 identity를 바꾸지 않습니다. 설정된 고객 접근 모드는 익명 접수를 거부할 수 있습니다. 두 경우 모두 명시적인 ticket 범위 조회 또는 claim 흐름에만 쓰는 일회성 request access
+        token을 반환하고 ownership claim 때 revoke합니다. 문의 대상 이메일·신뢰된 실제 클라이언트 주소·전체 요청 수에는 PostgreSQL 고정 창 제한을 적용합니다. 신뢰되지 않은 peer의
+        X-Forwarded-For는 client identity를 바꾸지 않으며, 제한 시 429와 초 단위 Retry-After를 반환합니다. 제한 버킷에는 원문 이메일이나 IP를 저장하지 않습니다.
       operationId: createCustomerRequest
       x-deskseed-contract-status: FROZEN
       tags:
@@ -258,7 +260,10 @@ paths:
   /api/v1/requests/{ticketNumber}/comments:
     post:
       summary: 고객 문의에 공개 답변 추가
-      description: '접근 토큰으로 식별한 고객 문의에 PUBLIC 댓글을 추가하는 API입니다. 토큰은 요청 헤더로만 전달하며 URL, 응답 본문, 감사 메타데이터에 다시 노출하지 않습니다. PENDING 문의는 OPEN으로 전환됩니다. SOLVED와 CLOSED는 자동 재개하지 않고 409를 반환합니다. 같은 ticketNumber·clientCommandId·본문의 재전송은 기존 댓글을 반환하며, 같은 식별자를 다른 티켓 또는 본문에 재사용하면 409를 반환합니다. 댓글, 상태 변경, TicketAudit, 새 접근 grant, request-received 메일 intent는 하나의 트랜잭션에서 함께 저장됩니다.'
+      description: 접근 토큰으로 식별한 고객 문의에 PUBLIC 댓글을 추가하는 API입니다. 토큰은 요청 헤더로만 전달하며 URL, 응답 본문, 감사 메타데이터에 다시 노출하지 않습니다. PENDING
+        문의는 OPEN으로 전환됩니다. SOLVED와 CLOSED는 자동 재개하지 않고 409를 반환합니다. 같은 ticketNumber·clientCommandId·본문의 재전송은 기존 댓글을 반환하며, 같은
+        식별자를 다른 티켓 또는 본문에 재사용하면 409를 반환합니다. 댓글, 상태 변경, TicketAudit, 새 접근 grant, request-received 메일 intent는 하나의 트랜잭션에서 함께
+        저장됩니다.
       operationId: addCustomerRequestComment
       x-deskseed-contract-status: FROZEN
       tags:
@@ -346,7 +351,8 @@ paths:
         '422': *id002
         '429': *id002
         '503': *id002
-      description: ticket-scoped request access token을 확인한 뒤 bounded stream을 private quarantine에 기록하고 SHA-256, MIME, malware scan을 끝낸 CLEAN object만 반환합니다. 고객 upload는 PUBLIC link에만 쓸 수 있으며 object key·public URL·원본 bytes는 응답에 포함하지 않습니다.
+      description: ticket-scoped request access token을 확인한 뒤 bounded stream을 private quarantine에 기록하고 SHA-256, MIME, malware
+        scan을 끝낸 CLEAN object만 반환합니다. 고객 upload는 PUBLIC link에만 쓸 수 있으며 object key·public URL·원본 bytes는 응답에 포함하지 않습니다.
   /api/v1/requests/{ticketNumber}/attachments/{attachmentId}/download:
     get:
       summary: 고객 PUBLIC 첨부파일 다운로드
@@ -385,7 +391,8 @@ paths:
         '404': *id002
         '409': *id002
         '503': *id002
-      description: 현재 request token이 소유한 ticket의 PUBLIC comment에 link된 CLEAN attachment만 다운로드합니다. INTERNAL, quarantine, infected, failed, deleted 또는 expired object는 같은 not-found-safe 응답으로 차단하고 성공 download는 audit됩니다.
+      description: 현재 request token이 소유한 ticket의 PUBLIC comment에 link된 CLEAN attachment만 다운로드합니다. INTERNAL, quarantine, infected,
+        failed, deleted 또는 expired object는 같은 not-found-safe 응답으로 차단하고 성공 download는 audit됩니다.
   /api/v1/customer/requests:
     get:
       summary: 인증 고객의 문의 목록 조회
@@ -597,7 +604,9 @@ paths:
         '403': *id006
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
-      description: 상담사가 실행할 수 있는 SYSTEM, PERSONAL, SHARED saved view 정의를 조회합니다. 반환 순서의 처음 20개 visible view만 같은 권한 predicate와 condition compiler로 계산한 exact ticketCount를 포함합니다. 목록·count는 서버 ticket-read authorization을 적용하며, 태그나 script 조건은 이 계약에 존재하지 않습니다.
+      description: 상담사가 실행할 수 있는 SYSTEM, PERSONAL, SHARED saved view 정의를 조회합니다. 반환 순서의 처음 20개 visible view만 같은 권한 predicate와
+        condition compiler로 계산한 exact ticketCount를 포함합니다. 목록·count는 서버 ticket-read authorization을 적용하며, 태그나 script 조건은 이 계약에
+        존재하지 않습니다.
     post:
       summary: PERSONAL 또는 권한 있는 SHARED saved view 생성
       operationId: createAgentSavedView
@@ -635,7 +644,8 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503': *id006
-      description: PERSONAL은 현재 owner만 생성할 수 있습니다. SHARED는 `saved-view:shared:manage` capability를 가진 ADMIN만 생성할 수 있으며, 설정 변경과 보안 감사가 함께 commit되지 않으면 생성되지 않습니다.
+      description: PERSONAL은 현재 owner만 생성할 수 있습니다. SHARED는 `saved-view:shared:manage` capability를 가진 ADMIN만 생성할 수 있으며, 설정
+        변경과 보안 감사가 함께 commit되지 않으면 생성되지 않습니다.
   /api/v1/agent/views/preview:
     post:
       summary: 저장 전 또는 변경 전 saved view 조건 preview
@@ -676,7 +686,8 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id006
-      description: preview는 저장하지 않지만 조회 자체와 조건 fingerprint를 `VIEW_EXECUTED` access audit으로 기록합니다. sample rows와 exact count는 실행 endpoint와 같은 parameterized compiler 및 authorization predicate를 사용합니다.
+      description: preview는 저장하지 않지만 조회 자체와 조건 fingerprint를 `VIEW_EXECUTED` access audit으로 기록합니다. sample rows와 exact count는
+        실행 endpoint와 같은 parameterized compiler 및 authorization predicate를 사용합니다.
   /api/v1/agent/views/reorder:
     post:
       summary: PERSONAL 또는 SHARED saved view 표시 순서 변경
@@ -711,7 +722,8 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503': *id006
-      description: reorder 요청은 해당 owner/scope의 현재 orderVersion을 요구합니다. 대상 목록은 모든 mutable visible view를 정확히 한 번 포함해야 하며 SYSTEM view의 순서는 바꾸지 않습니다.
+      description: reorder 요청은 해당 owner/scope의 현재 orderVersion을 요구합니다. 대상 목록은 모든 mutable visible view를 정확히 한 번 포함해야 하며 SYSTEM
+        view의 순서는 바꾸지 않습니다.
   /api/v1/agent/views/{viewKey}:
     patch:
       summary: PERSONAL 또는 SHARED saved view 정의 갱신
@@ -752,7 +764,8 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503': *id006
-      description: PERSONAL은 owner만, SHARED는 현재 capability를 가진 ADMIN만 갱신할 수 있습니다. SYSTEM definition은 immutable이며 version mismatch는 current definition을 반사하지 않는 conflict로 끝납니다.
+      description: PERSONAL은 owner만, SHARED는 현재 capability를 가진 ADMIN만 갱신할 수 있습니다. SYSTEM definition은 immutable이며 version mismatch는
+        current definition을 반사하지 않는 conflict로 끝납니다.
     delete:
       summary: PERSONAL 또는 SHARED saved view 삭제
       operationId: deleteAgentSavedView
@@ -785,7 +798,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/TicketVersionPreconditionProblem'
         '503': *id006
-      description: SYSTEM definition은 삭제할 수 없습니다. If-Match는 definition version을 나타내며, owner/capability/audit 검증 실패 시 definition을 삭제하지 않습니다.
+      description: SYSTEM definition은 삭제할 수 없습니다. If-Match는 definition version을 나타내며, owner/capability/audit 검증 실패 시 definition을
+        삭제하지 않습니다.
   /api/v1/agent/views/{viewKey}/tickets:
     get:
       summary: 선택한 보기의 티켓 목록 조회
@@ -857,7 +871,8 @@ paths:
         '404': *id006
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
-      description: 선택한 SYSTEM/PERSONAL/SHARED definition을 실행합니다. 조건 AST와 요청 filter는 parameterized SQL로 컴파일되고 현재 actor의 ticket-read predicate를 SQL 단계에서 함께 적용합니다. 실행은 `VIEW_EXECUTED` access audit을 먼저 기록하며 실패하면 보호된 queue를 반환하지 않습니다.
+      description: 선택한 SYSTEM/PERSONAL/SHARED definition을 실행합니다. 조건 AST와 요청 filter는 parameterized SQL로 컴파일되고 현재 actor의 ticket-read
+        predicate를 SQL 단계에서 함께 적용합니다. 실행은 `VIEW_EXECUTED` access audit을 먼저 기록하며 실패하면 보호된 queue를 반환하지 않습니다.
   /api/v1/agent/tickets:
     post:
       summary: 상담사 발신 티켓 생성
@@ -903,8 +918,8 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '422': *id006
         '503': *id006
-      description: 상담사 발신 티켓 생성 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다. requester.customerId가 기존
-        고객을 가리키지 않으면 404 /problems/agent-ticket-requester-not-found를 반환합니다.
+      description: 상담사 발신 티켓 생성 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다. requester.customerId가 기존 고객을 가리키지 않으면 404
+        /problems/agent-ticket-requester-not-found를 반환합니다.
   /api/v1/agent/tickets/batch-commands:
     post:
       summary: 명시 선택 티켓의 bounded batch command 실행
@@ -949,7 +964,9 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id006
-      description: 최대 100개 서로 다른 ticketNumber를 명시적으로 선택한 요청만 허용합니다. 각 item은 expectedVersion과 재전송에 유지되는 clientCommandId를 가지며 독립 transaction으로 기존 단일 ticket command/one TicketAudit를 재사용합니다. item 결과는 부분 성공을 표현하고, PUBLIC/INTERNAL comment는 이 schema에서 표현할 수 없습니다. group 변경은 TRANSFER와 reason을 사용해야 합니다.
+      description: 최대 100개 서로 다른 ticketNumber를 명시적으로 선택한 요청만 허용합니다. 각 item은 expectedVersion과 재전송에 유지되는 clientCommandId를 가지며
+        독립 transaction으로 기존 단일 ticket command/one TicketAudit를 재사용합니다. item 결과는 부분 성공을 표현하고, PUBLIC/INTERNAL comment는 이 schema에서
+        표현할 수 없습니다. group 변경은 TRANSFER와 reason을 사용해야 합니다.
   /api/v1/agent/attachments/uploads:
     post:
       summary: 상담사용 private attachment quarantine upload
@@ -992,7 +1009,9 @@ paths:
         '415': *id006
         '422': *id006
         '503': *id006
-      description: active staff만 upload할 수 있습니다. 서버는 bounded stream을 private quarantine에 기록한 뒤 SHA-256, claimed/detected MIME, malware scan을 검증합니다. CLEAN 결과만 future ticket create/comment command의 attachmentIds에 넣을 수 있고, object key나 signed/public URL은 반환하지 않습니다.
+      description: active staff만 upload할 수 있습니다. 서버는 bounded stream을 private quarantine에 기록한 뒤 SHA-256, claimed/detected MIME,
+        malware scan을 검증합니다. CLEAN 결과만 future ticket create/comment command의 attachmentIds에 넣을 수 있고, object key나 signed/public
+        URL은 반환하지 않습니다.
   /api/v1/agent/attachments/{attachmentId}/download:
     get:
       summary: 상담사용 ticket-linked attachment 다운로드
@@ -1035,7 +1054,8 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id006
-      description: 서버가 current staff ticket-read policy와 linked comment visibility를 검사한 뒤 CLEAN attachment만 stream합니다. quarantine, infected, failed, unlinked, deleted, expired attachment은 bytes를 반환하지 않으며 성공 view/download는 접근 감사 실패 시에도 반환하지 않습니다.
+      description: 서버가 current staff ticket-read policy와 linked comment visibility를 검사한 뒤 CLEAN attachment만 stream합니다. quarantine,
+        infected, failed, unlinked, deleted, expired attachment은 bytes를 반환하지 않으며 성공 view/download는 접근 감사 실패 시에도 반환하지 않습니다.
   /api/v1/agent/tickets/{ticketNumber}:
     get:
       summary: 상담사용 티켓 상세 조회
@@ -1523,7 +1543,9 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id006
-      description: 상담사가 현재 server-side ticket-read authorization 범위에서 검색합니다. query는 request body에서만 받고 보호된 encrypted/fingerprint audit으로 처리하며 URL, cursor, ordinary log에 포함하지 않습니다. score/ticketNumber cursor는 normalized query/filter/sort와 첫 snapshot에 서명 결합되고 exact resultCount와 nextCursor를 반환합니다.
+      description: 상담사가 현재 server-side ticket-read authorization 범위에서 검색합니다. query는 request body에서만 받고 보호된 encrypted/fingerprint
+        audit으로 처리하며 URL, cursor, ordinary log에 포함하지 않습니다. score/ticketNumber cursor는 normalized query/filter/sort와 첫 snapshot에
+        서명 결합되고 exact resultCount와 nextCursor를 반환합니다.
   /api/v1/agent/customers/search:
     post:
       summary: 상담사가 요청자 후보로 선택할 기존 고객 검색
@@ -1564,8 +1586,8 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
         '503': *id006
-      description: 상담사가 신규 티켓 생성 시 요청자로 선택할 기존 고객을 이름·이메일 부분 문자열로 검색하는 API입니다. 조회 자체가 검색 감사로 기록되며, 인증된 직원의 역할을 서버에서
-        확인한 뒤 처리합니다.
+      description: 상담사가 신규 티켓 생성 시 요청자로 선택할 기존 고객을 이름·이메일 부분 문자열로 검색하는 API입니다. 조회 자체가 검색 감사로 기록되며, 인증된 직원의 역할을 서버에서 확인한 뒤
+        처리합니다.
   /api/v1/agent/assignment-options:
     get:
       summary: 티켓 생성·배정에 사용할 활성 그룹과 구성원 목록 조회
@@ -1598,8 +1620,8 @@ paths:
         '403': *id006
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
-      description: 아직 티켓이 존재하지 않는 신규 생성 화면에서도 배정 가능한 활성 그룹과 그 활성 구성원 목록을 조회하는 API입니다. 티켓 상세 응답에 내장된 assignmentOptions와
-        동일한 스키마를 사용합니다.
+      description: 아직 티켓이 존재하지 않는 신규 생성 화면에서도 배정 가능한 활성 그룹과 그 활성 구성원 목록을 조회하는 API입니다. 티켓 상세 응답에 내장된 assignmentOptions와 동일한
+        스키마를 사용합니다.
   /api/v1/admin/staff:
     get:
       summary: 직원 계정 목록 조회
@@ -2662,7 +2684,9 @@ paths:
       summary: 감사 활동 내보내기 요청
       operationId: createAuditExport
       x-deskseed-contract-status: FROZEN
-      description: '감사 활동 projection을 short-lived CSV 또는 JSONL artifact로 내보내기 요청합니다. 현재 `audit:export` capability, owner, bounded field/filter/reason을 검증하고 permission snapshot과 self-audit을 job과 함께 저장합니다. worker와 artifact store 실패는 READY를 만들지 않으며 protected content와 raw query는 export field set에 존재하지 않습니다.'
+      description: 감사 활동 projection을 short-lived CSV 또는 JSONL artifact로 내보내기 요청합니다. 현재 `audit:export` capability, owner, bounded
+        field/filter/reason을 검증하고 permission snapshot과 self-audit을 job과 함께 저장합니다. worker와 artifact store 실패는 READY를 만들지 않으며
+        protected content와 raw query는 export field set에 존재하지 않습니다.
       tags:
       - Audit
       x-deskseed-phase: R2
@@ -2796,7 +2820,9 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatch'
         '410': *id006
         '503': *id006
-      description: 요청자 본인이며 현재도 `audit:export` capability를 가진 경우에만 READY artifact를 private store에서 stream합니다. 응답은 항상 no-store이고 다운로드 access/self-audit이 실패하면 bytes를 반환하지 않습니다. EXPIRED/삭제 artifact는 410 또는 not-found-safe 응답이며, CSV는 formula injection을 escape한 서버 생성 데이터만 포함합니다.
+      description: 요청자 본인이며 현재도 `audit:export` capability를 가진 경우에만 READY artifact를 private store에서 stream합니다. 응답은 항상 no-store이고
+        다운로드 access/self-audit이 실패하면 bytes를 반환하지 않습니다. EXPIRED/삭제 artifact는 410 또는 not-found-safe 응답이며, CSV는 formula injection을
+        escape한 서버 생성 데이터만 포함합니다.
   /api/v1/audit/projection/rebuild:
     post:
       summary: 감사 활동 조회 프로젝션 재구축
@@ -2993,7 +3019,10 @@ paths:
         '422': *id002
         '429': *id002
         '503': *id002
-      description: 인증 고객 세션과 CSRF를 확인하고 requester, ticket number, CUSTOMER_REQUEST kind가 모두 일치하는 own ticket을 먼저 찾습니다. 그 뒤 bounded stream을 private quarantine에 기록하고 MIME·checksum·malware scan을 통과한 CLEAN handle을 CUSTOMER actor, CUSTOMER_PORTAL source, PUBLIC visibility와 해당 ticket에 묶어 반환합니다. 다른 고객이나 없는 ticket은 같은 not-found-safe 응답으로 처리하며 object key, checksum, scan detail, public URL 또는 bytes는 JSON에 포함하지 않습니다.
+      description: 인증 고객 세션과 CSRF를 확인하고 requester, ticket number, CUSTOMER_REQUEST kind가 모두 일치하는 own ticket을 먼저 찾습니다. 그 뒤
+        bounded stream을 private quarantine에 기록하고 MIME·checksum·malware scan을 통과한 CLEAN handle을 CUSTOMER actor, CUSTOMER_PORTAL
+        source, PUBLIC visibility와 해당 ticket에 묶어 반환합니다. 다른 고객이나 없는 ticket은 같은 not-found-safe 응답으로 처리하며 object key, checksum,
+        scan detail, public URL 또는 bytes는 JSON에 포함하지 않습니다.
   /api/v1/customer/requests/{ticketNumber}/attachments/{attachmentId}/download:
     parameters:
     - *id010
@@ -3034,7 +3063,10 @@ paths:
         '404': *id002
         '409': *id002
         '503': *id002
-      description: 인증 고객이 소유한 path ticket을 attachment보다 먼저 확인한 뒤 그 ticket의 PUBLIC comment에 link된 CLEAN, non-expired object만 stream합니다. 다른 고객·ticket, INTERNAL, unlinked, quarantined, infected, failed, deleted, expired object는 같은 not-found-safe 응답으로 bytes를 차단합니다. 성공 stream 전 ATTACHMENT_DOWNLOADED access audit을 CUSTOMER_SESSION auth type과 purpose-bound session fingerprint로 commit하며 필수 감사 저장이 실패하면 성공 응답을 반환하지 않습니다.
+      description: 인증 고객이 소유한 path ticket을 attachment보다 먼저 확인한 뒤 그 ticket의 PUBLIC comment에 link된 CLEAN, non-expired object만
+        stream합니다. 다른 고객·ticket, INTERNAL, unlinked, quarantined, infected, failed, deleted, expired object는 같은 not-found-safe
+        응답으로 bytes를 차단합니다. 성공 stream 전 ATTACHMENT_DOWNLOADED access audit을 CUSTOMER_SESSION auth type과 purpose-bound session
+        fingerprint로 commit하며 필수 감사 저장이 실패하면 성공 응답을 반환하지 않습니다.
   /api/v1/admin/settings/customer-access-mode:
     get:
       summary: 고객 접근 모드 설정 조회
@@ -3194,7 +3226,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-      description: ADMIN이 마스킹된 수신자와 안전한 상태·시도·시간 메타데이터만 조회하는 키셋 목록 API입니다. 원본 수신자, 제목, 본문, 토큰, 암호문, nonce와 provider 응답은 반환하지 않습니다.
+      description: ADMIN이 마스킹된 수신자와 안전한 상태·시도·시간 메타데이터만 조회하는 키셋 목록 API입니다. 원본 수신자, 제목, 본문, 토큰, 암호문, nonce와 provider 응답은 반환하지
+        않습니다.
   /api/v1/admin/mail/intents/{intentId}:
     get:
       summary: 아웃바운드 메일 의도 상세 조회
@@ -3243,7 +3276,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-      description: ADMIN이 한 전송 의도와 시도 이력을 마스킹된 운영 projection으로 조회합니다. providerMessageId, provider 응답, 원본 수신자와 메일 콘텐츠는 계약상 제외됩니다.
+      description: ADMIN이 한 전송 의도와 시도 이력을 마스킹된 운영 projection으로 조회합니다. providerMessageId, provider 응답, 원본 수신자와 메일 콘텐츠는 계약상
+        제외됩니다.
   /api/v1/admin/mail/intents/{intentId}/retry:
     post:
       summary: 실패한 아웃바운드 메일 의도 재시도
@@ -3299,7 +3333,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-      description: ADMIN이 terminal FAILED 상태의 기존 전송 의도를 같은 intent로 다시 QUEUED 상태로 전환합니다. 하나의 intent만 잠그며 별도 티켓·comment·의도를 만들지 않고, 전환과 보안 감사는 같은 트랜잭션에서 성공해야 합니다.
+      description: ADMIN이 terminal FAILED 상태의 기존 전송 의도를 같은 intent로 다시 QUEUED 상태로 전환합니다. 하나의 intent만 잠그며 별도 티켓·comment·의도를
+        만들지 않고, 전환과 보안 감사는 같은 트랜잭션에서 성공해야 합니다.
   /api/v1/admin/business-schedules:
     get:
       summary: 영업 시간표 목록 조회
@@ -3891,6 +3926,1039 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
       description: 최초 답변 SLA 성과 집계 조회 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다.
+  /api/v1/admin/ticket-fields:
+    get:
+      summary: 티켓 field definition 목록 조회
+      description: ADMIN 권한과 staff actor 일관성 guard를 서버에서 확인한 뒤 field definition 목록만 반환합니다.
+      operationId: listTicketFieldDefinitions
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: active
+        in: query
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: 현재 관리자에게 보이는 bounded field definition 목록입니다.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketFieldDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: 티켓 field definition 생성
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 생성 및 Admin/Security audit을 같은 transaction으로 처리합니다.
+      operationId: createTicketFieldDefinition
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketFieldDefinitionRequest'
+            example:
+              machineKey: payment.method
+              type: SINGLE_SELECT
+              staffLabel: 결제 수단
+              customerLabel: 결제 수단
+              customerVisible: true
+              customerEditable: true
+              agentVisible: true
+              agentEditable: true
+              searchable: true
+              analyticsEligible: true
+              sensitive: false
+      responses:
+        '201':
+          description: immutable machine key와 version 1을 가진 draft definition입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-fields/{fieldId}:
+    get:
+      summary: 티켓 field definition 조회
+      description: ADMIN 권한과 staff actor 일관성 guard를 서버에서 확인한 뒤 하나의 field definition을 반환합니다.
+      operationId: getTicketFieldDefinition
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/TicketFieldId'
+      responses:
+        '200':
+          description: 요청한 field definition을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    put:
+      summary: 티켓 field definition 수정
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 수정과 Admin/Security audit을 원자적으로 처리합니다.
+      operationId: updateTicketFieldDefinition
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFieldId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketFieldDefinitionRequest'
+      responses:
+        '200':
+          description: 새 version의 definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-fields/{fieldId}/activation:
+    put:
+      summary: 티켓 field definition 활성 상태 변경
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 활성 상태와 감사 기록을 함께 변경합니다.
+      operationId: setTicketFieldDefinitionActivation
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFieldId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivationRequest'
+            example:
+              active: false
+      responses:
+        '200':
+          description: 변경된 definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-fields/{fieldId}/options:
+    get:
+      summary: single-select field option 목록 조회
+      description: ADMIN 권한과 staff actor 일관성 guard를 확인한 뒤 field type에 맞는 option 목록을 반환합니다.
+      operationId: listTicketFieldOptions
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/TicketFieldId'
+      responses:
+        '200':
+          description: display order 순서의 option 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketFieldOption'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: single-select field option 생성
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 stable option을 생성하며 감사 기록을 함께 남깁니다.
+      operationId: createTicketFieldOption
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFieldId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketFieldOptionRequest'
+            example:
+              machineKey: card
+              staffLabel: 카드
+              customerLabel: 카드
+              order: 10
+      responses:
+        '201':
+          description: stable option ID를 가진 option
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldOption'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/ticket-fields/{fieldId}/options/{optionId}:
+    put:
+      summary: ticket field option 수정 또는 비활성화
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 option lifecycle과 감사 기록을 함께 변경합니다.
+      operationId: updateTicketFieldOption
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFieldId'
+      - $ref: '#/components/parameters/TicketFieldOptionId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketFieldOptionRequest'
+      responses:
+        '200':
+          description: 변경된 option
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFieldOption'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-fields/{fieldId}/options/order:
+    put:
+      summary: ticket field option 표시 순서 재배치
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 전체 option set의 중복 없는 표시 순서를 원자적으로 변경합니다.
+      operationId: reorderTicketFieldOptions
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFieldId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderIdsRequest'
+            example:
+              ids:
+              - 76f77c09-ea8d-4b5e-8e5d-81cba5ea37ec
+      responses:
+        '200':
+          description: 재배치된 option 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketFieldOption'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/ticket-forms:
+    get:
+      summary: 티켓 form 목록 조회
+      description: ADMIN 권한과 staff actor 일관성 guard를 서버에서 확인한 뒤 form lifecycle과 version을 반환합니다.
+      operationId: listTicketForms
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: version과 lifecycle을 포함한 form 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketForm'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: 티켓 form draft 생성
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 form draft와 Admin/Security audit을 같은 transaction으로 생성합니다.
+      operationId: createTicketForm
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTicketFormRequest'
+      responses:
+        '201':
+          description: 생성된 form draft를 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/ticket-forms/{formId}:
+    get:
+      summary: 티켓 form 조회
+      description: ADMIN 권한과 staff actor 일관성 guard를 확인한 뒤 draft 또는 immutable published form version을 반환합니다.
+      operationId: getTicketForm
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/TicketFormId'
+      responses:
+        '200':
+          description: form draft 또는 immutable published version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    put:
+      summary: ticket form draft 수정
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 published version을 바꾸지 않는 draft 수정과 감사를 원자적으로 처리합니다.
+      operationId: updateTicketForm
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFormId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTicketFormRequest'
+      responses:
+        '200':
+          description: 수정된 draft form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-forms/{formId}/publish:
+    post:
+      summary: 충돌 없는 form version publish
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 cycle 또는 contradictory effect가 없는 draft만 immutable version으로
+        publish합니다.
+      operationId: publishTicketForm
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFormId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      responses:
+        '200':
+          description: immutable published form version을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-forms/{formId}/archive:
+    post:
+      summary: 티켓 form archive
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 기존 ticket 해석을 보존한 채 form을 archive합니다.
+      operationId: archiveTicketForm
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFormId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      responses:
+        '200':
+          description: archive된 form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketForm'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-forms/{formId}/preview:
+    post:
+      summary: actor context에서 form rule preview
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 raw expression 없이 Foundation condition AST의 server-side projection을 preview합니다.
+      operationId: previewTicketForm
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketFormId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketFormPreviewRequest'
+            example:
+              actorKind: CUSTOMER
+              ticketKind: CUSTOMER_REQUEST
+              statusCategory: NEW
+              fieldValues:
+                payment.method:
+                  optionId: 76f77c09-ea8d-4b5e-8e5d-81cba5ea37ec
+      responses:
+        '200':
+          description: server-side rule evaluation projection을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFormProjection'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/ticket-forms/validate:
+    post:
+      summary: conditional rule set publish 가능성 검증
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 dependency cycle 및 conflicting final effect를 publish 전에 검사합니다.
+      operationId: validateTicketFormConditions
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTicketFormRequest'
+      responses:
+        '200':
+          description: cycle과 contradictory final state 검증 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFormValidationResult'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/ticket-tags:
+    get:
+      summary: tag catalog 목록 조회
+      description: ADMIN 권한과 staff actor 일관성 guard를 확인한 뒤 normalized tag catalog만 반환합니다.
+      operationId: listTicketTagDefinitions
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-012
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: normalized tag definition 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketTagDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: tag definition 생성
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 normalized canonical value의 tag를 생성하며 감사를 함께 남깁니다.
+      operationId: createTicketTagDefinition
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-012
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTicketTagDefinitionRequest'
+            example:
+              value: payment
+              label: 결제
+      responses:
+        '201':
+          description: 생성된 normalized tag definition을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketTagDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/ticket-tags/{tagId}:
+    put:
+      summary: tag definition 수정 또는 비활성화
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 tag label 또는 lifecycle과 감사를 원자적으로 변경합니다.
+      operationId: updateTicketTagDefinition
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-012
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketTagId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertTicketTagDefinitionRequest'
+      responses:
+        '200':
+          description: 갱신된 tag definition을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketTagDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-statuses:
+    get:
+      summary: custom status definition 목록 조회
+      description: ADMIN 권한과 staff actor 일관성 guard를 확인한 뒤 stable category에 매핑된 custom status 목록을 반환합니다.
+      operationId: listTicketStatusDefinitions
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-013
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: stable category에 매핑된 status 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomTicketStatus'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      summary: custom status definition 생성
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 기존 category state machine을 보존하는 custom status를 생성합니다.
+      operationId: createTicketStatusDefinition
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-013
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertCustomTicketStatusRequest'
+            example:
+              machineKey: waiting-for-customer
+              agentLabel: 고객 응답 대기
+              customerLabel: 추가 정보 필요
+              statusCategory: PENDING
+              order: 10
+              active: true
+      responses:
+        '201':
+          description: 생성된 custom status definition을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomTicketStatus'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/ticket-statuses/{statusId}:
+    put:
+      summary: custom status definition 수정
+      description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 status definition과 Admin/Security audit을 원자적으로 변경합니다.
+      operationId: updateTicketStatusDefinition
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-013
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketStatusDefinitionId'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertCustomTicketStatusRequest'
+      responses:
+        '200':
+          description: 갱신된 custom status definition을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomTicketStatus'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+  /api/v1/admin/ticket-statuses/order:
+    put:
+      summary: custom status 표시 순서 재배치
+      description: ADMIN의 CSRF와 actor 일관성을 확인하고 category compatibility를 바꾸지 않는 custom status 표시 순서를 원자적으로 변경합니다.
+      operationId: reorderTicketStatusDefinitions
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-013
+      tags:
+      - Admin Ticket Configuration
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderIdsRequest'
+      responses:
+        '200':
+          description: 재배치된 custom status definition 목록을 반환합니다.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomTicketStatus'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/customer/ticket-forms:
+    get:
+      summary: 고객 제출 context의 form projection 조회
+      description: 고객 제출 context에 허용된 active field만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다.
+      operationId: getCustomerTicketFormProjection
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-011
+      tags:
+      - Ticket Configuration Runtime
+      security:
+      - {}
+      parameters:
+      - name: formId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: ticketKind
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/TicketKind'
+      responses:
+        '200':
+          description: staff-only definition을 포함하지 않는 customer projection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketFormProjection'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /api/v1/agent/ticket-configuration/descriptors:
+    get:
+      summary: 상담사 View/Search/Macro/Rules/Analytics용 configuration descriptor catalog 조회
+      description: 상담사 session의 actor 일관성을 확인하고 handler/provider identity만 포함한 bounded descriptor catalog를 반환합니다.
+      operationId: listTicketConfigurationDescriptors
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      - REQ-CFG-012
+      - REQ-CFG-013
+      tags:
+      - Ticket Configuration Runtime
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: handler/provider identity만 제공하는 bounded catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketConfigurationDescriptor'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/agent/tickets/{ticketNumber}/configuration:
+    get:
+      summary: 상담사용 ticket field/tag/custom status projection 조회
+      description: 상담사 session의 actor 일관성과 ticket read authorization을 확인하고 server-authorized configuration projection을 반환합니다.
+      operationId: getAgentTicketConfiguration
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      - REQ-CFG-012
+      - REQ-CFG-013
+      tags:
+      - Ticket Configuration Runtime
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/TicketConfigurationTicketNumber'
+      responses:
+        '200':
+          description: 서버 권한 검사를 거친 field value projection을 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketConfigurationValues'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    put:
+      summary: 정상 ticket command로 field/tag/custom status 변경
+      description: 상담사 CSRF, actor 일관성, ticket write authorization, If-Match version, form projection을 확인하고 하나의 TicketAudit으로
+        변경합니다.
+      operationId: updateAgentTicketConfiguration
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      - REQ-CFG-012
+      - REQ-CFG-013
+      x-deskseed-documentation-review: MANUAL
+      tags:
+      - Ticket Configuration Runtime
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketConfigurationTicketNumber'
+      - $ref: '#/components/parameters/TicketConfigurationIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketConfigurationRequest'
+            example:
+              fieldValues:
+                payment.method:
+                  optionId: 76f77c09-ea8d-4b5e-8e5d-81cba5ea37ec
+              addTagIds:
+              - ccda13be-fd84-485a-a5e9-6c124e2b1235
+              removeTagIds: []
+              customStatusId: 11f87c09-ea8d-4b5e-8e5d-81cba5ea37ec
+              clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
+      responses:
+        '200':
+          description: 하나의 TicketAudit와 ordered event를 만든 command 결과를 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketConfigurationCommandResult'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '412':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
 components:
   securitySchemes:
     staffSession:
@@ -4019,7 +5087,8 @@ components:
       name: X-Interaction-Id
       in: header
       required: true
-      description: 직원이 의도적으로 view preview 또는 attachment를 연 상호작용 식별자입니다. background prefetch는 semantic view/download를 만들지 않는 별도 intent를 사용합니다.
+      description: 직원이 의도적으로 view preview 또는 attachment를 연 상호작용 식별자입니다. background prefetch는 semantic view/download를 만들지 않는
+        별도 intent를 사용합니다.
       schema:
         type: string
         format: uuid
@@ -4043,6 +5112,59 @@ components:
         pattern: ^"?[0-9]+"?$
     AttachmentId:
       name: attachmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TicketConfigurationTicketNumber:
+      name: ticketNumber
+      in: path
+      required: true
+      description: 변경 또는 조회할 양의 ticket 번호입니다.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    TicketConfigurationIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: 현재 definition 또는 ticket version과 정확히 일치하지 않으면 기존 값을 덮어쓰지 않도록 하는 strong version precondition입니다.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    TicketFieldId:
+      name: fieldId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TicketFieldOptionId:
+      name: optionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TicketFormId:
+      name: formId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TicketTagId:
+      name: tagId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TicketStatusDefinitionId:
+      name: statusId
       in: path
       required: true
       schema:
@@ -4148,6 +5270,12 @@ components:
                 status: 409
                 detail: Refresh the staff session before continuing.
                 requestId: req-actor-409
+    Problem:
+      description: 권한, validation, lifecycle, version, audit persistence 실패를 RFC 9457 problem detail로 반환합니다.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
   schemas:
     Problem:
       type: object
@@ -4378,7 +5506,8 @@ components:
           items:
             type: string
             format: binary
-      description: 익명 고객이 최초 PUBLIC comment와 함께 최대 5개 파일을 multipart로 보내는 요청입니다. 서버는 ticket transaction을 열기 전에 bounded streaming, quarantine, MIME·malware 검사를 끝내고 CLEAN attachment만 첫 PUBLIC comment에 link합니다.
+      description: 익명 고객이 최초 PUBLIC comment와 함께 최대 5개 파일을 multipart로 보내는 요청입니다. 서버는 ticket transaction을 열기 전에 bounded streaming,
+        quarantine, MIME·malware 검사를 끝내고 CLEAN attachment만 첫 PUBLIC comment에 link합니다.
       x-deskseed-documentation-review: MANUAL
       example:
         name: 김민아
@@ -4397,7 +5526,8 @@ components:
         file:
           type: string
           format: binary
-      description: 이미 인증되었거나 ticket-scoped request token을 검증한 actor가 하나의 파일을 quarantine upload할 때 사용하는 multipart 본문입니다. filename 확장자만 신뢰하지 않으며 서버가 streaming size, MIME, checksum과 malware scan을 검사합니다.
+      description: 이미 인증되었거나 ticket-scoped request token을 검증한 actor가 하나의 파일을 quarantine upload할 때 사용하는 multipart 본문입니다. filename
+        확장자만 신뢰하지 않으며 서버가 streaming size, MIME, checksum과 malware scan을 검사합니다.
       x-deskseed-documentation-review: MANUAL
       example:
         file: approval-history.pdf
@@ -4420,7 +5550,8 @@ components:
           items:
             type: string
             format: uuid
-          description: 같은 ticket request-token으로 upload한 CLEAN PUBLIC attachment handle입니다. link는 이 comment/TicketAudit transaction에서만 수행됩니다.
+          description: 같은 ticket request-token으로 upload한 CLEAN PUBLIC attachment handle입니다. link는 이 comment/TicketAudit transaction에서만
+            수행됩니다.
         clientCommandId:
           type: string
           minLength: 1
@@ -4459,7 +5590,8 @@ components:
           items:
             type: string
             format: uuid
-          description: 같은 인증 고객이 이 ticket에 PUBLIC visibility로 upload한 CLEAN handle입니다. link는 이 comment, TicketAudit, ordered events, mail intent transaction에서만 수행됩니다.
+          description: 같은 인증 고객이 이 ticket에 PUBLIC visibility로 upload한 CLEAN handle입니다. link는 이 comment, TicketAudit, ordered
+            events, mail intent transaction에서만 수행됩니다.
       description: 인증된 고객이 자신에게 공개된 문의에 PUBLIC 댓글을 남길 때 사용하는 명령입니다. clientCommandId는 전송 재시도에도 같은 값을 유지해 중복 댓글 생성을 막습니다.
       x-deskseed-documentation-review: MANUAL
       example:
@@ -4492,7 +5624,8 @@ components:
             $ref: '#/components/schemas/TicketAttachment'
     PublicAttachment:
       deprecated: true
-      description: 호환을 위해 남은 PUBLIC-only alias입니다. 새 customer/staff projection은 `TicketAttachment`을 사용하며 public URL을 제공하지 않습니다.
+      description: 호환을 위해 남은 PUBLIC-only alias입니다. 새 customer/staff projection은 `TicketAttachment`을 사용하며 public URL을 제공하지
+        않습니다.
       allOf:
       - $ref: '#/components/schemas/TicketAttachment'
     TicketAttachment:
@@ -4518,7 +5651,8 @@ components:
         contentType:
           type: string
           maxLength: 127
-      description: CLEAN 상태로 comment에 link된 metadata입니다. object key, scan detail, checksum, public/signed URL은 포함하지 않으며 download endpoint가 server authorization을 다시 검사합니다.
+      description: CLEAN 상태로 comment에 link된 metadata입니다. object key, scan detail, checksum, public/signed URL은 포함하지 않으며 download
+        endpoint가 server authorization을 다시 검사합니다.
     AttachmentUpload:
       type: object
       additionalProperties: false
@@ -4550,7 +5684,8 @@ components:
         expiresAt:
           type: string
           format: date-time
-      description: 아직 ticket/comment에 link되지 않은 CLEAN upload handle입니다. expiresAt 전의 정상 ticket create/comment transaction에서만 one-time link할 수 있고 private storage locator는 반환하지 않습니다.
+      description: 아직 ticket/comment에 link되지 않은 CLEAN upload handle입니다. expiresAt 전의 정상 ticket create/comment transaction에서만
+        one-time link할 수 있고 private storage locator는 반환하지 않습니다.
     CustomerRequestDetail:
       type: object
       additionalProperties: false
@@ -4872,7 +6007,8 @@ components:
           maxItems: 1000
           items:
             $ref: '#/components/schemas/OutboundMailAttempt'
-      description: 안전한 운영 조회용 전송 의도입니다. sender, raw recipient, subject, body, protected ciphertext/nonce/key version, request/correlation IDs, provider message ID와 provider response는 의도적으로 제외됩니다.
+      description: 안전한 운영 조회용 전송 의도입니다. sender, raw recipient, subject, body, protected ciphertext/nonce/key version, request/correlation
+        IDs, provider message ID와 provider response는 의도적으로 제외됩니다.
     OutboundMailIntentPage:
       type: object
       additionalProperties: false
@@ -5058,7 +6194,8 @@ components:
         updatedAt:
           type: string
           format: date-time
-      description: versioned saved-view definition입니다. `key`는 실행 URL의 opaque 식별자이고 id 목록이나 executable expression을 담지 않습니다. SYSTEM scope는 read-only입니다.
+      description: versioned saved-view definition입니다. `key`는 실행 URL의 opaque 식별자이고 id 목록이나 executable expression을 담지 않습니다.
+        SYSTEM scope는 read-only입니다.
     SavedViewScope:
       type: string
       enum:
@@ -5108,7 +6245,9 @@ components:
             type: string
             minLength: 1
             maxLength: 100
-      description: field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다. IS_CURRENT_ACTOR, IS_UNASSIGNED, IS_CURRENT_ACTOR_GROUP, LESS_THAN_SOLVED는 빈 values만 허용하고 UPDATED_AT/WITHIN_LAST_DAYS는 bounded 정수 하루 수 하나만 허용합니다. raw SQL, SpEL, JavaScript, script expression은 허용하지 않습니다.
+      description: field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다. IS_CURRENT_ACTOR, IS_UNASSIGNED, IS_CURRENT_ACTOR_GROUP,
+        LESS_THAN_SOLVED는 빈 values만 허용하고 UPDATED_AT/WITHIN_LAST_DAYS는 bounded 정수 하루 수 하나만 허용합니다. raw SQL, SpEL, JavaScript,
+        script expression은 허용하지 않습니다.
     SavedViewConditions:
       type: object
       additionalProperties: false
@@ -5130,7 +6269,8 @@ components:
           maxItems: 12
           items:
             $ref: '#/components/schemas/SavedViewCondition'
-      description: '`(all AND) AND (any OR)` 형태의 version 1 allowlisted condition AST입니다. 빈 all 또는 any는 각각 identity 조건으로 해석하며 두 배열이 모두 비어 있는 definition은 거부합니다.'
+      description: '`(all AND) AND (any OR)` 형태의 version 1 allowlisted condition AST입니다. 빈 all 또는 any는 각각 identity 조건으로 해석하며
+        두 배열이 모두 비어 있는 definition은 거부합니다.'
     SavedViewColumn:
       type: string
       enum:
@@ -5174,7 +6314,8 @@ components:
             $ref: '#/components/schemas/SavedViewColumn'
         sort:
           $ref: '#/components/schemas/SavedViewSort'
-      description: 상담사가 저장 또는 preview할 수 있는 version 1 saved-view definition입니다. 태그, arbitrary text, custom field, macro, SQL/script 조건은 version 1 범위 밖이며 field/operator/value 조합은 서버 allowlist가 검증합니다.
+      description: 상담사가 저장 또는 preview할 수 있는 version 1 saved-view definition입니다. 태그, arbitrary text, custom field, macro, SQL/script
+        조건은 version 1 범위 밖이며 field/operator/value 조합은 서버 allowlist가 검증합니다.
       x-deskseed-documentation-review: MANUAL
       example:
         name: 우선 처리할 위험 SLA
@@ -5229,7 +6370,8 @@ components:
         sort:
           $ref: '#/components/schemas/SavedViewSort'
       x-deskseed-documentation-review: MANUAL
-      description: 현재 상담사가 새 PERSONAL definition을 만들거나, 명시적 shared-view capability를 가진 ADMIN이 SHARED definition을 만들 때 사용하는 요청입니다. SYSTEM scope는 생성할 수 없습니다.
+      description: 현재 상담사가 새 PERSONAL definition을 만들거나, 명시적 shared-view capability를 가진 ADMIN이 SHARED definition을 만들 때 사용하는
+        요청입니다. SYSTEM scope는 생성할 수 없습니다.
       example:
         scope: PERSONAL
         name: 내 위험 SLA
@@ -5283,7 +6425,8 @@ components:
         sort:
           $ref: '#/components/schemas/SavedViewSort'
       x-deskseed-documentation-review: MANUAL
-      description: owner의 PERSONAL 또는 권한 있는 ADMIN의 SHARED definition을 낙관적 version으로 갱신할 때 사용하는 요청입니다. scope·owner·SYSTEM immutable 상태는 이 요청으로 바꾸지 않습니다.
+      description: owner의 PERSONAL 또는 권한 있는 ADMIN의 SHARED definition을 낙관적 version으로 갱신할 때 사용하는 요청입니다. scope·owner·SYSTEM immutable
+        상태는 이 요청으로 바꾸지 않습니다.
       example:
         expectedVersion: 3
         name: 내 위험 SLA
@@ -5352,7 +6495,8 @@ components:
             maxLength: 100
             pattern: ^[A-Za-z0-9._:-]+$
       x-deskseed-documentation-review: MANUAL
-      description: PERSONAL 또는 SHARED mutable definition의 표시 순서를 그 scope의 orderVersion과 함께 원자적으로 바꾸는 요청입니다. SYSTEM key·누락·중복 key는 검증 오류입니다.
+      description: PERSONAL 또는 SHARED mutable definition의 표시 순서를 그 scope의 orderVersion과 함께 원자적으로 바꾸는 요청입니다. SYSTEM key·누락·중복
+        key는 검증 오류입니다.
       example:
         scope: PERSONAL
         expectedOrderVersion: 4
@@ -5699,7 +6843,8 @@ components:
           format: int32
           minimum: 0
           maximum: 100
-          description: 이 ticket에 저장된 ExternalReference 수입니다. 전체 stored-only 상세 목록은 `listAgentTicketExternalReferences` lazy API가 정본이며 detail은 외부 URL을 fetch하지 않습니다.
+          description: 이 ticket에 저장된 ExternalReference 수입니다. 전체 stored-only 상세 목록은 `listAgentTicketExternalReferences` lazy
+            API가 정본이며 detail은 외부 URL을 fetch하지 않습니다.
     TicketCustomer:
       type: object
       additionalProperties: false
@@ -5755,7 +6900,8 @@ components:
           items:
             type: string
             format: uuid
-          description: 현재 staff actor가 upload했고 아직 link되지 않은 CLEAN handle입니다. comment visibility와 attachment owner/visibility policy가 이 transaction에서 다시 검사됩니다.
+          description: 현재 staff actor가 upload했고 아직 link되지 않은 CLEAN handle입니다. comment visibility와 attachment owner/visibility
+            policy가 이 transaction에서 다시 검사됩니다.
     UpdateTicketCommand:
       type: object
       additionalProperties: false
@@ -5971,8 +7117,8 @@ components:
               type: string
               format: email
               maxLength: 254
-          description: customerId만 단독으로 지정해 검색으로 찾은 기존 고객을 요청자로 재사용하거나, name과 email을 함께 지정해 새 unverified
-            고객을 생성합니다. 세 필드를 함께 보내거나 아무 필드도 보내지 않으면 검증 오류입니다.
+          description: customerId만 단독으로 지정해 검색으로 찾은 기존 고객을 요청자로 재사용하거나, name과 email을 함께 지정해 새 unverified 고객을 생성합니다. 세 필드를
+            함께 보내거나 아무 필드도 보내지 않으면 검증 오류입니다.
         subject:
           type: string
           minLength: 1
@@ -6122,7 +7268,8 @@ components:
           maxItems: 100
           items:
             $ref: '#/components/schemas/AgentTicketBatchItem'
-      description: 목록은 명시 선택 ticketNumber만 포함하며 동일 ticketNumber를 두 번 포함할 수 없습니다. item command는 comment body/visibility를 갖지 않아 bulk PUBLIC/INTERNAL comment를 만들 수 없습니다.
+      description: 목록은 명시 선택 ticketNumber만 포함하며 동일 ticketNumber를 두 번 포함할 수 없습니다. item command는 comment body/visibility를 갖지
+        않아 bulk PUBLIC/INTERNAL comment를 만들 수 없습니다.
       x-deskseed-documentation-review: MANUAL
       example:
         items:
@@ -6401,7 +7548,8 @@ components:
           - string
           - 'null'
           maxLength: 2048
-      description: protected staff search 결과입니다. `score:desc,ticketNumber:desc`는 match score와 ticketNumber를 tie-breaker로 쓰며 cursor가 그 tuple과 snapshot을 포함합니다. raw query는 응답이나 cursor에 존재하지 않습니다.
+      description: protected staff search 결과입니다. `score:desc,ticketNumber:desc`는 match score와 ticketNumber를 tie-breaker로 쓰며
+        cursor가 그 tuple과 snapshot을 포함합니다. raw query는 응답이나 cursor에 존재하지 않습니다.
       x-deskseed-documentation-review: MANUAL
     AgentCustomerSearchRequest:
       type: object
@@ -6419,8 +7567,7 @@ components:
           minimum: 1
           maximum: 25
           default: 10
-      description: 상담사가 신규 티켓 생성 화면에서 요청자 후보를 찾기 위해 기존 고객의 이름 또는 이메일 일부 문자열로 검색할 때 사용하는 요청입니다. query는 검색 감사에서 보호된
-        형태로 처리됩니다.
+      description: 상담사가 신규 티켓 생성 화면에서 요청자 후보를 찾기 위해 기존 고객의 이름 또는 이메일 일부 문자열로 검색할 때 사용하는 요청입니다. query는 검색 감사에서 보호된 형태로 처리됩니다.
       x-deskseed-documentation-review: MANUAL
       example:
         query: 김민아
@@ -7704,7 +8851,8 @@ components:
             type: string
         artifact:
           $ref: '#/components/schemas/AuditExportArtifact'
-      description: requester-bound audit export job입니다. status가 READY여도 다운로드 순간 owner와 현재 `audit:export` capability를 다시 확인하므로 job 생성 당시 permission snapshot만으로 bytes를 받을 수 없습니다.
+      description: requester-bound audit export job입니다. status가 READY여도 다운로드 순간 owner와 현재 `audit:export` capability를 다시 확인하므로
+        job 생성 당시 permission snapshot만으로 bytes를 받을 수 없습니다.
     AuditExportArtifact:
       type: object
       additionalProperties: false
@@ -7762,7 +8910,8 @@ components:
           - ARTIFACT_STORE_UNAVAILABLE
           - EXPIRED
           - 'null'
-      description: private artifact의 allowlisted metadata입니다. object key, bucket, provider response, temporary URL, export row content는 반환하지 않습니다.
+      description: private artifact의 allowlisted metadata입니다. object key, bucket, provider response, temporary URL, export
+        row content는 반환하지 않습니다.
     AuditProjectionRebuildResult:
       type: object
       additionalProperties: false
@@ -8357,4 +9506,885 @@ components:
           format: double
           minimum: 0
           maximum: 1
+    TicketFieldType:
+      type: string
+      enum:
+      - CHECKBOX
+      - SINGLE_SELECT
+      - NUMBER
+      - SHORT_TEXT
+      - LONG_TEXT
+    TicketFieldDefinition:
+      type: object
+      required:
+      - id
+      - machineKey
+      - type
+      - staffLabel
+      - active
+      - version
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineKey:
+          type: string
+          pattern: ^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$
+          maxLength: 120
+        type:
+          $ref: '#/components/schemas/TicketFieldType'
+        staffLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        staffDescription:
+          type: string
+          maxLength: 500
+        customerLabel:
+          type: string
+          maxLength: 120
+        customerDescription:
+          type: string
+          maxLength: 500
+        active:
+          type: boolean
+        customerVisible:
+          type: boolean
+        customerEditable:
+          type: boolean
+        agentVisible:
+          type: boolean
+        agentEditable:
+          type: boolean
+        searchable:
+          type: boolean
+        analyticsEligible:
+          type: boolean
+        sensitive:
+          type: boolean
+        validation:
+          $ref: '#/components/schemas/TicketFieldValidation'
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateTicketFieldDefinitionRequest:
+      description: immutable machine key와 typed validation을 포함하는 새 ticket field definition 생성 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        machineKey: payment.method
+        type: SINGLE_SELECT
+        staffLabel: 결제 수단
+        customerLabel: 결제 수단
+        customerVisible: true
+        customerEditable: true
+        agentVisible: true
+        agentEditable: true
+        searchable: true
+        analyticsEligible: false
+        sensitive: false
+      allOf:
+      - $ref: '#/components/schemas/UpdateTicketFieldDefinitionRequest'
+      - type: object
+        required:
+        - machineKey
+        - type
+        - staffLabel
+        properties:
+          machineKey:
+            type: string
+            pattern: ^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$
+            maxLength: 120
+          type:
+            $ref: '#/components/schemas/TicketFieldType'
+    UpdateTicketFieldDefinitionRequest:
+      description: type과 machine key를 바꾸지 않고 ticket field label, projection policy, validation을 갱신하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        staffLabel: 결제 수단
+        customerLabel: 결제 수단
+        customerVisible: true
+        customerEditable: true
+        agentVisible: true
+        agentEditable: true
+        searchable: true
+        analyticsEligible: false
+        sensitive: false
+      type: object
+      properties:
+        machineKey:
+          type: string
+          readOnly: true
+        type:
+          $ref: '#/components/schemas/TicketFieldType'
+          readOnly: true
+        staffLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        staffDescription:
+          type: string
+          maxLength: 500
+        customerLabel:
+          type: string
+          maxLength: 120
+        customerDescription:
+          type: string
+          maxLength: 500
+        customerVisible:
+          type: boolean
+        customerEditable:
+          type: boolean
+        agentVisible:
+          type: boolean
+        agentEditable:
+          type: boolean
+        searchable:
+          type: boolean
+        analyticsEligible:
+          type: boolean
+        sensitive:
+          type: boolean
+        validation:
+          $ref: '#/components/schemas/TicketFieldValidation'
+    TicketFieldValidation:
+      type: object
+      properties:
+        minimum:
+          type: number
+        maximum:
+          type: number
+        precision:
+          type: integer
+          minimum: 1
+          maximum: 18
+        scale:
+          type: integer
+          minimum: 0
+          maximum: 12
+        minLength:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        maxLength:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        regex:
+          type: string
+          maxLength: 300
+          description: 서버 allowlist로 승인된 safe regular expression만 허용합니다.
+    TicketFieldOption:
+      type: object
+      required:
+      - id
+      - machineKey
+      - staffLabel
+      - active
+      - order
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineKey:
+          type: string
+          pattern: ^[a-z][a-z0-9-]*$
+          maxLength: 80
+        staffLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        customerLabel:
+          type: string
+          maxLength: 120
+        active:
+          type: boolean
+        order:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    CreateTicketFieldOptionRequest:
+      description: SINGLE_SELECT field에 stable option ID를 추가하는 생성 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        machineKey: card
+        staffLabel: 카드
+        customerLabel: 카드
+        order: 10
+      type: object
+      required:
+      - machineKey
+      - staffLabel
+      - order
+      properties:
+        machineKey:
+          type: string
+          pattern: ^[a-z][a-z0-9-]*$
+          maxLength: 80
+        staffLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        customerLabel:
+          type: string
+          maxLength: 120
+        order:
+          type: integer
+          minimum: 0
+    UpdateTicketFieldOptionRequest:
+      description: 기존 field option의 label 또는 active lifecycle을 바꾸는 optimistic update 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        staffLabel: 카드
+        customerLabel: 카드
+        active: true
+      type: object
+      required:
+      - staffLabel
+      - active
+      properties:
+        staffLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        customerLabel:
+          type: string
+          maxLength: 120
+        active:
+          type: boolean
+    ActivationRequest:
+      description: 기존 configuration definition을 삭제하지 않고 선택 가능 여부만 바꾸는 lifecycle 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        active: false
+      type: object
+      required:
+      - active
+      properties:
+        active:
+          type: boolean
+    ReorderIdsRequest:
+      description: 하나의 configuration collection에 속하는 모든 stable ID를 중복 없이 원하는 display 순서로 전달하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        ids:
+        - 76f77c09-ea8d-4b5e-8e5d-81cba5ea37ec
+      type: object
+      required:
+      - ids
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+    TicketForm:
+      type: object
+      required:
+      - id
+      - name
+      - lifecycle
+      - version
+      - placements
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        lifecycle:
+          type: string
+          enum:
+          - DRAFT
+          - PUBLISHED
+          - ARCHIVED
+        defaultForCustomer:
+          type: boolean
+        defaultForAgent:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        placements:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketFormFieldPlacement'
+        conditionalRules:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketFormConditionalRule'
+        allowedCustomStatusIds:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpsertTicketFormRequest:
+      description: draft ticket form의 field 배치, actor별 base policy, conditional AST rule, 허용 custom status를 저장하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        name: 결제 문의
+        description: 결제 확인에 필요한 항목
+        defaultForCustomer: true
+        defaultForAgent: false
+        placements:
+        - fieldId: 9a4fc019-2288-4a64-bf76-4ae7b08d713d
+          order: 10
+          customer:
+            visible: true
+            editable: true
+            required: false
+          agent:
+            visible: true
+            editable: true
+            required: false
+        conditionalRules: []
+        allowedCustomStatusIds: []
+      type: object
+      required:
+      - name
+      - placements
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        defaultForCustomer:
+          type: boolean
+        defaultForAgent:
+          type: boolean
+        placements:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketFormFieldPlacement'
+        conditionalRules:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketFormConditionalRule'
+        allowedCustomStatusIds:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+    TicketFormFieldPlacement:
+      type: object
+      required:
+      - fieldId
+      - order
+      - customer
+      - agent
+      properties:
+        fieldId:
+          type: string
+          format: uuid
+        order:
+          type: integer
+          minimum: 0
+        customer:
+          $ref: '#/components/schemas/FieldActorPolicy'
+        agent:
+          $ref: '#/components/schemas/FieldActorPolicy'
+    FieldActorPolicy:
+      type: object
+      required:
+      - visible
+      - editable
+      - required
+      properties:
+        visible:
+          type: boolean
+        editable:
+          type: boolean
+        required:
+          type: boolean
+    TicketFormConditionalRule:
+      type: object
+      required:
+      - id
+      - priority
+      - condition
+      - effects
+      properties:
+        id:
+          type: string
+          format: uuid
+        priority:
+          type: integer
+          minimum: 0
+        condition:
+          $ref: '#/components/schemas/VersionedConditionAst'
+        effects:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/TicketFormFieldEffect'
+    VersionedConditionAst:
+      type: object
+      required:
+      - schemaVersion
+      - root
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        root:
+          type: object
+          description: Foundation workflow AST node를 표현하며 raw executable expression은 허용하지 않습니다.
+    TicketFormFieldEffect:
+      type: object
+      required:
+      - fieldId
+      - behavior
+      properties:
+        fieldId:
+          type: string
+          format: uuid
+        behavior:
+          type: string
+          enum:
+          - SHOW
+          - HIDE
+          - REQUIRED
+          - OPTIONAL
+          - READ_ONLY
+          - EDITABLE
+    TicketFormPreviewRequest:
+      description: raw script 없이 actor와 ticket context의 form conditional effect를 검증하는 preview 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        actorKind: CUSTOMER
+        ticketKind: CUSTOMER_REQUEST
+        statusCategory: NEW
+        fieldValues:
+          payment.method:
+            optionId: 76f77c09-ea8d-4b5e-8e5d-81cba5ea37ec
+      type: object
+      required:
+      - actorKind
+      - ticketKind
+      - statusCategory
+      properties:
+        actorKind:
+          type: string
+          enum:
+          - CUSTOMER
+          - AGENT
+        ticketKind:
+          $ref: '#/components/schemas/TicketKind'
+        statusCategory:
+          $ref: '#/components/schemas/TicketStatusCategory'
+        customStatusId:
+          type: string
+          format: uuid
+        fieldValues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/TicketFieldValue'
+    TicketFormProjection:
+      type: object
+      required:
+      - formId
+      - formVersion
+      - fields
+      properties:
+        formId:
+          type: string
+          format: uuid
+        formVersion:
+          type: integer
+          minimum: 1
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectedTicketField'
+    ProjectedTicketField:
+      type: object
+      required:
+      - field
+      - visible
+      - editable
+      - required
+      properties:
+        field:
+          $ref: '#/components/schemas/TicketFieldDefinition'
+        visible:
+          type: boolean
+        editable:
+          type: boolean
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketFieldOption'
+    TicketFormValidationResult:
+      type: object
+      required:
+      - valid
+      - issues
+      properties:
+        valid:
+          type: boolean
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigurationValidationIssue'
+    ConfigurationValidationIssue:
+      type: object
+      required:
+      - code
+      - path
+      - message
+      properties:
+        code:
+          type: string
+          maxLength: 80
+        path:
+          type: string
+          maxLength: 300
+        message:
+          type: string
+          maxLength: 300
+    TicketTagDefinition:
+      type: object
+      required:
+      - id
+      - value
+      - label
+      - active
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        value:
+          type: string
+          pattern: ^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$
+          maxLength: 80
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+        active:
+          type: boolean
+        highCardinalityWarning:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    UpsertTicketTagDefinitionRequest:
+      description: normalized canonical value와 관리자용 display label을 가진 tag definition을 생성 또는 갱신하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        value: payment
+        label: 결제
+        active: true
+      type: object
+      required:
+      - value
+      - label
+      properties:
+        value:
+          type: string
+          pattern: ^[a-z0-9](?:[a-z0-9_-]{0,78}[a-z0-9])?$
+          maxLength: 80
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+        active:
+          type: boolean
+    TicketStatusCategory:
+      type: string
+      enum:
+      - NEW
+      - OPEN
+      - PENDING
+      - ON_HOLD
+      - SOLVED
+      - CLOSED
+    CustomTicketStatus:
+      type: object
+      required:
+      - id
+      - machineKey
+      - agentLabel
+      - statusCategory
+      - active
+      - order
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineKey:
+          type: string
+          pattern: ^[a-z][a-z0-9-]*$
+          maxLength: 80
+        agentLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        customerLabel:
+          type: string
+          maxLength: 120
+        statusCategory:
+          $ref: '#/components/schemas/TicketStatusCategory'
+        active:
+          type: boolean
+        order:
+          type: integer
+          minimum: 0
+        defaultForCategory:
+          type: boolean
+        allowedFormIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+        description:
+          type: string
+          maxLength: 500
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    UpsertCustomTicketStatusRequest:
+      description: 기존 ticket status category와 terminal invariant를 유지하는 custom status definition 생성 또는 갱신 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        machineKey: waiting-for-customer
+        agentLabel: 고객 응답 대기
+        customerLabel: 추가 정보 필요
+        statusCategory: PENDING
+        active: true
+        order: 10
+        defaultForCategory: true
+        allowedFormIds: []
+        description: 고객 답변을 기다리는 상태
+      type: object
+      required:
+      - machineKey
+      - agentLabel
+      - statusCategory
+      - order
+      - active
+      properties:
+        machineKey:
+          type: string
+          pattern: ^[a-z][a-z0-9-]*$
+          maxLength: 80
+        agentLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        customerLabel:
+          type: string
+          maxLength: 120
+        statusCategory:
+          $ref: '#/components/schemas/TicketStatusCategory'
+        active:
+          type: boolean
+        order:
+          type: integer
+          minimum: 0
+        defaultForCategory:
+          type: boolean
+        allowedFormIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+        description:
+          type: string
+          maxLength: 500
+    TicketFieldValue:
+      type: object
+      properties:
+        booleanValue:
+          type: boolean
+        numberValue:
+          type: number
+        optionId:
+          type: string
+          format: uuid
+        shortTextValue:
+          type: string
+          maxLength: 1000
+        longTextValue:
+          type: string
+          maxLength: 10000
+      minProperties: 1
+      maxProperties: 1
+    TicketConfigurationValues:
+      type: object
+      required:
+      - ticketNumber
+      - version
+      - fieldValues
+      - tags
+      - statusCategory
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+          minimum: 1
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        form:
+          $ref: '#/components/schemas/TicketFormProjection'
+        fieldValues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/TicketFieldValue'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketTagDefinition'
+        statusCategory:
+          $ref: '#/components/schemas/TicketStatusCategory'
+        customStatus:
+          $ref: '#/components/schemas/CustomTicketStatus'
+    UpdateTicketConfigurationRequest:
+      description: server-projected form version 안에서 typed field value, tag association, custom status를 하나의 ticket command로
+        변경하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        formVersion: 1
+        fieldValues:
+          payment.method:
+            optionId: 76f77c09-ea8d-4b5e-8e5d-81cba5ea37ec
+        addTagIds:
+        - ccda13be-fd84-485a-a5e9-6c124e2b1235
+        removeTagIds: []
+        customStatusId: 11f87c09-ea8d-4b5e-8e5d-81cba5ea37ec
+        clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
+      type: object
+      required:
+      - clientCommandId
+      properties:
+        formVersion:
+          type: integer
+          minimum: 1
+        fieldValues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/TicketFieldValue'
+        addTagIds:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+        removeTagIds:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+        customStatusId:
+          type: string
+          format: uuid
+        clientCommandId:
+          type: string
+          format: uuid
+    TicketConfigurationCommandResult:
+      type: object
+      required:
+      - ticketNumber
+      - version
+      - auditId
+      - replayed
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        version:
+          type: integer
+          format: int64
+        auditId:
+          type: string
+          format: uuid
+        replayed:
+          type: boolean
+    TicketConfigurationDescriptor:
+      type: object
+      required:
+      - key
+      - schemaVersion
+      - contexts
+      properties:
+        key:
+          type: string
+          pattern: ^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$
+          maxLength: 120
+        schemaVersion:
+          type: integer
+          minimum: 1
+        contexts:
+          type: array
+          items:
+            type: string
+            enum:
+            - SAVED_VIEW
+            - MACRO
+            - TRIGGER
+            - AUTOMATION
+            - ANALYTICS
+        sensitive:
+          type: boolean
+    TicketKind:
+      type: string
+      enum:
+      - CUSTOMER_REQUEST
+      - INTERNAL_CHILD
+      - AGENT_CREATED
+      - INTERNAL_WORK_ITEM
 x-deskseed-documentation-ownership: MANUAL
