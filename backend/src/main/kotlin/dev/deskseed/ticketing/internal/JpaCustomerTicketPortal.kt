@@ -78,6 +78,18 @@ internal class JpaCustomerTicketPortal(
     }
 
     @Transactional(readOnly = true)
+    override fun findOwnedTicketId(requesterId: UUID, ticketNumber: Long): UUID? = jdbcTemplate.query(
+        """
+        select id
+        from tickets
+        where requester_id = ? and ticket_number = ? and kind = 'CUSTOMER_REQUEST'
+        """.trimIndent(),
+        { result, _ -> result.getObject("id", UUID::class.java) },
+        requesterId,
+        ticketNumber,
+    ).singleOrNull()
+
+    @Transactional(readOnly = true)
     override fun findRequesterId(ticketId: UUID, ticketNumber: Long): UUID? = jdbcTemplate.query(
         """
         select requester_id

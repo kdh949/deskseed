@@ -3,10 +3,20 @@ package dev.deskseed.portal.internal
 import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
+import dev.deskseed.attachments.AttachmentContent
+import dev.deskseed.attachments.AttachmentDownloadCommand
+import dev.deskseed.attachments.AttachmentDownloadService
+import dev.deskseed.attachments.AttachmentUploadCommand
+import dev.deskseed.attachments.AttachmentUploadResult
+import dev.deskseed.attachments.AttachmentUploadService
+import dev.deskseed.attachments.AttachmentVisibility
+import dev.deskseed.audit.AccessAuditAuthType
+import dev.deskseed.audit.AccessAuditContext
 import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.CommandContext
+import dev.deskseed.foundation.RequestSource
 import dev.deskseed.outboundmail.MailRecipient
 import dev.deskseed.outboundmail.OutboundMailIntent
 import dev.deskseed.outboundmail.OutboundMailPort
@@ -26,6 +36,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
+import java.io.InputStream
+import java.util.UUID
 
 internal data class CustomerRequestListResult(
     val items: List<dev.deskseed.ticketing.CustomerTicketSummary>,
@@ -40,6 +52,13 @@ internal data class ClaimCustomerRequestInput(
     val claimToken: String?,
 )
 
+internal data class CustomerAttachmentRequestContext(
+    val requestId: String,
+    val correlationId: String,
+    val ipAddress: String?,
+    val userAgent: String?,
+)
+
 @Service
 internal class CustomerRequestPortalApplicationService(
     private val ticketPortal: CustomerTicketPortal,
@@ -49,6 +68,8 @@ internal class CustomerRequestPortalApplicationService(
     private val cursorCodec: CustomerRequestCursorCodec,
     private val customerAccessPolicy: CustomerAccessPolicy,
     private val auditWriter: AdminSecurityAuditWriter,
+    private val attachmentUploadService: AttachmentUploadService,
+    private val attachmentDownloadService: AttachmentDownloadService,
     private val clock: Clock,
 ) {
     @Transactional(readOnly = true)
@@ -77,6 +98,66 @@ internal class CustomerRequestPortalApplicationService(
     @Transactional(readOnly = true)
     fun detail(principal: CustomerPrincipal, ticketNumber: Long): PublicTicketView =
         ticketPortal.detail(principal.customerId, ticketNumber) ?: throw CustomerTicketNotFoundException()
+
+    fun uploadAttachment(
+        principal: CustomerPrincipal,
+        ticketNumber: Long,
+        fileName: String,
+        declaredContentType: String?,
+        content: InputStream,
+        context: CommandContext,
+    ): AttachmentUploadResult {
+        val ticketId = ticketPortal.findOwnedTicketId(principal.customerId, ticketNumber)
+            ?: throw CustomerTicketNotFoundException()
+        return attachmentUploadService.upload(
+            AttachmentUploadCommand(
+                actor = ActorRef(ActorType.CUSTOMER, principal.customerId),
+                actorDisplayName = principal.displayName,
+                source = RequestSource.CUSTOMER_PORTAL,
+                context = context,
+                boundTicketId = ticketId,
+                allowedVisibility = AttachmentVisibility.PUBLIC,
+                fileName = fileName,
+                declaredContentType = declaredContentType,
+                content = content,
+            ),
+        )
+    }
+
+    fun downloadAttachment(
+        principal: CustomerPrincipal,
+        ticketNumber: Long,
+        attachmentId: UUID,
+        requestContext: CustomerAttachmentRequestContext,
+    ): AttachmentContent {
+        val ticketId = ticketPortal.findOwnedTicketId(principal.customerId, ticketNumber)
+            ?: throw CustomerTicketNotFoundException()
+        val fingerprint = principal.sessionFingerprint
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Authenticated customer session fingerprint is unavailable")
+        return attachmentDownloadService.openForDownload(
+            AttachmentDownloadCommand(
+                attachmentId = attachmentId,
+                ticketId = ticketId,
+                ticketNumber = ticketNumber,
+                allowedVisibilities = setOf(AttachmentVisibility.PUBLIC),
+                accessContext = AccessAuditContext(
+                    actorType = ActorType.CUSTOMER,
+                    actorId = principal.customerId,
+                    actorDisplaySnapshot = principal.displayName,
+                    source = RequestSource.CUSTOMER_PORTAL,
+                    sessionFingerprint = fingerprint,
+                    authType = AccessAuditAuthType.CUSTOMER_SESSION,
+                    requestId = requestContext.requestId,
+                    correlationId = requestContext.correlationId,
+                    ipAddress = requestContext.ipAddress,
+                    userAgent = requestContext.userAgent,
+                ),
+                interactionId = null,
+                occurredAt = Instant.now(clock),
+            ),
+        )
+    }
 
     @Transactional
     fun addFollowUp(
