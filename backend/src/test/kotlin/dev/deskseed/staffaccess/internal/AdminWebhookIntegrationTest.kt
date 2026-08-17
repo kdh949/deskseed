@@ -1,0 +1,139 @@
+package dev.deskseed.staffaccess.internal
+
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.mock.web.MockHttpSession
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.testcontainers.junit.jupiter.Container
+import org.testcontainers.junit.jupiter.Testcontainers
+import org.testcontainers.postgresql.PostgreSQLContainer
+import org.testcontainers.utility.DockerImageName
+import java.sql.Timestamp
+import java.time.Instant
+import java.util.UUID
+
+@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
+@AutoConfigureMockMvc
+@Testcontainers
+class AdminWebhookIntegrationTest {
+    @Autowired private lateinit var mockMvc: MockMvc
+    @Autowired private lateinit var jdbcTemplate: JdbcTemplate
+
+    @BeforeEach
+    fun clearState() {
+        jdbcTemplate.execute(
+            "truncate table webhook_delivery_attempts, webhook_deliveries, webhook_subscriptions, webhook_endpoint_secrets, " +
+                "webhook_endpoints, staff_authority_grants, admin_security_audit_events, audit_activity_projection cascade",
+        )
+        jdbcTemplate.update("delete from staff_login_throttles")
+        jdbcTemplate.update("delete from staff_accounts")
+    }
+
+    @Test
+    fun `admin creates rotates tests and replays endpoint without persisting raw secret`() {
+        insertStaff("admin@example.com", "Admin password 42", "ADMIN")
+        val browser = login("admin@example.com", "Admin password 42")
+        val create = mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks")
+                .session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"name":"orders","url":"https://203.0.113.10/hooks","subscriptions":[{"eventType":"ticket.created","version":1,"payloadPolicy":"METADATA_ONLY"}]}""",
+                ),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.endpoint.targetClass").value("PUBLIC"))
+            .andExpect(jsonPath("$.secret").isNotEmpty)
+            .andReturn().response.contentAsString
+        val endpointId = UUID.fromString(Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"").find(create)!!.groupValues[1])
+        val secret = Regex("\\\"secret\\\":\\\"([^\\\"]+)\\\"").find(create)!!.groupValues[1]
+
+        val stored = jdbcTemplate.queryForObject("select encode(ciphertext, 'base64') from webhook_endpoint_secrets where endpoint_id = ?", String::class.java, endpointId)!!
+        assertThat(stored).doesNotContain(secret)
+        mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}", endpointId).session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.secret").doesNotExist())
+
+        mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks/{id}/rotate-secret", endpointId)
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"overlapSeconds":0,"reason":"scheduled rotation"}"""),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.secret").isNotEmpty)
+
+        val delivery = mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks/{id}/test-deliveries", endpointId)
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"reason":"test receiver"}"""),
+        ).andExpect(status().isAccepted).andExpect(jsonPath("$.status").value("PENDING")).andReturn().response.contentAsString
+        val deliveryId = UUID.fromString(Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"").find(delivery)!!.groupValues[1])
+        jdbcTemplate.update(
+            "update webhook_deliveries set status = 'DEAD_LETTERED', next_attempt_at = null, completed_at = now() where id = ?",
+            deliveryId,
+        )
+        mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks/{endpointId}/deliveries/{deliveryId}/replay", endpointId, deliveryId)
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"reason":"receiver recovered"}"""),
+        ).andExpect(status().isAccepted).andExpect(jsonPath("$.status").value("PENDING"))
+
+        val events = jdbcTemplate.queryForList(
+            "select event_type from admin_security_audit_events where target_id = ? order by occurred_at, id",
+            String::class.java, endpointId,
+        )
+        assertThat(events).contains("WEBHOOK_ENDPOINT_CREATED", "WEBHOOK_SECRET_ROTATED", "WEBHOOK_TEST_DELIVERY_REQUESTED", "WEBHOOK_DELIVERY_REPLAY_REQUESTED")
+    }
+
+    @Test
+    fun `agent cannot access webhook administration`() {
+        insertStaff("agent@example.com", "Agent password 42", "AGENT")
+        val browser = login("agent@example.com", "Agent password 42")
+        mockMvc.perform(get("/api/v1/admin/integrations/webhooks").session(browser.session))
+            .andExpect(status().isForbidden)
+    }
+
+    private fun login(email: String, password: String): Browser {
+        val csrf = mockMvc.perform(get("/api/v1/agent/csrf")).andExpect(status().isOk).andReturn()
+        val token = Regex("\\\"token\\\":\\\"([^\\\"]+)\\\"").find(csrf.response.contentAsString)!!.groupValues[1]
+        val session = csrf.request.session as MockHttpSession
+        val result = mockMvc.perform(
+            post("/api/v1/agent/session").session(session).header("X-CSRF-TOKEN", token)
+                .contentType(MediaType.APPLICATION_JSON).content("""{"email":"$email","password":"$password"}"""),
+        ).andExpect(status().isNoContent).andReturn()
+        return Browser(result.request.session as MockHttpSession, token)
+    }
+
+    private fun insertStaff(email: String, password: String, role: String) {
+        val now = Timestamp.from(Instant.parse("2026-08-18T00:00:00Z"))
+        jdbcTemplate.update(
+            """insert into staff_accounts (id, email_normalized, email_display, display_name, role, status, password_hash, created_at, updated_at, version)
+               values (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 0)""",
+            UUID.randomUUID(), email.lowercase(), email, if (role == "ADMIN") "관리자" else "상담사", role,
+            BCryptPasswordEncoder(4).encode(password), now, now,
+        )
+    }
+
+    private fun org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder.csrf(browser: Browser) =
+        header("X-CSRF-TOKEN", browser.csrfToken)
+
+    private data class Browser(val session: MockHttpSession, val csrfToken: String)
+
+    companion object {
+        @Container @ServiceConnection @JvmStatic
+        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
+    }
+}
