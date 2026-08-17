@@ -103,7 +103,23 @@ interface KnowledgeAdministration {
 
     fun createCategory(input: KnowledgeCategoryInput, actor: KnowledgeAdminActor): KnowledgeCategoryView
 
+    fun updateCategory(
+        categoryId: UUID,
+        input: KnowledgeCategoryInput,
+        active: Boolean,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeCategoryView
+
     fun createSection(input: KnowledgeSectionInput, actor: KnowledgeAdminActor): KnowledgeSectionView
+
+    fun updateSection(
+        sectionId: UUID,
+        input: KnowledgeSectionInput,
+        active: Boolean,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeSectionView
 
     fun createDraft(input: CreateKnowledgeArticleDraft, actor: KnowledgeAdminActor): KnowledgeArticleView
 

@@ -14,6 +14,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
@@ -70,6 +71,27 @@ class AdminKnowledgeIntegrationTest {
         ).andExpect(status().isCreated)
             .andExpect(jsonPath("$.slug").value("billing"))
             .andReturn().response.contentAsString.uuidField("id")
+
+        mockMvc.perform(
+            patch("/api/v1/admin/knowledge/categories/{categoryId}", categoryId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"0\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"slug":"billing","title":"결제와 청구","description":"결제 도움말","displayOrder":10,"active":true}"""),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.version").value(1))
+
+        mockMvc.perform(
+            patch("/api/v1/admin/knowledge/categories/{categoryId}", categoryId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"0\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"slug":"billing","title":"stale","description":"","displayOrder":10,"active":true}"""),
+        ).andExpect(status().isPreconditionFailed)
 
         val sectionId = postJson(
             browser,

@@ -27,6 +27,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -69,6 +70,25 @@ internal class AdminKnowledgeController(
             .body(created)
     }
 
+    @PatchMapping("/categories/{categoryId}")
+    fun updateCategory(
+        @PathVariable categoryId: UUID,
+        @RequestHeader("If-Match") ifMatch: String,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @Valid @RequestBody body: KnowledgeCategoryPatchRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeCategoryView> {
+        val result = administration.updateCategory(
+            categoryId,
+            body.toInput(),
+            body.active,
+            parseVersion(ifMatch),
+            request.actor(principal, expectedActor),
+        )
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
+    }
+
     @PostMapping("/sections")
     fun createSection(
         @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
@@ -81,6 +101,25 @@ internal class AdminKnowledgeController(
             .cacheControl(CacheControl.noStore())
             .eTag(created.version.toString())
             .body(created)
+    }
+
+    @PatchMapping("/sections/{sectionId}")
+    fun updateSection(
+        @PathVariable sectionId: UUID,
+        @RequestHeader("If-Match") ifMatch: String,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @Valid @RequestBody body: KnowledgeSectionPatchRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeSectionView> {
+        val result = administration.updateSection(
+            sectionId,
+            body.toInput(),
+            body.active,
+            parseVersion(ifMatch),
+            request.actor(principal, expectedActor),
+        )
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
     }
 
     @PostMapping("/articles")
@@ -181,6 +220,35 @@ internal data class KnowledgeSectionRequest(
     val description: String = "",
     @field:Min(0) @field:Max(Int.MAX_VALUE.toLong())
     val displayOrder: Int,
+) {
+    fun toInput() = KnowledgeSectionInput(categoryId, slug, title, description, displayOrder)
+}
+
+internal data class KnowledgeCategoryPatchRequest(
+    @field:NotBlank @field:Size(max = 120)
+    val slug: String,
+    @field:NotBlank @field:Size(max = 200)
+    val title: String,
+    @field:Size(max = 1000)
+    val description: String = "",
+    @field:Min(0) @field:Max(Int.MAX_VALUE.toLong())
+    val displayOrder: Int,
+    val active: Boolean,
+) {
+    fun toInput() = KnowledgeCategoryInput(slug, title, description, displayOrder)
+}
+
+internal data class KnowledgeSectionPatchRequest(
+    val categoryId: UUID,
+    @field:NotBlank @field:Size(max = 120)
+    val slug: String,
+    @field:NotBlank @field:Size(max = 200)
+    val title: String,
+    @field:Size(max = 1000)
+    val description: String = "",
+    @field:Min(0) @field:Max(Int.MAX_VALUE.toLong())
+    val displayOrder: Int,
+    val active: Boolean,
 ) {
     fun toInput() = KnowledgeSectionInput(categoryId, slug, title, description, displayOrder)
 }

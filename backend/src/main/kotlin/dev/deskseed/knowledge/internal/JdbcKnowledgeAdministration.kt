@@ -118,6 +118,57 @@ internal class JdbcKnowledgeAdministration(
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
+    override fun updateCategory(
+        categoryId: UUID,
+        input: KnowledgeCategoryInput,
+        active: Boolean,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeCategoryView {
+        val current = lockedCategory(categoryId)
+        if (current.version != expectedVersion) throw KnowledgePreconditionFailedException(current.version)
+        val normalized = input.validated()
+        val now = Instant.now(clock)
+        try {
+            jdbc.update(
+                """
+                update knowledge_categories
+                   set slug = ?, title = ?, description = ?, status = ?, display_order = ?,
+                       archived_at = ?, version = version + 1, updated_at = ?
+                 where id = ? and version = ?
+                """.trimIndent(),
+                normalized.slug,
+                normalized.title,
+                normalized.description,
+                if (active) "ACTIVE" else "ARCHIVED",
+                normalized.displayOrder,
+                if (active) null else Timestamp.from(now),
+                Timestamp.from(now),
+                categoryId,
+                expectedVersion,
+            ).also { changed -> if (changed != 1) throw KnowledgePreconditionFailedException(current.version) }
+        } catch (_: DuplicateKeyException) {
+            throw KnowledgeConflictException("DUPLICATE_CATEGORY_SLUG_OR_ORDER")
+        }
+        audit(
+            "KNOWLEDGE_CATEGORY_UPDATED",
+            actor,
+            "KNOWLEDGE_CATEGORY",
+            categoryId,
+            mapOf("active" to active.toString()),
+        )
+        publish(
+            "knowledge.category.updated",
+            "knowledge-category:$categoryId",
+            actor,
+            mapOf("categoryId" to categoryId.toString(), "active" to active.toString()),
+            now,
+        )
+        return category(categoryId)
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     override fun createSection(input: KnowledgeSectionInput, actor: KnowledgeAdminActor): KnowledgeSectionView {
         val normalized = input.validated()
         requireActiveCategory(normalized.categoryId)
@@ -157,6 +208,59 @@ internal class JdbcKnowledgeAdministration(
             occurredAt = now,
         )
         return section(id)
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun updateSection(
+        sectionId: UUID,
+        input: KnowledgeSectionInput,
+        active: Boolean,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeSectionView {
+        val current = lockedSection(sectionId)
+        if (current.version != expectedVersion) throw KnowledgePreconditionFailedException(current.version)
+        val normalized = input.validated()
+        if (active) requireActiveCategory(normalized.categoryId)
+        val now = Instant.now(clock)
+        try {
+            jdbc.update(
+                """
+                update knowledge_sections
+                   set category_id = ?, slug = ?, title = ?, description = ?, status = ?, display_order = ?,
+                       archived_at = ?, version = version + 1, updated_at = ?
+                 where id = ? and version = ?
+                """.trimIndent(),
+                normalized.categoryId,
+                normalized.slug,
+                normalized.title,
+                normalized.description,
+                if (active) "ACTIVE" else "ARCHIVED",
+                normalized.displayOrder,
+                if (active) null else Timestamp.from(now),
+                Timestamp.from(now),
+                sectionId,
+                expectedVersion,
+            ).also { changed -> if (changed != 1) throw KnowledgePreconditionFailedException(current.version) }
+        } catch (_: DuplicateKeyException) {
+            throw KnowledgeConflictException("DUPLICATE_SECTION_SLUG_OR_ORDER")
+        }
+        audit(
+            "KNOWLEDGE_SECTION_UPDATED",
+            actor,
+            "KNOWLEDGE_SECTION",
+            sectionId,
+            mapOf("active" to active.toString(), "categoryId" to normalized.categoryId.toString()),
+        )
+        publish(
+            "knowledge.section.updated",
+            "knowledge-section:$sectionId",
+            actor,
+            mapOf("sectionId" to sectionId.toString(), "active" to active.toString()),
+            now,
+        )
+        return section(sectionId)
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -476,6 +580,18 @@ internal class JdbcKnowledgeAdministration(
         articleId,
     ).singleOrNull() ?: throw KnowledgeNotFoundException("ARTICLE_NOT_FOUND")
 
+    private fun lockedCategory(categoryId: UUID): LockedVersion = jdbc.query(
+        "select version from knowledge_categories where id = ? for update",
+        { row, _ -> LockedVersion(row.getLong("version")) },
+        categoryId,
+    ).singleOrNull() ?: throw KnowledgeNotFoundException("CATEGORY_NOT_FOUND")
+
+    private fun lockedSection(sectionId: UUID): LockedVersion = jdbc.query(
+        "select version from knowledge_sections where id = ? for update",
+        { row, _ -> LockedVersion(row.getLong("version")) },
+        sectionId,
+    ).singleOrNull() ?: throw KnowledgeNotFoundException("SECTION_NOT_FOUND")
+
     private fun categoryView(row: ResultSet, @Suppress("UNUSED_PARAMETER") index: Int) = KnowledgeCategoryView(
         id = row.getObject("id", UUID::class.java),
         slug = row.getString("slug"),
@@ -592,6 +708,8 @@ internal class JdbcKnowledgeAdministration(
         val version: Long,
         val reviewerId: UUID?,
     )
+
+    private data class LockedVersion(val version: Long)
 }
 
 private object KnowledgeAudienceFactory {
