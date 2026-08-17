@@ -232,14 +232,15 @@ describe('AgentViewsPage', () => {
     ).toBeVisible()
     expect(screen.getByRole('option', { name: '보류' })).toBeVisible()
     expect(screen.getByRole('option', { name: '종료' })).toBeVisible()
-    expect(screen.getByRole('columnheader', { name: /업데이트/ })).toBeVisible()
     expect(
-      screen.getByRole('button', { name: '티켓 ID 내림차순' }),
-    ).toBeVisible()
+      screen.getAllByRole('columnheader').map((header) => header.textContent),
+    ).toEqual(['티켓 선택', '티켓 ID', '제목', '상태'])
     expect(
       screen.getByRole('link', { name: '티켓 #1042 결제 승인 오류' }),
     ).toBeVisible()
-    expect(screen.getByText('긴급', { selector: 'span' })).toBeVisible()
+    expect(
+      screen.queryByText('긴급', { selector: 'span' }),
+    ).not.toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('상태 필터'), 'PENDING')
     await user.selectOptions(screen.getByLabelText('우선순위 필터'), 'URGENT')
@@ -252,11 +253,6 @@ describe('AgentViewsPage', () => {
     expect(
       screen.queryByRole('button', { name: 'View 저장' }),
     ).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '티켓 ID 내림차순' }))
-    expect(
-      screen.getByRole('columnheader', { name: /티켓 ID/ }),
-    ).toHaveAttribute('aria-sort', 'ascending')
 
     await user.click(screen.getByLabelText('티켓 #1042 선택'))
     expect(
@@ -442,6 +438,91 @@ describe('AgentViewsPage', () => {
       expectedVersion: 1,
       name: '검토 예정',
     })
+  })
+
+  it('keeps a committed definition and retries only reorder with the latest order version', async () => {
+    const user = userEvent.setup()
+    const baseFetch = mockReadApi()
+    let reorderAttempts = 0
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.endsWith('/api/v1/agent/views/reorder')) {
+        reorderAttempts += 1
+        if (reorderAttempts === 1) {
+          return Promise.resolve(
+            jsonResponse({ title: 'conflict', status: 409 }, 409),
+          )
+        }
+        const body = JSON.parse(String(init?.body))
+        return Promise.resolve(
+          jsonResponse({
+            scope: 'PERSONAL',
+            orderVersion: 3,
+            viewKeys: body.viewKeys,
+          }),
+        )
+      }
+      if (
+        reorderAttempts > 0 &&
+        url.endsWith('/api/v1/agent/views') &&
+        method === 'GET'
+      ) {
+        return Promise.resolve(
+          jsonResponse(
+            views.map((view) =>
+              view.key === 'follow-up'
+                ? {
+                    ...view,
+                    name: '부분 저장 보기',
+                    definitionVersion: 2,
+                    orderVersion: 2,
+                  }
+                : {
+                    ...view,
+                    orderVersion:
+                      view.scope === 'PERSONAL' ? 2 : view.orderVersion,
+                  },
+            ),
+          ),
+        )
+      }
+      return baseFetch(input, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderPage('/agent/views/follow-up')
+    await screen.findByRole('table', { name: '내가 팔로우 중인 티켓 티켓' })
+    await user.click(
+      screen.getByRole('button', { name: '내가 팔로우 중인 티켓 편집' }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: '내가 팔로우 중인 티켓 편집',
+    })
+    await user.clear(within(dialog).getByRole('textbox', { name: '보기 이름' }))
+    await user.type(
+      within(dialog).getByRole('textbox', { name: '보기 이름' }),
+      '부분 저장 보기',
+    )
+    await user.click(within(dialog).getByRole('button', { name: '아래로' }))
+    await user.click(within(dialog).getByRole('button', { name: '변경 저장' }))
+
+    expect(await screen.findByText(/보기 정의는 저장되었습니다/)).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '보기 이름' })).toHaveValue(
+      '부분 저장 보기',
+    )
+    await user.click(screen.getByRole('button', { name: '변경 저장' }))
+    await waitFor(() => expect(reorderAttempts).toBe(2))
+
+    const patchCalls = fetchMock.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith('/api/v1/agent/views/follow-up') &&
+        init?.method === 'PATCH',
+    )
+    expect(patchCalls).toHaveLength(1)
+    const reorderBodies = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith('/api/v1/agent/views/reorder'))
+      .map(([, init]) => JSON.parse(String(init?.body)))
+    expect(reorderBodies[1]).toMatchObject({ expectedOrderVersion: 2 })
   })
 
   it('distinguishes empty, denied, and failed queues with safe recovery states', async () => {

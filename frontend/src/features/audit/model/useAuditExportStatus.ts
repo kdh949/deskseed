@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { getAuditExport } from '../../../api/client'
+import { ApiError, getAuditExport } from '../../../api/client'
 import type { AuditExportJob } from '../../../api/types'
 import { createOpaqueUuid } from '../../../api/uuid'
 
 const POLL_INTERVAL_MS = 3000
+const MAX_POLL_INTERVAL_MS = 30_000
 
 export function useAuditExportStatus(jobId: string) {
   // Reuse one deliberate-read interaction across this route mount. Unmounting
@@ -15,14 +16,26 @@ export function useAuditExportStatus(jobId: string) {
     queryFn: () => getAuditExport(jobId, interactionId),
     retry: false,
     refetchInterval: (currentQuery) => {
-      if (currentQuery.state.status === 'error') return false
-      return isTerminal(currentQuery.state.data) ? false : POLL_INTERVAL_MS
+      if (isTerminal(currentQuery.state.data)) return false
+      if (isDefiniteError(currentQuery.state.error)) return false
+      return Math.min(
+        MAX_POLL_INTERVAL_MS,
+        POLL_INTERVAL_MS * 2 ** currentQuery.state.fetchFailureCount,
+      )
     },
   })
   const polling =
-    query.isPending || (query.data !== undefined && !isTerminal(query.data))
+    !isDefiniteError(query.error) &&
+    (query.isPending || !isTerminal(query.data))
 
   return { ...query, polling, refresh: () => query.refetch() }
+}
+
+function isDefiniteError(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    (error.status === 401 || error.status === 403 || error.status === 404)
+  )
 }
 
 function isTerminal(job: AuditExportJob | undefined) {

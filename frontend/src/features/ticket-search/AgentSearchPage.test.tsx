@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentSearchPage } from './AgentSearchPage'
+import type { AgentTicketSearchInput } from '../../api/types'
 
 const ticket = {
   ticketNumber: 1042,
@@ -126,5 +127,74 @@ describe('AgentSearchPage', () => {
     expect(
       await screen.findByText('origin: 33333333-3333-4333-8333-333333333333'),
     ).toBeVisible()
+  })
+
+  it('preserves server order and applies draft filters only on explicit submit', async () => {
+    const user = userEvent.setup()
+    const searches: Array<{
+      body: AgentTicketSearchInput
+      interactionId: string | null
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/v1/agent/assignment-options'))
+          return json({ groups: [] })
+        if (url.endsWith('/api/v1/agent/csrf'))
+          return json({ token: 'csrf', headerName: 'X-CSRF-TOKEN' })
+        if (url.endsWith('/api/v1/agent/search')) {
+          const body = JSON.parse(String(init?.body)) as AgentTicketSearchInput
+          searches.push({
+            body,
+            interactionId: new Headers(init?.headers).get('X-Interaction-Id'),
+          })
+          return json({
+            searchEventId: crypto.randomUUID(),
+            searchInteractionId: crypto.randomUUID(),
+            items: [{ ...ticket, ticketNumber: 1041 }, ticket],
+            resultCount: 2,
+            sort: body.sort,
+            nextCursor: body.cursor ? null : 'opaque-next',
+          })
+        }
+        return json({})
+      }),
+    )
+    renderPage()
+    await user.type(screen.getByLabelText('서버 전체 티켓 검색어'), '결제')
+    await user.selectOptions(screen.getByLabelText('상태 검색 필터'), 'OPEN')
+    await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
+    await screen.findByText('정확한 전체 결과 2개')
+
+    const links = screen.getAllByRole('link', { name: /티켓 #10/ })
+    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
+      '티켓 #1041 중복 결제 확인',
+      '티켓 #1042 중복 결제 확인',
+    ])
+    await user.click(screen.getByRole('button', { name: '다음 페이지' }))
+    await waitFor(() => expect(searches).toHaveLength(2))
+    await user.selectOptions(screen.getByLabelText('상태 검색 필터'), 'SOLVED')
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(searches).toHaveLength(2)
+
+    const previousInteraction = searches[1]?.interactionId
+    await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
+    await waitFor(() => expect(searches).toHaveLength(3))
+    expect(searches[2]?.body).toMatchObject({
+      filters: { status: 'SOLVED' },
+      cursor: null,
+    })
+    expect(searches[2]?.interactionId).not.toBe(previousInteraction)
+
+    await user.selectOptions(
+      screen.getByLabelText('정렬 검색 필터'),
+      'updatedAt:desc,ticketNumber:desc',
+    )
+    await waitFor(() => expect(searches).toHaveLength(4))
+    expect(searches[3]?.body).toMatchObject({
+      sort: 'updatedAt:desc,ticketNumber:desc',
+      cursor: null,
+    })
   })
 })

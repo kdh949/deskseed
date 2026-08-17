@@ -47,6 +47,7 @@ function UploadExample() {
   const [state, setState] = useState<AttachmentDraftState>({
     blocked: false,
     ids: [],
+    needsNavigationWarning: false,
   })
   const onStateChange = useCallback(
     (nextState: AttachmentDraftState) => setState(nextState),

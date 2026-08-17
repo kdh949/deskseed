@@ -160,9 +160,7 @@ async function mockAgentReadApi(page: Page) {
     name,
     scope,
     ownerStaffId:
-      scope === 'PERSONAL'
-        ? '00000000-0000-4000-8000-000000000099'
-        : null,
+      scope === 'PERSONAL' ? '00000000-0000-4000-8000-000000000099' : null,
     categoryPath: ['Views'],
     ticketCount,
   }))
@@ -190,10 +188,7 @@ async function mockAgentReadApi(page: Page) {
     if (url.pathname === '/api/v1/agent/assignment-options') {
       return route.fulfill({ status: 200, json: { groups: [] } })
     }
-    if (
-      url.pathname === '/api/v1/agent/views' &&
-      request.method() === 'POST'
-    ) {
+    if (url.pathname === '/api/v1/agent/views' && request.method() === 'POST') {
       const body = request.postDataJSON()
       savedViewWrites.push(body)
       const created = {

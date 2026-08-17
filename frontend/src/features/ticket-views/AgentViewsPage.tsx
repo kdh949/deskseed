@@ -38,6 +38,7 @@ import {
   ViewNavigation,
   type IconName,
   type QueueTicketTableItem,
+  type QueueTicketColumn,
   type ViewNavigationItem,
   type ViewNavigationSection,
 } from '../../design-system'
@@ -399,17 +400,42 @@ export function AgentViewsPage() {
       return
     }
     if (editor?.mode === 'edit') {
-      await updateAgentSavedView(editor.view.key, {
-        expectedVersion:
-          values.expectedVersion ?? editor.view.definitionVersion,
-        ...values.definition,
-      })
-      if (pendingPersonalOrder) {
-        await reorderAgentSavedViews({
-          scope: 'PERSONAL',
-          expectedOrderVersion: editor.view.orderVersion,
-          viewKeys: pendingPersonalOrder,
+      let savedView = editor.view
+      if (!editor.pendingOrderOnly) {
+        savedView = await updateAgentSavedView(editor.view.key, {
+          expectedVersion:
+            values.expectedVersion ?? editor.view.definitionVersion,
+          ...values.definition,
         })
+        queryClient.setQueryData<SavedAgentView[]>(['agent-views'], (current) =>
+          current?.map((view) =>
+            view.key === savedView.key ? savedView : view,
+          ),
+        )
+        setEditor({ mode: 'edit', view: savedView })
+        await queryClient.invalidateQueries({
+          queryKey: ['agent-view', editor.view.key],
+        })
+      }
+      if (pendingPersonalOrder) {
+        try {
+          await reorderAgentSavedViews({
+            scope: 'PERSONAL',
+            expectedOrderVersion: savedView.orderVersion,
+            viewKeys: pendingPersonalOrder,
+          })
+        } catch (error) {
+          const refreshed = await viewQuery.refetch()
+          const latest = refreshed.data?.find(
+            (view) => view.key === savedView.key,
+          )
+          setEditor({
+            mode: 'edit',
+            view: latest ?? savedView,
+            pendingOrderOnly: true,
+          })
+          throw new SavedViewOrderSaveError(error)
+        }
       }
       await queryClient.invalidateQueries({ queryKey: ['agent-views'] })
       await queryClient.invalidateQueries({
@@ -684,6 +710,7 @@ export function AgentViewsPage() {
               onSelectionChange={toggleTicketSelection}
               selectedTicketNumbers={selectedTicketNumbers}
               ticketHref={(ticketNumber) => `/agent/tickets/${ticketNumber}`}
+              visibleColumns={toQueueColumns(currentServerView?.columns)}
             />
             <footer className="agent-queue-pagination">
               <p>{visibleTickets.length}개 표시</p>
@@ -735,6 +762,34 @@ export function AgentViewsPage() {
         returnFocusRef={editorTriggerRef}
       />
     </main>
+  )
+}
+
+class SavedViewOrderSaveError extends Error {
+  cause: unknown
+
+  constructor(cause: unknown) {
+    super('Saved view definition committed but order save failed')
+    this.name = 'SavedViewOrderSaveError'
+    this.cause = cause
+  }
+}
+
+const SAVED_VIEW_COLUMN_MAP = {
+  TICKET_NUMBER: 'ticketNumber',
+  SUBJECT: 'subject',
+  STATUS: 'status',
+  PRIORITY: 'priority',
+  GROUP: 'group',
+  ASSIGNEE: 'assignee',
+  UPDATED_AT: 'updatedAt',
+  FIRST_REPLY_SLA: 'sla',
+} as const satisfies Record<string, QueueTicketColumn>
+
+function toQueueColumns(columns: SavedAgentView['columns'] | undefined) {
+  return (columns ?? Object.keys(SAVED_VIEW_COLUMN_MAP)).map(
+    (column) =>
+      SAVED_VIEW_COLUMN_MAP[column as keyof typeof SAVED_VIEW_COLUMN_MAP],
   )
 }
 

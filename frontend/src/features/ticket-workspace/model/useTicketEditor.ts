@@ -6,7 +6,9 @@ import type {
   TicketFieldName,
   TicketCommandWarning,
   TicketVisibility,
+  UpdateTicketCommand,
 } from '../../../api/types'
+import type { AttachmentDraftState } from '../../attachments/AttachmentUploadField'
 import { createOpaqueUuid } from '../../../api/uuid'
 import {
   buildUpdateTicketCommand,
@@ -66,6 +68,13 @@ export function useTicketEditor({
   const [pendingCommandId, setPendingCommandId] = useState<string | null>(
     initial.pendingCommandId ?? null,
   )
+  const [pendingCommand, setPendingCommand] =
+    useState<UpdateTicketCommand | null>(initial.pendingCommand ?? null)
+  const [attachmentStates, setAttachmentStates] = useState<
+    Record<TicketVisibility, AttachmentDraftState>
+  >(() =>
+    initialAttachmentStates(initial.pendingCommand, initial.attachmentIds),
+  )
   const conflictRef = useRef<HTMLDivElement>(null)
   const storageKey = ticketDraftStorageKey(staffId, detail.ticket.ticketNumber)
   const dirtyFields = useMemo(
@@ -74,7 +83,17 @@ export function useTicketEditor({
   )
   const hasComment =
     comments.PUBLIC.trim() !== '' || comments.INTERNAL.trim() !== ''
-  const isUnsaved = dirtyFields.size > 0 || hasComment
+  const hasAttachments =
+    attachmentStates.PUBLIC.ids.length > 0 ||
+    attachmentStates.INTERNAL.ids.length > 0
+  const needsAttachmentWarning =
+    attachmentStates.PUBLIC.needsNavigationWarning ||
+    attachmentStates.INTERNAL.needsNavigationWarning
+  const isUnsaved =
+    dirtyFields.size > 0 ||
+    hasComment ||
+    hasAttachments ||
+    needsAttachmentWarning
   const blocker = useBlocker(isUnsaved || submitting)
   const unresolvedConflict = (conflict?.fields.size ?? 0) > 0
   const hasActiveSubmit =
@@ -97,15 +116,19 @@ export function useTicketEditor({
       fields: localFields,
       serverFields,
       baseVersion,
+      attachmentIds: persistedAttachmentIds(attachmentStates),
       ...(pendingCommandId ? { pendingCommandId } : {}),
+      ...(pendingCommand ? { pendingCommand } : {}),
     })
   }, [
     baseVersion,
+    attachmentStates,
     comments,
     isUnsaved,
     localFields,
     mode,
     pendingCommandId,
+    pendingCommand,
     serverFields,
     storageKey,
   ])
@@ -278,25 +301,30 @@ export function useTicketEditor({
     const submittedMode = mode
     const submittedComment = comments[submittedMode].trim().length > 0
     const clientCommandId = pendingCommandId ?? createOpaqueUuid()
+    const command =
+      pendingCommand ??
+      buildUpdateTicketCommand({
+        expectedVersion: baseVersion,
+        serverFields,
+        localFields,
+        comment: { visibility: submittedMode, body: comments[submittedMode] },
+        attachmentIds,
+        clientCommandId,
+      })
     if (pendingCommandId === null) {
       setPendingCommandId(clientCommandId)
+      setPendingCommand(command)
       writeTicketDraft(localStorage, storageKey, {
         mode,
         comments,
         fields: localFields,
         serverFields,
         baseVersion,
+        attachmentIds: persistedAttachmentIds(attachmentStates),
         pendingCommandId: clientCommandId,
+        pendingCommand: command,
       })
     }
-    const command = buildUpdateTicketCommand({
-      expectedVersion: baseVersion,
-      serverFields,
-      localFields,
-      comment: { visibility: submittedMode, body: comments[submittedMode] },
-      attachmentIds,
-      clientCommandId,
-    })
     try {
       const result = await updateAgentTicket(
         detail.ticket.ticketNumber,
@@ -311,6 +339,11 @@ export function useTicketEditor({
         baseVersion: result.version,
       })
       setPendingCommandId(null)
+      setPendingCommand(null)
+      setAttachmentStates((current) => ({
+        ...current,
+        [submittedMode]: emptyAttachmentState(),
+      }))
       setWarnings(result.warnings)
       setComments(confirmedComments)
       setServerFields(localFields)
@@ -395,6 +428,18 @@ export function useTicketEditor({
     loadLatestForConflict,
     refreshEditor,
     submit,
+    attachmentStates,
+    updateAttachmentState: (
+      visibility: TicketVisibility,
+      state: AttachmentDraftState,
+    ) => {
+      const nextAttachmentStates = { ...attachmentStates, [visibility]: state }
+      const pendingIds = pendingCommand?.comment?.attachmentIds ?? []
+      if (pendingCommand && !sameAttachmentIds(pendingIds, state.ids)) {
+        invalidatePendingCommand({ attachmentStates: nextAttachmentStates })
+      }
+      setAttachmentStates(nextAttachmentStates)
+    },
     error,
     success,
     warnings,
@@ -408,6 +453,7 @@ export function useTicketEditor({
       mode?: TicketVisibility
       comments?: TicketCommentDrafts
       fields?: EditableTicketFields
+      attachmentStates?: Record<TicketVisibility, AttachmentDraftState>
     } = {},
   ) {
     if (pendingCommandId) {
@@ -417,11 +463,15 @@ export function useTicketEditor({
         fields: next.fields ?? localFields,
         serverFields,
         baseVersion,
+        attachmentIds: persistedAttachmentIds(
+          next.attachmentStates ?? attachmentStates,
+        ),
       })
     } else {
       clearPendingTicketCommand(localStorage, storageKey)
     }
     setPendingCommandId(null)
+    setPendingCommand(null)
   }
 }
 
@@ -438,7 +488,9 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
       fields: freshFields,
       serverFields: freshFields,
       baseVersion: detail.ticket.version,
+      attachmentIds: undefined,
       pendingCommandId: undefined,
+      pendingCommand: undefined,
     }
   }
   if (stored.pendingCommandId) {
@@ -470,6 +522,44 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
         comments: { ...stored.comments, PUBLIC: '' },
       }
     : stored
+}
+
+function initialAttachmentStates(
+  pendingCommand?: UpdateTicketCommand,
+  storedAttachmentIds: Partial<Record<TicketVisibility, string[]>> = {},
+) {
+  const empty = emptyAttachmentState()
+  const states: Record<TicketVisibility, AttachmentDraftState> = {
+    PUBLIC: { ...empty, ids: [...(storedAttachmentIds.PUBLIC ?? [])] },
+    INTERNAL: { ...empty, ids: [...(storedAttachmentIds.INTERNAL ?? [])] },
+  }
+  if (pendingCommand?.comment?.attachmentIds?.length) {
+    states[pendingCommand.comment.visibility] = {
+      ...empty,
+      ids: [...pendingCommand.comment.attachmentIds],
+    }
+  }
+  return states
+}
+
+function emptyAttachmentState(): AttachmentDraftState {
+  return { blocked: false, ids: [], needsNavigationWarning: false }
+}
+
+function persistedAttachmentIds(
+  states: Record<TicketVisibility, AttachmentDraftState>,
+) {
+  return {
+    ...(states.PUBLIC.ids.length ? { PUBLIC: states.PUBLIC.ids } : {}),
+    ...(states.INTERNAL.ids.length ? { INTERNAL: states.INTERNAL.ids } : {}),
+  }
+}
+
+function sameAttachmentIds(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((id, index) => id === right[index])
+  )
 }
 
 function isAmbiguousCommandFailure(cause: unknown) {

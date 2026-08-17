@@ -3,8 +3,10 @@ import { ApiError } from '../../api/client'
 import type { AttachmentUpload } from '../../api/types'
 import { DsButton } from '../../design-system'
 import './attachments.css'
+import { MAX_ATTACHMENTS } from './attachmentPolicy'
 
 type UploadState =
+  | { key: string; fileName: string; status: 'RESTORED'; attachmentId: string }
   | { key: string; fileName: string; status: 'UPLOADING' }
   | { key: string; fileName: string; status: 'CLEAN'; upload: AttachmentUpload }
   | {
@@ -17,16 +19,19 @@ type UploadState =
 export interface AttachmentDraftState {
   blocked: boolean
   ids: string[]
+  needsNavigationWarning: boolean
 }
 
 export function AttachmentUploadField({
   disabled = false,
   label = '첨부 파일',
+  initialAttachmentIds = [],
   onStateChange,
   resetVersion = 0,
   upload,
 }: {
   disabled?: boolean
+  initialAttachmentIds?: string[]
   label?: string
   onStateChange: (state: AttachmentDraftState) => void
   resetVersion?: number
@@ -34,11 +39,17 @@ export function AttachmentUploadField({
 }) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [items, setItems] = useState<UploadState[]>([])
+  const onStateChangeRef = useRef(onStateChange)
+  onStateChangeRef.current = onStateChange
+  const [items, setItems] = useState<UploadState[]>(() =>
+    restoredItems(initialAttachmentIds),
+  )
+  const [limitError, setLimitError] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    setItems([])
+    setItems(restoredItems(initialAttachmentIds))
+    setLimitError(false)
   }, [resetVersion])
 
   useEffect(() => {
@@ -47,23 +58,31 @@ export function AttachmentUploadField({
   }, [])
 
   const pending = items.some((item) => item.status === 'UPLOADING')
-  const cleanItems = items.filter(
-    (item): item is Extract<UploadState, { status: 'CLEAN' }> =>
-      item.status === 'CLEAN' && Date.parse(item.upload.expiresAt) > now,
-  )
   const expired = items.some(
     (item) =>
       item.status === 'CLEAN' && Date.parse(item.upload.expiresAt) <= now,
   )
   const blocked = pending || expired || items.some(isRejected)
+  const ids = items.flatMap((item) =>
+    item.status === 'RESTORED'
+      ? [item.attachmentId]
+      : item.status === 'CLEAN' && Date.parse(item.upload.expiresAt) > now
+        ? [item.upload.id]
+        : [],
+  )
+  const needsNavigationWarning = items.some(
+    (item) => item.status === 'UPLOADING' || isRejected(item),
+  )
+  const activeCount = items.filter(
+    (item) =>
+      item.status === 'UPLOADING' ||
+      item.status === 'RESTORED' ||
+      (item.status === 'CLEAN' && Date.parse(item.upload.expiresAt) > now),
+  ).length
 
   useEffect(() => {
-    onStateChange({ blocked, ids: cleanItems.map((item) => item.upload.id) })
-  }, [
-    blocked,
-    cleanItems.map((item) => item.upload.id).join('|'),
-    onStateChange,
-  ])
+    onStateChangeRef.current({ blocked, ids, needsNavigationWarning })
+  }, [blocked, ids.join('|'), needsNavigationWarning])
 
   useEffect(() => {
     if (!pending) return
@@ -78,6 +97,12 @@ export function AttachmentUploadField({
   const selectFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
     if (!files.length) return
+    if (activeCount + files.length > MAX_ATTACHMENTS) {
+      setLimitError(true)
+      event.target.value = ''
+      return
+    }
+    setLimitError(false)
     for (const file of files) {
       const key = crypto.randomUUID()
       setItems((current) => [
@@ -118,7 +143,7 @@ export function AttachmentUploadField({
       <div className="attachment-upload-heading">
         <label htmlFor={inputId}>{label}</label>
         <input
-          disabled={disabled || pending}
+          disabled={disabled || pending || activeCount >= MAX_ATTACHMENTS}
           id={inputId}
           multiple
           onChange={selectFiles}
@@ -170,6 +195,11 @@ export function AttachmentUploadField({
           모든 파일이 CLEAN 상태여야 제출할 수 있습니다.
         </p>
       ) : null}
+      {limitError ? (
+        <p className="attachment-upload-blocker" role="alert">
+          첨부 파일은 최대 {MAX_ATTACHMENTS}개까지 선택할 수 있습니다.
+        </p>
+      ) : null}
     </section>
   )
 }
@@ -179,6 +209,7 @@ function isRejected(item: UploadState) {
 }
 
 function uploadStatus(item: UploadState, expired: boolean) {
+  if (item.status === 'RESTORED') return '이전 저장 시도에서 복원됨'
   if (item.status === 'UPLOADING') return '업로드 및 악성 파일 검사 중'
   if (item.status !== 'CLEAN') {
     return item.status === 'REJECTED'
@@ -187,6 +218,15 @@ function uploadStatus(item: UploadState, expired: boolean) {
   }
   if (expired) return '업로드 만료 · 파일을 다시 선택해 주세요.'
   return `CLEAN · ${formatBytes(item.upload.sizeBytes)}`
+}
+
+function restoredItems(attachmentIds: string[]): UploadState[] {
+  return attachmentIds.map((attachmentId, index) => ({
+    key: `restored:${attachmentId}`,
+    fileName: `복원된 첨부 파일 ${index + 1}`,
+    status: 'RESTORED',
+    attachmentId,
+  }))
 }
 
 function uploadFailureMessage(error: unknown) {

@@ -15,21 +15,23 @@ export function AuditExportStatusPage() {
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | undefined>()
 
-  const state: AuditExportStatusState = query.isPending
-    ? { status: 'loading' }
-    : query.isError
-      ? query.error instanceof ApiError && query.error.status === 404
-        ? { status: 'not-found' }
-        : query.error instanceof ApiError && query.error.status === 403
-          ? { status: 'denied' }
-          : {
-              status: 'error',
-              requestId:
-                query.error instanceof ApiError
-                  ? query.error.requestId
-                  : undefined,
-            }
-      : { status: 'ready', job: query.data, polling: query.polling }
+  const state: AuditExportStatusState = query.data
+    ? { status: 'ready', job: query.data, polling: query.polling }
+    : query.isPending
+      ? { status: 'loading' }
+      : query.isError
+        ? query.error instanceof ApiError && query.error.status === 404
+          ? { status: 'not-found' }
+          : query.error instanceof ApiError && query.error.status === 403
+            ? { status: 'denied' }
+            : {
+                status: 'error',
+                requestId:
+                  query.error instanceof ApiError
+                    ? query.error.requestId
+                    : undefined,
+              }
+        : { status: 'loading' }
 
   return (
     <AuditExportStatus

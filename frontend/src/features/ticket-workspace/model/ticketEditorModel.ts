@@ -25,7 +25,9 @@ export interface TicketDraftSnapshot {
   fields: EditableTicketFields
   serverFields: EditableTicketFields
   baseVersion: number
+  attachmentIds?: Partial<Record<TicketVisibility, string[]>>
   pendingCommandId?: string
+  pendingCommand?: UpdateTicketCommand
 }
 
 interface StoredTicketDraft extends TicketDraftSnapshot {
@@ -277,10 +279,14 @@ export function readTicketDraft(
       !Number.isFinite(savedAt) ||
       savedAt > now ||
       now - savedAt > TICKET_DRAFT_TTL_MS ||
+      (value.attachmentIds !== undefined &&
+        !isAttachmentDraftIds(value.attachmentIds)) ||
       (value.pendingCommandId !== undefined &&
         !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
           value.pendingCommandId,
-        ))
+        )) ||
+      (value.pendingCommand !== undefined &&
+        !isUpdateTicketCommand(value.pendingCommand))
     ) {
       return removeInvalidTicketDraft(storage, key)
     }
@@ -288,6 +294,26 @@ export function readTicketDraft(
   } catch {
     return removeInvalidTicketDraft(storage, key)
   }
+}
+
+function isAttachmentDraftIds(value: unknown) {
+  if (!value || typeof value !== 'object') return false
+  const ids = value as Partial<Record<TicketVisibility, unknown>>
+  return ['PUBLIC', 'INTERNAL'].every((visibility) => {
+    const values = ids[visibility as TicketVisibility]
+    return (
+      values === undefined ||
+      (Array.isArray(values) &&
+        values.length <= 5 &&
+        values.every(
+          (id) =>
+            typeof id === 'string' &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              id,
+            ),
+        ))
+    )
+  })
 }
 
 export function purgeStaffTicketDrafts(
@@ -350,10 +376,31 @@ export function clearPendingTicketCommand(
   key: string,
 ) {
   const current = readTicketDraft(storage, key)
-  if (!current?.pendingCommandId) return
+  if (!current?.pendingCommandId && !current?.pendingCommand) return
   const withoutPendingCommand = { ...current }
   delete withoutPendingCommand.pendingCommandId
+  delete withoutPendingCommand.pendingCommand
   writeTicketDraft(storage, key, withoutPendingCommand)
+}
+
+function isUpdateTicketCommand(value: unknown): value is UpdateTicketCommand {
+  if (!value || typeof value !== 'object') return false
+  const command = value as Partial<UpdateTicketCommand>
+  return (
+    Number.isSafeInteger(command.expectedVersion) &&
+    Array.isArray(command.changedFields) &&
+    typeof command.clientCommandId === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      command.clientCommandId,
+    ) &&
+    (command.comment === null ||
+      (typeof command.comment === 'object' &&
+        typeof command.comment.body === 'string' &&
+        (command.comment.visibility === 'PUBLIC' ||
+          command.comment.visibility === 'INTERNAL') &&
+        (command.comment.attachmentIds === undefined ||
+          Array.isArray(command.comment.attachmentIds))))
+  )
 }
 
 function isCommentDrafts(value: unknown): value is TicketCommentDrafts {

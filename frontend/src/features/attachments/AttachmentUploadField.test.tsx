@@ -53,6 +53,62 @@ describe('AttachmentUploadField', () => {
     expect(await screen.findByText(/감염 또는 격리됨/)).toBeVisible()
     expect(screen.getByTestId('blocked-state')).toHaveTextContent('blocked')
   })
+
+  it('rejects six files before starting any upload', async () => {
+    const user = userEvent.setup()
+    const upload = vi.fn()
+    render(<Harness upload={upload} />)
+
+    await user.upload(
+      screen.getByLabelText('첨부 파일'),
+      Array.from({ length: 6 }, (_, index) => new File(['x'], `${index}.png`)),
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('최대 5개')
+    expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('counts only active uploads when another batch is selected', async () => {
+    const user = userEvent.setup()
+    const upload = vi.fn(async (file: File) => ({
+      ...cleanUpload,
+      id: crypto.randomUUID(),
+      fileName: file.name,
+    }))
+    render(<Harness upload={upload} />)
+    const input = screen.getByLabelText('첨부 파일')
+
+    await user.upload(
+      input,
+      [0, 1, 2].map((index) => new File(['x'], `${index}.png`)),
+    )
+    await screen.findByText('2.png')
+    await user.upload(
+      input,
+      [3, 4, 5].map((index) => new File(['x'], `${index}.png`)),
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('최대 5개')
+    expect(upload).toHaveBeenCalledTimes(3)
+  })
+
+  it('frees a slot after a rejected file is removed', async () => {
+    const user = userEvent.setup()
+    const upload = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError('rejected', 422))
+      .mockResolvedValue(cleanUpload)
+    render(<Harness upload={upload} />)
+    const input = screen.getByLabelText('첨부 파일')
+
+    await user.upload(input, new File(['x'], 'rejected.exe'))
+    await screen.findByText(/감염 또는 격리됨/)
+    await user.click(screen.getByRole('button', { name: '초안에서 제거' }))
+    await user.upload(input, new File(['x'], 'safe.png'))
+
+    expect(await screen.findByText(/CLEAN/)).toBeVisible()
+    expect(upload).toHaveBeenCalledTimes(2)
+  })
 })
 
 function Harness({
@@ -63,6 +119,7 @@ function Harness({
   const [state, setState] = useState<AttachmentDraftState>({
     blocked: false,
     ids: [],
+    needsNavigationWarning: false,
   })
   const onStateChange = useCallback(
     (nextState: AttachmentDraftState) => setState(nextState),

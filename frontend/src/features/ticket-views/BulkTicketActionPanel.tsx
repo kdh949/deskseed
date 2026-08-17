@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { executeAgentTicketBatch } from '../../api/client'
 import type {
   AgentTicketBatchCommand,
@@ -45,7 +45,10 @@ export function BulkTicketActionPanel({
   const [assigneeId, setAssigneeId] = useState('')
   const [reason, setReason] = useState('')
   const [results, setResults] = useState<AgentTicketBatchItemResult[]>([])
-  const commandIds = useRef(new Map<number, string>())
+  const [activeAttempt, setActiveAttempt] =
+    useState<AgentTicketBatchCommand | null>(null)
+  const [resultAttempt, setResultAttempt] =
+    useState<AgentTicketBatchCommand | null>(null)
   const resultRef = useRef<HTMLDivElement>(null)
   const selectedGroup = options.groups.find((group) => group.id === value)
 
@@ -53,6 +56,7 @@ export function BulkTicketActionPanel({
     mutationFn: execute,
     onSuccess: (result) => {
       setResults(result.results)
+      setActiveAttempt(null)
       setConfirming(false)
       onComplete?.(result)
     },
@@ -62,24 +66,22 @@ export function BulkTicketActionPanel({
     if (results.length) resultRef.current?.focus()
   }, [results])
 
-  const command = useMemo(
-    () =>
-      buildBatchCommand(
-        tickets,
-        operation,
-        value,
-        assigneeId,
-        reason,
-        commandIds.current,
-      ),
-    [assigneeId, operation, reason, tickets, value],
-  )
   const failedTicketNumbers = new Set(
     results
       .filter((result) => result.outcome !== 'SUCCEEDED')
       .map((result) => result.ticketNumber),
   )
   const validationError = validate(operation, value, reason, tickets.length)
+
+  useEffect(() => {
+    setActiveAttempt(null)
+  }, [assigneeId, operation, reason, tickets, value])
+
+  const executeAttempt = (attempt: AgentTicketBatchCommand) => {
+    setActiveAttempt(attempt)
+    setResultAttempt(attempt)
+    mutation.mutate(attempt)
+  }
 
   if (!tickets.length) return null
 
@@ -187,7 +189,16 @@ export function BulkTicketActionPanel({
                   setConfirming(true)
                   return
                 }
-                mutation.mutate(command)
+                executeAttempt(
+                  activeAttempt ??
+                    buildBatchCommand(
+                      tickets,
+                      operation,
+                      value,
+                      assigneeId,
+                      reason,
+                    ),
+                )
               }}
               tone="primary"
             >
@@ -222,8 +233,9 @@ export function BulkTicketActionPanel({
             <DsButton
               disabled={mutation.isPending}
               onClick={() =>
-                mutation.mutate({
-                  items: command.items.filter((item) =>
+                resultAttempt &&
+                executeAttempt({
+                  items: resultAttempt.items.filter((item) =>
                     failedTicketNumbers.has(item.ticketNumber),
                   ),
                 })
@@ -403,15 +415,9 @@ function buildBatchCommand(
   value: string,
   assigneeId: string,
   reason: string,
-  commandIds: Map<number, string>,
 ): AgentTicketBatchCommand {
   return {
     items: tickets.map((ticket) => {
-      let clientCommandId = commandIds.get(ticket.ticketNumber)
-      if (!clientCommandId) {
-        clientCommandId = createOpaqueUuid()
-        commandIds.set(ticket.ticketNumber, clientCommandId)
-      }
       const command =
         operation === 'STATUS'
           ? {
@@ -440,7 +446,7 @@ function buildBatchCommand(
       return {
         ticketNumber: ticket.ticketNumber,
         expectedVersion: ticket.version,
-        clientCommandId,
+        clientCommandId: createOpaqueUuid(),
         command,
       }
     }),

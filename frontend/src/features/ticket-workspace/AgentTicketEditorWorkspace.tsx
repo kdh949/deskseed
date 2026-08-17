@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type {
   AgentComment,
   AgentTicketDetail,
@@ -23,10 +23,7 @@ import {
   StatusBadge,
 } from '../../design-system'
 import { AttachmentList } from '../attachments/AttachmentList'
-import {
-  AttachmentUploadField,
-  type AttachmentDraftState,
-} from '../attachments/AttachmentUploadField'
+import { AttachmentUploadField } from '../attachments/AttachmentUploadField'
 import { createOpaqueUuid } from '../../api/uuid'
 import type { EditableTicketFields } from './model/ticketEditorModel'
 import { useTicketEditor } from './model/useTicketEditor'
@@ -473,28 +470,12 @@ function ReplyComposer({
   const isInternal = mode === 'INTERNAL'
   const actionLabel = isInternal ? '내부 메모 저장' : '공개 답변 저장'
   const inputLabel = isInternal ? '내부 메모 내용' : '공개 답변 내용'
-  const [attachments, setAttachments] = useState<
-    Record<TicketVisibility, AttachmentDraftState>
-  >({
-    PUBLIC: { blocked: false, ids: [] },
-    INTERNAL: { blocked: false, ids: [] },
-  })
   const [resetVersions, setResetVersions] = useState<
     Record<TicketVisibility, number>
   >({ PUBLIC: 0, INTERNAL: 0 })
-  const updatePublicAttachments = useCallback(
-    (state: AttachmentDraftState) =>
-      setAttachments((current) => ({ ...current, PUBLIC: state })),
-    [],
-  )
-  const updateInternalAttachments = useCallback(
-    (state: AttachmentDraftState) =>
-      setAttachments((current) => ({ ...current, INTERNAL: state })),
-    [],
-  )
   const submit = async () => {
-    if (attachments[mode].blocked) return
-    const saved = await editor.submit(attachments[mode].ids)
+    if (editor.attachmentStates[mode].blocked) return
+    const saved = await editor.submit(editor.attachmentStates[mode].ids)
     if (saved) {
       setResetVersions((current) => ({
         ...current,
@@ -559,10 +540,10 @@ function ReplyComposer({
         </label>
         <AttachmentUploadField
           disabled={editor.submitting}
+          initialAttachmentIds={editor.attachmentStates[mode].ids}
+          key={mode}
           label={isInternal ? 'INTERNAL 첨부 파일' : 'PUBLIC 첨부 파일'}
-          onStateChange={
-            isInternal ? updateInternalAttachments : updatePublicAttachments
-          }
+          onStateChange={(state) => editor.updateAttachmentState(mode, state)}
           resetVersion={resetVersions[mode]}
           upload={uploadAgentAttachment}
         />
@@ -575,7 +556,9 @@ function ReplyComposer({
                 : '저장하지 않은 초안이 없습니다.'}
           </p>
           <DsButton
-            disabled={!editor.canSubmit || attachments[mode].blocked}
+            disabled={
+              !editor.canSubmit || editor.attachmentStates[mode].blocked
+            }
             onClick={() => void submit()}
             tone="primary"
           >

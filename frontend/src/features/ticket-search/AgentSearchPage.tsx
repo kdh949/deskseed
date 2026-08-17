@@ -18,6 +18,7 @@ import type {
   AgentTicketStatus,
   AgentTicketSummary,
   FirstReplySlaState,
+  AgentTicketSearchSort,
   TicketPriority,
 } from '../../api/types'
 import { createOpaqueUuid } from '../../api/uuid'
@@ -54,7 +55,10 @@ const SLA_STATES: FirstReplySlaState[] = [
 export function AgentSearchPage() {
   const navigate = useNavigate()
   const [queryText, setQueryText] = useState('')
-  const [filters, setFilters] = useState<AgentTicketSearchFilters>({})
+  const [draftFilters, setDraftFilters] = useState<AgentTicketSearchFilters>({})
+  const [sort, setSort] = useState<AgentTicketSearchSort>(
+    'score:desc,ticketNumber:desc',
+  )
   const [submitted, setSubmitted] = useState<AgentTicketSearchInput | null>(
     null,
   )
@@ -102,8 +106,7 @@ export function AgentSearchPage() {
     key: K,
     value: AgentTicketSearchFilters[K] | undefined,
   ) => {
-    setFilters((current) => ({ ...current, [key]: value || undefined }))
-    resetPaging()
+    setDraftFilters((current) => ({ ...current, [key]: value || undefined }))
   }
   const submitSearch = (event: FormEvent) => {
     event.preventDefault()
@@ -113,8 +116,8 @@ export function AgentSearchPage() {
     resetPaging()
     setSubmitted({
       query: normalized,
-      filters,
-      sort: 'score:desc,ticketNumber:desc',
+      filters: draftFilters,
+      sort,
       limit: 25,
     })
   }
@@ -162,7 +165,7 @@ export function AgentSearchPage() {
         </label>
         <SearchFilter
           label="상태"
-          value={filters.status ?? ''}
+          value={draftFilters.status ?? ''}
           onChange={(value) =>
             updateFilter('status', value as AgentTicketStatus)
           }
@@ -176,7 +179,7 @@ export function AgentSearchPage() {
         </SearchFilter>
         <SearchFilter
           label="우선순위"
-          value={filters.priority ?? ''}
+          value={draftFilters.priority ?? ''}
           onChange={(value) =>
             updateFilter('priority', value as TicketPriority)
           }
@@ -190,7 +193,7 @@ export function AgentSearchPage() {
         </SearchFilter>
         <SearchFilter
           label="그룹"
-          value={filters.groupId ?? ''}
+          value={draftFilters.groupId ?? ''}
           onChange={(value) => updateFilter('groupId', value)}
         >
           <option value="">전체</option>
@@ -202,7 +205,7 @@ export function AgentSearchPage() {
         </SearchFilter>
         <SearchFilter
           label="담당자"
-          value={filters.assigneeId ?? ''}
+          value={draftFilters.assigneeId ?? ''}
           onChange={(value) => updateFilter('assigneeId', value)}
         >
           <option value="">전체</option>
@@ -216,7 +219,7 @@ export function AgentSearchPage() {
         </SearchFilter>
         <SearchFilter
           label="최초 답변 SLA"
-          value={filters.slaState ?? ''}
+          value={draftFilters.slaState ?? ''}
           onChange={(value) =>
             updateFilter('slaState', value as FirstReplySlaState)
           }
@@ -227,6 +230,25 @@ export function AgentSearchPage() {
               {state}
             </option>
           ))}
+        </SearchFilter>
+        <SearchFilter
+          label="정렬"
+          value={sort}
+          onChange={(value) => {
+            const next = value as AgentTicketSearchSort
+            setSort(next)
+            if (!submitted) return
+            interactionId.current = createOpaqueUuid()
+            resetPaging()
+            setSubmitted((current) =>
+              current ? { ...current, sort: next, cursor: null } : current,
+            )
+          }}
+        >
+          <option value="score:desc,ticketNumber:desc">관련도 높은 순</option>
+          <option value="updatedAt:desc,ticketNumber:desc">
+            최근 업데이트 순
+          </option>
         </SearchFilter>
         <DsButton
           disabled={!queryText.trim() || searchQuery.isFetching}

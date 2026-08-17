@@ -60,4 +60,19 @@ describe('CustomerRequestForm', () => {
       '결제 승인 내역을 확인해 주세요.',
     )
   })
+
+  it('rejects more than five initial attachments before submit', async () => {
+    const user = userEvent.setup()
+    const submit = vi.fn()
+    render(<CustomerRequestForm onSubmitted={vi.fn()} submit={submit} />)
+
+    await user.upload(
+      screen.getByLabelText('첨부 파일'),
+      Array.from({ length: 6 }, (_, index) => new File(['x'], `${index}.txt`)),
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('최대 5개')
+    expect(screen.getByText('선택된 파일이 없습니다.')).toBeVisible()
+    expect(submit).not.toHaveBeenCalled()
+  })
 })

@@ -17,6 +17,7 @@ import {
   type RequestField,
   type RequestFieldErrors,
 } from './requestForm'
+import { MAX_ATTACHMENTS } from '../attachments/attachmentPolicy'
 
 export function CustomerRequestForm({
   onSubmitted,
@@ -33,6 +34,7 @@ export function CustomerRequestForm({
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<SubmitError | null>(null)
   const [files, setFiles] = useState<File[]>([])
+  const [attachmentLimitError, setAttachmentLimitError] = useState(false)
   const errors = validateRequestForm(form)
   const valid = Object.keys(errors).length === 0
   const nameId = useId()
@@ -146,15 +148,27 @@ export function CustomerRequestForm({
         <section aria-label="문의 첨부 파일" className="customer-field">
           <label htmlFor={attachmentsId}>첨부 파일</label>
           <input
-            disabled={submitting}
+            disabled={submitting || files.length >= MAX_ATTACHMENTS}
             id={attachmentsId}
             multiple
             onChange={(event) => {
-              setFiles(Array.from(event.target.files ?? []))
+              const selected = Array.from(event.target.files ?? [])
+              if (selected.length > MAX_ATTACHMENTS) {
+                setAttachmentLimitError(true)
+                event.target.value = ''
+                return
+              }
+              setFiles(selected)
+              setAttachmentLimitError(false)
               setSubmitError(null)
             }}
             type="file"
           />
+          {attachmentLimitError ? (
+            <small role="alert">
+              첨부 파일은 최대 {MAX_ATTACHMENTS}개까지 선택할 수 있습니다.
+            </small>
+          ) : null}
           {files.length ? (
             <ul aria-live="polite" className="customer-attachment-selection">
               {files.map((file, index) => (

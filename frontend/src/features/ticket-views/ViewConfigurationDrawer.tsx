@@ -14,7 +14,8 @@ import type {
 import { DsButton, DsDrawer, DsSelect, Notification } from '../../design-system'
 
 export type ViewEditor =
-  { mode: 'create' } | { mode: 'edit'; view: SavedAgentView }
+  | { mode: 'create' }
+  | { mode: 'edit'; view: SavedAgentView; pendingOrderOnly?: boolean }
 
 export type SavedViewEditorSave = {
   definition: SavedViewDefinition
@@ -145,14 +146,18 @@ export function ViewConfigurationDrawer({
     try {
       await action()
     } catch (caught) {
+      const orderOnlyFailure =
+        caught instanceof Error && caught.name === 'SavedViewOrderSaveError'
       const conflict =
         caught instanceof ApiError &&
         (caught.status === 409 || caught.status === 412)
       setError({
         conflict,
-        message: conflict
-          ? '다른 사용자가 이 보기를 변경했습니다. 입력은 유지됩니다. 최신 목록을 확인한 뒤 다시 시도하세요.'
-          : '보기 요청을 완료하지 못했습니다. 입력은 유지됩니다.',
+        message: orderOnlyFailure
+          ? '보기 정의는 저장되었습니다. 순서 저장만 실패했습니다. 최신 순서 버전으로 다시 시도하세요.'
+          : conflict
+            ? '다른 사용자가 이 보기를 변경했습니다. 입력은 유지됩니다. 최신 목록을 확인한 뒤 다시 시도하세요.'
+            : '보기 요청을 완료하지 못했습니다. 입력은 유지됩니다.',
       })
     } finally {
       setBusy(null)
@@ -186,7 +191,13 @@ export function ViewConfigurationDrawer({
         {error ? (
           <div ref={errorRef} tabIndex={-1}>
             <Notification
-              title={error.conflict ? '보기 버전 충돌' : '보기 요청 실패'}
+              title={
+                editor?.mode === 'edit' && editor.pendingOrderOnly
+                  ? '보기 정의 저장 완료 · 순서 저장 실패'
+                  : error.conflict
+                    ? '보기 버전 충돌'
+                    : '보기 요청 실패'
+              }
               tone={error.conflict ? 'conflict' : 'danger'}
             >
               {error.message}

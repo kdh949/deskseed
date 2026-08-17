@@ -187,6 +187,44 @@ describe('ticket editor model', () => {
     )
   })
 
+  it('persists the complete ambiguous command including attachment IDs', () => {
+    const storage = new Map<string, string>()
+    const adapter = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    }
+    storage.set(STAFF_DRAFT_SESSION_OWNER_KEY, 'staff-1')
+    const key = ticketDraftStorageKey('staff-1', 1042)
+    const pendingCommand = buildUpdateTicketCommand({
+      expectedVersion: 7,
+      serverFields,
+      localFields: serverFields,
+      comment: { visibility: 'PUBLIC', body: '첨부 확인' },
+      attachmentIds: ['11111111-1111-4111-8111-111111111111'],
+      clientCommandId: '44444444-4444-4444-8444-444444444444',
+    })
+
+    writeTicketDraft(adapter, key, {
+      mode: 'PUBLIC',
+      comments: { PUBLIC: '첨부 확인', INTERNAL: '' },
+      fields: serverFields,
+      baseVersion: 7,
+      attachmentIds: {
+        PUBLIC: ['11111111-1111-4111-8111-111111111111'],
+      },
+      pendingCommandId: pendingCommand.clientCommandId,
+      pendingCommand,
+    })
+
+    expect(readTicketDraft(adapter, key)?.pendingCommand).toEqual(
+      pendingCommand,
+    )
+    expect(readTicketDraft(adapter, key)?.attachmentIds?.PUBLIC).toEqual([
+      '11111111-1111-4111-8111-111111111111',
+    ])
+  })
+
   it('restores a draft only within the 12-hour active-session recovery window', () => {
     const savedAt = Date.parse('2026-08-12T00:00:00.000Z')
     const storage = new Map<string, string>()
