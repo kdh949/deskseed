@@ -21,6 +21,7 @@ import org.testcontainers.utility.DockerImageName
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import java.sql.Timestamp
 import java.time.Instant
+import java.security.MessageDigest
 import java.util.UUID
 
 @SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false", "deskseed.webhook.materializer-delay-ms=3600000"])
@@ -61,6 +62,11 @@ class WebhookOutboxMaterializerIntegrationTest {
         assertThat(
             jdbcTemplate.queryForList("select endpoint_id from webhook_deliveries where event_id = ?", UUID::class.java, eventId),
         ).containsExactlyInAnyOrder(first, second)
+        val checksumAndBody = jdbcTemplate.queryForMap(
+            "select payload_checksum, payload_json::text as payload_body from webhook_deliveries where event_id = ? limit 1",
+            eventId,
+        )
+        assertThat(checksumAndBody.getValue("payload_checksum")).isEqualTo(checksum(checksumAndBody.getValue("payload_body") as String))
     }
 
     @Test
@@ -122,6 +128,9 @@ class WebhookOutboxMaterializerIntegrationTest {
         }
         return eventId
     }
+
+    private fun checksum(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
     companion object {
         val STAFF_ID: UUID = UUID.fromString("240ed447-289a-4e4d-a8b0-25528b1d15d1")

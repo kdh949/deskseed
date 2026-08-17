@@ -58,13 +58,19 @@ internal class JdbcWebhookEventMaterializer(
         if (visibility != DomainEventVisibility.PUBLIC) return 0
         val subscriptions = jdbc.query(
             """
-            select endpoint_id, payload_policy
+            select endpoint_id, payload_policy, endpoint.version as endpoint_version
               from webhook_subscriptions subscription
               join webhook_endpoints endpoint on endpoint.id = subscription.endpoint_id
              where endpoint.enabled = true and endpoint.deactivated_at is null
                and subscription.event_type = ? and subscription.event_version = ?
             """.trimIndent(),
-            { row, _ -> Subscription(row.getObject("endpoint_id", UUID::class.java), WebhookPayloadPolicy.valueOf(row.getString("payload_policy"))) },
+            { row, _ ->
+                Subscription(
+                    row.getObject("endpoint_id", UUID::class.java),
+                    WebhookPayloadPolicy.valueOf(row.getString("payload_policy")),
+                    row.getLong("endpoint_version"),
+                )
+            },
             event.type, event.version,
         )
         var created = 0
@@ -72,22 +78,29 @@ internal class JdbcWebhookEventMaterializer(
             val serialized = serializers.mapNotNull { it.serialize(event, visibility, subscription.payloadPolicy) }
                 .singleOrNull() ?: throw IllegalStateException("Webhook event serializer is unavailable or ambiguous")
             val now = Instant.now(clock)
-            created += jdbc.update(
+            val deliveryId = UUID.randomUUID()
+            val storedPayload = jdbc.query(
                 """
                 insert into webhook_deliveries (
-                    id, endpoint_id, event_id, event_type, event_version, payload_checksum, payload_json, status,
+                    id, endpoint_id, endpoint_version, event_id, event_type, event_version, payload_checksum, payload_json, status,
                     attempt_count, next_attempt_at, lease_owner, lease_expires_at, error_category, created_at, updated_at, completed_at, version
-                ) values (?, ?, ?, ?, ?, ?, cast(? as jsonb), 'PENDING', 0, ?, null, null, null, ?, ?, null, 0)
+                ) values (?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), 'PENDING', 0, ?, null, null, null, ?, ?, null, 0)
                 on conflict (endpoint_id, event_id) do nothing
+                returning payload_json::text
                 """.trimIndent(),
-                UUID.randomUUID(), subscription.endpointId, serialized.eventId, serialized.eventType, serialized.eventVersion,
-                sha256(serialized.bodyJson), serialized.bodyJson, Timestamp.from(now), Timestamp.from(now), Timestamp.from(now),
-            )
+                { row, _ -> row.getString(1) },
+                deliveryId, subscription.endpointId, subscription.endpointVersion, serialized.eventId, serialized.eventType, serialized.eventVersion,
+                "0".repeat(64), serialized.bodyJson, Timestamp.from(now), Timestamp.from(now), Timestamp.from(now),
+            ).singleOrNull()
+            if (storedPayload != null) {
+                jdbc.update("update webhook_deliveries set payload_checksum = ? where id = ?", sha256(storedPayload), deliveryId)
+                created += 1
+            }
         }
         return created
     }
 
-    private data class Subscription(val endpointId: UUID, val payloadPolicy: WebhookPayloadPolicy)
+    private data class Subscription(val endpointId: UUID, val payloadPolicy: WebhookPayloadPolicy, val endpointVersion: Long)
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 }
 

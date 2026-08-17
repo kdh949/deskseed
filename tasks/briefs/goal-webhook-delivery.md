@@ -37,6 +37,12 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 - HMAC is `v1=base64(HMAC-SHA256(timestamp + "." + rawBody))`; raw secrets, request body and response body never enter audit or ordinary logs.
 - Admin mutation or required audit persistence failure returns a typed failure and rolls back the mutation. Delivery failures update their own durable state.
 
+## Threat model and abuse cases
+
+- A malicious ADMIN-configured endpoint must not become an SSRF primitive: HTTPS, normalized hostname, endpoint-scoped policy, all-address validation, DNS-pinned transport and redirect refusal are required on create, update, test and delivery paths.
+- A receiver must not be able to forge or replay a delivery without the one-time secret: stable IDs, timestamped HMAC over the exact sent body, constant-time verification support and rotation overlap are retained; raw secret/body never enter audit or ordinary logs.
+- A failing receiver must not block a ticket command or starve unrelated endpoints: event materialization commits first, lease/fan-out are separate, global/per-endpoint admission is bounded, and retry/circuit/dead-letter state lives in PostgreSQL.
+
 ## Validation
 
 - Focused deterministic HMAC/SSRF unit tests before persistence.
@@ -46,7 +52,8 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 ### Executed evidence
 
 - Passed: `./gradlew --no-daemon test --tests dev.deskseed.webhook.WebhookSecurityContractTest --tests dev.deskseed.webhook.internal.WebhookOutboxMaterializerIntegrationTest --tests dev.deskseed.architecture.ArchitectureTest`
-- Not run yet: delivery lease recovery, retry/backoff, circuit, HTTP receiver, real-stack and frontend Storybook checks. The Storybook MCP is unavailable in this session, so no undocumented UI contract has been inferred.
+- Passed: `./gradlew --no-daemon test --tests dev.deskseed.webhook.internal.WebhookDeliveryWorkerIntegrationTest --tests dev.deskseed.webhook.internal.WebhookOutboxMaterializerIntegrationTest --tests dev.deskseed.staffaccess.internal.AdminWebhookIntegrationTest --tests dev.deskseed.webhook.WebhookSecurityContractTest --tests dev.deskseed.architecture.ArchitectureTest`
+- Not run: real non-loopback receiver, redirect/DNS-pinning end-to-end, load/performance, full backend suite, remote CI for the current head, and frontend Storybook checks. The Storybook MCP is unavailable in this session, so no undocumented UI contract has been inferred.
 
 ## Compatibility and migration
 

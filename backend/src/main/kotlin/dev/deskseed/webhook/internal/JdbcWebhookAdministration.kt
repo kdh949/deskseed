@@ -206,7 +206,7 @@ internal class JdbcWebhookAdministration(
         val endpoint = findEndpoint(endpointId, locked = true)
         if (!endpoint.enabled) throw WebhookConflictException("WEBHOOK_ENDPOINT_DISABLED")
         val now = Instant.now(clock)
-        val view = insertDelivery(endpointId, UUID.randomUUID(), "webhook.test", 1, "{}", now)
+        val view = insertDelivery(endpointId, endpoint.version, UUID.randomUUID(), "webhook.test", 1, "{}", now)
         appendAudit("WEBHOOK_TEST_DELIVERY_REQUESTED", endpointId, actor, emptyMap(), now)
         return view
     }
@@ -312,6 +312,7 @@ internal class JdbcWebhookAdministration(
 
     private fun insertDelivery(
         endpointId: UUID,
+        endpointVersion: Long,
         eventId: UUID,
         eventType: String,
         eventVersion: Int,
@@ -322,11 +323,11 @@ internal class JdbcWebhookAdministration(
         jdbc.update(
             """
             insert into webhook_deliveries (
-                id, endpoint_id, event_id, event_type, event_version, payload_checksum, payload_json, status,
+                id, endpoint_id, endpoint_version, event_id, event_type, event_version, payload_checksum, payload_json, status,
                 attempt_count, next_attempt_at, lease_owner, lease_expires_at, error_category, created_at, updated_at, completed_at, version
-            ) values (?, ?, ?, ?, ?, ?, cast(? as jsonb), 'PENDING', 0, ?, null, null, null, ?, ?, null, 0)
+            ) values (?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), 'PENDING', 0, ?, null, null, null, ?, ?, null, 0)
             """.trimIndent(),
-            id, endpointId, eventId, eventType, eventVersion, sha256(payload), payload, Timestamp.from(now), Timestamp.from(now), Timestamp.from(now),
+            id, endpointId, endpointVersion, eventId, eventType, eventVersion, sha256(payload), payload, Timestamp.from(now), Timestamp.from(now), Timestamp.from(now),
         )
         return getDelivery(endpointId, id)
     }
