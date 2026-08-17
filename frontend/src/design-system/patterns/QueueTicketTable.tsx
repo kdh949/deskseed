@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { DeskseedIcon } from '../primitives/DeskseedIcon'
 import { DsStatusIndicator } from '../primitives/DeskseedPrimitives'
+import { FirstReplySlaIndicator } from '../components/FirstReplySlaIndicator'
+import type { FirstReplySlaBadge } from '../../api/types'
 
 export type QueueTicketTableItem = {
   assignee: string
@@ -8,6 +10,7 @@ export type QueueTicketTableItem = {
   isChild?: boolean
   priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
   requester: string
+  sla?: FirstReplySlaBadge | null
   status: 'NEW' | 'OPEN' | 'PENDING' | 'ON_HOLD' | 'SOLVED' | 'CLOSED'
   subject: string
   ticketNumber: number
@@ -20,6 +23,7 @@ export type QueueTicketSortKey =
   | 'group'
   | 'priority'
   | 'requester'
+  | 'sla'
   | 'status'
   | 'subject'
   | 'ticketNumber'
@@ -37,6 +41,7 @@ const sortableColumns: Array<{ key: QueueTicketSortKey; label: string }> = [
   { key: 'priority', label: '우선순위' },
   { key: 'group', label: '그룹' },
   { key: 'assignee', label: '담당자' },
+  { key: 'sla', label: '최초 답변 SLA' },
   { key: 'updatedAt', label: '최근 업데이트' },
   { key: 'subject', label: '제목' },
 ]
@@ -164,7 +169,9 @@ export function QueueTicketTable({
                     ? 'ds-queue-ticket-assignee-column'
                     : column.key === 'subject'
                       ? 'ds-queue-ticket-subject-column'
-                      : undefined
+                      : column.key === 'sla'
+                        ? 'ds-queue-ticket-sla-column'
+                        : undefined
               return (
                 <th
                   aria-sort={active ? sort.direction : 'none'}
@@ -241,6 +248,9 @@ export function QueueTicketTable({
                 <td className="ds-queue-ticket-assignee-column">
                   {item.assignee}
                 </td>
+                <td className="ds-queue-ticket-sla-column">
+                  <FirstReplySlaIndicator sla={item.sla ?? null} />
+                </td>
                 <td>{item.updatedLabel}</td>
                 <td className="ds-queue-ticket-subject-column">
                   <a
@@ -279,7 +289,9 @@ function sortQueueTicketItems(
   const getValue = (item: QueueTicketTableItem) =>
     sort.key === 'updatedAt'
       ? (item.updatedAt ?? item.updatedLabel)
-      : item[sort.key]
+      : sort.key === 'sla'
+        ? `${item.sla?.state ?? ''}:${item.sla?.dueAt ?? ''}`
+        : item[sort.key]
 
   return [...items].sort((left, right) => {
     const leftValue = getValue(left)

@@ -1,5 +1,6 @@
 export * from './components/Feedback'
 export * from './components/DsDrawer'
+export * from './components/FirstReplySlaIndicator'
 export * from './components/StatusBadge'
 export * from './patterns/QueueTicketTable'
 export * from './patterns/ViewNavigation'

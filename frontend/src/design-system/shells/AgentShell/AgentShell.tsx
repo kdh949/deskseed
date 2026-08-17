@@ -9,6 +9,12 @@ import {
 
 const navigationItems = [
   { id: 'views', icon: 'inbox' as const, label: 'Views', to: '/agent/views' },
+  {
+    id: 'search',
+    icon: 'search' as const,
+    label: 'Search',
+    to: '/agent/search',
+  },
 ]
 
 type AgentNavigationItemId = (typeof navigationItems)[number]['id']

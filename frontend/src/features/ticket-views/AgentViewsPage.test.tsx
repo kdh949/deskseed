@@ -114,10 +114,65 @@ function mockReadApi(
   page = ticketPage(),
   error?: { body: unknown; status: number },
 ) {
-  return vi.fn((input: RequestInfo | URL) => {
+  let serverViews = [...views]
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url.endsWith('/api/v1/agent/views'))
-      return Promise.resolve(jsonResponse(views))
+    const method = init?.method ?? 'GET'
+    if (url.endsWith('/api/v1/agent/assignment-options'))
+      return Promise.resolve(jsonResponse({ groups: [] }))
+    if (url.endsWith('/api/v1/agent/csrf'))
+      return Promise.resolve(
+        jsonResponse({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+      )
+    if (url.endsWith('/api/v1/agent/views/preview'))
+      return Promise.resolve(
+        jsonResponse({ items: [], ticketCount: 2, sort: viewContract.sort }),
+      )
+    if (url.endsWith('/api/v1/agent/views/reorder')) {
+      const body = JSON.parse(String(init?.body))
+      serverViews = body.viewKeys
+        .map((key: string) => serverViews.find((view) => view.key === key))
+        .filter(Boolean)
+        .concat(serverViews.filter((view) => view.scope !== body.scope))
+      return Promise.resolve(
+        jsonResponse({
+          scope: body.scope,
+          orderVersion: body.expectedOrderVersion + 1,
+          viewKeys: body.viewKeys,
+        }),
+      )
+    }
+    if (url.endsWith('/api/v1/agent/views') && method === 'POST') {
+      const body = JSON.parse(String(init?.body))
+      const created = {
+        ...viewContract,
+        ...body,
+        id: '00000000-0000-4000-8000-000000000010',
+        key: 'created-view',
+        ownerStaffId: '00000000-0000-4000-8000-000000000099',
+        active: true,
+        categoryPath: ['Views'],
+        ticketCount: 0,
+      }
+      serverViews = [...serverViews, created]
+      return Promise.resolve(jsonResponse(created, 201))
+    }
+    if (url.endsWith('/api/v1/agent/views') && method === 'GET')
+      return Promise.resolve(jsonResponse(serverViews))
+    if (url.includes('/api/v1/agent/views/') && method === 'PATCH') {
+      const key = url.split('/').at(-1)
+      const body = JSON.parse(String(init?.body))
+      const current = serverViews.find((view) => view.key === key)!
+      const updated = {
+        ...current,
+        ...body,
+        definitionVersion: current.definitionVersion + 1,
+      }
+      serverViews = serverViews.map((view) =>
+        view.key === key ? updated : view,
+      )
+      return Promise.resolve(jsonResponse(updated))
+    }
     if (
       url.includes('/api/v1/agent/views/') &&
       url.split('?')[0]?.endsWith('/tickets')
@@ -259,22 +314,17 @@ describe('AgentViewsPage', () => {
     ).toBe(false)
   })
 
-  it('creates a local personal view without executing a new server view query', async () => {
+  it('creates a server-backed personal view and opens its queue', async () => {
     const user = userEvent.setup()
     const fetchMock = mockReadApi()
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage('/agent/views/my-open')
     await screen.findByRole('table', { name: '내 티켓 티켓' })
-    const ticketRequestCountBeforeCreate = ticketRequestUrls(fetchMock).length
-
     await user.click(screen.getByRole('button', { name: '새 보기 만들기' }))
     const dialog = await screen.findByRole('dialog', {
-      name: '새 개인 보기 만들기',
+      name: '새 보기 만들기',
     })
-    await user.click(
-      within(dialog).getByRole('button', { name: '보기 만들기' }),
-    )
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '보기 이름을 입력하세요.',
     )
@@ -284,20 +334,22 @@ describe('AgentViewsPage', () => {
       '검토 전용 보기',
     )
     await user.click(
-      within(dialog).getByRole('button', { name: '중요 아이콘 선택' }),
-    )
-    await user.click(
       within(dialog).getByRole('button', { name: '보기 만들기' }),
     )
 
     expect(
-      await screen.findByRole('heading', {
-        name: '아직 연결된 티켓 조건이 없습니다.',
-      }),
+      await screen.findByRole('heading', { name: '검토 전용 보기' }),
     ).toBeVisible()
-    expect(screen.getByRole('link', { name: '검토 전용 보기' })).toBeVisible()
-    expect(ticketRequestUrls(fetchMock)).toHaveLength(
-      ticketRequestCountBeforeCreate,
+    expect(screen.getByRole('link', { name: /검토 전용 보기/ })).toBeVisible()
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith('/api/v1/agent/views') &&
+          init?.method === 'POST',
+      ),
+    ).toBe(true)
+    expect(ticketRequestUrls(fetchMock).at(-1)).toContain(
+      '/agent/views/created-view/tickets',
     )
   })
 
@@ -326,9 +378,10 @@ describe('AgentViewsPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('keeps shared views read-only and saves personal name, icon, and order only on confirmation', async () => {
+  it('updates a personal definition with expectedVersion and reorders only on confirmation', async () => {
     const user = userEvent.setup()
-    vi.stubGlobal('fetch', mockReadApi())
+    const fetchMock = mockReadApi()
+    vi.stubGlobal('fetch', fetchMock)
 
     renderPage('/agent/views/follow-up')
     await screen.findByRole('table', { name: '내가 팔로우 중인 티켓 티켓' })
@@ -339,7 +392,9 @@ describe('AgentViewsPage', () => {
     await user.click(
       screen.getByRole('button', { name: '내가 팔로우 중인 티켓 편집' }),
     )
-    let dialog = await screen.findByRole('dialog', { name: '개인 보기 편집' })
+    let dialog = await screen.findByRole('dialog', {
+      name: '내가 팔로우 중인 티켓 편집',
+    })
     await user.click(within(dialog).getByRole('button', { name: '아래로' }))
     await user.click(within(dialog).getByRole('button', { name: '취소' }))
     const linksAfterCancel = screen
@@ -356,14 +411,13 @@ describe('AgentViewsPage', () => {
     await user.click(
       screen.getByRole('button', { name: '내가 팔로우 중인 티켓 편집' }),
     )
-    dialog = await screen.findByRole('dialog', { name: '개인 보기 편집' })
+    dialog = await screen.findByRole('dialog', {
+      name: '내가 팔로우 중인 티켓 편집',
+    })
     await user.clear(within(dialog).getByRole('textbox', { name: '보기 이름' }))
     await user.type(
       within(dialog).getByRole('textbox', { name: '보기 이름' }),
       '검토 예정',
-    )
-    await user.click(
-      within(dialog).getByRole('button', { name: '북마크 아이콘 선택' }),
     )
     await user.click(within(dialog).getByRole('button', { name: '아래로' }))
     await user.click(within(dialog).getByRole('button', { name: '변경 저장' }))
@@ -379,6 +433,15 @@ describe('AgentViewsPage', () => {
     ).toBeLessThan(
       personalLinks.findIndex((label) => label?.startsWith('검토 예정')),
     )
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith('/api/v1/agent/views/follow-up') &&
+        init?.method === 'PATCH',
+    )
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
+      expectedVersion: 1,
+      name: '검토 예정',
+    })
   })
 
   it('distinguishes empty, denied, and failed queues with safe recovery states', async () => {
