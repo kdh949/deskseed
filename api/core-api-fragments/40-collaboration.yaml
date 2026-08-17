@@ -174,6 +174,21 @@ paths:
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
 components:
+  x-deskseed-realtime-protocol-v1:
+    endpoint: /ws/agent/collaboration
+    description: 인증된 staff session이 같은 출처에서 연결하는 version 1 협업 WebSocket 계약입니다. 연결과 재연결마다 세션·Origin·티켓 읽기 권한을 다시 확인하며 INTERNAL 본문이나 고객 정보는 메시지에 넣지 않습니다.
+    clientMessage:
+      $ref: '#/components/schemas/CollaborationRealtimeClientMessage'
+    serverMessage:
+      $ref: '#/components/schemas/CollaborationRealtimeServerMessage'
+    limits:
+      maxMessageBytes: 4096
+      maxMessagesPerMinute: 120
+      heartbeatSeconds: 20
+      staleAfterSeconds: 60
+    reconnect:
+      description: 연결 실패, 권한 변경 또는 protocol error 뒤 클라이언트는 새 handshake로 재연결하며 기존 subscribe 권한을 가정하지 않습니다.
+      retryableErrorCodes: [RATE_LIMITED, TRANSIENT_UNAVAILABLE]
   responses:
     TicketDraftConflictOrStaffSessionActorMismatch:
       description: 초안 버전 충돌 또는 브라우저가 확인한 actor와 인증 세션 주체가 다른 경우의 RFC 9457 응답입니다.
@@ -204,6 +219,196 @@ components:
       schema:
         $ref: '#/components/schemas/TicketDraftChannel'
   schemas:
+    CollaborationRealtimeClientMessage:
+      oneOf:
+        - $ref: '#/components/schemas/CollaborationSubscribeMessage'
+        - $ref: '#/components/schemas/CollaborationUnsubscribeMessage'
+        - $ref: '#/components/schemas/CollaborationHeartbeatMessage'
+        - $ref: '#/components/schemas/CollaborationPresenceStateMessage'
+      discriminator:
+        propertyName: type
+      description: 한 authenticated staff 브라우저가 협업 socket으로 보내는 bounded version 1 명령입니다. 각 ticket subscribe는 별도 읽기 권한을 확인하고 heartbeat는 해당 연결의 presence TTL만 연장합니다.
+    CollaborationSubscribeMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: subscribe
+        ticketNumber:
+          type: integer
+          minimum: 1
+      description: 현재 연결을 읽기 권한이 있는 하나의 ticket presence channel에 구독시키는 명령입니다.
+    CollaborationUnsubscribeMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: unsubscribe
+        ticketNumber:
+          type: integer
+          minimum: 1
+      description: 현재 연결의 한 ticket presence 구독을 종료하고 해당 ticket delta 수신을 멈추는 명령입니다.
+    CollaborationHeartbeatMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: heartbeat
+      description: 현재 연결이 유지 중인 모든 presence 구독의 마지막 활동 시각을 갱신하는 명령입니다.
+    CollaborationPresenceStateMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, state]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: presence.state
+        ticketNumber:
+          type: integer
+          minimum: 1
+        state:
+          $ref: '#/components/schemas/TicketPresenceState'
+      description: 현재 연결이 구독한 ticket에서 advisory viewing 또는 작성 상태를 바꾸는 명령이며 ticket lock이나 mutation 권한을 뜻하지 않습니다.
+    CollaborationRealtimeServerMessage:
+      oneOf:
+        - $ref: '#/components/schemas/TicketPresenceSnapshotMessage'
+        - $ref: '#/components/schemas/TicketPresenceDeltaMessage'
+        - $ref: '#/components/schemas/TicketCommittedUpdateMessage'
+        - $ref: '#/components/schemas/CollaborationRealtimeErrorMessage'
+      discriminator:
+        propertyName: type
+      description: 서버가 현재 권한 있는 구독자에게 보내는 version 1 협업 알림입니다. comment body, customer 정보, credential, connection ID는 포함하지 않습니다.
+    TicketPresenceState:
+      type: string
+      enum: [VIEWING, EDITING_PUBLIC, EDITING_INTERNAL, AWAY]
+      description: 상담사의 현재 화면 활동을 나타내는 advisory 상태이며 ticket 잠금이나 동시성 보장을 대체하지 않습니다.
+    TicketPresenceMember:
+      type: object
+      additionalProperties: false
+      required: [staffId, displayName, state, lastSeenAt]
+      properties:
+        staffId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          maxLength: 120
+        state:
+          $ref: '#/components/schemas/TicketPresenceState'
+        lastSeenAt:
+          type: string
+          format: date-time
+      description: 한 ticket을 보는 authenticated staff의 최소 표시 정보입니다. 연결 ID, 이메일, customer 정보와 작성 본문은 노출하지 않습니다.
+    TicketPresenceSnapshotMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, members]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: presence.snapshot
+        ticketNumber:
+          type: integer
+          minimum: 1
+        members:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketPresenceMember'
+      description: subscribe 성공 직후 해당 ticket에 남아 있는 비만료 presence를 반환하는 snapshot입니다.
+    TicketPresenceDeltaMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, action, member]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: presence.delta
+        ticketNumber:
+          type: integer
+          minimum: 1
+        action:
+          type: string
+          enum: [JOINED, UPDATED, LEFT, EXPIRED]
+        member:
+          $ref: '#/components/schemas/TicketPresenceMember'
+      description: 한 authenticated staff의 join, 상태 변경, disconnect 또는 TTL 만료를 알리는 ticket 범위 delta입니다.
+    TicketCommittedUpdateMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, ticketVersion, changedFields, occurredAt]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: ticket.updated
+        ticketNumber:
+          type: integer
+          minimum: 1
+        ticketVersion:
+          type: integer
+          minimum: 1
+        changedFields:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[a-z][a-zA-Z0-9]{0,63}$'
+        actorStaffId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+      description: ticket command commit 뒤 발행되는 safe stale 알림입니다. changedFields는 허용된 field 이름만 포함하며 comment body나 고객 데이터는 전달하지 않습니다.
+    CollaborationRealtimeErrorMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, code, retryable]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: error
+        code:
+          type: string
+          enum: [UNAUTHORIZED, FORBIDDEN, INVALID_MESSAGE, MESSAGE_TOO_LARGE, RATE_LIMITED, TRANSIENT_UNAVAILABLE]
+        retryable:
+          type: boolean
+        retryAfterMs:
+          type: integer
+          minimum: 0
+          maximum: 60000
+      description: socket을 닫거나 현재 요청만 거부할 때 body나 authorization detail을 노출하지 않고 보내는 오류입니다.
     TicketDraftChannel:
       type: string
       enum: [PUBLIC_REPLY, INTERNAL_NOTE]
