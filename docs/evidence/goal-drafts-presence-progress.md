@@ -50,3 +50,9 @@ An authorized staff member writes a PUBLIC reply or INTERNAL note, leaves the wo
 - Presence, collision WebSocket protocol, remote ticket update notifications, and user-visible multi-device conflict choice are not in D1; they remain on the second stacked branch.
 - This migration is additive V70 only. Rollback is forward-fix or operational disablement of the API/client path; applied Flyway history is never edited or deleted.
 - No Redis, broker, iframe, or multi-instance coordination is introduced.
+
+## D2: presence and collision contract
+
+- `api/core-api-fragments/40-collaboration.yaml` now owns a version 1 WebSocket protocol for authenticated staff presence, bounded client messages, safe snapshots/deltas, and after-commit stale notifications.
+- The contract reserves an Origin-checked `/ws/agent/collaboration` endpoint, 4 KiB message limit, 120 messages/minute, 20-second heartbeat, and 60-second stale timeout. It deliberately excludes customer connections, comment bodies, customer data, credentials, and server-only connection IDs.
+- `REQ-COL-002` is `BLUEPRINT_READY` until the security handshake, ticket authorization, in-memory single-instance boundary, after-commit publisher, extension-slot UI, and real-stack tests land.

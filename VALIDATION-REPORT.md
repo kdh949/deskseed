@@ -31,7 +31,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Markdown Files: 226
 - Openapi Operations: 156
 - Openapi Paths: 124
-- Requirement Definitions: 96
+- Requirement Definitions: 97
 - Staff Actor Blueprint Operations: 3
 - Staff Actor Bound Operations: 120
 - Staff Csrf Bound Operations: 74
