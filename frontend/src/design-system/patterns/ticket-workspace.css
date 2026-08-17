@@ -584,6 +584,46 @@
   border-bottom: 1px solid var(--ds-border-default);
 }
 
+.external-reference-list {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.external-reference-list li,
+.external-reference-list li > div,
+.external-reference-form,
+.external-reference-form label {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+}
+
+.external-reference-list li {
+  padding: var(--ds-ref-space-2);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+}
+
+.external-reference-list li > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.external-reference-list span,
+.external-reference-list small {
+  color: var(--ds-foreground-subtle);
+}
+
+.external-reference-form input {
+  min-height: var(--ds-ref-control-default);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+  padding: 0 var(--ds-ref-space-2);
+  font: inherit;
+}
+
 .context-section h2 {
   margin: 0;
   font-size: var(--ds-ref-font-size-sm);

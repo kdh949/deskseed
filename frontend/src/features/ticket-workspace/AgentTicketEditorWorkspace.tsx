@@ -12,6 +12,7 @@ import {
   DsButton,
   DsPropertyField,
   DsTabs,
+  FirstReplySlaIndicator,
   Notification,
   RetryButton,
   ScreenState,
@@ -19,6 +20,7 @@ import {
 } from '../../design-system'
 import type { EditableTicketFields } from './model/ticketEditorModel'
 import { useTicketEditor } from './model/useTicketEditor'
+import { TicketContextPanel, type ContextTab } from './TicketContextPanel'
 
 const STATUS_LABELS: Record<AgentTicketStatus, string> = {
   NEW: '신규',
@@ -168,6 +170,7 @@ function WorkspaceLayout({
   onRefresh?: () => void
   properties: ReactNode
 }) {
+  const [contextTab, setContextTab] = useState<ContextTab>('customer')
   return (
     <main
       aria-label={`티켓 #${detail.ticket.ticketNumber} 작업 공간`}
@@ -180,7 +183,11 @@ function WorkspaceLayout({
         <TicketHeader detail={detail} onRefresh={onRefresh} />
         {children}
       </section>
-      <CustomerContext detail={detail} />
+      <TicketContextPanel
+        activeTab={contextTab}
+        detail={detail}
+        onTabChange={setContextTab}
+      />
     </main>
   )
 }
@@ -209,6 +216,7 @@ function TicketHeader({
         </div>
       </div>
       <div className="ticket-heading-actions">
+        <FirstReplySlaIndicator detail sla={detail.ticket.sla} />
         <StatusBadge status={detail.ticket.status} />
         {onRefresh ? (
           <DsButton onClick={onRefresh} tone="secondary">
@@ -652,29 +660,6 @@ function ConflictResolution({
         </ol>
       )}
     </div>
-  )
-}
-
-function CustomerContext({ detail }: { detail: AgentTicketDetail }) {
-  const customer = detail.context.customer
-  return (
-    <aside aria-label="고객 정보" className="agent-ticket-editor-context">
-      <h2>고객 정보</h2>
-      {customer ? (
-        <dl>
-          <div>
-            <dt>이름</dt>
-            <dd>{customer.displayName}</dd>
-          </div>
-          <div>
-            <dt>이메일</dt>
-            <dd>{customer.email}</dd>
-          </div>
-        </dl>
-      ) : (
-        <p>연결된 고객 정보가 없습니다.</p>
-      )}
-    </aside>
   )
 }
 

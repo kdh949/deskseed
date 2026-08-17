@@ -1,7 +1,10 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect } from 'storybook/test'
+import { HttpResponse, http } from 'msw'
 import type { AgentTicketDetail } from '../../api/types'
-import { TicketContextPanel } from './TicketContextPanel'
+import { TicketContextPanel, type ContextTab } from './TicketContextPanel'
 
 const meta = {
   title: '06 Domain & Workspace/TicketContextPanel',
@@ -40,11 +43,61 @@ export const Activity: Story = {
   render: () => <ContextExample initialTab="activity" />,
 }
 
-function ContextExample({
-  initialTab,
-}: {
-  initialTab: 'customer' | 'related' | 'activity'
-}) {
+export const ExternalReferences: Story = {
+  args: baseArgs,
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/agent/tickets/1042/external-references', () =>
+          HttpResponse.json({
+            ticketVersion: 4,
+            canManage: true,
+            availableSystems: [externalSystem],
+            items: [
+              {
+                  id: '11111111-1111-4111-8111-111111111111',
+                system: externalSystem,
+                objectType: 'ORDER',
+                externalId: 'ORD-2026-0042',
+                displayLabel: '결제 주문 42',
+                linkState: 'AVAILABLE',
+                safeDeepLink: 'https://orders.example.test/orders/42',
+                metadata: { state: 'PAID' },
+                metadataObservedAt: '2026-08-17T03:10:00Z',
+                createdBy: {
+                    actorId: '22222222-2222-4222-8222-222222222222',
+                  displayName: 'Mina Park',
+                },
+                createdAt: '2026-08-17T03:11:00Z',
+              },
+            ],
+          }),
+        ),
+      ],
+    },
+  },
+  render: () => (
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <ContextExample initialTab="external" />
+    </QueryClientProvider>
+  ),
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('결제 주문 42')).toBeVisible()
+    await expect(canvas.getByText(/ACTIVE · AVAILABLE/)).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '새 탭에서 열기' }),
+    ).toBeEnabled()
+    await expect(
+      canvas.getByRole('heading', { name: '외부 참조 추가' }),
+    ).toBeVisible()
+  },
+}
+
+function ContextExample({ initialTab }: { initialTab: ContextTab }) {
   const [activeTab, setActiveTab] = useState(initialTab)
   return (
     <TicketContextPanel
@@ -111,4 +164,15 @@ const detailFixture: AgentTicketDetail = {
     version: 4,
   },
   warnings: [],
+}
+
+const externalSystem = {
+  id: '33333333-3333-4333-8333-333333333333',
+  systemKey: 'orders',
+  displayName: 'Order Console',
+  status: 'ACTIVE' as const,
+  allowedHostnames: ['orders.example.test'],
+  createdAt: '2026-08-01T00:00:00Z',
+  updatedAt: '2026-08-10T00:00:00Z',
+  version: 2,
 }
