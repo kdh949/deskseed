@@ -199,7 +199,7 @@ describe('customer portal API adapter', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(new Blob(['safe-bytes']), {
+        new Response('safe-bytes', {
           status: 200,
           headers: {
             'Content-Type': 'application/octet-stream',
@@ -215,7 +215,7 @@ describe('customer portal API adapter', () => {
       '55555555-5555-4555-8555-555555555555',
     )
 
-    expect(result.content).toBeInstanceOf(Blob)
+    expect(await result.content.text()).toBe('safe-bytes')
     expect(result.contentType).toBe('application/octet-stream')
     expect(result.fileName).toBe('approval-history.pdf')
   })

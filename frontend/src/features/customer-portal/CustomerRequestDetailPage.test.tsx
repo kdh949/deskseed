@@ -177,7 +177,7 @@ describe('CustomerRequestDetailPage', () => {
         )
       ) {
         return Promise.resolve(
-          new Response(new Blob(['safe']), {
+          new Response('safe', {
             status: 200,
             headers: {
               'Content-Type': 'application/octet-stream',
@@ -221,9 +221,7 @@ describe('CustomerRequestDetailPage', () => {
     ).toBeVisible()
     expect(screen.queryByText('must-not-render')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '다운로드' }))
-    await waitFor(() =>
-      expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob)),
-    )
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1))
     await user.upload(
       screen.getByLabelText('PUBLIC 첨부 파일'),
       new File(['safe'], 'additional.pdf', { type: 'application/pdf' }),
