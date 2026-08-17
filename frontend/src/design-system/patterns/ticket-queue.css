@@ -216,6 +216,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ds-view-navigation-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-ref-space-1);
+  white-space: nowrap;
+}
+
 .ds-view-navigation li > a:hover {
   background: var(--ds-background-hover);
 }
@@ -322,6 +329,15 @@
   color: var(--ds-foreground-muted);
   font-size: var(--ds-ref-font-size-sm);
   font-variant-numeric: tabular-nums;
+}
+
+.agent-queue-view-description {
+  max-width: 68ch;
+  margin: var(--ds-ref-space-2) 0 0;
+  color: var(--ds-foreground-subtle);
+  font-size: var(--ds-ref-font-size-sm);
+  line-height: var(--ds-ref-line-height-sm);
+  white-space: pre-wrap;
 }
 
 .agent-queue-filter-trigger {
@@ -771,7 +787,8 @@
   font-weight: var(--ds-ref-font-weight-semibold);
 }
 
-.view-configuration-field input {
+.view-configuration-field input,
+.view-configuration-field textarea {
   width: 100%;
   min-height: var(--ds-ref-control-default);
   box-sizing: border-box;
@@ -784,7 +801,14 @@
   font-weight: var(--ds-ref-font-weight-regular);
 }
 
+.view-configuration-field textarea {
+  min-height: calc(var(--ds-ref-control-default) * 2);
+  padding: var(--ds-ref-space-2);
+  resize: vertical;
+}
+
 .view-configuration-field input:focus-visible,
+.view-configuration-field textarea:focus-visible,
 .view-icon-picker button:focus-visible,
 .ds-view-navigation-create:focus-visible,
 .ds-view-navigation li > a:focus-visible {
@@ -796,6 +820,11 @@
   color: var(--ds-foreground-danger);
   font-size: var(--ds-ref-font-size-xs);
   font-weight: var(--ds-ref-font-weight-regular);
+}
+
+.view-configuration-field .view-configuration-field-hint {
+  color: var(--ds-foreground-muted);
+  text-align: right;
 }
 
 .view-configuration-conditions,

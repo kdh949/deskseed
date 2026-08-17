@@ -6,6 +6,7 @@ import { DsIconButton } from '../primitives/DeskseedPrimitives'
 
 export type ViewNavigationItem = {
   count?: number | null
+  countAsOf?: string | null
   editable?: boolean
   icon: IconName
   iconTone?: 'danger' | 'success' | 'warning'
@@ -68,7 +69,19 @@ export function ViewNavigation({
                       </span>
                       <span>{item.label}</span>
                       {item.count !== null && item.count !== undefined ? (
-                        <small>{item.count}</small>
+                        <small className="ds-view-navigation-count">
+                          <span>
+                            티켓 {item.count.toLocaleString('ko-KR')}개
+                          </span>
+                          {item.countAsOf ? (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <time dateTime={item.countAsOf}>
+                                {formatCountBasis(item.countAsOf)} 기준
+                              </time>
+                            </>
+                          ) : null}
+                        </small>
                       ) : null}
                     </NavLink>
                     {item.editable && onEditItem ? (
@@ -98,4 +111,11 @@ export function ViewNavigation({
       {footer ? <footer>{footer}</footer> : null}
     </aside>
   )
+}
+
+function formatCountBasis(value: string) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
