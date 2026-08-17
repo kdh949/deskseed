@@ -45,6 +45,56 @@ class KnowledgeContentMigrationTest {
                         """.trimIndent(),
                     )
                 }.hasMessageContaining("knowledge_article_revisions_article_id_fkey")
+
+                statement.executeUpdate(
+                    """
+                    insert into staff_accounts
+                        (id, email_normalized, email_display, display_name, role, status, password_hash, created_at, updated_at)
+                    values ('00000000-0000-0000-0000-000000000053', 'knowledge-owner@example.test',
+                            'knowledge-owner@example.test', 'Knowledge owner', 'ADMIN', 'ACTIVE', 'not-a-real-password-hash',
+                            clock_timestamp(), clock_timestamp())
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into knowledge_categories
+                        (id, slug, title, description, status, display_order, created_at, updated_at)
+                    values ('00000000-0000-0000-0000-000000000054', 'billing', 'Billing', '', 'ACTIVE', 0,
+                            clock_timestamp(), clock_timestamp())
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into knowledge_sections
+                        (id, category_id, slug, title, description, status, display_order, created_at, updated_at)
+                    values ('00000000-0000-0000-0000-000000000055', '00000000-0000-0000-0000-000000000054',
+                            'payments', 'Payments', '', 'ACTIVE', 0, clock_timestamp(), clock_timestamp())
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into knowledge_articles
+                        (id, section_id, slug, lifecycle, audience_type, author_id, created_at, updated_at)
+                    values ('00000000-0000-0000-0000-000000000056', '00000000-0000-0000-0000-000000000055',
+                            'payment-help', 'DRAFT', 'PUBLIC', '00000000-0000-0000-0000-000000000053',
+                            clock_timestamp(), clock_timestamp())
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into knowledge_article_revisions
+                        (id, article_id, revision_number, title, document_json, plain_text, content_checksum,
+                         created_by_staff_id, created_at)
+                    values ('00000000-0000-0000-0000-000000000057', '00000000-0000-0000-0000-000000000056', 1,
+                            'Payment help', '{"schemaVersion": 1, "blocks": [{"type":"paragraph","text":"Use card"}]}'::jsonb,
+                            E'Use card\\nSafely', repeat('b', 64), '00000000-0000-0000-0000-000000000053', clock_timestamp())
+                    """.trimIndent(),
+                )
+                assertThatThrownBy {
+                    statement.executeUpdate(
+                        "update knowledge_article_revisions set title = 'Mutated' where id = '00000000-0000-0000-0000-000000000057'",
+                    )
+                }.hasMessageContaining("Knowledge article revisions are immutable")
             }
         }
     }
