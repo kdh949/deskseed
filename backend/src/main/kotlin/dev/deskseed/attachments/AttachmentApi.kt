@@ -106,7 +106,7 @@ interface AttachmentDownloadService {
     /** Internal lookup only; callers must authorize its returned ticket before opening bytes. */
     fun locateLinkedAttachment(attachmentId: UUID): AttachmentLinkLocator?
 
-    /** Rechecks CLEAN/link/visibility and commits required access audit before returning a private stream. */
+    /** Rechecks CLEAN/link/visibility and commits required access audit before opening or returning a private stream. */
     fun openForDownload(command: AttachmentDownloadCommand): AttachmentContent
 }
 
