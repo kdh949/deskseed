@@ -11,12 +11,15 @@ export function AttachmentList({
   download: (attachmentId: string) => Promise<AttachmentDownload>
 }) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
-  const [errorId, setErrorId] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<{
+    attachmentId: string
+    requestId?: string
+  } | null>(null)
   if (!attachments.length) return null
 
   const handleDownload = async (attachment: TicketAttachment) => {
     setDownloadingId(attachment.id)
-    setErrorId(null)
+    setDownloadError(null)
     try {
       const result = await download(attachment.id)
       const url = URL.createObjectURL(result.content)
@@ -25,8 +28,11 @@ export function AttachmentList({
       anchor.download = result.fileName ?? attachment.fileName
       anchor.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setErrorId(attachment.id)
+    } catch (error) {
+      setDownloadError({
+        attachmentId: attachment.id,
+        requestId: requestIdOf(error),
+      })
     } finally {
       setDownloadingId(null)
     }
@@ -39,9 +45,12 @@ export function AttachmentList({
           <span>
             <strong>{attachment.fileName}</strong>
             <small>{formatBytes(attachment.sizeBytes)}</small>
-            {errorId === attachment.id ? (
+            {downloadError?.attachmentId === attachment.id ? (
               <small role="alert">
                 다운로드가 거부되었거나 파일이 삭제·만료되었습니다.
+                {downloadError.requestId
+                  ? ` 요청 ID: ${downloadError.requestId}`
+                  : ''}
               </small>
             ) : null}
           </span>
@@ -56,6 +65,14 @@ export function AttachmentList({
       ))}
     </ul>
   )
+}
+
+function requestIdOf(error: unknown) {
+  if (typeof error !== 'object' || error === null) return undefined
+  const requestId = (error as { requestId?: unknown }).requestId
+  return typeof requestId === 'string' && requestId.trim()
+    ? requestId
+    : undefined
 }
 
 function formatBytes(bytes: number) {

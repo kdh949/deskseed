@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react'
-import { ApiError } from '../../api/client'
 import type { AttachmentUpload } from '../../api/types'
 import { DsButton } from '../../design-system'
 import './attachments.css'
@@ -120,7 +119,7 @@ export function AttachmentUploadField({
           )
         })
         .catch((error) => {
-          const rejected = error instanceof ApiError && error.status === 422
+          const rejected = statusOf(error) === 422
           setItems((current) =>
             current.map((item) =>
               item.key === key
@@ -230,12 +229,19 @@ function restoredItems(attachmentIds: string[]): UploadState[] {
 }
 
 function uploadFailureMessage(error: unknown) {
-  if (!(error instanceof ApiError)) return '네트워크 상태를 확인해 주세요.'
-  if (error.status === 413) return '허용된 파일 크기를 초과했습니다.'
-  if (error.status === 415) return '허용되지 않는 파일 형식입니다.'
-  if (error.status === 422) return '안전 검사를 통과하지 못했습니다.'
-  if (error.status === 403) return '업로드 권한이 없습니다.'
+  const status = statusOf(error)
+  if (status === undefined) return '네트워크 상태를 확인해 주세요.'
+  if (status === 413) return '허용된 파일 크기를 초과했습니다.'
+  if (status === 415) return '허용되지 않는 파일 형식입니다.'
+  if (status === 422) return '안전 검사를 통과하지 못했습니다.'
+  if (status === 403) return '업로드 권한이 없습니다.'
   return '파일을 다시 선택해 주세요.'
+}
+
+function statusOf(error: unknown) {
+  if (typeof error !== 'object' || error === null) return undefined
+  const status = (error as { status?: unknown }).status
+  return typeof status === 'number' ? status : undefined
 }
 
 function formatBytes(bytes: number) {
