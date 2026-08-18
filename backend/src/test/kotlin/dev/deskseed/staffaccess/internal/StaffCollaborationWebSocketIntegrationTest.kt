@@ -100,6 +100,30 @@ class StaffCollaborationWebSocketIntegrationTest {
         }
     }
 
+    @Test
+    fun `deactivated staff receives an unauthorized protocol error before socket closure`() {
+        insertStaff("revoked-presence-agent@example.com")
+        val browser = login("revoked-presence-agent@example.com")
+        val handler = RecordingWebSocketHandler()
+        val session = connect(browser.sessionCookie, handler)
+
+        try {
+            jdbc.update(
+                "update staff_accounts set status = 'DISABLED' where email_normalized = ?",
+                "revoked-presence-agent@example.com",
+            )
+            session.sendMessage(TextMessage("""{"version":1,"type":"heartbeat"}"""))
+
+            val error = handler.messages.poll(5, TimeUnit.SECONDS)
+            assertThat(error).contains("\"type\":\"error\"")
+            assertThat(error).contains("\"code\":\"UNAUTHORIZED\"")
+            assertThat(error).contains("\"retryable\":false")
+            assertThat(handler.closed.await(5, TimeUnit.SECONDS)).isTrue()
+        } finally {
+            if (session.isOpen) session.close(CloseStatus.NORMAL)
+        }
+    }
+
     private fun connect(sessionCookie: String, handler: RecordingWebSocketHandler): WebSocketSession {
         val headers = WebSocketHttpHeaders().apply {
             add(HttpHeaders.COOKIE, sessionCookie)
