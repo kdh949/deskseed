@@ -2,7 +2,7 @@ ae59a3e911f3d60018c5a9556d10d94d3e31bcb4fb1f485415c7f7c973e4d166       10242  AG
 f956527caf42b43922c62be6666e67d07c2a46e7dbaa9987d0aa327e4321cb5a        6907  CHANGELOG-v0.6.md
 b75b745d628fc422bba128c48b7833fd6f79f94dfa5d47210248a1875f4560a4        2426  CODEX_TASK_TEMPLATE.md
 e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IMPLEMENTATION-START-HERE.md
-7277c6e3862951d3940233c429a2a943867f20f0a0b3ed64aa5454a3acabd71e       18175  README.md
+144aa23362d06cc32292229ebbf5207f40381cef1a9db285da309e49376c8ea1       18177  README.md
 75f2197bb2e8620fdcc8fcd6021d568c10667cd0dc91933eba80bf5cec6a6aec         908  SECURITY.md
 2237c4385694db59ce55172dedec325ca31d8560011946544419827fa3f9994c        6279  api/api-surface-catalog-v0.6.yaml
 371da3ad399510c30ad260f41f28ec51bf22924f5b6ed52e8771c2d93108bbab        2843  api/audit-activity-event-v1.schema.json
@@ -51,7 +51,7 @@ e2a838f57a0cbf58589c1e0443808aee939b3685ef93765d34c95ecd720cea7a        7042  do
 5b7aee4d7ae31125f0b713f1cfb45712bdcd88807b6df411d7749e9367ecd38b       16553  docs/19-security-audit-center.md
 7412962184d0f03424a8e5e5e7d6c098fb8ba7a072e98052e52534766955099e        7662  docs/20-api-sdk-contract.md
 384f67495078a4077302557a87eb4d06b4743621df90710f9de5ffdb6d08851c       38700  docs/21-minimum-verification-gates.md
-e8a16860e8ba939b282edd70320ea51e113a4ef6cc9176f45aceae3d915a3cb4        5982  docs/22-spring-initializr-and-dependencies.md
+efd41a232545bf4c22801850ee29fee2cb6e15301d4fe23ad14a505682f21f04        7708  docs/22-spring-initializr-and-dependencies.md
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 8e7d0a7a35381c263d0cbe1fd2202e841afa2adfbe99737adb97625f163e9b98        9156  docs/25-implementation-decision-register.md
