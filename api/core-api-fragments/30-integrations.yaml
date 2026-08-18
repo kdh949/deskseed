@@ -266,7 +266,7 @@ paths:
     get:
       operationId: getWebhookDelivery
       summary: 웹훅 delivery 상세 조회
-      description: ADMIN이 stable delivery ID의 current status와 bounded attempt metadata를 조회합니다. downstream response body와 raw header value는 반환하지 않습니다.
+      description: ADMIN이 stable delivery ID의 current status와 redacted attempt metadata를 조회합니다. payload, secret, downstream response body와 raw header value는 반환하지 않습니다.
       x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-INT-006]
       tags: [Integration Webhooks]
@@ -277,9 +277,9 @@ paths:
       - $ref: '#/components/parameters/WebhookDeliveryId'
       responses:
         '200':
-          description: response status, bounded header names, error category, latency만 포함하는 attempt history입니다.
+          description: response status, error category, latency만 포함하는 redacted attempt history입니다.
           content:
-            application/json: {schema: {$ref: '#/components/schemas/WebhookDelivery'}}
+            application/json: {schema: {$ref: '#/components/schemas/WebhookDeliveryDetail'}}
         '400': {$ref: '#/components/responses/NoStoreProblem'}
         '403': {$ref: '#/components/responses/NoStoreProblem'}
         '404': {$ref: '#/components/responses/NoStoreProblem'}
@@ -502,6 +502,28 @@ components:
         nextAttemptAt: {type: [string, 'null'], format: date-time}
         errorCategory: {type: [string, 'null'], maxLength: 100}
         createdAt: {type: string, format: date-time}
+    WebhookDeliveryDetail:
+      type: object
+      additionalProperties: false
+      required: [delivery, attempts]
+      properties:
+        delivery: {$ref: '#/components/schemas/WebhookDelivery'}
+        attempts:
+          type: array
+          items: {$ref: '#/components/schemas/WebhookDeliveryAttempt'}
+      description: endpoint delivery의 redacted activity detail입니다. payload, HMAC secret, raw request/response header와 response body를 포함하지 않습니다.
+    WebhookDeliveryAttempt:
+      type: object
+      additionalProperties: false
+      required: [attemptNumber, requestTimestamp]
+      properties:
+        attemptNumber: {type: integer, minimum: 1}
+        requestTimestamp: {type: string, format: date-time}
+        responseStatus: {type: [integer, 'null'], minimum: 100, maximum: 599}
+        latencyMillis: {type: [integer, 'null'], format: int64, minimum: 0}
+        errorCategory: {type: [string, 'null'], maxLength: 100}
+        completedAt: {type: [string, 'null'], format: date-time}
+      description: safe normalized response metadata만 포함하는 attempt projection입니다. downstream raw header/body는 표시하지 않습니다.
 tags:
 - name: Integration Clients
   description: ADMIN이 scoped Platform API client의 non-secret 운영 정책을 관리하는 contract surface입니다.

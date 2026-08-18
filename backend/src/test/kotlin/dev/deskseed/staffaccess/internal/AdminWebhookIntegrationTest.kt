@@ -82,6 +82,29 @@ class AdminWebhookIntegrationTest {
         ).andExpect(status().isAccepted).andExpect(jsonPath("$.status").value("PENDING")).andReturn().response.contentAsString
         val deliveryId = UUID.fromString(Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"").find(delivery)!!.groupValues[1])
         jdbcTemplate.update(
+            """
+            insert into webhook_delivery_attempts
+                (id, delivery_id, attempt_number, request_timestamp, response_status, response_headers_json,
+                 response_summary, latency_millis, error_category, completed_at)
+            values (?, ?, 1, now(), 503, cast(? as jsonb), ?, 42, 'HTTP_503', now())
+            """.trimIndent(),
+            UUID.randomUUID(), deliveryId, """{"authorization":"must-not-leak"}""", "receiver body must not leak",
+        )
+        val detail = mockMvc.perform(
+            get("/api/v1/admin/integrations/webhooks/{endpointId}/deliveries/{deliveryId}", endpointId, deliveryId)
+                .session(browser.session),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.delivery.id").value(deliveryId.toString()))
+            .andExpect(jsonPath("$.attempts[0].attemptNumber").value(1))
+            .andExpect(jsonPath("$.attempts[0].responseStatus").value(503))
+            .andExpect(jsonPath("$.attempts[0].latencyMillis").value(42))
+            .andExpect(jsonPath("$.attempts[0].responseSummary").doesNotExist())
+            .andExpect(jsonPath("$.attempts[0].responseHeaders").doesNotExist())
+            .andReturn().response.contentAsString
+        assertThat(detail).doesNotContain("must-not-leak", "receiver body must not leak")
+        jdbcTemplate.update(
             "update webhook_deliveries set status = 'DEAD_LETTERED', next_attempt_at = null, completed_at = now() where id = ?",
             deliveryId,
         )

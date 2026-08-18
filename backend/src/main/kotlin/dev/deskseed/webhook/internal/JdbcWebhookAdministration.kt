@@ -13,6 +13,8 @@ import dev.deskseed.webhook.UpdateWebhookEndpointCommand
 import dev.deskseed.webhook.WebhookAdministration
 import dev.deskseed.webhook.WebhookConflictException
 import dev.deskseed.webhook.WebhookDeliveryNotFoundException
+import dev.deskseed.webhook.WebhookDeliveryAttemptView
+import dev.deskseed.webhook.WebhookDeliveryDetailView
 import dev.deskseed.webhook.WebhookDeliveryStatus
 import dev.deskseed.webhook.WebhookDeliveryView
 import dev.deskseed.webhook.WebhookEndpointIssue
@@ -227,6 +229,32 @@ internal class JdbcWebhookAdministration(
         "select * from webhook_deliveries where endpoint_id = ? and id = ?",
         { row, _ -> row.toDelivery() }, endpointId, deliveryId,
     ).singleOrNull() ?: throw WebhookDeliveryNotFoundException()
+
+    @PreAuthorize("hasAuthority('$WEBHOOK_MANAGE_AUTHORITY')")
+    @Transactional(readOnly = true)
+    override fun getDeliveryDetail(endpointId: UUID, deliveryId: UUID): WebhookDeliveryDetailView {
+        val delivery = getDelivery(endpointId, deliveryId)
+        val attempts = jdbc.query(
+            """
+            select attempt_number, request_timestamp, response_status, latency_millis, error_category, completed_at
+              from webhook_delivery_attempts
+             where delivery_id = ?
+             order by attempt_number desc
+            """.trimIndent(),
+            { row, _ ->
+                WebhookDeliveryAttemptView(
+                    attemptNumber = row.getInt("attempt_number"),
+                    requestTimestamp = row.getTimestamp("request_timestamp").toInstant(),
+                    responseStatus = row.getObject("response_status") as Int?,
+                    latencyMillis = row.getObject("latency_millis") as Long?,
+                    errorCategory = row.getString("error_category"),
+                    completedAt = row.getTimestamp("completed_at")?.toInstant(),
+                )
+            },
+            deliveryId,
+        )
+        return WebhookDeliveryDetailView(delivery, attempts)
+    }
 
     @PreAuthorize("hasAuthority('$WEBHOOK_MANAGE_AUTHORITY')")
     @Transactional

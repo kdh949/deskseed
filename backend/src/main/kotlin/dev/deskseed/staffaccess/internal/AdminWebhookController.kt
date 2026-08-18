@@ -9,6 +9,7 @@ import dev.deskseed.webhook.RotateWebhookSecretCommand
 import dev.deskseed.webhook.UpdateWebhookEndpointCommand
 import dev.deskseed.webhook.WebhookAdministration
 import dev.deskseed.webhook.WebhookDeliveryView
+import dev.deskseed.webhook.WebhookDeliveryDetailView
 import dev.deskseed.webhook.WebhookEndpointIssue
 import dev.deskseed.webhook.WebhookEndpointView
 import dev.deskseed.webhook.WebhookPayloadPolicy
@@ -126,9 +127,9 @@ internal class AdminWebhookController(
     fun getDelivery(
         @PathVariable endpointId: UUID,
         @PathVariable deliveryId: UUID,
-    ): ResponseEntity<WebhookDeliveryResponse> = ResponseEntity.ok()
+    ): ResponseEntity<WebhookDeliveryDetailResponse> = ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .body(administration.getDelivery(endpointId, deliveryId).toResponse())
+        .body(administration.getDeliveryDetail(endpointId, deliveryId).toResponse())
 
     @PostMapping("/{endpointId}/deliveries/{deliveryId}/replay")
     fun replay(
@@ -234,6 +235,18 @@ internal data class WebhookDeliveryResponse(
     val errorCategory: String?,
     val createdAt: Instant,
 )
+internal data class WebhookDeliveryDetailResponse(
+    val delivery: WebhookDeliveryResponse,
+    val attempts: List<WebhookDeliveryAttemptResponse>,
+)
+internal data class WebhookDeliveryAttemptResponse(
+    val attemptNumber: Int,
+    val requestTimestamp: Instant,
+    val responseStatus: Int?,
+    val latencyMillis: Long?,
+    val errorCategory: String?,
+    val completedAt: Instant?,
+)
 
 private fun WebhookEndpointView.toResponse() = WebhookEndpointResponse(
     id, name, url, enabled,
@@ -245,6 +258,19 @@ private fun WebhookEndpointView.toResponse() = WebhookEndpointResponse(
 private fun WebhookEndpointIssue.toResponse() = WebhookEndpointIssueResponse(endpoint.toResponse(), secret, secretKeyVersion)
 private fun WebhookDeliveryView.toResponse() = WebhookDeliveryResponse(
     id, eventId, endpointId, status.name, attemptCount, nextAttemptAt, errorCategory, createdAt,
+)
+private fun WebhookDeliveryDetailView.toResponse() = WebhookDeliveryDetailResponse(
+    delivery.toResponse(),
+    attempts.map { attempt ->
+        WebhookDeliveryAttemptResponse(
+            attempt.attemptNumber,
+            attempt.requestTimestamp,
+            attempt.responseStatus,
+            attempt.latencyMillis,
+            attempt.errorCategory,
+            attempt.completedAt,
+        )
+    },
 )
 private fun WebhookEndpointView.etag() = "\"webhook-v$version\""
 private fun String.version(): Long = removePrefix("\"").removeSuffix("\"").removePrefix("webhook-v").toLongOrNull()

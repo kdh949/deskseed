@@ -83,6 +83,21 @@ data class WebhookDeliveryView(
     val createdAt: Instant,
 )
 
+/** Redacted activity detail. Payload, secret, raw response headers, and response body stay server-side. */
+data class WebhookDeliveryAttemptView(
+    val attemptNumber: Int,
+    val requestTimestamp: Instant,
+    val responseStatus: Int?,
+    val latencyMillis: Long?,
+    val errorCategory: String?,
+    val completedAt: Instant?,
+)
+
+data class WebhookDeliveryDetailView(
+    val delivery: WebhookDeliveryView,
+    val attempts: List<WebhookDeliveryAttemptView>,
+)
+
 interface WebhookAdministration {
     fun list(): List<WebhookEndpointView>
     fun get(endpointId: UUID): WebhookEndpointView
@@ -93,6 +108,7 @@ interface WebhookAdministration {
     fun createTestDelivery(endpointId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookDeliveryView
     fun listDeliveries(endpointId: UUID): List<WebhookDeliveryView>
     fun getDelivery(endpointId: UUID, deliveryId: UUID): WebhookDeliveryView
+    fun getDeliveryDetail(endpointId: UUID, deliveryId: UUID): WebhookDeliveryDetailView
     fun replayDelivery(endpointId: UUID, deliveryId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookDeliveryView
 }
 

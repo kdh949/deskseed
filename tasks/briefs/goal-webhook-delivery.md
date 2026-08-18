@@ -21,7 +21,7 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 
 ## In scope
 
-- V60–V69 only, webhook endpoint/subscription/delivery/attempt durable model, HMAC signing, endpoint-scoped SSRF validation, bounded delivery/retry/dead-letter/replay, and admin API contracts.
+- V60–V69 only, webhook endpoint/subscription/delivery/attempt durable model, HMAC signing, endpoint-scoped SSRF validation, bounded delivery/retry/dead-letter/replay, redacted attempt-detail projection, and admin API contracts.
 - Existing PostgreSQL API-key, idempotency, ETag and fixed-window limiter behavior is retained and expanded only without breaking its four frozen Platform operations.
 
 ## Out of scope
@@ -47,12 +47,14 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 
 - Focused deterministic HMAC/SSRF unit tests before persistence.
 - PostgreSQL migration/integration tests for fan-out uniqueness, lease recovery, retry/backoff, circuit isolation, replay and audit rollback.
+- Delivery-detail integration coverage proving that response status/latency/error metadata is available while raw response headers and bodies are never returned.
 - Contract bundle and ownership validation, docs check, architecture test, and real-stack mock receiver E2E after worker implementation.
 
 ### Executed evidence
 
 - Passed: `./gradlew --no-daemon test --tests dev.deskseed.webhook.WebhookSecurityContractTest --tests dev.deskseed.webhook.internal.WebhookOutboxMaterializerIntegrationTest --tests dev.deskseed.architecture.ArchitectureTest`
 - Passed: `./gradlew --no-daemon test --tests dev.deskseed.webhook.internal.WebhookDeliveryWorkerIntegrationTest --tests dev.deskseed.webhook.internal.WebhookOutboxMaterializerIntegrationTest --tests dev.deskseed.staffaccess.internal.AdminWebhookIntegrationTest --tests dev.deskseed.webhook.WebhookSecurityContractTest --tests dev.deskseed.architecture.ArchitectureTest`
+- Passed: `./gradlew --no-daemon test --tests dev.deskseed.staffaccess.internal.AdminWebhookIntegrationTest --tests dev.deskseed.staffaccess.internal.ApiDocumentationIntegrationTest --tests dev.deskseed.architecture.ArchitectureTest` (redacted delivery-attempt detail projection)
 - Not run: real non-loopback receiver, redirect/DNS-pinning end-to-end, load/performance, full backend suite, remote CI for the current head, and frontend Storybook checks. The Storybook MCP is unavailable in this session, so no undocumented UI contract has been inferred.
 
 ## Compatibility and migration
