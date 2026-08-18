@@ -4,8 +4,11 @@ import dev.deskseed.foundation.RequestSource
 import dev.deskseed.integration.CreateIntegrationClientCommand
 import dev.deskseed.integration.IntegrationAdminActor
 import dev.deskseed.integration.IntegrationClientAdministration
+import dev.deskseed.integration.IntegrationClientRatePolicyAdministration
+import dev.deskseed.integration.IntegrationCredentialIssue
 import dev.deskseed.integration.IntegrationResourceConstraints
 import dev.deskseed.integration.IntegrationScope
+import dev.deskseed.integration.UpdateIntegrationClientRatePolicyCommand
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -38,6 +41,7 @@ class PlatformRateLimitIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var administration: IntegrationClientAdministration
+    @Autowired private lateinit var ratePolicyAdministration: IntegrationClientRatePolicyAdministration
 
     @Test
     fun `third request is rate limited with headers and audited without key material`() {
@@ -55,15 +59,18 @@ class PlatformRateLimitIntegrationTest {
             """.trimIndent(),
             adminId,
         )
-        val apiKey = issueClient(adminId)
+        val issue = issueClient(adminId)
+        val apiKey = issue.apiKey
+        updateRateLimit(issue, adminId, 3)
         val request = { mockMvc.perform(get("/api/v1/platform/tickets/999999").header("Authorization", "Bearer $apiKey")).andReturn() }
 
+        assertThat(request().response.status).isEqualTo(404)
         assertThat(request().response.status).isEqualTo(404)
         assertThat(request().response.status).isEqualTo(404)
         val limited = request().response
         assertThat(limited.status).isEqualTo(429)
         assertThat(limited.getHeader("Retry-After")?.toLong()).isBetween(1, 60)
-        assertThat(limited.getHeader("X-RateLimit-Limit")).isEqualTo("2")
+        assertThat(limited.getHeader("X-RateLimit-Limit")).isEqualTo("3")
         assertThat(limited.getHeader("X-RateLimit-Remaining")).isEqualTo("0")
 
         val audit = jdbcTemplate.queryForObject(
@@ -88,7 +95,7 @@ class PlatformRateLimitIntegrationTest {
             """.trimIndent(),
             adminId,
         )
-        val apiKey = issueClient(adminId)
+        val apiKey = issueClient(adminId).apiKey
         jdbcTemplate.execute(
             """
             create or replace function fail_platform_rate_limit_insert() returns trigger language plpgsql as ${'$'}${'$'}
@@ -112,7 +119,7 @@ class PlatformRateLimitIntegrationTest {
         }
     }
 
-    private fun issueClient(adminId: UUID): String {
+    private fun issueClient(adminId: UUID): IntegrationCredentialIssue {
         SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken.authenticated(
             "admin",
             null,
@@ -134,7 +141,33 @@ class PlatformRateLimitIntegrationTest {
                     UUID.randomUUID().toString(),
                     UUID.randomUUID().toString(),
                 ),
-            ).apiKey
+            )
+        } finally {
+            SecurityContextHolder.clearContext()
+        }
+    }
+
+    private fun updateRateLimit(issue: IntegrationCredentialIssue, adminId: UUID, rateLimitPerMinute: Int) {
+        SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken.authenticated(
+            "admin",
+            null,
+            listOf(SimpleGrantedAuthority("integration:clients:manage")),
+        )
+        try {
+            ratePolicyAdministration.update(
+                issue.client.id,
+                UpdateIntegrationClientRatePolicyCommand(
+                    rateLimitPerMinute,
+                    ratePolicyAdministration.get(issue.client.id).version,
+                ),
+                IntegrationAdminActor(
+                    adminId,
+                    "Admin",
+                    RequestSource.ADMIN_UI,
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                ),
+            )
         } finally {
             SecurityContextHolder.clearContext()
         }

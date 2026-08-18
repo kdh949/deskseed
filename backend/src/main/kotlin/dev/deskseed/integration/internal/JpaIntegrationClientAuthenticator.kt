@@ -84,6 +84,7 @@ internal class JpaIntegrationClientAuthenticator(
         credential.lastUsedIp = normalizedIp
         client.lastUsedAt = now
         client.lastUsedIp = normalizedIp
+        client.usageCount += 1
         client.updatedAt = now
         credentialRepository.save(credential)
         clientRepository.save(client)
@@ -108,6 +109,7 @@ internal class JpaIntegrationClientAuthenticator(
                 scopes = decodeScopes(client.scopesJson),
                 resourceConstraints = constraints,
                 credentialId = credential.id,
+                rateLimitPerMinute = client.rateLimitPerMinute,
             ),
         )
     }

@@ -43,6 +43,11 @@ deskseed:
     network:
       allowed-client-cidrs: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS}
       trusted-proxy-cidrs: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS}
+  webhook:
+    secret:
+      active-key-version: ${DESKSEED_WEBHOOK_SECRET_ACTIVE_KEY_VERSION:v1}
+      keys:
+        v1: ${DESKSEED_WEBHOOK_SECRET_KEY_V1}
   mail:
     # Delivery remains opt-in. Protected intents are queued regardless, so encryption key material is always required.
     delivery-enabled: ${DESKSEED_MAIL_DELIVERY_ENABLED:false}

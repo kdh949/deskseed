@@ -15,6 +15,7 @@ import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher
 import dev.deskseed.integration.INTEGRATION_CLIENT_MANAGE_AUTHORITY
 import dev.deskseed.integration.EXTERNAL_SYSTEM_MANAGE_AUTHORITY
+import dev.deskseed.webhook.WEBHOOK_MANAGE_AUTHORITY
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
@@ -79,6 +80,8 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                 it.requestMatchers("/api/v1/admin/integration-clients/**")
                     .hasAuthority(INTEGRATION_CLIENT_MANAGE_AUTHORITY)
+                it.requestMatchers("/api/v1/admin/integrations/webhooks/**")
+                    .hasAuthority(WEBHOOK_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/external-systems/**")
                     .hasAuthority(EXTERNAL_SYSTEM_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
