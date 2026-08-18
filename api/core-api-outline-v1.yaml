@@ -4413,7 +4413,7 @@ paths:
     post:
       summary: 충돌 없는 form version publish
       description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 cycle 또는 contradictory effect가 없는 draft만 immutable version으로
-        publish합니다.
+        publish합니다. PUBLISHED 상태에서는 customer와 agent default가 각각 하나만 허용되며, 두 번째 default publish는 409으로 원자적으로 거절합니다.
       operationId: publishTicketForm
       x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
@@ -4810,7 +4810,8 @@ paths:
   /api/v1/customer/ticket-forms:
     get:
       summary: 고객 제출 context의 form projection 조회
-      description: 고객 제출 context에 허용된 active field만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다.
+      description: 고객 제출 context에 허용된 active field만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form
+        state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다.
       operationId: getCustomerTicketFormProjection
       x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
@@ -9822,8 +9823,10 @@ components:
           - ARCHIVED
         defaultForCustomer:
           type: boolean
+          description: PUBLISHED 상태에서는 true인 form이 하나만 허용되는 customer default 선택 여부입니다.
         defaultForAgent:
           type: boolean
+          description: PUBLISHED 상태에서는 true인 form이 하나만 허용되는 agent default 선택 여부입니다.
         version:
           type: integer
           minimum: 1
@@ -9885,8 +9888,10 @@ components:
           maxLength: 500
         defaultForCustomer:
           type: boolean
+          description: PUBLISHED 상태에서는 customer default가 하나만 허용됩니다.
         defaultForAgent:
           type: boolean
+          description: PUBLISHED 상태에서는 agent default가 하나만 허용됩니다.
         placements:
           type: array
           minItems: 1
@@ -10073,6 +10078,7 @@ components:
           type: boolean
         editable:
           type: boolean
+          description: form state와 전역 customerEditable capability의 교집합입니다.
         required:
           type: boolean
         options:

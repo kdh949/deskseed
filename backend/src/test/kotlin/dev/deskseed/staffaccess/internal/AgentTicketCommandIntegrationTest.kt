@@ -2,6 +2,7 @@ package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
 import dev.deskseed.ticketconfiguration.TicketConfigurationRuntimeQuery
+import dev.deskseed.ticketing.TicketSlaLifecycleChanged
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -21,6 +22,8 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.context.event.ApplicationEvents
+import org.springframework.test.context.event.RecordApplicationEvents
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -34,6 +37,7 @@ import java.util.concurrent.TimeUnit
 @SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
 @AutoConfigureMockMvc
 @Testcontainers
+@RecordApplicationEvents
 class AgentTicketCommandIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -43,6 +47,9 @@ class AgentTicketCommandIntegrationTest {
 
     @Autowired
     private lateinit var configurationRuntimeQuery: TicketConfigurationRuntimeQuery
+
+    @Autowired
+    private lateinit var applicationEvents: ApplicationEvents
 
     @BeforeEach
     fun clearState() {
@@ -343,6 +350,50 @@ class AgentTicketCommandIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select version from tickets where id = ?", Long::class.java, created.ticketId))
             .isEqualTo(1L)
         assertThat(auditCount(created.ticketId)).isEqualTo(2)
+    }
+
+    @Test
+    fun `tag only configuration mutation emits no status or SLA lifecycle event`() {
+        val agentId = insertStaff("tag-only-command@example.com", "태그 전용 상담사", "AGENT")
+        val groupId = insertGroup("태그 전용 그룹", agentId)
+        val browser = login("tag-only-command@example.com")
+        val created = createAssignedTicket(browser, agentId, groupId, "tag-only-command-customer@example.com")
+        val tagId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into ticket_tag_definitions
+                (id, normalized_value, label, active, definition_version, created_at, updated_at)
+            values (?, 'tag-only', '태그 전용', true, 1, now(), now())
+            """.trimIndent(),
+            tagId,
+        )
+        val lifecycleEventsBefore = applicationEvents.stream(TicketSlaLifecycleChanged::class.java).count()
+
+        mockMvc.perform(
+            configurationCommandRequest(
+                browser,
+                created.ticketNumber,
+                "request-tag-only-configuration",
+                "\"0\"",
+                """
+                {
+                  "addTagIds": ["$tagId"],
+                  "removeTagIds": [],
+                  "clientCommandId": "${UUID.randomUUID()}"
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.version").value(1))
+
+        assertThat(applicationEvents.stream(TicketSlaLifecycleChanged::class.java).count())
+            .isEqualTo(lifecycleEventsBefore)
+        assertThat(jdbcTemplate.queryForList(
+            "select event_type from domain_event_outbox where request_id = ? order by subject_sequence",
+            String::class.java,
+            "request-tag-only-configuration",
+        ).filterNotNull()).containsExactly("ticket.updated")
     }
 
     @Test

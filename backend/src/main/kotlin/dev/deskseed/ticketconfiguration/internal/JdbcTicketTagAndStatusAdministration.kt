@@ -37,7 +37,7 @@ internal class JdbcTicketTagAndStatusAdministration(
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
     override fun listTags(): List<TicketTagDefinitionView> = jdbc.query(
-        "$TAG_SELECT order by normalized_value, id",
+        "$TAG_SELECT order by tag.normalized_value, tag.id",
         ::tag,
     )
 
@@ -200,11 +200,11 @@ internal class JdbcTicketTagAndStatusAdministration(
     }
 
     private fun tagById(tagId: UUID): TicketTagDefinitionView = jdbc.query(
-        "$TAG_SELECT where id = ?", ::tag, tagId,
+        "$TAG_SELECT where tag.id = ?", ::tag, tagId,
     ).singleOrNull() ?: throw TicketConfigurationNotFoundException()
 
     private fun lockedTag(tagId: UUID): TicketTagDefinitionView = jdbc.query(
-        "$TAG_SELECT where id = ? for update", ::tag, tagId,
+        "$TAG_SELECT where tag.id = ? for update of tag", ::tag, tagId,
     ).singleOrNull() ?: throw TicketConfigurationNotFoundException()
 
     private fun statusById(statusId: UUID): CustomTicketStatusView = jdbc.query(
@@ -220,10 +220,9 @@ internal class JdbcTicketTagAndStatusAdministration(
     )
 
     private fun tag(result: ResultSet, @Suppress("UNUSED_PARAMETER") row: Int): TicketTagDefinitionView {
-        val id = result.getObject("id", UUID::class.java)
         return TicketTagDefinitionView(
-            id, result.getString("normalized_value"), result.getString("label"), result.getBoolean("active"),
-            jdbc.queryForObject("select count(*) >= 10000 from ticket_tag_assignments where tag_definition_id = ?", Boolean::class.java, id) ?: false,
+            result.getObject("id", UUID::class.java), result.getString("normalized_value"), result.getString("label"), result.getBoolean("active"),
+            result.getBoolean("high_cardinality_warning"),
             result.getLong("definition_version"),
         )
     }
@@ -273,7 +272,14 @@ internal class JdbcTicketTagAndStatusAdministration(
     private companion object {
         val CATALOG_ID: UUID = UUID(0, 0)
         const val TAG_SELECT = """
-            select id, normalized_value, label, active, definition_version from ticket_tag_definitions
+            select tag.id, tag.normalized_value, tag.label, tag.active, tag.definition_version,
+                   coalesce(usage.assignment_count >= 10000, false) as high_cardinality_warning
+              from ticket_tag_definitions tag
+              left join (
+                  select tag_definition_id, count(*) as assignment_count
+                    from ticket_tag_assignments
+                   group by tag_definition_id
+              ) usage on usage.tag_definition_id = tag.id
         """
         const val STATUS_SELECT = """
             select id, machine_key, agent_label, customer_label, status_category, active, display_order,

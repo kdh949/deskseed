@@ -614,30 +614,32 @@ internal class AgentTicketCommandTransaction(
                 context = command.context,
                 occurredAt = now,
             )
-            ticketIntegrationEvents.statusChanged(
-                ticketId = ticket.id,
-                ticketNumber = ticket.ticketNumber,
-                kind = ticket.kind,
-                previousStatus = oldStatus,
-                currentStatus = mutation.status,
-                actor = actor,
-                context = command.context,
-                occurredAt = now,
-            )
-            eventPublisher.publishEvent(
-                TicketSlaLifecycleChanged(
+            if (oldStatus != mutation.status) {
+                ticketIntegrationEvents.statusChanged(
                     ticketId = ticket.id,
+                    ticketNumber = ticket.ticketNumber,
+                    kind = ticket.kind,
                     previousStatus = oldStatus,
                     currentStatus = mutation.status,
-                    humanStaffPublicReply = false,
-                    ticketAuditId = auditId,
-                    actorId = command.actor.id,
-                    source = command.context.source.name,
-                    requestId = command.context.requestId,
-                    correlationId = command.context.correlationId,
+                    actor = actor,
+                    context = command.context,
                     occurredAt = now,
-                ),
-            )
+                )
+                eventPublisher.publishEvent(
+                    TicketSlaLifecycleChanged(
+                        ticketId = ticket.id,
+                        previousStatus = oldStatus,
+                        currentStatus = mutation.status,
+                        humanStaffPublicReply = false,
+                        ticketAuditId = auditId,
+                        actorId = command.actor.id,
+                        source = command.context.source.name,
+                        requestId = command.context.requestId,
+                        correlationId = command.context.correlationId,
+                        occurredAt = now,
+                    ),
+                )
+            }
         }
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId, warnings)
     }

@@ -37,7 +37,7 @@ class AdminTicketConfigurationIntegrationTest {
 
     @BeforeEach
     fun clearConfiguration() {
-        jdbc.execute("truncate table ticket_custom_field_values, ticket_tag_assignments, ticket_field_options, ticket_field_definitions cascade")
+        jdbc.execute("truncate table ticket_custom_field_values, ticket_tag_assignments, ticket_field_options, ticket_form_versions, ticket_forms, ticket_field_definitions cascade")
         jdbc.execute("truncate table ticket_tag_definitions, custom_ticket_statuses cascade")
         jdbc.execute("truncate table admin_security_audit_events")
     }
@@ -60,7 +60,7 @@ class AdminTicketConfigurationIntegrationTest {
         val cardResponse = mockMvc.perform(
             post("/api/v1/admin/ticket-fields/{fieldId}/options", fieldId)
                 .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
-                .content("""{"machineKey":"card","staffLabel":"카드","customerLabel":"카드","order":10}"""),
+                .content("""{"machineKey":"card","staffLabel":"카드","customerLabel":"카드","order":0}"""),
         )
             .andExpect(status().isCreated)
             .andExpect(header().string("ETag", "\"1\""))
@@ -70,19 +70,23 @@ class AdminTicketConfigurationIntegrationTest {
         val bankResponse = mockMvc.perform(
             post("/api/v1/admin/ticket-fields/{fieldId}/options", fieldId)
                 .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
-                .content("""{"machineKey":"bank-transfer","staffLabel":"계좌 이체","order":20}"""),
+                .content("""{"machineKey":"bank-transfer","staffLabel":"계좌 이체","order":1000000}"""),
         ).andExpect(status().isCreated).andReturn().response.contentAsString
         val bankId = UUID.fromString(stringField(bankResponse, "id"))
+        val (lowerId, higherId) = listOf(cardId, bankId).sortedBy(UUID::toString)
+        jdbc.update("update ticket_field_options set display_order = 2000000 where id = ?", cardId)
+        jdbc.update("update ticket_field_options set display_order = 0 where id = ?", lowerId)
+        jdbc.update("update ticket_field_options set display_order = 1000000 where id = ?", higherId)
 
         mockMvc.perform(
             put("/api/v1/admin/ticket-fields/{fieldId}/options/order", fieldId)
                 .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
-                .content("""{"ids":["$bankId","$cardId"]}"""),
+                .content("""{"ids":["$higherId","$lowerId"]}"""),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$[0].id").value(bankId.toString()))
+            .andExpect(jsonPath("$[0].id").value(higherId.toString()))
             .andExpect(jsonPath("$[0].order").value(0))
-            .andExpect(jsonPath("$[1].id").value(cardId.toString()))
+            .andExpect(jsonPath("$[1].id").value(lowerId.toString()))
             .andExpect(jsonPath("$[1].order").value(1))
 
         mockMvc.perform(
@@ -219,6 +223,62 @@ class AdminTicketConfigurationIntegrationTest {
     }
 
     @Test
+    fun `published customer and agent defaults are unique and report a domain conflict`() {
+        val browser = browser("ADMIN")
+        val fieldId = UUID.fromString(stringField(
+            mockMvc.perform(
+                post("/api/v1/admin/ticket-fields")
+                    .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                    .content(fieldJson("default-form.field")),
+            ).andExpect(status().isCreated).andReturn().response.contentAsString,
+            "id",
+        ))
+
+        val customerDefault = createForm(browser, "고객 기본 양식", fieldId, defaultForCustomer = true, defaultForAgent = false)
+        publishForm(browser, customerDefault)
+        val agentDefault = createForm(browser, "상담사 기본 양식", fieldId, defaultForCustomer = false, defaultForAgent = true)
+        publishForm(browser, agentDefault)
+
+        val secondCustomerDefault = createForm(browser, "두 번째 고객 기본 양식", fieldId, defaultForCustomer = true, defaultForAgent = false)
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-forms/{formId}/publish", secondCustomerDefault)
+                .session(browser.session).csrf(browser).header("If-Match", "\"1\""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("PUBLISHED_DEFAULT_FORM_EXISTS"))
+
+        val secondAgentDefault = createForm(browser, "두 번째 상담사 기본 양식", fieldId, defaultForCustomer = false, defaultForAgent = true)
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-forms/{formId}/publish", secondAgentDefault)
+                .session(browser.session).csrf(browser).header("If-Match", "\"1\""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("PUBLISHED_DEFAULT_FORM_EXISTS"))
+    }
+
+    @Test
+    fun `customer projection never makes a globally read-only field editable`() {
+        val browser = browser("ADMIN")
+        val fieldId = UUID.fromString(stringField(
+            mockMvc.perform(
+                post("/api/v1/admin/ticket-fields")
+                    .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                    .content(fieldJson("customer.read-only", customerEditable = false)),
+            ).andExpect(status().isCreated).andReturn().response.contentAsString,
+            "id",
+        ))
+        val formId = createForm(browser, "고객 읽기 전용 양식", fieldId, defaultForCustomer = true, defaultForAgent = false)
+        publishForm(browser, formId)
+
+        mockMvc.perform(
+            get("/api/v1/customer/ticket-forms").param("ticketKind", "CUSTOMER_REQUEST"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.formId").value(formId.toString()))
+            .andExpect(jsonPath("$.fields[0].editable").value(false))
+    }
+
+    @Test
     fun `admin normalizes tag catalog and preserves fixed status categories`() {
         val browser = browser("ADMIN")
         val fieldResponse = mockMvc.perform(
@@ -243,6 +303,14 @@ class AdminTicketConfigurationIntegrationTest {
             .andExpect(jsonPath("$.value").value("payment"))
             .andReturn().response.contentAsString
         val tagId = UUID.fromString(stringField(tagResponse, "id"))
+        mockMvc.perform(get("/api/v1/admin/ticket-tags").session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(tagId.toString()))
+            .andExpect(jsonPath("$[0].highCardinalityWarning").value(false))
+        assertThat(jdbc.queryForList(
+            "select indexname from pg_indexes where schemaname = current_schema() and tablename = 'ticket_tag_assignments'",
+            String::class.java,
+        )).contains("ticket_tag_assignments_tag_definition_idx")
         mockMvc.perform(
             put("/api/v1/admin/ticket-tags/{tagId}", tagId)
                 .session(browser.session).csrf(browser).header("If-Match", "\"1\"")
@@ -282,8 +350,33 @@ class AdminTicketConfigurationIntegrationTest {
         ).andExpect(status().isBadRequest)
     }
 
-    private fun fieldJson(machineKey: String) =
-        """{"machineKey":"$machineKey","type":"SINGLE_SELECT","staffLabel":"결제 수단","customerLabel":"결제 수단","customerVisible":true,"customerEditable":true,"agentVisible":true,"agentEditable":true,"searchable":true,"analyticsEligible":false,"sensitive":false,"validation":{}}"""
+    private fun fieldJson(machineKey: String, customerEditable: Boolean = true) =
+        """{"machineKey":"$machineKey","type":"SINGLE_SELECT","staffLabel":"결제 수단","customerLabel":"결제 수단","customerVisible":true,"customerEditable":$customerEditable,"agentVisible":true,"agentEditable":true,"searchable":true,"analyticsEligible":false,"sensitive":false,"validation":{}}"""
+
+    private fun createForm(
+        browser: Browser,
+        name: String,
+        fieldId: UUID,
+        defaultForCustomer: Boolean,
+        defaultForAgent: Boolean,
+    ): UUID = UUID.fromString(stringField(
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-forms")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(defaultFormJson(name, fieldId, defaultForCustomer, defaultForAgent)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString,
+        "id",
+    ))
+
+    private fun publishForm(browser: Browser, formId: UUID) {
+        mockMvc.perform(
+            post("/api/v1/admin/ticket-forms/{formId}/publish", formId)
+                .session(browser.session).csrf(browser).header("If-Match", "\"1\""),
+        ).andExpect(status().isOk)
+    }
+
+    private fun defaultFormJson(name: String, fieldId: UUID, defaultForCustomer: Boolean, defaultForAgent: Boolean) =
+        """{"name":"$name","defaultForCustomer":$defaultForCustomer,"defaultForAgent":$defaultForAgent,"placements":[{"fieldId":"$fieldId","order":10,"customer":{"visible":true,"editable":true,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[],"allowedCustomStatusIds":[]}"""
 
     private fun formJson(fieldId: UUID) =
         """{"name":"결제 문의","description":"결제 확인","defaultForCustomer":true,"defaultForAgent":false,"placements":[{"fieldId":"$fieldId","order":10,"customer":{"visible":true,"editable":true,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"actorKind","equals":"CUSTOMER"}}},"effects":[{"fieldId":"$fieldId","behavior":"READ_ONLY"}]}],"allowedCustomStatusIds":[]}"""

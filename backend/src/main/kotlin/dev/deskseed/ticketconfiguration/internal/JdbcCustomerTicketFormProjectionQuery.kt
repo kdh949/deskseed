@@ -52,7 +52,8 @@ internal class JdbcCustomerTicketFormProjectionQuery(
             form.definition.placements.sortedBy { it.order }.mapNotNull { placement ->
                 val definition = fields.getValue(placement) ?: return@mapNotNull null
                 val state = checkNotNull(states[placement.fieldId]).normalized()
-                if (!state.visible) return@mapNotNull null
+                val visible = state.visible
+                if (!visible) return@mapNotNull null
                 CustomerProjectedTicketField(
                     field = CustomerTicketFieldDefinition(
                         definition.id,
@@ -61,8 +62,8 @@ internal class JdbcCustomerTicketFormProjectionQuery(
                         definition.customerLabel,
                         definition.customerDescription,
                     ),
-                    visible = true,
-                    editable = state.editable,
+                    visible = visible,
+                    editable = visible && state.editable && definition.customerEditable,
                     required = state.required,
                     options = if (definition.type == TicketCustomFieldType.SINGLE_SELECT) options(definition.id) else emptyList(),
                 )
@@ -96,7 +97,7 @@ internal class JdbcCustomerTicketFormProjectionQuery(
 
     private fun field(id: UUID): CustomerField? = jdbc.query(
         """
-        select id, machine_key, field_type, customer_label, customer_description
+        select id, machine_key, field_type, customer_label, customer_description, customer_editable
           from ticket_field_definitions
          where id = ? and active and customer_visible and customer_label is not null
         """.trimIndent(),
@@ -104,7 +105,7 @@ internal class JdbcCustomerTicketFormProjectionQuery(
             CustomerField(
                 result.getObject("id", UUID::class.java), result.getString("machine_key"),
                 TicketCustomFieldType.valueOf(result.getString("field_type")), result.getString("customer_label"),
-                result.getString("customer_description"),
+                result.getString("customer_description"), result.getBoolean("customer_editable"),
             )
         },
         id,
@@ -137,6 +138,7 @@ internal class JdbcCustomerTicketFormProjectionQuery(
         val type: TicketCustomFieldType,
         val customerLabel: String,
         val customerDescription: String?,
+        val customerEditable: Boolean,
     )
 
     private data class FieldState(var visible: Boolean, var editable: Boolean, var required: Boolean) {

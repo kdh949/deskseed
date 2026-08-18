@@ -7,6 +7,7 @@ import dev.deskseed.foundation.ActorType
 import dev.deskseed.ticketconfiguration.ProjectedTicketFormField
 import dev.deskseed.ticketconfiguration.TicketConfigurationAdminActor
 import dev.deskseed.ticketconfiguration.TicketConfigurationAuditUnavailableException
+import dev.deskseed.ticketconfiguration.TicketConfigurationConflictException
 import dev.deskseed.ticketconfiguration.TicketConfigurationNotFoundException
 import dev.deskseed.ticketconfiguration.TicketConfigurationPreconditionFailedException
 import dev.deskseed.ticketconfiguration.TicketConfigurationValidationException
@@ -29,6 +30,7 @@ import dev.deskseed.ticketconfiguration.TicketFormValidationIssue
 import dev.deskseed.ticketconfiguration.TicketFormValidationResult
 import dev.deskseed.ticketconfiguration.TicketFormView
 import org.springframework.dao.DataAccessException
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.stereotype.Service
@@ -134,14 +136,18 @@ internal class JdbcTicketFormAdministration(
             """.trimIndent(),
             formId, row.currentVersion, row.definitionJson, actor.staffId, actor.displayName.take(100), now.atOffset(ZoneOffset.UTC),
         )
-        jdbc.update(
-            """
-            update ticket_forms
-               set lifecycle = 'PUBLISHED', published_version = ?, aggregate_version = aggregate_version + 1, updated_at = ?
-             where id = ?
-            """.trimIndent(),
-            row.currentVersion, now.atOffset(ZoneOffset.UTC), formId,
-        )
+        try {
+            jdbc.update(
+                """
+                update ticket_forms
+                   set lifecycle = 'PUBLISHED', published_version = ?, aggregate_version = aggregate_version + 1, updated_at = ?
+                 where id = ?
+                """.trimIndent(),
+                row.currentVersion, now.atOffset(ZoneOffset.UTC), formId,
+            )
+        } catch (failure: DataIntegrityViolationException) {
+            throw TicketConfigurationConflictException("PUBLISHED_DEFAULT_FORM_EXISTS")
+        }
         audit("TICKET_FORM_PUBLISHED", formId, actor, mapOf("formVersion" to row.currentVersion.toString()), now)
         formById(formId)
     }

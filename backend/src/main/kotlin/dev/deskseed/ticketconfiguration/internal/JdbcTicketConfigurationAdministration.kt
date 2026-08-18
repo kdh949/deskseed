@@ -239,14 +239,9 @@ internal class JdbcTicketConfigurationAdministration(
             throw TicketConfigurationConflictException("OPTION_ORDER_MUST_INCLUDE_EXACT_COLLECTION")
         }
         val now = Instant.now(clock)
-        // Two phases avoid violating the unique (field_definition_id, display_order) constraint mid-swap.
-        // The temporary range remains valid for the non-negative database constraint.
-        current.forEach { option ->
-            jdbc.update(
-                "update ticket_field_options set display_order = display_order + 1000000, updated_at = ? where id = ?",
-                now.atOffset(ZoneOffset.UTC), option.id,
-            )
-        }
+        // The unique order constraint is deferred inside this transaction so a swap never needs an
+        // arbitrary temporary range that could collide with an existing value or overflow.
+        jdbc.execute("set constraints ticket_field_options_field_definition_id_display_order_key deferred")
         ids.forEachIndexed { index, id ->
             jdbc.update(
                 "update ticket_field_options set display_order = ?, option_version = option_version + 1, updated_at = ? where id = ?",
