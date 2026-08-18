@@ -10,11 +10,11 @@ e659dd2c21a1124059dcd1492b12b23cb865060312a00c44d8d768a1bcd8f1c6        3514  IM
 3da3b3ecceb173505d3192f0eb008cceff8bcb607d07b2773624842862d6a7e8       56251  api/core-api-fragments/10-ticket-configuration.yaml
 28d401daf7619216c4337f47b17385e8f47e021a6be15381bc98f646fb102c87       37065  api/core-api-fragments/20-knowledge-base.yaml
 af8935f469412aedd0630af3a1ea0f4e9ed5792707b43d3d557aa2af4131b3b0       31042  api/core-api-fragments/30-integrations.yaml
-c6d33dc1ac04cabe22f077c9aed80d04a461966f5a8e3ff2d1f396400d89a63d          80  api/core-api-fragments/40-collaboration.yaml
+17aab79973a561a1038c54897902b818d13167f862b849ad1fca2366d254d473       20023  api/core-api-fragments/40-collaboration.yaml
 432a4a1413187f4608f644aa63dd0bae1798386d79ad905e1de1941703d77358          77  api/core-api-fragments/50-views-macros.yaml
 90a9e4466fdd8100051f41d80b18b786997f29029cbdced085eca3320152dbd9          85  api/core-api-fragments/60-triggers-automations.yaml
 320bbfad1795a69006b7a347e98dae7d1b55175dd3d77c519850a8e76d12db92          82  api/core-api-fragments/70-analytics.yaml
-91a64523c1df2ec5480f9a62dc414c99beccf76ad01076939c29e0f9da59c26a      406786  api/core-api-outline-v1.yaml
+85e1d23306ada6f61623e3ebfa891b5061b18c9914439ec88eb7f735c4c318f8      427220  api/core-api-outline-v1.yaml
 3fed2202173278118ddc6eb8e5d8ada47772b752f0d36a93e5b18d6301e538e8       13735  api/customer-identity-api-v1.yaml
 4d5d1e754da5cdd1e6600bb2dbcb654d7cb65e8699a53daadedb8a6fb19212a4        2315  api/integration-event-envelope-v1.schema.json
 ba2e8cde7f714cb6f3dc8a22c9baf58ca52c6db346ceaf70e63e8e7278c11eb5        5503  api/mvp-target.yaml
@@ -55,7 +55,7 @@ e8a16860e8ba939b282edd70320ea51e113a4ef6cc9176f45aceae3d915a3cb4        5982  do
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 8e7d0a7a35381c263d0cbe1fd2202e841afa2adfbe99737adb97625f163e9b98        9156  docs/25-implementation-decision-register.md
-e4c1f0c3a1a48a021960b28299164d81dededff9c00823e03adbdd9cfae08e58       31886  docs/26-requirement-traceability.md
+4c30230a67ee162a2059506ceeb8720616dec698aff08e8310866b38d6250a37       33079  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -129,6 +129,7 @@ c150b9d4ada696d7c9374d603750707dabf6833679adc47348231fbe6313bea7        4090  do
 130b0c88cf3fdb0e6cfc1759305ff82724c535b8eaba61e1799313631843a3b4        3243  docs/evidence/KB-WAVE1-READ-SEARCH-ADMIN.md
 3f992b30c1d71ad638898428b2e9c6dc6edeca7ac31fa03bf702d6e0decb9136        5827  docs/evidence/business-schedule-admin.md
 1862e8c41d4bb42c091e1fd7eed206e31c4d884b05ccff3f37d7c49a42fd71fe        7161  docs/evidence/customer-my-requests-portal.md
+868dea489a4907b1feaac754ec4a9316b2707616c0b073c4dc219d3a8d4d18f3        5051  docs/evidence/goal-drafts-presence-progress.md
 a138e5c6ccd889cdd5dcc87b88032b97d02efa1006ca202c52cf818bce3643d7        3115  docs/evidence/goal-foundation-progress.md
 8ec4114c71a23972ebc09d8726c8e7606c8d76b072dc7b22bdc00a93e6cdbcba        6978  docs/evidence/goal-integrations-webhooks-progress.md
 845b172140a58e2d8892c0f4162fcf22e615c5467edd977cd12f1cc809ad27bb        2975  docs/evidence/goal-knowledge-base-progress.md

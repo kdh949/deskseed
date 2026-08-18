@@ -136,6 +136,23 @@ data class TicketSlaLifecycleChanged(
 )
 
 /**
+ * Post-command collaboration hint. It intentionally contains neither ticket/comment body
+ * content nor a permission grant; realtime subscribers re-authorize and re-fetch normally.
+ */
+data class TicketCollaborationUpdated(
+    val ticketNumber: Long,
+    val ticketVersion: Long,
+    val changedFields: Set<String>,
+    val actorStaffId: UUID,
+    val occurredAt: Instant,
+) {
+    init {
+        require(ticketNumber > 0) { "ticketNumber must be positive" }
+        require(ticketVersion > 0) { "ticketVersion must be positive" }
+    }
+}
+
+/**
  * A PUBLIC staff comment persisted in the current transaction that needs Portal-owned customer capability issuance
  * and mail intent creation. The fact is synchronous and transaction-local, not an external delivery guarantee.
  */

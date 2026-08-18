@@ -1,5 +1,506 @@
 x-deskseed-fragment:
   owner: drafts-presence
-paths: {}
-components: {}
-tags: []
+paths:
+  /api/v1/agent/tickets/{ticketNumber}/drafts/{channel}:
+    get:
+      tags: [협업 초안]
+      summary: 인증된 직원의 복구용 작성 초안 조회
+      description: 인증된 직원이 읽을 수 있는 티켓에서 자신의 PUBLIC 답변 또는 INTERNAL 메모 초안을 조회합니다. 티켓 상세 열람이나 TicketAudit를 만들지 않으며 응답은 항상 no-store입니다.
+      operationId: getAgentTicketDraft
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D1
+      x-deskseed-requirements: [REQ-COL-001, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/TicketDraftTicketNumber'
+        - $ref: '#/components/parameters/TicketDraftChannel'
+      responses:
+        '200':
+          description: 소유자만 읽을 수 있는 초안이며 캐시하지 않습니다.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDraft'
+        '404':
+          description: 티켓을 읽을 수 없거나 요청한 channel에 이 직원의 초안이 없습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    put:
+      tags: [협업 초안]
+      summary: 인증된 직원의 작성 초안 생성 또는 낙관적 갱신
+      description: 인증된 직원이 읽을 수 있는 티켓에서 자신의 channel 초안을 생성하거나 현재 draftVersion으로 갱신합니다. 이 작업은 Ticket row나 TicketAudit를 변경하지 않으며, 동시 변경은 최신 버전을 포함한 409로 반환합니다.
+      operationId: saveAgentTicketDraft
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D1
+      x-deskseed-requirements: [REQ-COL-001, REQ-FILE-001, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/TicketDraftTicketNumber'
+        - $ref: '#/components/parameters/TicketDraftChannel'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveTicketDraftRequest'
+            examples:
+              publicReply:
+                value:
+                  body: 결제 승인 상태를 확인한 뒤 다시 안내드리겠습니다.
+                  attachmentIds: []
+                  clientDeviceId: 018f7c2c-7348-7a32-a971-4c9a845b3310
+                  baseTicketVersion: 7
+                  expectedDraftVersion: 0
+      responses:
+        '200':
+          description: 초안을 생성 또는 갱신했습니다. 반환한 draftVersion은 다음 저장 또는 삭제에 필요합니다.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDraft'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '404':
+          description: 티켓을 읽을 수 없거나 양수 expectedDraftVersion이 더 이상 소유자 초안을 가리키지 않습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/TicketDraftConflictOrStaffSessionActorMismatch'
+        '422':
+          description: CLOSED 티켓은 새 초안 생성 또는 기존 초안 갱신을 허용하지 않습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    delete:
+      tags: [협업 초안]
+      summary: 제출 또는 명시적 폐기 후 인증된 직원의 한 channel 초안 삭제
+      description: 인증된 직원이 읽을 수 있는 티켓에서 자신의 한 channel 초안을 현재 draftVersion으로 삭제합니다. 다른 channel은 바꾸지 않으며 CLOSED 티켓의 기존 초안 삭제도 허용합니다.
+      operationId: deleteAgentTicketDraft
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D1
+      x-deskseed-requirements: [REQ-COL-001, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/TicketDraftTicketNumber'
+        - $ref: '#/components/parameters/TicketDraftChannel'
+        - name: expectedDraftVersion
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '204':
+          description: 요청한 channel 초안을 삭제했습니다. 다른 channel은 변경하지 않습니다.
+        '404':
+          description: 티켓을 읽을 수 없거나 소유자 초안이 더 이상 존재하지 않습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/TicketDraftConflictOrStaffSessionActorMismatch'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+  /api/v1/agent/drafts/recoverable:
+    get:
+      tags: [협업 초안]
+      summary: 인증된 직원의 만료되지 않은 복구용 초안 목록
+      description: 인증된 직원이 현재 읽을 수 있는 티켓에 남긴 만료 전 초안을 최근 갱신 순서로 반환합니다. 권한이 사라진 티켓은 목록에서 제외하며 응답은 항상 no-store입니다.
+      operationId: listAgentRecoverableDrafts
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D1
+      x-deskseed-requirements: [REQ-COL-001, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: 소유자만 읽을 수 있는 만료 전 초안이며 최근 갱신 순으로 정렬하고 캐시하지 않습니다.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TicketDraft'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+components:
+  x-deskseed-realtime-protocol-v1:
+    endpoint: /ws/agent/collaboration
+    description: 인증된 staff session이 같은 출처에서 연결하는 version 1 협업 WebSocket 계약입니다. 연결과 재연결마다 세션·Origin·티켓 읽기 권한을 다시 확인하며 INTERNAL 본문이나 고객 정보는 메시지에 넣지 않습니다.
+    clientMessage:
+      $ref: '#/components/schemas/CollaborationRealtimeClientMessage'
+    serverMessage:
+      $ref: '#/components/schemas/CollaborationRealtimeServerMessage'
+    limits:
+      maxMessageBytes: 4096
+      maxMessagesPerMinute: 120
+      heartbeatSeconds: 20
+      staleAfterSeconds: 60
+    reconnect:
+      description: 연결 실패, 권한 변경 또는 protocol error 뒤 클라이언트는 새 handshake로 재연결하며 기존 subscribe 권한을 가정하지 않습니다.
+      retryableErrorCodes: [RATE_LIMITED, TRANSIENT_UNAVAILABLE]
+  responses:
+    TicketDraftConflictOrStaffSessionActorMismatch:
+      description: 초안 버전 충돌 또는 브라우저가 확인한 actor와 인증 세션 주체가 다른 경우의 RFC 9457 응답입니다.
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: no-store
+      content:
+        application/problem+json:
+          schema:
+            anyOf:
+              - $ref: '#/components/schemas/TicketDraftConflictProblem'
+              - $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+  parameters:
+    TicketDraftTicketNumber:
+      name: ticketNumber
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    TicketDraftChannel:
+      name: channel
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/TicketDraftChannel'
+  schemas:
+    CollaborationRealtimeClientMessage:
+      oneOf:
+        - $ref: '#/components/schemas/CollaborationSubscribeMessage'
+        - $ref: '#/components/schemas/CollaborationUnsubscribeMessage'
+        - $ref: '#/components/schemas/CollaborationHeartbeatMessage'
+        - $ref: '#/components/schemas/CollaborationPresenceStateMessage'
+      discriminator:
+        propertyName: type
+      description: 한 authenticated staff 브라우저가 협업 socket으로 보내는 bounded version 1 명령입니다. 각 ticket subscribe는 별도 읽기 권한을 확인하고 heartbeat는 해당 연결의 presence TTL만 연장합니다.
+    CollaborationSubscribeMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: subscribe
+        ticketNumber:
+          type: integer
+          minimum: 1
+      description: 현재 연결을 읽기 권한이 있는 하나의 ticket presence channel에 구독시키는 명령입니다.
+    CollaborationUnsubscribeMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: unsubscribe
+        ticketNumber:
+          type: integer
+          minimum: 1
+      description: 현재 연결의 한 ticket presence 구독을 종료하고 해당 ticket delta 수신을 멈추는 명령입니다.
+    CollaborationHeartbeatMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: heartbeat
+      description: 현재 연결이 유지 중인 모든 presence 구독의 마지막 활동 시각을 갱신하는 명령입니다.
+    CollaborationPresenceStateMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, state]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: presence.state
+        ticketNumber:
+          type: integer
+          minimum: 1
+        state:
+          $ref: '#/components/schemas/TicketPresenceState'
+      description: 현재 연결이 구독한 ticket에서 advisory viewing 또는 작성 상태를 바꾸는 명령이며 ticket lock이나 mutation 권한을 뜻하지 않습니다.
+    CollaborationRealtimeServerMessage:
+      oneOf:
+        - $ref: '#/components/schemas/TicketPresenceSnapshotMessage'
+        - $ref: '#/components/schemas/TicketPresenceDeltaMessage'
+        - $ref: '#/components/schemas/TicketCommittedUpdateMessage'
+        - $ref: '#/components/schemas/CollaborationRealtimeErrorMessage'
+      discriminator:
+        propertyName: type
+      description: 서버가 현재 권한 있는 구독자에게 보내는 version 1 협업 알림입니다. comment body, customer 정보, credential, connection ID는 포함하지 않습니다.
+    TicketPresenceState:
+      type: string
+      enum: [VIEWING, EDITING_PUBLIC, EDITING_INTERNAL, AWAY]
+      description: 상담사의 현재 화면 활동을 나타내는 advisory 상태이며 ticket 잠금이나 동시성 보장을 대체하지 않습니다.
+    TicketPresenceMember:
+      type: object
+      additionalProperties: false
+      required: [staffId, displayName, state, lastSeenAt]
+      properties:
+        staffId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          maxLength: 120
+        state:
+          $ref: '#/components/schemas/TicketPresenceState'
+        lastSeenAt:
+          type: string
+          format: date-time
+      description: 한 ticket을 보는 authenticated staff의 최소 표시 정보입니다. 연결 ID, 이메일, customer 정보와 작성 본문은 노출하지 않습니다.
+    TicketPresenceSnapshotMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, members]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: presence.snapshot
+        ticketNumber:
+          type: integer
+          minimum: 1
+        members:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TicketPresenceMember'
+      description: subscribe 성공 직후 해당 ticket에 남아 있는 비만료 presence를 반환하는 snapshot입니다.
+    TicketPresenceDeltaMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, action, member]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: presence.delta
+        ticketNumber:
+          type: integer
+          minimum: 1
+        action:
+          type: string
+          enum: [JOINED, UPDATED, LEFT, EXPIRED]
+        member:
+          $ref: '#/components/schemas/TicketPresenceMember'
+      description: 한 authenticated staff의 join, 상태 변경, disconnect 또는 TTL 만료를 알리는 ticket 범위 delta입니다.
+    TicketCommittedUpdateMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, ticketNumber, ticketVersion, changedFields, occurredAt]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: ticket.updated
+        ticketNumber:
+          type: integer
+          minimum: 1
+        ticketVersion:
+          type: integer
+          minimum: 1
+        changedFields:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[a-z][a-zA-Z0-9]{0,63}$'
+        actorStaffId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+      description: ticket command commit 뒤 발행되는 safe stale 알림입니다. changedFields는 허용된 field 이름만 포함하며 comment body나 고객 데이터는 전달하지 않습니다.
+    CollaborationRealtimeErrorMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, code, retryable]
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: error
+        code:
+          type: string
+          enum: [UNAUTHORIZED, FORBIDDEN, INVALID_MESSAGE, MESSAGE_TOO_LARGE, RATE_LIMITED, TRANSIENT_UNAVAILABLE]
+        retryable:
+          type: boolean
+        retryAfterMs:
+          type: integer
+          minimum: 0
+          maximum: 60000
+      description: socket을 닫거나 현재 요청만 거부할 때 body나 authorization detail을 노출하지 않고 보내는 오류입니다.
+    TicketDraftChannel:
+      type: string
+      enum: [PUBLIC_REPLY, INTERNAL_NOTE]
+      description: PUBLIC 답변과 INTERNAL 메모 초안은 소유자와 티켓 기준의 독립 행을 사용합니다.
+    TicketDraft:
+      type: object
+      required:
+        [ticketNumber, channel, body, attachmentIds, clientDeviceId, baseTicketVersion, draftVersion, updatedAt, expiresAt]
+      properties:
+        ticketNumber:
+          type: integer
+          format: int64
+        channel:
+          $ref: '#/components/schemas/TicketDraftChannel'
+        body:
+          type: string
+          maxLength: 20000
+        attachmentIds:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        clientDeviceId:
+          type: string
+          format: uuid
+        baseTicketVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        draftVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        updatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    SaveTicketDraftRequest:
+      type: object
+      required: [body, attachmentIds, clientDeviceId, baseTicketVersion, expectedDraftVersion]
+      description: 한 직원이 한 티켓의 한 PUBLIC 또는 INTERNAL channel에서 복구할 작성 내용을 저장할 때 사용합니다. 이 요청은 티켓이나 댓글을 변경하지 않습니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        body: 결제 승인 상태를 확인한 뒤 다시 안내드리겠습니다.
+        attachmentIds: []
+        clientDeviceId: 018f7c2c-7348-7a32-a971-4c9a845b3310
+        baseTicketVersion: 7
+        expectedDraftVersion: 0
+      properties:
+        body:
+          type: string
+          maxLength: 20000
+          description: 제출 전 작성 본문입니다. 소유자 연결 초안 저장소에만 보관하며 TicketAudit 값으로 만들지 않습니다.
+        attachmentIds:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          description: 보류 중인 첨부 handle입니다. 이후 제출이 댓글에 연결하기 전 소유자와 티켓 가시성을 다시 확인합니다.
+          items:
+            type: string
+            format: uuid
+        clientDeviceId:
+          type: string
+          format: uuid
+          description: 같은 직원의 여러 브라우저가 만든 초안 충돌을 설명할 때만 비교하는 불투명 설치 식별자이며 인증 주체를 대신하지 않습니다.
+        baseTicketVersion:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 작성 중 관찰한 티켓 버전입니다. 티켓을 변경하지 않습니다.
+        expectedDraftVersion:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 0은 아직 없는 channel 초안을 생성하고 양수는 정확히 그 저장 버전을 갱신합니다.
+    TicketDraftConflictProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [currentVersion]
+          properties:
+            currentVersion:
+              type: integer
+              format: int64
+              minimum: 1
+            updatedAt:
+              type: string
+              format: date-time
+tags:
+  - name: 협업 초안
+    description: 소유자 연결 초안 복구와 보조 협업 API입니다.
