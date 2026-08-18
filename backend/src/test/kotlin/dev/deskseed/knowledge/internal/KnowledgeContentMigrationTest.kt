@@ -13,9 +13,9 @@ import java.sql.DriverManager
 @Testcontainers
 class KnowledgeContentMigrationTest {
     @Test
-    fun `V50 and V51 create a fixed hierarchy and canonical multi-block revision storage without altering prior history`() {
+    fun `V50 through V52 create fixed hierarchy immutable revisions and a derived PostgreSQL search projection without altering prior history`() {
         migrateTo("36")
-        migrateTo("51")
+        migrateTo("52")
 
         connection().use { jdbc ->
             jdbc.createStatement().use { statement ->
@@ -27,11 +27,17 @@ class KnowledgeContentMigrationTest {
                     .isEqualTo("knowledge_articles")
                 assertThat(queryString(statement, "select to_regclass('public.knowledge_article_revisions')"))
                     .isEqualTo("knowledge_article_revisions")
+                assertThat(queryString(statement, "select to_regclass('public.knowledge_search_documents')"))
+                    .isEqualTo("knowledge_search_documents")
+                assertThat(queryString(statement, "select to_regclass('public.knowledge_access_audit_events')"))
+                    .isEqualTo("knowledge_access_audit_events")
                 assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version = '36' and success"))
                     .isEqualTo(1)
                 assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version = '50' and success"))
                     .isEqualTo(1)
                 assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version = '51' and success"))
+                    .isEqualTo(1)
+                assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version = '52' and success"))
                     .isEqualTo(1)
 
                 assertThatThrownBy {
@@ -95,6 +101,16 @@ class KnowledgeContentMigrationTest {
                         "update knowledge_article_revisions set title = 'Mutated' where id = '00000000-0000-0000-0000-000000000057'",
                     )
                 }.hasMessageContaining("Knowledge article revisions are immutable")
+                statement.executeUpdate(
+                    """
+                    update knowledge_articles
+                       set lifecycle = 'PUBLISHED', current_published_revision_id = '00000000-0000-0000-0000-000000000057',
+                           published_at = clock_timestamp()
+                     where id = '00000000-0000-0000-0000-000000000056'
+                    """.trimIndent(),
+                )
+                assertThat(queryLong(statement, "select count(*) from knowledge_search_documents where article_id = '00000000-0000-0000-0000-000000000056'"))
+                    .isEqualTo(1)
             }
         }
     }

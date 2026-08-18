@@ -28,7 +28,7 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Dual Use Actor Bound Operations: 1
 - E2E Visual Baselines: 12
 - Json Files: 11
-- Markdown Files: 221
+- Markdown Files: 222
 - Openapi Operations: 124
 - Openapi Paths: 102
 - Requirement Definitions: 91

@@ -55,7 +55,7 @@ e8a16860e8ba939b282edd70320ea51e113a4ef6cc9176f45aceae3d915a3cb4        5982  do
 0d0bf1347b4c3c45d251a26f562941b22716aa8d3133402f29ba265ba916ff5c        8534  docs/23-data-retention-and-privacy.md
 7e482f89d425b8727aa06ec33df32303c5497b14ac1458a96947dc9c76c6cd93        8861  docs/24-source-research.md
 6cb309ec3db89abce22017b12a66ef37de7ad0b24065349efb3bc7d9d2569779        8877  docs/25-implementation-decision-register.md
-70b5e85fa7a519854a2a54a5b3dc413e87b1bbc4625895b4d388992c9ae31188       30143  docs/26-requirement-traceability.md
+23e8b6b66e3cac79926a01fc80970eeaa375987859592f1a1f55d9977c87e49a       30107  docs/26-requirement-traceability.md
 641e6abdf6a34491fa238a24f0f1c2ed222292aa9c2e7a19b03352f406f09b73        7995  docs/27-implementation-handbook.md
 8b0638d6008c4fb63d2bac559e126e1eca600175958a1761287cc8d5cd68ca9d        7068  docs/28-frontend-product-and-information-architecture.md
 03f5433719ac1471d896c8ad1a83afe411241415eeabf981c2b4da508c519fa9        6766  docs/29-zendesk-inspired-design-system.md
@@ -125,10 +125,11 @@ f4c69b8146e22a1af8f2be4a97e7a00d30ae9e717b121cb26fe1a899b3c276cc        2209  do
 eb8fd5cb2d295e6e988b35fe88ad39a2f475b9e3357f7014556a3901eba656a9        2326  docs/adr/0038-shared-organization-ticket-consistency-guard.md
 10c7cd008473222332b5d8d30ad5d2e1219589b6a2a1dc1fb4babc4cb58a68a4        3630  docs/adr/0039-agent-workspace-surface-and-headless-capability-preservation.md
 d871c58a59556300b186c0422e8c771aa863b10f4061457c2f29a70e4579a604        2463  docs/adr/0040-additive-extension-foundation.md
+130b0c88cf3fdb0e6cfc1759305ff82724c535b8eaba61e1799313631843a3b4        3243  docs/evidence/KB-WAVE1-READ-SEARCH-ADMIN.md
 3f992b30c1d71ad638898428b2e9c6dc6edeca7ac31fa03bf702d6e0decb9136        5827  docs/evidence/business-schedule-admin.md
 1862e8c41d4bb42c091e1fd7eed206e31c4d884b05ccff3f37d7c49a42fd71fe        7161  docs/evidence/customer-my-requests-portal.md
 a138e5c6ccd889cdd5dcc87b88032b97d02efa1006ca202c52cf818bce3643d7        3115  docs/evidence/goal-foundation-progress.md
-cf400a2db29dd32ebd20d0709419369bb5dec36b9662becfd11586dd099227e7        2348  docs/evidence/goal-knowledge-base-progress.md
+845b172140a58e2d8892c0f4162fcf22e615c5467edd977cd12f1cc809ad27bb        2975  docs/evidence/goal-knowledge-base-progress.md
 f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  docs/evidence/outbound-mail-mailpit-foundation.md
 36d43d6d66f816434f4d3701dda086aa9cc830edc37aba91936501e54f919e90        4966  docs/evidence/p0/BE-P0-CUSTOMER-ACCESS.md
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md

@@ -14,6 +14,7 @@ import dev.deskseed.knowledge.CreateKnowledgeArticleDraft
 import dev.deskseed.knowledge.KnowledgeAdminActor
 import dev.deskseed.knowledge.KnowledgeAdministration
 import dev.deskseed.knowledge.KnowledgeArticleLifecycle
+import dev.deskseed.knowledge.KnowledgeArticlePage
 import dev.deskseed.knowledge.KnowledgeArticleView
 import dev.deskseed.knowledge.KnowledgeAudience
 import dev.deskseed.knowledge.KnowledgeAudienceType
@@ -24,6 +25,8 @@ import dev.deskseed.knowledge.KnowledgeNotFoundException
 import dev.deskseed.knowledge.KnowledgeLifecycleAction
 import dev.deskseed.knowledge.KnowledgePreconditionFailedException
 import dev.deskseed.knowledge.KnowledgeRevisionView
+import dev.deskseed.knowledge.KnowledgeSearchIndexState
+import dev.deskseed.knowledge.KnowledgeSearchIndexStatus
 import dev.deskseed.knowledge.KnowledgeSectionInput
 import dev.deskseed.knowledge.KnowledgeSectionView
 import org.springframework.dao.DuplicateKeyException
@@ -49,6 +52,7 @@ internal class JdbcKnowledgeAdministration(
     private val auditWriter: AdminSecurityAuditWriter,
     private val eventPublication: EventPublicationPort,
     private val objectMapper: ObjectMapper,
+    private val cursorCodec: KnowledgeCursorCodec,
     private val clock: Clock,
 ) : KnowledgeAdministration {
     private val documentValidator = CanonicalKnowledgeDocumentValidator()
@@ -344,6 +348,43 @@ internal class JdbcKnowledgeAdministration(
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
+    override fun listArticles(cursor: String?, actor: KnowledgeAdminActor): KnowledgeArticlePage {
+        val decoded = cursorCodec.decode("admin-articles", cursor)
+        val arguments = mutableListOf<Any>()
+        val boundary = decoded?.let {
+            arguments += Timestamp.from(it.createdAt)
+            arguments += it.articleId
+            "where (created_at, id) < (?, ?)"
+        }.orEmpty()
+        val rows = jdbc.query(
+            """
+            select id, created_at
+              from knowledge_articles
+              $boundary
+             order by created_at desc, id desc
+             limit 51
+            """.trimIndent(),
+            { row, _ -> KnowledgeCursor(row.getTimestamp("created_at").toInstant(), row.getObject("id", UUID::class.java)) },
+            *arguments.toTypedArray(),
+        )
+        val items = rows.take(50).map { article(it.articleId) }
+        audit(
+            eventType = "KNOWLEDGE_ARTICLE_LISTED",
+            actor = actor,
+            targetType = "KNOWLEDGE_ARTICLE_COLLECTION",
+            targetId = null,
+            metadata = mapOf("count" to items.size.toString()),
+        )
+        return KnowledgeArticlePage(
+            items = items,
+            nextCursor = if (rows.size > items.size) {
+                cursorCodec.encode("admin-articles", rows[items.size - 1])
+            } else null,
+        )
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     override fun getArticle(articleId: UUID, actor: KnowledgeAdminActor): KnowledgeArticleView {
         val view = article(articleId)
         audit(
@@ -354,6 +395,91 @@ internal class JdbcKnowledgeAdministration(
             metadata = emptyMap(),
         )
         return view
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun updateDraft(
+        articleId: UUID,
+        input: CreateKnowledgeArticleDraft,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleView {
+        val root = lockedArticle(articleId)
+        if (root.version != expectedVersion) throw KnowledgePreconditionFailedException(root.version)
+        require(root.lifecycle == KnowledgeArticleLifecycle.DRAFT) { "Only DRAFT articles can receive a new draft revision" }
+        val normalized = input.validated()
+        requireActiveSection(normalized.sectionId)
+        requireAudienceGroupsActive(normalized.audience)
+        val validatedDocument = documentValidator.validate(normalized.document, normalized.audience)
+        val now = Instant.now(clock)
+        val nextRevision = jdbc.queryForObject(
+            "select coalesce(max(revision_number), 0) + 1 from knowledge_article_revisions where article_id = ?",
+            Int::class.java,
+            articleId,
+        )!!
+        val audienceChanged = root.audienceType != normalized.audience.type || audienceGroups(articleId) != normalized.audience.groupIds
+        jdbc.update("delete from knowledge_article_audience_groups where article_id = ?", articleId)
+        normalized.audience.groupIds.sortedBy(UUID::toString).forEach { groupId ->
+            jdbc.update(
+                "insert into knowledge_article_audience_groups (article_id, group_id) values (?, ?)",
+                articleId,
+                groupId,
+            )
+        }
+        try {
+            jdbc.update(
+                """
+                update knowledge_articles
+                   set section_id = ?, slug = ?, audience_type = ?,
+                       audience_version = audience_version + ?, version = version + 1, updated_at = ?
+                 where id = ? and version = ?
+                """.trimIndent(),
+                normalized.sectionId,
+                normalized.slug,
+                normalized.audience.type.name,
+                if (audienceChanged) 1 else 0,
+                Timestamp.from(now),
+                articleId,
+                expectedVersion,
+            ).also { changed -> if (changed != 1) throw KnowledgePreconditionFailedException(root.version) }
+            jdbc.update(
+                """
+                insert into knowledge_article_revisions
+                    (id, article_id, revision_number, title, document_json, plain_text, summary, change_note,
+                     content_checksum, created_by_staff_id, created_at)
+                values (?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                UUID.randomUUID(),
+                articleId,
+                nextRevision,
+                normalized.title,
+                objectMapper.writeValueAsString(documentCodec.encode(validatedDocument.document)),
+                validatedDocument.plainText,
+                normalized.summary,
+                normalized.changeNote,
+                validatedDocument.checksumSha256,
+                actor.staffId,
+                Timestamp.from(now),
+            )
+        } catch (_: DuplicateKeyException) {
+            throw KnowledgeConflictException("DUPLICATE_ARTICLE_SLUG")
+        }
+        audit(
+            "KNOWLEDGE_ARTICLE_DRAFT_REVISION_CREATED",
+            actor,
+            "KNOWLEDGE_ARTICLE",
+            articleId,
+            mapOf("revision" to nextRevision.toString(), "audienceChanged" to audienceChanged.toString()),
+        )
+        publish(
+            "knowledge.article.draft-revision-created",
+            "knowledge-article:$articleId",
+            actor,
+            mapOf("articleId" to articleId.toString(), "revision" to nextRevision.toString()),
+            now,
+        )
+        return article(articleId)
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -497,6 +623,93 @@ internal class JdbcKnowledgeAdministration(
         return article(articleId)
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun searchIndexStatus(actor: KnowledgeAdminActor): KnowledgeSearchIndexStatus {
+        val result = jdbc.query(
+            """
+            select status.state, status.last_rebuilt_at,
+                   greatest(0, extract(epoch from now() - coalesce(max(document.indexed_at), status.updated_at)))::bigint as lag_seconds
+              from knowledge_search_index_status status
+              left join knowledge_search_documents document on true
+             where status.singleton = true
+             group by status.state, status.last_rebuilt_at, status.updated_at
+            """.trimIndent(),
+            { row, _ ->
+                KnowledgeSearchIndexStatus(
+                    state = KnowledgeSearchIndexState.valueOf(row.getString("state")),
+                    lastRebuiltAt = row.getTimestamp("last_rebuilt_at")?.toInstant(),
+                    lagSeconds = row.getLong("lag_seconds"),
+                )
+            },
+        ).single()
+        audit(
+            "KNOWLEDGE_SEARCH_INDEX_STATUS_VIEWED",
+            actor,
+            "KNOWLEDGE_SEARCH_INDEX",
+            null,
+            mapOf("state" to result.state.name),
+        )
+        return result
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun rebuildSearchIndex(actor: KnowledgeAdminActor) {
+        val now = Instant.now(clock)
+        jdbc.update(
+            """
+            insert into knowledge_search_documents (article_id, revision_id, search_document, indexed_at)
+            select article.id, revision.id,
+                   setweight(to_tsvector('simple', revision.title), 'A') ||
+                       setweight(to_tsvector('simple', coalesce(revision.summary, '')), 'B') ||
+                       setweight(to_tsvector('simple', revision.plain_text), 'C'),
+                   ?
+              from knowledge_articles article
+              join knowledge_article_revisions revision on revision.id = article.current_published_revision_id
+             where article.lifecycle = 'PUBLISHED'
+            on conflict (article_id) do update
+                set revision_id = excluded.revision_id,
+                    search_document = excluded.search_document,
+                    indexed_at = excluded.indexed_at
+            """.trimIndent(),
+            Timestamp.from(now),
+        )
+        jdbc.update(
+            """
+            delete from knowledge_search_documents document
+             where not exists (
+                select 1 from knowledge_articles article
+                 where article.id = document.article_id and article.lifecycle = 'PUBLISHED'
+                   and article.current_published_revision_id = document.revision_id
+             )
+            """.trimIndent(),
+        )
+        jdbc.update(
+            """
+            update knowledge_search_index_status
+               set state = 'IDLE', last_rebuilt_at = ?, updated_at = ?
+             where singleton = true
+            """.trimIndent(),
+            Timestamp.from(now),
+            Timestamp.from(now),
+        )
+        audit(
+            "KNOWLEDGE_SEARCH_INDEX_REBUILT",
+            actor,
+            "KNOWLEDGE_SEARCH_INDEX",
+            null,
+            emptyMap(),
+        )
+        publish(
+            "knowledge.search-index.rebuilt",
+            "knowledge-search-index:primary",
+            actor,
+            mapOf("rebuiltAt" to now.toString()),
+            now,
+        )
+    }
+
     private fun requireActiveCategory(categoryId: UUID) {
         val active = jdbc.queryForObject(
             "select count(*) from knowledge_categories where id = ? and status = 'ACTIVE'",
@@ -613,7 +826,7 @@ internal class JdbcKnowledgeAdministration(
 
     private fun lockedArticle(articleId: UUID): LockedArticle = jdbc.query(
         """
-        select id, lifecycle, version, reviewer_id
+        select id, lifecycle, audience_type, version, reviewer_id
           from knowledge_articles
          where id = ?
          for update
@@ -622,6 +835,7 @@ internal class JdbcKnowledgeAdministration(
             LockedArticle(
                 id = row.getObject("id", UUID::class.java),
                 lifecycle = KnowledgeArticleLifecycle.valueOf(row.getString("lifecycle")),
+                audienceType = KnowledgeAudienceType.valueOf(row.getString("audience_type")),
                 version = row.getLong("version"),
                 reviewerId = row.getObject("reviewer_id", UUID::class.java),
             )
@@ -754,6 +968,7 @@ internal class JdbcKnowledgeAdministration(
     private data class LockedArticle(
         val id: UUID,
         val lifecycle: KnowledgeArticleLifecycle,
+        val audienceType: KnowledgeAudienceType,
         val version: Long,
         val reviewerId: UUID?,
     )

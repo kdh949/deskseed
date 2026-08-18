@@ -39,11 +39,15 @@ class AdminKnowledgeIntegrationTest {
 
     @BeforeEach
     fun clearState() {
-        jdbc.execute("delete from knowledge_article_audience_groups")
-        jdbc.execute("delete from knowledge_article_revisions")
-        jdbc.execute("delete from knowledge_articles")
-        jdbc.execute("delete from knowledge_sections")
-        jdbc.execute("delete from knowledge_categories")
+        // Revisions and access rows are append-only in the production application role.
+        // Test isolation therefore uses one PostgreSQL TRUNCATE over the FK-connected tables.
+        jdbc.execute(
+            """
+            truncate table knowledge_access_audit_events, knowledge_article_feedback_totals,
+                knowledge_search_documents, knowledge_article_audience_groups,
+                knowledge_article_revisions, knowledge_articles, knowledge_sections, knowledge_categories
+            """.trimIndent(),
+        )
         jdbc.execute("delete from domain_event_outbox")
         // Canonical audit rows are append-only; test isolation must use PostgreSQL TRUNCATE,
         // never an application-role DELETE that production correctly rejects.
@@ -211,6 +215,133 @@ class AdminKnowledgeIntegrationTest {
 
         assertThat(jdbc.queryForObject("select count(*) from knowledge_categories", Long::class.java)).isZero()
         assertThat(jdbc.queryForObject("select count(*) from domain_event_outbox", Long::class.java)).isZero()
+    }
+
+    @Test
+    fun `published Help article is audience filtered searchable and agent reads fail closed on audit`() {
+        val adminId = insertStaff("knowledge-reader@example.com", "Knowledge reader password 42")
+        val browser = login("knowledge-reader@example.com", "Knowledge reader password 42")
+        val categoryId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/categories",
+            """{"slug":"access","title":"접근","displayOrder":1}""",
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        val sectionId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/sections",
+            """{"categoryId":"$categoryId","slug":"login","title":"로그인","displayOrder":1}""",
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        val articleId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/articles",
+            """
+            {"sectionId":"$sectionId","slug":"reset-password","title":"비밀번호 재설정",
+             "summary":"로그인 문제 해결","document":{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"비밀번호를 재설정하려면 이메일을 확인하세요."}]},"audience":{"type":"PUBLIC"}}
+            """.trimIndent(),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        mockMvc.perform(
+            patch("/api/v1/admin/knowledge/articles/{articleId}", articleId)
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId)
+                .header("X-CSRF-TOKEN", browser.csrfToken).header("If-Match", "\"0\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"sectionId":"$sectionId","slug":"reset-password","title":"비밀번호 재설정",
+                     "summary":"로그인 문제 해결","changeNote":"문구 보강",
+                     "document":{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"비밀번호를 재설정하려면 이메일을 확인하고 다시 로그인하세요."}]},"audience":{"type":"PUBLIC"}}
+                    """.trimIndent(),
+                ),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.version").value(1))
+        mockMvc.perform(
+            get("/api/v1/admin/knowledge/articles")
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.items[0].id").value(articleId.toString()))
+        mockMvc.perform(
+            get("/api/v1/admin/knowledge/articles/{articleId}/revisions", articleId)
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.length()").value(2))
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/submit-review", articleId)
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId)
+                .header("X-CSRF-TOKEN", browser.csrfToken).header("If-Match", "\"1\""),
+        ).andExpect(status().isOk)
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/publish", articleId)
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId)
+                .header("X-CSRF-TOKEN", browser.csrfToken).header("If-Match", "\"2\""),
+        ).andExpect(status().isOk)
+        mockMvc.perform(
+            get("/api/v1/admin/knowledge/search-index")
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.state").value("IDLE"))
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/search-index")
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId)
+                .header("X-CSRF-TOKEN", browser.csrfToken),
+        ).andExpect(status().isAccepted)
+
+        val publicArticle = mockMvc.perform(get("/api/v1/help/articles/reset-password"))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.currentPublishedRevision.document.blocks[0].type").value("paragraph"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", org.hamcrest.Matchers.containsString("public")))
+            .andReturn()
+        mockMvc.perform(
+            get("/api/v1/help/articles/reset-password")
+                .header("If-None-Match", checkNotNull(publicArticle.response.getHeader("ETag"))),
+        ).andExpect(status().isNotModified)
+        mockMvc.perform(
+            post("/api/v1/help/search")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query":"비밀번호 재설정"}"""),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].articleSlug").value("reset-password"))
+        mockMvc.perform(
+            post("/api/v1/help/articles/reset-password/feedback")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"helpful":true}"""),
+        ).andExpect(status().isNoContent)
+        assertThat(jdbc.queryForObject("select helpful_count from knowledge_article_feedback_totals where article_id = ?", Long::class.java, articleId))
+            .isEqualTo(1)
+
+        mockMvc.perform(
+            get("/api/v1/agent/knowledge/articles/reset-password")
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId),
+        ).andExpect(status().isOk)
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "no-store"))
+        mockMvc.perform(
+            post("/api/v1/agent/knowledge/search")
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId)
+                .header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query":"비밀번호"}"""),
+        ).andExpect(status().isOk)
+        assertThat(jdbc.queryForObject("select count(*) from knowledge_access_audit_events", Long::class.java)).isEqualTo(2)
+        jdbc.execute(
+            """
+            create or replace function fail_knowledge_access_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'injected knowledge access audit failure'; end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbc.execute(
+            "create trigger fail_knowledge_access_audit before insert on knowledge_access_audit_events for each row execute function fail_knowledge_access_audit()",
+        )
+        try {
+            mockMvc.perform(
+                get("/api/v1/agent/knowledge/articles/reset-password")
+                    .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId),
+            ).andExpect(status().isServiceUnavailable)
+        } finally {
+            jdbc.execute("drop trigger if exists fail_knowledge_access_audit on knowledge_access_audit_events")
+            jdbc.execute("drop function if exists fail_knowledge_access_audit()")
+        }
+        assertThat(jdbc.queryForObject("select count(*) from knowledge_access_audit_events", Long::class.java)).isEqualTo(2)
+        assertThat(jdbc.queryForObject("select count(*) from knowledge_search_documents where article_id = ?", Long::class.java, articleId))
+            .isEqualTo(1)
     }
 
     private fun postJson(

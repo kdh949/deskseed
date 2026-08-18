@@ -11,11 +11,13 @@ import dev.deskseed.knowledge.KnowledgeAudience
 import dev.deskseed.knowledge.KnowledgeAudienceType
 import dev.deskseed.knowledge.KnowledgeCategoryInput
 import dev.deskseed.knowledge.KnowledgeCategoryView
+import dev.deskseed.knowledge.KnowledgeArticlePage
 import dev.deskseed.knowledge.KnowledgeArticleView
 import dev.deskseed.knowledge.KnowledgeLifecycleAction
 import dev.deskseed.knowledge.KnowledgeRevisionView
 import dev.deskseed.knowledge.KnowledgeSectionInput
 import dev.deskseed.knowledge.KnowledgeSectionView
+import dev.deskseed.knowledge.KnowledgeSearchIndexStatus
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
@@ -129,13 +131,23 @@ internal class AdminKnowledgeController(
         @AuthenticationPrincipal principal: StaffPrincipal,
         @Valid @RequestBody body: KnowledgeArticleDraftRequest,
         request: HttpServletRequest,
-    ): ResponseEntity<KnowledgeArticleView> {
+    ): ResponseEntity<KnowledgeArticleResponse> {
         val created = administration.createDraft(body.toInput(documentCodec), request.actor(principal, expectedActor))
         return ResponseEntity.created(URI.create("/api/v1/admin/knowledge/articles/${created.id}"))
             .cacheControl(CacheControl.noStore())
             .eTag(created.version.toString())
-            .body(created)
+            .body(created.toResponse(documentCodec))
     }
+
+    @GetMapping("/articles")
+    fun listArticles(
+        @RequestParam(required = false) cursor: String?,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeArticlePageResponse> = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(administration.listArticles(cursor, request.actor(principal, expectedActor)).toResponse(documentCodec))
 
     @GetMapping("/articles/{articleId}")
     fun getArticle(
@@ -143,9 +155,27 @@ internal class AdminKnowledgeController(
         @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
         @AuthenticationPrincipal principal: StaffPrincipal,
         request: HttpServletRequest,
-    ): ResponseEntity<KnowledgeArticleView> {
+    ): ResponseEntity<KnowledgeArticleResponse> {
         val article = administration.getArticle(articleId, request.actor(principal, expectedActor))
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(article.version.toString()).body(article)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(article.version.toString()).body(article.toResponse(documentCodec))
+    }
+
+    @PatchMapping("/articles/{articleId}")
+    fun updateArticleDraft(
+        @PathVariable articleId: UUID,
+        @RequestHeader("If-Match") ifMatch: String,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @Valid @RequestBody body: KnowledgeArticleDraftRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeArticleResponse> {
+        val article = administration.updateDraft(
+            articleId,
+            body.toInput(documentCodec),
+            parseVersion(ifMatch),
+            request.actor(principal, expectedActor),
+        )
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(article.version.toString()).body(article.toResponse(documentCodec))
     }
 
     @GetMapping("/articles/{articleId}/revisions")
@@ -154,9 +184,9 @@ internal class AdminKnowledgeController(
         @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
         @AuthenticationPrincipal principal: StaffPrincipal,
         request: HttpServletRequest,
-    ): ResponseEntity<List<KnowledgeRevisionView>> = ResponseEntity.ok()
+    ): ResponseEntity<List<KnowledgeRevisionResponse>> = ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .body(administration.listRevisions(articleId, request.actor(principal, expectedActor)))
+        .body(administration.listRevisions(articleId, request.actor(principal, expectedActor)).map { it.toResponse(documentCodec) })
 
     @PostMapping("/articles/{articleId}/{action}")
     fun transition(
@@ -166,14 +196,14 @@ internal class AdminKnowledgeController(
         @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
         @AuthenticationPrincipal principal: StaffPrincipal,
         request: HttpServletRequest,
-    ): ResponseEntity<KnowledgeArticleView> {
+    ): ResponseEntity<KnowledgeArticleResponse> {
         val result = administration.transition(
             articleId = articleId,
             action = action.toLifecycleAction(),
             expectedVersion = parseVersion(ifMatch),
             actor = request.actor(principal, expectedActor),
         )
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result.toResponse(documentCodec))
     }
 
     @PutMapping("/articles/{articleId}/audience")
@@ -184,14 +214,33 @@ internal class AdminKnowledgeController(
         @AuthenticationPrincipal principal: StaffPrincipal,
         @Valid @RequestBody body: KnowledgeAudienceRequest,
         request: HttpServletRequest,
-    ): ResponseEntity<KnowledgeArticleView> {
+    ): ResponseEntity<KnowledgeArticleResponse> {
         val result = administration.replaceAudience(
             articleId,
             body.toAudience(),
             parseVersion(ifMatch),
             request.actor(principal, expectedActor),
         )
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result.toResponse(documentCodec))
+    }
+
+    @GetMapping("/search-index")
+    fun searchIndexStatus(
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<KnowledgeSearchIndexStatus> = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(administration.searchIndexStatus(request.actor(principal, expectedActor)))
+
+    @PostMapping("/search-index")
+    fun rebuildSearchIndex(
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<Unit> {
+        administration.rebuildSearchIndex(request.actor(principal, expectedActor))
+        return ResponseEntity.accepted().cacheControl(CacheControl.noStore()).build()
     }
 
     private fun HttpServletRequest.actor(principal: StaffPrincipal, expectedActor: UUID): KnowledgeAdminActor {
@@ -309,3 +358,65 @@ internal data class KnowledgeArticleDraftRequest(
         audience = audience.toAudience(),
     )
 }
+
+/** Keep the canonical wire document typed; Kotlin sealed-class JSON has no stable discriminator. */
+internal data class KnowledgeAudienceResponse(
+    val type: KnowledgeAudienceType,
+    val groupIds: Set<UUID>,
+)
+
+internal data class KnowledgeRevisionResponse(
+    val id: UUID,
+    val revisionNumber: Int,
+    val title: String,
+    val document: Map<String, Any>,
+    val summary: String,
+    val changeNote: String,
+    val contentChecksum: String,
+    val createdAt: java.time.Instant,
+)
+
+internal data class KnowledgeArticleResponse(
+    val id: UUID,
+    val sectionId: UUID,
+    val slug: String,
+    val lifecycle: dev.deskseed.knowledge.KnowledgeArticleLifecycle,
+    val audience: KnowledgeAudienceResponse,
+    val audienceVersion: Int,
+    val currentPublishedRevision: KnowledgeRevisionResponse?,
+    val version: Long,
+)
+
+internal data class KnowledgeArticlePageResponse(
+    val items: List<KnowledgeArticleResponse>,
+    val hasMore: Boolean,
+    val nextCursor: String?,
+)
+
+private fun KnowledgeRevisionView.toResponse(codec: CanonicalKnowledgeDocumentCodec) = KnowledgeRevisionResponse(
+    id = id,
+    revisionNumber = revisionNumber,
+    title = title,
+    document = codec.encode(document),
+    summary = summary,
+    changeNote = changeNote,
+    contentChecksum = contentChecksum,
+    createdAt = createdAt,
+)
+
+private fun KnowledgeArticleView.toResponse(codec: CanonicalKnowledgeDocumentCodec) = KnowledgeArticleResponse(
+    id = id,
+    sectionId = sectionId,
+    slug = slug,
+    lifecycle = lifecycle,
+    audience = KnowledgeAudienceResponse(audience.type, audience.groupIds),
+    audienceVersion = audienceVersion,
+    currentPublishedRevision = currentPublishedRevision?.toResponse(codec),
+    version = version,
+)
+
+private fun KnowledgeArticlePage.toResponse(codec: CanonicalKnowledgeDocumentCodec) = KnowledgeArticlePageResponse(
+    items = items.map { it.toResponse(codec) },
+    hasMore = nextCursor != null,
+    nextCursor = nextCursor,
+)

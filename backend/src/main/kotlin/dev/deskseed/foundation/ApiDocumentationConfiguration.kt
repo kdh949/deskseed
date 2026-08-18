@@ -20,6 +20,7 @@ internal class ApiDocumentationConfiguration {
         .group("core")
         .pathsToMatch(
             "/api/v1/requests/**",
+            "/api/v1/help/**",
             "/api/v1/agent/**",
             "/api/v1/admin/**",
             "/api/v1/audit/**",

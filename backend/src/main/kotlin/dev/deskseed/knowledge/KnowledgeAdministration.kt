@@ -98,6 +98,23 @@ data class KnowledgeArticleView(
     val version: Long,
 )
 
+data class KnowledgeArticlePage(
+    val items: List<KnowledgeArticleView>,
+    val nextCursor: String?,
+)
+
+enum class KnowledgeSearchIndexState {
+    IDLE,
+    REBUILDING,
+    FAILED,
+}
+
+data class KnowledgeSearchIndexStatus(
+    val state: KnowledgeSearchIndexState,
+    val lastRebuiltAt: Instant?,
+    val lagSeconds: Long,
+)
+
 interface KnowledgeAdministration {
     fun listCategories(actor: KnowledgeAdminActor): List<KnowledgeCategoryView>
 
@@ -123,7 +140,16 @@ interface KnowledgeAdministration {
 
     fun createDraft(input: CreateKnowledgeArticleDraft, actor: KnowledgeAdminActor): KnowledgeArticleView
 
+    fun listArticles(cursor: String?, actor: KnowledgeAdminActor): KnowledgeArticlePage
+
     fun getArticle(articleId: UUID, actor: KnowledgeAdminActor): KnowledgeArticleView
+
+    fun updateDraft(
+        articleId: UUID,
+        input: CreateKnowledgeArticleDraft,
+        expectedVersion: Long,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleView
 
     fun listRevisions(articleId: UUID, actor: KnowledgeAdminActor): List<KnowledgeRevisionView>
 
@@ -140,6 +166,10 @@ interface KnowledgeAdministration {
         expectedVersion: Long,
         actor: KnowledgeAdminActor,
     ): KnowledgeArticleView
+
+    fun searchIndexStatus(actor: KnowledgeAdminActor): KnowledgeSearchIndexStatus
+
+    fun rebuildSearchIndex(actor: KnowledgeAdminActor)
 }
 
 class KnowledgeNotFoundException(val code: String) : RuntimeException()
