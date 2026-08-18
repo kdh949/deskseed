@@ -51,8 +51,6 @@ SEED_CONTRACT_SCRIPTS = {
     "scripts/test_api_documentation_quality.py",
     "scripts/test_core_openapi_bundle.py",
     "scripts/validate_documentation.py",
-    "scripts/validate_goal_wave_ownership.py",
-    "scripts/verify_seed.py",
     "scripts/requirements-docs.txt",
 }
 COMPOSE_SCRIPTS = {
@@ -60,12 +58,6 @@ COMPOSE_SCRIPTS = {
     "scripts/e2e-compose-ownership.sh",
     "scripts/test-e2e-compose-ownership.sh",
 }
-GENERATED_DOCUMENTATION = {
-    "FILE-MANIFEST.txt",
-    "VALIDATION-REPORT.md",
-}
-
-
 @dataclasses.dataclass
 class ChangeClassification:
     seed_contracts: bool = False
@@ -141,8 +133,6 @@ def classify_changes(paths: Iterable[str], event_type: str) -> ChangeClassificat
         if path.startswith("api/") or path in SEED_CONTRACT_SCRIPTS:
             result.include("seed_contracts")
             result.include_backend("backend_contract")
-        elif path in GENERATED_DOCUMENTATION:
-            result.include("seed_contracts")
         elif _is_documentation(path):
             result.include("seed_contracts")
         elif _is_backend_global_build(path):
