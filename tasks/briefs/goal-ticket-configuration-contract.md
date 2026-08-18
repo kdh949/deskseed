@@ -21,7 +21,7 @@ An ADMIN can safely define typed ticket fields, versioned forms, normalized tags
 ## In scope
 
 - owned Core OpenAPI fragment, accepted data/status/rule decision, requirement reservation, evidence record, and deterministic generated bundle;
-- all required admin and core runtime operation families as reviewer-visible contract shapes; this tags/statuses PR freezes the implemented ADMIN operations and defers customer/agent runtime shapes as `BLUEPRINT_READY` to the final stacked implementation PR.
+- all required admin and core runtime operation families as reviewer-visible contract shapes: #83 freezes implemented ADMIN fields/forms, #87 freezes implemented ADMIN tags/statuses, and customer/agent runtime shapes remain `BLUEPRINT_READY` until the final stacked implementation PR.
 - V40 additive persistence foundation and ADMIN vertical slices: typed field definition/stable single-select option lifecycle, versioned form draft/preview/validation/publish/archive, normalized tag catalog, and category-compatible custom status catalog; `If-Match` precondition, CSRF/session authorization, Foundation `WorkflowCatalog` condition contribution, and atomic Admin/Security audit.
 
 ## Out of scope
