@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   TicketCollaborationRealtime,
   type CollaborationView,
@@ -65,6 +65,39 @@ describe('TicketCollaborationRealtime', () => {
     client.stop()
     expect(socket!.closed).toBe(true)
   })
+
+  it('stops reconnecting and exposes an explicit denied state for authorization failures', () => {
+    vi.useFakeTimers()
+    let socket: FakeSocket | undefined
+    let connections = 0
+    const client = new TicketCollaborationRealtime(1042, () => {
+      connections += 1
+      socket = new FakeSocket()
+      return socket
+    })
+    const observed: CollaborationView[] = []
+    client.observe((view) => observed.push(view))
+
+    client.start()
+    socket!.open()
+    socket!.message({
+      version: 1,
+      type: 'error',
+      code: 'FORBIDDEN',
+      retryable: false,
+    })
+
+    expect(observed.at(-1)!.connection).toBe('denied')
+    expect(socket!.closed).toBe(true)
+    vi.advanceTimersByTime(3_000)
+    expect(connections).toBe(1)
+
+    client.stop()
+  })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 function member(

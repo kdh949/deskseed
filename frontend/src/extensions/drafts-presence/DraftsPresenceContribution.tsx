@@ -26,6 +26,12 @@ export function TicketPresenceContext({
           사용할 수 있습니다.
         </p>
       ) : null}
+      {collaboration.connection === 'denied' ? (
+        <p aria-live="polite">
+          이 티켓의 실시간 presence를 볼 권한이 없습니다. 티켓 저장과 초안
+          복구는 계속 사용할 수 있습니다.
+        </p>
+      ) : null}
       {collaboration.connection === 'connected' &&
       collaboration.members.length === 0 ? (
         <p>현재 이 티켓을 보는 다른 상담사가 없습니다.</p>
@@ -73,7 +79,9 @@ export function ComposerPresenceStatus({
       ? `${mode} 작성 presence가 공유됩니다.`
       : collaboration.connection === 'connecting'
         ? '실시간 작성 presence를 연결하는 중입니다.'
-        : '실시간 작성 presence를 사용할 수 없습니다. 초안은 계속 저장됩니다.'
+        : collaboration.connection === 'denied'
+          ? '이 티켓의 실시간 작성 presence를 공유할 권한이 없습니다. 초안은 계속 저장됩니다.'
+          : '실시간 작성 presence를 사용할 수 없습니다. 초안은 계속 저장됩니다.'
 
   return (
     <p aria-live="polite" className="ticket-collaboration-composer-status">
@@ -85,14 +93,16 @@ export function ComposerPresenceStatus({
 function ConnectionState({
   state,
 }: {
-  state: 'connecting' | 'connected' | 'unavailable'
+  state: 'connecting' | 'connected' | 'denied' | 'unavailable'
 }) {
   const label =
     state === 'connected'
       ? '연결됨'
       : state === 'connecting'
         ? '연결 중'
-        : '연결 안 됨'
+        : state === 'denied'
+          ? '권한 없음'
+          : '연결 안 됨'
   return <span data-state={state}>{label}</span>
 }
 

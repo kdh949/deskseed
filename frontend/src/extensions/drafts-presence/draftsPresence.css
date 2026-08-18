@@ -38,6 +38,10 @@
   color: var(--ds-foreground-warning);
 }
 
+.ticket-collaboration-presence__heading span[data-state='denied'] {
+  color: var(--ds-foreground-danger);
+}
+
 .ticket-collaboration-presence > p,
 .ticket-collaboration-presence__update p {
   margin: var(--ds-ref-space-2) 0 0;
