@@ -9,7 +9,7 @@ import dev.deskseed.foundation.RequestSource
 import dev.deskseed.integration.AuthenticatedIntegrationClient
 import dev.deskseed.integration.IntegrationAuthenticationRequest
 import dev.deskseed.integration.IntegrationAuthenticationResult
-import dev.deskseed.integration.IntegrationClientAuthenticator
+import dev.deskseed.integration.IntegrationAuthenticator
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -24,7 +24,7 @@ import java.time.Instant
 @Component
 internal class PlatformSecurityFilter(
     private val networkBoundary: PlatformNetworkBoundary,
-    private val authenticator: IntegrationClientAuthenticator,
+    private val authenticator: IntegrationAuthenticator,
     private val rateLimiter: PlatformRateLimiter,
     private val auditWriter: AdminSecurityAuditWriter,
     private val problemWriter: PlatformProblemWriter,
@@ -85,7 +85,7 @@ internal class PlatformSecurityFilter(
 
         val principal = authentication.principal
         val rate = try {
-            rateLimiter.consume(principal.id)
+            rateLimiter.consume(principal.id, principal.rateLimitPerMinute)
         } catch (_: PlatformRateLimitUnavailableException) {
             problemWriter.write(
                 request,

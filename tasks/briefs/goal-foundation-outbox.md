@@ -34,7 +34,7 @@ Ticket creation and representative updates create a bounded integration-event in
 
 - `EventPublicationPort.append` requires an existing transaction; a persistence failure aborts the ticket command with its audit write.
 - a worker claim, recovery, or future delivery failure does not roll back an already committed ticket command.
-- ordering is only within `subject`; consumers must not infer global ordering.
+- ordering is only within `subject`; a later sequence cannot be claimed while a lower sequence for the same subject is pending or leased, and consumers must not infer global ordering.
 - internal child ticket facts and internal comments remain `INTERNAL`; non-child ticket metadata and public comments are explicitly `PUBLIC`.
 - delivery is at least once: an event ID and subject sequence remain stable across lease recovery; receivers must deduplicate by ID.
 
@@ -48,3 +48,4 @@ The envelope limits metadata keys and values, rejects control characters and sen
 2. Given an expired lease, the same event is claimed again with its ID and subject sequence intact and its attempt count incremented.
 3. Given ticket creation or an agent/platform update, the outbox receives metadata-only ticket/comment/status facts with the corresponding PUBLIC or INTERNAL visibility.
 4. Given an unbounded body, secret, token, control character, or invalid event type, envelope construction fails before persistence.
+5. Given a worker holds subject sequence 0, a second worker cannot claim sequence 1 until sequence 0 reaches a terminal state.

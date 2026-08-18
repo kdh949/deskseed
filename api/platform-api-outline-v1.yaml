@@ -6,6 +6,8 @@ info:
     문서에 입력하거나 저장하지 마세요.
   x-deskseed-status: implementation-ready
   x-deskseed-network-boundary: private-only
+  x-deskseed-active-authentication-strategy: OPAQUE_API_KEY
+  x-deskseed-future-authentication-boundary: ExternalOAuthTokenAuthenticator is inactive and is not an exposed flow in this release.
 servers:
 - url: https://deskseed.internal.example/api/v1/platform
 security:
@@ -205,6 +207,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: Deskseed scoped API key
+      description: 현재 release의 활성 machine authentication은 `OPAQUE_API_KEY`뿐입니다. OAuth token 또는 authorization endpoint는 이 계약에 노출하지 않으며, future resource-server adapter는 호환 경계로만 유지합니다.
   parameters:
     TicketNumber:
       name: ticketNumber

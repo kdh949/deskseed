@@ -18,6 +18,8 @@ class PlatformOpenApiContractTest {
         )
         assertThat(contract).contains(
             "x-deskseed-network-boundary: private-only",
+            "x-deskseed-active-authentication-strategy: OPAQUE_API_KEY",
+            "ExternalOAuthTokenAuthenticator is inactive",
             "tickets:create",
             "tickets:read",
             "tickets:update",

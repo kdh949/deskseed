@@ -33,6 +33,12 @@ internal class IntegrationClientEntity(
     var lastUsedAt: Instant? = null,
     @Column(name = "last_used_ip", length = 64)
     var lastUsedIp: String? = null,
+    @Column(name = "rate_limit_per_minute", nullable = false)
+    var rateLimitPerMinute: Int = 60,
+    @Column(name = "usage_count", nullable = false)
+    var usageCount: Long = 0,
+    @Column(name = "rate_policy_version", nullable = false)
+    var ratePolicyVersion: Long = 0,
     @Version
     var version: Long = 0,
 )

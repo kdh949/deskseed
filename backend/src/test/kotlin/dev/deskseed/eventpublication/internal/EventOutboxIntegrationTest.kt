@@ -85,6 +85,23 @@ class EventOutboxIntegrationTest {
             .isEqualTo("DELIVERED")
     }
 
+    @Test
+    fun `a later event for the same subject waits for the active predecessor lease`() {
+        val firstId = transactions.execute { outbox.append(eventAppend()) }!!
+        val secondId = transactions.execute { outbox.append(eventAppend()) }!!
+
+        val first = transactions.execute { outbox.claimNext("worker-a", 30) }!!
+        assertThat(first.envelope.id).isEqualTo(firstId)
+        assertThat(first.envelope.sequence).isZero()
+        assertThat(transactions.execute { outbox.claimNext("worker-b", 30) }).isNull()
+
+        transactions.executeWithoutResult { outbox.markDelivered(firstId, "worker-a") }
+
+        val second = transactions.execute { outbox.claimNext("worker-b", 30) }!!
+        assertThat(second.envelope.id).isEqualTo(secondId)
+        assertThat(second.envelope.sequence).isEqualTo(1)
+    }
+
     private fun eventAppend() = DomainEventAppend(
         envelope = DomainEventEnvelope(
             id = UUID.randomUUID(),
