@@ -16,6 +16,7 @@ import dev.deskseed.ticketing.TicketTransitionInvalidException
 import dev.deskseed.ticketing.TicketUpdateContentionException
 import dev.deskseed.ticketing.TicketVersionPreconditionFailedException
 import dev.deskseed.ticketing.TicketWriteForbiddenException
+import dev.deskseed.ticketconfiguration.TicketConfigurationValidationException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.ConstraintViolationException
 import org.springframework.dao.DataAccessException
@@ -34,6 +35,7 @@ import java.net.URI
         AgentTicketCommandController::class,
         AgentTicketBatchController::class,
         AgentExternalReferenceController::class,
+        AgentTicketConfigurationController::class,
     ],
 )
 internal class AgentTicketCommandExceptionHandler {
@@ -162,6 +164,7 @@ internal class AgentTicketCommandExceptionHandler {
 
     @ExceptionHandler(
         TicketCommandInvalidException::class,
+        TicketConfigurationValidationException::class,
         AttachmentLinkInvalidException::class,
         IllegalArgumentException::class,
         ConstraintViolationException::class,

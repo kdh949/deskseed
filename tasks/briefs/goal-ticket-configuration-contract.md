@@ -23,22 +23,24 @@ An ADMIN can safely define typed ticket fields, versioned forms, normalized tags
 - owned Core OpenAPI fragment, accepted data/status/rule decision, requirement reservation, evidence record, and deterministic generated bundle;
 - all required admin and core runtime operation families as a frozen reviewer-visible contract.
 - V40 additive persistence foundation and ADMIN vertical slices: typed field definition/stable single-select option lifecycle, versioned form draft/preview/validation/publish/archive, normalized tag catalog, and category-compatible custom status catalog; `If-Match` precondition, CSRF/session authorization, Foundation `WorkflowCatalog` condition contribution, and atomic Admin/Security audit.
+- agent runtime vertical slice: server-projected typed field values, active tag associations, and compatible custom-status selection travel through the existing ticket command/replay/optimistic-version/TicketAudit/outbox boundary; access-audited agent read returns no semantic `TICKET_VIEWED`.
+- public customer form projection is rendered from a published default snapshot and exposes a distinct customer DTO, never staff labels/descriptions, search/analytics flags, or staff-only options.
 
 ## Out of scope
 
-- runtime field values/tags/status ticket command, customer/agent projection, Platform API additions, outbox payload additions, View/Search SQL contributors, and a customer form rendering change;
+- Platform API additions, View/Search SQL contributors, customer submission-value persistence, browser E2E, and a frontend form rendering change;
 - generated Core bundle is never edited manually.
 
 ## Invariants and failure semantics
 
-- field values are typed and one-per-field; type changes after values exist are rejected.
+- field values are typed and one-per-field; agent writes must be editable in the server-projected published form and type changes after values exist are rejected.
 - publish rejects rule cycles and contradictory final effects; server re-evaluates a submitted form snapshot.
 - tags/status/value mutations use one ticket command and one ticket audit; admin configuration writes are atomically admin-audited.
 - `CLOSED` remains terminal and custom labels do not replace persisted status categories.
 
 ## Data and privacy
 
-Sensitive field values remain out of ordinary logs, customer projection, default analytics, and non-protected audit payloads. The contract exposes no credential, session, comment body, or raw search content.
+Sensitive field values remain out of ordinary logs, TicketAudit payloads, customer projection, default analytics, and non-protected audit payloads. The contract exposes no credential, session, comment body, or raw search content.
 
 ## Acceptance scenarios
 

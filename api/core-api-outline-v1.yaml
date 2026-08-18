@@ -4837,7 +4837,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TicketFormProjection'
+                $ref: '#/components/schemas/CustomerTicketFormProjection'
         '404':
           $ref: '#/components/responses/Problem'
   /api/v1/agent/ticket-configuration/descriptors:
@@ -10039,6 +10039,88 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProjectedTicketField'
+    CustomerTicketFormProjection:
+      description: 고객에게 허용된 label, option, projection policy만 반환하며 staff label/description, search/analytics/sensitive metadata는
+        포함하지 않습니다.
+      type: object
+      required:
+      - formId
+      - formVersion
+      - fields
+      properties:
+        formId:
+          type: string
+          format: uuid
+        formVersion:
+          type: integer
+          minimum: 1
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerProjectedTicketField'
+    CustomerProjectedTicketField:
+      type: object
+      required:
+      - field
+      - visible
+      - editable
+      - required
+      - options
+      properties:
+        field:
+          $ref: '#/components/schemas/CustomerTicketFieldDefinition'
+        visible:
+          type: boolean
+        editable:
+          type: boolean
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerTicketFieldOption'
+    CustomerTicketFieldDefinition:
+      type: object
+      required:
+      - id
+      - machineKey
+      - type
+      - label
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineKey:
+          type: string
+          pattern: ^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$
+          maxLength: 120
+        type:
+          $ref: '#/components/schemas/TicketFieldType'
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+    CustomerTicketFieldOption:
+      type: object
+      required:
+      - id
+      - machineKey
+      - label
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineKey:
+          type: string
+          pattern: ^[a-z][a-z0-9-]*$
+          maxLength: 80
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
     ProjectedTicketField:
       type: object
       required:

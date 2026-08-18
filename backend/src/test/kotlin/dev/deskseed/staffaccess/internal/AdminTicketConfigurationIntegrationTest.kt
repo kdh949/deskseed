@@ -199,6 +199,15 @@ class AdminTicketConfigurationIntegrationTest {
             .andExpect(header().string("ETag", "\"2\""))
             .andExpect(jsonPath("$.lifecycle").value("PUBLISHED"))
 
+        mockMvc.perform(
+            get("/api/v1/customer/ticket-forms").param("ticketKind", "CUSTOMER_REQUEST"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.formId").value(formId.toString()))
+            .andExpect(jsonPath("$.fields[0].field.label").value("결제 수단"))
+            .andExpect(jsonPath("$.fields[0].field.staffLabel").doesNotExist())
+
         assertThatThrownBy {
             jdbc.update("update ticket_form_versions set definition_json = '{}'::jsonb where form_id = ? and version = 1", formId)
         }.hasMessageContaining("ticket_form_versions rows are immutable")
