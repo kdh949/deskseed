@@ -20,15 +20,15 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 
 ## Counts
 
-- Adr Files: 41
+- Adr Files: 42
 - Bundled Image Assets: 0
 - Canonical Docs: 56
 - Core Api Requirement Links: 63
-- Decision Definitions: 56
+- Decision Definitions: 57
 - Dual Use Actor Bound Operations: 1
 - E2E Visual Baselines: 12
 - Json Files: 11
-- Markdown Files: 229
+- Markdown Files: 232
 - Openapi Operations: 169
 - Openapi Paths: 134
 - Requirement Definitions: 97
