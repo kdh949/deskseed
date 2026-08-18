@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class TicketRelationMigrationTest {
     @Test
     fun `version eight upgrades existing tickets and enforces typed one parent non self relations`() {

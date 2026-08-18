@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class TicketIntegrationEventPublisherTest {
     private val recording = RecordingEventPublication()
     private val subject = TicketIntegrationEventPublisher(recording)

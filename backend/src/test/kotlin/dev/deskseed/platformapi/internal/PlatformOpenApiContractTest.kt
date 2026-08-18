@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
 
+@dev.deskseed.testsupport.category.ContractTest
 class PlatformOpenApiContractTest {
     @Test
     fun `frozen v1 exposes only four ticket operations with machine controls`() {

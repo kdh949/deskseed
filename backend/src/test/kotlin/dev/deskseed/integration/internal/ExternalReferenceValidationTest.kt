@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import tools.jackson.databind.ObjectMapper
 import java.time.Instant
 
+@dev.deskseed.testsupport.category.FastTest
 class ExternalReferenceValidationTest {
     private val subject = ExternalReferenceValidation(ObjectMapper())
 

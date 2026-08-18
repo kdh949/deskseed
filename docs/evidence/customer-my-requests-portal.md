@@ -73,7 +73,7 @@ not create a second ticket comment, business audit or mail intent.
 | Visual gate | PASS | reviewed Darwin Chromium snapshots at 1280×800 and 1440×900 |
 | Real Compose Playwright | PASS | 6/6; includes anonymous submit → magic link → explicit claim → My Requests → PUBLIC follow-up → exact replay |
 | Compose smoke | PASS | backend `:18080/actuator/health` and Mailpit `:18025/readyz`, exit 0; owned containers/network/volume cleaned |
-| Docs/contracts | PASS | `validate_documentation.py` and `verify_seed.py` |
+| Docs/contracts | PASS | `make docs-check` semantic documentation and OpenAPI gates |
 
 ## Mailpit API verification log
 

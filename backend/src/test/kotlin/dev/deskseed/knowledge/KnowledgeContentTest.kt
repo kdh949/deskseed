@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class KnowledgeContentTest {
     private val validator = CanonicalKnowledgeDocumentValidator()
 

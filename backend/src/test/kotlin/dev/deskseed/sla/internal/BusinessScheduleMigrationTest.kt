@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class BusinessScheduleMigrationTest {
     @Test
     fun `migration seeds Seoul weekday schedule and protects immutable history`() {

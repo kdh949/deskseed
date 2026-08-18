@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import java.util.Base64
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class CustomerAuthSecretsTest {
     private val key = Base64.getEncoder().encodeToString(ByteArray(32) { (it + 1).toByte() })
 

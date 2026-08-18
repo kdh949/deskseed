@@ -11,6 +11,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class InMemoryPresenceBusTest {
     private val clock = MutableClock(Instant.parse("2026-08-18T00:00:00Z"))
     private val bus = InMemoryPresenceBus(clock, Duration.ofSeconds(60))

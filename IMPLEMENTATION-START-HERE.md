@@ -24,7 +24,7 @@ Core MVP는 `IMPLEMENTATION_READY`다. 미래 기능은 상세 spec이 있는 `B
 ```text
 1. 저장소에 이 문서 seed 복사
 2. Spring Initializr/React repository bootstrap
-3. `python3 scripts/validate_documentation.py --write`를 CI에 추가
+3. `make docs-check`를 CI에 추가
 4. tasks/00 실행
 5. tasks/06 → 12 순서로 Core MVP
 6. tasks/01 → 02로 보안 감사 release gate

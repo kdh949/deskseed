@@ -25,6 +25,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 @Testcontainers
+@dev.deskseed.testsupport.category.IntegrationTest
 class EventOutboxIntegrationTest {
     private val now = Instant.parse("2026-08-18T00:00:00Z")
     private lateinit var jdbc: JdbcTemplate

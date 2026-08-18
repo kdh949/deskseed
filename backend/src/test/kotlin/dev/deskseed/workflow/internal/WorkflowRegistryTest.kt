@@ -20,6 +20,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.ObjectMapper
 
+@dev.deskseed.testsupport.category.FastTest
 class WorkflowRegistryTest {
     private val mapper = ObjectMapper()
 

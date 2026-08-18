@@ -7,7 +7,6 @@ import dev.deskseed.collaboration.TicketDraftMaintenance
 import dev.deskseed.collaboration.TicketDraftStore
 import dev.deskseed.collaboration.UpdatedTicketDraft
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -224,7 +223,3 @@ internal class TicketDraftExpiryWorker(
         maintenance.purgeExpired("ticket-draft-expiry", 200)
     }
 }
-
-@Component
-@EnableScheduling
-internal class TicketDraftSchedulingConfiguration

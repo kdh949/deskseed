@@ -22,6 +22,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 @Testcontainers
+@dev.deskseed.testsupport.category.IntegrationTest
 class JdbcTicketDraftStoreIntegrationTest {
     private val now = Instant.parse("2026-08-18T00:00:00Z")
     private val customerId = UUID.fromString("018f7c2c-7348-7a32-a971-4c9a845b3301")

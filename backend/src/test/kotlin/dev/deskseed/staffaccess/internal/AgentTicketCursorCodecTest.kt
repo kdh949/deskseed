@@ -8,6 +8,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.time.Instant
 
+@dev.deskseed.testsupport.category.FastTest
 class AgentTicketCursorCodecTest {
     private val filters = StaffTicketListFilter()
     private val cursor = StaffTicketCursor(Instant.parse("2026-08-10T10:15:30Z"), 1042)
