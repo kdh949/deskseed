@@ -187,6 +187,149 @@ class AdminKnowledgeIntegrationTest {
     }
 
     @Test
+    fun `admin article list filters a document-free summary projection`() {
+        val adminId = insertStaff("knowledge-list-admin@example.com", "Knowledge list admin password 42")
+        val browser = login("knowledge-list-admin@example.com", "Knowledge list admin password 42")
+        val categoryId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/categories",
+            """{"slug":"list","title":"목록","displayOrder":1}""",
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        val sectionId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/sections",
+            """{"categoryId":"$categoryId","slug":"summary","title":"요약","displayOrder":1}""",
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        val publishedArticleId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/articles",
+            """
+            {"sectionId":"$sectionId","slug":"public-summary","title":"목록용 제목","summary":"목록용 요약",
+             "document":{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"LIST_ONLY_BODY_MARKER"}]},
+             "audience":{"type":"PUBLIC"}}
+            """.trimIndent(),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/submit-review", publishedArticleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"0\""),
+        ).andExpect(status().isOk)
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/publish", publishedArticleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"1\""),
+        ).andExpect(status().isOk)
+        postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/articles",
+            """
+            {"sectionId":"$sectionId","slug":"staff-draft","title":"직원 초안",
+             "document":{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"목록에서 제외됩니다."}]},
+             "audience":{"type":"STAFF"}}
+            """.trimIndent(),
+        ).andExpect(status().isCreated)
+
+        val result = mockMvc.perform(
+            get("/api/v1/admin/knowledge/articles")
+                .param("lifecycle", "PUBLISHED")
+                .param("sectionId", sectionId.toString())
+                .param("audience", "PUBLIC")
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString()),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].id").value(publishedArticleId.toString()))
+            .andExpect(jsonPath("$.items[0].currentPublishedRevision.title").value("목록용 제목"))
+            .andExpect(jsonPath("$.items[0].currentPublishedRevision.document").doesNotExist())
+            .andExpect(jsonPath("$.items[0].currentPublishedRevision.changeNote").doesNotExist())
+            .andReturn()
+
+        assertThat(result.response.contentAsString).doesNotContain("LIST_ONLY_BODY_MARKER")
+    }
+
+    @Test
+    fun `audience replacement rejects a public attachment before aggregate side effects`() {
+        val adminId = insertStaff("knowledge-audience-admin@example.com", "Knowledge audience admin password 42")
+        val browser = login("knowledge-audience-admin@example.com", "Knowledge audience admin password 42")
+        val categoryId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/categories",
+            """{"slug":"attachment","title":"첨부","displayOrder":1}""",
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        val sectionId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/sections",
+            """{"categoryId":"$categoryId","slug":"restricted","title":"제한","displayOrder":1}""",
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        val articleId = postJson(
+            browser,
+            adminId,
+            "/api/v1/admin/knowledge/articles",
+            """
+            {"sectionId":"$sectionId","slug":"restricted-attachment","title":"제한 첨부",
+             "document":{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"제한 문서입니다."},{"type":"attachment","attachmentId":"${UUID.randomUUID()}"}]},
+             "audience":{"type":"STAFF"}}
+            """.trimIndent(),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString.uuidField("id")
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/submit-review", articleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"0\""),
+        ).andExpect(status().isOk)
+        mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/publish", articleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"1\""),
+        ).andExpect(status().isOk)
+        val auditsBefore = jdbc.queryForObject(
+            "select count(*) from admin_security_audit_events where target_id = ?",
+            Long::class.java,
+            articleId,
+        )!!
+        val eventsBefore = jdbc.queryForObject(
+            "select count(*) from domain_event_outbox where subject = ?",
+            Long::class.java,
+            "knowledge-article:$articleId",
+        )!!
+
+        mockMvc.perform(
+            put("/api/v1/admin/knowledge/articles/{articleId}/audience", articleId)
+                .session(browser.session)
+                .header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken)
+                .header("If-Match", "\"2\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"type":"PUBLIC"}"""),
+        ).andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/knowledge-validation"))
+
+        assertThat(jdbc.queryForObject("select audience_type from knowledge_articles where id = ?", String::class.java, articleId))
+            .isEqualTo("STAFF")
+        assertThat(jdbc.queryForObject("select audience_version from knowledge_articles where id = ?", Int::class.java, articleId))
+            .isEqualTo(1)
+        assertThat(jdbc.queryForObject("select version from knowledge_articles where id = ?", Long::class.java, articleId))
+            .isEqualTo(2)
+        assertThat(jdbc.queryForObject("select count(*) from admin_security_audit_events where target_id = ?", Long::class.java, articleId))
+            .isEqualTo(auditsBefore)
+        assertThat(jdbc.queryForObject("select count(*) from domain_event_outbox where subject = ?", Long::class.java, "knowledge-article:$articleId"))
+            .isEqualTo(eventsBefore)
+    }
+
+    @Test
     fun `required audit failure rolls category mutation and event intent back`() {
         val adminId = insertStaff("rollback-admin@example.com", "Rollback admin password 42")
         val browser = login("rollback-admin@example.com", "Rollback admin password 42")

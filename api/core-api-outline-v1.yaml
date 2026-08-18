@@ -4371,10 +4371,13 @@ paths:
       - staffSession: []
       parameters:
       - $ref: '#/components/parameters/KnowledgeCursor'
+      - $ref: '#/components/parameters/KnowledgeArticleLifecycleFilter'
+      - $ref: '#/components/parameters/KnowledgeArticleSectionIdFilter'
+      - $ref: '#/components/parameters/KnowledgeArticleAudienceFilter'
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
       responses:
         '200':
-          $ref: '#/components/responses/KnowledgeSearchResponse'
+          $ref: '#/components/responses/AdminKnowledgeArticleSummaryPageResponse'
         '400':
           $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
         '403':
@@ -4866,6 +4869,39 @@ components:
       schema:
         type: string
         maxLength: 1024
+    KnowledgeArticleLifecycleFilter:
+      name: lifecycle
+      in: query
+      required: false
+      description: 관리자 목록에서 반환할 article lifecycle만 선택합니다.
+      schema:
+        type: string
+        enum:
+        - DRAFT
+        - IN_REVIEW
+        - PUBLISHED
+        - UNPUBLISHED
+        - ARCHIVED
+    KnowledgeArticleSectionIdFilter:
+      name: sectionId
+      in: query
+      required: false
+      description: 관리자 목록을 특정 knowledge section UUID로 제한합니다.
+      schema:
+        type: string
+        format: uuid
+    KnowledgeArticleAudienceFilter:
+      name: audience
+      in: query
+      required: false
+      description: 관리자 목록에서 반환할 article audience type만 선택합니다.
+      schema:
+        type: string
+        enum:
+        - PUBLIC
+        - SIGNED_IN_CUSTOMER
+        - STAFF
+        - SELECTED_STAFF_GROUPS
     IfMatch:
       name: If-Match
       in: header
@@ -5034,6 +5070,19 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/KnowledgeArticle'
+    AdminKnowledgeArticleSummaryPageResponse:
+      description: lifecycle·section·audience filter가 적용된 관리자 article 목록이며 canonical document 본문은 포함하지 않습니다.
+      headers:
+        Cache-Control:
+          description: 관리자 목록은 shared cache에 저장하지 않습니다.
+          schema:
+            type: string
+            enum:
+            - no-store
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AdminKnowledgeArticleSummaryPage'
     AgentKnowledgeArticleResponse:
       description: restricted staff article 응답이며 no-store를 적용합니다.
       headers:
@@ -9470,6 +9519,7 @@ components:
           uniqueItems: true
     KnowledgeBlockDocument:
       type: object
+      additionalProperties: false
       description: versioned vendor-neutral Deskseed block document이며 HTML payload와 unknown block type은 허용하지 않습니다.
       required:
       - schemaVersion
@@ -9484,8 +9534,182 @@ components:
           minItems: 1
           maxItems: 200
           items:
-            type: object
-            additionalProperties: true
+            $ref: '#/components/schemas/KnowledgeBlock'
+    KnowledgeBlock:
+      oneOf:
+      - $ref: '#/components/schemas/KnowledgeParagraphBlock'
+      - $ref: '#/components/schemas/KnowledgeHeadingBlock'
+      - $ref: '#/components/schemas/KnowledgeListBlock'
+      - $ref: '#/components/schemas/KnowledgeCodeBlock'
+      - $ref: '#/components/schemas/KnowledgeCalloutBlock'
+      - $ref: '#/components/schemas/KnowledgeQuoteBlock'
+      - $ref: '#/components/schemas/KnowledgeDividerBlock'
+      - $ref: '#/components/schemas/KnowledgeLinkBlock'
+      - $ref: '#/components/schemas/KnowledgeAttachmentBlock'
+      discriminator:
+        propertyName: type
+        mapping:
+          paragraph: '#/components/schemas/KnowledgeParagraphBlock'
+          heading: '#/components/schemas/KnowledgeHeadingBlock'
+          list: '#/components/schemas/KnowledgeListBlock'
+          code: '#/components/schemas/KnowledgeCodeBlock'
+          callout: '#/components/schemas/KnowledgeCalloutBlock'
+          quote: '#/components/schemas/KnowledgeQuoteBlock'
+          divider: '#/components/schemas/KnowledgeDividerBlock'
+          link: '#/components/schemas/KnowledgeLinkBlock'
+          attachment: '#/components/schemas/KnowledgeAttachmentBlock'
+    KnowledgeParagraphBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - text
+      properties:
+        type:
+          type: string
+          enum:
+          - paragraph
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    KnowledgeHeadingBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - level
+      - text
+      properties:
+        type:
+          type: string
+          enum:
+          - heading
+        level:
+          type: integer
+          minimum: 2
+          maximum: 3
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    KnowledgeListBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - ordered
+      - items
+      properties:
+        type:
+          type: string
+          enum:
+          - list
+        ordered:
+          type: boolean
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 10000
+    KnowledgeCodeBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - text
+      properties:
+        type:
+          type: string
+          enum:
+          - code
+        language:
+          type:
+          - string
+          - 'null'
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    KnowledgeCalloutBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - text
+      properties:
+        type:
+          type: string
+          enum:
+          - callout
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    KnowledgeQuoteBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - text
+      properties:
+        type:
+          type: string
+          enum:
+          - quote
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    KnowledgeDividerBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      properties:
+        type:
+          type: string
+          enum:
+          - divider
+    KnowledgeLinkBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - text
+      - url
+      properties:
+        type:
+          type: string
+          enum:
+          - link
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        url:
+          type: string
+          format: uri
+          pattern: ^https://
+          minLength: 1
+          maxLength: 2048
+    KnowledgeAttachmentBlock:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - attachmentId
+      properties:
+        type:
+          type: string
+          enum:
+          - attachment
+        attachmentId:
+          type: string
+          format: uuid
     KnowledgeArticleDraftInput:
       type: object
       x-deskseed-documentation-review: MANUAL
@@ -9616,6 +9840,96 @@ components:
         version:
           type: integer
           format: int64
+    AdminKnowledgeArticleRevisionSummary:
+      type: object
+      additionalProperties: false
+      description: 관리자 목록용 immutable revision metadata이며 canonical document와 change note는 포함하지 않습니다.
+      required:
+      - id
+      - revisionNumber
+      - title
+      - summary
+      - contentChecksum
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        revisionNumber:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+        summary:
+          type: string
+        contentChecksum:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AdminKnowledgeArticleSummary:
+      type: object
+      additionalProperties: false
+      description: 관리자 article 목록의 bounded summary projection입니다. 상세 API만 canonical document를 반환합니다.
+      required:
+      - id
+      - sectionId
+      - slug
+      - lifecycle
+      - audience
+      - audienceVersion
+      - currentPublishedRevision
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        sectionId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        lifecycle:
+          type: string
+          enum:
+          - DRAFT
+          - IN_REVIEW
+          - PUBLISHED
+          - UNPUBLISHED
+          - ARCHIVED
+        audience:
+          $ref: '#/components/schemas/KnowledgeAudienceInput'
+        audienceVersion:
+          type: integer
+          minimum: 1
+        currentPublishedRevision:
+          oneOf:
+          - $ref: '#/components/schemas/AdminKnowledgeArticleRevisionSummary'
+          - type: 'null'
+        version:
+          type: integer
+          format: int64
+    AdminKnowledgeArticleSummaryPage:
+      type: object
+      additionalProperties: false
+      description: filter-bound stable cursor로 페이지를 넘기는 관리자 article summary collection입니다.
+      required:
+      - items
+      - hasMore
+      - nextCursor
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AdminKnowledgeArticleSummary'
+        hasMore:
+          type: boolean
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          maxLength: 1024
     AgentKnowledgeArticle:
       allOf:
       - $ref: '#/components/schemas/KnowledgeArticle'

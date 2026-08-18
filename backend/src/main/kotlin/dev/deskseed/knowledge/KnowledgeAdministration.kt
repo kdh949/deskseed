@@ -103,6 +103,38 @@ data class KnowledgeArticlePage(
     val nextCursor: String?,
 )
 
+data class KnowledgeArticleListFilter(
+    val lifecycle: KnowledgeArticleLifecycle? = null,
+    val sectionId: UUID? = null,
+    val audience: KnowledgeAudienceType? = null,
+)
+
+/** List projection deliberately excludes immutable canonical document bodies. */
+data class KnowledgeArticleRevisionSummary(
+    val id: UUID,
+    val revisionNumber: Int,
+    val title: String,
+    val summary: String,
+    val contentChecksum: String,
+    val createdAt: Instant,
+)
+
+data class KnowledgeArticleSummary(
+    val id: UUID,
+    val sectionId: UUID,
+    val slug: String,
+    val lifecycle: KnowledgeArticleLifecycle,
+    val audience: KnowledgeAudience,
+    val audienceVersion: Int,
+    val currentPublishedRevision: KnowledgeArticleRevisionSummary?,
+    val version: Long,
+)
+
+data class KnowledgeArticleSummaryPage(
+    val items: List<KnowledgeArticleSummary>,
+    val nextCursor: String?,
+)
+
 enum class KnowledgeSearchIndexState {
     IDLE,
     REBUILDING,
@@ -140,7 +172,11 @@ interface KnowledgeAdministration {
 
     fun createDraft(input: CreateKnowledgeArticleDraft, actor: KnowledgeAdminActor): KnowledgeArticleView
 
-    fun listArticles(cursor: String?, actor: KnowledgeAdminActor): KnowledgeArticlePage
+    fun listArticles(
+        cursor: String?,
+        filter: KnowledgeArticleListFilter,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleSummaryPage
 
     fun getArticle(articleId: UUID, actor: KnowledgeAdminActor): KnowledgeArticleView
 

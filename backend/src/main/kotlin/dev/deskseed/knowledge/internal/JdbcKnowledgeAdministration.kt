@@ -14,7 +14,10 @@ import dev.deskseed.knowledge.CreateKnowledgeArticleDraft
 import dev.deskseed.knowledge.KnowledgeAdminActor
 import dev.deskseed.knowledge.KnowledgeAdministration
 import dev.deskseed.knowledge.KnowledgeArticleLifecycle
-import dev.deskseed.knowledge.KnowledgeArticlePage
+import dev.deskseed.knowledge.KnowledgeArticleListFilter
+import dev.deskseed.knowledge.KnowledgeArticleRevisionSummary
+import dev.deskseed.knowledge.KnowledgeArticleSummary
+import dev.deskseed.knowledge.KnowledgeArticleSummaryPage
 import dev.deskseed.knowledge.KnowledgeArticleView
 import dev.deskseed.knowledge.KnowledgeAudience
 import dev.deskseed.knowledge.KnowledgeAudienceType
@@ -348,37 +351,110 @@ internal class JdbcKnowledgeAdministration(
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
-    override fun listArticles(cursor: String?, actor: KnowledgeAdminActor): KnowledgeArticlePage {
-        val decoded = cursorCodec.decode("admin-articles", cursor)
+    override fun listArticles(
+        cursor: String?,
+        filter: KnowledgeArticleListFilter,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleSummaryPage {
+        val conditions = mutableListOf<String>()
         val arguments = mutableListOf<Any>()
-        val boundary = decoded?.let {
+        filter.lifecycle?.let {
+            conditions += "article.lifecycle = ?"
+            arguments += it.name
+        }
+        filter.sectionId?.let {
+            conditions += "article.section_id = ?"
+            arguments += it
+        }
+        filter.audience?.let {
+            conditions += "article.audience_type = ?"
+            arguments += it.name
+        }
+        val scope = if (filter.lifecycle == null && filter.sectionId == null && filter.audience == null) {
+            "admin-articles"
+        } else {
+            listOf(
+                "admin-articles",
+                filter.lifecycle?.name ?: "all-lifecycles",
+                filter.sectionId?.toString() ?: "all-sections",
+                filter.audience?.name ?: "all-audiences",
+            ).joinToString(":")
+        }
+        cursorCodec.decode(scope, cursor)?.let {
+            conditions += "(article.created_at, article.id) < (?, ?)"
             arguments += Timestamp.from(it.createdAt)
             arguments += it.articleId
-            "where (created_at, id) < (?, ?)"
-        }.orEmpty()
+        }
+        val whereClause = conditions.takeIf(List<String>::isNotEmpty)?.joinToString(" and ", prefix = "where ").orEmpty()
         val rows = jdbc.query(
             """
-            select id, created_at
-              from knowledge_articles
-              $boundary
-             order by created_at desc, id desc
+            select article.id, article.section_id, article.slug, article.lifecycle, article.audience_type,
+                   article.audience_version, article.version, article.created_at,
+                   revision.id as revision_id, revision.revision_number, revision.title, revision.summary,
+                   revision.content_checksum, revision.created_at as revision_created_at,
+                   array_agg(audience_group.group_id order by audience_group.group_id)
+                       filter (where audience_group.group_id is not null) as audience_group_ids
+              from knowledge_articles article
+              left join knowledge_article_audience_groups audience_group on audience_group.article_id = article.id
+              left join knowledge_article_revisions revision on revision.id = article.current_published_revision_id
+              $whereClause
+             group by article.id, article.section_id, article.slug, article.lifecycle, article.audience_type,
+                      article.audience_version, article.version, article.created_at,
+                      revision.id, revision.revision_number, revision.title, revision.summary,
+                      revision.content_checksum, revision.created_at
+             order by article.created_at desc, article.id desc
              limit 51
             """.trimIndent(),
-            { row, _ -> KnowledgeCursor(row.getTimestamp("created_at").toInstant(), row.getObject("id", UUID::class.java)) },
+            { row, _ ->
+                val groupIds = row.getArray("audience_group_ids")?.array
+                    ?.let { values -> (values as Array<*>).map { it as UUID }.toSet() }
+                    .orEmpty()
+                val revisionId = row.getObject("revision_id", UUID::class.java)
+                AdminArticleListRow(
+                    cursor = KnowledgeCursor(row.getTimestamp("created_at").toInstant(), row.getObject("id", UUID::class.java)),
+                    summary = KnowledgeArticleSummary(
+                        id = row.getObject("id", UUID::class.java),
+                        sectionId = row.getObject("section_id", UUID::class.java),
+                        slug = row.getString("slug"),
+                        lifecycle = KnowledgeArticleLifecycle.valueOf(row.getString("lifecycle")),
+                        audience = KnowledgeAudienceFactory.fromDatabase(
+                            KnowledgeAudienceType.valueOf(row.getString("audience_type")),
+                            groupIds,
+                        ),
+                        audienceVersion = row.getInt("audience_version"),
+                        currentPublishedRevision = revisionId?.let {
+                            KnowledgeArticleRevisionSummary(
+                                id = it,
+                                revisionNumber = row.getInt("revision_number"),
+                                title = row.getString("title"),
+                                summary = row.getString("summary"),
+                                contentChecksum = row.getString("content_checksum"),
+                                createdAt = checkNotNull(row.getTimestamp("revision_created_at")).toInstant(),
+                            )
+                        },
+                        version = row.getLong("version"),
+                    ),
+                )
+            },
             *arguments.toTypedArray(),
         )
-        val items = rows.take(50).map { article(it.articleId) }
+        val items = rows.take(50).map(AdminArticleListRow::summary)
         audit(
             eventType = "KNOWLEDGE_ARTICLE_LISTED",
             actor = actor,
             targetType = "KNOWLEDGE_ARTICLE_COLLECTION",
             targetId = null,
-            metadata = mapOf("count" to items.size.toString()),
+            metadata = mapOf(
+                "count" to items.size.toString(),
+                "lifecycle" to (filter.lifecycle?.name ?: "ALL"),
+                "sectionId" to (filter.sectionId?.toString() ?: "ALL"),
+                "audience" to (filter.audience?.name ?: "ALL"),
+            ),
         )
-        return KnowledgeArticlePage(
+        return KnowledgeArticleSummaryPage(
             items = items,
             nextCursor = if (rows.size > items.size) {
-                cursorCodec.encode("admin-articles", rows[items.size - 1])
+                cursorCodec.encode(scope, rows[items.size - 1].cursor)
             } else null,
         )
     }
@@ -585,6 +661,13 @@ internal class JdbcKnowledgeAdministration(
         val root = lockedArticle(articleId)
         if (root.version != expectedVersion) throw KnowledgePreconditionFailedException(root.version)
         requireAudienceGroupsActive(audience)
+        val revisionId = if (root.lifecycle == KnowledgeArticleLifecycle.PUBLISHED) {
+            root.currentPublishedRevisionId
+                ?: throw KnowledgeNotFoundException("PUBLISHED_ARTICLE_REVISION_NOT_FOUND")
+        } else {
+            latestRevisionId(articleId)
+        }
+        documentValidator.validate(revision(revisionId).document, audience)
         val now = Instant.now(clock)
         jdbc.update("delete from knowledge_article_audience_groups where article_id = ?", articleId)
         audience.groupIds.sortedBy(UUID::toString).forEach { groupId ->
@@ -826,7 +909,7 @@ internal class JdbcKnowledgeAdministration(
 
     private fun lockedArticle(articleId: UUID): LockedArticle = jdbc.query(
         """
-        select id, lifecycle, audience_type, version, reviewer_id
+        select id, lifecycle, audience_type, current_published_revision_id, version, reviewer_id
           from knowledge_articles
          where id = ?
          for update
@@ -836,6 +919,7 @@ internal class JdbcKnowledgeAdministration(
                 id = row.getObject("id", UUID::class.java),
                 lifecycle = KnowledgeArticleLifecycle.valueOf(row.getString("lifecycle")),
                 audienceType = KnowledgeAudienceType.valueOf(row.getString("audience_type")),
+                currentPublishedRevisionId = row.getObject("current_published_revision_id", UUID::class.java),
                 version = row.getLong("version"),
                 reviewerId = row.getObject("reviewer_id", UUID::class.java),
             )
@@ -969,8 +1053,14 @@ internal class JdbcKnowledgeAdministration(
         val id: UUID,
         val lifecycle: KnowledgeArticleLifecycle,
         val audienceType: KnowledgeAudienceType,
+        val currentPublishedRevisionId: UUID?,
         val version: Long,
         val reviewerId: UUID?,
+    )
+
+    private data class AdminArticleListRow(
+        val cursor: KnowledgeCursor,
+        val summary: KnowledgeArticleSummary,
     )
 
     private data class LockedVersion(val version: Long)

@@ -33,8 +33,9 @@
 
 - Conflict leaves the existing revision and publication pointer unchanged.
 - Required admin/search/restricted-read audit failure returns 503 and commits no mutation or protected response.
-- Unknown blocks, unsupported Editor.js tools, HTML payloads, unsafe URLs, and PUBLIC references to non-CLEAN/Internal attachments are rejected before persistence.
-- Unpublish/audience changes invalidate shared permission assumptions transactionally; restricted responses are never shared cached.
+- Unknown blocks, unsupported Editor.js tools, HTML payloads, unsafe URLs, and PUBLIC references to non-CLEAN/Internal attachments are rejected before persistence; the OpenAPI block document uses the same closed discriminated block family.
+- Unpublish/audience changes validate the current published or latest canonical document before audience/audit/outbox writes invalidate shared permission assumptions; restricted responses are never shared cached.
+- Admin article collection reads accept lifecycle, section, and audience filters and return a document-free summary projection; detail reads alone load canonical documents.
 
 ## Validation plan
 

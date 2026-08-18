@@ -215,8 +215,8 @@ paths:
       x-deskseed-requirements: [REQ-KB-001]
       tags: [Knowledge Base]
       security: [{ staffSession: [] }]
-      parameters: [{ $ref: '#/components/parameters/KnowledgeCursor' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
-      responses: { '200': { $ref: '#/components/responses/KnowledgeSearchResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' } }
+      parameters: [{ $ref: '#/components/parameters/KnowledgeCursor' }, { $ref: '#/components/parameters/KnowledgeArticleLifecycleFilter' }, { $ref: '#/components/parameters/KnowledgeArticleSectionIdFilter' }, { $ref: '#/components/parameters/KnowledgeArticleAudienceFilter' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses: { '200': { $ref: '#/components/responses/AdminKnowledgeArticleSummaryPageResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' } }
     post:
       operationId: createKnowledgeArticleDraft
       summary: 관리자 knowledge article draft 생성
@@ -325,6 +325,9 @@ components:
     ArticleId: { name: articleId, in: path, required: true, description: article stable UUID입니다., schema: { type: string, format: uuid } }
     TicketNumber: { name: ticketNumber, in: path, required: true, description: Deskseed ticket number입니다., schema: { type: integer, format: int64, minimum: 1 } }
     KnowledgeCursor: { name: cursor, in: query, required: false, description: 권한과 정렬 state를 포함하는 opaque cursor입니다., schema: { type: string, maxLength: 1024 } }
+    KnowledgeArticleLifecycleFilter: { name: lifecycle, in: query, required: false, description: 관리자 목록에서 반환할 article lifecycle만 선택합니다., schema: { type: string, enum: [DRAFT, IN_REVIEW, PUBLISHED, UNPUBLISHED, ARCHIVED] } }
+    KnowledgeArticleSectionIdFilter: { name: sectionId, in: query, required: false, description: 관리자 목록을 특정 knowledge section UUID로 제한합니다., schema: { type: string, format: uuid } }
+    KnowledgeArticleAudienceFilter: { name: audience, in: query, required: false, description: 관리자 목록에서 반환할 article audience type만 선택합니다., schema: { type: string, enum: [PUBLIC, SIGNED_IN_CUSTOMER, STAFF, SELECTED_STAFF_GROUPS] } }
     IfMatch: { name: If-Match, in: header, required: true, description: resource version에 대한 HTTP precondition입니다., schema: { type: string, minLength: 3, maxLength: 160 } }
     IfNoneMatch: { name: If-None-Match, in: header, required: false, description: previously received article ETag입니다., schema: { type: string, minLength: 3, maxLength: 160 } }
     KnowledgeLifecycleAction: { name: action, in: path, required: true, description: explicit article lifecycle transition입니다., schema: { type: string, enum: [submit-review, publish, unpublish, archive] } }
@@ -341,6 +344,11 @@ components:
         Last-Modified: { description: current published revision 시각입니다., schema: { type: string, format: date-time } }
         Cache-Control: { description: PUBLIC anonymous response만 shared cache 가능하며 다른 audience는 private 또는 no-store입니다., schema: { type: string } }
       content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeArticle' } } }
+    AdminKnowledgeArticleSummaryPageResponse:
+      description: lifecycle·section·audience filter가 적용된 관리자 article 목록이며 canonical document 본문은 포함하지 않습니다.
+      headers:
+        Cache-Control: { description: 관리자 목록은 shared cache에 저장하지 않습니다., schema: { type: string, enum: [no-store] } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/AdminKnowledgeArticleSummaryPage' } } }
     AgentKnowledgeArticleResponse: { description: restricted staff article 응답이며 no-store를 적용합니다., headers: { Cache-Control: { description: protected article response는 no-store입니다., schema: { type: string, enum: [no-store] } } }, content: { application/json: { schema: { $ref: '#/components/schemas/AgentKnowledgeArticle' } } } }
     KnowledgeSearchResponse: { description: permission-filtered deterministic search page 응답입니다., headers: { Cache-Control: { description: query와 audience에 의존하는 search response는 no-store입니다., schema: { type: string, enum: [no-store] } } }, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSearchPage' } } } }
   schemas:
@@ -352,11 +360,118 @@ components:
     KnowledgeSectionInput: { type: object, x-deskseed-documentation-review: MANUAL, description: 관리자가 지정 category 안에 Help Center section을 생성하는 입력입니다., required: [categoryId, slug, title, displayOrder], example: { categoryId: 00000000-0000-0000-0000-000000000001, slug: invoices, title: 청구서, description: 청구서와 영수증 도움말, displayOrder: 10 }, properties: { categoryId: { type: string, format: uuid }, slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 }, title: { type: string, minLength: 1, maxLength: 200 }, description: { type: string, maxLength: 1000 }, displayOrder: { type: integer, minimum: 0 } } }
     KnowledgeSectionPatch: { allOf: [{ $ref: '#/components/schemas/KnowledgeSectionInput' }], x-deskseed-documentation-review: MANUAL, description: 관리자가 section의 category·표시 정보와 active 상태를 같은 version precondition에서 갱신하는 입력입니다., example: { categoryId: 00000000-0000-0000-0000-000000000001, slug: invoices, title: 청구서, description: 청구서와 영수증 도움말, displayOrder: 10, active: true }, properties: { active: { type: boolean } } }
     KnowledgeAudienceInput: { type: object, x-deskseed-documentation-review: MANUAL, description: "첫 release에서 article 공개 범위를 PUBLIC, 로그인 고객, staff 또는 선택 staff group으로 정하는 입력입니다.", required: [type], example: { type: SELECTED_STAFF_GROUPS, groupIds: [00000000-0000-0000-0000-000000000002] }, properties: { type: { type: string, enum: [PUBLIC, SIGNED_IN_CUSTOMER, STAFF, SELECTED_STAFF_GROUPS] }, groupIds: { type: array, maxItems: 100, items: { type: string, format: uuid }, uniqueItems: true } } }
-    KnowledgeBlockDocument: { type: object, description: versioned vendor-neutral Deskseed block document이며 HTML payload와 unknown block type은 허용하지 않습니다., required: [schemaVersion, blocks], properties: { schemaVersion: { type: integer, enum: [1] }, blocks: { type: array, minItems: 1, maxItems: 200, items: { type: object, additionalProperties: true } } } }
+    KnowledgeBlockDocument:
+      type: object
+      additionalProperties: false
+      description: versioned vendor-neutral Deskseed block document이며 HTML payload와 unknown block type은 허용하지 않습니다.
+      required: [schemaVersion, blocks]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        blocks:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: '#/components/schemas/KnowledgeBlock' }
+    KnowledgeBlock:
+      oneOf:
+        - { $ref: '#/components/schemas/KnowledgeParagraphBlock' }
+        - { $ref: '#/components/schemas/KnowledgeHeadingBlock' }
+        - { $ref: '#/components/schemas/KnowledgeListBlock' }
+        - { $ref: '#/components/schemas/KnowledgeCodeBlock' }
+        - { $ref: '#/components/schemas/KnowledgeCalloutBlock' }
+        - { $ref: '#/components/schemas/KnowledgeQuoteBlock' }
+        - { $ref: '#/components/schemas/KnowledgeDividerBlock' }
+        - { $ref: '#/components/schemas/KnowledgeLinkBlock' }
+        - { $ref: '#/components/schemas/KnowledgeAttachmentBlock' }
+      discriminator:
+        propertyName: type
+        mapping:
+          paragraph: '#/components/schemas/KnowledgeParagraphBlock'
+          heading: '#/components/schemas/KnowledgeHeadingBlock'
+          list: '#/components/schemas/KnowledgeListBlock'
+          code: '#/components/schemas/KnowledgeCodeBlock'
+          callout: '#/components/schemas/KnowledgeCalloutBlock'
+          quote: '#/components/schemas/KnowledgeQuoteBlock'
+          divider: '#/components/schemas/KnowledgeDividerBlock'
+          link: '#/components/schemas/KnowledgeLinkBlock'
+          attachment: '#/components/schemas/KnowledgeAttachmentBlock'
+    KnowledgeParagraphBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: { type: string, enum: [paragraph] }
+        text: { type: string, minLength: 1, maxLength: 10000 }
+    KnowledgeHeadingBlock:
+      type: object
+      additionalProperties: false
+      required: [type, level, text]
+      properties:
+        type: { type: string, enum: [heading] }
+        level: { type: integer, minimum: 2, maximum: 3 }
+        text: { type: string, minLength: 1, maxLength: 10000 }
+    KnowledgeListBlock:
+      type: object
+      additionalProperties: false
+      required: [type, ordered, items]
+      properties:
+        type: { type: string, enum: [list] }
+        ordered: { type: boolean }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 10000 }
+    KnowledgeCodeBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: { type: string, enum: [code] }
+        language: { type: [string, 'null'] }
+        text: { type: string, minLength: 1, maxLength: 10000 }
+    KnowledgeCalloutBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: { type: string, enum: [callout] }
+        text: { type: string, minLength: 1, maxLength: 10000 }
+    KnowledgeQuoteBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: { type: string, enum: [quote] }
+        text: { type: string, minLength: 1, maxLength: 10000 }
+    KnowledgeDividerBlock:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, enum: [divider] }
+    KnowledgeLinkBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text, url]
+      properties:
+        type: { type: string, enum: [link] }
+        text: { type: string, minLength: 1, maxLength: 10000 }
+        url: { type: string, format: uri, pattern: '^https://', minLength: 1, maxLength: 2048 }
+    KnowledgeAttachmentBlock:
+      type: object
+      additionalProperties: false
+      required: [type, attachmentId]
+      properties:
+        type: { type: string, enum: [attachment] }
+        attachmentId: { type: string, format: uuid }
     KnowledgeArticleDraftInput: { type: object, x-deskseed-documentation-review: MANUAL, description: 관리자가 immutable initial revision으로 저장할 canonical knowledge article draft 입력입니다., required: [sectionId, slug, title, document, audience], example: { sectionId: 00000000-0000-0000-0000-000000000001, slug: payment-failure, title: 결제가 실패할 때, summary: 카드 승인 오류 해결 방법, changeNote: 최초 초안, document: { schemaVersion: 1, blocks: [{ type: paragraph, text: 결제 수단을 다시 확인하세요. }] }, audience: { type: PUBLIC } }, properties: { sectionId: { type: string, format: uuid }, slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 }, title: { type: string, minLength: 1, maxLength: 300 }, summary: { type: string, maxLength: 1000 }, changeNote: { type: string, maxLength: 1000 }, document: { $ref: '#/components/schemas/KnowledgeBlockDocument' }, audience: { $ref: '#/components/schemas/KnowledgeAudienceInput' } } }
     KnowledgeArticleDraftPatch: { allOf: [{ $ref: '#/components/schemas/KnowledgeArticleDraftInput' }], x-deskseed-documentation-review: MANUAL, description: 기존 revision을 수정하지 않고 새 immutable revision을 추가하는 article draft 입력입니다., example: { sectionId: 00000000-0000-0000-0000-000000000001, slug: payment-failure, title: 결제가 실패할 때, summary: 카드 승인 오류 해결 방법, changeNote: 오류 안내 보강, document: { schemaVersion: 1, blocks: [{ type: paragraph, text: 결제 수단을 다시 확인하세요. }] }, audience: { type: PUBLIC } } }
     KnowledgeRevision: { type: object, description: immutable canonical article revision metadata와 content입니다., required: [id, revisionNumber, title, document, contentChecksum, createdAt], properties: { id: { type: string, format: uuid }, revisionNumber: { type: integer, minimum: 1 }, title: { type: string }, summary: { type: string }, document: { $ref: '#/components/schemas/KnowledgeBlockDocument' }, changeNote: { type: string }, contentChecksum: { type: string }, createdAt: { type: string, format: date-time } } }
     KnowledgeArticle: { type: object, description: current public 또는 administrative projection을 담는 article aggregate입니다., required: [id, sectionId, slug, lifecycle, audience, version], properties: { id: { type: string, format: uuid }, sectionId: { type: string, format: uuid }, slug: { type: string }, lifecycle: { type: string, enum: [DRAFT, IN_REVIEW, PUBLISHED, UNPUBLISHED, ARCHIVED] }, audience: { $ref: '#/components/schemas/KnowledgeAudienceInput' }, audienceVersion: { type: integer, minimum: 1 }, currentPublishedRevision: { $ref: '#/components/schemas/KnowledgeRevision' }, version: { type: integer, format: int64 } } }
+    AdminKnowledgeArticleRevisionSummary: { type: object, additionalProperties: false, description: 관리자 목록용 immutable revision metadata이며 canonical document와 change note는 포함하지 않습니다., required: [id, revisionNumber, title, summary, contentChecksum, createdAt], properties: { id: { type: string, format: uuid }, revisionNumber: { type: integer, minimum: 1 }, title: { type: string }, summary: { type: string }, contentChecksum: { type: string }, createdAt: { type: string, format: date-time } } }
+    AdminKnowledgeArticleSummary: { type: object, additionalProperties: false, description: 관리자 article 목록의 bounded summary projection입니다. 상세 API만 canonical document를 반환합니다., required: [id, sectionId, slug, lifecycle, audience, audienceVersion, currentPublishedRevision, version], properties: { id: { type: string, format: uuid }, sectionId: { type: string, format: uuid }, slug: { type: string }, lifecycle: { type: string, enum: [DRAFT, IN_REVIEW, PUBLISHED, UNPUBLISHED, ARCHIVED] }, audience: { $ref: '#/components/schemas/KnowledgeAudienceInput' }, audienceVersion: { type: integer, minimum: 1 }, currentPublishedRevision: { oneOf: [{ $ref: '#/components/schemas/AdminKnowledgeArticleRevisionSummary' }, { type: 'null' }] }, version: { type: integer, format: int64 } } }
+    AdminKnowledgeArticleSummaryPage: { type: object, additionalProperties: false, description: filter-bound stable cursor로 페이지를 넘기는 관리자 article summary collection입니다., required: [items, hasMore, nextCursor], properties: { items: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/AdminKnowledgeArticleSummary' } }, hasMore: { type: boolean }, nextCursor: { type: [string, 'null'], maxLength: 1024 } } }
     AgentKnowledgeArticle: { allOf: [{ $ref: '#/components/schemas/KnowledgeArticle' }], description: required access audit persistence 뒤에만 반환하는 staff projection입니다. }
     KnowledgeSearchRequest: { type: object, x-deskseed-documentation-review: MANUAL, description: URL에 남기지 않는 bounded POST knowledge search query 입력입니다., required: [query], example: { query: 결제 오류, limit: 20 }, properties: { query: { type: string, minLength: 1, maxLength: 512 }, cursor: { type: string, maxLength: 1024 }, limit: { type: integer, minimum: 1, maximum: 50, default: 20 } } }
     KnowledgeSearchHit: { type: object, description: hidden content를 포함하지 않는 permission-safe article search result입니다., required: [articleSlug, title, excerpt, audience], properties: { articleSlug: { type: string }, title: { type: string }, excerpt: { type: string }, audience: { type: string, enum: [PUBLIC, SIGNED_IN_CUSTOMER, STAFF, SELECTED_STAFF_GROUPS] }, categoryTitle: { type: string }, sectionTitle: { type: string } } }

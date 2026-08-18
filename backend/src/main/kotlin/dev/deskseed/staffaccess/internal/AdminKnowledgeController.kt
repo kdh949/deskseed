@@ -11,8 +11,12 @@ import dev.deskseed.knowledge.KnowledgeAudience
 import dev.deskseed.knowledge.KnowledgeAudienceType
 import dev.deskseed.knowledge.KnowledgeCategoryInput
 import dev.deskseed.knowledge.KnowledgeCategoryView
-import dev.deskseed.knowledge.KnowledgeArticlePage
+import dev.deskseed.knowledge.KnowledgeArticleListFilter
+import dev.deskseed.knowledge.KnowledgeArticleRevisionSummary
+import dev.deskseed.knowledge.KnowledgeArticleSummary
+import dev.deskseed.knowledge.KnowledgeArticleSummaryPage
 import dev.deskseed.knowledge.KnowledgeArticleView
+import dev.deskseed.knowledge.KnowledgeArticleLifecycle
 import dev.deskseed.knowledge.KnowledgeLifecycleAction
 import dev.deskseed.knowledge.KnowledgeRevisionView
 import dev.deskseed.knowledge.KnowledgeSectionInput
@@ -142,12 +146,21 @@ internal class AdminKnowledgeController(
     @GetMapping("/articles")
     fun listArticles(
         @RequestParam(required = false) cursor: String?,
+        @RequestParam(required = false) lifecycle: KnowledgeArticleLifecycle?,
+        @RequestParam(required = false) sectionId: UUID?,
+        @RequestParam(required = false) audience: KnowledgeAudienceType?,
         @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
         @AuthenticationPrincipal principal: StaffPrincipal,
         request: HttpServletRequest,
-    ): ResponseEntity<KnowledgeArticlePageResponse> = ResponseEntity.ok()
+    ): ResponseEntity<AdminKnowledgeArticleSummaryPageResponse> = ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .body(administration.listArticles(cursor, request.actor(principal, expectedActor)).toResponse(documentCodec))
+        .body(
+            administration.listArticles(
+                cursor,
+                KnowledgeArticleListFilter(lifecycle, sectionId, audience),
+                request.actor(principal, expectedActor),
+            ).toResponse(),
+        )
 
     @GetMapping("/articles/{articleId}")
     fun getArticle(
@@ -387,8 +400,28 @@ internal data class KnowledgeArticleResponse(
     val version: Long,
 )
 
-internal data class KnowledgeArticlePageResponse(
-    val items: List<KnowledgeArticleResponse>,
+internal data class AdminKnowledgeArticleRevisionSummaryResponse(
+    val id: UUID,
+    val revisionNumber: Int,
+    val title: String,
+    val summary: String,
+    val contentChecksum: String,
+    val createdAt: java.time.Instant,
+)
+
+internal data class AdminKnowledgeArticleSummaryResponse(
+    val id: UUID,
+    val sectionId: UUID,
+    val slug: String,
+    val lifecycle: KnowledgeArticleLifecycle,
+    val audience: KnowledgeAudienceResponse,
+    val audienceVersion: Int,
+    val currentPublishedRevision: AdminKnowledgeArticleRevisionSummaryResponse?,
+    val version: Long,
+)
+
+internal data class AdminKnowledgeArticleSummaryPageResponse(
+    val items: List<AdminKnowledgeArticleSummaryResponse>,
     val hasMore: Boolean,
     val nextCursor: String?,
 )
@@ -415,8 +448,28 @@ private fun KnowledgeArticleView.toResponse(codec: CanonicalKnowledgeDocumentCod
     version = version,
 )
 
-private fun KnowledgeArticlePage.toResponse(codec: CanonicalKnowledgeDocumentCodec) = KnowledgeArticlePageResponse(
-    items = items.map { it.toResponse(codec) },
+private fun KnowledgeArticleRevisionSummary.toResponse() = AdminKnowledgeArticleRevisionSummaryResponse(
+    id = id,
+    revisionNumber = revisionNumber,
+    title = title,
+    summary = summary,
+    contentChecksum = contentChecksum,
+    createdAt = createdAt,
+)
+
+private fun KnowledgeArticleSummary.toResponse() = AdminKnowledgeArticleSummaryResponse(
+    id = id,
+    sectionId = sectionId,
+    slug = slug,
+    lifecycle = lifecycle,
+    audience = KnowledgeAudienceResponse(audience.type, audience.groupIds),
+    audienceVersion = audienceVersion,
+    currentPublishedRevision = currentPublishedRevision?.toResponse(),
+    version = version,
+)
+
+private fun KnowledgeArticleSummaryPage.toResponse() = AdminKnowledgeArticleSummaryPageResponse(
+    items = items.map { it.toResponse() },
     hasMore = nextCursor != null,
     nextCursor = nextCursor,
 )
