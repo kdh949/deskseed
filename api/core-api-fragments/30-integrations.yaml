@@ -1,6 +1,61 @@
 x-deskseed-fragment:
   owner: integrations-webhooks-api
 paths:
+  /api/v1/admin/integration-clients/{clientId}/rate-policy:
+    get:
+      operationId: getIntegrationClientRatePolicy
+      summary: 연동 클라이언트 요청 한도와 사용 현황 조회
+      description: ADMIN이 기존 Platform API client의 현재 분당 한도, 인증된 요청 누계와 마지막 사용 시각을 조회합니다. API key, secret hash, IP allowlist 원문과 credential secret는 이 projection에 포함하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-INT-001, REQ-INT-002]
+      tags: [Integration Clients]
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/IntegrationClientId'
+      responses:
+        '200':
+          description: 현재 client version에 결합된 no-store 정책 projection입니다. PATCH는 이 응답의 ETag를 If-Match로 사용합니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            ETag: {schema: {type: string}}
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/IntegrationClientRatePolicy'}}
+        '400': {$ref: '#/components/responses/NoStoreProblem'}
+        '403': {$ref: '#/components/responses/NoStoreProblem'}
+        '404': {$ref: '#/components/responses/NoStoreProblem'}
+        '409': {$ref: '#/components/responses/NoStoreProblem'}
+    patch:
+      operationId: updateIntegrationClientRatePolicy
+      summary: 연동 클라이언트 분당 요청 한도 변경
+      description: ADMIN이 current IntegrationClient ETag와 CSRF를 제시해 다음 Platform request부터 적용할 분당 한도를 변경합니다. 설정 변경과 `INTEGRATION_CLIENT_RATE_LIMIT_UPDATED` admin/security audit는 함께 commit되며 audit persistence 실패 시 변경을 반환하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-INT-001, REQ-INT-002]
+      tags: [Integration Clients]
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/IntegrationClientId'
+      - $ref: '#/components/parameters/IntegrationClientRatePolicyIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/UpdateIntegrationClientRatePolicy'}}
+      responses:
+        '200':
+          description: 새 한도와 version입니다. 새 ETag로 다음 변경을 조건부로 수행합니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            ETag: {schema: {type: string}}
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/IntegrationClientRatePolicy'}}
+        '400': {$ref: '#/components/responses/NoStoreProblem'}
+        '403': {$ref: '#/components/responses/NoStoreProblem'}
+        '404': {$ref: '#/components/responses/NoStoreProblem'}
+        '409': {$ref: '#/components/responses/NoStoreProblem'}
+        '412': {$ref: '#/components/responses/NoStoreProblem'}
+        '503': {$ref: '#/components/responses/NoStoreProblem'}
   /api/v1/admin/integrations/webhooks:
     get:
       operationId: listWebhookEndpoints
@@ -259,6 +314,11 @@ paths:
         '503': {$ref: '#/components/responses/NoStoreProblem'}
 components:
   parameters:
+    IntegrationClientRatePolicyIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: {type: string, minLength: 3, maxLength: 100}
     WebhookEndpointId:
       name: endpointId
       in: path
@@ -288,6 +348,27 @@ components:
             - {$ref: '#/components/schemas/InvalidExpectedStaffActorProblem'}
             - {$ref: '#/components/schemas/StaffSessionActorMismatchProblem'}
   schemas:
+    IntegrationClientRatePolicy:
+      type: object
+      additionalProperties: false
+      required: [clientId, rateLimitPerMinute, usageCount, version, updatedAt]
+      properties:
+        clientId: {type: string, format: uuid}
+        rateLimitPerMinute: {type: integer, minimum: 1, maximum: 10000}
+        usageCount: {type: integer, format: int64, minimum: 0}
+        lastUsedAt: {type: [string, 'null'], format: date-time}
+        version: {type: integer, format: int64, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+      description: API key raw secret, verifier, IP allowlist 원문과 credential secret를 제외한 client rate-limit 운영 projection입니다. usageCount는 성공 인증 뒤 누적되며 rate-limited request도 포함합니다.
+    UpdateIntegrationClientRatePolicy:
+      type: object
+      additionalProperties: false
+      required: [rateLimitPerMinute]
+      properties:
+        rateLimitPerMinute: {type: integer, minimum: 1, maximum: 10000}
+      x-deskseed-documentation-review: MANUAL
+      example: {rateLimitPerMinute: 120}
+      description: 서버 운영자가 허용한 범위 안에서 다음 Platform request부터 적용할 client별 분당 요청 한도입니다.
     WebhookEndpoint:
       type: object
       additionalProperties: false
@@ -422,5 +503,7 @@ components:
         errorCategory: {type: [string, 'null'], maxLength: 100}
         createdAt: {type: string, format: date-time}
 tags:
+- name: Integration Clients
+  description: ADMIN이 scoped Platform API client의 non-secret 운영 정책을 관리하는 contract surface입니다.
 - name: Integration Webhooks
   description: ADMIN이 signed outbound webhook endpoint와 delivery log를 운영하는 contract surface입니다. Platform API와 분리됩니다.

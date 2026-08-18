@@ -88,8 +88,8 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53, ADR 0031 | `PlatformOpenApiContractTest`, `PlatformNetworkBoundaryTest`의 production CIDR fail-closed, `PlatformTicketIntegrationTest`; PLAT-001/002 |
-| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1/I2 | 18, 32~34, 39, ADR 0012/0016/0031 | 기존 IntegrationClient lifecycle suite + `PlatformTicketIntegrationTest`, `PlatformRateLimitIntegrationTest`; INT-AUTH-001~004·ARCH-001/002/004·ACC-006/007·AUD-001 |
+| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53, ADR 0031 | `PlatformOpenApiContractTest`, `PlatformNetworkBoundaryTest`의 production CIDR fail-closed, `PlatformTicketIntegrationTest`, V62 per-client policy의 `PlatformRateLimitIntegrationTest`; PLAT-001/002 |
+| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1/I2 | 18, 32~34, 39, ADR 0012/0016/0031 | 기존 IntegrationClient lifecycle suite와 V62 policy/audit/usage의 `AdminIntegrationClientIntegrationTest` + `PlatformTicketIntegrationTest`, `PlatformRateLimitIntegrationTest`; INT-AUTH-001~004·ARCH-001/002/004·ACC-006/007·AUD-001 |
 | REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20, 32 | `PlatformApiMigrationTest`, `PlatformTicketIntegrationTest`의 replay/key misuse/concurrent claim/audit·receipt crash rollback/final failure replay 및 Platform SLA target/fact exact-once; IDEM-001~004 |
 | REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | `PlatformTicketIntegrationTest` matching/stale/final replay; CONC-001 |
 | REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 30, 32~34, 39, 55, ADR 0015 | `ExternalReferenceValidationTest`, migration/integration tests, OpenAPI/API types; UI는 `DEFERRED_UI`. Platform API·provider fetch·mirroring은 미구현 |

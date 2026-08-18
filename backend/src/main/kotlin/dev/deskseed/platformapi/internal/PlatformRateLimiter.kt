@@ -25,10 +25,10 @@ internal data class PlatformRateDecision(
 @Component
 internal class PlatformRateLimiter(
     private val jdbcTemplate: JdbcTemplate,
-    @Value("\${deskseed.platform.rate-limit.requests-per-minute:60}") private val limit: Int,
+    @Value("\${deskseed.platform.rate-limit.requests-per-minute:60}") private val defaultLimit: Int,
 ) {
     init {
-        require(limit > 0) { "Platform rate limit must be positive" }
+        require(defaultLimit > 0) { "Platform rate limit must be positive" }
     }
 
     /**
@@ -37,7 +37,8 @@ internal class PlatformRateLimiter(
      * surfaced as 503 rather than allowing an in-memory quota bypass.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun consume(clientId: UUID): PlatformRateDecision = try {
+    fun consume(clientId: UUID, limit: Int = defaultLimit): PlatformRateDecision = try {
+        require(limit > 0) { "Platform client rate limit must be positive" }
         val consumed = jdbcTemplate.queryForObject(
             """
             with database_clock as (
