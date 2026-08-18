@@ -25,7 +25,14 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.net.URI
 
-@RestControllerAdvice(assignableTypes = [AgentTicketReadController::class, AgentAttachmentController::class, AgentKnowledgeController::class])
+@RestControllerAdvice(
+    assignableTypes = [
+        AgentTicketReadController::class,
+        AgentAttachmentController::class,
+        AgentKnowledgeController::class,
+        AgentTicketConfigurationController::class,
+    ],
+)
 internal class AgentTicketReadExceptionHandler {
     @ExceptionHandler(AttachmentNotFoundException::class)
     fun attachmentNotFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(

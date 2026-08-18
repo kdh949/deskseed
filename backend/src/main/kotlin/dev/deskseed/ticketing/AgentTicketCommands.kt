@@ -10,7 +10,9 @@ enum class TicketField(val externalName: String) {
     STATUS("status"),
     PRIORITY("priority"),
     GROUP_ID("groupId"),
-    ASSIGNEE_ID("assigneeId");
+    ASSIGNEE_ID("assigneeId"),
+    /** One optimistic-concurrency unit for typed values, tags, and custom status. */
+    CONFIGURATION("configuration");
 
     companion object {
         fun fromExternalName(value: String): TicketField? = entries.firstOrNull { it.externalName == value }
@@ -53,6 +55,68 @@ data class UpdateAgentTicketCommand(
     val actor: StaffTicketCommandActor,
     val context: CommandContext,
 )
+
+/**
+ * Deliberately typed, one-of wire value for the ticket configuration command.
+ * The ticketing module owns command/replay/audit semantics; the configuration
+ * module validates the field definition, projected form, and storage shape.
+ */
+data class TicketConfigurationFieldValue(
+    val booleanValue: Boolean? = null,
+    val numberValue: String? = null,
+    val optionId: UUID? = null,
+    val shortTextValue: String? = null,
+    val longTextValue: String? = null,
+) {
+    init {
+        require(
+            listOf(booleanValue, numberValue, optionId, shortTextValue, longTextValue).count { it != null } == 1,
+        ) { "A ticket configuration value must contain exactly one typed value" }
+    }
+}
+
+data class UpdateTicketConfigurationCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val formVersion: Int?,
+    val fieldValues: Map<String, TicketConfigurationFieldValue>,
+    val addTagIds: Set<UUID>,
+    val removeTagIds: Set<UUID>,
+    val customStatusId: UUID?,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class TicketConfigurationMutationRequest(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ticketKind: TicketKind,
+    val currentStatus: TicketStatus,
+    val formVersion: Int?,
+    val fieldValues: Map<String, TicketConfigurationFieldValue>,
+    val addTagIds: Set<UUID>,
+    val removeTagIds: Set<UUID>,
+    val customStatusId: UUID?,
+    val occurredAt: Instant,
+)
+
+data class TicketConfigurationAuditChange(
+    val type: String,
+    /** Bounded JSON summaries only; typed field values are never copied into TicketAudit. */
+    val before: String?,
+    val after: String?,
+    val metadata: Map<String, Any?>,
+)
+
+data class TicketConfigurationMutationResult(
+    val status: TicketStatus,
+    val auditChanges: List<TicketConfigurationAuditChange>,
+)
+
+/** Public named interface that keeps ticketing independent of configuration persistence internals. */
+interface TicketConfigurationMutationHandler {
+    fun apply(request: TicketConfigurationMutationRequest): TicketConfigurationMutationResult
+}
 
 data class TransferTicketCommand(
     val ticketNumber: Long,
@@ -134,6 +198,8 @@ interface AgentTicketCommandService {
     fun create(command: CreateAgentTicketCommand): TicketCommandResult
 
     fun update(command: UpdateAgentTicketCommand): TicketCommandResult
+
+    fun updateConfiguration(command: UpdateTicketConfigurationCommand): TicketCommandResult
 
     fun transfer(command: TransferTicketCommand): TicketCommandResult
 
