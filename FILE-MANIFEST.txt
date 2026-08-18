@@ -64,7 +64,7 @@ efd41a232545bf4c22801850ee29fee2cb6e15301d4fe23ad14a505682f21f04        7708  do
 b56c2062fe881dd665b9a86848caffd1947337c1a3fca1b4522f4eca050d9dec       17129  docs/32-database-schema-and-index-blueprint.md
 c809e4eb60236657673ee4b5726a9e73930afdc875d642727ec918c568e6205a        9590  docs/33-authorization-permission-matrix.md
 b846d1abc42c3b56cbce45f063e3c8ec441db947190e61537186fc169145e4f9       12041  docs/34-state-machines-command-event-catalog.md
-b98cb50d41ece90f5f41fab23266df9da91e284ec584d1a9b23e7aadc70154ef        4406  docs/35-test-quality-release-strategy.md
+7a31e102c18454cf86d7a393cd98ae36444b9c2d172e8c12efd4a59c8a0f2d27        4828  docs/35-test-quality-release-strategy.md
 9265782af391fd85519e106c426f0733f9ca3b2606554828c2466e3f5337cafa       18863  docs/36-self-hosted-operations-runbook.md
 3030495d978e5bec340ce4247a576aa69f84a49eeacc6653eab735ab33382658        6115  docs/37-customer-portal-and-identity-blueprint.md
 d656e849bc6bdd8ea351c609e20a642bd6bd3306be5e638621722c8425a0c1ce        4936  docs/38-post-mvp-capability-blueprints.md
@@ -149,6 +149,8 @@ c0fd28b15664e90c1768dbabf3ac3f0dd517732fd8d011cd6cea5dfec5c91706        6525  do
 35d6ff0b3a7790b15a4c71750b0397a0af139a32f66eb9b3abe8ad942d10e113        4379  docs/evidence/release/operations/2026-08-12-macos-arm64-cleanup-smoke.md
 b1db656e42be6f7677fa693047181f064b358a257540c7ffca592176f1120ebf       12229  docs/evidence/release/operations/2026-08-12-macos-arm64-full.md
 d48e5968feeb6c5972ca71bc5872e2450ac5ecd502e4492e195747063afc2772        2891  docs/evidence/release/operations/README.md
+1fc2008b10457a41edcc9dcdd4d695c64dc17bc58311d40b0307a3da9d327f36        6737  docs/evidence/release/operations/backend-test-categories.md
+3b1e2cee07ad11dac847bcd421c8726cd9c3e18c920c63fa82f1296587cf3251        5339  docs/evidence/release/operations/change-aware-ci.md
 3a919c5135f310db7dd2cb605d2c75adc6c768fa3479c6550877fbc01dcc8078       13105  docs/evidence/release/performance/README.md
 7448c27e4adf76c568a15a9447fe5e97bbc0a56339c4127c41ebb1a38db5b678        1556  docs/evidence/release/performance/agent-search-quality-corpus.md
 19f0ae1cdb976beeb88e63321a5a698a6d413c97d3806bdce9dfc7067c7253e4        2235  docs/evidence/release/performance/first-reply-sla-query-plan.md
@@ -224,6 +226,9 @@ cfce573b08218932920462d46c02caadb3136293752df677fd0ce72123fc38a1        4100  do
 6d9fd101c7d7935c2c976fc36e7d10acb4cd4939c84db7bca22781c7f9991fd2        8191  scripts/audit-explorer-performance.sql
 46063673ec8285fa7ec0c09043edd5c74b894e014f0227998a7e7bed40cd6dc0        1634  scripts/audit-frontend-licenses.mjs
 5e9678b7db2df9f1b2bf8a7a79cd50fb0eaf9868813ad9ff8346ef6503a6d138        5743  scripts/bundle_core_openapi.py
+d70b223b7bcb7b6bc5bf780994064b9235c16fcad7c9ee440adae14642bb0db7          35  scripts/ci/__init__.py
+0ac9edc4ab8e2b9ec4e18d62deb5f7343ef685c66fa5ae11f8970948a87e10a1       15097  scripts/ci/classify_changes.py
+1d17df4f664e7dee16641fafce5bae8050916f84f19c2f7a0596a3382df50c34       10878  scripts/ci/test_classify_changes.py
 a37dbc869142f30dc15786bb8a10f69081f5d719f1b91af5606cafc1e042c207        3075  scripts/compose-smoke.sh
 0b9eaf53b96a26d3a6490be2d25f9185658d9579c6ba642f34e0ac516a60f710        1039  scripts/demo-request.sh
 82657cffa18ed5ffc7a7532fd5a79990664c7889abb22e17aa117b8bc471d29d       23086  scripts/e2e-compose-ownership.sh
@@ -256,7 +261,7 @@ f4d3cbc089a4cb91d39f345df75ec6a52ec1ee8d01ddf52f0a5d3e7766b710b1       57125  sc
 86039df10acf707d5941485169b22bd6ef5e8709afbeb9d456a87b7b3e6d1ea4       10278  scripts/test-e2e-compose-ownership.sh
 cfbf40619679578bf1f646d025684371b11b86bab1e87e31ceed8b6114b44851        5746  scripts/test_api_documentation_quality.py
 8bb66f87b6ef363fed4f3307b0352bc88fdf47c8d30892be4a228d3d2ccde909        2213  scripts/test_core_openapi_bundle.py
-25154b8be86ba191399ba2d0842ac295c1119bf329482fc253f591c63f800dfc       35800  scripts/validate_documentation.py
+57e921ccd1e05b15aa314433f486cff459e98601d7d4bd00108ebfcd569b17e2       35819  scripts/validate_documentation.py
 589fa065335bbd86d92cadc8da21c2a0fc00b5c49337754ecbe477efa4887f8d        3251  scripts/validate_goal_wave_ownership.py
 91a16eaab467092b130b82db62cad1738545b097eea45a695049a0e16c37f0a8        8926  scripts/verify_seed.py
 932fa7e8dee699c780f0f0a264055e801d30cde3f6f0f54aa7a8def30896650f         600  tasks/00-bootstrap-documentation-and-repository.md
@@ -305,8 +310,10 @@ b5868c1200695b1bf4342e2b23016b6d88ffbf75585a71861f7005cdf6da5624        3101  ta
 c97a8903af77f9221b21f813fcba4315b953a9f631d7c67318e1da1b88ceabbf        7816  tasks/briefs/goal-webhook-delivery.md
 a440d49ef2a6885f45e727e954ab2878d13319586065651adb8512d1728a144e        4971  tasks/briefs/integration-client-management.md
 7928256db634523d0ae40396641fdc934e61edd7b0eb8e1948bc35aadf29fccd        6645  tasks/briefs/issue-24-review-remediation.md
+584b864c4b8e07525ccdca402e75a55c00245d24a1cbc126a45f80d04154bebf        4037  tasks/briefs/p0-change-aware-ci-and-scheduling-isolation.md
 55a7432c4b6d311344381db93ab93c643b2bfb8e72827af8a4ccf09793da4967       15791  tasks/briefs/p1-authenticated-customer-attachments.md
 9ab5b37db4398506b7778a7187e37ba9b67068838ed5bf455555a777aee3fa6c        8678  tasks/briefs/p1-backend-operations.md
+e2da22c06b0d02b669af6b18a4f7badf3fe5c2bdd23276b30dd6c01da729cbcc        3422  tasks/briefs/p1-backend-test-categories-and-integration-infrastructure.md
 3790b9f3a233695dc94d50960ef50005a265eb13464e7aa4e0dc7671b4a5c304        8756  tasks/briefs/p1-contract-freeze.md
 82ff241205e1ebc61007a0e65b27e33919fc125c088ef85403184b0aa07dfa4e       10446  tasks/briefs/p1-frontend-operations-ui.md
 04172e337b3fe233addd429060cc76182bbdcb12d556a97c859a0f739f0ea5b6        9160  tasks/briefs/p1-parallel-followup-coordination.md

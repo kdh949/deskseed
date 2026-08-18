@@ -27,8 +27,8 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Decision Definitions: 56
 - Dual Use Actor Bound Operations: 1
 - E2E Visual Baselines: 12
-- Json Files: 11
-- Markdown Files: 229
+- Json Files: 13
+- Markdown Files: 233
 - Openapi Operations: 169
 - Openapi Paths: 134
 - Requirement Definitions: 97

@@ -104,6 +104,7 @@ GENERATED_DIRECTORY_NAMES = {
     ".git",
     ".gradle",
     ".gradle-user-home",
+    "__pycache__",
     "build",
     "dist",
     "node_modules",
