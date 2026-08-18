@@ -330,7 +330,7 @@ describe('AgentTicketEditorWorkspace', () => {
     expect(commands[1]).toEqual(commands[0])
   })
 
-  it('persists clean attachments before submit and restores them after reload', async () => {
+  it('keeps clean attachment handles in the current composer until submit', async () => {
     const user = userEvent.setup()
     const { commands } = installMutationFetch([
       new Response(
@@ -343,7 +343,7 @@ describe('AgentTicketEditorWorkspace', () => {
         { status: 200 },
       ),
     ])
-    const first = renderWorkspace()
+    renderWorkspace()
     await user.type(
       screen.getByRole('textbox', { name: '공개 답변 내용' }),
       '첨부 초안을 복원합니다.',
@@ -353,10 +353,6 @@ describe('AgentTicketEditorWorkspace', () => {
       new File(['a'], 'a.png', { type: 'image/png' }),
     )
     await screen.findByText(/^CLEAN/)
-    first.unmount()
-
-    renderWorkspace()
-    expect(await screen.findByText(/이전 저장 시도에서 복원됨/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
     await waitFor(() => expect(commands).toHaveLength(1))
     expect(

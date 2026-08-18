@@ -2,6 +2,28 @@ export type TicketStatus = 'NEW' | 'OPEN' | 'PENDING' | 'SOLVED'
 export type AgentTicketStatus = TicketStatus | 'ON_HOLD' | 'CLOSED'
 export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 export type TicketVisibility = 'PUBLIC' | 'INTERNAL'
+export type TicketDraftChannel = 'PUBLIC_REPLY' | 'INTERNAL_NOTE'
+
+/** Owner-bound, recoverable composer state; it is not a ticket mutation or audit event. */
+export interface TicketDraft {
+  ticketNumber: number
+  channel: TicketDraftChannel
+  body: string
+  attachmentIds: string[]
+  clientDeviceId: string
+  baseTicketVersion: number
+  draftVersion: number
+  updatedAt: string
+  expiresAt: string
+}
+
+export interface SaveTicketDraftInput {
+  body: string
+  attachmentIds: string[]
+  clientDeviceId: string
+  baseTicketVersion: number
+  expectedDraftVersion: number
+}
 
 export interface SubmitRequestInput {
   name: string

@@ -25,6 +25,15 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TECH-004 | 커밋된 OpenAPI 계약을 사람이 검토한 한국어 도메인 설명·합성 예시와 함께 탐색 가능한 API Reference로 제공한다 | IMPLEMENTATION_READY | M0 | 21, 22, 39, D-054 | `ApiDocumentationIntegrationTest`, `DOC-001`, `make docs-check` |
 | REQ-PORT-001 | 먼저 작동하는 포트폴리오를 만들고 이후 성능·Kafka까지 깊게 확장한다 | IMPLEMENTATION_READY | 전체 | 05, 11, 27, 41 | 릴리스별 증거 문서 |
 
+## 2.0 Wave 1 knowledge base
+
+| ID | 요구사항 | 상태 | 구현 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-KB-001 | 고객·상담사·관리자가 Category→Section→Article과 immutable revision lifecycle을 audience에 맞게 사용한다 | IN_PROGRESS | Wave 1 | Goal 03, 02, 03, 25, 32, 33, 34, ADR 0013, 0018, 0040 | hierarchy/FK/order/slug·revision/publish conflict·public/agent/admin lifecycle PostgreSQL tests |
+| REQ-KB-002 | 상담사는 PUBLIC·INTERNAL·selected group 문서를 권한으로 검색·열람하고 결과 열람은 required access audit 뒤에 반환한다 | IN_PROGRESS | Wave 1 | Goal 03, 19, 33, 34, ADR 0018 | audience matrix, restricted detail/search audit failure injection, no count/snippet leakage tests |
+| REQ-KB-003 | PostgreSQL FTS/GIN/trigram search는 hidden 문서가 rank/count/excerpt에 영향을 주지 않고 stable cursor·corpus·latency evidence를 제공한다 | IN_PROGRESS | Wave 1 | Goal 03, 08, 25, 32, ADR 0008, 0025 | Korean/English/identifier corpus, permission boundary, cursor, rebuild and p95 evidence |
+| REQ-KB-004 | canonical Deskseed block document와 safe renderer는 XSS를 차단하고 publish/cache revision 일관성을 보장한다 | IN_PROGRESS | Wave 1 | Goal 03, 23, 39, 40, ADR 0018 | unsafe URL/HTML/unknown block rejection, canonical adapter round-trip, ETag 304/publish and audience cache tests |
+
 ## 2.1 인증·초기 상담원 가시성
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
@@ -123,6 +132,10 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-VIEW-001 | 태그를 제외한 allowlisted condition AST 기반의 versioned SYSTEM/PERSONAL/SHARED saved view를 제공한다 | IMPLEMENTATION_READY | P1 | 33, 34, 39, 47, 50 | PostgreSQL `AgentTicketReadIntegrationTest`의 AST allowlist/owner·shared capability/version conflict/reorder/preview/authorization·audit/description 영속성·동일 compiler row-count/one-UNION-ALL count와 batch 단일 `ticketCountAsOf`; frontend description draft/conflict 보존, `EXACT`/`OMITTED_VISIBLE_LIMIT` count metadata 조합의 strict decoder와 negative tests, exact count 기준 시각, server persistence, columns/sort/share scope and cursor reset unit/Storybook; PERF-001 |
 | REQ-CFG-002 | typed custom field와 form을 제공한다 | BLUEPRINT_READY | P6 | 38, 47 | type validation/migration/projection 테스트 |
 | REQ-CFG-003 | 상담사가 macro를 preview한 뒤 하나의 command로 적용한다 | BLUEPRINT_READY | P6 | 38, 45, 47 | preview/no-side-effect/one-audit 테스트 |
+| REQ-CFG-010 | 관리자가 immutable machine key와 typed EAV validation을 가진 ticket field definition/option을 관리하고, 서버 projection이 customer/staff field visibility를 분리한다 | IMPLEMENTATION_READY | Wave 1 | 02 Goal, 32, 33, 39, 47, ADR 0041 | PostgreSQL type CHECK/option lifecycle/visibility-bypass/audit rollback, owned Core contract and customer/staff projection tests; CFG-001 |
+| REQ-CFG-011 | 관리자가 immutable published version과 server-authoritative conditional visibility를 가진 ticket form을 관리한다 | IMPLEMENTATION_READY | Wave 1 | 02 Goal, 33, 34, 39, 47, ADR 0041 | form publish cycle/contradiction/hidden-required/version-stale integration tests and customer/agent projection E2E; CFG-002 |
+| REQ-CFG-012 | 관리자가 normalized tag catalog을 관리하고, ticket command·검색·저장형 View에서 tag를 권한과 감사 경계 안에 사용한다 | IMPLEMENTATION_READY | Wave 1 | 02 Goal, 33, 34, 39, 47, ADR 0041 | normalization/concurrent add-remove/audit/authorization/query contributor tests; CFG-003 |
+| REQ-CFG-013 | 관리자가 fixed status category에 매핑되는 custom status label을 관리하며 CLOSED terminal compatibility를 보존한다 | IMPLEMENTATION_READY | Wave 1 | 02 Goal, 33, 34, 39, 47, ADR 0041 | default uniqueness/status-category compatibility/closed mutation denial/old-client category integration tests; CFG-004 |
 | REQ-FILE-001 | private object storage 기반 첨부파일을 제공한다 | IMPLEMENTATION_READY | P1 | 38, 39, 48, 50 | PostgreSQL `AttachmentPipelineIntegrationTest`의 bounded stream/quarantine/SHA-256/MIME mismatch/deterministic malware/clean-only link/PUBLIC-INTERNAL isolation/expiry cleanup/audit failure와 `AttachmentProductionBoundaryTest`의 production local-storage/deterministic-scanner 제외, `CustomerRequestPortalIntegrationTest`의 authenticated own-ticket upload/link/download, CUSTOMER_SESSION 감사, customer A/B 격리, cross-path replay; frontend authenticated metadata strict decode, CSRF multipart upload, attachmentIds follow-up, audited Blob download unit/page/Storybook; FILE-001/003/004/006 |
 | REQ-FILE-002 | rich text와 redaction은 안전한 canonical format과 별도 권한을 사용한다 | BLUEPRINT_READY | P8 | 48 | XSS/redaction/audit 테스트 |
 | REQ-CHAN-001 | 이메일 수신·발신을 Ticket/Comment channel adapter로 제공한다 | BLUEPRINT_READY | P8 | 38, 49 | threading/dedup/outbox/bounce 테스트 |
@@ -162,3 +175,10 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-FND-002 | 조건·액션·템플릿 변수·검색 predicate·analytics dimension은 versioned descriptor registry로 확장하며 unknown/duplicate/incompatible input은 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F1 | ADR 0040, 34, 45, 46, 47 | duplicate descriptor startup failure, AST bound/unknown-type rejection, action external-I/O separation, ARCH-001 |
 | REQ-FND-003 | 공개 가능한 integration event intent는 ticket mutation과 원자적으로 PostgreSQL outbox에 기록되고 worker replay/lease 실패는 committed ticket mutation을 되돌리지 않는다 | IMPLEMENTATION_READY | Wave 0 F2 | ADR 0040, 18, 32, 34, 45 | PostgreSQL outbox atomicity, lease recovery, payload redaction/visibility, ARCH-002/003 |
 | REQ-FND-004 | feature lane은 central App/shell을 수정하지 않고 deterministic route/navigation/workspace contribution을 추가하며 duplicate/권한/extension failure를 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F3 | ADR 0040, 28–31, 40, 51, 55 | discovery order, duplicate rejection, denied route/nav, error isolation, typecheck and Storybook gate |
+
+## 12. Wave 1 drafts and presence
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-COL-001 | 상담사는 티켓별 PUBLIC/INTERNAL 초안을 분리해 최대 30일 서버와 7일 브라우저에 복구할 수 있고, 다른 직원·다른 channel·CLOSED ticket·낡은 버전의 쓰기는 안전하게 격리한다 | IMPLEMENTATION_READY | Wave 1 D1 | ADR 0040, 31, 34, 48, 50, 55 | `AgentTicketDraftIntegrationTest` owner/channel/CLOSED/conflict/attachment-owner/no-ticket-audit; `JdbcTicketDraftStoreIntegrationTest` TTL/lease; client decoder and local recovery unit tests; ARCH-001/002/004, FILE-001 |
+| REQ-COL-002 | 읽기 권한이 있는 상담사는 단일 인스턴스 범위의 authenticated WebSocket presence와 commit 뒤 safe stale 알림을 받고, presence는 ticket lock이나 optimistic concurrency를 대체하지 않는다 | BLUEPRINT_READY | Wave 1 D2 | 31, 33, 34, 39, 50, 55 | Origin/session/ticket authorization, message rate·size, heartbeat TTL, disconnect cleanup, after-commit only notification, no body/PII payload, multi-instance fail-fast, frontend contribution and real-stack two-agent verification |
