@@ -4,35 +4,28 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.security.MessageDigest
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
         "deskseed.webhook.delivery.enabled=false",
-        "deskseed.webhook.delivery.scheduling-enabled=false",
         "deskseed.webhook.delivery.max-attempts=2",
         "deskseed.webhook.delivery.circuit-failure-threshold=3",
     ],
 )
 @Import(WebhookDeliveryWorkerIntegrationTest.FakeTransportConfiguration::class)
-@Testcontainers
+@dev.deskseed.testsupport.category.SlowTest
 class WebhookDeliveryWorkerIntegrationTest {
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var worker: WebhookDeliveryWorker
@@ -200,8 +193,5 @@ class WebhookDeliveryWorkerIntegrationTest {
     companion object {
         val STAFF_ID: UUID = UUID.fromString("b6d34baf-2063-48e8-86ee-d2d6aec08942")
         val FIXED_NOW: Instant = Instant.parse("2026-08-18T00:00:00Z")
-
-        @Container @ServiceConnection @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

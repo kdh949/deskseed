@@ -93,6 +93,9 @@ logging:
     level: "%5p [requestId:%X{requestId:-}]"
 
 deskseed:
+  scheduling:
+    # Production behavior stays enabled unless the operator explicitly disables all scheduled infrastructure.
+    enabled: ${DESKSEED_SCHEDULING_ENABLED:true}
   api-docs:
     require-admin: false
   platform:

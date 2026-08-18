@@ -15,6 +15,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class AuditActivityProjectionMigrationTest {
     @BeforeEach
     fun resetSchema() {

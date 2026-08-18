@@ -6,8 +6,6 @@ import dev.deskseed.ticketing.TicketSlaLifecycleChanged
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.dao.DataAccessException
@@ -24,20 +22,16 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.context.event.ApplicationEvents
 import org.springframework.test.context.event.RecordApplicationEvents
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 @AutoConfigureMockMvc
-@Testcontainers
 @RecordApplicationEvents
+@dev.deskseed.testsupport.category.IntegrationTest
 class AgentTicketCommandIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -1780,10 +1774,5 @@ class AgentTicketCommandIntegrationTest {
 
     companion object {
         private const val PASSWORD = "Agent password 42!"
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

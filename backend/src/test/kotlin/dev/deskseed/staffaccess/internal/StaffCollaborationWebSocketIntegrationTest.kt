@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -17,10 +16,6 @@ import org.springframework.web.socket.WebSocketSession
 import org.springframework.web.socket.client.standard.StandardWebSocketClient
 import org.springframework.web.socket.handler.TextWebSocketHandler
 import org.springframework.web.socket.WebSocketHttpHeaders
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -29,7 +24,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
@@ -37,32 +32,16 @@ import java.util.concurrent.TimeUnit
         "deskseed.collaboration.websocket.max-messages-per-minute=1",
     ],
 )
-@Testcontainers
+@dev.deskseed.testsupport.category.SlowTest
 class StaffCollaborationWebSocketIntegrationTest {
     @Autowired private lateinit var jdbc: JdbcTemplate
+    @Autowired private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
     @LocalServerPort private var port = 0
     private val http = HttpClient.newHttpClient()
 
     @BeforeEach
     fun clearState() {
-        jdbc.execute(
-            """
-            truncate table
-                access_audit_events,
-                admin_security_audit_events,
-                ticket_audit_events,
-                ticket_audits,
-                ticket_comments,
-                request_access_tokens,
-                tickets,
-                customers,
-                group_memberships,
-                support_groups,
-                staff_login_throttles,
-                staff_accounts
-            restart identity cascade
-            """.trimIndent(),
-        )
+        databaseCleaner.resetMutableStaffTicketState()
     }
 
     @Test
@@ -234,10 +213,5 @@ class StaffCollaborationWebSocketIntegrationTest {
 
     private companion object {
         const val PASSWORD = "Presence password 42!"
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

@@ -9,6 +9,7 @@ import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.web.socket.handler.TextWebSocketHandler
 
+@dev.deskseed.testsupport.category.FastTest
 class StaffCollaborationOriginInterceptorTest {
     private val handler = object : TextWebSocketHandler() {}
     private val interceptor = StaffCollaborationOriginInterceptor("https://staff.deskseed.test")

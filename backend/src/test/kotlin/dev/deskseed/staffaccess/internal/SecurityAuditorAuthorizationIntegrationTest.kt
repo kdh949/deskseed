@@ -31,6 +31,7 @@ import java.util.UUID
 @SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
 @AutoConfigureMockMvc
 @Testcontainers
+@dev.deskseed.testsupport.category.IntegrationTest
 class SecurityAuditorAuthorizationIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc

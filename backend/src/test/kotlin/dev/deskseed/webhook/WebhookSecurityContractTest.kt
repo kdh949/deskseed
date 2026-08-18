@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import java.net.InetAddress
 import java.time.Instant
 
+@dev.deskseed.testsupport.category.ContractTest
 class WebhookSecurityContractTest {
     private val signer = WebhookSignatureSigner()
 

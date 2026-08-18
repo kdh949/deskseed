@@ -24,6 +24,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class AttachmentDownloadAuditOrderTest {
     @Test
     fun `required audit failure does not open private attachment stream`() {

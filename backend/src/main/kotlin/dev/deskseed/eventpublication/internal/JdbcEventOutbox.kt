@@ -9,9 +9,7 @@ import dev.deskseed.eventpublication.EventPublicationPort
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
 import org.springframework.dao.EmptyResultDataAccessException
-import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -189,7 +187,3 @@ internal class EventOutboxLeaseRecoveryWorker(
         outbox.returnExpiredLeases()
     }
 }
-
-@Configuration(proxyBeanMethods = false)
-@EnableScheduling
-internal class EventOutboxSchedulingConfiguration

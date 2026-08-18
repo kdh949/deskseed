@@ -10,6 +10,7 @@ import org.springframework.core.io.ClassPathResource
 import org.springframework.mock.env.MockEnvironment
 import org.springframework.mock.web.MockHttpServletRequest
 
+@dev.deskseed.testsupport.category.ContractTest
 class PlatformNetworkBoundaryTest {
     private val policy = IntegrationNetworkPolicy()
 

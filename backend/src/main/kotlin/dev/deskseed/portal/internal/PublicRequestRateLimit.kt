@@ -8,7 +8,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -70,7 +69,6 @@ internal data class PublicRequestRateLimitProperties(
 }
 
 @Configuration(proxyBeanMethods = false)
-@EnableScheduling
 @EnableConfigurationProperties(PublicRequestRateLimitProperties::class)
 internal class PublicRequestRateLimitConfiguration
 

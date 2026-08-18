@@ -9,6 +9,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.reflect.full.memberProperties
 
+@dev.deskseed.testsupport.category.FastTest
 class TicketTest {
     @Test
     fun `web submission stores the request body as the first public customer comment`() {

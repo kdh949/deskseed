@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class OutboundMailPolicyTest {
     private val properties = OutboundMailProperties(
         fromAddress = "no-reply@deskseed.local",

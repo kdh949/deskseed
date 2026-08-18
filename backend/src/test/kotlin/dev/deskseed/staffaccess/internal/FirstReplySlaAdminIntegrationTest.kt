@@ -5,8 +5,6 @@ import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -21,17 +19,15 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false", "deskseed.sla.breach-scanner.initial-delay=1d"])
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
+    properties = ["deskseed.test.context-group=first-reply-sla-admin"],
+)
 @AutoConfigureMockMvc
-@Testcontainers
+@dev.deskseed.testsupport.category.IntegrationTest
 class FirstReplySlaAdminIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbc: JdbcTemplate
@@ -298,8 +294,4 @@ class FirstReplySlaAdminIntegrationTest {
 
     private data class Browser(val session: MockHttpSession, val csrfToken: String)
 
-    companion object {
-        @Container @ServiceConnection @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
-    }
 }

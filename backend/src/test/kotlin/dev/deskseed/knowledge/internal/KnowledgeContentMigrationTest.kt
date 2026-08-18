@@ -11,6 +11,7 @@ import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class KnowledgeContentMigrationTest {
     @Test
     fun `V50 through V52 create fixed hierarchy immutable revisions and a derived PostgreSQL search projection without altering prior history`() {

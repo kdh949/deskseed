@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean
 import org.springframework.core.io.ClassPathResource
 
+@dev.deskseed.testsupport.category.FastTest
 class PublicRequestRateLimitPropertiesTest {
     @Test
     fun `startup validation rejects invalid limits windows keys and forwarding bounds`() {
