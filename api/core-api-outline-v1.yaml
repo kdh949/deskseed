@@ -14,6 +14,16 @@ x-deskseed-staff-actor-consistency:
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting
+  - listTicketTagDefinitions
+  - createTicketTagDefinition
+  - updateTicketTagDefinition
+  - listTicketStatusDefinitions
+  - createTicketStatusDefinition
+  - updateTicketStatusDefinition
+  - reorderTicketStatusDefinitions
+  - listTicketConfigurationDescriptors
+  - getAgentTicketConfiguration
+  - updateAgentTicketConfiguration
   parameter:
     $ref: '#/components/parameters/ExpectedStaffActorHeader'
   invalidHeaderResponse:
@@ -4558,7 +4568,7 @@ paths:
       summary: tag catalog 목록 조회
       description: ADMIN 권한과 staff actor 일관성 guard를 확인한 뒤 normalized tag catalog만 반환합니다.
       operationId: listTicketTagDefinitions
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-012
       tags:
@@ -4586,7 +4596,7 @@ paths:
       summary: tag definition 생성
       description: ADMIN의 CSRF와 actor 일관성을 확인하고 normalized canonical value의 tag를 생성하며 감사를 함께 남깁니다.
       operationId: createTicketTagDefinition
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-012
       x-deskseed-documentation-review: MANUAL
@@ -4624,7 +4634,7 @@ paths:
       summary: tag definition 수정 또는 비활성화
       description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 tag label 또는 lifecycle과 감사를 원자적으로 변경합니다.
       operationId: updateTicketTagDefinition
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-012
       x-deskseed-documentation-review: MANUAL
@@ -4665,7 +4675,7 @@ paths:
       summary: custom status definition 목록 조회
       description: ADMIN 권한과 staff actor 일관성 guard를 확인한 뒤 stable category에 매핑된 custom status 목록을 반환합니다.
       operationId: listTicketStatusDefinitions
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-013
       tags:
@@ -4693,7 +4703,7 @@ paths:
       summary: custom status definition 생성
       description: ADMIN의 CSRF와 actor 일관성을 확인하고 기존 category state machine을 보존하는 custom status를 생성합니다.
       operationId: createTicketStatusDefinition
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-013
       x-deskseed-documentation-review: MANUAL
@@ -4735,7 +4745,7 @@ paths:
       summary: custom status definition 수정
       description: ADMIN의 CSRF, actor 일관성, If-Match version을 확인하고 status definition과 Admin/Security audit을 원자적으로 변경합니다.
       operationId: updateTicketStatusDefinition
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-013
       x-deskseed-documentation-review: MANUAL
@@ -4776,7 +4786,7 @@ paths:
       summary: custom status 표시 순서 재배치
       description: ADMIN의 CSRF와 actor 일관성을 확인하고 category compatibility를 바꾸지 않는 custom status 표시 순서를 원자적으로 변경합니다.
       operationId: reorderTicketStatusDefinitions
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-013
       tags:
@@ -4812,7 +4822,7 @@ paths:
       summary: 고객 제출 context의 form projection 조회
       description: 고객 제출 context에 허용된 active field만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다.
       operationId: getCustomerTicketFormProjection
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-011
       tags:
@@ -4845,7 +4855,7 @@ paths:
       summary: 상담사 View/Search/Macro/Rules/Analytics용 configuration descriptor catalog 조회
       description: 상담사 session의 actor 일관성을 확인하고 handler/provider identity만 포함한 bounded descriptor catalog를 반환합니다.
       operationId: listTicketConfigurationDescriptors
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-010
       - REQ-CFG-012
@@ -4876,7 +4886,7 @@ paths:
       summary: 상담사용 ticket field/tag/custom status projection 조회
       description: 상담사 session의 actor 일관성과 ticket read authorization을 확인하고 server-authorized configuration projection을 반환합니다.
       operationId: getAgentTicketConfiguration
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-010
       - REQ-CFG-012
@@ -4910,7 +4920,7 @@ paths:
       description: 상담사 CSRF, actor 일관성, ticket write authorization, If-Match version, form projection을 확인하고 하나의 TicketAudit으로
         변경합니다.
       operationId: updateAgentTicketConfiguration
-      x-deskseed-contract-status: FROZEN
+      x-deskseed-contract-status: BLUEPRINT_READY
       x-deskseed-requirements:
       - REQ-CFG-010
       - REQ-CFG-012
