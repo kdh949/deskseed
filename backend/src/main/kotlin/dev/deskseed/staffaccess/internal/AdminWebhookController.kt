@@ -10,6 +10,7 @@ import dev.deskseed.webhook.UpdateWebhookEndpointCommand
 import dev.deskseed.webhook.WebhookAdministration
 import dev.deskseed.webhook.WebhookDeliveryView
 import dev.deskseed.webhook.WebhookDeliveryDetailView
+import dev.deskseed.webhook.WebhookDeliverySummaryView
 import dev.deskseed.webhook.WebhookEndpointIssue
 import dev.deskseed.webhook.WebhookEndpointView
 import dev.deskseed.webhook.WebhookPayloadPolicy
@@ -222,6 +223,7 @@ internal data class WebhookEndpointResponse(
     val subscriptions: List<WebhookSubscriptionResponse>,
     val targetClass: String,
     val health: WebhookHealthResponse,
+    val deliverySummary: WebhookDeliverySummaryResponse,
     val archivedAt: Instant?,
     val version: Long,
     val createdAt: Instant,
@@ -235,6 +237,18 @@ internal data class WebhookHealthResponse(
     val consecutiveFailures: Int,
     val lastSucceededAt: Instant?,
     val lastFailedAt: Instant?,
+)
+internal data class WebhookDeliverySummaryResponse(
+    val totalDeliveries: Long,
+    val pendingDeliveries: Long,
+    val inFlightDeliveries: Long,
+    val retryScheduledDeliveries: Long,
+    val succeededDeliveries: Long,
+    val deadLetteredDeliveries: Long,
+    val cancelledDeliveries: Long,
+    val lastDeliveryAt: Instant?,
+    val lastFailureAt: Instant?,
+    val lastFailureCategory: String?,
 )
 internal data class WebhookEndpointIssueResponse(val endpoint: WebhookEndpointResponse, val secret: String, val secretKeyVersion: Int)
 internal data class WebhookDeliveryResponse(
@@ -265,7 +279,11 @@ private fun WebhookEndpointView.toResponse() = WebhookEndpointResponse(
     subscriptions.map { WebhookSubscriptionResponse(it.eventType, it.version, it.payloadPolicy.name) },
     targetClass.name,
     WebhookHealthResponse(health.state.name, health.cooldownUntil, health.consecutiveFailures, health.lastSucceededAt, health.lastFailedAt),
-    archivedAt, version, createdAt, updatedAt,
+    deliverySummary.toResponse(), archivedAt, version, createdAt, updatedAt,
+)
+private fun WebhookDeliverySummaryView.toResponse() = WebhookDeliverySummaryResponse(
+    totalDeliveries, pendingDeliveries, inFlightDeliveries, retryScheduledDeliveries, succeededDeliveries, deadLetteredDeliveries, cancelledDeliveries,
+    lastDeliveryAt, lastFailureAt, lastFailureCategory,
 )
 private fun WebhookEndpointIssue.toResponse() = WebhookEndpointIssueResponse(endpoint.toResponse(), secret, secretKeyVersion)
 private fun WebhookDeliveryView.toResponse() = WebhookDeliveryResponse(

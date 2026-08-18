@@ -15,6 +15,7 @@ import dev.deskseed.webhook.WebhookConflictException
 import dev.deskseed.webhook.WebhookDeliveryNotFoundException
 import dev.deskseed.webhook.WebhookDeliveryAttemptView
 import dev.deskseed.webhook.WebhookDeliveryDetailView
+import dev.deskseed.webhook.WebhookDeliverySummaryView
 import dev.deskseed.webhook.WebhookDeliveryStatus
 import dev.deskseed.webhook.WebhookDeliveryView
 import dev.deskseed.webhook.WebhookEndpointIssue
@@ -358,6 +359,7 @@ internal class JdbcWebhookAdministration(
         ),
         targetClass = endpoint.target.targetClass,
         health = WebhookHealthView(endpoint.healthState, endpoint.cooldownUntil, endpoint.consecutiveFailures, endpoint.lastSucceededAt, endpoint.lastFailedAt),
+        deliverySummary = deliverySummary(endpoint.id),
         archivedAt = endpoint.archivedAt,
         version = endpoint.version,
         createdAt = endpoint.createdAt,
@@ -372,6 +374,44 @@ internal class JdbcWebhookAdministration(
     private fun requireNotArchived(endpoint: EndpointRow) {
         if (endpoint.archivedAt != null) throw WebhookConflictException("WEBHOOK_ENDPOINT_ARCHIVED")
     }
+
+    private fun deliverySummary(endpointId: UUID): WebhookDeliverySummaryView = jdbc.query(
+        """
+        select count(*) as total_deliveries,
+               count(*) filter (where status = 'PENDING') as pending_deliveries,
+               count(*) filter (where status = 'IN_FLIGHT') as in_flight_deliveries,
+               count(*) filter (where status = 'RETRY_SCHEDULED') as retry_scheduled_deliveries,
+               count(*) filter (where status = 'SUCCEEDED') as succeeded_deliveries,
+               count(*) filter (where status = 'DEAD_LETTERED') as dead_lettered_deliveries,
+               count(*) filter (where status = 'CANCELLED') as cancelled_deliveries,
+               max(created_at) as last_delivery_at,
+               max(updated_at) filter (where error_category is not null) as last_failure_at,
+               (
+                   select latest.error_category
+                     from webhook_deliveries latest
+                    where latest.endpoint_id = ? and latest.error_category is not null
+                    order by latest.updated_at desc, latest.id desc
+                    limit 1
+               ) as last_failure_category
+          from webhook_deliveries
+         where endpoint_id = ?
+        """.trimIndent(),
+        { row, _ ->
+            WebhookDeliverySummaryView(
+                totalDeliveries = row.getLong("total_deliveries"),
+                pendingDeliveries = row.getLong("pending_deliveries"),
+                inFlightDeliveries = row.getLong("in_flight_deliveries"),
+                retryScheduledDeliveries = row.getLong("retry_scheduled_deliveries"),
+                succeededDeliveries = row.getLong("succeeded_deliveries"),
+                deadLetteredDeliveries = row.getLong("dead_lettered_deliveries"),
+                cancelledDeliveries = row.getLong("cancelled_deliveries"),
+                lastDeliveryAt = row.getTimestamp("last_delivery_at")?.toInstant(),
+                lastFailureAt = row.getTimestamp("last_failure_at")?.toInstant(),
+                lastFailureCategory = row.getString("last_failure_category"),
+            )
+        },
+        endpointId, endpointId,
+    ).single()
 
     private fun insertDelivery(
         endpointId: UUID,

@@ -68,6 +68,7 @@ class AdminWebhookIntegrationTest {
         mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}", endpointId).session(browser.session))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.secret").doesNotExist())
+            .andExpect(jsonPath("$.deliverySummary.totalDeliveries").value(0))
 
         mockMvc.perform(
             post("/api/v1/admin/integrations/webhooks/{id}/rotate-secret", endpointId)
@@ -105,9 +106,15 @@ class AdminWebhookIntegrationTest {
             .andReturn().response.contentAsString
         assertThat(detail).doesNotContain("must-not-leak", "receiver body must not leak")
         jdbcTemplate.update(
-            "update webhook_deliveries set status = 'DEAD_LETTERED', next_attempt_at = null, completed_at = now() where id = ?",
+            "update webhook_deliveries set status = 'DEAD_LETTERED', next_attempt_at = null, completed_at = now(), updated_at = now(), error_category = 'HTTP_503' where id = ?",
             deliveryId,
         )
+        mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}", endpointId).session(browser.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.deliverySummary.totalDeliveries").value(1))
+            .andExpect(jsonPath("$.deliverySummary.deadLetteredDeliveries").value(1))
+            .andExpect(jsonPath("$.deliverySummary.lastFailureAt").isNotEmpty)
+            .andExpect(jsonPath("$.deliverySummary.lastFailureCategory").value("HTTP_503"))
         mockMvc.perform(
             post("/api/v1/admin/integrations/webhooks/{endpointId}/deliveries/{deliveryId}/replay", endpointId, deliveryId)
                 .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
@@ -172,6 +179,10 @@ class AdminWebhookIntegrationTest {
         mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}/deliveries", endpointId).session(browser.session))
             .andExpect(status().isOk).andExpect(jsonPath("$[0].id").value(deliveryId.toString()))
             .andExpect(jsonPath("$[0].status").value("CANCELLED"))
+        mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}", endpointId).session(browser.session))
+            .andExpect(status().isOk).andExpect(jsonPath("$.deliverySummary.totalDeliveries").value(1))
+            .andExpect(jsonPath("$.deliverySummary.cancelledDeliveries").value(1))
+            .andExpect(jsonPath("$.deliverySummary.lastFailureCategory").doesNotExist())
         mockMvc.perform(
             post("/api/v1/admin/integrations/webhooks/{id}/test-deliveries", endpointId).session(browser.session).csrf(browser)
                 .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"must not queue"}"""),

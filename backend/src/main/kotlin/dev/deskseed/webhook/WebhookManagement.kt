@@ -53,6 +53,20 @@ data class WebhookHealthView(
     val lastFailedAt: Instant?,
 )
 
+/** Aggregate-only operational view; it never exposes delivery payload, headers, or diagnostics. */
+data class WebhookDeliverySummaryView(
+    val totalDeliveries: Long,
+    val pendingDeliveries: Long,
+    val inFlightDeliveries: Long,
+    val retryScheduledDeliveries: Long,
+    val succeededDeliveries: Long,
+    val deadLetteredDeliveries: Long,
+    val cancelledDeliveries: Long,
+    val lastDeliveryAt: Instant?,
+    val lastFailureAt: Instant?,
+    val lastFailureCategory: String?,
+)
+
 data class WebhookEndpointView(
     val id: UUID,
     val name: String,
@@ -61,6 +75,7 @@ data class WebhookEndpointView(
     val subscriptions: List<WebhookSubscription>,
     val targetClass: WebhookTargetClass,
     val health: WebhookHealthView,
+    val deliverySummary: WebhookDeliverySummaryView,
     val archivedAt: Instant?,
     val version: Long,
     val createdAt: Instant,
