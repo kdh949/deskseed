@@ -59,6 +59,23 @@ describe('DraftsPresenceContribution', () => {
     )
     expect(screen.getByText(/초안은 계속 저장됩니다/)).toBeVisible()
   })
+
+  it('distinguishes an authorization denial from a transient connection failure', () => {
+    mockedCollaboration.mockReturnValue({
+      connection: 'denied',
+      members: [],
+      ticketUpdate: null,
+    })
+
+    const { rerender } = render(<TicketPresenceContext ticketNumber={1042} />)
+    expect(screen.getByText(/볼 권한이 없습니다/)).toBeVisible()
+    expect(screen.getByText('권한 없음')).toBeVisible()
+
+    rerender(
+      <ComposerPresenceStatus composerMode="internal" ticketNumber={1042} />,
+    )
+    expect(screen.getByText(/공유할 권한이 없습니다/)).toBeVisible()
+  })
 })
 
 afterEach(() => {

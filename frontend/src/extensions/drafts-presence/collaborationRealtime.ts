@@ -9,7 +9,7 @@ export type CollaborationMember = {
 }
 
 export type CollaborationView = {
-  connection: 'connecting' | 'connected' | 'unavailable'
+  connection: 'connecting' | 'connected' | 'denied' | 'unavailable'
   members: readonly CollaborationMember[]
   ticketUpdate: {
     ticketVersion: number
@@ -49,6 +49,7 @@ export class TicketCollaborationRealtime {
   private heartbeatTimer: number | null = null
   private reconnectTimer: number | null = null
   private running = false
+  private authorizationDenied = false
   private view: CollaborationView = emptyView
   private readonly listeners = new Set<(view: CollaborationView) => void>()
 
@@ -66,6 +67,7 @@ export class TicketCollaborationRealtime {
   start() {
     if (this.running) return
     this.running = true
+    this.authorizationDenied = false
     this.connect()
   }
 
@@ -132,8 +134,10 @@ export class TicketCollaborationRealtime {
         if (this.heartbeatTimer !== null)
           window.clearInterval(this.heartbeatTimer)
         this.heartbeatTimer = null
-        this.replaceView({ ...this.view, connection: 'unavailable' })
-        if (this.running) {
+        if (!this.authorizationDenied) {
+          this.replaceView({ ...this.view, connection: 'unavailable' })
+        }
+        if (this.running && !this.authorizationDenied) {
           this.reconnectTimer = window.setTimeout(
             () => this.connect(),
             RECONNECT_MS,
@@ -154,7 +158,16 @@ export class TicketCollaborationRealtime {
   private handleMessage(raw: string) {
     if (raw.length > MAX_INBOUND_MESSAGE_BYTES) return
     const message = parseServerMessage(raw)
-    if (!message || message.ticketNumber !== this.ticketNumber) return
+    if (!message) return
+    if (message.type === 'error') {
+      if (message.code === 'FORBIDDEN' || message.code === 'UNAUTHORIZED') {
+        this.authorizationDenied = true
+        this.replaceView({ ...this.view, connection: 'denied' })
+        this.socket?.close()
+      }
+      return
+    }
+    if (message.ticketNumber !== this.ticketNumber) return
 
     if (message.type === 'presence.snapshot') {
       this.replaceView({ ...this.view, members: message.members })
@@ -245,10 +258,29 @@ type ServerMessage =
       ticketVersion: number
       changedFields: string[]
     }
+  | {
+      type: 'error'
+      code: CollaborationErrorCode
+    }
+
+type CollaborationErrorCode =
+  | 'FORBIDDEN'
+  | 'UNAUTHORIZED'
+  | 'INVALID_MESSAGE'
+  | 'RATE_LIMITED'
+  | 'TRANSIENT_UNAVAILABLE'
 
 function parseServerMessage(raw: string): ServerMessage | null {
   try {
     const value: unknown = JSON.parse(raw)
+    if (
+      isRecord(value) &&
+      value.version === 1 &&
+      value.type === 'error' &&
+      isCollaborationErrorCode(value.code)
+    ) {
+      return { type: value.type, code: value.code }
+    }
     if (
       !isRecord(value) ||
       value.version !== 1 ||
@@ -343,6 +375,18 @@ function isPresenceState(value: unknown): value is PresenceState {
 
 function isSafeFieldName(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z][a-zA-Z0-9]{0,63}$/.test(value)
+}
+
+function isCollaborationErrorCode(
+  value: unknown,
+): value is CollaborationErrorCode {
+  return (
+    value === 'FORBIDDEN' ||
+    value === 'UNAUTHORIZED' ||
+    value === 'INVALID_MESSAGE' ||
+    value === 'RATE_LIMITED' ||
+    value === 'TRANSIENT_UNAVAILABLE'
+  )
 }
 
 function defaultSocketFactory(url: string): CollaborationSocket {
