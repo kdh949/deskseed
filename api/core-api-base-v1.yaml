@@ -14,9 +14,6 @@ x-deskseed-staff-actor-consistency:
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting
-  - listTicketConfigurationDescriptors
-  - getAgentTicketConfiguration
-  - updateAgentTicketConfiguration
   parameter:
     $ref: '#/components/parameters/ExpectedStaffActorHeader'
   invalidHeaderResponse:

@@ -21,7 +21,7 @@ An ADMIN can safely define typed ticket fields, versioned forms, normalized tags
 ## In scope
 
 - owned Core OpenAPI fragment, accepted data/status/rule decision, requirement reservation, evidence record, and deterministic generated bundle;
-- all required admin and core runtime operation families as reviewer-visible contract shapes; this tags/statuses PR freezes the implemented ADMIN operations and defers customer/agent runtime shapes as `BLUEPRINT_READY` to the final stacked implementation PR.
+- all required admin and core runtime operation families as `FROZEN` reviewer-visible contracts: the final runtime stacked PR promotes customer/agent operations only after their mappings, authorization, audit, failure semantics, and tests are present.
 - V40 additive persistence foundation and ADMIN vertical slices: typed field definition/stable single-select option lifecycle, versioned form draft/preview/validation/publish/archive, normalized tag catalog, and category-compatible custom status catalog; `If-Match` precondition, CSRF/session authorization, Foundation `WorkflowCatalog` condition contribution, and atomic Admin/Security audit.
 - agent runtime vertical slice: server-projected typed field values, active tag associations, and compatible custom-status selection travel through the existing ticket command/replay/optimistic-version/TicketAudit/outbox boundary; access-audited agent read returns no semantic `TICKET_VIEWED`.
 - public customer form projection is rendered from a published default snapshot and exposes a distinct customer DTO, never staff labels/descriptions, search/analytics flags, or staff-only options.

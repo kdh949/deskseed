@@ -488,7 +488,7 @@ paths:
       summary: 고객 제출 context의 form projection 조회
       description: 고객 제출 context에 허용된 active field만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다.
       operationId: getCustomerTicketFormProjection
-      x-deskseed-contract-status: BLUEPRINT_READY
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-011]
       tags: [Ticket Configuration Runtime]
       security: [{}]
@@ -509,7 +509,7 @@ paths:
       summary: 상담사 View/Search/Macro/Rules/Analytics용 configuration descriptor catalog 조회
       description: 상담사 session의 actor 일관성을 확인하고 handler/provider identity만 포함한 bounded descriptor catalog를 반환합니다.
       operationId: listTicketConfigurationDescriptors
-      x-deskseed-contract-status: BLUEPRINT_READY
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-010, REQ-CFG-012, REQ-CFG-013]
       tags: [Ticket Configuration Runtime]
       security: [{staffSession: []}]
@@ -524,7 +524,7 @@ paths:
       summary: 상담사용 ticket field/tag/custom status projection 조회
       description: 상담사 session의 actor 일관성과 ticket read authorization을 확인하고 server-authorized configuration projection을 반환합니다.
       operationId: getAgentTicketConfiguration
-      x-deskseed-contract-status: BLUEPRINT_READY
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-010, REQ-CFG-012, REQ-CFG-013]
       tags: [Ticket Configuration Runtime]
       security: [{staffSession: []}]
@@ -540,7 +540,7 @@ paths:
       summary: 정상 ticket command로 field/tag/custom status 변경
       description: 상담사 CSRF, actor 일관성, ticket write authorization, If-Match version, form projection을 확인하고 하나의 TicketAudit으로 변경합니다.
       operationId: updateAgentTicketConfiguration
-      x-deskseed-contract-status: BLUEPRINT_READY
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-010, REQ-CFG-012, REQ-CFG-013]
       x-deskseed-documentation-review: MANUAL
       tags: [Ticket Configuration Runtime]

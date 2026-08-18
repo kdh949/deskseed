@@ -129,7 +129,7 @@ c150b9d4ada696d7c9374d603750707dabf6833679adc47348231fbe6313bea7        4090  do
 3f992b30c1d71ad638898428b2e9c6dc6edeca7ac31fa03bf702d6e0decb9136        5827  docs/evidence/business-schedule-admin.md
 1862e8c41d4bb42c091e1fd7eed206e31c4d884b05ccff3f37d7c49a42fd71fe        7161  docs/evidence/customer-my-requests-portal.md
 a138e5c6ccd889cdd5dcc87b88032b97d02efa1006ca202c52cf818bce3643d7        3115  docs/evidence/goal-foundation-progress.md
-d13e0ee5621dc88ab49dacb847dc19be41734f9b2bab12e5e8da39c387e1fb48        3379  docs/evidence/goal-ticket-configuration-progress.md
+f47f9be1af49200b37d1acff7ca61bf9acdfa61dd5130ec1eb6400ad4d030dfb        3712  docs/evidence/goal-ticket-configuration-progress.md
 f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  docs/evidence/outbound-mail-mailpit-foundation.md
 36d43d6d66f816434f4d3701dda086aa9cc830edc37aba91936501e54f919e90        4966  docs/evidence/p0/BE-P0-CUSTOMER-ACCESS.md
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md
@@ -295,7 +295,7 @@ ac362594888ac24f3e3925f9a739495de6ee02494f48157c1ad4e485936d2274        6458  ta
 24b8c9193002c4cab9803841d41d7ec849a764fc9ca9ec76a4918c2cae1545d0        2551  tasks/briefs/goal-foundation-contract-kernel.md
 16c07ea30c14034b671f12ce7e772eaddb8fd27b346eb6620a3935f4ca71f47f        3727  tasks/briefs/goal-foundation-extension-host.md
 48d0a537f97fa763b7cd0649f5efd6331b8ffe2e116db100785734e8d51716f7        3106  tasks/briefs/goal-foundation-outbox.md
-be328a8b30ab5253179d224372d22f09bb9d061298803600309932a9b5d734da        4246  tasks/briefs/goal-ticket-configuration-contract.md
+14e35adc37657d8c000c3e20bb57154565f2fa74053b670b7441943e1ffaed4f        4402  tasks/briefs/goal-ticket-configuration-contract.md
 a440d49ef2a6885f45e727e954ab2878d13319586065651adb8512d1728a144e        4971  tasks/briefs/integration-client-management.md
 7928256db634523d0ae40396641fdc934e61edd7b0eb8e1948bc35aadf29fccd        6645  tasks/briefs/issue-24-review-remediation.md
 55a7432c4b6d311344381db93ab93c643b2bfb8e72827af8a4ccf09793da4967       15791  tasks/briefs/p1-authenticated-customer-attachments.md
