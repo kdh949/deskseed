@@ -24,8 +24,9 @@ internal class StaffSessionValidationFilter(
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
         !request.requestURI.startsWith("/api/v1/agent/") &&
-            !request.requestURI.startsWith("/api/v1/admin/") &&
-            !request.requestURI.startsWith("/api/v1/audit/") &&
+        !request.requestURI.startsWith("/api/v1/admin/") &&
+        !request.requestURI.startsWith("/api/v1/audit/") &&
+            !request.requestURI.startsWith("/ws/agent/") &&
             !request.requestURI.startsWith("/docs/api") &&
             !request.requestURI.startsWith("/api-docs/specs/") &&
             !request.requestURI.startsWith("/v3/api-docs/")

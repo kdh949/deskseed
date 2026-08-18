@@ -1,5 +1,6 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.collaboration.CollaborationPresenceConnectionTerminator
 import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.organization.StaffRole
 import io.swagger.v3.oas.annotations.media.Schema
@@ -34,6 +35,7 @@ import java.time.Instant
 @Validated
 internal class StaffSessionController(
     private val authenticationService: StaffAuthenticationApplicationService,
+    private val collaborationConnectionTerminator: CollaborationPresenceConnectionTerminator,
     private val clock: Clock,
     @Value("\${deskseed.staff-auth.session-idle:60m}")
     private val sessionIdle: Duration,
@@ -86,7 +88,11 @@ internal class StaffSessionController(
     }
 
     @DeleteMapping("/session")
-    fun logout(request: HttpServletRequest): ResponseEntity<Void> {
+    fun logout(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<Void> {
+        collaborationConnectionTerminator.closeStaffConnections(principal.id)
         request.getSession(false)?.invalidate()
         SecurityContextHolder.clearContext()
         return ResponseEntity.noContent().build()

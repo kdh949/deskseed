@@ -95,6 +95,20 @@ interface TicketAttachmentLinker {
     fun linkCleanAttachments(command: TicketAttachmentLinkCommand): List<LinkedTicketAttachment>
 }
 
+/**
+ * Validates private attachment handles before they are retained by an unsaved composer draft.
+ * This does not link or extend an attachment; the ticket comment command revalidates before linking.
+ */
+interface TicketDraftAttachmentReferenceValidator {
+    fun validateDraftReferences(
+        ticketId: UUID,
+        actor: ActorRef,
+        visibility: AttachmentVisibility,
+        attachmentIds: Set<UUID>,
+        now: Instant,
+    )
+}
+
 interface TicketAttachmentReadProjection {
     fun listForComments(
         commentIds: Collection<UUID>,
