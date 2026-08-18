@@ -13,8 +13,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      seed_contracts: ${{ steps.classify.outputs.seed_contracts || steps.fail-closed.outputs.seed_contracts }}
+      backend: ${{ steps.classify.outputs.backend || steps.fail-closed.outputs.backend }}
+      backend_fast: ${{ steps.classify.outputs.backend_fast || steps.fail-closed.outputs.backend_fast }}
+      backend_contract: ${{ steps.classify.outputs.backend_contract || steps.fail-closed.outputs.backend_contract }}
+      backend_integration: ${{ steps.classify.outputs.backend_integration || steps.fail-closed.outputs.backend_integration }}
+      backend_migration: ${{ steps.classify.outputs.backend_migration || steps.fail-closed.outputs.backend_migration }}
+      backend_slow: ${{ steps.classify.outputs.backend_slow || steps.fail-closed.outputs.backend_slow }}
+      frontend_quality: ${{ steps.classify.outputs.frontend_quality || steps.fail-closed.outputs.frontend_quality }}
+      frontend_storybook: ${{ steps.classify.outputs.frontend_storybook || steps.fail-closed.outputs.frontend_storybook }}
+      frontend_e2e: ${{ steps.classify.outputs.frontend_e2e || steps.fail-closed.outputs.frontend_e2e }}
+      compose: ${{ steps.classify.outputs.compose || steps.fail-closed.outputs.compose }}
+      run_all: ${{ steps.classify.outputs.run_all || steps.fail-closed.outputs.run_all }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Classify cumulative changes
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/ci/classify_changes.py
+          --event-type "${{ github.event_name }}"
+          --base-sha "$BASE_SHA"
+          --head-sha "$HEAD_SHA"
+      - name: Fail closed after an unexpected classifier failure
+        id: fail-closed
+        if: failure()
+        run: |
+          for output in seed_contracts backend backend_fast backend_contract backend_integration backend_migration backend_slow frontend_quality frontend_storybook frontend_e2e compose run_all; do
+            echo "$output=true" >> "$GITHUB_OUTPUT"
+          done
+          {
+            echo "## Change classification failure"
+            echo
+            echo "The classifier step failed unexpectedly. Every verification job was selected and CI gate will retain the failure."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   seed-contracts:
     name: Documentation contracts
+    needs: [changes]
+    if: >-
+      always() &&
+      (needs.changes.outputs.seed_contracts == 'true' || needs.changes.outputs.run_all == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -32,6 +79,10 @@ jobs:
 
   backend:
     name: Backend tests
+    needs: [changes]
+    if: >-
+      always() &&
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.run_all == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -39,19 +90,52 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
       - name: Test
         working-directory: backend
-        run: ./gradlew --no-daemon test
+        env:
+          BACKEND_FAST: ${{ needs.changes.outputs.backend_fast }}
+          BACKEND_CONTRACT: ${{ needs.changes.outputs.backend_contract }}
+          BACKEND_INTEGRATION: ${{ needs.changes.outputs.backend_integration }}
+          BACKEND_MIGRATION: ${{ needs.changes.outputs.backend_migration }}
+          BACKEND_SLOW: ${{ needs.changes.outputs.backend_slow }}
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            selected=()
+            [[ "$BACKEND_FAST" == "true" ]] && selected+=(fast)
+            [[ "$BACKEND_CONTRACT" == "true" ]] && selected+=(contract)
+            [[ "$BACKEND_INTEGRATION" == "true" ]] && selected+=(integration)
+            [[ "$BACKEND_MIGRATION" == "true" ]] && selected+=(migration)
+            [[ "$BACKEND_SLOW" == "true" ]] && selected+=(slow)
+            if [[ "${#selected[@]}" -eq 0 ]]; then
+              echo "Backend tests was selected without a backend category" >&2
+              exit 1
+            fi
+            tags=$(IFS=,; echo "${selected[*]}")
+            ./gradlew --no-daemon ciSelectedTest "-PdeskseedTestTags=$tags" --fail-fast
+          else
+            ./gradlew --no-daemon test
+          fi
 
   frontend:
     name: Frontend quality gates
+    needs: [changes]
+    if: >-
+      always() &&
+      (needs.changes.outputs.frontend_quality == 'true' ||
+       needs.changes.outputs.frontend_storybook == 'true' ||
+       needs.changes.outputs.frontend_e2e == 'true' ||
+       needs.changes.outputs.run_all == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.2"
-          package-manager-cache: false
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install
         working-directory: frontend
         run: npm ci --no-audit --no-fund
@@ -71,9 +155,15 @@ jobs:
         working-directory: frontend
         run: npm test
       - name: Install Chromium for Storybook tests
+        if: >-
+          needs.changes.outputs.frontend_storybook == 'true' ||
+          needs.changes.outputs.run_all == 'true'
         working-directory: frontend
         run: npx playwright install --with-deps chromium
       - name: Storybook tests
+        if: >-
+          needs.changes.outputs.frontend_storybook == 'true' ||
+          needs.changes.outputs.run_all == 'true'
         working-directory: frontend
         run: npm run test:storybook
       - name: Build
@@ -82,14 +172,19 @@ jobs:
 
   frontend-browser-e2e:
     name: Frontend browser E2E
-    needs: [frontend]
+    needs: [changes, frontend]
+    if: >-
+      always() &&
+      (needs.changes.outputs.frontend_e2e == 'true' || needs.changes.outputs.run_all == 'true') &&
+      needs.frontend.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "22.23.2"
-          package-manager-cache: false
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
@@ -110,6 +205,10 @@ jobs:
 
   compose-smoke:
     name: Compose health smoke
+    needs: [changes]
+    if: >-
+      always() &&
+      (needs.changes.outputs.compose == 'true' || needs.changes.outputs.run_all == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -117,3 +216,61 @@ jobs:
         run: bash scripts/test-e2e-compose-ownership.sh
       - name: Start stack and check backend health
         run: bash scripts/compose-smoke.sh
+
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs:
+      - changes
+      - seed-contracts
+      - backend
+      - frontend
+      - frontend-browser-e2e
+      - compose-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify selected jobs
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SEED_EXPECTED: ${{ needs.changes.outputs.seed_contracts }}
+          SEED_RESULT: ${{ needs.seed-contracts.result }}
+          BACKEND_EXPECTED: ${{ needs.changes.outputs.backend }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_EXPECTED: ${{ needs.changes.outputs.frontend_quality }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          E2E_EXPECTED: ${{ needs.changes.outputs.frontend_e2e }}
+          E2E_RESULT: ${{ needs.frontend-browser-e2e.result }}
+          COMPOSE_EXPECTED: ${{ needs.changes.outputs.compose }}
+          COMPOSE_RESULT: ${{ needs.compose-smoke.result }}
+        run: |
+          failed=0
+          {
+            echo "## CI gate results"
+            echo
+            echo "| Job | Selected | Result |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          check_job() {
+            local name="$1"
+            local selected="$2"
+            local result="$3"
+            echo "| $name | $selected | $result |" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$selected" == "true" && "$result" != "success" ]]; then
+              failed=1
+            elif [[ "$selected" != "true" && "$result" != "skipped" ]]; then
+              failed=1
+            fi
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              failed=1
+            fi
+          }
+
+          echo "| Changes | true | $CHANGES_RESULT |" >> "$GITHUB_STEP_SUMMARY"
+          [[ "$CHANGES_RESULT" == "success" ]] || failed=1
+          check_job "Documentation contracts" "$SEED_EXPECTED" "$SEED_RESULT"
+          check_job "Backend tests" "$BACKEND_EXPECTED" "$BACKEND_RESULT"
+          check_job "Frontend quality gates" "$FRONTEND_EXPECTED" "$FRONTEND_RESULT"
+          check_job "Frontend browser E2E" "$E2E_EXPECTED" "$E2E_RESULT"
+          check_job "Compose health smoke" "$COMPOSE_EXPECTED" "$COMPOSE_RESULT"
+          exit "$failed"
