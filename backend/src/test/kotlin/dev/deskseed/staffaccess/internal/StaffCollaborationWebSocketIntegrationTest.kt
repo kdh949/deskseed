@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
         "deskseed.collaboration.websocket.allowed-origins=http://localhost:5173",
+        "deskseed.collaboration.websocket.max-messages-per-minute=1",
     ],
 )
 @Testcontainers
@@ -118,6 +119,28 @@ class StaffCollaborationWebSocketIntegrationTest {
             assertThat(error).contains("\"type\":\"error\"")
             assertThat(error).contains("\"code\":\"UNAUTHORIZED\"")
             assertThat(error).contains("\"retryable\":false")
+            assertThat(handler.closed.await(5, TimeUnit.SECONDS)).isTrue()
+        } finally {
+            if (session.isOpen) session.close(CloseStatus.NORMAL)
+        }
+    }
+
+    @Test
+    fun `rate limited socket receives retryable protocol error before closure`() {
+        insertStaff("rate-limited-presence-agent@example.com")
+        val browser = login("rate-limited-presence-agent@example.com")
+        val handler = RecordingWebSocketHandler()
+        val session = connect(browser.sessionCookie, handler)
+
+        try {
+            session.sendMessage(TextMessage("""{"version":1,"type":"heartbeat"}"""))
+            session.sendMessage(TextMessage("""{"version":1,"type":"heartbeat"}"""))
+
+            val error = handler.messages.poll(5, TimeUnit.SECONDS)
+            assertThat(error).contains("\"type\":\"error\"")
+            assertThat(error).contains("\"code\":\"RATE_LIMITED\"")
+            assertThat(error).contains("\"retryable\":true")
+            assertThat(error).contains("\"retryAfterMs\":60000")
             assertThat(handler.closed.await(5, TimeUnit.SECONDS)).isTrue()
         } finally {
             if (session.isOpen) session.close(CloseStatus.NORMAL)
