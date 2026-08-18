@@ -99,7 +99,7 @@
 - Browser: all 37 development Playwright tests passed; `ticket-composer-conflict.spec.ts` covers same-field conflict, non-overlap merge and keyboard-only INTERNAL save with axe, while `ticket-command-conflict-preserves-drafts.png` captures the focused property banner and preserved PUBLIC draft.
 - Full stack: isolated Compose run passed customer create plus real staff PUBLIC/INTERNAL composer saves; customer API and DOM exposed the PUBLIC reply and excluded the INTERNAL note.
 - Backend: all 72 Gradle tests passed; `AgentTicketReadIntegrationTest` covers active assignment options and CLOSED ticket read-only capability against PostgreSQL.
-- Contracts: `validate_documentation.py` and `verify_seed.py` passed with 43 OpenAPI paths and 53 operations.
+- Contracts: `make docs-check` passed the semantic documentation and OpenAPI contract gates.
 
 ## Compatibility and migration
 

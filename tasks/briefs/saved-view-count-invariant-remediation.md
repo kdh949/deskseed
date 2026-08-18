@@ -56,8 +56,7 @@ cd frontend && npm run contract:check
 cd frontend && npm run check:design-system-boundaries
 cd frontend && npm run test
 cd frontend && npm run build
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_documentation_quality.py
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_documentation.py --write
+make docs-check
 ```
 
 ## Compatibility and migration

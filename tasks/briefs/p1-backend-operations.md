@@ -64,7 +64,7 @@
 ## Validation
 
 - PostgreSQL integration: full `backend/./gradlew test`; focused migration, architecture, runtime OpenAPI, search, auditor authorization, attachment, export, batch, external-reference, and limiter tests.
-- Contract/docs: `PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_documentation_quality.py`; `PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_documentation.py --write`.
+- Contract/docs: `make docs-check`.
 - Frontend fixture: `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm run check:design-system-boundaries`, `npm test`, `npm run build`, and `npm run test:e2e`.
 - Stack: isolated-port Compose smoke and `bash scripts/run-p1-contract-e2e.sh`; the latter calls P1 APIs through the frontend proxy and checks the runtime Core OpenAPI directly from the backend documentation surface.
 - Performance: `bash scripts/run-release-performance.sh --scale release --output-dir /private/tmp/deskseed-p1-release-performance-20260816`; committed evidence contains 1M tickets, 2M comments, `EXPLAIN (ANALYZE, BUFFERS)`, source fingerprint, and cleanup result.

@@ -50,7 +50,7 @@ H. Storybook interaction/axe, Playwright, real-stack, full gates
 병렬 파일 규칙:
 
 - tasks/briefs/p1-parallel-followup-coordination.md의 Workstream A ownership만 수정한다.
-- api/core-api-outline-v1.yaml, docs/26, docs/55, VALIDATION-REPORT.md, FILE-MANIFEST.txt에서는 Saved View section만 수정한다.
+- api/core-api-outline-v1.yaml, docs/26, docs/55에서는 Saved View section만 수정한다.
 - customer portal/customerauth/attachment implementation 파일은 수정하지 않는다.
 - baseline frontend e2e Prettier failure를 feature commit에 섞지 않는다. 최신 base에서 이미 고쳐졌는지 확인하고 미해결이면 별도 baseline failure로 보고한다.
 
