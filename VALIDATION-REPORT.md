@@ -32,9 +32,9 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - Openapi Operations: 129
 - Openapi Paths: 103
 - Requirement Definitions: 91
-- Staff Actor Blueprint Operations: 3
-- Staff Actor Bound Operations: 99
-- Staff Csrf Bound Operations: 62
+- Staff Actor Blueprint Operations: 6
+- Staff Actor Bound Operations: 96
+- Staff Csrf Bound Operations: 61
 - Task Briefs: 26
 - Verification Gate Definitions: 128
 - Yaml Files: 25
