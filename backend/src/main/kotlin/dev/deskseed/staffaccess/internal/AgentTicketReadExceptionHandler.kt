@@ -10,6 +10,8 @@ import dev.deskseed.ticketing.SavedViewAccessDeniedException
 import dev.deskseed.ticketing.SavedViewConflictException
 import dev.deskseed.ticketing.SavedViewNotFoundException
 import dev.deskseed.ticketing.SavedViewPreconditionFailedException
+import dev.deskseed.knowledge.KnowledgeAccessAuditUnavailableException
+import dev.deskseed.knowledge.KnowledgeNotFoundException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.ConstraintViolationException
 import org.springframework.beans.TypeMismatchException
@@ -23,7 +25,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import java.net.URI
 
-@RestControllerAdvice(assignableTypes = [AgentTicketReadController::class, AgentAttachmentController::class])
+@RestControllerAdvice(assignableTypes = [AgentTicketReadController::class, AgentAttachmentController::class, AgentKnowledgeController::class])
 internal class AgentTicketReadExceptionHandler {
     @ExceptionHandler(AttachmentNotFoundException::class)
     fun attachmentNotFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
@@ -78,6 +80,15 @@ internal class AgentTicketReadExceptionHandler {
         "The requested ticket or view was not found.",
     )
 
+    @ExceptionHandler(KnowledgeNotFoundException::class)
+    fun knowledgeNotFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request,
+        HttpStatus.NOT_FOUND,
+        "/problems/knowledge-not-found",
+        "Knowledge article not found",
+        "The requested knowledge article is not available to this staff actor.",
+    )
+
     @ExceptionHandler(SavedViewNotFoundException::class)
     fun savedViewNotFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
         request,
@@ -114,7 +125,7 @@ internal class AgentTicketReadExceptionHandler {
         "The saved view changed after the supplied ETag was read.",
     )
 
-    @ExceptionHandler(AccessAuditUnavailableException::class)
+    @ExceptionHandler(AccessAuditUnavailableException::class, KnowledgeAccessAuditUnavailableException::class)
     fun auditUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
         request,
         HttpStatus.SERVICE_UNAVAILABLE,
