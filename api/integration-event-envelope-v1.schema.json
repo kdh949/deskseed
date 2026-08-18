@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:deskseed:schema:integration-event-envelope:v1",
-  "title": "Deskseed integration event envelope v1 (planned)",
+  "title": "Deskseed integration event envelope v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,6 +11,11 @@
     "occurredAt",
     "subject",
     "correlationId",
+    "actorType",
+    "actorId",
+    "source",
+    "requestId",
+    "commandId",
     "data"
   ],
   "properties": {
@@ -38,6 +43,7 @@
     },
     "subject": {
       "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}:[A-Za-z0-9-]{1,100}$",
       "examples": [
         "ticket:018f7c2c-7348-7a32-a971-4c9a845b3350"
       ]
@@ -52,17 +58,45 @@
     },
     "correlationId": {
       "type": "string",
-      "format": "uuid"
+      "pattern": "^[A-Za-z0-9._:-]{1,100}$"
     },
     "causationId": {
       "type": [
         "string",
         "null"
       ],
+      "pattern": "^[A-Za-z0-9._:-]{1,100}$"
+    },
+    "actorType": {
+      "type": "string",
+      "enum": ["CUSTOMER", "STAFF", "INTEGRATION_CLIENT", "TRIGGER", "AUTOMATION", "SYSTEM"]
+    },
+    "actorId": {
+      "type": ["string", "null"],
       "format": "uuid"
     },
+    "source": {
+      "type": "string",
+      "enum": ["CUSTOMER_PORTAL", "AGENT_UI", "ADMIN_UI", "PLATFORM_API", "TRIGGER", "AUTOMATION", "SYSTEM_JOB"]
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,100}$"
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,100}$"
+    },
     "data": {
-      "type": "object"
+      "type": "object",
+      "maxProperties": 30,
+      "propertyNames": {
+        "pattern": "^[a-z][a-zA-Z0-9]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 500
+      }
     }
   }
 }

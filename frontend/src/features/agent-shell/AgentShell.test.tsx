@@ -50,4 +50,28 @@ describe('AgentShell', () => {
       screen.queryByRole('link', { name: '새 티켓' }),
     ).not.toBeInTheDocument()
   })
+
+  it('renders only the extension navigation contributions supplied by the host', () => {
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter>
+          <AgentShell
+            displayName="상담사"
+            extensionNavigationItems={[
+              {
+                id: 'knowledge.base',
+                label: 'Knowledge',
+                to: '/agent/knowledge',
+              },
+            ]}
+          />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+
+    expect(screen.getByRole('link', { name: 'Knowledge' })).toHaveAttribute(
+      'href',
+      '/agent/knowledge',
+    )
+  })
 })

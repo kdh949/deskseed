@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import org.assertj.core.api.Assertions.assertThat
+import dev.deskseed.ticketconfiguration.TicketConfigurationRuntimeQuery
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -16,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -39,6 +41,9 @@ class AgentTicketCommandIntegrationTest {
     @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
 
+    @Autowired
+    private lateinit var configurationRuntimeQuery: TicketConfigurationRuntimeQuery
+
     @BeforeEach
     fun clearState() {
         jdbcTemplate.execute(
@@ -49,6 +54,14 @@ class AgentTicketCommandIntegrationTest {
                 ticket_audit_events,
                 ticket_audits,
                 ticket_comments,
+                ticket_custom_field_values,
+                ticket_tag_assignments,
+                ticket_field_options,
+                ticket_form_versions,
+                ticket_forms,
+                ticket_field_definitions,
+                ticket_tag_definitions,
+                custom_ticket_statuses,
                 request_access_tokens,
                 tickets,
                 customers,
@@ -133,6 +146,203 @@ class AgentTicketCommandIntegrationTest {
         assertThat(audit).containsEntry("expected_version", 0L)
         assertThat(audit).containsEntry("ticket_version", 0L)
         assertThat(eventTypes(auditId)).containsExactly("TICKET_CREATED", "COMMENT_CREATED")
+    }
+
+    @Test
+    fun `agent configuration command projects typed values tags and custom status with redacted atomic audit`() {
+        val agentId = insertStaff("configuration-command@example.com", "구성 명령 상담사", "AGENT")
+        val groupId = insertGroup("구성 명령 그룹", agentId)
+        val browser = login("configuration-command@example.com")
+        val created = createAssignedTicket(browser, agentId, groupId, "configuration-command-customer@example.com")
+        val fieldId = UUID.randomUUID()
+        val formId = UUID.randomUUID()
+        val tagId = UUID.randomUUID()
+        val statusId = UUID.randomUUID()
+        val definitionJson =
+            """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[],"allowedCustomStatusIds":[]}"""
+        jdbcTemplate.update(
+            """
+            insert into ticket_field_definitions
+                (id, machine_key, field_type, staff_label, customer_visible, customer_editable, agent_visible,
+                 agent_editable, searchable, analytics_eligible, sensitive, validation_json, active,
+                 definition_version, created_at, updated_at)
+            values (?, 'payment.reference', 'SHORT_TEXT', '결제 참조', false, false, true, true, false, false,
+                    true, '{}'::jsonb, true, 1, now(), now())
+            """.trimIndent(),
+            fieldId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_forms
+                (id, name, lifecycle, default_for_customer, default_for_agent, draft_definition_json,
+                 current_version, published_version, aggregate_version, created_at, updated_at)
+            values (?, '상담사 결제 구성', 'DRAFT', false, true, cast(? as jsonb), 1, null, 1, now(), now())
+            """.trimIndent(),
+            formId,
+            definitionJson,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_form_versions
+                (form_id, version, definition_json, published_by_staff_id, published_by_display, published_at)
+            values (?, 1, cast(? as jsonb), ?, '구성 명령 상담사', now())
+            """.trimIndent(),
+            formId,
+            definitionJson,
+            agentId,
+        )
+        jdbcTemplate.update(
+            "update ticket_forms set lifecycle = 'PUBLISHED', published_version = 1 where id = ?",
+            formId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_tag_definitions
+                (id, normalized_value, label, active, definition_version, created_at, updated_at)
+            values (?, 'payment', '결제', true, 1, now(), now())
+            """.trimIndent(),
+            tagId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into custom_ticket_statuses
+                (id, machine_key, agent_label, status_category, active, display_order, default_for_category,
+                 allowed_form_ids, definition_version, created_at, updated_at)
+            values (?, 'payment-review', '결제 검토', 'OPEN', true, 0, false, cast(? as uuid[]), 1, now(), now())
+            """.trimIndent(),
+            statusId,
+            arrayOf(formId),
+        )
+
+        val commandId = UUID.randomUUID()
+        val response = mockMvc.perform(
+            configurationCommandRequest(
+                browser,
+                created.ticketNumber,
+                "request-ticket-configuration",
+                "\"0\"",
+                """
+                {
+                  "formVersion": 1,
+                  "fieldValues": {"payment.reference": {"shortTextValue": "customer-payment-reference-secret"}},
+                  "addTagIds": ["$tagId"],
+                  "removeTagIds": [],
+                  "customStatusId": "$statusId",
+                  "clientCommandId": "$commandId"
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"1\""))
+            .andExpect(jsonPath("$.replayed").value(false))
+            .andReturn().response.contentAsString
+        val auditId = uuidField(response, "auditId")
+
+        assertThat(jdbcTemplate.queryForObject(
+            "select short_text_value from ticket_custom_field_values where ticket_id = ? and field_definition_id = ?",
+            String::class.java,
+            created.ticketId,
+            fieldId,
+        )).isEqualTo("customer-payment-reference-secret")
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from ticket_tag_assignments where ticket_id = ? and tag_definition_id = ?",
+            Long::class.java,
+            created.ticketId,
+            tagId,
+        )).isEqualTo(1)
+        assertThat(jdbcTemplate.queryForMap("select status, custom_status_id::text, version from tickets where id = ?", created.ticketId))
+            .containsEntry("status", "OPEN")
+            .containsEntry("custom_status_id", statusId.toString())
+            .containsEntry("version", 1L)
+        assertThat(eventTypes(auditId)).containsExactly("TICKET_CONFIGURATION_UPDATED", "STATUS_CHANGED")
+        assertThat(jdbcTemplate.queryForList(
+            "select coalesce(old_value_json, '') || coalesce(new_value_json, '') || metadata_json from ticket_audit_events where audit_id = ?",
+            String::class.java,
+            auditId,
+        ).joinToString()).doesNotContain("customer-payment-reference-secret")
+        assertThat(configurationRuntimeQuery.readAgentConfiguration(created.ticketId, created.ticketNumber, 1, dev.deskseed.ticketing.TicketStatus.OPEN)
+            .fieldValues["payment.reference"]?.shortTextValue).isEqualTo("customer-payment-reference-secret")
+
+        mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}/configuration", created.ticketNumber)
+                .session(browser.session)
+                .header("X-Request-Id", "request-ticket-configuration-read")
+                .header("X-Correlation-Id", "correlation-ticket-configuration-read"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.fieldValues['payment.reference'].shortTextValue").value("customer-payment-reference-secret"))
+            .andExpect(jsonPath("$.customStatus.id").value(statusId.toString()))
+        assertThat(jdbcTemplate.queryForList(
+            "select action from access_audit_events where resource_id = ? order by occurred_at, id",
+            String::class.java,
+            created.ticketId,
+        ).filterNotNull()).containsExactly("API_RESOURCE_READ")
+
+        mockMvc.perform(
+            configurationCommandRequest(
+                browser,
+                created.ticketNumber,
+                "request-ticket-configuration-replay",
+                "\"0\"",
+                """
+                {
+                  "formVersion": 1,
+                  "fieldValues": {"payment.reference": {"shortTextValue": "customer-payment-reference-secret"}},
+                  "addTagIds": ["$tagId"],
+                  "removeTagIds": [],
+                  "customStatusId": "$statusId",
+                  "clientCommandId": "$commandId"
+                }
+                """.trimIndent(),
+            ),
+        ).andExpect(status().isOk).andExpect(jsonPath("$.replayed").value(true))
+        assertThat(auditCount(created.ticketId)).isEqualTo(2)
+
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_ticket_configuration_command_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                raise exception 'injected ticket configuration audit failure';
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_ticket_configuration_command_audit before insert on ticket_audits for each row execute function fail_ticket_configuration_command_audit()",
+        )
+        try {
+            mockMvc.perform(
+                configurationCommandRequest(
+                    browser,
+                    created.ticketNumber,
+                    "request-ticket-configuration-audit-failure",
+                    "\"1\"",
+                    """
+                    {
+                      "formVersion": 1,
+                      "fieldValues": {"payment.reference": {"shortTextValue": "must-roll-back"}},
+                      "clientCommandId": "${UUID.randomUUID()}"
+                    }
+                    """.trimIndent(),
+                ),
+            ).andExpect(status().isServiceUnavailable)
+                .andExpect(jsonPath("$.type").value("/problems/audit-write-unavailable"))
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_ticket_configuration_command_audit on ticket_audits")
+            jdbcTemplate.execute("drop function if exists fail_ticket_configuration_command_audit()")
+        }
+        assertThat(jdbcTemplate.queryForObject(
+            "select short_text_value from ticket_custom_field_values where ticket_id = ? and field_definition_id = ?",
+            String::class.java,
+            created.ticketId,
+            fieldId,
+        )).isEqualTo("customer-payment-reference-secret")
+        assertThat(jdbcTemplate.queryForObject("select version from tickets where id = ?", Long::class.java, created.ticketId))
+            .isEqualTo(1L)
+        assertThat(auditCount(created.ticketId)).isEqualTo(2)
     }
 
     @Test
@@ -1316,6 +1526,21 @@ class AgentTicketCommandIntegrationTest {
         .header("X-CSRF-TOKEN", browser.csrfToken)
         .header("X-Request-Id", requestId)
         .header("X-Correlation-Id", "batch-ticket-command")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(body)
+
+    private fun configurationCommandRequest(
+        browser: Browser,
+        ticketNumber: Long,
+        requestId: String,
+        ifMatch: String,
+        body: String,
+    ) = put("/api/v1/agent/tickets/{ticketNumber}/configuration", ticketNumber)
+        .session(browser.session)
+        .header("X-CSRF-TOKEN", browser.csrfToken)
+        .header("X-Request-Id", requestId)
+        .header("X-Correlation-Id", "correlation-ticket-configuration")
+        .header("If-Match", ifMatch)
         .contentType(MediaType.APPLICATION_JSON)
         .content(body)
 

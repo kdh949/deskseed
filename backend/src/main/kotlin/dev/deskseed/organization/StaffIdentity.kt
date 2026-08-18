@@ -20,6 +20,7 @@ object StaffAuthorityCatalog {
     const val ADMIN_MANAGE = "ADMIN_MANAGE"
     const val INTEGRATION_CLIENT_MANAGE = "integration:clients:manage"
     const val EXTERNAL_SYSTEM_MANAGE = "integration:systems:manage"
+    const val WEBHOOK_PRIVATE_TARGET_APPROVE = "integration:webhooks:private-target:approve"
     const val AUDIT_ACTIVITY_READ = "audit:activity:read"
     const val AUDIT_TICKET_CHANGE_READ = "audit:ticket-change:read"
     const val AUDIT_ACCESS_READ = "audit:access:read"
@@ -35,6 +36,7 @@ object StaffAuthorityCatalog {
             AGENT_WORKSPACE,
             INTEGRATION_CLIENT_MANAGE,
             EXTERNAL_SYSTEM_MANAGE,
+            WEBHOOK_PRIVATE_TARGET_APPROVE,
             SAVED_VIEW_SHARED_MANAGE,
         )
         StaffRole.AGENT -> setOf(AGENT_WORKSPACE)

@@ -1,0 +1,365 @@
+x-deskseed-fragment:
+  owner: knowledge-base
+tags:
+  - name: Knowledge Base
+    description: 고객·상담사·관리자가 audience 정책에 따라 지식 문서를 탐색하고 관리하는 API입니다.
+paths:
+  /api/v1/help/categories:
+    get:
+      operationId: listHelpCategories
+      summary: 고객 Help Center 카테고리 목록
+      description: PUBLIC 또는 현재 고객 세션에 허용된 published 문서가 있는 카테고리만 반환합니다. 숨겨진 문서·섹션의 존재는 반환하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{}, { customerSession: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/KnowledgeCacheableResponse' }
+        '500': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/help/categories/{categorySlug}:
+    get:
+      operationId: getHelpCategory
+      summary: 고객 Help Center 카테고리와 섹션
+      description: 허용되지 않거나 archive된 카테고리는 existence leak 없이 404로 처리합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{}, { customerSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CategorySlug' }]
+      responses:
+        '200': { $ref: '#/components/responses/KnowledgeCacheableResponse' }
+        '404': { $ref: '#/components/responses/ProblemResponse' }
+        '500': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/help/sections/{sectionSlug}:
+    get:
+      operationId: getHelpSection
+      summary: 고객 Help Center 섹션과 문서 목록
+      description: audience를 통과한 published article만 반환하며 hidden article의 count나 제목을 포함하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{}, { customerSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/SectionSlug' }, { $ref: '#/components/parameters/KnowledgeCursor' }]
+      responses:
+        '200': { $ref: '#/components/responses/KnowledgeCacheableResponse' }
+        '404': { $ref: '#/components/responses/ProblemResponse' }
+        '500': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/help/articles/{articleSlug}:
+    get:
+      operationId: getHelpArticle
+      summary: 고객 Help Center published 문서
+      description: PUBLIC은 cacheable이고 로그인·제한 audience 응답은 shared cache를 금지합니다. audience 미충족과 archive/unpublished는 404입니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001, REQ-KB-004]
+      tags: [Knowledge Base]
+      security: [{}, { customerSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleSlug' }, { $ref: '#/components/parameters/IfNoneMatch' }]
+      responses:
+        '200': { $ref: '#/components/responses/KnowledgeArticleResponse' }
+        '304': { description: 현재 audience에 대해 제공했던 ETag와 같은 published revision입니다. }
+        '404': { $ref: '#/components/responses/ProblemResponse' }
+        '500': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/help/search:
+    post:
+      operationId: searchHelpArticles
+      summary: 고객 Help Center 권한 필터 검색
+      description: POST body query는 URL history나 ordinary log에 남기지 않습니다. SQL audience filter 뒤의 cursor·snippet만 반환하며 hidden 문서는 count·rank·excerpt에 영향을 주지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001, REQ-KB-003]
+      tags: [Knowledge Base]
+      security: [{}, { customerSession: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KnowledgeSearchRequest' }
+            example: { query: '결제 오류', limit: 20 }
+      responses:
+        '200': { $ref: '#/components/responses/KnowledgeSearchResponse' }
+        '400': { $ref: '#/components/responses/ProblemResponse' }
+        '500': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/help/articles/{articleSlug}/feedback:
+    post:
+      operationId: recordHelpArticleFeedback
+      summary: 고객 Help Center 문서 유용성 피드백
+      description: 현재 audience에서 열람 가능한 published article에만 helpful/not helpful 하나를 기록합니다. anonymous feedback은 identity를 생성하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{}, { customerSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleSlug' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeFeedbackRequest' }, example: { helpful: true } } }
+      responses:
+        '204': { description: 피드백이 기록되었습니다. }
+        '404': { $ref: '#/components/responses/ProblemResponse' }
+        '500': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/agent/knowledge/search:
+    post:
+      operationId: searchAgentKnowledge
+      summary: 상담사 PUBLIC·INTERNAL 지식 검색
+      description: staff session 권한과 selected group audience를 SQL에서 확인하고 search access audit을 성공 응답 전에 기록합니다. audit 저장 실패는 503으로 fail closed합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-002, REQ-KB-003]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSearchRequest' }, example: { query: 'payment authorization', limit: 20 } } }
+      responses:
+        '200': { $ref: '#/components/responses/KnowledgeSearchResponse' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '403': { $ref: '#/components/responses/ProblemResponse' }
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '503': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/agent/knowledge/articles/{articleSlug}:
+    get:
+      operationId: getAgentKnowledgeArticle
+      summary: 상담사 지식 문서 상세
+      description: audience와 revision metadata는 staff projection으로 반환하고 restricted read audit을 fail closed로 기록합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-002]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleSlug' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses:
+        '200': { $ref: '#/components/responses/AgentKnowledgeArticleResponse' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '403': { $ref: '#/components/responses/ProblemResponse' }
+        '404': { $ref: '#/components/responses/ProblemResponse' }
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '503': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/agent/tickets/{ticketNumber}/knowledge-suggestions:
+    get:
+      operationId: suggestAgentKnowledgeForTicket
+      summary: 티켓 공개 맥락 기반 지식 추천
+      description: 서버가 subject와 bounded PUBLIC text만 query로 변환합니다. INTERNAL comment·raw query는 response, event, ordinary log에 포함하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-002, REQ-KB-003]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/TicketNumber' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses:
+        '200': { $ref: '#/components/responses/KnowledgeSearchResponse' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '403': { $ref: '#/components/responses/ProblemResponse' }
+        '404': { $ref: '#/components/responses/ProblemResponse' }
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+        '503': { $ref: '#/components/responses/ProblemResponse' }
+  /api/v1/admin/knowledge/categories:
+    get:
+      operationId: listKnowledgeCategories
+      summary: 관리자 knowledge category 목록
+      description: archive된 category도 administrative projection으로 반환합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeCategoryList' } } } }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' } }
+    post:
+      operationId: createKnowledgeCategory
+      summary: 관리자 knowledge category 생성
+      description: ADMIN mutation과 admin/security audit은 하나의 transaction에서 commit 또는 rollback합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeCategoryInput' }, example: { slug: billing, title: 결제, description: 결제와 청구서 도움말, displayOrder: 10 } } } }
+      responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeCategory' } } } }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/categories/{categoryId}:
+    patch:
+      operationId: updateKnowledgeCategory
+      summary: 관리자 knowledge category 수정·archive
+      description: If-Match optimistic version과 admin mutation audit을 요구합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CategoryId' }, { $ref: '#/components/parameters/IfMatch' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeCategoryPatch' } } } }
+      responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeCategory' } } } }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '404': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '412': { $ref: '#/components/responses/ProblemResponse' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/sections:
+    post:
+      operationId: createKnowledgeSection
+      summary: 관리자 knowledge section 생성
+      description: section slug와 display order는 같은 category 안에서 유일해야 합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSectionInput' }, example: { categoryId: 00000000-0000-0000-0000-000000000001, slug: invoices, title: 청구서, displayOrder: 10 } } } }
+      responses: { '201': { content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSection' } } } }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/sections/{sectionId}:
+    patch:
+      operationId: updateKnowledgeSection
+      summary: 관리자 knowledge section 수정·archive
+      description: If-Match으로 category 이동·archive·순서를 동시에 보장합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/SectionId' }, { $ref: '#/components/parameters/IfMatch' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSectionPatch' } } } }
+      responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSection' } } } }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '404': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '412': { $ref: '#/components/responses/ProblemResponse' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/articles:
+    get:
+      operationId: listKnowledgeArticles
+      summary: 관리자 knowledge article 목록
+      description: lifecycle, section, audience로 filter하고 stable cursor를 사용합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/KnowledgeCursor' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses: { '200': { $ref: '#/components/responses/KnowledgeSearchResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' } }
+    post:
+      operationId: createKnowledgeArticleDraft
+      summary: 관리자 knowledge article draft 생성
+      description: vendor-neutral canonical block document만 저장하고 initial immutable revision을 생성합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001, REQ-KB-004]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeArticleDraftInput' }, x-deskseed-documentation-review: MANUAL } } }
+      responses: { '201': { $ref: '#/components/responses/KnowledgeArticleResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/articles/{articleId}:
+    get:
+      operationId: getKnowledgeArticle
+      summary: 관리자 knowledge article와 현재 draft metadata
+      description: 관리자 전용 문서 상태와 audience version을 반환합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleId' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses: { '200': { $ref: '#/components/responses/KnowledgeArticleResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '404': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' } }
+    patch:
+      operationId: updateKnowledgeArticleDraft
+      summary: 관리자 knowledge article 새 draft revision 저장
+      description: If-Match이 맞을 때만 새 immutable revision을 추가하고 sensitive draft body를 event payload에 포함하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001, REQ-KB-004]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleId' }, { $ref: '#/components/parameters/IfMatch' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeArticleDraftPatch' }, x-deskseed-documentation-review: MANUAL } } }
+      responses: { '200': { $ref: '#/components/responses/KnowledgeArticleResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '404': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '412': { $ref: '#/components/responses/ProblemResponse' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/articles/{articleId}/revisions:
+    get:
+      operationId: listKnowledgeArticleRevisions
+      summary: 관리자 knowledge article revision 목록
+      description: revision은 immutable이며 restore는 기존 revision 변경이 아닌 새 draft revision 생성입니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleId' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/KnowledgeRevision' }
+        '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }
+        '403': { $ref: '#/components/responses/ProblemResponse' }
+        '404': { $ref: '#/components/responses/ProblemResponse' }
+        '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }
+  /api/v1/admin/knowledge/articles/{articleId}/{action}:
+    post:
+      operationId: transitionKnowledgeArticleLifecycle
+      summary: 관리자 knowledge article lifecycle action
+      description: action은 submit-review, publish, unpublish, archive 중 하나입니다. If-Match이 맞을 때 revision pointer, lifecycle, search document와 admin audit을 하나의 transaction에서 전환합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001, REQ-KB-003, REQ-KB-004]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleId' }, { $ref: '#/components/parameters/KnowledgeLifecycleAction' }, { $ref: '#/components/parameters/IfMatch' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      responses: { '200': { $ref: '#/components/responses/KnowledgeArticleResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '404': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '412': { $ref: '#/components/responses/ProblemResponse' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/articles/{articleId}/audience:
+    put:
+      operationId: replaceKnowledgeArticleAudience
+      summary: 관리자 knowledge article audience 교체
+      description: audience version을 증가시키며 이후 restricted cache response는 shared cache를 사용할 수 없습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001, REQ-KB-003]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ArticleId' }, { $ref: '#/components/parameters/IfMatch' }, { $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeAudienceInput' }, example: { type: SELECTED_STAFF_GROUPS, groupIds: [00000000-0000-0000-0000-000000000002] } } } }
+      responses: { '200': { $ref: '#/components/responses/KnowledgeArticleResponse' }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '404': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '412': { $ref: '#/components/responses/ProblemResponse' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+  /api/v1/admin/knowledge/search-index:
+    get:
+      operationId: getKnowledgeSearchIndexStatus
+      summary: 관리자 knowledge search index 상태
+      description: PostgreSQL search document의 마지막 rebuild·lag만 반환하고 raw article body나 query는 반환하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-003]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSearchIndexStatus' } } } }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' } }
+    post:
+      operationId: rebuildKnowledgeSearchIndex
+      summary: 관리자 knowledge search index rebuild
+      description: durable rebuild operation은 source article/revision을 변경하지 않고 권한 검증과 admin audit을 기록합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-003]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }, { $ref: '#/components/parameters/CsrfHeader' }]
+      responses: { '202': { description: rebuild가 요청되었습니다. }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
+components:
+  parameters:
+    CategorySlug: { name: categorySlug, in: path, required: true, description: category stable slug입니다., schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 } }
+    SectionSlug: { name: sectionSlug, in: path, required: true, description: section stable slug입니다., schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 } }
+    ArticleSlug: { name: articleSlug, in: path, required: true, description: article stable slug입니다., schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 } }
+    CategoryId: { name: categoryId, in: path, required: true, description: category stable UUID입니다., schema: { type: string, format: uuid } }
+    SectionId: { name: sectionId, in: path, required: true, description: section stable UUID입니다., schema: { type: string, format: uuid } }
+    ArticleId: { name: articleId, in: path, required: true, description: article stable UUID입니다., schema: { type: string, format: uuid } }
+    TicketNumber: { name: ticketNumber, in: path, required: true, description: Deskseed ticket number입니다., schema: { type: integer, format: int64, minimum: 1 } }
+    KnowledgeCursor: { name: cursor, in: query, required: false, description: 권한과 정렬 state를 포함하는 opaque cursor입니다., schema: { type: string, maxLength: 1024 } }
+    IfMatch: { name: If-Match, in: header, required: true, description: resource version에 대한 HTTP precondition입니다., schema: { type: string, minLength: 3, maxLength: 160 } }
+    IfNoneMatch: { name: If-None-Match, in: header, required: false, description: previously received article ETag입니다., schema: { type: string, minLength: 3, maxLength: 160 } }
+    KnowledgeLifecycleAction: { name: action, in: path, required: true, description: explicit article lifecycle transition입니다., schema: { type: string, enum: [submit-review, publish, unpublish, archive] } }
+  responses:
+    ProblemResponse: { description: RFC 9457 problem response 형식입니다., content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    KnowledgeCacheableResponse:
+      description: audience 정책으로 필터링된 고객 navigation 응답입니다.
+      headers: { Cache-Control: { description: PUBLIC anonymous navigation만 shared cache가 가능하며 authenticated navigation은 private이어야 합니다., schema: { type: string } } }
+      content: { application/json: { schema: { type: object, additionalProperties: true } } }
+    KnowledgeArticleResponse:
+      description: audience 검사를 통과한 published canonical article 응답입니다.
+      headers:
+        ETag: { description: published revision·audience version에서 파생한 entity tag입니다., schema: { type: string } }
+        Last-Modified: { description: current published revision 시각입니다., schema: { type: string, format: date-time } }
+        Cache-Control: { description: PUBLIC anonymous response만 shared cache 가능하며 다른 audience는 private 또는 no-store입니다., schema: { type: string } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeArticle' } } }
+    AgentKnowledgeArticleResponse: { description: restricted staff article 응답이며 no-store를 적용합니다., headers: { Cache-Control: { description: protected article response는 no-store입니다., schema: { type: string, enum: [no-store] } } }, content: { application/json: { schema: { $ref: '#/components/schemas/AgentKnowledgeArticle' } } } }
+    KnowledgeSearchResponse: { description: permission-filtered deterministic search page 응답입니다., headers: { Cache-Control: { description: query와 audience에 의존하는 search response는 no-store입니다., schema: { type: string, enum: [no-store] } } }, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeSearchPage' } } } }
+  schemas:
+    KnowledgeCategoryList: { type: array, description: 권한 필터가 적용된 knowledge category collection입니다., items: { $ref: '#/components/schemas/KnowledgeCategory' } }
+    KnowledgeCategory: { type: object, description: 고정 hierarchy의 root category입니다., required: [id, slug, title, active, displayOrder, version], properties: { id: { type: string, format: uuid }, slug: { type: string }, title: { type: string }, description: { type: string }, active: { type: boolean }, displayOrder: { type: integer }, version: { type: integer, format: int64 } } }
+    KnowledgeCategoryInput: { type: object, x-deskseed-documentation-review: MANUAL, description: 관리자가 새 Help Center category를 생성할 때 쓰는 slug·표시명·순서 입력입니다., required: [slug, title, displayOrder], example: { slug: billing, title: 결제, description: 결제와 청구서 도움말, displayOrder: 10 }, properties: { slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 }, title: { type: string, minLength: 1, maxLength: 200 }, description: { type: string, maxLength: 1000 }, displayOrder: { type: integer, minimum: 0 } } }
+    KnowledgeCategoryPatch: { allOf: [{ $ref: '#/components/schemas/KnowledgeCategoryInput' }], x-deskseed-documentation-review: MANUAL, description: 관리자가 category의 표시 정보와 active 상태를 같은 version precondition에서 갱신하는 입력입니다., example: { slug: billing, title: 결제와 청구, description: 결제와 청구서 도움말, displayOrder: 10, active: true }, properties: { active: { type: boolean } } }
+    KnowledgeSection: { type: object, description: 고정 hierarchy의 middle section입니다., required: [id, categoryId, slug, title, active, displayOrder, version], properties: { id: { type: string, format: uuid }, categoryId: { type: string, format: uuid }, slug: { type: string }, title: { type: string }, description: { type: string }, active: { type: boolean }, displayOrder: { type: integer }, version: { type: integer, format: int64 } } }
+    KnowledgeSectionInput: { type: object, x-deskseed-documentation-review: MANUAL, description: 관리자가 지정 category 안에 Help Center section을 생성하는 입력입니다., required: [categoryId, slug, title, displayOrder], example: { categoryId: 00000000-0000-0000-0000-000000000001, slug: invoices, title: 청구서, description: 청구서와 영수증 도움말, displayOrder: 10 }, properties: { categoryId: { type: string, format: uuid }, slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 }, title: { type: string, minLength: 1, maxLength: 200 }, description: { type: string, maxLength: 1000 }, displayOrder: { type: integer, minimum: 0 } } }
+    KnowledgeSectionPatch: { allOf: [{ $ref: '#/components/schemas/KnowledgeSectionInput' }], x-deskseed-documentation-review: MANUAL, description: 관리자가 section의 category·표시 정보와 active 상태를 같은 version precondition에서 갱신하는 입력입니다., example: { categoryId: 00000000-0000-0000-0000-000000000001, slug: invoices, title: 청구서, description: 청구서와 영수증 도움말, displayOrder: 10, active: true }, properties: { active: { type: boolean } } }
+    KnowledgeAudienceInput: { type: object, x-deskseed-documentation-review: MANUAL, description: "첫 release에서 article 공개 범위를 PUBLIC, 로그인 고객, staff 또는 선택 staff group으로 정하는 입력입니다.", required: [type], example: { type: SELECTED_STAFF_GROUPS, groupIds: [00000000-0000-0000-0000-000000000002] }, properties: { type: { type: string, enum: [PUBLIC, SIGNED_IN_CUSTOMER, STAFF, SELECTED_STAFF_GROUPS] }, groupIds: { type: array, maxItems: 100, items: { type: string, format: uuid }, uniqueItems: true } } }
+    KnowledgeBlockDocument: { type: object, description: versioned vendor-neutral Deskseed block document이며 HTML payload와 unknown block type은 허용하지 않습니다., required: [schemaVersion, blocks], properties: { schemaVersion: { type: integer, enum: [1] }, blocks: { type: array, minItems: 1, maxItems: 200, items: { type: object, additionalProperties: true } } } }
+    KnowledgeArticleDraftInput: { type: object, x-deskseed-documentation-review: MANUAL, description: 관리자가 immutable initial revision으로 저장할 canonical knowledge article draft 입력입니다., required: [sectionId, slug, title, document, audience], example: { sectionId: 00000000-0000-0000-0000-000000000001, slug: payment-failure, title: 결제가 실패할 때, summary: 카드 승인 오류 해결 방법, changeNote: 최초 초안, document: { schemaVersion: 1, blocks: [{ type: paragraph, text: 결제 수단을 다시 확인하세요. }] }, audience: { type: PUBLIC } }, properties: { sectionId: { type: string, format: uuid }, slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 120 }, title: { type: string, minLength: 1, maxLength: 300 }, summary: { type: string, maxLength: 1000 }, changeNote: { type: string, maxLength: 1000 }, document: { $ref: '#/components/schemas/KnowledgeBlockDocument' }, audience: { $ref: '#/components/schemas/KnowledgeAudienceInput' } } }
+    KnowledgeArticleDraftPatch: { allOf: [{ $ref: '#/components/schemas/KnowledgeArticleDraftInput' }], x-deskseed-documentation-review: MANUAL, description: 기존 revision을 수정하지 않고 새 immutable revision을 추가하는 article draft 입력입니다., example: { sectionId: 00000000-0000-0000-0000-000000000001, slug: payment-failure, title: 결제가 실패할 때, summary: 카드 승인 오류 해결 방법, changeNote: 오류 안내 보강, document: { schemaVersion: 1, blocks: [{ type: paragraph, text: 결제 수단을 다시 확인하세요. }] }, audience: { type: PUBLIC } } }
+    KnowledgeRevision: { type: object, description: immutable canonical article revision metadata와 content입니다., required: [id, revisionNumber, title, document, contentChecksum, createdAt], properties: { id: { type: string, format: uuid }, revisionNumber: { type: integer, minimum: 1 }, title: { type: string }, summary: { type: string }, document: { $ref: '#/components/schemas/KnowledgeBlockDocument' }, changeNote: { type: string }, contentChecksum: { type: string }, createdAt: { type: string, format: date-time } } }
+    KnowledgeArticle: { type: object, description: current public 또는 administrative projection을 담는 article aggregate입니다., required: [id, sectionId, slug, lifecycle, audience, version], properties: { id: { type: string, format: uuid }, sectionId: { type: string, format: uuid }, slug: { type: string }, lifecycle: { type: string, enum: [DRAFT, IN_REVIEW, PUBLISHED, UNPUBLISHED, ARCHIVED] }, audience: { $ref: '#/components/schemas/KnowledgeAudienceInput' }, audienceVersion: { type: integer, minimum: 1 }, currentPublishedRevision: { $ref: '#/components/schemas/KnowledgeRevision' }, version: { type: integer, format: int64 } } }
+    AgentKnowledgeArticle: { allOf: [{ $ref: '#/components/schemas/KnowledgeArticle' }], description: required access audit persistence 뒤에만 반환하는 staff projection입니다. }
+    KnowledgeSearchRequest: { type: object, x-deskseed-documentation-review: MANUAL, description: URL에 남기지 않는 bounded POST knowledge search query 입력입니다., required: [query], example: { query: 결제 오류, limit: 20 }, properties: { query: { type: string, minLength: 1, maxLength: 512 }, cursor: { type: string, maxLength: 1024 }, limit: { type: integer, minimum: 1, maximum: 50, default: 20 } } }
+    KnowledgeSearchHit: { type: object, description: hidden content를 포함하지 않는 permission-safe article search result입니다., required: [articleSlug, title, excerpt, audience], properties: { articleSlug: { type: string }, title: { type: string }, excerpt: { type: string }, audience: { type: string, enum: [PUBLIC, SIGNED_IN_CUSTOMER, STAFF, SELECTED_STAFF_GROUPS] }, categoryTitle: { type: string }, sectionTitle: { type: string } } }
+    KnowledgeSearchPage: { type: object, description: deterministic permission-filtered search page 응답입니다., required: [items, hasMore], properties: { items: { type: array, items: { $ref: '#/components/schemas/KnowledgeSearchHit' } }, hasMore: { type: boolean }, nextCursor: { type: string } } }
+    KnowledgeFeedbackRequest: { type: object, x-deskseed-documentation-review: MANUAL, description: 현재 열람 가능한 published article의 최소 helpfulness signal 입력입니다., required: [helpful], example: { helpful: true }, properties: { helpful: { type: boolean } } }
+    KnowledgeSearchIndexStatus: { type: object, description: rebuild 가능한 PostgreSQL knowledge search projection 상태입니다., required: [state], properties: { state: { type: string, enum: [IDLE, REBUILDING, FAILED] }, lastRebuiltAt: { type: string, format: date-time }, lagSeconds: { type: integer, minimum: 0 } } }

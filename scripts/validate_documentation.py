@@ -52,7 +52,7 @@ REQUIRED_CHECKLISTS = {
 }
 EXPECTED_DOC_NUMBERS = set(range(0, 56))
 EXPECTED_TASK_NUMBERS = set(range(0, 26))
-EXPECTED_ADR_NUMBERS = set(range(1, 40))
+EXPECTED_ADR_NUMBERS = set(range(1, 43))
 # This is an onboarding brief that precedes the canonical 00-19 delivery
 # sequence. It intentionally shares the bootstrap number but is not a release
 # task in the contiguous task register.
@@ -60,6 +60,10 @@ NON_CANONICAL_TASK_BRIEFS = {"00-bootstrap-documentation-and-repository.md"}
 # The repository retains this pre-v0.6 planning draft for historical context.
 # The v0.6 Core outline is the canonical contract validated below.
 NON_CANONICAL_OPENAPI_DRAFTS = {"api/mvp-target.yaml"}
+# The base document is an input to the deterministic Core bundle. It is validated
+# through the committed compatibility artifact so its operations are not counted a
+# second time by repository-wide uniqueness checks.
+OPENAPI_COMPOSITION_SOURCES = {"api/core-api-base-v1.yaml"}
 REFERENCE_OPENAPI_CONTRACTS = {
     "api/core-api-outline-v1.yaml",
     "api/customer-identity-api-v1.yaml",
@@ -379,7 +383,7 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
     if set(task_numbers) != EXPECTED_TASK_NUMBERS:
         errors.append(f"Task briefs must be contiguous 00-25; missing={sorted(EXPECTED_TASK_NUMBERS-set(task_numbers))}, extra={sorted(set(task_numbers)-EXPECTED_TASK_NUMBERS)}")
     if set(adr_numbers) != EXPECTED_ADR_NUMBERS:
-        errors.append(f"ADRs must be contiguous 0001-0039; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
+        errors.append(f"ADRs must be contiguous 0001-0040; missing={sorted(EXPECTED_ADR_NUMBERS-set(adr_numbers))}, extra={sorted(set(adr_numbers)-EXPECTED_ADR_NUMBERS)}")
     counts.update(canonical_docs=len(docs_numbers), task_briefs=len(task_numbers), adr_files=len(adr_numbers))
 
     md_files = all_files("**/*.md")
@@ -417,7 +421,7 @@ def validate() -> tuple[list[str], list[str], dict[str, int]]:
             continue
         if not isinstance(document, dict) or not str(document.get("openapi", "")).startswith("3.1"):
             continue
-        if rel(path) in NON_CANONICAL_OPENAPI_DRAFTS:
+        if rel(path) in NON_CANONICAL_OPENAPI_DRAFTS | OPENAPI_COMPOSITION_SOURCES:
             continue
         if rel(path) in REFERENCE_OPENAPI_CONTRACTS:
             errors.extend(validate_api_reference_quality(path, document))

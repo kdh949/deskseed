@@ -38,6 +38,9 @@ import {
   updateAgentTicket,
   uploadAnonymousRequestAttachment,
   uploadAgentAttachment,
+  getAgentTicketDraft,
+  saveAgentTicketDraft,
+  clearAgentTicketDraft,
 } from './client'
 
 const submitInput = {
@@ -86,6 +89,95 @@ afterEach(() => {
   setConfirmedStaffActor(null)
   localStorage.removeItem('deskseed:staff-session:last-authenticated-staff:v1')
   vi.unstubAllGlobals()
+})
+
+describe('agent ticket draft API client', () => {
+  const draft = {
+    ticketNumber: 7101,
+    channel: 'PUBLIC_REPLY',
+    body: '결제 확인 후 안내드리겠습니다.',
+    attachmentIds: [],
+    clientDeviceId: '11111111-1111-4111-8111-111111111111',
+    baseTicketVersion: 7,
+    draftVersion: 2,
+    updatedAt: '2026-08-18T00:00:00Z',
+    expiresAt: '2026-09-17T00:00:00Z',
+  }
+
+  it('reads an owner-bound draft with no-store staff credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(draft), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getAgentTicketDraft(7101, 'PUBLIC_REPLY')).resolves.toEqual(
+      draft,
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/agent/tickets/7101/drafts/PUBLIC_REPLY',
+      expect.objectContaining({ cache: 'no-store', credentials: 'include' }),
+    )
+  })
+
+  it('uses CSRF and the expected actor for optimistic save and clear', async () => {
+    setConfirmedStaffActor('22222222-2222-4222-8222-222222222222')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-save', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(draft), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-clear', headerName: 'X-CSRF-TOKEN' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      saveAgentTicketDraft(7101, 'PUBLIC_REPLY', {
+        body: draft.body,
+        attachmentIds: [],
+        clientDeviceId: draft.clientDeviceId,
+        baseTicketVersion: 7,
+        expectedDraftVersion: 1,
+      }),
+    ).resolves.toEqual(draft)
+    await expect(
+      clearAgentTicketDraft(7101, 'PUBLIC_REPLY', 2),
+    ).resolves.toBeUndefined()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/agent/tickets/7101/drafts/PUBLIC_REPLY',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: expect.objectContaining({
+          'X-CSRF-TOKEN': 'csrf-save',
+          'X-Deskseed-Expected-Staff-Id':
+            '22222222-2222-4222-8222-222222222222',
+        }),
+      }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      '/api/v1/agent/tickets/7101/drafts/PUBLIC_REPLY?expectedDraftVersion=2',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+  })
 })
 
 describe('admin list API client', () => {
