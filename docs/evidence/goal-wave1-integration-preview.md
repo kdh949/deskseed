@@ -19,5 +19,8 @@
 ## Verification record
 
 - Passed: integration-preview Core bundle, ownership validator, API documentation quality, deterministic documentation/manifest validation.
-- Pending: Kotlin compile, focused cross-lane tests, Compose real-stack attempt, remote preview CI.
+- Passed: `backend ./gradlew --no-daemon compileKotlin`.
+- Passed: focused cross-lane Testcontainers suite: `ArchitectureTest`, `ApiDocumentationIntegrationTest`, `AdminTicketConfigurationIntegrationTest`, `AdminKnowledgeIntegrationTest`, `AdminWebhookIntegrationTest`, `AgentTicketDraftIntegrationTest`, `StaffCollaborationWebSocketIntegrationTest`, `KnowledgeContentMigrationTest`, and `P1AdditiveMigrationTest`.
+- Passed: `make compose-smoke`: ownership preflight preserved replacement sentinels, then an isolated single-node DB, Mailpit, backend, and frontend stack built and passed health plus committed API-documentation probes. Transient connection-reset retries occurred before backend health became ready; the final command exited 0.
+- Pending: remote preview CI.
 - External gaps remain explicit: Storybook MCP, approved non-loopback webhook receiver/load evidence, two-agent browser verification, and multi-instance deployment.

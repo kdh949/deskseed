@@ -135,7 +135,7 @@ a138e5c6ccd889cdd5dcc87b88032b97d02efa1006ca202c52cf818bce3643d7        3115  do
 8ec4114c71a23972ebc09d8726c8e7606c8d76b072dc7b22bdc00a93e6cdbcba        6978  docs/evidence/goal-integrations-webhooks-progress.md
 845b172140a58e2d8892c0f4162fcf22e615c5467edd977cd12f1cc809ad27bb        2975  docs/evidence/goal-knowledge-base-progress.md
 2e8b48c5a9191391f26e0034ece56eddcc1e6e1661e66969adfa754dbd101b39        3750  docs/evidence/goal-ticket-configuration-progress.md
-784a609882f1bcfe941b3c33f81afd8163c44b91eb2a41e45ccc7b913d1f1123        1333  docs/evidence/goal-wave1-integration-preview.md
+b438efd70679cbe343d630a79cf4d330353ae9f99ccff8b20da08fabd131ed30        2006  docs/evidence/goal-wave1-integration-preview.md
 f6383928a21a073abe59748c7e54088ec857a7d4011404e610499ca78bbaa2d5        4541  docs/evidence/outbound-mail-mailpit-foundation.md
 36d43d6d66f816434f4d3701dda086aa9cc830edc37aba91936501e54f919e90        4966  docs/evidence/p0/BE-P0-CUSTOMER-ACCESS.md
 74de6a9fd505fc7373bf419efe6d0884ff6964a590b152fd4e3d58edb92999f1        5167  docs/evidence/p0/BE-P0-MAIL-OPERATIONS.md
