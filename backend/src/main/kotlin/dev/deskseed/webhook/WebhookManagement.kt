@@ -18,6 +18,42 @@ data class WebhookSubscription(
     val payloadPolicy: WebhookPayloadPolicy,
 )
 
+data class WebhookEventDescriptor(
+    val eventType: String,
+    val version: Int,
+    val payloadPolicies: Set<WebhookPayloadPolicy>,
+)
+
+/**
+ * Single allowlist for administratively persisted subscriptions and the v1 serializer boundary.
+ * A descriptor does not grant access to raw event data; serializers remain responsible for the
+ * public visibility and field allowlist checks before a delivery intent is materialized.
+ */
+object WebhookEventCatalog {
+    val descriptors: List<WebhookEventDescriptor> = listOf(
+        WebhookEventDescriptor("ticket.created", 1, WebhookPayloadPolicy.entries.toSet()),
+        WebhookEventDescriptor("ticket.updated", 1, WebhookPayloadPolicy.entries.toSet()),
+        WebhookEventDescriptor("ticket.comment.created", 1, WebhookPayloadPolicy.entries.toSet()),
+        WebhookEventDescriptor("ticket.status.changed", 1, WebhookPayloadPolicy.entries.toSet()),
+        WebhookEventDescriptor("ticket.sla.changed", 1, WebhookPayloadPolicy.entries.toSet()),
+        WebhookEventDescriptor("attachment.ready", 1, WebhookPayloadPolicy.entries.toSet()),
+    ).also { values ->
+        require(values.map { it.eventType to it.version }.distinct().size == values.size) {
+            "Webhook event descriptors must not duplicate an event type and version"
+        }
+    }
+
+    fun supports(subscription: WebhookSubscription): Boolean = supports(
+        subscription.eventType,
+        subscription.version,
+        subscription.payloadPolicy,
+    )
+
+    fun supports(eventType: String, version: Int, payloadPolicy: WebhookPayloadPolicy): Boolean = descriptors.any {
+        it.eventType == eventType && it.version == version && payloadPolicy in it.payloadPolicies
+    }
+}
+
 data class PrivateWebhookTargetApproval(
     val hostname: String,
     val port: Int,

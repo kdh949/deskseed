@@ -37,6 +37,8 @@ internal class IntegrationClientEntity(
     var rateLimitPerMinute: Int = 60,
     @Column(name = "usage_count", nullable = false)
     var usageCount: Long = 0,
+    @Column(name = "rate_policy_version", nullable = false)
+    var ratePolicyVersion: Long = 0,
     @Version
     var version: Long = 0,
 )

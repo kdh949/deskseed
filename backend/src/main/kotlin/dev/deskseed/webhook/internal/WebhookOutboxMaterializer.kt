@@ -6,6 +6,7 @@ import dev.deskseed.eventpublication.EventOutboxOperations
 import dev.deskseed.webhook.SerializedWebhookEvent
 import dev.deskseed.webhook.WebhookEventMaterializer
 import dev.deskseed.webhook.WebhookEventSerializer
+import dev.deskseed.webhook.WebhookEventCatalog
 import dev.deskseed.webhook.WebhookPayloadPolicy
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
@@ -28,7 +29,7 @@ internal class TicketWebhookEventSerializer(private val objectMapper: ObjectMapp
         visibility: DomainEventVisibility,
         policy: WebhookPayloadPolicy,
     ): SerializedWebhookEvent? {
-        if (visibility != DomainEventVisibility.PUBLIC || event.type !in SUPPORTED_EVENT_TYPES || event.version != 1) return null
+        if (visibility != DomainEventVisibility.PUBLIC || !WebhookEventCatalog.supports(event.type, event.version, policy)) return null
         // Foundation events deliberately have no comment body. PUBLIC_CONTENT is reserved for a later
         // provider that can prove its field allowlist; this v1 serializer remains metadata-only.
         val payload = linkedMapOf(
@@ -40,10 +41,6 @@ internal class TicketWebhookEventSerializer(private val objectMapper: ObjectMapp
             "data" to event.data.toSortedMap(),
         )
         return SerializedWebhookEvent(event.id, event.type, event.version, event.occurredAt, objectMapper.writeValueAsString(payload))
-    }
-
-    private companion object {
-        val SUPPORTED_EVENT_TYPES = setOf("ticket.created", "ticket.updated", "ticket.comment.created", "ticket.status.changed")
     }
 }
 

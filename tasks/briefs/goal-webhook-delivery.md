@@ -21,7 +21,7 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 
 ## In scope
 
-- V60–V69 only, webhook endpoint/subscription/delivery/attempt durable model, HMAC signing, endpoint-scoped SSRF validation, bounded delivery/retry/dead-letter/replay, redacted attempt-detail projection, endpoint status/failure summary, terminal archive without hard delete, and admin API contracts.
+- V60–V69 only, webhook endpoint/subscription/delivery/attempt durable model, HMAC signing, endpoint-scoped SSRF validation, one versioned event descriptor catalog shared by subscription validation and serialization, bounded delivery/retry/dead-letter/replay, redacted attempt-detail projection, endpoint status/failure summary, terminal archive without hard delete, and admin API contracts.
 - Existing PostgreSQL API-key, idempotency, ETag and fixed-window limiter behavior is retained and expanded only without breaking its four frozen Platform operations.
 
 ## Out of scope

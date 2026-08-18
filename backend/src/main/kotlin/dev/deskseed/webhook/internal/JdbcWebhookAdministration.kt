@@ -21,6 +21,7 @@ import dev.deskseed.webhook.WebhookDeliveryView
 import dev.deskseed.webhook.WebhookEndpointIssue
 import dev.deskseed.webhook.WebhookEndpointNotFoundException
 import dev.deskseed.webhook.WebhookEndpointView
+import dev.deskseed.webhook.WebhookEventCatalog
 import dev.deskseed.webhook.WebhookHealthState
 import dev.deskseed.webhook.WebhookHealthView
 import dev.deskseed.webhook.WebhookPayloadPolicy
@@ -335,7 +336,7 @@ internal class JdbcWebhookAdministration(
     private fun validateSubscriptions(subscriptions: Set<WebhookSubscription>) {
         require(subscriptions.isNotEmpty() && subscriptions.size <= 20) { "Webhook subscriptions are invalid" }
         subscriptions.forEach { subscription ->
-            require(subscription.eventType in SUPPORTED_EVENT_TYPES && subscription.version == 1) { "Webhook subscription is unsupported" }
+            require(WebhookEventCatalog.supports(subscription)) { "Webhook subscription is unsupported" }
         }
     }
 
@@ -511,11 +512,6 @@ internal class JdbcWebhookAdministration(
         val updatedAt: Instant,
     )
 
-    private companion object {
-        val SUPPORTED_EVENT_TYPES = setOf(
-            "ticket.created", "ticket.updated", "ticket.comment.created", "ticket.status.changed", "ticket.sla.changed", "attachment.ready",
-        )
-    }
 }
 
 private fun WebhookTargetPolicy.Companion.fromStored(

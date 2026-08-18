@@ -32,7 +32,7 @@
 
 ## Invariants and failure semantics
 
-- Policy updates compare the current IntegrationClient optimistic version. A stale `If-Match` is a 412 with the current ETag and no mutation.
+- Policy updates compare a dedicated rate-policy configuration version. Successful machine authentication may update client usage statistics but does not invalidate the policy ETag; a stale policy `If-Match` is a 412 with the current policy ETag and no mutation.
 - Policy is restricted by a server-admin min/max and DB check range. Authenticated machine requests use the persisted client value, but a shared limiter persistence failure still returns 503 fail-closed.
 - The policy mutation and `INTEGRATION_CLIENT_RATE_LIMIT_UPDATED` admin/security audit commit or roll back together.
 - API key raw secret remains verifier-only; it is not returned by this surface and never appears in policy metadata.

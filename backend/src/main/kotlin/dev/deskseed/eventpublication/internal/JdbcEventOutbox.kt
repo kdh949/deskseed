@@ -86,9 +86,18 @@ internal class JdbcEventOutbox(
             jdbc.queryForObject(
                 """
                 with candidate as (
-                    select id from domain_event_outbox
-                     where status = 'PENDING' and available_at <= ?
-                     order by occurred_at, id
+                    select candidate.id
+                      from domain_event_outbox candidate
+                     where candidate.status = 'PENDING'
+                       and candidate.available_at <= ?
+                       and not exists (
+                           select 1
+                             from domain_event_outbox predecessor
+                            where predecessor.subject = candidate.subject
+                              and predecessor.subject_sequence < candidate.subject_sequence
+                              and predecessor.status in ('PENDING', 'LEASED')
+                       )
+                     order by candidate.occurred_at, candidate.id
                      for update skip locked
                      limit 1
                 )

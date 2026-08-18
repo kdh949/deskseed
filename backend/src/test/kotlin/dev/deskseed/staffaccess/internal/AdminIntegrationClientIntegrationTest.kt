@@ -460,6 +460,20 @@ class AdminIntegrationClientIntegrationTest {
 
         assertThat(authenticate(apiKey, "203.0.113.10", "rate-policy-usage"))
             .isInstanceOf(IntegrationAuthenticationResult.Success::class.java)
+
+        mockMvc.perform(
+            patch("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId)
+                .session(browser.session)
+                .csrf(browser)
+                .header("If-Match", "\"integration-client-v1\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rateLimitPerMinute":4}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"integration-client-v2\""))
+            .andExpect(jsonPath("$.rateLimitPerMinute").value(4))
+            .andExpect(jsonPath("$.usageCount").value(1))
+
         mockMvc.perform(
             get("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId).session(browser.session),
         )
@@ -471,8 +485,12 @@ class AdminIntegrationClientIntegrationTest {
             "select metadata_json from admin_security_audit_events where event_type = 'INTEGRATION_CLIENT_RATE_LIMIT_UPDATED'",
             String::class.java,
         )
-        assertThat(metadata.single()).contains("previousRateLimitPerMinute", "rateLimitPerMinute")
-        assertThat(metadata).allSatisfy { it -> assertThat(it).doesNotContain(apiKey).doesNotContain(apiKey.substringAfter('.')) }
+        assertThat(metadata).allSatisfy { it ->
+            assertThat(it)
+                .contains("previousRateLimitPerMinute", "rateLimitPerMinute")
+                .doesNotContain(apiKey)
+                .doesNotContain(apiKey.substringAfter('.'))
+        }
     }
 
     private fun createClient(browser: Browser, name: String, ipAllowlist: Set<String>?): String =

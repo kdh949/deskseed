@@ -45,15 +45,16 @@ internal class JpaIntegrationClientRatePolicyAdministration(
         command: UpdateIntegrationClientRatePolicyCommand,
         actor: IntegrationAdminActor,
     ): IntegrationClientRatePolicyView {
-        require(command.expectedVersion >= 0) { "Integration client version must be non-negative" }
+        require(command.expectedVersion >= 0) { "Integration client rate-policy version must be non-negative" }
         require(command.rateLimitPerMinute in minimumLimit..maximumLimit) { "Integration client rate limit is outside admin bounds" }
         val client = clientRepository.findLockedById(clientId) ?: throw IntegrationClientNotFoundException()
-        if (client.version != command.expectedVersion) {
-            throw IntegrationClientRatePolicyConflictException(client.version)
+        if (client.ratePolicyVersion != command.expectedVersion) {
+            throw IntegrationClientRatePolicyConflictException(client.ratePolicyVersion)
         }
         val previousLimit = client.rateLimitPerMinute
         val now = Instant.now(clock)
         client.rateLimitPerMinute = command.rateLimitPerMinute
+        client.ratePolicyVersion += 1
         client.updatedAt = now
         clientRepository.saveAndFlush(client)
         auditWriter.append(
@@ -83,7 +84,7 @@ internal class JpaIntegrationClientRatePolicyAdministration(
         rateLimitPerMinute = client.rateLimitPerMinute,
         usageCount = client.usageCount,
         lastUsedAt = client.lastUsedAt,
-        version = client.version,
+        version = client.ratePolicyVersion,
         updatedAt = client.updatedAt,
     )
 }

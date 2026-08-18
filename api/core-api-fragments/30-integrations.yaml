@@ -15,7 +15,7 @@ paths:
       - $ref: '#/components/parameters/IntegrationClientId'
       responses:
         '200':
-          description: 현재 client version에 결합된 no-store 정책 projection입니다. PATCH는 이 응답의 ETag를 If-Match로 사용합니다.
+          description: 현재 rate-policy configuration version에 결합된 no-store 정책 projection입니다. 성공 인증의 usage 통계 갱신은 이 ETag를 무효화하지 않으며, PATCH는 이 응답의 ETag를 If-Match로 사용합니다.
           headers:
             Cache-Control: {schema: {type: string, const: no-store}}
             ETag: {schema: {type: string}}
@@ -28,7 +28,7 @@ paths:
     patch:
       operationId: updateIntegrationClientRatePolicy
       summary: 연동 클라이언트 분당 요청 한도 변경
-      description: ADMIN이 current IntegrationClient ETag와 CSRF를 제시해 다음 Platform request부터 적용할 분당 한도를 변경합니다. 설정 변경과 `INTEGRATION_CLIENT_RATE_LIMIT_UPDATED` admin/security audit는 함께 commit되며 audit persistence 실패 시 변경을 반환하지 않습니다.
+      description: ADMIN이 current rate-policy ETag와 CSRF를 제시해 다음 Platform request부터 적용할 분당 한도를 변경합니다. 성공 인증의 usage 통계 갱신은 이 ETag를 무효화하지 않습니다. 설정 변경과 `INTEGRATION_CLIENT_RATE_LIMIT_UPDATED` admin/security audit는 함께 commit되며 audit persistence 실패 시 변경을 반환하지 않습니다.
       x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-INT-001, REQ-INT-002]
       tags: [Integration Clients]
@@ -389,7 +389,7 @@ components:
         lastUsedAt: {type: [string, 'null'], format: date-time}
         version: {type: integer, format: int64, minimum: 0}
         updatedAt: {type: string, format: date-time}
-      description: API key raw secret, verifier, IP allowlist 원문과 credential secret를 제외한 client rate-limit 운영 projection입니다. usageCount는 성공 인증 뒤 누적되며 rate-limited request도 포함합니다.
+      description: API key raw secret, verifier, IP allowlist 원문과 credential secret를 제외한 client rate-limit 운영 projection입니다. usageCount는 성공 인증 뒤 누적되며 rate-limited request도 포함합니다. version은 rate policy configuration만의 버전이므로 usage 통계 갱신으로는 변하지 않습니다.
     UpdateIntegrationClientRatePolicy:
       type: object
       additionalProperties: false
