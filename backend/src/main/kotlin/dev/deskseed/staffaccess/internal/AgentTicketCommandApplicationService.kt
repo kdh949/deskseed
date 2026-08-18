@@ -19,6 +19,8 @@ import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.TransferTicketCommand
 import dev.deskseed.ticketing.UpdateAgentTicketCommand
+import dev.deskseed.ticketing.UpdateTicketConfigurationCommand
+import dev.deskseed.ticketing.TicketConfigurationFieldValue
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -49,6 +51,15 @@ internal data class UpdateAgentTicketInput(
     val groupId: UUID?,
     val assigneeId: UUID?,
     val comment: AgentCommentDraft?,
+)
+
+internal data class UpdateTicketConfigurationInput(
+    val expectedVersion: Long,
+    val formVersion: Int?,
+    val fieldValues: Map<String, TicketConfigurationFieldValue>,
+    val addTagIds: Set<UUID>,
+    val removeTagIds: Set<UUID>,
+    val customStatusId: UUID?,
 )
 
 internal data class TransferTicketInput(
@@ -124,6 +135,25 @@ internal class AgentTicketCommandApplicationService(
             groupId = input.groupId,
             assigneeId = input.assigneeId,
             comment = input.comment,
+            actor = principal.commandActor(),
+            context = context,
+        ),
+    )
+
+    fun updateConfiguration(
+        principal: StaffPrincipal,
+        ticketNumber: Long,
+        input: UpdateTicketConfigurationInput,
+        context: CommandContext,
+    ): TicketCommandResult = ticketCommandService.updateConfiguration(
+        UpdateTicketConfigurationCommand(
+            ticketNumber = ticketNumber,
+            expectedVersion = input.expectedVersion,
+            formVersion = input.formVersion,
+            fieldValues = input.fieldValues,
+            addTagIds = input.addTagIds,
+            removeTagIds = input.removeTagIds,
+            customStatusId = input.customStatusId,
             actor = principal.commandActor(),
             context = context,
         ),

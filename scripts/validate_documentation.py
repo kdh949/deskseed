@@ -52,7 +52,7 @@ REQUIRED_CHECKLISTS = {
 }
 EXPECTED_DOC_NUMBERS = set(range(0, 56))
 EXPECTED_TASK_NUMBERS = set(range(0, 26))
-EXPECTED_ADR_NUMBERS = set(range(1, 41))
+EXPECTED_ADR_NUMBERS = set(range(1, 42))
 # This is an onboarding brief that precedes the canonical 00-19 delivery
 # sequence. It intentionally shares the bootstrap number but is not a release
 # task in the contiguous task register.
