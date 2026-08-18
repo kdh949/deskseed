@@ -27,6 +27,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
@@ -350,6 +351,145 @@ class AdminIntegrationClientIntegrationTest {
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_integration_auth_audit on admin_security_audit_events")
             jdbcTemplate.execute("drop function if exists fail_integration_auth_audit_insert()")
+        }
+    }
+
+    @Test
+    fun `rate policy is versioned audited CSRF protected and records authenticated usage without key material`() {
+        insertStaff("admin@example.com", "Admin password 42", "ADMIN")
+        insertStaff("agent@example.com", "Agent password 42", "AGENT")
+        val browser = login("admin@example.com", "Admin password 42")
+        val agent = login("agent@example.com", "Agent password 42")
+        val issue = createClient(browser, "rate-policy", null)
+        val clientId = clientId(issue)
+        val apiKey = apiKey(issue)
+        val initial = mockMvc.perform(
+            get("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId).session(browser.session),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("ETag", "\"integration-client-v0\""))
+            .andExpect(jsonPath("$.rateLimitPerMinute").value(60))
+            .andExpect(jsonPath("$.usageCount").value(0))
+            .andExpect(jsonPath("$.lastUsedIp").doesNotExist())
+            .andReturn()
+        assertThat(initial.response.contentAsString).doesNotContain(apiKey).doesNotContain(apiKey.substringAfter('.'))
+
+        mockMvc.perform(
+            patch("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId)
+                .session(browser.session)
+                .header("If-Match", "\"integration-client-v0\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rateLimitPerMinute":3}"""),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            get("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId).session(agent.session),
+        ).andExpect(status().isForbidden)
+
+        mockMvc.perform(
+            patch("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId)
+                .session(browser.session)
+                .csrf(browser)
+                .header("If-Match", "\"integration-client-v0\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rateLimitPerMinute":3}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("ETag", "\"integration-client-v1\""))
+            .andExpect(jsonPath("$.rateLimitPerMinute").value(3))
+            .andExpect(jsonPath("$.version").value(1))
+
+        mockMvc.perform(
+            patch("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId)
+                .session(browser.session)
+                .csrf(browser)
+                .header("If-Match", "\"integration-client-v0\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rateLimitPerMinute":4}"""),
+        )
+            .andExpect(status().isPreconditionFailed)
+            .andExpect(header().string("ETag", "\"integration-client-v1\""))
+            .andExpect(jsonPath("$.type").value("/problems/integration-client-rate-policy-version-mismatch"))
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select rate_limit_per_minute from integration_clients where id = ?",
+                Int::class.java,
+                clientId,
+            ),
+        ).isEqualTo(3)
+
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_integration_rate_policy_audit_insert() returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+              if new.event_type = 'INTEGRATION_CLIENT_RATE_LIMIT_UPDATED' then
+                raise exception 'injected integration rate-policy audit failure';
+              end if;
+              return new;
+            end; ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_integration_rate_policy_audit before insert on admin_security_audit_events " +
+                "for each row execute function fail_integration_rate_policy_audit_insert()",
+        )
+        try {
+            mockMvc.perform(
+                patch("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId)
+                    .session(browser.session)
+                    .csrf(browser)
+                    .header("If-Match", "\"integration-client-v1\"")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"rateLimitPerMinute":4}"""),
+            )
+                .andExpect(status().isServiceUnavailable)
+                .andExpect(jsonPath("$.type").value("/problems/admin-audit-unavailable"))
+            assertThat(
+                jdbcTemplate.queryForObject(
+                    "select rate_limit_per_minute from integration_clients where id = ?",
+                    Int::class.java,
+                    clientId,
+                ),
+            ).isEqualTo(3)
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_integration_rate_policy_audit on admin_security_audit_events")
+            jdbcTemplate.execute("drop function if exists fail_integration_rate_policy_audit_insert()")
+        }
+
+        assertThat(authenticate(apiKey, "203.0.113.10", "rate-policy-usage"))
+            .isInstanceOf(IntegrationAuthenticationResult.Success::class.java)
+
+        mockMvc.perform(
+            patch("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId)
+                .session(browser.session)
+                .csrf(browser)
+                .header("If-Match", "\"integration-client-v1\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rateLimitPerMinute":4}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"integration-client-v2\""))
+            .andExpect(jsonPath("$.rateLimitPerMinute").value(4))
+            .andExpect(jsonPath("$.usageCount").value(1))
+
+        mockMvc.perform(
+            get("/api/v1/admin/integration-clients/{clientId}/rate-policy", clientId).session(browser.session),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.usageCount").value(1))
+            .andExpect(jsonPath("$.lastUsedAt").exists())
+
+        val metadata = jdbcTemplate.queryForList(
+            "select metadata_json from admin_security_audit_events where event_type = 'INTEGRATION_CLIENT_RATE_LIMIT_UPDATED'",
+            String::class.java,
+        )
+        assertThat(metadata).allSatisfy { it ->
+            assertThat(it)
+                .contains("previousRateLimitPerMinute", "rateLimitPerMinute")
+                .doesNotContain(apiKey)
+                .doesNotContain(apiKey.substringAfter('.'))
         }
     }
 

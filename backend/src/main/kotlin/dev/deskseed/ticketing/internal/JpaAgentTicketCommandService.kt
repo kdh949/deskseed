@@ -141,6 +141,7 @@ internal class AgentTicketCommandTransaction(
     private val attachmentLinker: TicketAttachmentLinker,
     private val customerDirectory: CustomerDirectory,
     private val objectMapper: ObjectMapper,
+    private val ticketIntegrationEvents: TicketIntegrationEventPublisher,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
 ) {
@@ -229,6 +230,19 @@ internal class AgentTicketCommandTransaction(
                 commentAuditEvent(ticket.firstComment.id, command.firstComment, now),
                 *firstCommentAttachmentEvents.toTypedArray(),
             ),
+        )
+        ticketIntegrationEvents.ticketCreated(
+            ticketId = ticket.id,
+            ticketNumber = ticket.ticketNumber,
+            kind = ticket.kind,
+            priority = ticket.priority,
+            channel = ticket.channel,
+            status = ticket.status,
+            firstCommentId = ticket.firstComment.id,
+            firstCommentVisibility = ticket.firstComment.visibility,
+            actor = ActorRef(ActorType.STAFF, command.actor.id),
+            context = command.context,
+            occurredAt = now,
         )
         if (command.firstComment.visibility == CommentVisibility.PUBLIC) {
             emitPublicReply(
@@ -324,6 +338,7 @@ internal class AgentTicketCommandTransaction(
 
         val events = mutableListOf<NewAuditEvent>()
         var publicReply: PublicReply? = null
+        var createdComment: CreatedComment? = null
         command.comment?.let { draft ->
             val commentId = UUID.randomUUID()
             commentRepository.saveAndFlush(
@@ -339,6 +354,7 @@ internal class AgentTicketCommandTransaction(
             )
             events += commentAuditEvent(commentId, draft, now)
             events += linkAttachments(ticket, commentId, draft, command.actor.id, now)
+            createdComment = CreatedComment(commentId, draft.visibility)
             if (draft.visibility == CommentVisibility.PUBLIC) {
                 publicReply = PublicReply(commentId, draft.body.trim())
             }
@@ -414,6 +430,40 @@ internal class AgentTicketCommandTransaction(
             now = now,
             events = eventsWithResult,
         )
+        if (hasMutation) {
+            val actor = ActorRef(ActorType.STAFF, command.actor.id)
+            ticketIntegrationEvents.ticketUpdated(
+                ticketId = ticket.id,
+                ticketNumber = ticket.ticketNumber,
+                kind = ticket.kind,
+                changedFields = command.changedFields.map(TicketField::externalName).toSet() +
+                    if (createdComment != null) setOf("comments") else emptySet(),
+                actor = actor,
+                context = command.context,
+                occurredAt = now,
+            )
+            createdComment?.let { comment ->
+                ticketIntegrationEvents.commentCreated(
+                    ticketId = ticket.id,
+                    ticketNumber = ticket.ticketNumber,
+                    commentId = comment.id,
+                    visibility = comment.visibility,
+                    actor = actor,
+                    context = command.context,
+                    occurredAt = now,
+                )
+            }
+            ticketIntegrationEvents.statusChanged(
+                ticketId = ticket.id,
+                ticketNumber = ticket.ticketNumber,
+                kind = ticket.kind,
+                previousStatus = oldStatus,
+                currentStatus = newStatus,
+                actor = actor,
+                context = command.context,
+                occurredAt = now,
+            )
+        }
         publicReply?.let { reply ->
             emitPublicReply(
                 ticket = ticket,
@@ -1107,6 +1157,11 @@ internal class AgentTicketCommandTransaction(
     private data class PublicReply(
         val commentId: UUID,
         val body: String,
+    )
+
+    private data class CreatedComment(
+        val id: UUID,
+        val visibility: CommentVisibility,
     )
 
     private data class NewAuditEvent(

@@ -21,6 +21,7 @@ import dev.deskseed.integration.IntegrationScope
 import dev.deskseed.integration.IntegrationTicketField
 import dev.deskseed.integration.IntegrationTicketKind
 import dev.deskseed.integration.RotateIntegrationCredentialCommand
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.security.access.prepost.PreAuthorize
@@ -41,7 +42,12 @@ internal class JpaIntegrationClientAdministration(
     private val auditWriter: AdminSecurityAuditWriter,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
+    @Value("\${deskseed.platform.rate-limit.requests-per-minute:60}") private val defaultRateLimitPerMinute: Int,
 ) : IntegrationClientAdministration {
+    init {
+        require(defaultRateLimitPerMinute > 0) { "Platform rate limit must be positive" }
+    }
+
     @PreAuthorize("hasAuthority('$INTEGRATION_CLIENT_MANAGE_AUTHORITY')")
     @Transactional(readOnly = true)
     override fun list(page: Int, size: Int): IntegrationClientPage {
@@ -86,6 +92,7 @@ internal class JpaIntegrationClientAdministration(
                 createdByStaffId = actor.staffId,
                 createdAt = now,
                 updatedAt = now,
+                rateLimitPerMinute = defaultRateLimitPerMinute,
             ),
         )
         val credential = credentialRepository.saveAndFlush(

@@ -55,6 +55,10 @@ export function AgentTicketWorkspacePage() {
   return (
     <AgentTicketEditorWorkspace
       detail={query.data}
+      extensionAccess={{
+        role: session.staff.role,
+        capabilities: session.staff.capabilities,
+      }}
       key={`${session.staff.id}:${ticketNumber}`}
       refreshLatest={refreshLatest}
       staffId={session.staff.id}

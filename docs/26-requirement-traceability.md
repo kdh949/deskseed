@@ -88,12 +88,12 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53, ADR 0031 | `PlatformOpenApiContractTest`, `PlatformNetworkBoundaryTest`의 production CIDR fail-closed, `PlatformTicketIntegrationTest`; PLAT-001/002 |
-| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1/I2 | 18, 32~34, 39, ADR 0012/0016/0031 | 기존 IntegrationClient lifecycle suite + `PlatformTicketIntegrationTest`, `PlatformRateLimitIntegrationTest`; INT-AUTH-001~004·ARCH-001/002/004·ACC-006/007·AUD-001 |
+| REQ-INT-001 | 사설망 scoped API key 기반 Platform API v1을 제공한다 | IMPLEMENTATION_READY | I2/I3 | 18, 20, 39, 53, ADR 0031 | `PlatformOpenApiContractTest`, `PlatformNetworkBoundaryTest`의 production CIDR fail-closed, `PlatformTicketIntegrationTest`, V62 per-client policy의 `PlatformRateLimitIntegrationTest`; PLAT-001/002 |
+| REQ-INT-002 | 머신 주체 IntegrationClient와 scope/자원 제한을 사용한다 | IMPLEMENTATION_READY | I1/I2 | 18, 32~34, 39, ADR 0012/0016/0031 | 기존 IntegrationClient lifecycle suite와 V62 policy/audit/usage의 `AdminIntegrationClientIntegrationTest` + `PlatformTicketIntegrationTest`, `PlatformRateLimitIntegrationTest`; INT-AUTH-001~004·ARCH-001/002/004·ACC-006/007·AUD-001 |
 | REQ-INT-003 | 외부 쓰기는 Idempotency-Key를 지원한다 | IMPLEMENTATION_READY | I3 | 18, 20, 32 | `PlatformApiMigrationTest`, `PlatformTicketIntegrationTest`의 replay/key misuse/concurrent claim/audit·receipt crash rollback/final failure replay 및 Platform SLA target/fact exact-once; IDEM-001~004 |
 | REQ-INT-004 | 외부 수정은 ETag/If-Match로 충돌을 제어한다 | IMPLEMENTATION_READY | I3 | 18, 20 | `PlatformTicketIntegrationTest` matching/stale/final replay; CONC-001 |
 | REQ-INT-005 | 주문·결제 등은 ExternalReference로 연결한다 | IMPLEMENTATION_READY | I4 | 18, 30, 32~34, 39, 55, ADR 0015 | `ExternalReferenceValidationTest`, migration/integration tests, OpenAPI/API types; UI는 `DEFERRED_UI`. Platform API·provider fetch·mirroring은 미구현 |
-| REQ-INT-006 | 외부 시스템에 signed webhook을 보낸다 | BLUEPRINT_READY | I5 | 18, 20, 38 | WH-001~005 |
+| REQ-INT-006 | 외부 시스템에 signed webhook을 보낸다 | IMPLEMENTATION_READY | I5 | 18, 20, 39, 53, ADR 0011, ADR 0040 | V60 endpoint/secret/delivery model, FROZEN admin contract, `WebhookSecurityContractTest`, `AdminWebhookIntegrationTest`; worker fan-out/transport/retry evidence continues in `goal-integrations-webhooks-progress.md` |
 | REQ-INT-007 | n8n/Workato에서 webhook으로 자동화할 수 있다 | BLUEPRINT_READY | I5/I7 | 18, 38 | 예제 workflow smoke test |
 | REQ-INT-008 | TypeScript·Python·JVM SDK를 생성한다 | BLUEPRINT_READY | I6 | 20, 39 | SDK-001~003 |
 | REQ-INT-009 | Agent App SDK와 Embed SDK로 내부 전산에 UI를 연결한다 | BLUEPRINT_READY | P7 | 18, 28, 38 | sandbox/embed security test |
@@ -153,3 +153,12 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
    - 최소 테스트 시나리오
    - 운영·보안 영향 기록
 4. 구현되지 않은 기능을 README에서 완성 기능처럼 표현하지 않는다.
+
+## 11. Wave 0 and Wave 1 extension foundation
+
+| ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
+|---|---|---:|---|---|---|
+| REQ-FND-001 | 병렬 Wave lane은 소유한 OpenAPI fragment·migration 범위·progress/traceability 영역만 변경하고, 생성된 Core bundle이나 다른 lane의 공용 계약을 직접 수정하지 않는다 | IMPLEMENTATION_READY | Wave 0 F1 | ADR 0040, 39, 41, 50 | deterministic bundle parity, duplicate path/method/component rejection, ownership range validator, documentation contract gate |
+| REQ-FND-002 | 조건·액션·템플릿 변수·검색 predicate·analytics dimension은 versioned descriptor registry로 확장하며 unknown/duplicate/incompatible input은 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F1 | ADR 0040, 34, 45, 46, 47 | duplicate descriptor startup failure, AST bound/unknown-type rejection, action external-I/O separation, ARCH-001 |
+| REQ-FND-003 | 공개 가능한 integration event intent는 ticket mutation과 원자적으로 PostgreSQL outbox에 기록되고 worker replay/lease 실패는 committed ticket mutation을 되돌리지 않는다 | IMPLEMENTATION_READY | Wave 0 F2 | ADR 0040, 18, 32, 34, 45 | PostgreSQL outbox atomicity, lease recovery, payload redaction/visibility, ARCH-002/003 |
+| REQ-FND-004 | feature lane은 central App/shell을 수정하지 않고 deterministic route/navigation/workspace contribution을 추가하며 duplicate/권한/extension failure를 fail closed한다 | IMPLEMENTATION_READY | Wave 0 F3 | ADR 0040, 28–31, 40, 51, 55 | discovery order, duplicate rejection, denied route/nav, error isolation, typecheck and Storybook gate |

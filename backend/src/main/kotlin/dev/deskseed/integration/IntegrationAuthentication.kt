@@ -18,6 +18,7 @@ data class AuthenticatedIntegrationClient(
     val scopes: Set<IntegrationScope>,
     val resourceConstraints: IntegrationResourceConstraints,
     val credentialId: UUID,
+    val rateLimitPerMinute: Int = 60,
 )
 
 sealed interface IntegrationAuthenticationResult {
@@ -25,9 +26,12 @@ sealed interface IntegrationAuthenticationResult {
     data object Failure : IntegrationAuthenticationResult
 }
 
-interface IntegrationClientAuthenticator {
+interface IntegrationAuthenticator {
     fun authenticate(request: IntegrationAuthenticationRequest): IntegrationAuthenticationResult
 }
+
+/** The active v1 strategy. A future OAuth adapter implements the parent interface but is not wired. */
+interface IntegrationClientAuthenticator : IntegrationAuthenticator
 
 data class IntegrationResourceRequest(
     val groupId: UUID? = null,
