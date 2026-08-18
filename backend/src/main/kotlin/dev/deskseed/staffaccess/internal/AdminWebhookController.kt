@@ -98,6 +98,17 @@ internal class AdminWebhookController(
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(endpoint.etag()).body(endpoint.toResponse())
     }
 
+    @PostMapping("/{endpointId}/archive")
+    fun archive(
+        @PathVariable endpointId: UUID,
+        @Valid @RequestBody body: WebhookReasonRequest,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<WebhookEndpointResponse> {
+        val endpoint = administration.archive(endpointId, body.toCommand(), request.actor(principal))
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(endpoint.etag()).body(endpoint.toResponse())
+    }
+
     @PostMapping("/{endpointId}/rotate-secret")
     fun rotateSecret(
         @PathVariable endpointId: UUID,
@@ -211,6 +222,7 @@ internal data class WebhookEndpointResponse(
     val subscriptions: List<WebhookSubscriptionResponse>,
     val targetClass: String,
     val health: WebhookHealthResponse,
+    val archivedAt: Instant?,
     val version: Long,
     val createdAt: Instant,
     val updatedAt: Instant,
@@ -253,7 +265,7 @@ private fun WebhookEndpointView.toResponse() = WebhookEndpointResponse(
     subscriptions.map { WebhookSubscriptionResponse(it.eventType, it.version, it.payloadPolicy.name) },
     targetClass.name,
     WebhookHealthResponse(health.state.name, health.cooldownUntil, health.consecutiveFailures, health.lastSucceededAt, health.lastFailedAt),
-    version, createdAt, updatedAt,
+    archivedAt, version, createdAt, updatedAt,
 )
 private fun WebhookEndpointIssue.toResponse() = WebhookEndpointIssueResponse(endpoint.toResponse(), secret, secretKeyVersion)
 private fun WebhookDeliveryView.toResponse() = WebhookDeliveryResponse(

@@ -21,7 +21,7 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 
 ## In scope
 
-- V60–V69 only, webhook endpoint/subscription/delivery/attempt durable model, HMAC signing, endpoint-scoped SSRF validation, bounded delivery/retry/dead-letter/replay, redacted attempt-detail projection, and admin API contracts.
+- V60–V69 only, webhook endpoint/subscription/delivery/attempt durable model, HMAC signing, endpoint-scoped SSRF validation, bounded delivery/retry/dead-letter/replay, redacted attempt-detail projection, terminal archive without hard delete, and admin API contracts.
 - Existing PostgreSQL API-key, idempotency, ETag and fixed-window limiter behavior is retained and expanded only without breaking its four frozen Platform operations.
 
 ## Out of scope
@@ -36,6 +36,7 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 - Public endpoints accept HTTPS/443 only and every resolved address must be public. Private endpoints need endpoint-local hostname, port and CIDR approval; loopback, link-local, multicast, unspecified and CGNAT stay blocked.
 - HMAC is `v1=base64(HMAC-SHA256(timestamp + "." + rawBody))`; raw secrets, request body and response body never enter audit or ordinary logs.
 - Admin mutation or required audit persistence failure returns a typed failure and rolls back the mutation. Delivery failures update their own durable state.
+- Archive is terminal and requires an already inactive endpoint. It atomically records `archived_at`, cancels pending/retry delivery intents, hides the endpoint from the default list, and leaves authorized delivery history intact. Already leased work is not recalled; the worker cannot claim any new archived endpoint work.
 
 ## Threat model and abuse cases
 
@@ -55,12 +56,14 @@ ADMIN이 서명된 outbound webhook endpoint를 안전하게 운영하고, exter
 - Passed: `./gradlew --no-daemon test --tests dev.deskseed.webhook.WebhookSecurityContractTest --tests dev.deskseed.webhook.internal.WebhookOutboxMaterializerIntegrationTest --tests dev.deskseed.architecture.ArchitectureTest`
 - Passed: `./gradlew --no-daemon test --tests dev.deskseed.webhook.internal.WebhookDeliveryWorkerIntegrationTest --tests dev.deskseed.webhook.internal.WebhookOutboxMaterializerIntegrationTest --tests dev.deskseed.staffaccess.internal.AdminWebhookIntegrationTest --tests dev.deskseed.webhook.WebhookSecurityContractTest --tests dev.deskseed.architecture.ArchitectureTest`
 - Passed: `./gradlew --no-daemon test --tests dev.deskseed.staffaccess.internal.AdminWebhookIntegrationTest --tests dev.deskseed.staffaccess.internal.ApiDocumentationIntegrationTest --tests dev.deskseed.architecture.ArchitectureTest` (redacted delivery-attempt detail projection)
+- Passed: `./gradlew --no-daemon --no-configuration-cache test --rerun-tasks --tests dev.deskseed.staffaccess.internal.AdminWebhookIntegrationTest --info` (V63 Flyway archive migration; active archive rejected, pending delivery cancelled, history retained, audit/no-store/CSRF/role boundary covered)
+- Passed: `./gradlew --no-daemon --no-configuration-cache test --rerun-tasks --tests dev.deskseed.webhook.internal.WebhookDeliveryWorkerIntegrationTest --info` and `--tests dev.deskseed.architecture.ArchitectureTest --info` (V63 schema and archived claim exclusion compatibility)
 - Not run: real non-loopback receiver, redirect/DNS-pinning end-to-end, load/performance, full backend suite, remote CI for the current head, and frontend Storybook checks. The Storybook MCP is unavailable in this session, so no undocumented UI contract has been inferred.
 
 ## Compatibility and migration
 
 - Core API fragment is source; generated `core-api-outline-v1.yaml` is refreshed deterministically. The first runtime endpoint slice freezes its matching admin operations together with controller and PostgreSQL integration evidence.
-- V60–V69 are additive only. Rollback is a commit revert before migration deployment; deployed tables are retained until a separately approved forward migration retires them.
+- V60–V69 are additive only. V63 adds nullable `archived_at` plus an archive-list index without changing an applied migration. Rollback is a commit revert before migration deployment; deployed columns/tables are retained until a separately approved forward migration retires them.
 
 ## Human explanation
 

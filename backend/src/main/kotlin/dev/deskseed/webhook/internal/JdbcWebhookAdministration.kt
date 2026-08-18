@@ -55,7 +55,7 @@ internal class JdbcWebhookAdministration(
     @PreAuthorize("hasAuthority('$WEBHOOK_MANAGE_AUTHORITY')")
     @Transactional(readOnly = true)
     override fun list(): List<WebhookEndpointView> = jdbc.query(
-        "select * from webhook_endpoints order by created_at desc, id desc",
+        "select * from webhook_endpoints where archived_at is null order by created_at desc, id desc",
     ) { row, _ -> endpointView(row.toEndpoint()) }
 
     @PreAuthorize("hasAuthority('$WEBHOOK_MANAGE_AUTHORITY')")
@@ -104,6 +104,7 @@ internal class JdbcWebhookAdministration(
     @Transactional
     override fun update(endpointId: UUID, command: UpdateWebhookEndpointCommand, actor: IntegrationAdminActor): WebhookEndpointView {
         val endpoint = findEndpoint(endpointId, locked = true)
+        requireNotArchived(endpoint)
         if (endpoint.version != command.expectedVersion) throw WebhookConflictException("WEBHOOK_ENDPOINT_VERSION_MISMATCH", endpoint.version)
         require(command.name != null || command.url != null || command.enabled != null || command.subscriptions != null) {
             "Webhook update must change at least one field"
@@ -144,6 +145,7 @@ internal class JdbcWebhookAdministration(
     override fun deactivate(endpointId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookEndpointView {
         requireReason(command.reason)
         val endpoint = findEndpoint(endpointId, locked = true)
+        requireNotArchived(endpoint)
         val now = Instant.now(clock)
         if (endpoint.enabled) {
             jdbc.update(
@@ -162,10 +164,35 @@ internal class JdbcWebhookAdministration(
 
     @PreAuthorize("hasAuthority('$WEBHOOK_MANAGE_AUTHORITY')")
     @Transactional
+    override fun archive(endpointId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookEndpointView {
+        requireReason(command.reason)
+        val endpoint = findEndpoint(endpointId, locked = true)
+        if (endpoint.archivedAt != null) return endpointView(endpoint)
+        if (endpoint.enabled) throw WebhookConflictException("WEBHOOK_ENDPOINT_MUST_BE_DEACTIVATED")
+        val now = Instant.now(clock)
+        jdbc.update(
+            """
+            update webhook_endpoints
+               set deactivated_at = coalesce(deactivated_at, ?), archived_at = ?, updated_at = ?, version = version + 1
+             where id = ? and archived_at is null and enabled = false
+            """.trimIndent(),
+            Timestamp.from(now), Timestamp.from(now), Timestamp.from(now), endpointId,
+        ).also { require(it == 1) { "Webhook endpoint archive lost its state guard" } }
+        jdbc.update(
+            """update webhook_deliveries set status = 'CANCELLED', next_attempt_at = null, updated_at = ?, completed_at = ?
+                 where endpoint_id = ? and status in ('PENDING', 'RETRY_SCHEDULED')""",
+            Timestamp.from(now), Timestamp.from(now), endpointId,
+        )
+        appendAudit("WEBHOOK_ENDPOINT_ARCHIVED", endpointId, actor, emptyMap(), now)
+        return endpointView(findEndpoint(endpointId, locked = false))
+    }
+
+    @PreAuthorize("hasAuthority('$WEBHOOK_MANAGE_AUTHORITY')")
+    @Transactional
     override fun rotateSecret(endpointId: UUID, command: RotateWebhookSecretCommand, actor: IntegrationAdminActor): WebhookEndpointIssue {
         require(command.overlapSeconds in 0..86_400) { "Webhook secret overlap is invalid" }
         requireReason(command.reason)
-        findEndpoint(endpointId, locked = true)
+        requireNotArchived(findEndpoint(endpointId, locked = true))
         val now = Instant.now(clock)
         val current = jdbc.queryForMap(
             "select id, sequence from webhook_endpoint_secrets where endpoint_id = ? and status = 'ACTIVE' for update",
@@ -206,6 +233,7 @@ internal class JdbcWebhookAdministration(
     override fun createTestDelivery(endpointId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookDeliveryView {
         requireReason(command.reason)
         val endpoint = findEndpoint(endpointId, locked = true)
+        requireNotArchived(endpoint)
         if (!endpoint.enabled) throw WebhookConflictException("WEBHOOK_ENDPOINT_DISABLED")
         val now = Instant.now(clock)
         val view = insertDelivery(endpointId, endpoint.version, UUID.randomUUID(), "webhook.test", 1, "{}", now)
@@ -265,7 +293,9 @@ internal class JdbcWebhookAdministration(
         actor: IntegrationAdminActor,
     ): WebhookDeliveryView {
         requireReason(command.reason)
-        findEndpoint(endpointId, locked = true)
+        val endpoint = findEndpoint(endpointId, locked = true)
+        requireNotArchived(endpoint)
+        if (!endpoint.enabled) throw WebhookConflictException("WEBHOOK_ENDPOINT_DISABLED")
         val delivery = jdbc.query(
             "select * from webhook_deliveries where endpoint_id = ? and id = ? for update",
             { row, _ -> row.toDelivery() }, endpointId, deliveryId,
@@ -328,6 +358,7 @@ internal class JdbcWebhookAdministration(
         ),
         targetClass = endpoint.target.targetClass,
         health = WebhookHealthView(endpoint.healthState, endpoint.cooldownUntil, endpoint.consecutiveFailures, endpoint.lastSucceededAt, endpoint.lastFailedAt),
+        archivedAt = endpoint.archivedAt,
         version = endpoint.version,
         createdAt = endpoint.createdAt,
         updatedAt = endpoint.updatedAt,
@@ -337,6 +368,10 @@ internal class JdbcWebhookAdministration(
         "select * from webhook_endpoints where id = ?${if (locked) " for update" else ""}",
         { row, _ -> row.toEndpoint() }, endpointId,
     ).singleOrNull() ?: throw WebhookEndpointNotFoundException()
+
+    private fun requireNotArchived(endpoint: EndpointRow) {
+        if (endpoint.archivedAt != null) throw WebhookConflictException("WEBHOOK_ENDPOINT_ARCHIVED")
+    }
 
     private fun insertDelivery(
         endpointId: UUID,
@@ -395,6 +430,7 @@ internal class JdbcWebhookAdministration(
         consecutiveFailures = getInt("consecutive_failures"),
         lastSucceededAt = getTimestamp("last_succeeded_at")?.toInstant(),
         lastFailedAt = getTimestamp("last_failed_at")?.toInstant(),
+        archivedAt = getTimestamp("archived_at")?.toInstant(),
         version = getLong("version"),
         createdAt = getTimestamp("created_at").toInstant(),
         updatedAt = getTimestamp("updated_at").toInstant(),
@@ -429,6 +465,7 @@ internal class JdbcWebhookAdministration(
         val consecutiveFailures: Int,
         val lastSucceededAt: Instant?,
         val lastFailedAt: Instant?,
+        val archivedAt: Instant?,
         val version: Long,
         val createdAt: Instant,
         val updatedAt: Instant,

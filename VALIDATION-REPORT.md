@@ -29,12 +29,12 @@ Generated deterministically by `python3 scripts/validate_documentation.py --writ
 - E2E Visual Baselines: 12
 - Json Files: 11
 - Markdown Files: 222
-- Openapi Operations: 113
-- Openapi Paths: 92
+- Openapi Operations: 114
+- Openapi Paths: 93
 - Requirement Definitions: 87
 - Staff Actor Blueprint Operations: 3
-- Staff Actor Bound Operations: 84
-- Staff Csrf Bound Operations: 51
+- Staff Actor Bound Operations: 85
+- Staff Csrf Bound Operations: 52
 - Task Briefs: 26
 - Verification Gate Definitions: 128
 - Yaml Files: 25

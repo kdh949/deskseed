@@ -129,6 +129,58 @@ class AdminWebhookIntegrationTest {
             .andExpect(status().isForbidden)
     }
 
+    @Test
+    fun `admin archives only an inactive endpoint and cancels pending history without requeueing`() {
+        insertStaff("archive-admin@example.com", "Admin password 42", "ADMIN")
+        val browser = login("archive-admin@example.com", "Admin password 42")
+        val created = mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks").session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"name":"archive-target","url":"https://203.0.113.20/hooks","subscriptions":[{"eventType":"ticket.created","version":1,"payloadPolicy":"METADATA_ONLY"}]}""",
+                ),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val endpointId = UUID.fromString(Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"").find(created)!!.groupValues[1])
+
+        mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks/{id}/archive", endpointId).session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"retire after migration"}"""),
+        ).andExpect(status().isConflict).andExpect(jsonPath("$.code").value("WEBHOOK_ENDPOINT_MUST_BE_DEACTIVATED"))
+
+        val delivery = mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks/{id}/test-deliveries", endpointId).session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"queue before archive"}"""),
+        ).andExpect(status().isAccepted).andReturn().response.contentAsString
+        val deliveryId = UUID.fromString(Regex("\\\"id\\\":\\\"([^\\\"]+)\\\"").find(delivery)!!.groupValues[1])
+        val currentEtag = mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}", endpointId).session(browser.session))
+            .andExpect(status().isOk).andReturn().response.getHeader("ETag")!!
+        mockMvc.perform(
+            patch("/api/v1/admin/integrations/webhooks/{id}", endpointId).session(browser.session).csrf(browser)
+                .header("If-Match", currentEtag).contentType(MediaType.APPLICATION_JSON).content("""{"enabled":false}"""),
+        ).andExpect(status().isOk)
+        val archiveEtag = mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks/{id}/archive", endpointId).session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"retire after migration"}"""),
+        ).andExpect(status().isOk).andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.archivedAt").isNotEmpty).andReturn().response.getHeader("ETag")!!
+
+        val list = mockMvc.perform(get("/api/v1/admin/integrations/webhooks").session(browser.session))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertThat(list).doesNotContain(endpointId.toString())
+        mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}", endpointId).session(browser.session))
+            .andExpect(status().isOk).andExpect(jsonPath("$.archivedAt").isNotEmpty)
+        mockMvc.perform(get("/api/v1/admin/integrations/webhooks/{id}/deliveries", endpointId).session(browser.session))
+            .andExpect(status().isOk).andExpect(jsonPath("$[0].id").value(deliveryId.toString()))
+            .andExpect(jsonPath("$[0].status").value("CANCELLED"))
+        mockMvc.perform(
+            post("/api/v1/admin/integrations/webhooks/{id}/test-deliveries", endpointId).session(browser.session).csrf(browser)
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"must not queue"}"""),
+        ).andExpect(status().isConflict).andExpect(jsonPath("$.code").value("WEBHOOK_ENDPOINT_ARCHIVED"))
+        assertThat(archiveEtag).startsWith("\"webhook-v")
+        assertThat(jdbcTemplate.queryForList("select event_type from admin_security_audit_events where target_id = ?", String::class.java, endpointId))
+            .contains("WEBHOOK_ENDPOINT_UPDATED", "WEBHOOK_ENDPOINT_ARCHIVED")
+    }
+
     private fun login(email: String, password: String): Browser {
         val csrf = mockMvc.perform(get("/api/v1/agent/csrf")).andExpect(status().isOk).andReturn()
         val token = Regex("\\\"token\\\":\\\"([^\\\"]+)\\\"").find(csrf.response.contentAsString)!!.groupValues[1]

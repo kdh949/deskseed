@@ -182,6 +182,36 @@ paths:
         '404': {$ref: '#/components/responses/NoStoreProblem'}
         '409': {$ref: '#/components/responses/NoStoreProblem'}
         '503': {$ref: '#/components/responses/NoStoreProblem'}
+  /api/v1/admin/integrations/webhooks/{endpointId}/archive:
+    post:
+      operationId: archiveWebhookEndpoint
+      summary: 비활성 웹훅 엔드포인트 보관
+      description: ADMIN이 이미 비활성화된 endpoint를 hard delete 없이 보관합니다. delivery/attempt history와 encrypted secret material은 보존되지만 일반 endpoint 목록, 새로운 test delivery, replay와 설정 변경에서는 제외됩니다. archive와 admin/security audit는 함께 commit됩니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-INT-006]
+      tags: [Integration Webhooks]
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/WebhookEndpointId'
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/WebhookReason'}}
+      responses:
+        '200':
+          description: endpoint는 terminal archived 상태가 되고 authorized delivery list/detail route에서 history를 보존합니다. 이미 archived endpoint는 같은 state projection을 반환합니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+            ETag: {schema: {type: string}}
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/WebhookEndpoint'}}
+        '400': {$ref: '#/components/responses/NoStoreProblem'}
+        '403': {$ref: '#/components/responses/NoStoreProblem'}
+        '404': {$ref: '#/components/responses/NoStoreProblem'}
+        '409': {$ref: '#/components/responses/NoStoreProblem'}
+        '503': {$ref: '#/components/responses/NoStoreProblem'}
   /api/v1/admin/integrations/webhooks/{endpointId}/rotate-secret:
     post:
       operationId: rotateWebhookSecret
@@ -372,7 +402,7 @@ components:
     WebhookEndpoint:
       type: object
       additionalProperties: false
-      required: [id, name, url, enabled, subscriptions, targetClass, health, version, createdAt, updatedAt]
+      required: [id, name, url, enabled, subscriptions, targetClass, health, archivedAt, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         name: {type: string, maxLength: 100}
@@ -384,10 +414,11 @@ components:
           items: {$ref: '#/components/schemas/WebhookSubscription'}
         targetClass: {type: string, enum: [PUBLIC, PRIVATE_APPROVED]}
         health: {$ref: '#/components/schemas/WebhookHealth'}
+        archivedAt: {type: [string, 'null'], format: date-time}
         version: {type: integer, format: int64, minimum: 0}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
-      description: Secret raw value 및 secret hash/ciphertext를 포함하지 않는 ADMIN projection입니다.
+      description: Secret raw value 및 secret hash/ciphertext를 포함하지 않는 ADMIN projection입니다. archivedAt가 존재하면 endpoint는 terminal archive 상태이며 새 delivery와 설정 변경을 할 수 없습니다.
     WebhookEndpointIssue:
       type: object
       additionalProperties: false
@@ -478,7 +509,7 @@ components:
       x-deskseed-documentation-review: MANUAL
       example:
         reason: 운영자가 dead letter delivery 재시도를 확인했습니다.
-      description: endpoint 비활성화, test delivery 또는 replay처럼 admin/security audit가 필요한 webhook 작업의 사유입니다.
+      description: endpoint 비활성화/보관, test delivery 또는 replay처럼 admin/security audit가 필요한 webhook 작업의 사유입니다.
     WebhookHealth:
       type: object
       additionalProperties: false

@@ -221,7 +221,7 @@ internal class WebhookDeliveryClaimService(
               join webhook_endpoint_secrets secret on secret.endpoint_id = endpoint.id and secret.status = 'ACTIVE'
              where delivery.status in ('PENDING', 'RETRY_SCHEDULED')
                and delivery.next_attempt_at <= ?
-               and endpoint.enabled = true and endpoint.deactivated_at is null
+               and endpoint.enabled = true and endpoint.deactivated_at is null and endpoint.archived_at is null
                and (endpoint.health_state <> 'OPEN' or endpoint.cooldown_until <= ?)
                and (endpoint.health_state <> 'HALF_OPEN' or endpoint.half_open_claimed = false)
                and endpoint.active_delivery_count < ?

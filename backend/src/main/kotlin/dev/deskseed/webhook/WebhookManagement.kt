@@ -61,6 +61,7 @@ data class WebhookEndpointView(
     val subscriptions: List<WebhookSubscription>,
     val targetClass: WebhookTargetClass,
     val health: WebhookHealthView,
+    val archivedAt: Instant?,
     val version: Long,
     val createdAt: Instant,
     val updatedAt: Instant,
@@ -104,6 +105,7 @@ interface WebhookAdministration {
     fun create(command: CreateWebhookEndpointCommand, actor: IntegrationAdminActor): WebhookEndpointIssue
     fun update(endpointId: UUID, command: UpdateWebhookEndpointCommand, actor: IntegrationAdminActor): WebhookEndpointView
     fun deactivate(endpointId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookEndpointView
+    fun archive(endpointId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookEndpointView
     fun rotateSecret(endpointId: UUID, command: RotateWebhookSecretCommand, actor: IntegrationAdminActor): WebhookEndpointIssue
     fun createTestDelivery(endpointId: UUID, command: WebhookReasonCommand, actor: IntegrationAdminActor): WebhookDeliveryView
     fun listDeliveries(endpointId: UUID): List<WebhookDeliveryView>
