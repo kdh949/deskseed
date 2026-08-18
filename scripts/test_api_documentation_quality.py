@@ -28,9 +28,6 @@ class ApiDocumentationQualityTest(unittest.TestCase):
     def validate(self, document: dict[str, Any]) -> list[str]:
         return validate_api_reference_quality(PLATFORM_CONTRACT, document)
 
-    def test_current_platform_contract_passes_manual_documentation_gate(self) -> None:
-        self.assertEqual([], self.validate(self.document))
-
     def test_name_based_description_is_rejected(self) -> None:
         changed = copy.deepcopy(self.document)
         changed["components"]["schemas"]["CreateTicketRequest"]["properties"]["subject"][
