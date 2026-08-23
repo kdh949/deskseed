@@ -36,5 +36,5 @@ AUT-001~008 and WH-001~005. Failure-injection proves committed ticket mutation i
 - [x] immutable versions, explicit activation/deactivation, audited position exchange
 - [x] server-side admin capability and atomic admin/security audit
 - [x] sample-ticket dry-run with zero ticket/job side effects
-- [ ] ticket-transaction durable evaluation job
+- [x] ticket-transaction durable evaluation job with ordered immutable-version snapshot
 - [ ] ordered worker execution, loop controls, provenance and webhook outbox materialization

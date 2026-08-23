@@ -220,3 +220,13 @@ Loop controls must cross this boundary using event/correlation IDs and integrati
 - `AUT-007`: dry run has zero side effects
 - `AUT-008`: version activation/rollback and audit
 - `AUT-009`: automation scanner idempotency/crash recovery
+
+## 17. Initial durable evaluation boundary
+
+The first implementation listens to the synchronous `TicketSubmitted` application event with transaction propagation `MANDATORY`. It snapshots active trigger IDs, immutable versions, and positions into one `trigger_evaluation_jobs` row before the originating customer, staff, or Platform API transaction commits.
+
+- no active trigger means no job row;
+- job insertion failure rolls back the ticket command and its audit because otherwise the trigger event would be lost;
+- later definition deactivation cannot rewrite an already captured version snapshot;
+- the job appender performs no condition action and no network I/O;
+- webhook delivery failure occurs after both ticket and trigger command commits and cannot roll either mutation back.

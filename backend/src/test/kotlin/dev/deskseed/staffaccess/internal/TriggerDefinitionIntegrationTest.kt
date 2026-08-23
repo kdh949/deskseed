@@ -11,6 +11,7 @@ import org.springframework.mock.web.MockHttpSession
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
@@ -119,6 +120,78 @@ class TriggerDefinitionIntegrationTest {
     }
 
     @Test
+    fun `ticket creation snapshots active ordered versions into a durable job in the root transaction`() {
+        val admin = browser("ADMIN")
+        val groupId = activeGroup("durable trigger 그룹")
+        val createdTrigger = mockMvc.perform(
+            post("/api/v1/admin/triggers")
+                .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+                .content(triggerJson("durable 긴급 라우팅", 10, groupId)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val triggerId = UUID.fromString(stringField(createdTrigger, "id"))
+        mockMvc.perform(
+            put("/api/v1/admin/triggers/{triggerId}/activation", triggerId)
+                .session(admin.session).csrf(admin).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isOk)
+
+        val ticketJson = createUrgentTicket(admin, "durable-job@example.com", "durable job 검증", status().isCreated)
+        val ticketNumber = longField(ticketJson, "ticketNumber")
+        val job = jdbc.queryForMap(
+            """
+            select ticket_number, root_ticket_audit_id, root_correlation_id, event_type,
+                   trigger_versions_json::text as versions, status, attempt_count
+              from trigger_evaluation_jobs
+             where ticket_number = ?
+            """.trimIndent(),
+            ticketNumber,
+        )
+        assertThat(job)
+            .containsEntry("ticket_number", ticketNumber)
+            .containsEntry("event_type", "TICKET_CREATED")
+            .containsEntry("status", "PENDING")
+            .containsEntry("attempt_count", 0)
+        assertThat(job["root_ticket_audit_id"]).isNotNull()
+        assertThat(job["root_correlation_id"]).isNotNull()
+        assertThat(job["versions"].toString()).contains(triggerId.toString(), "\"triggerVersion\": 1", "\"position\": 10")
+
+        mockMvc.perform(
+            delete("/api/v1/admin/triggers/{triggerId}/activation", triggerId)
+                .session(admin.session).csrf(admin).header("If-Match", "\"2\""),
+        ).andExpect(status().isOk)
+        assertThat(jdbc.queryForObject(
+            "select trigger_versions_json::text from trigger_evaluation_jobs where ticket_number = ?",
+            String::class.java, ticketNumber,
+        )).contains(triggerId.toString(), "\"triggerVersion\": 1")
+
+        mockMvc.perform(
+            put("/api/v1/admin/triggers/{triggerId}/activation", triggerId)
+                .session(admin.session).csrf(admin).header("If-Match", "\"3\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isOk)
+        jdbc.execute(
+            """
+            create or replace function fail_trigger_job_insert() returns trigger language plpgsql as ${'$'}${'$'}
+            begin raise exception 'forced durable job failure'; end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbc.execute(
+            "create trigger fail_trigger_job_insert before insert on trigger_evaluation_jobs for each row execute function fail_trigger_job_insert()",
+        )
+        try {
+            createUrgentTicket(admin, "durable-failure@example.com", "rollback ticket", status().isServiceUnavailable)
+        } finally {
+            jdbc.execute("drop trigger if exists fail_trigger_job_insert on trigger_evaluation_jobs")
+            jdbc.execute("drop function if exists fail_trigger_job_insert()")
+        }
+        assertThat(jdbc.queryForObject(
+            "select count(*) from tickets where subject = 'rollback ticket'",
+            Long::class.java,
+        )).isZero()
+    }
+
+    @Test
     fun `agent cannot manage triggers and required audit failure rolls back creation`() {
         val agent = browser("AGENT")
         val groupId = activeGroup("권한 검증 그룹")
@@ -164,6 +237,26 @@ class TriggerDefinitionIntegrationTest {
             id, name,
         )
     }
+
+    private fun createUrgentTicket(
+        browser: Browser,
+        requesterEmail: String,
+        subject: String,
+        expectedStatus: org.springframework.test.web.servlet.ResultMatcher,
+    ): String = mockMvc.perform(
+        post("/api/v1/agent/tickets")
+            .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {
+                  "requester":{"name":"긴급 고객","email":"$requesterEmail"},
+                  "subject":"$subject",
+                  "firstComment":{"visibility":"PUBLIC","body":"긴급 문의입니다."},
+                  "priority":"URGENT"
+                }
+                """.trimIndent(),
+            ),
+    ).andExpect(expectedStatus).andReturn().response.contentAsString
 
     private fun triggerJson(name: String, position: Int, groupId: UUID) =
         """
