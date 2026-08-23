@@ -38,6 +38,9 @@ CreateAgentTicket
 AddTicketComment
 UpdateTicket
 ApplyMacro
+CreateTriggerVersion
+ActivateTriggerVersion
+RepositionTrigger
 AssignTicket
 TransferTicket
 CreateChildTicket

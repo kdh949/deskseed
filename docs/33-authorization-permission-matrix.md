@@ -56,6 +56,7 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | manage PERSONAL macro | D | D | owner only C | owner only C | D | D |
 | manage SHARED macro | D | D | D | explicit capability C | D | D |
 | preview/apply active macro | D | D | ticket read/write policy C | ticket read/write policy C | D | D |
+| manage trigger/automation definitions | D | D | D | explicit capability C | D | D |
 | upload/link/download PUBLIC attachment | ticket scoped C | own ticket C | ticket policy C | A | D | D |
 | download INTERNAL attachment | D | D | staff ticket policy C | A | D | D |
 | manage staff/groups | D | D | D | A | D | D |
