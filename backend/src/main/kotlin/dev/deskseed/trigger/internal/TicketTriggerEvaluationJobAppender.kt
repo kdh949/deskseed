@@ -25,9 +25,10 @@ internal class TicketTriggerEvaluationJobAppender(
         val versions = jdbc.query(
             """
             select id, active_version, position
-              from trigger_definitions
+             from trigger_definitions
              where active_version is not null
              order by position, id
+             limit 101
             """.trimIndent(),
             { result, _ -> TriggerVersionSnapshot(
                 result.getObject("id", UUID::class.java),
@@ -35,6 +36,7 @@ internal class TicketTriggerEvaluationJobAppender(
                 result.getInt("position"),
             ) },
         )
+        require(versions.size <= 100) { "Active trigger limit exceeded" }
         if (versions.isEmpty()) return
         jdbc.update(
             """

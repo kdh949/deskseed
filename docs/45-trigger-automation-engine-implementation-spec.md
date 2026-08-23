@@ -230,3 +230,5 @@ The first implementation listens to the synchronous `TicketSubmitted` applicatio
 - later definition deactivation cannot rewrite an already captured version snapshot;
 - the job appender performs no condition action and no network I/O;
 - webhook delivery failure occurs after both ticket and trigger command commits and cannot roll either mutation back.
+
+The worker claims jobs with `FOR UPDATE SKIP LOCKED` and a 60-second lease in a separate transaction. One execution transaction walks the captured versions in `(position, triggerId)` order, reloads the latest ticket before every rule, invokes a typed `ActorType.TRIGGER` ticket command, appends `TRIGGER_APPLIED` provenance, and then appends the metadata-only `ticket.trigger.executed` event. A failed invariant rolls the entire execution transaction back and moves the job through bounded retry to dead letter; it never leaves a partial ticket mutation or webhook intent.

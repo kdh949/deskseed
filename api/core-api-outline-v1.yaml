@@ -13867,6 +13867,7 @@ components:
           - ticket.status.changed
           - ticket.sla.changed
           - attachment.ready
+          - ticket.trigger.executed
         version:
           type: integer
           const: 1

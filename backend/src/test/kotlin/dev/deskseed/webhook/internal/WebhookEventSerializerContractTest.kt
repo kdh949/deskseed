@@ -55,6 +55,7 @@ class WebhookEventSerializerContractTest {
             "ticket.status.changed",
             "ticket.sla.changed",
             "attachment.ready",
+            "ticket.trigger.executed",
         )
     }
 }
