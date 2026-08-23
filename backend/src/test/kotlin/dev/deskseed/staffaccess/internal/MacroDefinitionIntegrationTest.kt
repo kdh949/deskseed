@@ -11,6 +11,7 @@ import org.springframework.mock.web.MockHttpSession
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
@@ -38,12 +39,22 @@ class MacroDefinitionIntegrationTest {
                 ticket_audit_events,
                 ticket_audits,
                 ticket_comments,
+                ticket_custom_field_values,
+                ticket_tag_assignments,
+                ticket_field_options,
+                ticket_form_versions,
+                ticket_forms,
+                ticket_field_definitions,
+                ticket_tag_definitions,
+                custom_ticket_statuses,
                 macro_activations,
                 macro_actions,
                 macro_versions,
                 macro_definitions,
                 tickets,
                 customers,
+                group_memberships,
+                support_groups,
                 staff_login_throttles,
                 staff_accounts
             restart identity cascade
@@ -234,12 +245,182 @@ class MacroDefinitionIntegrationTest {
         )).isEqualTo(1)
     }
 
+    @Test
+    fun `apply commits fields configuration and edited comment as one replayable ticket audit`() {
+        val agent = browser("AGENT")
+        val groupId = UUID.randomUUID()
+        jdbc.update(
+            "insert into support_groups (id, name, status, created_at, updated_at, version) values (?, ?, 'ACTIVE', now(), now(), 0)",
+            groupId,
+            "매크로 적용 그룹",
+        )
+        jdbc.update(
+            """
+            insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at, version)
+            values (?, ?, ?, 'ACTIVE', now(), now(), 0)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            groupId,
+            agent.staffId,
+        )
+        val ticketJson = mockMvc.perform(
+            post("/api/v1/agent/tickets")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "requester":{"name":"적용 고객","email":"macro-apply@example.com"},
+                      "subject":"결제 확인",
+                      "firstComment":{"visibility":"PUBLIC","body":"결제 내역을 확인해 주세요."},
+                      "priority":"NORMAL",
+                      "groupId":"$groupId",
+                      "assigneeId":"${agent.staffId}"
+                    }
+                    """.trimIndent(),
+                ),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val ticketNumber = longField(ticketJson, "ticketNumber")
+        val ticketId = jdbc.queryForObject("select id from tickets where ticket_number = ?", UUID::class.java, ticketNumber)!!
+        val fieldId = UUID.randomUUID()
+        val formId = UUID.randomUUID()
+        val tagId = UUID.randomUUID()
+        val definitionJson =
+            """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[],"allowedCustomStatusIds":[]}"""
+        jdbc.update(
+            """
+            insert into ticket_field_definitions
+                (id, machine_key, field_type, staff_label, customer_visible, customer_editable, agent_visible,
+                 agent_editable, searchable, analytics_eligible, sensitive, validation_json, active,
+                 definition_version, created_at, updated_at)
+            values (?, 'payment.reference', 'SHORT_TEXT', '결제 참조', false, false, true, true, false, false,
+                    true, '{}'::jsonb, true, 1, now(), now())
+            """.trimIndent(),
+            fieldId,
+        )
+        jdbc.update(
+            """
+            insert into ticket_forms
+                (id, name, lifecycle, default_for_customer, default_for_agent, draft_definition_json,
+                 current_version, published_version, aggregate_version, created_at, updated_at)
+            values (?, '매크로 적용 구성', 'DRAFT', false, true, cast(? as jsonb), 1, null, 1, now(), now())
+            """.trimIndent(),
+            formId,
+            definitionJson,
+        )
+        jdbc.update(
+            """
+            insert into ticket_form_versions
+                (form_id, version, definition_json, published_by_staff_id, published_by_display, published_at)
+            values (?, 1, cast(? as jsonb), ?, '매크로 상담사', now())
+            """.trimIndent(),
+            formId,
+            definitionJson,
+            agent.staffId,
+        )
+        jdbc.update("update ticket_forms set lifecycle = 'PUBLISHED', published_version = 1 where id = ?", formId)
+        jdbc.update(
+            """
+            insert into ticket_tag_definitions
+                (id, normalized_value, label, active, definition_version, created_at, updated_at)
+            values (?, 'payment-reviewed', '결제 확인', true, 1, now(), now())
+            """.trimIndent(),
+            tagId,
+        )
+        val macroJson =
+            """
+            {
+              "name":"결제 확인 완료",
+              "actions":[
+                {"type":"PRIORITY","priority":"HIGH"},
+                {"type":"ADD_TAG","tagId":"$tagId"},
+                {"type":"CUSTOM_FIELD","fieldKey":"payment.reference","value":{"shortTextValue":"macro-reference-secret"}},
+                {"type":"COMMENT","visibility":"INTERNAL","template":"{{ticket.number}}번 결제 확인을 완료했습니다."}
+              ]
+            }
+            """.trimIndent()
+        val createdMacro = mockMvc.perform(
+            post("/api/v1/agent/personal-macros")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON).content(macroJson),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val macroId = UUID.fromString(stringField(createdMacro, "id"))
+        mockMvc.perform(
+            put("/api/v1/agent/personal-macros/{macroId}/activation", macroId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isOk)
+        val commandId = UUID.randomUUID()
+        val applyBody =
+            """{"macroVersion":1,"commentBodyOverride":"상담사가 확인한 내부 결제 메모","clientCommandId":"$commandId"}"""
+
+        val applied = mockMvc.perform(
+            post("/api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/apply", ticketNumber, macroId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"0\"")
+                .contentType(MediaType.APPLICATION_JSON).content(applyBody),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"1\""))
+            .andExpect(jsonPath("$.replayed").value(false))
+            .andReturn().response.contentAsString
+        val auditId = UUID.fromString(stringField(applied, "auditId"))
+
+        assertThat(jdbc.queryForMap("select priority, version from tickets where id = ?", ticketId))
+            .containsEntry("priority", "HIGH")
+            .containsEntry("version", 1L)
+        assertThat(jdbc.queryForObject(
+            "select short_text_value from ticket_custom_field_values where ticket_id = ? and field_definition_id = ?",
+            String::class.java,
+            ticketId,
+            fieldId,
+        )).isEqualTo("macro-reference-secret")
+        assertThat(jdbc.queryForObject(
+            "select count(*) from ticket_tag_assignments where ticket_id = ? and tag_definition_id = ?",
+            Long::class.java,
+            ticketId,
+            tagId,
+        )).isEqualTo(1)
+        assertThat(jdbc.queryForObject(
+            "select body from ticket_comments where ticket_id = ? order by created_at desc, id desc limit 1",
+            String::class.java,
+            ticketId,
+        )).isEqualTo("상담사가 확인한 내부 결제 메모")
+        assertThat(jdbc.queryForList(
+            "select event_type from ticket_audit_events where audit_id = ? order by event_order",
+            String::class.java,
+            auditId,
+        )).containsExactly("MACRO_APPLIED", "PRIORITY_CHANGED", "TICKET_CONFIGURATION_UPDATED", "COMMENT_CREATED")
+        assertThat(jdbc.queryForObject(
+            "select count(*) from ticket_audits where command_id = ?",
+            Long::class.java,
+            commandId.toString(),
+        )).isEqualTo(1)
+
+        mockMvc.perform(
+            delete("/api/v1/agent/personal-macros/{macroId}/activation", macroId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"2\""),
+        ).andExpect(status().isOk)
+
+        mockMvc.perform(
+            post("/api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/apply", ticketNumber, macroId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"0\"")
+                .contentType(MediaType.APPLICATION_JSON).content(applyBody),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("ETag", "\"1\""))
+            .andExpect(jsonPath("$.replayed").value(true))
+        assertThat(jdbc.queryForObject(
+            "select count(*) from ticket_audits where command_id = ?",
+            Long::class.java,
+            commandId.toString(),
+        )).isEqualTo(1)
+    }
+
     private fun macroJson(name: String, template: String) =
         """{"name":"$name","actions":[{"type":"PRIORITY","priority":"URGENT"},{"type":"COMMENT","visibility":"PUBLIC","template":"$template"}]}"""
 
     private fun browser(role: String): Browser {
         val email = "macro-${role.lowercase()}-${UUID.randomUUID()}@example.com"
         val password = "Macro password 42!"
+        val staffId = UUID.randomUUID()
         jdbc.update(
             """
             insert into staff_accounts
@@ -247,7 +428,7 @@ class MacroDefinitionIntegrationTest {
                  password_hash, created_at, updated_at, version)
             values (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 0)
             """.trimIndent(),
-            UUID.randomUUID(), email.lowercase(), email,
+            staffId, email.lowercase(), email,
             if (role == "ADMIN") "매크로 관리자" else "매크로 상담사", role,
             BCryptPasswordEncoder(4).encode(password),
             Timestamp.from(Instant.parse("2026-08-24T00:00:00Z")),
@@ -261,7 +442,7 @@ class MacroDefinitionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"email":"$email","password":"$password"}"""),
         ).andExpect(status().isNoContent).andReturn()
-        return Browser(login.request.session as MockHttpSession, token)
+        return Browser(login.request.session as MockHttpSession, token, staffId)
     }
 
     private fun MockHttpServletRequestBuilder.csrf(browser: Browser) = header("X-CSRF-TOKEN", browser.csrfToken)
@@ -272,5 +453,5 @@ class MacroDefinitionIntegrationTest {
     private fun longField(json: String, field: String): Long =
         Regex("\\\"$field\\\":(\\d+)").find(json)!!.groupValues[1].toLong()
 
-    private data class Browser(val session: MockHttpSession, val csrfToken: String)
+    private data class Browser(val session: MockHttpSession, val csrfToken: String, val staffId: UUID)
 }

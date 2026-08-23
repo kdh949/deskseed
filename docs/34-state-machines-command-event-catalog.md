@@ -37,6 +37,7 @@ CreateAnonymousRequest
 CreateAgentTicket
 AddTicketComment
 UpdateTicket
+ApplyMacro
 AssignTicket
 TransferTicket
 CreateChildTicket
@@ -71,6 +72,7 @@ clock
 
 ```text
 TICKET_CREATED
+MACRO_APPLIED
 UPDATE_COMMAND_RECEIVED
 COMMENT_CREATED
 STATUS_CHANGED

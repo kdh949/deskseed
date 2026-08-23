@@ -72,6 +72,14 @@ internal class JdbcMacroDefinitionAdministration(
     }
 
     @Transactional(readOnly = true)
+    override fun getVersion(macroId: UUID, macroVersion: Int, actor: MacroDefinitionActor): MacroDefinitionView {
+        val current = stateById(macroId)
+        if (current.scope == MacroScope.PERSONAL && current.ownerStaffId != actor.staffId) throw MacroNotFoundException()
+        if (!versionExists(macroId, macroVersion)) throw MacroNotFoundException()
+        return view(current, macroVersion)
+    }
+
+    @Transactional(readOnly = true)
     override fun listManaged(scope: MacroScope, actor: MacroDefinitionActor): List<MacroDefinitionView> {
         requireScopeAccess(scope, actor)
         val parameters = if (scope == MacroScope.PERSONAL) arrayOf<Any>(scope.name, actor.staffId) else arrayOf(scope.name)
@@ -383,7 +391,7 @@ internal class JdbcMacroDefinitionAdministration(
         scope = MacroScope.valueOf(result.getString("scope")),
         ownerStaffId = result.getObject("owner_staff_id", UUID::class.java),
         currentVersion = result.getInt("current_version"),
-        activeVersion = result.getObject("active_version", Integer::class.java)?.toInt(),
+        activeVersion = (result.getObject("active_version") as? Number)?.toInt(),
         aggregateVersion = result.getLong("aggregate_version"),
         createdAt = result.getTimestamp("created_at").toInstant(),
         updatedAt = result.getTimestamp("updated_at").toInstant(),

@@ -15,6 +15,7 @@ import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketTransitionInvalidException
 import dev.deskseed.ticketing.TicketUpdateContentionException
 import dev.deskseed.ticketing.TicketVersionPreconditionFailedException
+import dev.deskseed.ticketing.TicketMacroVersionUnavailableException
 import dev.deskseed.ticketing.TicketWriteForbiddenException
 import dev.deskseed.ticketconfiguration.TicketConfigurationValidationException
 import jakarta.servlet.http.HttpServletRequest
@@ -36,9 +37,19 @@ import java.net.URI
         AgentTicketBatchController::class,
         AgentExternalReferenceController::class,
         AgentTicketConfigurationController::class,
+        AgentMacroApplyController::class,
     ],
 )
 internal class AgentTicketCommandExceptionHandler {
+    @ExceptionHandler(TicketMacroVersionUnavailableException::class)
+    fun macroVersionUnavailable(request: HttpServletRequest) = problem(
+        request,
+        HttpStatus.CONFLICT,
+        "/problems/macro-version-unavailable",
+        "Macro version unavailable",
+        "The requested macro version is no longer active or accessible.",
+    )
+
     @ExceptionHandler(AgentTicketNotFoundException::class)
     fun notFound(request: HttpServletRequest) = problem(
         request,

@@ -87,6 +87,32 @@ data class UpdateTicketConfigurationCommand(
     val context: CommandContext,
 )
 
+data class ApplyMacroTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val macroId: UUID,
+    val macroVersion: Int,
+    val orderedActionTypes: List<String>,
+    val changedFields: Set<TicketField>,
+    val status: TicketStatus?,
+    val priority: TicketPriority?,
+    val groupId: UUID?,
+    val assigneeId: UUID?,
+    val comment: AgentCommentDraft?,
+    val formVersion: Int?,
+    val fieldValues: Map<String, TicketConfigurationFieldValue>,
+    val addTagIds: Set<UUID>,
+    val removeTagIds: Set<UUID>,
+    val customStatusId: UUID?,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+/** Rechecked inside the ticket transaction after idempotent replay lookup. */
+fun interface TicketMacroActivationGuard {
+    fun requireActive(macroId: UUID, macroVersion: Int, actorStaffId: UUID)
+}
+
 data class TicketConfigurationMutationRequest(
     val ticketId: UUID,
     val ticketNumber: Long,
@@ -204,6 +230,8 @@ interface AgentTicketCommandService {
 
     fun updateConfiguration(command: UpdateTicketConfigurationCommand): TicketCommandResult
 
+    fun applyMacro(command: ApplyMacroTicketCommand): TicketCommandResult
+
     fun transfer(command: TransferTicketCommand): TicketCommandResult
 
     fun createChild(command: CreateChildTicketCommand): CreateChildTicketResult
@@ -249,6 +277,8 @@ class TicketFieldConflictException(
 ) : RuntimeException()
 
 class TicketVersionPreconditionFailedException(val currentVersion: Long) : RuntimeException()
+
+class TicketMacroVersionUnavailableException : RuntimeException()
 
 class TicketRelationInvalidException(val reason: String) : RuntimeException(reason)
 

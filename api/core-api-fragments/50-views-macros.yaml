@@ -179,6 +179,28 @@ paths:
         '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
         '412': {$ref: '#/components/responses/Problem'}
         '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/apply:
+    post:
+      summary: 검토한 macro preview를 티켓에 적용
+      description: If-Match ticket version과 현재 활성 macro version을 transaction 안에서 다시 확인하고 typed field, tag, custom field, comment를 하나의 일반 ticket command로 적용합니다. 티켓 version은 최대 한 번 증가하고 `MACRO_APPLIED` provenance를 첫 ordered event로 가진 TicketAudit 하나만 생성합니다.
+      operationId: applyTicketMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      x-deskseed-documentation-review: MANUAL
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/TicketConfigurationTicketNumber'}, {$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroTicketIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MacroApplyRequest'}}}
+      responses:
+        '200': {description: 한 번 commit된 macro ticket command 결과이며 exact clientCommandId 재시도에서는 replayed가 true입니다., headers: {ETag: {$ref: '#/components/headers/MacroApplyTicketETag'}}, content: {application/json: {schema: {$ref: '#/components/schemas/MacroApplyResult'}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
   /api/v1/admin/shared-macros/{macroId}/activation:
     put:
       summary: SHARED macro version 활성화
@@ -220,8 +242,10 @@ components:
   parameters:
     MacroId: {name: macroId, in: path, required: true, description: PERSONAL 또는 SHARED macro aggregate의 stable UUID입니다., schema: {type: string, format: uuid}}
     MacroIfMatch: {name: If-Match, in: header, required: true, description: macro aggregateVersion과 정확히 일치해야 하는 strong precondition입니다., schema: {type: string, pattern: '^"[0-9]+"$', minLength: 3, maxLength: 24}}
+    MacroTicketIfMatch: {name: If-Match, in: header, required: true, description: preview가 반환한 ticketVersion과 정확히 일치해야 하며 replay 전에는 stale write를 거절하는 strong precondition입니다., schema: {type: string, pattern: '^"[0-9]+"$', minLength: 3, maxLength: 24}}
   headers:
     MacroETag: {description: 응답 시점의 macro aggregateVersion을 나타내는 strong ETag입니다., schema: {type: string, pattern: '^"[0-9]+"$'}}
+    MacroApplyTicketETag: {description: 모든 action을 반영한 뒤의 ticket version을 나타내며 exact replay에서도 원래 값을 유지합니다., schema: {type: string, pattern: '^"[0-9]+"$'}}
   requestBodies:
     MacroDefinitionBody:
       required: true
@@ -296,6 +320,27 @@ components:
       properties:
         visibility: {type: string, enum: [PUBLIC, INTERNAL], description: 렌더링된 draft의 서버 검증 가시성입니다.}
         body: {type: string, minLength: 1, maxLength: 10000, description: allowlisted ticket/requester/agent placeholder를 현재 projection으로 치환한 plain text입니다.}
+    MacroApplyRequest:
+      type: object
+      description: preview에서 검토한 활성 macro version과 댓글 draft를 idempotent ticket command로 제출하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      additionalProperties: false
+      required: [macroVersion, clientCommandId]
+      properties:
+        macroVersion: {type: integer, minimum: 1, description: preview 응답의 macroVersion이며 apply transaction 안에서 현재 활성 version과 다시 비교합니다.}
+        commentBodyOverride: {type: [string, 'null'], minLength: 1, maxLength: 20000, description: COMMENT action이 있으면 preview에서 검토·수정한 plain-text draft 전체를 반드시 전달하며 저장된 visibility는 바꾸지 않습니다.}
+        clientCommandId: {type: string, format: uuid, description: 동일 actor의 exact payload 재시도를 원래 TicketAudit 결과에 연결하며 다른 payload에는 재사용할 수 없습니다.}
+      example: {macroVersion: 1, commentBodyOverride: 상담사가 검토한 내부 결제 메모입니다., clientCommandId: '77777777-7777-4777-8777-777777777777'}
+    MacroApplyResult:
+      type: object
+      additionalProperties: false
+      required: [ticketNumber, version, auditId, replayed, warnings]
+      properties:
+        ticketNumber: {type: integer, format: int64, minimum: 1, description: macro command가 적용된 ticket 번호입니다.}
+        version: {type: integer, format: int64, minimum: 0, description: 모든 macro action을 원자적으로 반영한 뒤의 ticket version입니다.}
+        auditId: {type: string, format: uuid, description: '`MACRO_APPLIED`와 ordered action events를 보유한 단일 TicketAudit ID입니다.'}
+        replayed: {type: boolean, description: 새 mutation 없이 exact clientCommandId의 기존 결과를 반환했는지 나타냅니다.}
+        warnings: {type: array, description: 열린 child가 있는 solve처럼 commit은 허용하지만 상담사 확인이 필요한 경고입니다., items: {$ref: '#/components/schemas/CommandWarning'}}
     MacroAction:
       oneOf:
         - {$ref: '#/components/schemas/MacroStatusAction'}

@@ -169,6 +169,8 @@ interface MacroDefinitionAdministration {
 
     fun getActive(macroId: UUID, actor: MacroDefinitionActor): MacroDefinitionView
 
+    fun getVersion(macroId: UUID, macroVersion: Int, actor: MacroDefinitionActor): MacroDefinitionView
+
     fun listManaged(scope: MacroScope, actor: MacroDefinitionActor): List<MacroDefinitionView>
 
     fun create(scope: MacroScope, draft: MacroDefinitionDraft, actor: MacroDefinitionActor): MacroDefinitionView
