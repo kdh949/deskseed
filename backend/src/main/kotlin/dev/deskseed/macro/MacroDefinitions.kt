@@ -121,6 +121,9 @@ data class MacroDefinitionDraft(
         require(actions.filter { it.type in singular }.groupingBy(MacroActionDefinition::type).eachCount().values.all { it == 1 }) {
             "Macro contains duplicate singular actions"
         }
+        require(actions.map(MacroActionDefinition::type).toSet().let {
+            MacroActionType.STATUS !in it || MacroActionType.CUSTOM_STATUS !in it
+        }) { "Macro cannot set both status and custom status" }
         val addedTags = actions.filterIsInstance<MacroAddTagAction>().map(MacroAddTagAction::tagId)
         val removedTags = actions.filterIsInstance<MacroRemoveTagAction>().map(MacroRemoveTagAction::tagId)
         require(addedTags.distinct().size == addedTags.size && removedTags.distinct().size == removedTags.size) {
@@ -163,6 +166,8 @@ data class MacroDefinitionView(
 
 interface MacroDefinitionAdministration {
     fun listAccessible(actor: MacroDefinitionActor): List<MacroDefinitionView>
+
+    fun getActive(macroId: UUID, actor: MacroDefinitionActor): MacroDefinitionView
 
     fun listManaged(scope: MacroScope, actor: MacroDefinitionActor): List<MacroDefinitionView>
 

@@ -115,6 +115,9 @@ data class TicketConfigurationMutationResult(
 
 /** Public named interface that keeps ticketing independent of configuration persistence internals. */
 interface TicketConfigurationMutationHandler {
+    /** Validates the same current configuration boundary without writing rows. */
+    fun validate(request: TicketConfigurationMutationRequest)
+
     fun apply(request: TicketConfigurationMutationRequest): TicketConfigurationMutationResult
 }
 

@@ -111,6 +111,22 @@ class MacroDefinitionMigrationTest {
         }
     }
 
+    @Test
+    fun `V72 adds macro preview access audit provenance`() {
+        migrateTo("72")
+
+        connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                assertThat(queryString(statement, "select to_regclass('public.macro_preview_audit_details')"))
+                    .isEqualTo("macro_preview_audit_details")
+                assertThat(queryString(
+                    statement,
+                    "select pg_get_constraintdef(oid) from pg_constraint where conname = 'access_audit_action_valid'",
+                )).contains("MACRO_PREVIEWED")
+            }
+        }
+    }
+
     private fun migrateTo(version: String) {
         Flyway.configure()
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)

@@ -32,6 +32,38 @@ internal class JdbcTicketConfigurationMutationHandler(
     private val objectMapper: ObjectMapper,
     private val conditions: TicketFormConditionEngine,
 ) : TicketConfigurationMutationHandler {
+    override fun validate(request: TicketConfigurationMutationRequest) {
+        val currentCustomStatus = jdbc.query(
+            "select custom_status_id from tickets where id = ?",
+            { result, _ -> result.getObject(1, UUID::class.java) },
+            request.ticketId,
+        ).singleOrNull()
+        val form = resolveAgentForm(request)
+        val requestedFields = request.fieldValues.mapValues { (machineKey, _) ->
+            fieldByMachineKey(machineKey) ?: invalid("FIELD_NOT_FOUND", "The configured field does not exist")
+        }
+        val projectionFields = form?.definition?.placements
+            ?.mapNotNull { placement -> fieldById(placement.fieldId) }
+            ?.associateBy { it.id }
+            ?: emptyMap()
+        val projection = form?.let { projectAgentFields(it, request, projectionFields, currentCustomStatus) }
+            ?: emptyMap()
+        if (request.fieldValues.isNotEmpty() && form == null) {
+            invalid("AGENT_FORM_UNAVAILABLE", "Agent field updates require one published default agent form")
+        }
+        requestedFields.toSortedMap().forEach { (machineKey, field) ->
+            val policy = projection[field.id]
+                ?: invalid("FIELD_NOT_IN_AGENT_FORM", "The field is not projected by the selected agent form")
+            if (!field.active || !field.agentVisible || !field.agentEditable || !policy.visible || !policy.editable) {
+                invalid("FIELD_NOT_EDITABLE", "The field is not editable in the current server projection")
+            }
+            validateValue(field, request.fieldValues.getValue(machineKey))
+        }
+        requireTagDefinitions(request.addTagIds, activeOnly = true)
+        requireTagDefinitions(request.removeTagIds, activeOnly = false)
+        request.customStatusId?.let { statusId -> validateStatusFormCompatibility(activeStatus(statusId), form) }
+    }
+
     override fun apply(request: TicketConfigurationMutationRequest): TicketConfigurationMutationResult {
         val currentCustomStatus = jdbc.query(
             "select custom_status_id from tickets where id = ?",

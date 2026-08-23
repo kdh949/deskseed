@@ -142,6 +142,23 @@ paths:
         '403': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
         '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/preview:
+    post:
+      summary: 활성 macro의 티켓 변경 preview
+      description: 현재 ticket staff projection과 configuration을 기준으로 활성 macro version을 평가해 변경 계획과 렌더링된 댓글 draft를 반환합니다. Ticket row, comment, version, TicketAudit은 변경하지 않으며 `TICKET_VIEWED` 대신 required `MACRO_PREVIEWED` access audit을 원자적으로 저장합니다.
+      operationId: previewTicketMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/TicketConfigurationTicketNumber'}, {$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/AgentInteractionHeader'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      responses:
+        '200': {description: 정확한 macro/ticket version에 고정된 side-effect-free preview입니다., content: {application/json: {schema: {$ref: '#/components/schemas/MacroPreview'}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '503': {$ref: '#/components/responses/Problem'}
   /api/v1/admin/shared-macros/{macroId}/versions:
     post:
       summary: SHARED macro 새 version 생성
@@ -222,15 +239,21 @@ components:
   schemas:
     MacroDefinitionRequest:
       type: object
+      description: 소유 범위 안의 불변 macro version에 저장할 이름과 순서 보존 typed action 정의입니다.
+      x-deskseed-documentation-review: MANUAL
       additionalProperties: false
       required: [name, actions]
+      example: {name: 긴급 문의 안내, actions: [{type: PRIORITY, priority: URGENT}, {type: COMMENT, visibility: PUBLIC, template: '안녕하세요 {{requester.name}}님. 문의를 확인하고 있습니다.'}]}
       properties:
         name: {type: string, minLength: 1, maxLength: 120, description: 소유 범위 안에서 중복되지 않는 상담사용 macro 이름입니다.}
         actions: {type: array, minItems: 1, maxItems: 50, description: preview와 apply에서 같은 순서로 해석하는 typed action 목록입니다., items: {$ref: '#/components/schemas/MacroAction'}}
     MacroActivationRequest:
       type: object
+      description: macro aggregate가 이미 보유한 불변 version을 활성 포인터로 선택하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
       additionalProperties: false
       required: [version]
+      example: {version: 1}
       properties: {version: {type: integer, minimum: 1, description: 이미 저장된 불변 macro version입니다.}}
     MacroDefinition:
       type: object
@@ -247,6 +270,32 @@ components:
         actions: {type: array, minItems: 1, maxItems: 50, description: 응답 version에 고정된 순서 보존 typed action입니다., items: {$ref: '#/components/schemas/MacroAction'}}
         createdAt: {type: string, format: date-time, description: macro aggregate 생성 시각입니다.}
         updatedAt: {type: string, format: date-time, description: latest version 또는 활성 포인터 변경 시각입니다.}
+    MacroPreview:
+      type: object
+      additionalProperties: false
+      required: [macroId, macroVersion, ticketNumber, ticketVersion, changes]
+      properties:
+        macroId: {type: string, format: uuid, description: preview에 사용한 활성 macro ID입니다.}
+        macroVersion: {type: integer, minimum: 1, description: preview에 사용한 불변 활성 macro version입니다.}
+        ticketNumber: {type: integer, format: int64, minimum: 1, description: 대상 ticket 번호입니다.}
+        ticketVersion: {type: integer, format: int64, minimum: 0, description: apply의 If-Match로 다시 제출해야 하는 current ticket version입니다.}
+        changes: {type: array, maxItems: 50, description: 저장된 action 순서에서 댓글을 제외한 before/after 변경 계획입니다., items: {$ref: '#/components/schemas/MacroPreviewChange'}}
+        comment: {oneOf: [{$ref: '#/components/schemas/MacroPreviewComment'}, {type: 'null'}], description: COMMENT action이 없으면 null인 렌더링된 plain-text draft입니다.}
+    MacroPreviewChange:
+      type: object
+      additionalProperties: false
+      required: [field]
+      properties:
+        field: {type: string, maxLength: 200, description: 'status, priority, stable resource ID 또는 field machine key를 포함한 typed 변경 경로입니다.'}
+        before: {type: [string, 'null'], maxLength: 10000, description: 현재 ticket의 staff projection에서 읽어 변경 비교에 사용하는 기준입니다.}
+        after: {type: [string, 'null'], maxLength: 10000, description: 일반 ticket command에 다시 제출될 목표 값의 안전한 문자열 projection입니다.}
+    MacroPreviewComment:
+      type: object
+      additionalProperties: false
+      required: [visibility, body]
+      properties:
+        visibility: {type: string, enum: [PUBLIC, INTERNAL], description: 렌더링된 draft의 서버 검증 가시성입니다.}
+        body: {type: string, minLength: 1, maxLength: 10000, description: allowlisted ticket/requester/agent placeholder를 현재 projection으로 치환한 plain text입니다.}
     MacroAction:
       oneOf:
         - {$ref: '#/components/schemas/MacroStatusAction'}

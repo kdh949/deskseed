@@ -64,6 +64,14 @@ internal class JdbcMacroDefinitionAdministration(
     ).map { current -> view(current, checkNotNull(current.activeVersion)) }
 
     @Transactional(readOnly = true)
+    override fun getActive(macroId: UUID, actor: MacroDefinitionActor): MacroDefinitionView {
+        val current = stateById(macroId)
+        if (current.scope == MacroScope.PERSONAL && current.ownerStaffId != actor.staffId) throw MacroNotFoundException()
+        val activeVersion = current.activeVersion ?: throw MacroNotFoundException()
+        return view(current, activeVersion)
+    }
+
+    @Transactional(readOnly = true)
     override fun listManaged(scope: MacroScope, actor: MacroDefinitionActor): List<MacroDefinitionView> {
         requireScopeAccess(scope, actor)
         val parameters = if (scope == MacroScope.PERSONAL) arrayOf<Any>(scope.name, actor.staffId) else arrayOf(scope.name)

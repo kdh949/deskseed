@@ -30,8 +30,25 @@ class MacroDefinitionIntegrationTest {
 
     @BeforeEach
     fun clearMacros() {
-        jdbc.execute("truncate table macro_activations, macro_actions, macro_versions, macro_definitions cascade")
-        jdbc.execute("truncate table admin_security_audit_events")
+        jdbc.execute(
+            """
+            truncate table
+                access_audit_events,
+                admin_security_audit_events,
+                ticket_audit_events,
+                ticket_audits,
+                ticket_comments,
+                macro_activations,
+                macro_actions,
+                macro_versions,
+                macro_definitions,
+                tickets,
+                customers,
+                staff_login_throttles,
+                staff_accounts
+            restart identity cascade
+            """.trimIndent(),
+        )
     }
 
     @Test
@@ -129,6 +146,94 @@ class MacroDefinitionIntegrationTest {
         )).isZero()
     }
 
+    @Test
+    fun `preview renders allowlisted placeholders without changing the ticket and is access audited`() {
+        val agent = browser("AGENT")
+        val ticketJson = mockMvc.perform(
+            post("/api/v1/agent/tickets")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "requester":{"name":"미리보기 고객","email":"macro-preview@example.com"},
+                      "subject":"환불 요청",
+                      "firstComment":{"visibility":"PUBLIC","body":"환불 상태를 알려주세요."},
+                      "priority":"NORMAL"
+                    }
+                    """.trimIndent(),
+                ),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val ticketNumber = longField(ticketJson, "ticketNumber")
+        val createdMacro = mockMvc.perform(
+            post("/api/v1/agent/personal-macros")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content(macroJson("환불 긴급 응답", "{{requester.name}}님, {{ticket.number}}번 {{ticket.subject}} 문의를 확인했습니다.")),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val macroId = UUID.fromString(stringField(createdMacro, "id"))
+        mockMvc.perform(
+            put("/api/v1/agent/personal-macros/{macroId}/activation", macroId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isOk)
+        val interactionId = UUID.randomUUID()
+
+        mockMvc.perform(
+            post("/api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/preview", ticketNumber, macroId)
+                .session(agent.session).csrf(agent).header("X-Interaction-Id", interactionId),
+        )
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.macroVersion").value(1))
+            .andExpect(jsonPath("$.ticketVersion").value(0))
+            .andExpect(jsonPath("$.changes[0].field").value("priority"))
+            .andExpect(jsonPath("$.changes[0].before").value("NORMAL"))
+            .andExpect(jsonPath("$.changes[0].after").value("URGENT"))
+            .andExpect(jsonPath("$.comment.visibility").value("PUBLIC"))
+            .andExpect(jsonPath("$.comment.body").value("미리보기 고객님, ${ticketNumber}번 환불 요청 문의를 확인했습니다."))
+
+        assertThat(jdbc.queryForMap("select priority, version from tickets where ticket_number = ?", ticketNumber))
+            .containsEntry("priority", "NORMAL")
+            .containsEntry("version", 0L)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from ticket_comments where ticket_id = (select id from tickets where ticket_number = ?)",
+            Long::class.java,
+            ticketNumber,
+        )).isEqualTo(1)
+        assertThat(jdbc.queryForList(
+            "select action from access_audit_events where interaction_id = ? order by occurred_at, id",
+            String::class.java,
+            interactionId,
+        )).containsExactly("MACRO_PREVIEWED")
+
+        jdbc.execute(
+            """
+            create or replace function fail_macro_preview_audit_insert()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if new.action = 'MACRO_PREVIEWED' then raise exception 'injected macro preview audit failure'; end if;
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbc.execute(
+            "create trigger fail_macro_preview_audit_insert before insert on access_audit_events for each row execute function fail_macro_preview_audit_insert()",
+        )
+        try {
+            mockMvc.perform(
+                post("/api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/preview", ticketNumber, macroId)
+                    .session(agent.session).csrf(agent).header("X-Interaction-Id", UUID.randomUUID()),
+            ).andExpect(status().isServiceUnavailable)
+        } finally {
+            jdbc.execute("drop trigger if exists fail_macro_preview_audit_insert on access_audit_events")
+            jdbc.execute("drop function if exists fail_macro_preview_audit_insert()")
+        }
+        assertThat(jdbc.queryForObject(
+            "select count(*) from access_audit_events where action = 'MACRO_PREVIEWED'",
+            Long::class.java,
+        )).isEqualTo(1)
+    }
+
     private fun macroJson(name: String, template: String) =
         """{"name":"$name","actions":[{"type":"PRIORITY","priority":"URGENT"},{"type":"COMMENT","visibility":"PUBLIC","template":"$template"}]}"""
 
@@ -163,6 +268,9 @@ class MacroDefinitionIntegrationTest {
 
     private fun stringField(json: String, field: String): String =
         Regex("\\\"$field\\\":\\\"([^\\\"]+)\\\"").find(json)!!.groupValues[1]
+
+    private fun longField(json: String, field: String): Long =
+        Regex("\\\"$field\\\":(\\d+)").find(json)!!.groupValues[1].toLong()
 
     private data class Browser(val session: MockHttpSession, val csrfToken: String)
 }

@@ -31,6 +31,7 @@ import java.net.URI
         AgentAttachmentController::class,
         AgentTicketConfigurationController::class,
         AgentKnowledgeController::class,
+        AgentMacroPreviewController::class,
     ],
 )
 internal class AgentTicketReadExceptionHandler {
