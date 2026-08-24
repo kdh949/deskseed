@@ -1,12 +1,11 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.ticketing.StaffTicketReadStore
+import dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.dao.DataAccessException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -21,16 +20,12 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import org.hamcrest.Matchers.containsString
 import java.util.UUID
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
+@DeskseedSpringIntegrationTest
 @AutoConfigureMockMvc
-@Testcontainers
+@dev.deskseed.testsupport.category.IntegrationTest
 class TransferChildTicketIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -39,28 +34,14 @@ class TransferChildTicketIntegrationTest {
     private lateinit var jdbcTemplate: JdbcTemplate
 
     @Autowired
+    private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
+
+    @Autowired
     private lateinit var ticketReadStore: StaffTicketReadStore
 
     @BeforeEach
     fun clearState() {
-        jdbcTemplate.execute(
-            """
-            truncate table
-                access_audit_events,
-                admin_security_audit_events,
-                ticket_audit_events,
-                ticket_audits,
-                ticket_comments,
-                request_access_tokens,
-                tickets,
-                customers,
-                group_memberships,
-                support_groups,
-                staff_login_throttles,
-                staff_accounts
-            restart identity cascade
-            """.trimIndent(),
-        )
+        databaseCleaner.resetMutableStaffTicketState()
     }
 
     @Test
@@ -697,10 +678,5 @@ class TransferChildTicketIntegrationTest {
 
     companion object {
         private const val PASSWORD = "Agent password 42!"
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

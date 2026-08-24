@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class IntegrationClientMigrationTest {
     @Test
     fun `migration creates constrained credential storage without a raw secret column`() {

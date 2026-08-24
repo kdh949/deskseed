@@ -53,6 +53,9 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | execute saved view / preview | D | D | server ticket-read C | A | D | D |
 | manage PERSONAL saved view | D | D | owner only C | owner only C | D | D |
 | manage SHARED saved view | D | D | D | explicit capability C | D | D |
+| manage PERSONAL macro | D | D | owner only C | owner only C | D | D |
+| manage SHARED macro | D | D | D | explicit capability C | D | D |
+| preview/apply active macro | D | D | ticket read/write policy C | ticket read/write policy C | D | D |
 | upload/link/download PUBLIC attachment | ticket scoped C | own ticket C | ticket policy C | A | D | D |
 | download INTERNAL attachment | D | D | staff ticket policy C | A | D | D |
 | manage staff/groups | D | D | D | A | D | D |
@@ -177,6 +180,18 @@ saved-view:shared:manage
 update, delete and reorder require an active `STAFF_ADMIN` plus the explicit current
 capability; a SYSTEM definition is immutable to every interactive actor. View execution
 uses the existing server-side ticket read policy, not this management capability.
+
+## 9.2 Macro management capability
+
+```text
+macro:shared:manage
+```
+
+`PERSONAL` macro definition은 owner만 version 생성·활성화·비활성화할 수 있다. `SHARED`
+definition lifecycle은 active `STAFF_ADMIN`과 현재 `macro:shared:manage` capability를 모두
+요구한다. 활성 macro 목록은 SHARED와 현재 actor 소유 PERSONAL만 포함한다. Macro preview와
+apply는 관리 capability를 티켓 권한으로 바꾸지 않으며, 대상 티켓의 일반 read/write policy,
+assignment invariant, comment visibility와 configuration validation을 다시 적용한다.
 
 ## 10. Integration scopes
 

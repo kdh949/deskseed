@@ -10,22 +10,16 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import java.sql.Timestamp
 import java.time.Instant
 import java.security.MessageDigest
 import java.util.UUID
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false", "deskseed.webhook.materializer-delay-ms=3600000"])
-@Testcontainers
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
+@dev.deskseed.testsupport.category.SlowTest
 class WebhookOutboxMaterializerIntegrationTest {
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var eventPublication: EventPublicationPort
@@ -134,8 +128,5 @@ class WebhookOutboxMaterializerIntegrationTest {
 
     companion object {
         val STAFF_ID: UUID = UUID.fromString("240ed447-289a-4e4d-a8b0-25528b1d15d1")
-
-        @Container @ServiceConnection @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

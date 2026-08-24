@@ -17,6 +17,7 @@ import java.sql.DriverManager
  * edits an applied Flyway history row.
  */
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class P1AdditiveMigrationTest {
     @BeforeEach
     fun resetSchema() {

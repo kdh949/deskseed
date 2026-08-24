@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.DependsOn
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -374,15 +373,6 @@ internal class MailDeliveryScheduler(private val worker: MailDeliveryWorker) {
         worker.runDueBatch()
     }
 }
-
-@Configuration(proxyBeanMethods = false)
-@EnableScheduling
-@ConditionalOnProperty(
-    prefix = "deskseed.mail",
-    name = ["delivery-enabled", "scheduling-enabled"],
-    havingValue = "true",
-)
-internal class OutboundMailSchedulingConfiguration
 
 @Component
 internal class OutboundMailBacklogMetrics(

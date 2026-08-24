@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class TicketAuditCommandContextMigrationTest {
     @Test
     fun `command context migration preserves append-only legacy audits`() {

@@ -5,6 +5,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
 
+@dev.deskseed.testsupport.category.FastTest
 class StaffSlaDisplayStateTest {
     @Test
     fun `active SLA classification uses inclusive now and risk boundaries`() {

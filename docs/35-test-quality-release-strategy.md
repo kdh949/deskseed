@@ -182,3 +182,8 @@ Stable 전에:
 - performance baseline comparison.
 - no real customer data in demo.
 - known issues documented.
+
+PR feedback 단계의 변경 범위 선택, fail-closed fallback, cache와 최종 required check 운영은
+`docs/evidence/release/operations/change-aware-ci.md`를 따른다. 이 선택은 `main`의 전체 release gate를 줄이지 않는다.
+Backend의 단일 주 category, 전체 suite 호환성, Spring context/PostgreSQL lifecycle 측정은
+`docs/evidence/release/operations/backend-test-categories.md`를 따른다.

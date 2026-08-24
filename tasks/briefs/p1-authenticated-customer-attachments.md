@@ -264,8 +264,7 @@ Backend가 현재 synchronous scan 후 CLEAN 또는 problem만 반환하더라�
 ```bash
 cd backend && ./gradlew test --tests '*AttachmentPipelineIntegrationTest' --tests '*CustomerRequestPortalIntegrationTest' --tests '*PublicRequestIntegrationTest'
 cd backend && ./gradlew test
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_documentation_quality.py
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_documentation.py --write
+make docs-check
 cd frontend && npm run typecheck
 cd frontend && npm run lint
 cd frontend && npm run format:check

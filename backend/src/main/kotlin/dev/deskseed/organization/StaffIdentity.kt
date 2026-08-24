@@ -29,6 +29,7 @@ object StaffAuthorityCatalog {
     const val AUDIT_EXPORT = "audit:export"
     const val AUDIT_PROJECTION_REBUILD = "audit:projection:rebuild"
     const val SAVED_VIEW_SHARED_MANAGE = "saved-view:shared:manage"
+    const val MACRO_SHARED_MANAGE = "macro:shared:manage"
 
     fun forRole(role: StaffRole): Set<String> = when (role) {
         StaffRole.ADMIN -> setOf(
@@ -38,6 +39,7 @@ object StaffAuthorityCatalog {
             EXTERNAL_SYSTEM_MANAGE,
             WEBHOOK_PRIVATE_TARGET_APPROVE,
             SAVED_VIEW_SHARED_MANAGE,
+            MACRO_SHARED_MANAGE,
         )
         StaffRole.AGENT -> setOf(AGENT_WORKSPACE)
         StaffRole.SECURITY_AUDITOR -> setOf(

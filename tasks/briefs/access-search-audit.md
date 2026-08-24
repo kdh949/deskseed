@@ -44,7 +44,7 @@
 - Performance baseline: result size is bounded to 100; comment count does not introduce N+1 and the repository executes exactly two SQL statements (count + rows). One-million-row p50/p95 and audit-on/off throughput delta are not claimed in this slice.
 - Frontend: 67 Vitest tests, typecheck, ESLint, formatting, production build; search/client/workspace contract tests.
 - Integrated: isolated Compose backend+frontend+PostgreSQL Playwright suite, including direct DB assertion that internal refetch keeps one view/open and browser refresh produces a new interaction (4/4 scenarios passed).
-- Contract/docs: `python3 scripts/validate_documentation.py` and OpenAPI/UI route catalogs.
+- Contract/docs: `make docs-check` and OpenAPI/UI route catalogs.
 - Supply chain: `npm audit --audit-level=high` still reports the pre-existing two high and one moderate advisory in `react-router` and the `styled-components`→`postcss` chain. This slice adds no dependency; the app does not use SSR/RSC or untrusted CSS processing and new links are server-validated ticket numbers/UUIDs, but dependency upgrade or explicit owner risk acceptance remains a release gate.
 
 ## Explicit non-goals and owner trade-off

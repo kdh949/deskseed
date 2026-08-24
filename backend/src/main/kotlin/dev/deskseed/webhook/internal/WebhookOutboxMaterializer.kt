@@ -8,9 +8,7 @@ import dev.deskseed.webhook.WebhookEventMaterializer
 import dev.deskseed.webhook.WebhookEventSerializer
 import dev.deskseed.webhook.WebhookEventCatalog
 import dev.deskseed.webhook.WebhookPayloadPolicy
-import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -119,7 +117,3 @@ internal class WebhookEventOutboxWorker(
         repeat(100) { if (!runOnce()) return }
     }
 }
-
-@Configuration(proxyBeanMethods = false)
-@EnableScheduling
-internal class WebhookSchedulingConfiguration

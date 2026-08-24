@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class DomainEventEnvelopeTest {
     @Test
     fun `rejects control characters and oversized public-safe event payload values`() {

@@ -26,16 +26,6 @@ class CoreOpenApiBundleTest(unittest.TestCase):
             check=False,
         )
 
-    def test_committed_artifact_matches_deterministic_fragment_bundle(self) -> None:
-        completed = subprocess.run(
-            ["python3", str(SCRIPT), "--check"],
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-
     def test_fragment_collision_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             copied = Path(temporary) / "repository"

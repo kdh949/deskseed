@@ -14,6 +14,7 @@ import dev.deskseed.integration.ExternalReferenceStore
 import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
+import dev.deskseed.ticketing.ApplyMacroTicketCommand
 import dev.deskseed.ticketing.CommentAuthorType
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
@@ -28,13 +29,17 @@ import dev.deskseed.ticketing.TicketCommandInvalidException
 import dev.deskseed.ticketing.TicketCommandIdReusedException
 import dev.deskseed.ticketing.TicketCommandResult
 import dev.deskseed.ticketing.TicketCommandWarning
+import dev.deskseed.ticketing.TicketConfigurationMutationHandler
+import dev.deskseed.ticketing.TicketConfigurationMutationRequest
 import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketFieldConflictException
 import dev.deskseed.ticketing.TicketExternalReferenceCommandResult
 import dev.deskseed.ticketing.TicketKind
+import dev.deskseed.ticketing.TicketMacroActivationGuard
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.PublicAgentReplyRecorded
 import dev.deskseed.ticketing.TicketRelationInvalidException
+import dev.deskseed.ticketing.TicketCollaborationUpdated
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.TicketSlaLifecycleChanged
 import dev.deskseed.ticketing.TicketSubmitted
@@ -44,6 +49,7 @@ import dev.deskseed.ticketing.TicketVersionPreconditionFailedException
 import dev.deskseed.ticketing.TicketWriteAuthorizationPolicy
 import dev.deskseed.ticketing.TicketWriteForbiddenException
 import dev.deskseed.ticketing.UpdateAgentTicketCommand
+import dev.deskseed.ticketing.UpdateTicketConfigurationCommand
 import dev.deskseed.ticketing.TransferTicketCommand
 import dev.deskseed.ticketing.internal.domain.ParentChildRelationRules
 import dev.deskseed.ticketing.internal.domain.Ticket
@@ -71,6 +77,14 @@ internal class JpaAgentTicketCommandService(
 
     override fun update(command: UpdateAgentTicketCommand): TicketCommandResult = executeRetriable {
         transaction.update(command)
+    }
+
+    override fun updateConfiguration(command: UpdateTicketConfigurationCommand): TicketCommandResult = executeRetriable {
+        transaction.updateConfiguration(command)
+    }
+
+    override fun applyMacro(command: ApplyMacroTicketCommand): TicketCommandResult = executeRetriable {
+        transaction.applyMacro(command)
     }
 
     override fun transfer(command: TransferTicketCommand): TicketCommandResult = executeRetriable {
@@ -142,6 +156,8 @@ internal class AgentTicketCommandTransaction(
     private val customerDirectory: CustomerDirectory,
     private val objectMapper: ObjectMapper,
     private val ticketIntegrationEvents: TicketIntegrationEventPublisher,
+    private val configurationMutationHandler: TicketConfigurationMutationHandler,
+    private val macroActivationGuard: TicketMacroActivationGuard,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
 ) {
@@ -432,15 +448,25 @@ internal class AgentTicketCommandTransaction(
         )
         if (hasMutation) {
             val actor = ActorRef(ActorType.STAFF, command.actor.id)
+            val changedFields = command.changedFields.map(TicketField::externalName).toSet() +
+                if (createdComment != null) setOf("comments") else emptySet()
             ticketIntegrationEvents.ticketUpdated(
                 ticketId = ticket.id,
                 ticketNumber = ticket.ticketNumber,
                 kind = ticket.kind,
-                changedFields = command.changedFields.map(TicketField::externalName).toSet() +
-                    if (createdComment != null) setOf("comments") else emptySet(),
+                changedFields = changedFields,
                 actor = actor,
                 context = command.context,
                 occurredAt = now,
+            )
+            eventPublisher.publishEvent(
+                TicketCollaborationUpdated(
+                    ticketNumber = ticket.ticketNumber,
+                    ticketVersion = ticket.version,
+                    changedFields = changedFields,
+                    actorStaffId = command.actor.id,
+                    occurredAt = now,
+                ),
             )
             createdComment?.let { comment ->
                 ticketIntegrationEvents.commentCreated(
@@ -488,6 +514,403 @@ internal class AgentTicketCommandTransaction(
                 occurredAt = now,
             ),
         )
+        return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId, warnings)
+    }
+
+    @Transactional
+    fun updateConfiguration(command: UpdateTicketConfigurationCommand): TicketCommandResult {
+        validateStaffContext(command.actor.id, command.context.source)
+        validateConfigurationCommand(command)
+        val requestDescriptor = configurationRequestDescriptor(command)
+        organizationConsistencyGuard.acquire()
+        commandReplayStore.lock(command.actor.id, command.context.commandId)
+        commandReplayStore.find(command.actor.id, command.context.commandId)?.let { original ->
+            if (
+                original.result.ticketNumber != command.ticketNumber ||
+                original.operation != UPDATE_TICKET_CONFIGURATION_OPERATION ||
+                original.requestDescriptor != requestDescriptor
+            ) {
+                throw TicketCommandIdReusedException()
+            }
+            return original.result.copy(replayed = true)
+        }
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
+            throw TicketWriteForbiddenException()
+        }
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets are immutable")
+        }
+        requireExactVersion(command.expectedVersion, ticket.version)
+
+        val now = Instant.now(clock)
+        val oldStatus = ticket.status
+        val mutation = configurationMutationHandler.apply(
+            TicketConfigurationMutationRequest(
+                ticketId = ticket.id,
+                ticketNumber = ticket.ticketNumber,
+                ticketKind = ticket.kind,
+                currentStatus = oldStatus,
+                formVersion = command.formVersion,
+                fieldValues = command.fieldValues,
+                addTagIds = command.addTagIds,
+                removeTagIds = command.removeTagIds,
+                customStatusId = command.customStatusId,
+                occurredAt = now,
+            ),
+        )
+        validateStatusChange(oldStatus, mutation.status, mutation.status != oldStatus)
+
+        val events = mutation.auditChanges.map { change ->
+            NewAuditEvent(
+                type = change.type,
+                field = TicketField.CONFIGURATION,
+                before = change.before,
+                after = change.after,
+                metadata = change.metadata,
+                occurredAt = now,
+            )
+        }.toMutableList()
+        val hasMutation = events.isNotEmpty() || mutation.status != oldStatus
+        if (mutation.status != oldStatus) {
+            events += fieldAuditEvent("STATUS_CHANGED", TicketField.STATUS, oldStatus.name, mutation.status.name)
+        }
+        if (hasMutation) {
+            ticket.status = mutation.status
+            ticket.updatedAt = now
+            ticket.solvedAt = when {
+                oldStatus != TicketStatus.SOLVED && mutation.status == TicketStatus.SOLVED -> now
+                oldStatus == TicketStatus.SOLVED && mutation.status == TicketStatus.OPEN -> null
+                else -> ticket.solvedAt
+            }
+            ticketRepository.saveAndFlush(ticket)
+        }
+        if (events.isEmpty()) {
+            events += NewAuditEvent(type = "TICKET_CONFIGURATION_COMMAND_RECEIVED", field = TicketField.CONFIGURATION)
+        }
+        val warnings = if (oldStatus != TicketStatus.SOLVED && mutation.status == TicketStatus.SOLVED) {
+            relationRepository.findOpenChildTicketNumbers(ticket.id).takeIf { it.isNotEmpty() }?.let {
+                listOf(
+                    TicketCommandWarning(
+                        code = "OPEN_CHILD_TICKETS",
+                        message = "${it.size}개의 열린 child ticket이 있지만 parent 해결은 저장되었습니다.",
+                        relatedTicketNumbers = it,
+                    ),
+                )
+            } ?: emptyList()
+        } else {
+            emptyList()
+        }
+        val eventsWithResult = events.mapIndexed { index, event ->
+            if (index != 0) event else event.copy(
+                metadata = event.metadata + mapOf(
+                    "commandOperation" to UPDATE_TICKET_CONFIGURATION_OPERATION,
+                    "commandRequestDescriptor" to requestDescriptor,
+                    "commandWarnings" to warnings,
+                ),
+            )
+        }
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            resultVersion = ticket.version,
+            actorId = command.actor.id,
+            context = command.context.toAuditContext(),
+            now = now,
+            events = eventsWithResult,
+        )
+        if (hasMutation) {
+            val actor = ActorRef(ActorType.STAFF, command.actor.id)
+            ticketIntegrationEvents.ticketUpdated(
+                ticketId = ticket.id,
+                ticketNumber = ticket.ticketNumber,
+                kind = ticket.kind,
+                changedFields = setOf(TicketField.CONFIGURATION.externalName) +
+                    if (oldStatus != mutation.status) setOf(TicketField.STATUS.externalName) else emptySet(),
+                actor = actor,
+                context = command.context,
+                occurredAt = now,
+            )
+            if (oldStatus != mutation.status) {
+                ticketIntegrationEvents.statusChanged(
+                    ticketId = ticket.id,
+                    ticketNumber = ticket.ticketNumber,
+                    kind = ticket.kind,
+                    previousStatus = oldStatus,
+                    currentStatus = mutation.status,
+                    actor = actor,
+                    context = command.context,
+                    occurredAt = now,
+                )
+                eventPublisher.publishEvent(
+                    TicketSlaLifecycleChanged(
+                        ticketId = ticket.id,
+                        previousStatus = oldStatus,
+                        currentStatus = mutation.status,
+                        humanStaffPublicReply = false,
+                        ticketAuditId = auditId,
+                        actorId = command.actor.id,
+                        source = command.context.source.name,
+                        requestId = command.context.requestId,
+                        correlationId = command.context.correlationId,
+                        occurredAt = now,
+                    ),
+                )
+            }
+        }
+        return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId, warnings)
+    }
+
+    @Transactional
+    fun applyMacro(command: ApplyMacroTicketCommand): TicketCommandResult {
+        validateStaffContext(command.actor.id, command.context.source)
+        if (command.expectedVersion < 0 || command.macroVersion < 1) {
+            throw TicketCommandInvalidException("Macro and ticket versions must be valid")
+        }
+        if (command.orderedActionTypes.isEmpty() || command.orderedActionTypes.size > 50) {
+            throw TicketCommandInvalidException("Macro actions must be bounded")
+        }
+        if (command.comment?.attachmentIds?.isNotEmpty() == true) {
+            throw TicketCommandInvalidException("Macro apply does not accept attachment handles")
+        }
+        command.comment?.let(::validateComment)
+        if (TicketField.STATUS in command.changedFields && command.customStatusId != null) {
+            throw TicketCommandInvalidException("Macro cannot set both status and custom status")
+        }
+        val configurationRequested = TicketField.CONFIGURATION in command.changedFields
+        val hasConfigurationInput = command.fieldValues.isNotEmpty() || command.addTagIds.isNotEmpty() ||
+            command.removeTagIds.isNotEmpty() || command.customStatusId != null
+        if (configurationRequested != hasConfigurationInput) {
+            throw TicketCommandInvalidException("Macro configuration declaration does not match its actions")
+        }
+        if ((command.addTagIds intersect command.removeTagIds).isNotEmpty()) {
+            throw TicketCommandInvalidException("Macro cannot add and remove the same tag")
+        }
+        val requestDescriptor = macroRequestDescriptor(command)
+        organizationConsistencyGuard.acquire()
+        commandReplayStore.lock(command.actor.id, command.context.commandId)
+        commandReplayStore.find(command.actor.id, command.context.commandId)?.let { original ->
+            if (
+                original.result.ticketNumber != command.ticketNumber ||
+                original.operation != APPLY_MACRO_OPERATION ||
+                original.requestDescriptor != requestDescriptor
+            ) {
+                throw TicketCommandIdReusedException()
+            }
+            return original.result.copy(replayed = true)
+        }
+        macroActivationGuard.requireActive(command.macroId, command.macroVersion, command.actor.id)
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
+            throw TicketWriteForbiddenException()
+        }
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets are immutable")
+        }
+        requireExactVersion(command.expectedVersion, ticket.version)
+        if (ticket.kind == TicketKind.INTERNAL_CHILD && command.comment?.visibility == CommentVisibility.PUBLIC) {
+            throw TicketCommandInvalidException("Internal child tickets cannot contain public comments")
+        }
+
+        val oldStatus = ticket.status
+        val oldPriority = ticket.priority
+        val oldGroupId = ticket.groupId
+        val oldAssigneeId = ticket.assigneeId
+        val requestedStatus = if (TicketField.STATUS in command.changedFields) checkNotNull(command.status) else oldStatus
+        val newPriority = if (TicketField.PRIORITY in command.changedFields) checkNotNull(command.priority) else oldPriority
+        val newGroupId = if (TicketField.GROUP_ID in command.changedFields) command.groupId else oldGroupId
+        val newAssigneeId = if (TicketField.ASSIGNEE_ID in command.changedFields) command.assigneeId else oldAssigneeId
+        validateMacroAssignmentChange(command, oldAssigneeId, newGroupId, newAssigneeId)
+        val now = Instant.now(clock)
+
+        var publicReply: PublicReply? = null
+        var createdComment: CreatedComment? = null
+        val commentEvents = mutableListOf<NewAuditEvent>()
+        command.comment?.let { draft ->
+            val commentId = UUID.randomUUID()
+            commentRepository.saveAndFlush(
+                TicketCommentEntity(
+                    id = commentId,
+                    ticketId = ticket.id,
+                    authorType = CommentAuthorType.AGENT,
+                    authorId = command.actor.id,
+                    visibility = draft.visibility,
+                    body = draft.body.trim(),
+                    createdAt = now,
+                ),
+            )
+            commentEvents += commentAuditEvent(commentId, draft, now)
+            createdComment = CreatedComment(commentId, draft.visibility)
+            if (draft.visibility == CommentVisibility.PUBLIC) publicReply = PublicReply(commentId, draft.body.trim())
+        }
+
+        val configurationMutation = if (configurationRequested) {
+            configurationMutationHandler.apply(
+                TicketConfigurationMutationRequest(
+                    ticketId = ticket.id,
+                    ticketNumber = ticket.ticketNumber,
+                    ticketKind = ticket.kind,
+                    currentStatus = requestedStatus,
+                    formVersion = command.formVersion,
+                    fieldValues = command.fieldValues,
+                    addTagIds = command.addTagIds,
+                    removeTagIds = command.removeTagIds,
+                    customStatusId = command.customStatusId,
+                    occurredAt = now,
+                ),
+            )
+        } else {
+            null
+        }
+        val newStatus = configurationMutation?.status ?: requestedStatus
+        validateStatusChange(
+            oldStatus,
+            newStatus,
+            TicketField.STATUS in command.changedFields || command.customStatusId != null,
+        )
+        val statusEvents = if (newStatus != oldStatus) {
+            listOf(fieldAuditEvent("STATUS_CHANGED", TicketField.STATUS, oldStatus.name, newStatus.name))
+        } else {
+            emptyList()
+        }
+        val priorityEvents = if (newPriority != oldPriority) {
+            listOf(fieldAuditEvent("PRIORITY_CHANGED", TicketField.PRIORITY, oldPriority.name, newPriority.name))
+        } else {
+            emptyList()
+        }
+        val groupEvents = if (newGroupId != oldGroupId) {
+            listOf(referenceAuditEvent("GROUP_CHANGED", TicketField.GROUP_ID, oldGroupId, newGroupId))
+        } else {
+            emptyList()
+        }
+        val assigneeEvents = if (newAssigneeId != oldAssigneeId) {
+            listOf(referenceAuditEvent("ASSIGNEE_CHANGED", TicketField.ASSIGNEE_ID, oldAssigneeId, newAssigneeId))
+        } else {
+            emptyList()
+        }
+        val configurationEvents = configurationMutation?.auditChanges.orEmpty().map { change ->
+            NewAuditEvent(
+                type = change.type,
+                field = TicketField.CONFIGURATION,
+                before = change.before,
+                after = change.after,
+                metadata = change.metadata,
+                occurredAt = now,
+            )
+        }
+
+        val actionEvents = mutableListOf<NewAuditEvent>()
+        var configurationEmitted = false
+        var statusEmitted = false
+        command.orderedActionTypes.forEach { actionType ->
+            when (actionType) {
+                "STATUS" -> if (!statusEmitted) { actionEvents += statusEvents; statusEmitted = true }
+                "PRIORITY" -> actionEvents += priorityEvents
+                "GROUP" -> actionEvents += groupEvents
+                "ASSIGNEE" -> actionEvents += assigneeEvents
+                "ADD_TAG", "REMOVE_TAG", "CUSTOM_FIELD", "CUSTOM_STATUS" -> {
+                    if (!configurationEmitted) { actionEvents += configurationEvents; configurationEmitted = true }
+                    if (actionType == "CUSTOM_STATUS" && !statusEmitted) {
+                        actionEvents += statusEvents
+                        statusEmitted = true
+                    }
+                }
+                "COMMENT" -> actionEvents += commentEvents
+                else -> throw TicketCommandInvalidException("Macro contains an unsupported action type")
+            }
+        }
+        if (!configurationEmitted) actionEvents += configurationEvents
+        if (!statusEmitted) actionEvents += statusEvents
+        val hasMutation = actionEvents.isNotEmpty()
+        if (hasMutation) {
+            ticket.status = newStatus
+            ticket.priority = newPriority
+            ticket.groupId = newGroupId
+            ticket.assigneeId = newAssigneeId
+            ticket.updatedAt = now
+            ticket.solvedAt = when {
+                oldStatus != TicketStatus.SOLVED && newStatus == TicketStatus.SOLVED -> now
+                oldStatus == TicketStatus.SOLVED && newStatus == TicketStatus.OPEN -> null
+                else -> ticket.solvedAt
+            }
+            ticketRepository.saveAndFlush(ticket)
+        }
+        val warnings = if (oldStatus != TicketStatus.SOLVED && newStatus == TicketStatus.SOLVED) {
+            relationRepository.findOpenChildTicketNumbers(ticket.id).takeIf { it.isNotEmpty() }?.let {
+                listOf(
+                    TicketCommandWarning(
+                        code = "OPEN_CHILD_TICKETS",
+                        message = "${it.size}개의 열린 child ticket이 있지만 parent 해결은 저장되었습니다.",
+                        relatedTicketNumbers = it,
+                    ),
+                )
+            } ?: emptyList()
+        } else {
+            emptyList()
+        }
+        val provenance = NewAuditEvent(
+            type = "MACRO_APPLIED",
+            metadata = mapOf(
+                "macroId" to command.macroId.toString(),
+                "macroVersion" to command.macroVersion,
+                "orderedActionTypes" to command.orderedActionTypes,
+                "commandOperation" to APPLY_MACRO_OPERATION,
+                "commandRequestDescriptor" to requestDescriptor,
+                "commandWarnings" to warnings,
+            ),
+            occurredAt = now,
+        )
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            resultVersion = ticket.version,
+            actorId = command.actor.id,
+            context = command.context.toAuditContext(),
+            now = now,
+            events = listOf(provenance) + actionEvents,
+        )
+        if (hasMutation) {
+            val actor = ActorRef(ActorType.STAFF, command.actor.id)
+            val changedFields = command.changedFields.map(TicketField::externalName).toSet() +
+                if (createdComment != null) setOf("comments") else emptySet()
+            ticketIntegrationEvents.ticketUpdated(
+                ticket.id, ticket.ticketNumber, ticket.kind, changedFields, actor, command.context, now,
+            )
+            eventPublisher.publishEvent(
+                TicketCollaborationUpdated(ticket.ticketNumber, ticket.version, changedFields, command.actor.id, now),
+            )
+            createdComment?.let { comment ->
+                ticketIntegrationEvents.commentCreated(
+                    ticket.id, ticket.ticketNumber, comment.id, comment.visibility, actor, command.context, now,
+                )
+            }
+            if (newStatus != oldStatus) {
+                ticketIntegrationEvents.statusChanged(
+                    ticket.id, ticket.ticketNumber, ticket.kind, oldStatus, newStatus, actor, command.context, now,
+                )
+            }
+        }
+        publicReply?.let { reply ->
+            emitPublicReply(ticket, reply.commentId, reply.body, command.actor.id, command.context, auditId)
+        }
+        if (hasMutation) {
+            eventPublisher.publishEvent(
+                TicketSlaLifecycleChanged(
+                    ticketId = ticket.id,
+                    previousStatus = oldStatus,
+                    currentStatus = newStatus,
+                    humanStaffPublicReply = command.comment?.visibility == CommentVisibility.PUBLIC,
+                    ticketAuditId = auditId,
+                    actorId = command.actor.id,
+                    source = command.context.source.name,
+                    requestId = command.context.requestId,
+                    correlationId = command.context.correlationId,
+                    occurredAt = now,
+                ),
+            )
+        }
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId, warnings)
     }
 
@@ -927,6 +1350,83 @@ internal class AgentTicketCommandTransaction(
         )
     }
 
+    private fun validateConfigurationCommand(command: UpdateTicketConfigurationCommand) {
+        if (command.expectedVersion < 0) {
+            throw TicketCommandInvalidException("expectedVersion must be non-negative")
+        }
+        if (
+            command.fieldValues.isEmpty() && command.addTagIds.isEmpty() &&
+            command.removeTagIds.isEmpty() && command.customStatusId == null
+        ) {
+            throw TicketCommandInvalidException("A configuration value, tag, or custom status is required")
+        }
+        if (command.formVersion != null && command.formVersion < 1) {
+            throw TicketCommandInvalidException("formVersion must be positive")
+        }
+        if (command.fieldValues.size > 100 || command.addTagIds.size > 50 || command.removeTagIds.size > 50) {
+            throw TicketCommandInvalidException("Ticket configuration command exceeds bounded collection sizes")
+        }
+        if ((command.addTagIds intersect command.removeTagIds).isNotEmpty()) {
+            throw TicketCommandInvalidException("A tag cannot be added and removed in one command")
+        }
+        command.fieldValues.keys.forEach { key ->
+            if (key.length > 120 || !CONFIGURATION_FIELD_KEY.matches(key)) {
+                throw TicketCommandInvalidException("Configuration field keys must be stable machine keys")
+            }
+        }
+        command.fieldValues.forEach { (key, value) ->
+            if (value.shortTextValue?.length ?: 0 > 1_000 || value.longTextValue?.length ?: 0 > 10_000) {
+                throw TicketCommandInvalidException("Configuration text value exceeds its bounded field type")
+            }
+            if (value.numberValue?.length ?: 0 > 64) {
+                throw TicketCommandInvalidException("Configuration number value is invalid")
+            }
+            if (key.isBlank()) throw TicketCommandInvalidException("Configuration field key is invalid")
+        }
+    }
+
+    private fun configurationRequestDescriptor(command: UpdateTicketConfigurationCommand): String = objectMapper.writeValueAsString(
+        linkedMapOf(
+            "operation" to UPDATE_TICKET_CONFIGURATION_OPERATION,
+            "ticketNumber" to command.ticketNumber,
+            "expectedVersion" to command.expectedVersion,
+            "formVersion" to command.formVersion,
+            // Never copy potentially sensitive typed values into command replay metadata.
+            "fieldValueHashes" to command.fieldValues.toSortedMap().mapValues { (_, value) ->
+                sha256(objectMapper.writeValueAsString(value))
+            },
+            "addTagIds" to command.addTagIds.map(UUID::toString).sorted(),
+            "removeTagIds" to command.removeTagIds.map(UUID::toString).sorted(),
+            "customStatusId" to command.customStatusId?.toString(),
+        ),
+    )
+
+    private fun macroRequestDescriptor(command: ApplyMacroTicketCommand): String = objectMapper.writeValueAsString(
+        linkedMapOf(
+            "operation" to APPLY_MACRO_OPERATION,
+            "ticketNumber" to command.ticketNumber,
+            "expectedVersion" to command.expectedVersion,
+            "macroId" to command.macroId.toString(),
+            "macroVersion" to command.macroVersion,
+            "orderedActionTypes" to command.orderedActionTypes,
+            "changedFields" to command.changedFields.map(TicketField::externalName).sorted(),
+            "status" to command.status?.name,
+            "priority" to command.priority?.name,
+            "groupId" to command.groupId?.toString(),
+            "assigneeId" to command.assigneeId?.toString(),
+            "comment" to command.comment?.let {
+                mapOf("visibility" to it.visibility.name, "contentSha256" to sha256(it.body.trim()))
+            },
+            "formVersion" to command.formVersion,
+            "fieldValueHashes" to command.fieldValues.toSortedMap().mapValues { (_, value) ->
+                sha256(objectMapper.writeValueAsString(value))
+            },
+            "addTagIds" to command.addTagIds.map(UUID::toString).sorted(),
+            "removeTagIds" to command.removeTagIds.map(UUID::toString).sorted(),
+            "customStatusId" to command.customStatusId?.toString(),
+        ),
+    )
+
     private fun transferRequestDescriptor(command: TransferTicketCommand): String = objectMapper.writeValueAsString(
         linkedMapOf(
             "operation" to TRANSFER_TICKET_OPERATION,
@@ -990,6 +1490,29 @@ internal class AgentTicketCommandTransaction(
 
     private fun validateAssignmentChange(
         command: UpdateAgentTicketCommand,
+        oldAssigneeId: UUID?,
+        newGroupId: UUID?,
+        newAssigneeId: UUID?,
+    ) {
+        val groupRequested = TicketField.GROUP_ID in command.changedFields
+        val assigneeRequested = TicketField.ASSIGNEE_ID in command.changedFields
+        if (groupRequested && newGroupId != null && !assignmentPolicy.isActiveGroup(newGroupId)) {
+            throw TicketAssignmentInvalidException("The target group is not active")
+        }
+        if (groupRequested && !assigneeRequested && oldAssigneeId != null &&
+            (newGroupId == null || !assignmentPolicy.isActiveMember(newGroupId, oldAssigneeId))
+        ) {
+            throw TicketAssignmentInvalidException("Changing group requires an explicit compatible assignee or clear")
+        }
+        if ((groupRequested || assigneeRequested) && newAssigneeId != null &&
+            (newGroupId == null || !assignmentPolicy.isActiveMember(newGroupId, newAssigneeId))
+        ) {
+            throw TicketAssignmentInvalidException("The assignee must be an active member of the target group")
+        }
+    }
+
+    private fun validateMacroAssignmentChange(
+        command: ApplyMacroTicketCommand,
         oldAssigneeId: UUID?,
         newGroupId: UUID?,
         newAssigneeId: UUID?,
@@ -1175,7 +1698,10 @@ internal class AgentTicketCommandTransaction(
 
     private companion object {
         const val UPDATE_TICKET_OPERATION = "UPDATE_TICKET"
+        const val UPDATE_TICKET_CONFIGURATION_OPERATION = "UPDATE_TICKET_CONFIGURATION"
+        const val APPLY_MACRO_OPERATION = "APPLY_MACRO"
         const val TRANSFER_TICKET_OPERATION = "TRANSFER_TICKET"
         const val MAX_ATTACHMENTS = 5
+        val CONFIGURATION_FIELD_KEY = Regex("^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
     }
 }

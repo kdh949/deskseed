@@ -1,0 +1,122 @@
+.ticket-collaboration-presence {
+  z-index: 1;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: end;
+  margin: var(--ds-ref-space-3);
+  padding: var(--ds-ref-space-3);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-container);
+  color: var(--ds-foreground-subtle);
+  background: var(--ds-background-raised);
+  font-size: var(--ds-ref-font-size-xs);
+}
+
+.ticket-collaboration-presence__heading,
+.ticket-collaboration-presence__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-ref-space-2);
+}
+
+.ticket-collaboration-presence__heading h2 {
+  margin: 0;
+  color: var(--ds-foreground-default);
+  font-size: var(--ds-ref-font-size-sm);
+}
+
+.ticket-collaboration-presence__heading span {
+  color: var(--ds-foreground-muted);
+}
+
+.ticket-collaboration-presence__heading span[data-state='connected'] {
+  color: var(--ds-foreground-success);
+}
+
+.ticket-collaboration-presence__heading span[data-state='unavailable'] {
+  color: var(--ds-foreground-warning);
+}
+
+.ticket-collaboration-presence__heading span[data-state='denied'] {
+  color: var(--ds-foreground-danger);
+}
+
+.ticket-collaboration-presence > p,
+.ticket-collaboration-presence__update p {
+  margin: var(--ds-ref-space-2) 0 0;
+  line-height: var(--ds-ref-line-height-xs);
+}
+
+.ticket-collaboration-presence__list {
+  display: grid;
+  gap: var(--ds-ref-space-2);
+  margin: var(--ds-ref-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ticket-collaboration-presence__list li {
+  justify-content: flex-start;
+}
+
+.ticket-collaboration-presence__list strong,
+.ticket-collaboration-presence__list small {
+  display: block;
+}
+
+.ticket-collaboration-presence__list strong {
+  color: var(--ds-foreground-default);
+  font-weight: var(--ds-ref-font-weight-semibold);
+}
+
+.ticket-collaboration-presence__list small {
+  color: var(--ds-foreground-muted);
+}
+
+.ticket-collaboration-presence__marker {
+  min-width: 2.5rem;
+  padding: var(--ds-ref-space-1) var(--ds-ref-space-2);
+  border-radius: var(--ds-ref-radius-full);
+  color: var(--ds-foreground-primary);
+  background: var(--ds-background-selected);
+  font-size: var(--ds-ref-font-size-xs);
+  text-align: center;
+}
+
+.ticket-collaboration-presence__update {
+  margin-top: var(--ds-ref-space-3);
+  padding-top: var(--ds-ref-space-3);
+  border-top: 1px solid var(--ds-border-warning);
+}
+
+.ticket-collaboration-presence__update strong {
+  color: var(--ds-foreground-default);
+}
+
+.ticket-collaboration-presence__update button {
+  min-height: var(--ds-ref-control-compact);
+  margin-top: var(--ds-ref-space-2);
+  padding: 0 var(--ds-ref-space-2);
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--ds-ref-radius-control);
+  color: var(--ds-foreground-default);
+  background: var(--ds-background-raised);
+  font-weight: var(--ds-ref-font-weight-semibold);
+  cursor: pointer;
+}
+
+.ticket-collaboration-presence__update button:hover {
+  background: var(--ds-background-hover);
+}
+
+.ticket-collaboration-presence__update button:focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-focus-ring-color);
+  outline-offset: var(--ds-focus-ring-offset);
+}
+
+.ticket-collaboration-composer-status {
+  margin: 0;
+  color: var(--ds-foreground-muted);
+  font-size: var(--ds-ref-font-size-xs);
+}

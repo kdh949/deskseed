@@ -1,7 +1,7 @@
 # Spring Initializr and Dependency Baseline
 
 Status: recommended bootstrap values, not generated code
-Checked: 2026-08-10
+Checked: 2026-08-18
 
 ## 1. Spring Initializr values
 
@@ -166,3 +166,25 @@ Each feature module exposes a small root API and keeps implementation under `int
 7. continue through `docs/14-execution-backlog.md`
 
 Do not ask Codex to scaffold every future module with empty interfaces. Create a module when its first vertical feature is implemented, while preserving the documented boundary.
+
+## 9. Frontend Node.js support policy
+
+`frontend/package.json`의 `engines.node`가 로컬 개발과 frontend build tooling의 canonical compatibility range다. 현재 지원 범위는 다음과 같다.
+
+```text
+^22.22.2 || ^24.15.0 || >=26.0.0
+```
+
+이 범위는 임의의 최신 patch 목록이 아니라 설치된 의존성의 `engines` 교집합과 Node.js release lifecycle을 반영한다.
+
+- `jsdom 30.0.1`이 `^22.22.2 || ^24.15.0 || >=26.0.0`을 요구하며, committed 근거는 `frontend/package-lock.json`의 해당 package metadata다.
+- `>=22.22.2`처럼 하나의 열린 범위로 합치지 않는다. 그렇게 하면 jsdom이 지원하지 않는 Node 23, Node 24.0.0–24.14.x, Node 25까지 프로젝트가 지원한다고 잘못 선언하게 된다.
+- EOL release line은 새 지원 대상으로 추가하지 않는다. Node.js 공식 release policy와 status를 확인하고, frontend 의존성이 허용하더라도 운영·CI 필요성이 없는 EOL major는 제외한다.
+- package `engines`는 호환성 범위다. CI의 exact Node version과 container image는 재현성과 보안 patch 기준이므로 별도로 더 최신 버전에 고정할 수 있다. CI pin을 올렸다는 이유만으로 package의 호환성 하한을 함께 올리지 않는다.
+
+범위를 변경할 때는 direct/transitive dependency의 published `engines`, Node.js 공식 release status, CI와 container baseline을 함께 확인한다. 새 최소 지원 버전에서는 `npm_config_engine_strict=true npm ci`와 frontend quality gates를 실행한다.
+
+Sources:
+
+- Node.js release status and production guidance: https://nodejs.org/en/about/previous-releases
+- jsdom package metadata: https://www.npmjs.com/package/jsdom

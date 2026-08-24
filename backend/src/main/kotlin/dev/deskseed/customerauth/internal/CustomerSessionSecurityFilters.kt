@@ -20,7 +20,7 @@ internal class CustomerSessionAuthenticationFilter(
     private val sessionStore: CustomerAccountSessionStore,
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
-        (!request.requestURI.startsWith("/api/v1/customer/") &&
+        (!request.requestURI.startsWith("/api/v1/customer/") && !request.requestURI.startsWith("/api/v1/help/") &&
             !(request.method == "POST" && request.requestURI == "/api/v1/requests")) ||
             request.requestURI.startsWith("/api/v1/customer/auth/")
 

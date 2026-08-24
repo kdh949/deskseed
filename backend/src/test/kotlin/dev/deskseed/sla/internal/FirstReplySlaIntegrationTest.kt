@@ -30,22 +30,16 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.transaction.annotation.Transactional
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.Callable
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false", "deskseed.sla.breach-scanner.initial-delay=1d"])
-@Testcontainers
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
+@dev.deskseed.testsupport.category.SlowTest
 class FirstReplySlaIntegrationTest {
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var administration: FirstReplySlaAdministration
@@ -524,10 +518,5 @@ class FirstReplySlaIntegrationTest {
 
     companion object {
         private val DEFAULT_SCHEDULE_ID: UUID = UUID.fromString("51000000-0000-0000-0000-000000000001")
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

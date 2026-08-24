@@ -136,18 +136,7 @@ internal class AgentTicketReadApplicationService(
         originSearchEventId: UUID?,
         context: AgentReadRequestContext,
     ): AgentTicketWorkspaceDetail {
-        requireActiveStaffRead(principal)
-        val detail = ticketStore.findDetail(ticketNumber) ?: throw AgentTicketNotFoundException()
-        val directGrant = writeAuthorizationPolicy.canUpdate(
-            principal = principal,
-            currentGroupId = detail.ticket.group?.id,
-            currentAssigneeId = detail.ticket.assignee?.id,
-        )
-        val relationGrant = readScope != StaffTicketReadScope.ALL_TICKETS &&
-            ticketStore.hasRelationReadGrant(detail.ticket.id, principal.id)
-        if (!readAuthorizationPolicy.canRead(readScope, directGrant, relationGrant)) {
-            throw AgentTicketNotFoundException()
-        }
+        val detail = requireReadableTicket(principal, ticketNumber)
         try {
             val occurredAt = Instant.now(clock)
             val auditContext = context.toAccessAuditContext(
@@ -162,7 +151,7 @@ internal class AgentTicketReadApplicationService(
                             auditContext.sessionFingerprint!!,
                             detail.ticket.id,
                         )
-                    )
+                )
             ) {
                 throw InvalidSearchOriginException()
             }
@@ -210,12 +199,35 @@ internal class AgentTicketReadApplicationService(
         } catch (exception: AccessAuditProtectionException) {
             throw AccessAuditUnavailableException(exception)
         }
+        val directGrant = writeAuthorizationPolicy.canUpdate(
+            principal = principal,
+            currentGroupId = detail.ticket.group?.id,
+            currentAssigneeId = detail.ticket.assignee?.id,
+        )
         val canUpdate = detail.ticket.status != TicketStatus.CLOSED && directGrant
         return AgentTicketWorkspaceDetail(
             detail = detail,
             capabilities = if (canUpdate) listOf("READ", "UPDATE") else listOf("READ"),
             assignmentOptions = assignmentCatalog.listActiveGroups(),
         )
+    }
+
+    /** Authorizes a collaboration resource without emitting a semantic ticket-view event. */
+    @Transactional(readOnly = true)
+    fun requireReadableTicket(principal: StaffPrincipal, ticketNumber: Long): StaffTicketDetail {
+        requireActiveStaffRead(principal)
+        val detail = ticketStore.findDetail(ticketNumber) ?: throw AgentTicketNotFoundException()
+        val directGrant = writeAuthorizationPolicy.canUpdate(
+            principal = principal,
+            currentGroupId = detail.ticket.group?.id,
+            currentAssigneeId = detail.ticket.assignee?.id,
+        )
+        val relationGrant = readScope != StaffTicketReadScope.ALL_TICKETS &&
+            ticketStore.hasRelationReadGrant(detail.ticket.id, principal.id)
+        if (!readAuthorizationPolicy.canRead(readScope, directGrant, relationGrant)) {
+            throw AgentTicketNotFoundException()
+        }
+        return detail
     }
 
     private fun requireActiveStaffRead(principal: StaffPrincipal) {

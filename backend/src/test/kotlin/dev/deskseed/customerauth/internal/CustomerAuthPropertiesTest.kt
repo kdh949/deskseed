@@ -5,6 +5,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.time.Duration
 
+@dev.deskseed.testsupport.category.FastTest
 class CustomerAuthPropertiesTest {
     @Test
     fun `magic link ttl accepts the inclusive five to sixty minute policy`() {

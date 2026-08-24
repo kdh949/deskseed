@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import java.nio.file.Path
 
+@dev.deskseed.testsupport.category.ContractTest
 class AttachmentProductionBoundaryTest {
     @TempDir
     lateinit var privateRoot: Path

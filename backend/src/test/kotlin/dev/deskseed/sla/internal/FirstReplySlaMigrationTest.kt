@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class FirstReplySlaMigrationTest {
     @Test
     fun `migration creates indexed target facts scanner checkpoint and immutable policy history`() {

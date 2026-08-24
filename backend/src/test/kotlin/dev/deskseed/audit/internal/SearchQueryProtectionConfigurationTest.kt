@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 
+@dev.deskseed.testsupport.category.FastTest
 class SearchQueryProtectionConfigurationTest {
     private val contextRunner = ApplicationContextRunner()
         .withUserConfiguration(SearchQueryProtectionConfiguration::class.java)

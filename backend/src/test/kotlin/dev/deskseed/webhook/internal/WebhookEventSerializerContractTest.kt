@@ -11,6 +11,7 @@ import tools.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.ContractTest
 class WebhookEventSerializerContractTest {
     private val serializer = TicketWebhookEventSerializer(ObjectMapper())
 

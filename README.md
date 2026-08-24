@@ -48,7 +48,7 @@ Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 �
 
 ## 가장 짧은 재현 경로
 
-Docker Engine, Docker Compose v2, Node.js 22.23.2 이상(또는 `frontend/package.json`의 지원 범위에 포함되는 최신 LTS), npm과 Chromium용 Playwright dependency가 필요하다. 다음 순서는 synthetic data만 사용해 실제 frontend, HTTP API, PostgreSQL과 감사 원장을 검증하고 disposable stack/volume을 종료 시 정리한다.
+Docker Engine, Docker Compose v2, `frontend/package.json`의 지원 범위(`^22.22.2 || ^24.15.0 || >=26.0.0`)에 포함되는 Node.js, npm과 Chromium용 Playwright dependency가 필요하다. 다음 순서는 synthetic data만 사용해 실제 frontend, HTTP API, PostgreSQL과 감사 원장을 검증하고 disposable stack/volume을 종료 시 정리한다.
 
 ```bash
 npm --prefix frontend ci
