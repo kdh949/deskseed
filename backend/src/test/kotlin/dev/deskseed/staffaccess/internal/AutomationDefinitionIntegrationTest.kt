@@ -110,6 +110,106 @@ class AutomationDefinitionIntegrationTest {
         )).containsExactly("AUTOMATION_CREATED", "AUTOMATION_ACTIVATED")
     }
 
+    @Test
+    fun `agent cannot create versions or activate automations`() {
+        val admin = browser()
+        val created = mockMvc.perform(
+            post("/api/v1/admin/automations")
+                .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"권한 검증 자동화","position":10,"solvedAgeMinutes":60,"actionType":"CLOSE_TICKET"}"""),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val automationId = UUID.fromString(stringField(created, "id"))
+        val agent = browser("AGENT")
+
+        mockMvc.perform(
+            post("/api/v1/admin/automations")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"권한 없는 자동화","position":20,"solvedAgeMinutes":60,"actionType":"CLOSE_TICKET"}"""),
+        ).andExpect(status().isForbidden)
+        mockMvc.perform(
+            post("/api/v1/admin/automations/{automationId}/versions", automationId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"권한 없는 버전","solvedAgeMinutes":120,"actionType":"CLOSE_TICKET"}"""),
+        ).andExpect(status().isForbidden)
+        mockMvc.perform(
+            put("/api/v1/admin/automations/{automationId}/activation", automationId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isForbidden)
+
+        assertThat(jdbc.queryForMap(
+            "select current_version, active_version from automation_definitions where id = ?",
+            automationId,
+        )).containsEntry("current_version", 1).containsEntry("active_version", null)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from automation_versions where automation_id = ?",
+            Long::class.java,
+            automationId,
+        )).isEqualTo(1)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from automation_activations where automation_id = ?",
+            Long::class.java,
+            automationId,
+        )).isZero()
+    }
+
+    @Test
+    fun `required audit failures roll back automation definition version and activation`() {
+        val admin = browser()
+        installAuditFailure()
+        try {
+            mockMvc.perform(
+                post("/api/v1/admin/automations")
+                    .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"name":"감사 실패 생성","position":10,"solvedAgeMinutes":60,"actionType":"CLOSE_TICKET"}"""),
+            ).andExpect(status().isServiceUnavailable)
+        } finally {
+            removeAuditFailure()
+        }
+        assertThat(jdbc.queryForObject(
+            "select count(*) from automation_definitions where normalized_name = '감사 실패 생성'",
+            Long::class.java,
+        )).isZero()
+
+        val created = mockMvc.perform(
+            post("/api/v1/admin/automations")
+                .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"감사 원자성 자동화","position":20,"solvedAgeMinutes":60,"actionType":"CLOSE_TICKET"}"""),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val automationId = UUID.fromString(stringField(created, "id"))
+        installAuditFailure()
+        try {
+            mockMvc.perform(
+                post("/api/v1/admin/automations/{automationId}/versions", automationId)
+                    .session(admin.session).csrf(admin).header("If-Match", "\"1\"")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"name":"감사 실패 버전","solvedAgeMinutes":120,"actionType":"CLOSE_TICKET"}"""),
+            ).andExpect(status().isServiceUnavailable)
+            mockMvc.perform(
+                put("/api/v1/admin/automations/{automationId}/activation", automationId)
+                    .session(admin.session).csrf(admin).header("If-Match", "\"1\"")
+                    .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+            ).andExpect(status().isServiceUnavailable)
+        } finally {
+            removeAuditFailure()
+        }
+        assertThat(jdbc.queryForMap(
+            "select current_version, active_version from automation_definitions where id = ?",
+            automationId,
+        )).containsEntry("current_version", 1).containsEntry("active_version", null)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from automation_versions where automation_id = ?",
+            Long::class.java,
+            automationId,
+        )).isEqualTo(1)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from automation_activations where automation_id = ?",
+            Long::class.java,
+            automationId,
+        )).isZero()
+    }
+
     private fun createTicket(browser: Browser): Long {
         val json = mockMvc.perform(
             post("/api/v1/agent/tickets")
@@ -125,8 +225,29 @@ class AutomationDefinitionIntegrationTest {
         return Regex("\\\"ticketNumber\\\":(\\d+)").find(json)!!.groupValues[1].toLong()
     }
 
-    private fun browser(): Browser {
-        val email = "automation-admin-${UUID.randomUUID()}@example.com"
+    private fun installAuditFailure() {
+        jdbc.execute(
+            """
+            create or replace function fail_automation_audit_insert() returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if new.event_type like 'AUTOMATION_%' then raise exception 'forced automation audit failure'; end if;
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbc.execute(
+            "create trigger fail_automation_audit_insert before insert on admin_security_audit_events for each row execute function fail_automation_audit_insert()",
+        )
+    }
+
+    private fun removeAuditFailure() {
+        jdbc.execute("drop trigger if exists fail_automation_audit_insert on admin_security_audit_events")
+        jdbc.execute("drop function if exists fail_automation_audit_insert()")
+    }
+
+    private fun browser(role: String = "ADMIN"): Browser {
+        val email = "automation-${role.lowercase()}-${UUID.randomUUID()}@example.com"
         val password = "Automation password 42!"
         val id = UUID.randomUUID()
         jdbc.update(
@@ -134,9 +255,9 @@ class AutomationDefinitionIntegrationTest {
             insert into staff_accounts (
                 id, email_normalized, email_display, display_name, role, status,
                 password_hash, created_at, updated_at, version
-            ) values (?, ?, ?, '자동화 관리자', 'ADMIN', 'ACTIVE', ?, ?, ?, 0)
+            ) values (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 0)
             """.trimIndent(),
-            id, email.lowercase(), email, BCryptPasswordEncoder(4).encode(password),
+            id, email.lowercase(), email, "자동화 $role", role, BCryptPasswordEncoder(4).encode(password),
             Timestamp.from(Instant.now()), Timestamp.from(Instant.now()),
         )
         val csrf = mockMvc.perform(get("/api/v1/agent/csrf")).andExpect(status().isOk).andReturn()

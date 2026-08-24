@@ -39,10 +39,32 @@ internal class AutomationCandidateStore(
         return jdbc.query(
             """
             with candidate as (
-                select id from automation_candidates
-                 where status in ('PENDING', 'RETRY_SCHEDULED') and available_at <= ?
-                 order by available_at, discovered_at, id
-                 for update skip locked limit 1
+                select candidate.id
+                  from automation_candidates candidate
+                 where candidate.status in ('PENDING', 'RETRY_SCHEDULED')
+                   and candidate.available_at <= ?
+                   and not exists (
+                       select 1
+                         from automation_candidates predecessor
+                        where predecessor.ticket_id = candidate.ticket_id
+                          and predecessor.solved_at = candidate.solved_at
+                          and predecessor.status in ('PENDING', 'LEASED', 'RETRY_SCHEDULED')
+                          and (
+                              predecessor.position_snapshot < candidate.position_snapshot
+                              or (predecessor.position_snapshot = candidate.position_snapshot
+                                  and predecessor.automation_id < candidate.automation_id)
+                              or (predecessor.position_snapshot = candidate.position_snapshot
+                                  and predecessor.automation_id = candidate.automation_id
+                                  and predecessor.automation_version < candidate.automation_version)
+                              or (predecessor.position_snapshot = candidate.position_snapshot
+                                  and predecessor.automation_id = candidate.automation_id
+                                  and predecessor.automation_version = candidate.automation_version
+                                  and predecessor.id < candidate.id)
+                          )
+                   )
+                 order by candidate.available_at, candidate.eligible_at, candidate.position_snapshot,
+                          candidate.automation_id, candidate.automation_version, candidate.id
+                 for update of candidate skip locked limit 1
             )
             update automation_candidates item
                set status = 'LEASED', attempt_count = attempt_count + 1, lease_owner = ?,

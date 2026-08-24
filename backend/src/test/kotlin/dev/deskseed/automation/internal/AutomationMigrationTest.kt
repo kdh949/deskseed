@@ -22,9 +22,9 @@ class AutomationMigrationTest {
     }
 
     @Test
-    fun `V74 creates versioned solved automation candidates and execution provenance`() {
+    fun `V75 creates versioned solved automation candidates and execution provenance`() {
         Flyway.configure().dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
-            .locations("classpath:db/migration").target("74").load().migrate()
+            .locations("classpath:db/migration").target("75").load().migrate()
         connection().use { connection -> connection.createStatement().use { statement ->
             listOf(
                 "automation_definitions", "automation_versions", "automation_activations",
@@ -40,6 +40,27 @@ class AutomationMigrationTest {
             ).use { result ->
                 check(result.next())
                 assertThat(result.getString(1)).contains("solved_at", "status", "SOLVED")
+            }
+        } }
+    }
+
+    @Test
+    fun `V76 adds an immutable position snapshot and ordering index to automation candidates`() {
+        Flyway.configure().dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
+            .locations("classpath:db/migration").target("76").load().migrate()
+        connection().use { connection -> connection.createStatement().use { statement ->
+            statement.executeQuery(
+                "select is_nullable from information_schema.columns " +
+                    "where table_name = 'automation_candidates' and column_name = 'position_snapshot'",
+            ).use { result ->
+                check(result.next())
+                assertThat(result.getString(1)).isEqualTo("NO")
+            }
+            statement.executeQuery(
+                "select to_regclass('public.automation_candidates_ticket_order_idx')",
+            ).use { result ->
+                check(result.next())
+                assertThat(result.getString(1)).isEqualTo("automation_candidates_ticket_order_idx")
             }
         } }
     }

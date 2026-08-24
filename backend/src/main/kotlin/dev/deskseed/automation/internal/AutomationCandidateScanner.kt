@@ -26,6 +26,7 @@ internal class AutomationCandidateScanner(
             with eligible as (
                 select definition.id as automation_id,
                        definition.active_version as automation_version,
+                       definition.position as position_snapshot,
                        ticket.id as ticket_id,
                        ticket.ticket_number,
                        ticket.solved_at,
@@ -48,11 +49,11 @@ internal class AutomationCandidateScanner(
                  limit ?
             ), inserted as (
                 insert into automation_candidates (
-                    id, automation_id, automation_version, ticket_id, ticket_number, solved_at,
+                    id, automation_id, automation_version, position_snapshot, ticket_id, ticket_number, solved_at,
                     eligible_at, status, attempt_count, available_at, lease_owner, lease_expires_at,
                     last_error_code, discovered_at, updated_at, completed_at
                 )
-                select gen_random_uuid(), automation_id, automation_version, ticket_id, ticket_number, solved_at,
+                select gen_random_uuid(), automation_id, automation_version, position_snapshot, ticket_id, ticket_number, solved_at,
                        eligible_at, 'PENDING', 0, ?, null, null, null, ?, ?, null
                   from eligible
                 on conflict (automation_id, automation_version, ticket_id, solved_at) do nothing

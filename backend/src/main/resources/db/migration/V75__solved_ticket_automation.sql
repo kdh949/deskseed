@@ -1,4 +1,4 @@
--- Initial time-based automation: versioned solved-age policy and system-only close action.
+-- V75 initial time-based automation: versioned solved-age policy and system-only close action.
 create table automation_definitions (
     id uuid primary key,
     normalized_name varchar(120) not null unique,

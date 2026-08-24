@@ -1,5 +1,6 @@
 package dev.deskseed.automation.internal
 
+import dev.deskseed.webhook.internal.WebhookEventOutboxWorker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -14,13 +15,20 @@ import java.util.UUID
 class AutomationExecutionIntegrationTest {
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var scanner: AutomationCandidateScanner
+    @Autowired private lateinit var store: AutomationCandidateStore
     @Autowired private lateinit var worker: AutomationExecutionWorker
+    @Autowired private lateinit var webhookOutboxWorker: WebhookEventOutboxWorker
 
     @BeforeEach
     fun clearData() {
         jdbc.execute(
             """
             truncate table
+                webhook_delivery_attempts,
+                webhook_deliveries,
+                webhook_subscriptions,
+                webhook_endpoint_secrets,
+                webhook_endpoints,
                 domain_event_outbox,
                 automation_executions,
                 automation_candidates,
@@ -71,6 +79,91 @@ class AutomationExecutionIntegrationTest {
             "select count(*) from ticket_audits where ticket_id = ? and actor_type = 'AUTOMATION'",
             Long::class.java, ticketId,
         )).isEqualTo(1)
+    }
+
+    @Test
+    fun `same solved interval applies the lowest position before UUID claim order`() {
+        val firstPolicy = activePolicy(60, position = 10)
+        val secondPolicy = activePolicy(60, position = 20)
+        val now = Instant.now().minusSeconds(5)
+        val ticketId = solvedTicket(60_004, now.minusSeconds(3_700))
+        assertThat(scanner.scanOnce(now)).isEqualTo(2)
+        assertThat(jdbc.queryForList(
+            "select position_snapshot from automation_candidates order by position_snapshot",
+            Int::class.java,
+        )).containsExactly(10, 20)
+
+        jdbc.update(
+            "update automation_candidates set id = ? where automation_id = ?",
+            UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"), firstPolicy,
+        )
+        jdbc.update(
+            "update automation_candidates set id = ? where automation_id = ?",
+            UUID.fromString("00000000-0000-0000-0000-000000000001"), secondPolicy,
+        )
+
+        assertThat(worker.runOnce("automation-order-worker-a")).isTrue()
+        assertThat(jdbc.queryForObject(
+            "select actor_id::text from ticket_audits where ticket_id = ? and actor_type = 'AUTOMATION'",
+            String::class.java,
+            ticketId,
+        )).isEqualTo(firstPolicy.toString())
+        assertThat(worker.runOnce("automation-order-worker-b")).isTrue()
+        assertThat(jdbc.queryForObject(
+            "select outcome from automation_executions where automation_id = ?",
+            String::class.java,
+            firstPolicy,
+        )).isEqualTo("CLOSED")
+        assertThat(jdbc.queryForObject(
+            "select outcome from automation_executions where automation_id = ?",
+            String::class.java,
+            secondPolicy,
+        )).isEqualTo("SKIPPED_STATE_CHANGED")
+    }
+
+    @Test
+    fun `leased lower position candidate blocks a later policy for the same solved interval`() {
+        val firstPolicy = activePolicy(60, position = 10)
+        val secondPolicy = activePolicy(60, position = 20)
+        val now = Instant.now().minusSeconds(5)
+        solvedTicket(60_005, now.minusSeconds(3_700))
+        assertThat(scanner.scanOnce(now)).isEqualTo(2)
+        jdbc.update(
+            "update automation_candidates set id = ? where automation_id = ?",
+            UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"), firstPolicy,
+        )
+        jdbc.update(
+            "update automation_candidates set id = ? where automation_id = ?",
+            UUID.fromString("00000000-0000-0000-0000-000000000001"), secondPolicy,
+        )
+
+        assertThat(store.claim("automation-order-lease-a")!!.automationId).isEqualTo(firstPolicy)
+        assertThat(store.claim("automation-order-lease-b")).isNull()
+    }
+
+    @Test
+    fun `automation close of an internal work item creates no external webhook delivery`() {
+        activePolicy(60)
+        val now = Instant.now().minusSeconds(5)
+        val ticketId = solvedTicket(60_006, now.minusSeconds(3_700))
+        subscribeWebhook("ticket.updated")
+        subscribeWebhook("ticket.status.changed")
+        assertThat(scanner.scanOnce(now)).isEqualTo(1)
+
+        assertThat(worker.runOnce("automation-internal-webhook-worker")).isTrue()
+        while (webhookOutboxWorker.runOnce("automation-internal-webhook-materializer")) {
+            // Drain only this test's committed event intents before asserting the fan-out boundary.
+        }
+
+        assertThat(jdbc.queryForList(
+            "select visibility from domain_event_outbox where subject = ? order by subject_sequence",
+            String::class.java,
+            "ticket:$ticketId",
+        )).isNotEmpty().allSatisfy { visibility -> assertThat(visibility).isEqualTo("INTERNAL") }
+        assertThat(jdbc.queryForObject(
+            "select count(*) from webhook_deliveries",
+            Long::class.java,
+        )).isZero()
     }
 
     @Test
@@ -134,7 +227,7 @@ class AutomationExecutionIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from ticket_audits where actor_type = 'AUTOMATION'", Long::class.java)).isZero()
     }
 
-    private fun activePolicy(ageMinutes: Int): UUID {
+    private fun activePolicy(ageMinutes: Int, position: Int = 10): UUID {
         val staffId = UUID.randomUUID()
         val policyId = UUID.randomUUID()
         jdbc.update(
@@ -151,9 +244,9 @@ class AutomationExecutionIntegrationTest {
             insert into automation_definitions (
                 id, normalized_name, name, position, current_version, active_version,
                 aggregate_version, created_at, updated_at
-            ) values (?, ?, ?, 10, 1, null, 1, now(), now())
+            ) values (?, ?, ?, ?, 1, null, 1, now(), now())
             """.trimIndent(),
-            policyId, "automation policy $policyId", "Automation Policy $policyId",
+            policyId, "automation policy $policyId", "Automation Policy $policyId", position,
         )
         jdbc.update(
             """
@@ -177,6 +270,30 @@ class AutomationExecutionIntegrationTest {
             ) values (?, ?, null, 'INTERNAL_WORK_ITEM', ?, 'SOLVED', 'NORMAL', null, null, 'API', 0, ?, ?, ?)
             """.trimIndent(),
             id, number, "Solved $number", Timestamp.from(solvedAt.minusSeconds(60)), Timestamp.from(solvedAt), Timestamp.from(solvedAt),
+        )
+    }
+
+    private fun subscribeWebhook(eventType: String) {
+        val endpointId = UUID.randomUUID()
+        val staffId = jdbc.queryForObject("select id from staff_accounts limit 1", UUID::class.java)!!
+        val now = Timestamp.from(Instant.now())
+        jdbc.update(
+            """
+            insert into webhook_endpoints (
+                id, name, url, enabled, target_class, allowed_hostnames_json, allowed_ports_json, allowed_cidrs_json,
+                health_state, cooldown_until, consecutive_failures, last_succeeded_at, last_failed_at, created_by_staff_id,
+                created_at, updated_at, deactivated_at, version
+            ) values (?, ?, 'https://203.0.113.10/hook', true, 'PUBLIC', '[]', '[443]', '[]', 'CLOSED', null, 0, null, null,
+                      ?, ?, ?, null, 0)
+            """.trimIndent(),
+            endpointId, "Automation $eventType", staffId, now, now,
+        )
+        jdbc.update(
+            """
+            insert into webhook_subscriptions (endpoint_id, event_type, event_version, payload_policy, created_at)
+            values (?, ?, 1, 'METADATA_ONLY', ?)
+            """.trimIndent(),
+            endpointId, eventType, now,
         )
     }
 }
