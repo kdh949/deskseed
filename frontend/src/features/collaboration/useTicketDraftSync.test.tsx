@@ -7,6 +7,7 @@ import {
   getAgentTicketDraft,
   saveAgentTicketDraft,
 } from '../../api/client'
+import type * as ApiClientModule from '../../api/client'
 import type { TicketDraft, TicketVisibility } from '../../api/types'
 import {
   readLocalTicketDraft,
@@ -14,10 +15,11 @@ import {
   writeLocalTicketDraft,
   type LocalTicketDraft,
 } from './draftRecovery'
+import type * as DraftRecoveryModule from './draftRecovery'
 import { useTicketDraftSync } from './useTicketDraftSync'
 
 vi.mock('../../api/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/client')>()
+  const actual = await importOriginal<typeof ApiClientModule>()
   return {
     ...actual,
     clearAgentTicketDraft: vi.fn(),
@@ -27,7 +29,7 @@ vi.mock('../../api/client', async (importOriginal) => {
 })
 
 vi.mock('./draftRecovery', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./draftRecovery')>()
+  const actual = await importOriginal<typeof DraftRecoveryModule>()
   return {
     ...actual,
     readLocalTicketDraft: vi.fn(),
