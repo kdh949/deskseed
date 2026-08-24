@@ -15,7 +15,10 @@ import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.ApplyMacroTicketCommand
+import dev.deskseed.ticketing.ApplyAutomationTicketCommand
 import dev.deskseed.ticketing.ApplyTriggerTicketCommand
+import dev.deskseed.ticketing.AutomationTicketCommandService
+import dev.deskseed.ticketing.AutomationTicketStateChangedException
 import dev.deskseed.ticketing.CommentAuthorType
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
@@ -72,7 +75,7 @@ import java.util.UUID
 @Service
 internal class JpaAgentTicketCommandService(
     private val transaction: AgentTicketCommandTransaction,
-) : AgentTicketCommandService, TriggerTicketCommandService {
+) : AgentTicketCommandService, TriggerTicketCommandService, AutomationTicketCommandService {
     override fun create(command: CreateAgentTicketCommand): TicketCommandResult = translateStorageFailure {
         transaction.create(command)
     }
@@ -91,6 +94,10 @@ internal class JpaAgentTicketCommandService(
 
     override fun applyTrigger(command: ApplyTriggerTicketCommand): TicketCommandResult = executeRetriable {
         transaction.applyTrigger(command)
+    }
+
+    override fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult = executeRetriable {
+        transaction.closeSolvedTicket(command)
     }
 
     override fun transfer(command: TransferTicketCommand): TicketCommandResult = executeRetriable {
@@ -981,6 +988,62 @@ internal class AgentTicketCommandTransaction(
                 now,
             )
         }
+        return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId)
+    }
+
+    @Transactional
+    fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult {
+        require(command.context.source == RequestSource.AUTOMATION) { "Automation command source is invalid" }
+        require(command.automationVersion > 0) { "Automation version must be positive" }
+        val now = Instant.now(clock)
+        if (command.eligibleAt.isAfter(now)) throw AutomationTicketStateChangedException()
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (ticket.version != command.expectedVersion || ticket.status != TicketStatus.SOLVED ||
+            ticket.solvedAt != command.expectedSolvedAt
+        ) {
+            throw AutomationTicketStateChangedException()
+        }
+
+        ticket.status = TicketStatus.CLOSED
+        ticket.updatedAt = now
+        ticketRepository.saveAndFlush(ticket)
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            resultVersion = ticket.version,
+            actorId = command.automationId,
+            actorType = ActorType.AUTOMATION,
+            context = command.context.toAuditContext(),
+            now = now,
+            events = listOf(
+                NewAuditEvent(
+                    type = "AUTOMATION_APPLIED",
+                    metadata = mapOf(
+                        "automationId" to command.automationId.toString(),
+                        "automationVersion" to command.automationVersion,
+                        "candidateId" to command.candidateId.toString(),
+                        "solvedAt" to command.expectedSolvedAt.toString(),
+                        "eligibleAt" to command.eligibleAt.toString(),
+                    ),
+                ),
+                fieldAuditEvent("STATUS_CHANGED", TicketField.STATUS, TicketStatus.SOLVED.name, TicketStatus.CLOSED.name),
+            ),
+        )
+        val actor = ActorRef(ActorType.AUTOMATION, command.automationId)
+        ticketIntegrationEvents.ticketUpdated(
+            ticket.id, ticket.ticketNumber, ticket.kind, setOf(TicketField.STATUS.externalName), actor, command.context, now,
+        )
+        ticketIntegrationEvents.statusChanged(
+            ticket.id, ticket.ticketNumber, ticket.kind, TicketStatus.SOLVED, TicketStatus.CLOSED, actor, command.context, now,
+        )
+        eventPublisher.publishEvent(
+            TicketSlaLifecycleChanged(
+                ticket.id, TicketStatus.SOLVED, TicketStatus.CLOSED, false, auditId,
+                command.automationId, command.context.source.name, command.context.requestId,
+                command.context.correlationId, now,
+            ),
+        )
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId)
     }
 

@@ -123,6 +123,23 @@ interface TriggerTicketCommandService {
     fun applyTrigger(command: ApplyTriggerTicketCommand): TicketCommandResult
 }
 
+data class ApplyAutomationTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val automationId: UUID,
+    val automationVersion: Int,
+    val candidateId: UUID,
+    val expectedSolvedAt: Instant,
+    val eligibleAt: Instant,
+    val context: CommandContext,
+)
+
+interface AutomationTicketCommandService {
+    fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult
+}
+
+class AutomationTicketStateChangedException : RuntimeException()
+
 /** Rechecked inside the ticket transaction after idempotent replay lookup. */
 fun interface TicketMacroActivationGuard {
     fun requireActive(macroId: UUID, macroVersion: Int, actorStaffId: UUID)

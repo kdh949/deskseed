@@ -27,7 +27,7 @@ The customer projection currently exposes `NEW`, `OPEN`, `PENDING`, and `SOLVED`
 | PENDING | OPEN | Agent/Admin/Customer event | customer replies or agent resumes |
 | PENDING | SOLVED | Agent/Admin | resolution |
 | SOLVED | OPEN | Agent/Admin/Customer follow-up policy | reopen |
-| SOLVED | CLOSED | System | configured delay later |
+| SOLVED | CLOSED | Automation | active solved-age policy의 eligibleAt 경과 후 latest interval 재검사 |
 | CLOSED | any | none | immutable; follow-up creates new linked ticket |
 
 ## 3. Core commands
@@ -43,6 +43,7 @@ ActivateTriggerVersion
 RepositionTrigger
 CreateAutomationVersion
 ActivateAutomationVersion
+CloseSolvedTicketAutomation
 AssignTicket
 TransferTicket
 CreateChildTicket
@@ -79,6 +80,7 @@ clock
 TICKET_CREATED
 MACRO_APPLIED
 TRIGGER_APPLIED
+AUTOMATION_APPLIED
 UPDATE_COMMAND_RECEIVED
 COMMENT_CREATED
 STATUS_CHANGED

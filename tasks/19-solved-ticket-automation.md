@@ -26,4 +26,5 @@ An admin versions and activates a policy such as “close tickets 72 hours after
 
 - [x] versioned solved-age policy, activation and dry-run contract
 - [x] indexed bounded candidate discovery and interval idempotency
-- [ ] leased execution and system-only close command provenance
+- [x] leased execution and system-only close command provenance
+- [x] latest solved interval skip, lease recovery, retry and dead-letter rollback
