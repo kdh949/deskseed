@@ -10,6 +10,8 @@ import dev.deskseed.ticketing.SavedViewAccessDeniedException
 import dev.deskseed.ticketing.SavedViewConflictException
 import dev.deskseed.ticketing.SavedViewNotFoundException
 import dev.deskseed.ticketing.SavedViewPreconditionFailedException
+import dev.deskseed.ticketing.TicketAssignmentInvalidException
+import dev.deskseed.ticketing.TicketTransitionInvalidException
 import dev.deskseed.knowledge.KnowledgeAccessAuditUnavailableException
 import dev.deskseed.knowledge.KnowledgeNotFoundException
 import jakarta.servlet.http.HttpServletRequest
@@ -86,6 +88,24 @@ internal class AgentTicketReadExceptionHandler {
         "/problems/agent-ticket-not-found",
         "Ticket not found",
         "The requested ticket or view was not found.",
+    )
+
+    @ExceptionHandler(TicketAssignmentInvalidException::class)
+    fun invalidAssignment(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request,
+        HttpStatus.UNPROCESSABLE_CONTENT,
+        "/problems/ticket-assignment-invalid",
+        "Ticket assignment is invalid",
+        "The requested group and assignee do not satisfy the assignment policy.",
+    )
+
+    @ExceptionHandler(TicketTransitionInvalidException::class)
+    fun invalidTransition(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request,
+        HttpStatus.UNPROCESSABLE_CONTENT,
+        "/problems/ticket-status-transition-invalid",
+        "Ticket status transition is invalid",
+        "The requested staff status transition is not allowed.",
     )
 
     @ExceptionHandler(KnowledgeNotFoundException::class)

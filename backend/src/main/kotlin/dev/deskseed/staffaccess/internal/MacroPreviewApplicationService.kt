@@ -28,6 +28,7 @@ import dev.deskseed.ticketing.TicketConfigurationMutationHandler
 import dev.deskseed.ticketing.TicketConfigurationMutationRequest
 import dev.deskseed.ticketing.TicketMacroContextQuery
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.TicketStatusTransitionPolicy
 import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Isolation
@@ -97,8 +98,12 @@ internal class MacroPreviewApplicationService(
             throw AgentTicketNotFoundException()
         }
         val macroVersion = checkNotNull(macro.activeVersion)
-        validateAssignmentActions(macro.actions.filterIsInstance<MacroGroupAction>().singleOrNull(),
-            macro.actions.filterIsInstance<MacroAssigneeAction>().singleOrNull(), detail.detailGroupId())
+        validateAssignmentActions(
+            group = macro.actions.filterIsInstance<MacroGroupAction>().singleOrNull(),
+            assignee = macro.actions.filterIsInstance<MacroAssigneeAction>().singleOrNull(),
+            currentGroupId = detail.detailGroupId(),
+            currentAssigneeId = detail.ticket.assignee?.id,
+        )
 
         val fieldValues = macro.actions.filterIsInstance<MacroCustomFieldAction>()
             .associate { it.fieldKey to it.value }
@@ -106,6 +111,7 @@ internal class MacroPreviewApplicationService(
         val removeTagIds = macro.actions.filterIsInstance<MacroRemoveTagAction>().mapTo(linkedSetOf(), MacroRemoveTagAction::tagId)
         val customStatusId = macro.actions.filterIsInstance<MacroCustomStatusAction>().singleOrNull()?.customStatusId
         val targetStatus = macro.actions.filterIsInstance<MacroStatusAction>().singleOrNull()?.status ?: ticket.status
+        TicketStatusTransitionPolicy.requireStaffTransition(ticket.status, targetStatus)
         configurationMutationHandler.validate(
             TicketConfigurationMutationRequest(
                 ticketId = ticket.ticketId,
@@ -199,14 +205,17 @@ internal class MacroPreviewApplicationService(
         group: MacroGroupAction?,
         assignee: MacroAssigneeAction?,
         currentGroupId: UUID?,
+        currentAssigneeId: UUID?,
     ) {
         val targetGroupId = group?.groupId ?: currentGroupId
-        group?.let { require(assignmentPolicy.isActiveGroup(it.groupId)) { "Macro target group is inactive" } }
-        assignee?.assigneeId?.let { assigneeId ->
-            require(targetGroupId != null && assignmentPolicy.isActiveMember(targetGroupId, assigneeId)) {
-                "Macro assignee must be an active member of the target group"
-            }
-        }
+        val targetAssigneeId = assignee?.assigneeId ?: currentAssigneeId
+        assignmentPolicy.requireValidChange(
+            currentAssigneeId = currentAssigneeId,
+            targetGroupId = targetGroupId,
+            targetAssigneeId = targetAssigneeId,
+            groupRequested = group != null,
+            assigneeRequested = assignee != null,
+        )
     }
 
     private fun dev.deskseed.ticketing.StaffTicketDetail.detailGroupId(): UUID? = ticket.group?.id

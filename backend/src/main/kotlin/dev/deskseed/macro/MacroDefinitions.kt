@@ -124,6 +124,9 @@ data class MacroDefinitionDraft(
         require(actions.map(MacroActionDefinition::type).toSet().let {
             MacroActionType.STATUS !in it || MacroActionType.CUSTOM_STATUS !in it
         }) { "Macro cannot set both status and custom status" }
+        require(actions.filterIsInstance<MacroStatusAction>().none { it.status == TicketStatus.CLOSED }) {
+            "Macro cannot set the automation-only CLOSED status"
+        }
         val addedTags = actions.filterIsInstance<MacroAddTagAction>().map(MacroAddTagAction::tagId)
         val removedTags = actions.filterIsInstance<MacroRemoveTagAction>().map(MacroRemoveTagAction::tagId)
         require(addedTags.distinct().size == addedTags.size && removedTags.distinct().size == removedTags.size) {
