@@ -47,7 +47,8 @@ class StaffTicketQueryEvidenceIntegrationTest {
     @BeforeEach
     fun seed() {
         jdbcTemplate.execute(
-            "truncate table search_audit_query_ciphertexts, search_audit_customer_result_items, " +
+            "truncate table macro_preview_audit_details, search_audit_query_ciphertexts, " +
+                "search_audit_customer_result_items, " +
                 "search_audit_result_items, search_audit_details, access_audit_events",
         )
         jdbcTemplate.update("delete from request_access_tokens")

@@ -46,7 +46,8 @@ class AgentTicketSearchIntegrationTest {
     fun clearState() {
         if (tableExists("search_audit_query_ciphertexts")) {
             jdbcTemplate.execute(
-                "truncate table search_audit_query_ciphertexts, search_audit_customer_result_items, " +
+                "truncate table macro_preview_audit_details, search_audit_query_ciphertexts, " +
+                    "search_audit_customer_result_items, " +
                     "search_audit_result_items, search_audit_details, access_audit_events",
             )
         } else if (tableExists("access_audit_events")) {
