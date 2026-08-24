@@ -9,6 +9,7 @@ import dev.deskseed.foundation.CommandContext
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.TicketChannel
 import dev.deskseed.ticketing.TicketKind
+import dev.deskseed.ticketing.TicketIntegrationEventVisibilityPolicy
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import org.springframework.stereotype.Component
@@ -171,5 +172,5 @@ internal class TicketIntegrationEventPublisher(
     }
 
     private fun ticketVisibility(kind: TicketKind): DomainEventVisibility =
-        if (kind == TicketKind.INTERNAL_CHILD) DomainEventVisibility.INTERNAL else DomainEventVisibility.PUBLIC
+        TicketIntegrationEventVisibilityPolicy.forTicket(kind)
 }

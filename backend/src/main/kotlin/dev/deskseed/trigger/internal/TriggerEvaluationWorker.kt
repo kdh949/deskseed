@@ -9,6 +9,7 @@ import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.ApplyTriggerTicketCommand
 import dev.deskseed.ticketing.TicketKind
+import dev.deskseed.ticketing.TicketIntegrationEventVisibilityPolicy
 import dev.deskseed.ticketing.TriggerTicketCommandService
 import dev.deskseed.trigger.TriggerActionType
 import dev.deskseed.trigger.TriggerConditionDefinition
@@ -276,7 +277,7 @@ internal class TriggerEvaluationExecutor(
                     "ticketAuditId" to ticketAuditId.toString(),
                 ),
             ),
-            if (kind == TicketKind.INTERNAL_CHILD) DomainEventVisibility.INTERNAL else DomainEventVisibility.PUBLIC,
+            TicketIntegrationEventVisibilityPolicy.forTicket(kind),
         ))
     }
 

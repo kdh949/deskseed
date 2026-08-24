@@ -126,6 +126,22 @@ class TriggerExecutionIntegrationTest {
     }
 
     @Test
+    fun `trigger webhook intent for an internal work item is never public`() {
+        val admin = browser()
+        val targetGroup = activeGroup("내부 작업 트리거 그룹")
+        createAndActivate(admin, urgentUnassignedTrigger("내부 작업 라우팅", 10, targetGroup, true))
+        val ticketNumber = createUrgentTicket(admin, "internal-work-item-trigger@example.com", "internal work item")
+        jdbc.update("update tickets set kind = 'INTERNAL_WORK_ITEM' where ticket_number = ?", ticketNumber)
+
+        assertThat(worker.runOnce("internal-work-item-trigger-worker")).isTrue()
+
+        assertThat(jdbc.queryForList(
+            "select visibility from domain_event_outbox where event_type = 'ticket.trigger.executed'",
+            String::class.java,
+        )).containsExactly("INTERNAL")
+    }
+
+    @Test
     fun `invariant failure retries then dead letters without partial ticket mutation`() {
         val admin = browser()
         val targetGroup = activeGroup("실패 대상 그룹")
