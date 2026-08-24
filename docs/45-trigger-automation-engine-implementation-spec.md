@@ -232,3 +232,9 @@ The first implementation listens to the synchronous `TicketSubmitted` applicatio
 - webhook delivery failure occurs after both ticket and trigger command commits and cannot roll either mutation back.
 
 The worker claims jobs with `FOR UPDATE SKIP LOCKED` and a 60-second lease in a separate transaction. One execution transaction walks the captured versions in `(position, triggerId)` order, reloads the latest ticket before every rule, invokes a typed `ActorType.TRIGGER` ticket command, appends `TRIGGER_APPLIED` provenance, and then appends the metadata-only `ticket.trigger.executed` event. A failed invariant rolls the entire execution transaction back and moves the job through bounded retry to dead letter; it never leaves a partial ticket mutation or webhook intent.
+
+## 18. Initial solved-ticket automation boundary
+
+The first time-based slice only accepts a versioned elapsed-time condition (`solvedAgeMinutes`) and the system-only `CLOSE_TICKET` action. A 60-second scanner uses one PostgreSQL advisory transaction lock, the partial `(solved_at, id)` index for `SOLVED` tickets, and a maximum batch of 100 candidate pairs.
+
+Candidate identity is `(automationId, automationVersion, ticketId, solvedAt)`. The discovery query excludes existing identities before its limit so repeated scans cannot starve later rows. Reopening and solving a ticket creates a different interval identity; rescanning the same SOLVED interval does not.
