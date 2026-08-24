@@ -180,7 +180,7 @@ components:
       required: [ticketNumber, eventType]
       properties:
         ticketNumber: {type: integer, format: int64, minimum: 1, description: 현재 priority와 group projection만 평가에 사용하는 샘플 티켓 번호입니다.}
-        eventType: {type: string, enum: [TICKET_CREATED, TICKET_UPDATED], description: EVENT condition에 공급하며 실제 job을 생성하지 않는 합성 평가 경계입니다.}
+        eventType: {type: string, enum: [TICKET_CREATED], description: 현재 구현된 TICKET_CREATED 경계에서 trigger 조건을 평가합니다.}
       example: {ticketNumber: 1042, eventType: TICKET_CREATED}
     TriggerCondition:
       type: object

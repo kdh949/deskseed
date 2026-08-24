@@ -15027,8 +15027,7 @@ components:
           type: string
           enum:
           - TICKET_CREATED
-          - TICKET_UPDATED
-          description: EVENT condition에 공급하며 실제 job을 생성하지 않는 합성 평가 경계입니다.
+          description: 현재 구현된 TICKET_CREATED 경계에서 trigger 조건을 평가합니다.
       example:
         ticketNumber: 1042
         eventType: TICKET_CREATED

@@ -22,6 +22,7 @@ import dev.deskseed.trigger.TriggerEventType
 import dev.deskseed.trigger.TriggerNotFoundException
 import dev.deskseed.trigger.TriggerPreconditionFailedException
 import dev.deskseed.trigger.TriggerSetGroupAction
+import dev.deskseed.trigger.requireImplemented
 import dev.deskseed.trigger.TriggerWebhookAction
 import org.springframework.dao.DataAccessException
 import org.springframework.dao.DataIntegrityViolationException
@@ -116,7 +117,13 @@ internal class JdbcTriggerDefinitionAdministration(
         val current = lockedState(triggerId)
         requireExpected(current, expectedAggregateVersion)
         if (!versionExists(triggerId, triggerVersion)) throw TriggerNotFoundException()
-        validateActionTargets(triggerId, triggerVersion)
+        validateDefinitionTargets(triggerId, triggerVersion)
+        if (current.activeVersion == null) {
+            lockActiveTriggerSet()
+            if (activeTriggerCount() >= MAX_ACTIVE_TRIGGER_COUNT) {
+                throw TriggerConflictException("ACTIVE_TRIGGER_LIMIT_REACHED")
+            }
+        }
         val now = Instant.now(clock)
         jdbc.update(
             "update trigger_definitions set active_version = ?, aggregate_version = aggregate_version + 1, updated_at = ? where id = ?",
@@ -137,6 +144,7 @@ internal class JdbcTriggerDefinitionAdministration(
         val current = lockedState(triggerId)
         requireExpected(current, expectedAggregateVersion)
         val activeVersion = current.activeVersion ?: throw TriggerConflictException("TRIGGER_NOT_ACTIVE")
+        lockActiveTriggerSet()
         val now = Instant.now(clock)
         jdbc.update(
             "update trigger_definitions set active_version = null, aggregate_version = aggregate_version + 1, updated_at = ? where id = ?",
@@ -158,6 +166,7 @@ internal class JdbcTriggerDefinitionAdministration(
         require(position in 1..10_000) { "Trigger position is invalid" }
         val current = lockedState(triggerId)
         requireExpected(current, expectedAggregateVersion)
+        val displaced = stateAtPosition(position, triggerId)
         val now = Instant.now(clock)
         jdbc.execute("set constraints trigger_definitions_position_key deferred")
         jdbc.update(
@@ -168,10 +177,33 @@ internal class JdbcTriggerDefinitionAdministration(
             "update trigger_definitions set position = ?, aggregate_version = aggregate_version + 1, updated_at = ? where id = ?",
             position, Timestamp.from(now), triggerId,
         )
-        audit(
-            "TRIGGER_REPOSITIONED", triggerId, actor, now,
-            mapOf("previousPosition" to current.position.toString(), "position" to position.toString()),
+        val targetMetadata = mutableMapOf(
+            "previousPosition" to current.position.toString(),
+            "position" to position.toString(),
         )
+        displaced?.let { counterpart ->
+            targetMetadata += mapOf(
+                "counterpartTriggerId" to counterpart.id.toString(),
+                "counterpartPreviousPosition" to counterpart.position.toString(),
+                "counterpartPosition" to current.position.toString(),
+            )
+        }
+        audit("TRIGGER_REPOSITIONED", triggerId, actor, now, targetMetadata)
+        displaced?.let { counterpart ->
+            audit(
+                "TRIGGER_REPOSITIONED",
+                counterpart.id,
+                actor,
+                now,
+                mapOf(
+                    "previousPosition" to counterpart.position.toString(),
+                    "position" to current.position.toString(),
+                    "counterpartTriggerId" to current.id.toString(),
+                    "counterpartPreviousPosition" to current.position.toString(),
+                    "counterpartPosition" to position.toString(),
+                ),
+            )
+        }
         view(stateById(triggerId), current.currentVersion)
     }
 
@@ -184,6 +216,7 @@ internal class JdbcTriggerDefinitionAdministration(
         actor: TriggerDefinitionActor,
     ): TriggerDryRunResult {
         requireAccess(actor)
+        eventType.requireImplemented()
         val current = stateById(triggerId)
         if (!versionExists(triggerId, triggerVersion)) throw TriggerNotFoundException()
         val definition = view(current, triggerVersion)
@@ -297,8 +330,12 @@ internal class JdbcTriggerDefinitionAdministration(
         }
     }
 
-    private fun validateActionTargets(triggerId: UUID, version: Int) {
-        view(stateById(triggerId), version).actions.filterIsInstance<TriggerSetGroupAction>().forEach {
+    private fun validateDefinitionTargets(triggerId: UUID, version: Int) {
+        val definition = view(stateById(triggerId), version)
+        definition.conditions.filter { it.field == TriggerConditionField.EVENT }.forEach { condition ->
+            TriggerEventType.valueOf(requireNotNull(condition.value)).requireImplemented()
+        }
+        definition.actions.filterIsInstance<TriggerSetGroupAction>().forEach {
             if (!activeGroup(it.groupId)) throw TriggerConflictException("TRIGGER_TARGET_GROUP_INACTIVE")
         }
     }
@@ -308,8 +345,24 @@ internal class JdbcTriggerDefinitionAdministration(
         Boolean::class.java, groupId,
     ) == true
 
+    private fun activeTriggerCount(): Long = jdbc.queryForObject(
+        "select count(*) from trigger_definitions where active_version is not null",
+        Long::class.java,
+    ) ?: 0
+
+    private fun lockActiveTriggerSet() {
+        jdbc.execute("select pg_advisory_xact_lock($ACTIVE_TRIGGER_SET_LOCK)")
+    }
+
     private fun stateById(id: UUID): TriggerState = jdbc.query("$SELECT where definition.id = ?", ::state, id)
         .singleOrNull() ?: throw TriggerNotFoundException()
+
+    private fun stateAtPosition(position: Int, excludingId: UUID): TriggerState? = jdbc.query(
+        "$SELECT where definition.position = ? and definition.id <> ?",
+        ::state,
+        position,
+        excludingId,
+    ).singleOrNull()
 
     private fun lockedState(id: UUID): TriggerState = jdbc.query("$SELECT where definition.id = ? for update", ::state, id)
         .singleOrNull() ?: throw TriggerNotFoundException()
@@ -369,6 +422,8 @@ internal class JdbcTriggerDefinitionAdministration(
     private data class TicketSnapshot(val priority: String, val groupId: UUID?)
 
     private companion object {
+        const val MAX_ACTIVE_TRIGGER_COUNT = 100
+        const val ACTIVE_TRIGGER_SET_LOCK = 3_470_555_019_348_854_226L
         const val SELECT = """
             select definition.id, definition.position, definition.current_version, definition.active_version,
                    definition.aggregate_version, definition.created_at, definition.updated_at

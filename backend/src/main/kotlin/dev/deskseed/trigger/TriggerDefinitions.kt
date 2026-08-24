@@ -7,6 +7,13 @@ import java.util.Locale
 import java.util.UUID
 
 enum class TriggerEventType { TICKET_CREATED, TICKET_UPDATED }
+
+fun TriggerEventType.requireImplemented() {
+    if (this != TriggerEventType.TICKET_CREATED) {
+        throw TriggerValidationException("TRIGGER_EVENT_NOT_IMPLEMENTED", "Only TICKET_CREATED is implemented")
+    }
+}
+
 enum class TriggerConditionGroup { ALL, ANY }
 enum class TriggerConditionField { EVENT, PRIORITY, GROUP }
 enum class TriggerConditionOperator { IS, IS_NOT, PRESENT, NOT_PRESENT }
@@ -62,6 +69,9 @@ data class TriggerDefinitionDraft(
         require(conditions.size in 1..50) { "Trigger requires between 1 and 50 conditions" }
         require(actions.size in 1..50) { "Trigger requires between 1 and 50 actions" }
         require(conditions.any { it.field == TriggerConditionField.EVENT }) { "Trigger requires an event condition" }
+        conditions.filter { it.field == TriggerConditionField.EVENT }.forEach { condition ->
+            TriggerEventType.valueOf(requireNotNull(condition.value)).requireImplemented()
+        }
         require(actions.count { it.type == TriggerActionType.SET_GROUP } <= 1) { "Trigger can set group at most once" }
         require(actions.count { it.type == TriggerActionType.ENQUEUE_WEBHOOK } <= 1) { "Trigger can enqueue a webhook at most once" }
     }

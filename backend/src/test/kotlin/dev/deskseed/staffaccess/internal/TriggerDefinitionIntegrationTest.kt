@@ -21,6 +21,10 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 @AutoConfigureMockMvc
@@ -120,6 +124,39 @@ class TriggerDefinitionIntegrationTest {
     }
 
     @Test
+    fun `trigger definitions and dry runs reject the unimplemented ticket updated event`() {
+        val admin = browser("ADMIN")
+        val groupId = activeGroup("지원하지 않는 이벤트 그룹")
+        val updatedEventDefinition = triggerJson("업데이트 이벤트 규칙", 20, groupId)
+            .replace("\"value\":\"TICKET_CREATED\"", "\"value\":\"TICKET_UPDATED\"")
+
+        mockMvc.perform(
+            post("/api/v1/admin/triggers")
+                .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+                .content(updatedEventDefinition),
+        ).andExpect(status().isBadRequest)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from trigger_definitions where normalized_name = '업데이트 이벤트 규칙'",
+            Long::class.java,
+        )).isZero()
+
+        val ticketJson = createUrgentTicket(admin, "unsupported-trigger-event@example.com", "지원하지 않는 이벤트", status().isCreated)
+        val ticketNumber = longField(ticketJson, "ticketNumber")
+        val created = mockMvc.perform(
+            post("/api/v1/admin/triggers")
+                .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+                .content(triggerJson("생성 이벤트 규칙", 21, groupId)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val triggerId = UUID.fromString(stringField(created, "id"))
+
+        mockMvc.perform(
+            post("/api/v1/admin/triggers/{triggerId}/versions/{version}/dry-run", triggerId, 1)
+                .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"ticketNumber":$ticketNumber,"eventType":"TICKET_UPDATED"}"""),
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
     fun `ticket creation snapshots active ordered versions into a durable job in the root transaction`() {
         val admin = browser("ADMIN")
         val groupId = activeGroup("durable trigger 그룹")
@@ -189,6 +226,118 @@ class TriggerDefinitionIntegrationTest {
             "select count(*) from tickets where subject = 'rollback ticket'",
             Long::class.java,
         )).isZero()
+    }
+
+    @Test
+    fun `activation caps active triggers before ticket creation and leaves new tickets available`() {
+        val admin = browser("ADMIN")
+        val groupId = activeGroup("활성 상한 그룹")
+        (1..100).forEach { position ->
+            createAndActivate(admin, "활성 상한 규칙 $position", position, groupId)
+        }
+        assertThat(jdbc.queryForObject(
+            "select count(*) from trigger_definitions where active_version is not null",
+            Long::class.java,
+        )).isEqualTo(100)
+
+        val overflowId = createTrigger(admin, "활성 상한 초과 규칙", 101, groupId)
+        mockMvc.perform(
+            put("/api/v1/admin/triggers/{triggerId}/activation", overflowId)
+                .session(admin.session).csrf(admin).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/trigger-conflict"))
+        assertThat(jdbc.queryForObject(
+            "select count(*) from trigger_definitions where active_version is not null",
+            Long::class.java,
+        )).isEqualTo(100)
+
+        val ticketJson = createUrgentTicket(admin, "active-limit-ticket@example.com", "활성 상한 이후 티켓", status().isCreated)
+        val ticketNumber = longField(ticketJson, "ticketNumber")
+        assertThat(jdbc.queryForObject(
+            "select jsonb_array_length(trigger_versions_json) from trigger_evaluation_jobs where ticket_number = ?",
+            Int::class.java,
+            ticketNumber,
+        )).isEqualTo(100)
+    }
+
+    @Test
+    fun `concurrent activations cannot exceed the active trigger limit`() {
+        val setupAdmin = browser("ADMIN")
+        val groupId = activeGroup("동시 활성화 상한 그룹")
+        (1..99).forEach { position ->
+            createAndActivate(setupAdmin, "동시 활성화 규칙 $position", position, groupId)
+        }
+        val firstTriggerId = createTrigger(setupAdmin, "동시 활성화 후보 A", 100, groupId)
+        val secondTriggerId = createTrigger(setupAdmin, "동시 활성화 후보 B", 101, groupId)
+        val firstAdmin = browser("ADMIN")
+        val secondAdmin = browser("ADMIN")
+        jdbc.execute(
+            """
+            create or replace function delay_trigger_activation_update()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if old.active_version is null and new.active_version is not null then
+                    perform pg_sleep(0.25);
+                end if;
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbc.execute(
+            "create trigger delay_trigger_activation_update before update on trigger_definitions for each row execute function delay_trigger_activation_update()",
+        )
+        try {
+            assertThat(
+                concurrently(
+                    Callable { activationStatus(firstAdmin, firstTriggerId) },
+                    Callable { activationStatus(secondAdmin, secondTriggerId) },
+                ),
+            ).containsExactlyInAnyOrder(200, 409)
+        } finally {
+            jdbc.execute("drop trigger if exists delay_trigger_activation_update on trigger_definitions")
+            jdbc.execute("drop function if exists delay_trigger_activation_update()")
+        }
+        assertThat(jdbc.queryForObject(
+            "select count(*) from trigger_definitions where active_version is not null",
+            Long::class.java,
+        )).isEqualTo(100)
+    }
+
+    @Test
+    fun `reposition records an audit for both triggers whose positions are swapped`() {
+        val admin = browser("ADMIN")
+        val groupId = activeGroup("순서 교환 감사 그룹")
+        val firstTriggerId = createTrigger(admin, "순서 교환 첫 번째", 10, groupId)
+        val secondTriggerId = createTrigger(admin, "순서 교환 두 번째", 20, groupId)
+
+        mockMvc.perform(
+            put("/api/v1/admin/triggers/{triggerId}/position", firstTriggerId)
+                .session(admin.session).csrf(admin).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"position":20}"""),
+        ).andExpect(status().isOk)
+
+        assertThat(jdbc.queryForMap("select position, aggregate_version from trigger_definitions where id = ?", firstTriggerId))
+            .containsEntry("position", 20)
+            .containsEntry("aggregate_version", 2L)
+        assertThat(jdbc.queryForMap("select position, aggregate_version from trigger_definitions where id = ?", secondTriggerId))
+            .containsEntry("position", 10)
+            .containsEntry("aggregate_version", 2L)
+        val audits = jdbc.queryForList(
+            """
+            select target_id::text as target_id, metadata_json::text as metadata
+              from admin_security_audit_events
+             where event_type = 'TRIGGER_REPOSITIONED'
+             order by target_id
+            """.trimIndent(),
+        )
+        assertThat(audits).hasSize(2)
+        assertThat(audits.single { it["target_id"] == firstTriggerId.toString() }["metadata"].toString())
+            .contains("\"previousPosition\":\"10\"", "\"position\":\"20\"", secondTriggerId.toString())
+        assertThat(audits.single { it["target_id"] == secondTriggerId.toString() }["metadata"].toString())
+            .contains("\"previousPosition\":\"20\"", "\"position\":\"10\"", firstTriggerId.toString())
     }
 
     @Test
@@ -274,6 +423,48 @@ class TriggerDefinitionIntegrationTest {
           ]
         }
         """.trimIndent()
+
+    private fun createAndActivate(browser: Browser, name: String, position: Int, groupId: UUID): UUID {
+        val triggerId = createTrigger(browser, name, position, groupId)
+        mockMvc.perform(
+            put("/api/v1/admin/triggers/{triggerId}/activation", triggerId)
+                .session(browser.session).csrf(browser).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isOk)
+        return triggerId
+    }
+
+    private fun createTrigger(browser: Browser, name: String, position: Int, groupId: UUID): UUID {
+        val created = mockMvc.perform(
+            post("/api/v1/admin/triggers")
+                .session(browser.session).csrf(browser).contentType(MediaType.APPLICATION_JSON)
+                .content(triggerJson(name, position, groupId)),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        return UUID.fromString(stringField(created, "id"))
+    }
+
+    private fun activationStatus(browser: Browser, triggerId: UUID): Int = mockMvc.perform(
+        put("/api/v1/admin/triggers/{triggerId}/activation", triggerId)
+            .session(browser.session).csrf(browser).header("If-Match", "\"1\"")
+            .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+    ).andReturn().response.status
+
+    private fun concurrently(vararg calls: Callable<Int>): List<Int> {
+        val barrier = CyclicBarrier(calls.size)
+        val executor = Executors.newFixedThreadPool(calls.size)
+        try {
+            val futures = calls.map { call ->
+                executor.submit<Int> {
+                    barrier.await(5, TimeUnit.SECONDS)
+                    call.call()
+                }
+            }
+            return futures.map { it.get(15, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
+            executor.awaitTermination(5, TimeUnit.SECONDS)
+        }
+    }
 
     private fun browser(role: String): Browser {
         val email = "trigger-${role.lowercase()}-${UUID.randomUUID()}@example.com"
