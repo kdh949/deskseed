@@ -1,5 +1,6 @@
 package dev.deskseed.trigger.internal
 
+import dev.deskseed.webhook.internal.WebhookEventOutboxWorker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -26,6 +27,7 @@ class TriggerExecutionIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var worker: TriggerEvaluationWorker
+    @Autowired private lateinit var webhookOutboxWorker: WebhookEventOutboxWorker
 
     @BeforeEach
     fun clearData() {
@@ -126,19 +128,24 @@ class TriggerExecutionIntegrationTest {
     }
 
     @Test
-    fun `trigger webhook intent for an internal work item is never public`() {
+    fun `trigger execution for an internal work item creates no external webhook delivery`() {
         val admin = browser()
         val targetGroup = activeGroup("내부 작업 트리거 그룹")
         createAndActivate(admin, urgentUnassignedTrigger("내부 작업 라우팅", 10, targetGroup, true))
+        subscribeWebhook("ticket.trigger.executed")
         val ticketNumber = createUrgentTicket(admin, "internal-work-item-trigger@example.com", "internal work item")
         jdbc.update("update tickets set kind = 'INTERNAL_WORK_ITEM' where ticket_number = ?", ticketNumber)
 
         assertThat(worker.runOnce("internal-work-item-trigger-worker")).isTrue()
+        while (webhookOutboxWorker.runOnce("internal-work-item-trigger-materializer")) {
+            // Drain this test's outbox rows to exercise the external fan-out boundary.
+        }
 
         assertThat(jdbc.queryForList(
             "select visibility from domain_event_outbox where event_type = 'ticket.trigger.executed'",
             String::class.java,
         )).containsExactly("INTERNAL")
+        assertThat(jdbc.queryForObject("select count(*) from webhook_deliveries", Long::class.java)).isZero()
     }
 
     @Test
@@ -270,6 +277,30 @@ class TriggerExecutionIntegrationTest {
         jdbc.update(
             "insert into support_groups (id, name, status, created_at, updated_at, version) values (?, ?, 'ACTIVE', now(), now(), 0)",
             id, name,
+        )
+    }
+
+    private fun subscribeWebhook(eventType: String) {
+        val endpointId = UUID.randomUUID()
+        val staffId = jdbc.queryForObject("select id from staff_accounts limit 1", UUID::class.java)!!
+        val now = Timestamp.from(Instant.now())
+        jdbc.update(
+            """
+            insert into webhook_endpoints (
+                id, name, url, enabled, target_class, allowed_hostnames_json, allowed_ports_json, allowed_cidrs_json,
+                health_state, cooldown_until, consecutive_failures, last_succeeded_at, last_failed_at, created_by_staff_id,
+                created_at, updated_at, deactivated_at, version
+            ) values (?, ?, 'https://203.0.113.10/hook', true, 'PUBLIC', '[]', '[443]', '[]', 'CLOSED', null, 0, null, null,
+                      ?, ?, ?, null, 0)
+            """.trimIndent(),
+            endpointId, "Trigger $eventType", staffId, now, now,
+        )
+        jdbc.update(
+            """
+            insert into webhook_subscriptions (endpoint_id, event_type, event_version, payload_policy, created_at)
+            values (?, ?, 1, 'METADATA_ONLY', ?)
+            """.trimIndent(),
+            endpointId, eventType, now,
         )
     }
 
