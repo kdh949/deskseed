@@ -41,6 +41,8 @@ ApplyMacro
 CreateTriggerVersion
 ActivateTriggerVersion
 RepositionTrigger
+CreateAutomationVersion
+ActivateAutomationVersion
 AssignTicket
 TransferTicket
 CreateChildTicket
