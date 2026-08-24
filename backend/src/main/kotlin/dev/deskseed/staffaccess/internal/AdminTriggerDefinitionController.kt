@@ -104,15 +104,15 @@ internal class AdminTriggerDefinitionController(
         triggerId, body.position, triggerEtag(ifMatch), request.triggerActor(principal),
     ))
 
-    @PostMapping("/{triggerId}/versions/{version}/dry-run")
+    @PostMapping("/{triggerId}/versions/{triggerVersion}/dry-run")
     fun dryRun(
         @PathVariable triggerId: UUID,
-        @PathVariable version: Int,
+        @PathVariable triggerVersion: Int,
         @Valid @RequestBody body: TriggerDryRunRequest,
         @AuthenticationPrincipal principal: StaffPrincipal,
         request: HttpServletRequest,
     ) = administration.dryRun(
-        triggerId, version, body.ticketNumber, body.eventType, request.triggerActor(principal),
+        triggerId, triggerVersion, body.ticketNumber, body.eventType, request.triggerActor(principal),
     )
 }
 
