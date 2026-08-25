@@ -907,6 +907,85 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - claim requires the original request-access token or a signed, ticket-specific claim grant.
 - successful and denied claim attempts are security-audited without logging the secret.
 
+### AUTH-005 — Password registration and email verification
+
+- new and existing email input receives the same `202` shape and comparable work class; no response, log, audit, or mail decision exposes account existence.
+- registration persists only an adaptive customer password hash and digest-only email/continuation proofs; raw password, token, continuation secret, and usable credential examples are absent.
+- activation requires the email token and browser-bound continuation proof for the same unexpired intent; mismatch, replay, expiry, and concurrent consume create no account.
+- profile, password account, current registration-policy acceptances, verification security audit, and durable mail intent effects commit or roll back at their documented boundaries.
+
+### AUTH-006 — Password login isolation, throttling, and session rotation
+
+- unknown email, wrong password, disabled account, passwordless account, and incomplete registration return one generic invalid-credential problem after real-or-dummy adaptive hash work.
+- normalized destination and requester network limits are PostgreSQL-backed; `429` includes `Retry-After` and reveals no account state.
+- successful login rotates the current customer session, binds it to the credential version, and appends one metadata-only security event; required audit failure returns no authenticated success.
+- password, password hash, session cookie, Authorization value, raw email, and company name are absent from ordinary logs and audit metadata.
+
+### AUTH-007 — Password reset single use and session revocation
+
+- reset request is enumeration-safe, throttled, mail-backed, and issues only a purpose-bound digest-stored token for an active password account.
+- one valid unexpired token can change the credential once; wrong-purpose, malformed, expired, replayed, and concurrent consume cannot produce a second change.
+- successful reset increments credential version, revokes every existing customer session, consumes the token, and appends the required security audit atomically.
+- an old session fails on its next protected request and reset never creates a new authenticated session implicitly.
+
+### AUTH-008 — Passwordless eligibility and registration completion
+
+- magic-link login mail is issued only for an eligible identity without a password while every request retains the same generic response.
+- consume accepts only a single-use `PASSWORDLESS_LOGIN` token and rotates into a session whose projection requires registration completion.
+- completion requires that session plus CSRF and current registration policy versions; password/profile/consents, credential-version update, session rotation/revocation, and security audit are atomic.
+- completion never lists or claims an anonymous ticket from email equality; AUTH-004 proof remains required.
+
+### CONSENT-001 — Immutable consent policy lifecycle
+
+- only an active ADMIN with `customer-consent:manage`, current expected-actor guard, CSRF, and matching `If-Match` can create, edit, publish, or archive a policy.
+- AGENT, SECURITY_AUDITOR, customer, and Integration Client direct access is denied without leaking protected resource state.
+- publishing creates an immutable version; accepted historical versions remain resolvable and cannot be updated or deleted through the runtime application role.
+- policy mutation and its metadata-only Admin/Security audit commit or roll back together; document body is absent from audit metadata.
+
+### CONSENT-002 — Current-version validation and atomic acceptance
+
+- registration and request submission require every current required policy for their context exactly once and reject missing, duplicate, unknown, archived, wrong-context, or stale versions.
+- final validation occurs in the account/ticket transaction; a prior policy projection is not an authorization token.
+- append-only acceptance references the immutable policy/version and server time without duplicating the document body.
+- acceptance, account or ticket mutation, and required audit commit or roll back together; acceptance data is absent from ordinary logs, webhooks, and ticket change metadata.
+
+### CFG-001 — Typed field and option integrity
+
+- field machine keys are immutable, each persisted EAV row matches exactly one allowed type column, and single-select values reference an active stable option ID.
+- incompatible type change and inactive/foreign option input fail without partial configuration or ticket mutation.
+- customer and staff projections apply independent server-side visibility/editability rules; direct ID input cannot reveal a staff-only definition, option, count, or value.
+
+### CFG-002 — Immutable form lifecycle and conditional projection
+
+- draft validation rejects unknown condition types, cycles, contradictory effects, and hidden-required dead ends.
+- publish creates an immutable version and enforces at most one current default for each customer/agent audience.
+- the server re-evaluates allowlisted facts and drops hidden/readonly values; frontend visibility is never authoritative.
+
+### CFG-003 — Normalized tag lifecycle and assignment
+
+- canonical tag values normalize deterministically and concurrent duplicate creation or assignment cannot create duplicate active identities.
+- lifecycle changes require ADMIN authorization and atomic Admin/Security audit; ticket add/remove uses the normal ticket write policy and one TicketAudit.
+- View/Search contributors enforce ticket authorization before tag conditions affect results, counts, or cursors.
+
+### CFG-004 — Category-compatible custom status
+
+- every custom status maps to one fixed canonical category and only one active default exists per category.
+- a custom label cannot bypass allowed transitions, SLA category semantics, or terminal `CLOSED` behavior.
+- older clients can rely on the canonical category while authorized projections resolve the selected label.
+
+### CFG-005 — Runtime configuration command and read boundary
+
+- agent configuration reads are server-projected, required-access-audited, and do not emit semantic `TICKET_VIEWED` during background refresh.
+- one ticket configuration command enforces write scope, expected version, stable client command identity, form capability, and normalized field/tag/status inputs.
+- exact replay returns the original result; misuse/conflict is non-mutating; one ordered TicketAudit and outbox fact commit with the ticket change.
+
+### CFG-006 — Customer form candidate projection and submission binding
+
+- initial and candidate projections expose only the current published customer form and customer-visible fields/options after server evaluation of allowlisted typed values.
+- candidate projection is not an authorization token; final create repeats current form/version, visibility, requiredness, type, and option validation.
+- selected form/version is preserved even with zero custom values; hidden/readonly values are dropped and staff-only/unknown input returns an existence-safe validation problem.
+- ticket, first PUBLIC comment, form selection, normalized values, one TicketAudit, required consent acceptances, CLEAN attachment links, access token, and mail intent obey the documented atomicity boundary.
+
 ### PERM-001 — Initial global agent read
 
 - every active Agent can find and read every staff-visible ticket through Views, search, direct URL and parent/child navigation.

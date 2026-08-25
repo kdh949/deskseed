@@ -66,55 +66,55 @@ Forward-only Flyway migrations are still required. “Not deployed” permits co
 
 `D-040` and ADR 0029 currently say customer authentication begins with email magic links. The new requirement activates their password-authentication revisit trigger.
 
-Create a new accepted ADR, proposed as:
+The new accepted ADR is:
 
 ```text
 ADR 0042 — Password-primary customer authentication with passwordless magic-link onboarding
 ```
 
-Reserve the next three decision-register entries for:
+The accepted decision-register entries are:
 
 ```text
-decision 57: customer authentication is password-primary; magic-link login is passwordless-only
-decision 58: consent policies are administrator-managed immutable versions with append-only acceptance
-decision 59: customer request submission binds a server-authorized form/version and typed values
+D-057: customer authentication is password-primary; magic-link login is passwordless-only
+D-058: consent policies are administrator-managed immutable versions with append-only acceptance
+D-059: customer request submission binds a server-authorized form/version and typed values
 ```
 
-Task 1 registers the final ASCII decision IDs in `docs/05-decision-register.md`; the plan intentionally does not activate those references before the register is updated.
+Task 1 registers these final ASCII decision IDs in the canonical `docs/25-implementation-decision-register.md`.
 
 ADR 0042 supersedes the authentication-method portion of ADR 0029 but preserves its single-use token, enumeration safety, session security, explicit claim, and outbound-mail boundaries.
 
 ### 4.2 Requirement IDs
 
-Add five narrow requirements rather than marking broad requirements complete:
+The five narrow requirements are:
 
 ```text
-customer auth: password registration, email verification, password login, and reset
-customer auth: passwordless magic-link sign-in and explicit registration completion
-customer consent: administrator-managed immutable consent-policy versions
-customer consent: server-validated append-only customer consent acceptance
-ticket configuration: customer form projection, submission validation, and form snapshot binding
+REQ-AUTH-003: password registration, email verification, password login, and reset
+REQ-AUTH-004: passwordless magic-link sign-in and explicit registration completion
+REQ-CONSENT-001: administrator-managed immutable consent-policy versions
+REQ-CONSENT-002: server-validated append-only customer consent acceptance
+REQ-CFG-014: customer form projection, submission validation, and form snapshot binding
 ```
 
-Task 1 allocates their final IDs in `docs/26-requirement-traceability.md`; candidate numbers are not used as active references in this plan.
+Task 1 registers these IDs in `docs/26-requirement-traceability.md` as `BLUEPRINT_READY`; the matching contract-freeze PR promotes each row independently.
 
 `REQ-CFG-002` remains broad. Completing the customer submission slice does not prove every custom-field query, search, and analytics capability.
 
 ### 4.3 Verification gate additions
 
-Extend `docs/21-minimum-verification-gates.md` with seven newly allocated gates covering:
+Extend `docs/21-minimum-verification-gates.md` with these seven gates:
 
 ```text
-customer authentication: password registration and email verification
-customer authentication: password login enumeration safety, throttling, and session rotation
-customer authentication: password reset single-use, expiry, and session revocation
-customer authentication: passwordless magic-link eligibility and registration completion
-customer consent: immutable policy lifecycle and administrator authorization
-customer consent: current-version enforcement and atomic acceptance persistence
-ticket configuration: customer form candidate projection and submission binding
+AUTH-005: password registration and email verification
+AUTH-006: password login enumeration safety, throttling, and session rotation
+AUTH-007: password reset single-use, expiry, and session revocation
+AUTH-008: passwordless magic-link eligibility and registration completion
+CONSENT-001: immutable policy lifecycle and administrator authorization
+CONSENT-002: current-version enforcement and atomic acceptance persistence
+CFG-006: customer form candidate projection and submission binding
 ```
 
-Task 1 assigns the final gate IDs together with the traceability rows so the plan never presents an undefined gate as executable.
+Task 1 also restores the already-referenced `CFG-001` through `CFG-005` definitions from the delivered ticket-configuration evidence so every active traceability reference resolves.
 
 Existing `AUTH-001` through `AUTH-004`, `ARCH-001/002/004`, `TKT-001/002`, `CHG-001/002/003`, `FILE-001/003/004/006`, and `DOC-001` remain applicable.
 

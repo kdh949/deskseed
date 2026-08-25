@@ -53,18 +53,69 @@ identity를 바꾸지 못한다. 신뢰 프록시에서 온 malformed, 복수, �
 
 ## 4. Account authentication — accepted contract
 
-Initial method: **email magic link only**.
+ADR 0042의 목표 방식은 **password-primary with passwordless-only magic-link login**이다.
 
-- use Spring Security One-Time Token integration or an equivalent adapter with the same contract;
-- production-style DB-backed token service in development and production;
-- single use, default 15-minute TTL, configurable 5–60 minutes;
-- enumeration-safe request response;
-- delivery through durable outbound email and Mailpit in development;
-- secure customer session cookie and explicit logout;
-- token generation, consumption success/failure, replay, and account link are security-audited;
-- passwords, social login, and external IdP are later capabilities.
+```text
+NO_ACCOUNT
+  → registration intent
+  → email token + same-browser continuation proof
+  → ACTIVE_PASSWORD
 
-The magic-link URL must not leak through application logs or third-party resources. The frontend consumes the token through a dedicated route and immediately establishes a server session.
+ANONYMOUS_REQUESTER or ACTIVE_PASSWORDLESS
+  → PASSWORDLESS_LOGIN magic link
+  → passwordless session / REGISTRATION_REQUIRED
+  → password + profile + current registration consents
+  → ACTIVE_PASSWORD
+
+ACTIVE_PASSWORD
+  → password login
+  → purpose-bound password reset
+```
+
+### 4.1 Password registration and login
+
+- registration request stores a customer-specific adaptive password hash, never plaintext;
+- email verification activates a pending registration only when a single-use email token and the
+  same intent's browser-bound continuation proof both match;
+- login always performs real-or-dummy password-hash work and uses one generic invalid-credential
+  response for unknown, wrong-password, disabled, passwordless, and incomplete states;
+- normalized destination and requester network identity have PostgreSQL-backed rate limits;
+- successful login rotates the server-side customer session and appends a metadata-only security
+  event before returning success;
+- password reset is enumeration-safe, purpose-bound, single-use, expiring, and revokes all existing
+  customer sessions by advancing the credential version;
+- password input is 12–128 characters, permits Unicode and spaces, rejects controls, and has no
+  forced composition rule;
+- social login, external IdP, SSO, and MFA remain later capabilities.
+
+The initial customer encoder target is Argon2id with 19 MiB memory, two iterations, parallelism one,
+16-byte salt, and 32-byte hash. It is distinct from staff BCrypt/bootstrap configuration and must be
+tuned with supported-deployment timing evidence before implementation is called release-ready.
+
+### 4.2 Passwordless magic-link boundary
+
+- production-style DB-backed, purpose-bound token service is used in development and production;
+- `PASSWORDLESS_LOGIN` is single-use with default 15-minute TTL, configurable 5–60 minutes;
+- request response is enumeration-safe and sends mail only for an identity without a password;
+- consume creates/rotates a customer session whose projection requires explicit registration
+  completion before password-account capabilities are available;
+- completion requires session+CSRF and atomically writes password, display name, company name,
+  current registration-policy acceptances, credential version, and rotated session state;
+- token generation, consumption success/failure, replay, and completion are security-audited;
+- delivery uses durable outbound email and Mailpit in development.
+
+Magic-link, verification, and reset URLs must not leak through application logs, audit metadata,
+referrers, or third-party resources. Browser token routes remove the token before follow-up requests.
+
+### 4.3 Session and identity boundary
+
+- customer cookies remain HttpOnly, Secure in production, SameSite=Lax, and server-revocable;
+- password reset revokes every old customer session; login and completion rotate the current one;
+- `CurrentCustomer` exposes bounded credential/registration/authentication-method states, not hashes,
+  token state, limiter data, or security-audit metadata;
+- company name is profile PII and is not copied to routine authentication events or ticket-list
+  projections unless a contract explicitly needs it;
+- required credential/security-audit persistence failure is fail-closed.
 
 ## 5. Claim flow
 
@@ -134,7 +185,9 @@ SOLVED/CLOSED → 해결됨
 - allow customer follow-up.
 - solved reopen window.
 - display public status mapping.
-- email verification provider.
+- customer authentication method and purpose-specific TTLs.
+- password length bounds and rate-limit policy.
+- email verification/delivery provider.
 - brand/logo/colors.
 
 The implemented access-mode slice exposes only the typed three-mode setting. ADMIN writes carry
@@ -154,8 +207,11 @@ notification event와 actual email delivery를 분리하고 delivery audit/obser
 ## 10. Security acceptance
 
 - 다른 고객 ticket 접근 불가.
-- email enumeration 최소화.
+- registration, login, reset, magic request의 email/credential-state enumeration 방지.
 - token logs/referrer leakage 방지.
 - internal comment/child/audit leak 없음.
 - XSS sanitization.
-- magic link replay/expiry.
+- verification/reset/magic token purpose·replay·expiry·concurrent consume 검증.
+- registration continuation-proof mismatch는 account를 활성화하지 않음.
+- password reset 뒤 모든 old session 거부.
+- passwordless completion은 email equality로 ticket을 claim하지 않음.

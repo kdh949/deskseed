@@ -45,7 +45,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-038 | email as Ticket/Comment channel adapter | accepted for P8 | channel model evidence changes |
 | D-039 | Docker Compose first supported self-hosted topology | accepted | Kubernetes demand and ops owner exist |
 
-| D-040 | customer authentication starts with DB-backed email magic links | accepted | password/SSO requirement |
+| D-040 | customer authentication starts with DB-backed email magic links | superseded by D-057 for authentication method; token/session/claim boundaries retained | password/SSO requirement activated |
 | D-041 | all active agents initially read all staff-visible tickets | accepted | operator requests restrictive mode |
 | D-042 | cross-group write remains group-or-assignee until explicitly decided | provisional | product owner decision |
 | D-043 | Platform API v1 is private-network scoped-key create/read/update/internal-comment | accepted | public/delegated API requirement |
@@ -62,6 +62,9 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-054 | Committed OpenAPI remains authoritative; Scalar renders manually owned Korean domain documentation, while springdoc runtime output is drift evidence only and validators never generate inferred prose | accepted | contract ownership or API delivery model changes |
 | D-055 | Parallel Wave delivery used delivery-time ownership reservations; the durable contract is owned Core OpenAPI fragments plus a deterministic committed bundle, and typed workflow extensions fail closed outside central switches | accepted | a different contract composition or extension boundary is approved |
 | D-056 | Ticket configuration uses typed EAV values, immutable form versions, server-authoritative conditional projection, normalized tags, and custom labels mapped to fixed status categories | accepted | field type set, query evidence, or status/state-machine policy changes |
+| D-057 | Customer authentication is password-primary; magic-link login is passwordless-only and registration activation also requires browser-bound continuation proof | accepted | SSO/MFA requirement, supported-hardware password benchmark failure, or credential-policy change |
+| D-058 | Customer consent policies use administrator-managed immutable published versions and append-only acceptances bound to the accepted version | accepted | legal withdrawal/renewal policy or document-format requirement changes |
+| D-059 | Customer request submission binds the current server-authorized form/version and normalized typed values; candidate projection is never an authorization token | accepted | form lifecycle, field type set, or deployed-client compatibility changes |
 
 D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
 IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.
