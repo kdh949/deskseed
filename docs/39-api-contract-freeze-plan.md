@@ -56,6 +56,7 @@ POST /api/v1/customer/auth/magic-link-sessions
 POST /api/v1/customer/auth/password-reset-requests
 POST /api/v1/customer/auth/password-resets
 PUT  /api/v1/customer/me/registration
+GET  /api/v1/customer/consent-policies
 GET  /api/v1/customer/csrf
 DELETE /api/v1/customer/session
 GET  /api/v1/customer/me
@@ -103,6 +104,10 @@ GET/POST/PATCH /api/v1/admin/staff...
 PUT/DELETE /api/v1/admin/staff/{staffId}/audit-authorities/{authority}
 GET/POST/PATCH /api/v1/admin/groups...
 PUT /api/v1/admin/settings/customer-access-mode
+GET/POST /api/v1/admin/customer-consent-policies
+GET/PUT  /api/v1/admin/customer-consent-policies/{policyId}
+POST     /api/v1/admin/customer-consent-policies/{policyId}/publish
+POST     /api/v1/admin/customer-consent-policies/{policyId}/archive
 GET/PUT /api/v1/admin/permissions...
 GET/POST /api/v1/admin/sla-policies
 POST /api/v1/admin/sla-policies/preview

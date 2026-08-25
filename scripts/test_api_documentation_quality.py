@@ -243,6 +243,247 @@ class CustomerIdentityContractTest(unittest.TestCase):
         self.assertIn("Set-Cookie", success["headers"])
 
 
+class CustomerConsentContractTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.document: dict[str, Any] = yaml.safe_load(CORE_CONTRACT.read_text(encoding="utf-8"))
+
+    def operation(self, path: str, method: str = "get") -> dict[str, Any]:
+        operation = self.document["paths"][path][method]
+        self.assertIsInstance(operation, dict)
+        return operation
+
+    def resolve(self, value: dict[str, Any]) -> dict[str, Any]:
+        reference = value.get("$ref")
+        if reference is None:
+            return value
+        self.assertTrue(reference.startswith("#/"), f"only local references are supported: {reference}")
+        resolved: Any = self.document
+        for part in reference.removeprefix("#/").split("/"):
+            resolved = resolved[part]
+        self.assertIsInstance(resolved, dict)
+        return resolved
+
+    @staticmethod
+    def parameter_refs(operation: dict[str, Any]) -> set[str]:
+        return {
+            str(parameter["$ref"])
+            for parameter in operation.get("parameters", [])
+            if isinstance(parameter, dict) and "$ref" in parameter
+        }
+
+    def validator(self, schema_name: str) -> Draft202012Validator:
+        return Draft202012Validator(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "components": self.document["components"],
+                "$ref": f"#/components/schemas/{schema_name}",
+            },
+        )
+
+    def test_customer_and_admin_operation_family_is_complete_and_blueprint_only(self) -> None:
+        expected = {
+            ("/api/v1/customer/consent-policies", "get"): "listCurrentCustomerConsentPolicies",
+            ("/api/v1/admin/customer-consent-policies", "get"): "listCustomerConsentPolicies",
+            ("/api/v1/admin/customer-consent-policies", "post"): "createCustomerConsentPolicy",
+            (
+                "/api/v1/admin/customer-consent-policies/{policyId}",
+                "get",
+            ): "getCustomerConsentPolicy",
+            (
+                "/api/v1/admin/customer-consent-policies/{policyId}",
+                "put",
+            ): "updateCustomerConsentPolicyDraft",
+            (
+                "/api/v1/admin/customer-consent-policies/{policyId}/publish",
+                "post",
+            ): "publishCustomerConsentPolicy",
+            (
+                "/api/v1/admin/customer-consent-policies/{policyId}/archive",
+                "post",
+            ): "archiveCustomerConsentPolicy",
+        }
+        declared_blueprints = set(
+            self.document["x-deskseed-staff-actor-consistency"]["blueprintOnlyOperationIds"],
+        )
+
+        for (path, method), operation_id in expected.items():
+            with self.subTest(path=path, method=method):
+                operation = self.operation(path, method)
+                self.assertEqual(operation_id, operation["operationId"])
+                self.assertNotIn("x-deskseed-contract-status", operation)
+                if path.startswith("/api/v1/admin/"):
+                    self.assertIn(operation_id, declared_blueprints)
+
+    def test_admin_policy_boundary_requires_authority_actor_csrf_and_precondition(self) -> None:
+        admin_operations = (
+            self.operation("/api/v1/admin/customer-consent-policies"),
+            self.operation("/api/v1/admin/customer-consent-policies", "post"),
+            self.operation("/api/v1/admin/customer-consent-policies/{policyId}"),
+            self.operation("/api/v1/admin/customer-consent-policies/{policyId}", "put"),
+            self.operation("/api/v1/admin/customer-consent-policies/{policyId}/publish", "post"),
+            self.operation("/api/v1/admin/customer-consent-policies/{policyId}/archive", "post"),
+        )
+        for operation in admin_operations:
+            with self.subTest(operation=operation["operationId"]):
+                self.assertEqual([{"staffSession": []}], operation["security"])
+                self.assertEqual(
+                    "customer-consent:manage",
+                    operation["x-deskseed-required-authority"],
+                )
+                self.assertIn(
+                    "#/components/parameters/ExpectedStaffActorHeader",
+                    self.parameter_refs(operation),
+                )
+
+        writes = {
+            "createCustomerConsentPolicy": self.operation(
+                "/api/v1/admin/customer-consent-policies",
+                "post",
+            ),
+            "updateCustomerConsentPolicyDraft": self.operation(
+                "/api/v1/admin/customer-consent-policies/{policyId}",
+                "put",
+            ),
+            "publishCustomerConsentPolicy": self.operation(
+                "/api/v1/admin/customer-consent-policies/{policyId}/publish",
+                "post",
+            ),
+            "archiveCustomerConsentPolicy": self.operation(
+                "/api/v1/admin/customer-consent-policies/{policyId}/archive",
+                "post",
+            ),
+        }
+        expected_events = {
+            "createCustomerConsentPolicy": "CUSTOMER_CONSENT_POLICY_CREATED",
+            "updateCustomerConsentPolicyDraft": "CUSTOMER_CONSENT_POLICY_DRAFT_UPDATED",
+            "publishCustomerConsentPolicy": "CUSTOMER_CONSENT_POLICY_PUBLISHED",
+            "archiveCustomerConsentPolicy": "CUSTOMER_CONSENT_POLICY_ARCHIVED",
+        }
+        for operation_id, operation in writes.items():
+            with self.subTest(operation=operation_id):
+                refs = self.parameter_refs(operation)
+                self.assertIn("#/components/parameters/CsrfHeader", refs)
+                expected_precondition = (
+                    "#/components/parameters/CustomerConsentIfNoneMatch"
+                    if operation_id == "createCustomerConsentPolicy"
+                    else "#/components/parameters/CustomerConsentIfMatch"
+                )
+                self.assertIn(expected_precondition, refs)
+                self.assertEqual("FAIL_CLOSED", operation["x-deskseed-audit-failure"])
+                self.assertEqual(
+                    [expected_events[operation_id]],
+                    operation["x-deskseed-security-audit-events"],
+                )
+
+    def test_public_projection_contains_only_current_customer_safe_version_fields(self) -> None:
+        operation = self.operation("/api/v1/customer/consent-policies")
+        self.assertNotIn("security", operation)
+        response = self.resolve(operation["responses"]["200"])
+        cache_control = self.resolve(response["headers"]["Cache-Control"])
+        self.assertEqual("no-store", cache_control["schema"]["const"])
+
+        schema = self.document["components"]["schemas"]["CurrentCustomerConsentPolicy"]
+        self.assertFalse(schema["additionalProperties"])
+        fields = set(schema["properties"])
+        self.assertTrue(
+            {
+                "policyId",
+                "policyKey",
+                "version",
+                "title",
+                "document",
+                "checksumSha256",
+                "required",
+                "displayOrder",
+                "effectiveAt",
+            }.issubset(fields),
+        )
+        self.assertTrue(
+            fields.isdisjoint(
+                {
+                    "lifecycle",
+                    "draft",
+                    "versions",
+                    "aggregateVersion",
+                    "publishedByStaffId",
+                    "acceptances",
+                    "customerId",
+                },
+            ),
+        )
+        example = response["content"]["application/json"]["example"]
+        self.assertFalse(list(self.validator("CurrentCustomerConsentPolicyList").iter_errors(example)))
+
+    def test_consent_document_subset_rejects_active_or_unbounded_content_shapes(self) -> None:
+        validator = self.validator("CustomerConsentDocument")
+        valid = {
+            "schemaVersion": 1,
+            "blocks": [{"type": "paragraph", "text": "합성 정책 문서입니다."}],
+        }
+        invalid = {
+            "raw html property": {
+                "schemaVersion": 1,
+                "blocks": [
+                    {"type": "paragraph", "text": "합성 정책", "html": "<strong>unsafe</strong>"},
+                ],
+            },
+            "script text": {
+                "schemaVersion": 1,
+                "blocks": [{"type": "paragraph", "text": "<script>unsafe</script>"}],
+            },
+            "attachment block": {
+                "schemaVersion": 1,
+                "blocks": [
+                    {"type": "attachment", "attachmentId": "00000000-0000-4000-8000-000000000001"},
+                ],
+            },
+            "code block": {
+                "schemaVersion": 1,
+                "blocks": [{"type": "code", "text": "alert(1)"}],
+            },
+            "unsafe url": {
+                "schemaVersion": 1,
+                "blocks": [{"type": "link", "text": "정책", "url": "http://example.test"}],
+            },
+            "control character": {
+                "schemaVersion": 1,
+                "blocks": [{"type": "paragraph", "text": "합성\u0007정책"}],
+            },
+        }
+
+        self.assertFalse(list(validator.iter_errors(valid)))
+        for description, document in invalid.items():
+            with self.subTest(description=description):
+                self.assertTrue(list(validator.iter_errors(document)))
+
+    def test_admin_request_examples_are_manual_synthetic_and_schema_valid(self) -> None:
+        for schema_name in (
+            "CreateCustomerConsentPolicyRequest",
+            "UpdateCustomerConsentPolicyDraftRequest",
+        ):
+            with self.subTest(schema=schema_name):
+                schema = self.document["components"]["schemas"][schema_name]
+                self.assertEqual("MANUAL", schema["x-deskseed-documentation-review"])
+                if "policyKey" in schema["example"]:
+                    self.assertTrue(schema["example"]["policyKey"].startswith("test-"))
+                self.assertIn("합성", schema["example"]["title"])
+                self.assertFalse(list(self.validator(schema_name).iter_errors(schema["example"])))
+
+    def test_stale_policy_contract_is_non_mutating_and_returns_current_version(self) -> None:
+        response = self.resolve(
+            self.operation(
+                "/api/v1/admin/customer-consent-policies/{policyId}",
+                "put",
+            )["responses"]["412"],
+        )
+        schema = self.resolve(response["content"]["application/problem+json"]["schema"])
+        self.assertEqual(
+            "/problems/customer-consent-precondition-failed",
+            schema["allOf"][1]["properties"]["type"]["const"],
+        )
+        self.assertIn("ETag", response["headers"])
+
+
 class KnowledgeBaseContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.document: dict[str, Any] = yaml.safe_load(CORE_CONTRACT.read_text(encoding="utf-8"))

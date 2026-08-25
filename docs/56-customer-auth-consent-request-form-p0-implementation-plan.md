@@ -331,7 +331,7 @@ To prevent account pre-hijacking, a pending registration is activated only when 
 
 ### 7.2 Consent operations
 
-Add an owned Core fragment, proposed `api/core-api-fragments/05-customer-consent.yaml`.
+Add the owned Core fragment `api/core-api-fragments/05-customer-consent.yaml`.
 
 Customer operation:
 

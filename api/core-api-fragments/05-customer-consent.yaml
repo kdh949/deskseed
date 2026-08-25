@@ -1,0 +1,618 @@
+x-deskseed-fragment:
+  owner: customer-consent
+
+tags:
+- name: Customer Consent
+  description: 고객이 registration 또는 request submission에 필요한 현재 published consent policy만 읽는 공개 API입니다.
+- name: Admin Customer Consent
+  description: ADMIN이 별도 권한으로 consent policy draft와 immutable published version lifecycle을 관리하는 API입니다.
+
+paths:
+  /api/v1/customer/consent-policies:
+    get:
+      tags: [Customer Consent]
+      operationId: listCurrentCustomerConsentPolicies
+      summary: 고객 작업에 필요한 현재 동의 정책 조회
+      description: >-
+        REGISTRATION 또는 REQUEST_SUBMISSION context의 current published policy만 displayOrder 순서로
+        반환합니다. Draft, archived version, admin aggregate version, staff identity와 acceptance history는
+        response/count에 포함하지 않습니다. Document는 raw HTML, script, attachment/code block, unsafe URL,
+        control character를 허용하지 않는 canonical consent subset입니다. Response는 no-store이며 client가
+        받은 version은 registration/request final transaction에서 다시 검증됩니다.
+      x-deskseed-requirements: [REQ-CONSENT-001, REQ-CONSENT-002]
+      parameters:
+      - $ref: '#/components/parameters/CustomerConsentContextQuery'
+      responses:
+        '200': {$ref: '#/components/responses/CurrentCustomerConsentPoliciesResponse'}
+        '400': {$ref: '#/components/responses/CustomerConsentInvalidRequest'}
+        '503': {$ref: '#/components/responses/CustomerConsentUnavailable'}
+
+  /api/v1/admin/customer-consent-policies:
+    get:
+      tags: [Admin Customer Consent]
+      operationId: listCustomerConsentPolicies
+      summary: 고객 동의 정책 관리자 목록 조회
+      description: >-
+        Active ADMIN과 customer-consent:manage authority, expected-actor guard를 확인하고 context/lifecycle
+        filter에 맞는 bounded policy summary page를 반환합니다. Canonical draft/published document body와
+        customer acceptance는 목록에서 제외하고 no-store를 적용합니다.
+      x-deskseed-requirements: [REQ-CONSENT-001]
+      x-deskseed-required-authority: customer-consent:manage
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CustomerConsentContextFilter'
+      - $ref: '#/components/parameters/CustomerConsentLifecycleFilter'
+      - $ref: '#/components/parameters/AdminPageNumber'
+      - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200': {$ref: '#/components/responses/AdminCustomerConsentPolicyPageResponse'}
+        '400': {$ref: '#/components/responses/CustomerConsentInvalidRequestOrActor'}
+        '401': {$ref: '#/components/responses/CustomerConsentUnauthorized'}
+        '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+    post:
+      tags: [Admin Customer Consent]
+      operationId: createCustomerConsentPolicy
+      summary: 고객 동의 정책 draft 생성
+      description: >-
+        Active ADMIN, customer-consent:manage, expected-actor, CSRF, If-None-Match를 확인한 뒤 immutable
+        policyKey/context와 versioned draft를 만듭니다. 동일 key/context conflict는 기존 body를 노출하지
+        않고 409를 반환합니다. Policy/draft mutation과 CUSTOMER_CONSENT_POLICY_CREATED metadata-only
+        Admin/Security audit는 한 transaction에서 commit/rollback합니다.
+      x-deskseed-requirements: [REQ-CONSENT-001]
+      x-deskseed-required-authority: customer-consent:manage
+      x-deskseed-security-audit-events: [CUSTOMER_CONSENT_POLICY_CREATED]
+      x-deskseed-audit-failure: FAIL_CLOSED
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/CustomerConsentIfNoneMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateCustomerConsentPolicyRequest'}
+      responses:
+        '201': {$ref: '#/components/responses/AdminCustomerConsentPolicyResponse'}
+        '400': {$ref: '#/components/responses/CustomerConsentInvalidRequestOrActor'}
+        '401': {$ref: '#/components/responses/CustomerConsentUnauthorized'}
+        '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
+        '409': {$ref: '#/components/responses/CustomerConsentConflictOrActorMismatch'}
+        '412': {$ref: '#/components/responses/CustomerConsentPreconditionFailed'}
+        '503': {$ref: '#/components/responses/CustomerConsentUnavailable'}
+
+  /api/v1/admin/customer-consent-policies/{policyId}:
+    get:
+      tags: [Admin Customer Consent]
+      operationId: getCustomerConsentPolicy
+      summary: 고객 동의 정책과 immutable version history 조회
+      description: >-
+        Active ADMIN과 customer-consent:manage, expected-actor guard를 확인하고 current draft, current
+        published version과 immutable version history를 반환합니다. Customer acceptance rows와 customer
+        identity는 포함하지 않으며 inaccessible policy는 existence-safe 404를 사용합니다.
+      x-deskseed-requirements: [REQ-CONSENT-001]
+      x-deskseed-required-authority: customer-consent:manage
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CustomerConsentPolicyId'
+      responses:
+        '200': {$ref: '#/components/responses/AdminCustomerConsentPolicyResponse'}
+        '400': {$ref: '#/components/responses/CustomerConsentInvalidRequestOrActor'}
+        '401': {$ref: '#/components/responses/CustomerConsentUnauthorized'}
+        '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
+        '404': {$ref: '#/components/responses/CustomerConsentNotFound'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+    put:
+      tags: [Admin Customer Consent]
+      operationId: updateCustomerConsentPolicyDraft
+      summary: 고객 동의 정책 draft 수정
+      description: >-
+        Active ADMIN, authority, expected-actor, CSRF와 strong If-Match를 확인한 뒤 draft definition과
+        aggregateVersion만 갱신합니다. PolicyKey/context와 이미 published된 version은 변경하지 않습니다.
+        Mutation과 CUSTOMER_CONSENT_POLICY_DRAFT_UPDATED audit가 원자적이며 stale draft는 412로
+        non-mutating, required audit failure는 503으로 fail-closed합니다.
+      x-deskseed-requirements: [REQ-CONSENT-001]
+      x-deskseed-required-authority: customer-consent:manage
+      x-deskseed-security-audit-events: [CUSTOMER_CONSENT_POLICY_DRAFT_UPDATED]
+      x-deskseed-audit-failure: FAIL_CLOSED
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/CustomerConsentPolicyId'
+      - $ref: '#/components/parameters/CustomerConsentIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateCustomerConsentPolicyDraftRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/AdminCustomerConsentPolicyResponse'}
+        '400': {$ref: '#/components/responses/CustomerConsentInvalidRequestOrActor'}
+        '401': {$ref: '#/components/responses/CustomerConsentUnauthorized'}
+        '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
+        '404': {$ref: '#/components/responses/CustomerConsentNotFound'}
+        '409': {$ref: '#/components/responses/CustomerConsentConflictOrActorMismatch'}
+        '412': {$ref: '#/components/responses/CustomerConsentPreconditionFailed'}
+        '503': {$ref: '#/components/responses/CustomerConsentUnavailable'}
+
+  /api/v1/admin/customer-consent-policies/{policyId}/publish:
+    post:
+      tags: [Admin Customer Consent]
+      operationId: publishCustomerConsentPolicy
+      summary: 고객 동의 정책 draft를 immutable version으로 공개
+      description: >-
+        Active ADMIN, authority, expected-actor, CSRF와 strong If-Match를 확인합니다. Valid draft를 새
+        immutable version으로 복사하고 같은 key/context의 current published pointer를 원자적으로
+        전환합니다. 기존 published version과 acceptance reference는 바꾸지 않습니다. Publish와
+        CUSTOMER_CONSENT_POLICY_PUBLISHED audit는 함께 commit/rollback합니다.
+      x-deskseed-requirements: [REQ-CONSENT-001]
+      x-deskseed-required-authority: customer-consent:manage
+      x-deskseed-security-audit-events: [CUSTOMER_CONSENT_POLICY_PUBLISHED]
+      x-deskseed-audit-failure: FAIL_CLOSED
+      x-deskseed-immutable-published-versions: true
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/CustomerConsentPolicyId'
+      - $ref: '#/components/parameters/CustomerConsentIfMatch'
+      responses:
+        '200': {$ref: '#/components/responses/AdminCustomerConsentPolicyResponse'}
+        '400': {$ref: '#/components/responses/CustomerConsentInvalidRequestOrActor'}
+        '401': {$ref: '#/components/responses/CustomerConsentUnauthorized'}
+        '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
+        '404': {$ref: '#/components/responses/CustomerConsentNotFound'}
+        '409': {$ref: '#/components/responses/CustomerConsentConflictOrActorMismatch'}
+        '412': {$ref: '#/components/responses/CustomerConsentPreconditionFailed'}
+        '503': {$ref: '#/components/responses/CustomerConsentUnavailable'}
+
+  /api/v1/admin/customer-consent-policies/{policyId}/archive:
+    post:
+      tags: [Admin Customer Consent]
+      operationId: archiveCustomerConsentPolicy
+      summary: 고객 동의 정책 신규 사용 중단
+      description: >-
+        Active ADMIN, authority, expected-actor, CSRF와 strong If-Match를 확인하고 policy를 ARCHIVED로
+        전환합니다. Archived policy는 새 registration/request projection에 나오지 않지만 기존 immutable
+        version과 acceptance evidence는 유지합니다. Transition과 CUSTOMER_CONSENT_POLICY_ARCHIVED
+        audit는 원자적이며 stale/conflict/audit failure는 mutation을 남기지 않습니다.
+      x-deskseed-requirements: [REQ-CONSENT-001]
+      x-deskseed-required-authority: customer-consent:manage
+      x-deskseed-security-audit-events: [CUSTOMER_CONSENT_POLICY_ARCHIVED]
+      x-deskseed-audit-failure: FAIL_CLOSED
+      x-deskseed-immutable-published-versions: true
+      security: [{staffSession: []}]
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/CustomerConsentPolicyId'
+      - $ref: '#/components/parameters/CustomerConsentIfMatch'
+      responses:
+        '200': {$ref: '#/components/responses/AdminCustomerConsentPolicyResponse'}
+        '400': {$ref: '#/components/responses/CustomerConsentInvalidRequestOrActor'}
+        '401': {$ref: '#/components/responses/CustomerConsentUnauthorized'}
+        '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
+        '404': {$ref: '#/components/responses/CustomerConsentNotFound'}
+        '409': {$ref: '#/components/responses/CustomerConsentConflictOrActorMismatch'}
+        '412': {$ref: '#/components/responses/CustomerConsentPreconditionFailed'}
+        '503': {$ref: '#/components/responses/CustomerConsentUnavailable'}
+
+components:
+  parameters:
+    CustomerConsentPolicyId:
+      name: policyId
+      in: path
+      required: true
+      description: ADMIN이 lifecycle을 조회하거나 변경할 customer consent policy UUID입니다.
+      schema: {type: string, format: uuid}
+    CustomerConsentContextQuery:
+      name: context
+      in: query
+      required: true
+      description: 고객이 곧 수행할 registration 또는 request submission 작업 context입니다.
+      schema: {$ref: '#/components/schemas/CustomerConsentContext'}
+    CustomerConsentContextFilter:
+      name: context
+      in: query
+      required: false
+      description: 관리자 목록을 하나의 customer operation context로 제한합니다.
+      schema: {$ref: '#/components/schemas/CustomerConsentContext'}
+    CustomerConsentLifecycleFilter:
+      name: lifecycle
+      in: query
+      required: false
+      description: 관리자 목록을 하나의 draft/published/archived lifecycle로 제한합니다.
+      schema: {$ref: '#/components/schemas/CustomerConsentLifecycle'}
+    CustomerConsentIfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: true
+      description: 새 policyKey/context만 만들도록 요구하는 create precondition이며 정확히 별표를 전달합니다.
+      schema: {type: string, const: '*'}
+    CustomerConsentIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Policy aggregateVersion과 정확히 일치해야 하는 quoted strong ETag입니다.
+      schema: {type: string, pattern: '^"[0-9]+"$', minLength: 3, maxLength: 24}
+  headers:
+    CustomerConsentETag:
+      description: 다음 mutation의 If-Match에 그대로 사용할 policy aggregateVersion strong ETag입니다.
+      schema: {type: string, pattern: '^"[0-9]+"$'}
+    CustomerConsentNoStore:
+      description: Consent document, lifecycle, PII-adjacent response를 shared/browser cache에 저장하지 않습니다.
+      schema: {type: string, const: no-store}
+  responses:
+    CurrentCustomerConsentPoliciesResponse:
+      description: Current published customer consent policies를 context/displayOrder 순서로 반환합니다.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/CurrentCustomerConsentPolicyList'}
+          example:
+            context: REGISTRATION
+            policies:
+            - policyId: 00000000-0000-4000-8000-000000000401
+              policyKey: test-terms
+              version: 3
+              title: 합성 테스트 이용 조건
+              document:
+                schemaVersion: 1
+                blocks:
+                - {type: paragraph, text: 테스트 환경에서만 사용하는 합성 정책 문서입니다.}
+              checksumSha256: '0000000000000000000000000000000000000000000000000000000000000000'
+              required: true
+              displayOrder: 10
+              effectiveAt: '2026-08-25T04:00:00Z'
+    AdminCustomerConsentPolicyPageResponse:
+      description: Document body를 제외한 bounded 관리자 consent policy summary page입니다.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminCustomerConsentPolicyPage'}
+    AdminCustomerConsentPolicyResponse:
+      description: Current draft와 immutable version history를 포함한 관리자 policy detail입니다.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}
+        ETag: {$ref: '#/components/headers/CustomerConsentETag'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AdminCustomerConsentPolicy'}
+    CustomerConsentInvalidRequest:
+      description: Context 또는 customer consent query shape가 유효하지 않습니다.
+      headers: {Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerConsentProblem'}
+          example: {type: /problems/customer-consent-request-invalid, title: 고객 동의 정책 요청을 처리할 수 없습니다, status: 400, requestId: req-consent-400}
+    CustomerConsentInvalidRequestOrActor:
+      description: Invalid expected-actor 또는 consent input/document validation 실패입니다.
+      headers: {Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}}
+      content:
+        application/problem+json:
+          schema:
+            anyOf:
+            - {$ref: '#/components/schemas/InvalidExpectedStaffActorProblem'}
+            - {$ref: '#/components/schemas/CustomerConsentProblem'}
+          examples:
+            invalidConsent:
+              value: {type: /problems/customer-consent-request-invalid, title: 고객 동의 정책 요청을 처리할 수 없습니다, status: 400, requestId: req-consent-400}
+            invalidActor:
+              value: {type: /problems/invalid-staff-session-actor, title: 직원 세션 주체를 확인할 수 없습니다, status: 400, requestId: req-actor-400}
+    CustomerConsentUnauthorized:
+      description: 유효한 staff session이 없어 policy 존재 여부를 반환하지 않습니다.
+      headers: {Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerConsentProblem'}
+          example: {type: /problems/staff-session-required, title: 직원 로그인이 필요합니다, status: 401, requestId: req-consent-401}
+    CustomerConsentForbidden:
+      description: Active ADMIN role과 customer-consent:manage authority가 모두 필요합니다.
+      headers: {Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerConsentProblem'}
+          example: {type: /problems/customer-consent-forbidden, title: 고객 동의 정책 관리 권한이 없습니다, status: 403, requestId: req-consent-403}
+    CustomerConsentNotFound:
+      description: Policy가 없거나 현재 actor에게 노출할 수 없는 경우를 구분하지 않습니다.
+      headers: {Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerConsentProblem'}
+          example: {type: /problems/customer-consent-not-found, title: 고객 동의 정책을 찾을 수 없습니다, status: 404, requestId: req-consent-404}
+    CustomerConsentConflictOrActorMismatch:
+      description: Expected actor mismatch 또는 policy key/lifecycle conflict가 mutation 전에 발견되었습니다.
+      headers: {Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}}
+      content:
+        application/problem+json:
+          schema:
+            anyOf:
+            - {$ref: '#/components/schemas/StaffSessionActorMismatchProblem'}
+            - {$ref: '#/components/schemas/CustomerConsentProblem'}
+          examples:
+            lifecycleConflict:
+              value: {type: /problems/customer-consent-conflict, title: 현재 고객 동의 정책 상태와 요청이 충돌합니다, status: 409, requestId: req-consent-409}
+            actorMismatch:
+              value: {type: /problems/staff-session-actor-mismatch, title: 직원 세션 주체가 변경되었습니다, status: 409, requestId: req-actor-409}
+    CustomerConsentPreconditionFailed:
+      description: If-Match 또는 If-None-Match precondition이 현재 policy version/key 상태와 일치하지 않습니다.
+      headers:
+        Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}
+        ETag: {$ref: '#/components/headers/CustomerConsentETag'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerConsentPreconditionProblem'}
+          example: {type: /problems/customer-consent-precondition-failed, title: 고객 동의 정책 버전이 변경되었습니다, status: 412, requestId: req-consent-412, currentVersion: 7}
+    CustomerConsentUnavailable:
+      description: Required consent persistence 또는 Admin/Security audit 실패로 success를 반환하지 않습니다.
+      headers: {Cache-Control: {$ref: '#/components/headers/CustomerConsentNoStore'}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerConsentProblem'}
+          example: {type: /problems/customer-consent-unavailable, title: 고객 동의 정책 요청을 안전하게 완료할 수 없습니다, status: 503, requestId: req-consent-503}
+  schemas:
+    CustomerConsentContext:
+      type: string
+      enum: [REGISTRATION, REQUEST_SUBMISSION]
+      description: Consent policy와 acceptance를 하나의 customer command purpose에 제한하는 context입니다.
+    CustomerConsentLifecycle:
+      type: string
+      enum: [DRAFT, PUBLISHED, ARCHIVED]
+      description: Draft editing, current publication, 신규 사용 중단을 구분하는 policy lifecycle입니다.
+    CustomerConsentDocument:
+      type: object
+      additionalProperties: false
+      description: >-
+        Deskseed canonical block document의 consent subset입니다. Raw HTML/script/control character,
+        code/attachment block과 HTTPS가 아닌 link를 허용하지 않습니다.
+      required: [schemaVersion, blocks]
+      properties:
+        schemaVersion: {type: integer, const: 1}
+        blocks:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {$ref: '#/components/schemas/CustomerConsentBlock'}
+    CustomerConsentBlock:
+      oneOf:
+      - {$ref: '#/components/schemas/CustomerConsentParagraphBlock'}
+      - {$ref: '#/components/schemas/CustomerConsentHeadingBlock'}
+      - {$ref: '#/components/schemas/CustomerConsentListBlock'}
+      - {$ref: '#/components/schemas/CustomerConsentCalloutBlock'}
+      - {$ref: '#/components/schemas/CustomerConsentQuoteBlock'}
+      - {$ref: '#/components/schemas/CustomerConsentDividerBlock'}
+      - {$ref: '#/components/schemas/CustomerConsentLinkBlock'}
+      discriminator:
+        propertyName: type
+        mapping:
+          paragraph: '#/components/schemas/CustomerConsentParagraphBlock'
+          heading: '#/components/schemas/CustomerConsentHeadingBlock'
+          list: '#/components/schemas/CustomerConsentListBlock'
+          callout: '#/components/schemas/CustomerConsentCalloutBlock'
+          quote: '#/components/schemas/CustomerConsentQuoteBlock'
+          divider: '#/components/schemas/CustomerConsentDividerBlock'
+          link: '#/components/schemas/CustomerConsentLinkBlock'
+    CustomerConsentText:
+      type: string
+      minLength: 1
+      maxLength: 10000
+      pattern: '^[^<>\x00-\x1F\x7F]*$'
+      description: Angle bracket와 control character를 금지한 bounded plain text입니다.
+    CustomerConsentParagraphBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties: {type: {type: string, const: paragraph}, text: {$ref: '#/components/schemas/CustomerConsentText'}}
+    CustomerConsentHeadingBlock:
+      type: object
+      additionalProperties: false
+      required: [type, level, text]
+      properties: {type: {type: string, const: heading}, level: {type: integer, minimum: 2, maximum: 3}, text: {$ref: '#/components/schemas/CustomerConsentText'}}
+    CustomerConsentListBlock:
+      type: object
+      additionalProperties: false
+      required: [type, ordered, items]
+      properties:
+        type: {type: string, const: list}
+        ordered: {type: boolean}
+        items: {type: array, minItems: 1, maxItems: 100, items: {$ref: '#/components/schemas/CustomerConsentText'}}
+    CustomerConsentCalloutBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties: {type: {type: string, const: callout}, text: {$ref: '#/components/schemas/CustomerConsentText'}}
+    CustomerConsentQuoteBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties: {type: {type: string, const: quote}, text: {$ref: '#/components/schemas/CustomerConsentText'}}
+    CustomerConsentDividerBlock:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties: {type: {type: string, const: divider}}
+    CustomerConsentLinkBlock:
+      type: object
+      additionalProperties: false
+      required: [type, text, url]
+      properties:
+        type: {type: string, const: link}
+        text: {$ref: '#/components/schemas/CustomerConsentText'}
+        url: {type: string, format: uri, pattern: '^https://', maxLength: 2048, description: Browser가 표시할 수 있는 bounded HTTPS link이며 backend가 fetch하지 않습니다.}
+    CustomerConsentDraftInput:
+      type: object
+      required: [title, document, required, displayOrder, effectiveAt]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200, pattern: '^[^<>\x00-\x1F\x7F]*$', description: Customer에게 표시할 bounded plain-text policy title입니다.}
+        document: {$ref: '#/components/schemas/CustomerConsentDocument'}
+        required: {type: boolean, description: 해당 context command가 acceptance 없이 진행할 수 없는지 나타냅니다.}
+        displayOrder: {type: integer, minimum: 0, maximum: 10000, description: Current customer projection의 stable ascending order입니다.}
+        effectiveAt: {type: string, format: date-time, description: Published version이 current eligibility를 얻는 server time boundary입니다.}
+      description: >-
+        Immutable published version의 source가 될 bounded safe consent draft definition입니다.
+    CreateCustomerConsentPolicyRequest:
+      allOf:
+      - $ref: '#/components/schemas/CustomerConsentDraftInput'
+      - type: object
+        required: [policyKey, context]
+        properties:
+          policyKey: {type: string, minLength: 1, maxLength: 80, pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$', description: 생성 뒤 바꿀 수 없는 server-owned stable policy key입니다.}
+          context: {$ref: '#/components/schemas/CustomerConsentContext'}
+      unevaluatedProperties: false
+      description: Immutable policyKey/context와 initial safe draft를 함께 만드는 ADMIN 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        policyKey: test-terms
+        context: REGISTRATION
+        title: 합성 테스트 이용 조건
+        document:
+          schemaVersion: 1
+          blocks:
+          - {type: paragraph, text: 테스트 환경에서만 사용하는 합성 정책 문서입니다.}
+        required: true
+        displayOrder: 10
+        effectiveAt: '2026-08-25T04:00:00Z'
+    UpdateCustomerConsentPolicyDraftRequest:
+      allOf:
+      - $ref: '#/components/schemas/CustomerConsentDraftInput'
+      unevaluatedProperties: false
+      description: Existing published history를 바꾸지 않고 next draft definition만 갱신하는 ADMIN 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        title: 합성 테스트 이용 조건 개정안
+        document:
+          schemaVersion: 1
+          blocks:
+          - {type: paragraph, text: 테스트 환경에서만 사용하는 합성 개정 정책 문서입니다.}
+        required: true
+        displayOrder: 10
+        effectiveAt: '2026-08-26T04:00:00Z'
+    CurrentCustomerConsentPolicyList:
+      type: object
+      additionalProperties: false
+      required: [context, policies]
+      properties:
+        context: {$ref: '#/components/schemas/CustomerConsentContext'}
+        policies:
+          type: array
+          maxItems: 20
+          description: Current published/effective policies만 displayOrder와 policyKey 순서로 반환합니다.
+          items: {$ref: '#/components/schemas/CurrentCustomerConsentPolicy'}
+      description: 하나의 customer command context에서 final validation에 제출할 current policy list입니다.
+    CurrentCustomerConsentPolicy:
+      type: object
+      additionalProperties: false
+      required: [policyId, policyKey, version, title, document, checksumSha256, required, displayOrder, effectiveAt]
+      properties:
+        policyId: {type: string, format: uuid, description: Customer가 version과 함께 돌려보낼 opaque policy identity입니다.}
+        policyKey: {type: string, maxLength: 80, description: Acceptance input과 운영 설명에 사용하는 immutable stable key입니다.}
+        version: {type: integer, minimum: 1, description: Final transaction에서 current published version과 재검증할 immutable version입니다.}
+        title: {type: string, maxLength: 200, description: Reviewed published version에 고정된 customer-facing title입니다.}
+        document: {$ref: '#/components/schemas/CustomerConsentDocument'}
+        checksumSha256: {type: string, pattern: '^[a-f0-9]{64}$', description: Canonical document/plain-text representation의 lowercase SHA-256입니다.}
+        required: {type: boolean, description: 이 context command가 acceptance를 반드시 포함해야 하는지 나타냅니다.}
+        displayOrder: {type: integer, minimum: 0, description: Customer에게 표시할 ascending order입니다.}
+        effectiveAt: {type: string, format: date-time, description: 이 published version이 current가 된 server time입니다.}
+      description: Draft/staff/audit metadata를 제외한 current published consent version의 customer-safe projection입니다.
+    CustomerConsentPolicyDraft:
+      allOf:
+      - $ref: '#/components/schemas/CustomerConsentDraftInput'
+      - type: object
+        required: [draftVersion, updatedAt]
+        properties:
+          draftVersion: {type: integer, minimum: 1, description: Published version과 독립적인 current draft revision입니다.}
+          updatedAt: {type: string, format: date-time, description: Server Clock 기준 latest draft mutation 시각입니다.}
+      unevaluatedProperties: false
+      description: 아직 customer projection에 노출하지 않는 editable policy draft입니다.
+    CustomerConsentPolicyVersion:
+      type: object
+      additionalProperties: false
+      required: [policyId, policyKey, version, title, document, plainText, checksumSha256, required, displayOrder, effectiveAt, publishedByStaffId, publishedByDisplayName, publishedAt]
+      properties:
+        policyId: {type: string, format: uuid, description: Acceptance가 참조하는 stable policy identity입니다.}
+        policyKey: {type: string, maxLength: 80, description: Policy root에서 복사한 immutable stable key입니다.}
+        version: {type: integer, minimum: 1, description: Policy별 단조 증가하는 immutable published version입니다.}
+        title: {type: string, maxLength: 200, description: Publish 시점에 고정된 reviewed customer-facing title입니다.}
+        document: {$ref: '#/components/schemas/CustomerConsentDocument'}
+        plainText: {type: string, maxLength: 50000, description: Canonical document에서 결정적으로 만든 immutable search/review text입니다.}
+        checksumSha256: {type: string, pattern: '^[a-f0-9]{64}$', description: Canonical document/plain-text representation의 lowercase SHA-256입니다.}
+        required: {type: boolean, description: Publish 시점 context acceptance requirement입니다.}
+        displayOrder: {type: integer, minimum: 0, description: Publish 시점 customer display order입니다.}
+        effectiveAt: {type: string, format: date-time, description: Published version이 current eligibility를 얻는 server time boundary입니다.}
+        publishedByStaffId: {type: string, format: uuid, description: Publish command를 실행한 staff identity입니다.}
+        publishedByDisplayName: {type: string, maxLength: 100, description: Historical review를 위한 publish-time staff display snapshot입니다.}
+        publishedAt: {type: string, format: date-time, description: Immutable version이 commit된 server time입니다.}
+      description: Acceptance가 참조하고 runtime role이 update/delete할 수 없는 immutable published version입니다.
+    AdminCustomerConsentPolicySummary:
+      type: object
+      additionalProperties: false
+      required: [id, policyKey, context, lifecycle, aggregateVersion, required, displayOrder, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        policyKey: {type: string, maxLength: 80}
+        context: {$ref: '#/components/schemas/CustomerConsentContext'}
+        lifecycle: {$ref: '#/components/schemas/CustomerConsentLifecycle'}
+        aggregateVersion: {type: integer, format: int64, minimum: 0, description: Strong ETag/If-Match에 사용하는 policy aggregate counter입니다.}
+        publishedVersion: {type: [integer, 'null'], minimum: 1, description: Current published version이 없으면 null입니다.}
+        required: {type: boolean, description: Current draft definition의 required 정책입니다.}
+        displayOrder: {type: integer, minimum: 0}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+      description: Admin list에서 document body 없이 policy lifecycle과 current pointer만 보여 주는 summary입니다.
+    AdminCustomerConsentPolicyPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalCount, totalPages]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AdminCustomerConsentPolicySummary'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalCount: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, minimum: 0}
+      description: Context/lifecycle filter가 적용된 bounded admin policy summary page입니다.
+    AdminCustomerConsentPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, policyKey, context, lifecycle, aggregateVersion, draft, versions, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        policyKey: {type: string, maxLength: 80, description: 생성 뒤 바뀌지 않는 stable key입니다.}
+        context: {$ref: '#/components/schemas/CustomerConsentContext'}
+        lifecycle: {$ref: '#/components/schemas/CustomerConsentLifecycle'}
+        aggregateVersion: {type: integer, format: int64, minimum: 0, description: Response ETag와 같은 optimistic aggregate version입니다.}
+        draft: {$ref: '#/components/schemas/CustomerConsentPolicyDraft'}
+        publishedVersion:
+          oneOf:
+          - {$ref: '#/components/schemas/CustomerConsentPolicyVersion'}
+          - {type: 'null'}
+          description: Current published version이 없으면 null이며 draft와 같은 object가 아닙니다.
+        versions:
+          type: array
+          maxItems: 200
+          description: Version ascending order의 immutable published history이며 acceptance 참조 동안 유지합니다.
+          items: {$ref: '#/components/schemas/CustomerConsentPolicyVersion'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+      description: ADMIN이 draft/lifecycle/history를 검토하는 policy detail이며 customer acceptance row는 포함하지 않습니다.
+    CustomerConsentProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        properties:
+          currentVersion: {type: integer, format: int64, minimum: 0, description: 412 response에서만 반환하는 latest aggregate version입니다.}
+      description: Consent request input을 반사하지 않는 bounded RFC 9457 problem입니다.
+    CustomerConsentPreconditionProblem:
+      allOf:
+      - $ref: '#/components/schemas/CustomerConsentProblem'
+      - type: object
+        required: [currentVersion]
+        properties:
+          type: {type: string, const: /problems/customer-consent-precondition-failed}
+          status: {type: integer, const: 412}
+      description: Stale/missing create or mutation precondition이 policy를 덮어쓰지 못하게 하는 problem입니다.
