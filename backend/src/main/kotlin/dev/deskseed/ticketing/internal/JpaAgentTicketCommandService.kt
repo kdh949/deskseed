@@ -15,6 +15,10 @@ import dev.deskseed.ticketing.AgentCommentDraft
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.ApplyMacroTicketCommand
+import dev.deskseed.ticketing.ApplyAutomationTicketCommand
+import dev.deskseed.ticketing.ApplyTriggerTicketCommand
+import dev.deskseed.ticketing.AutomationTicketCommandService
+import dev.deskseed.ticketing.AutomationTicketStateChangedException
 import dev.deskseed.ticketing.CommentAuthorType
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
@@ -51,6 +55,7 @@ import dev.deskseed.ticketing.TicketWriteForbiddenException
 import dev.deskseed.ticketing.UpdateAgentTicketCommand
 import dev.deskseed.ticketing.UpdateTicketConfigurationCommand
 import dev.deskseed.ticketing.TransferTicketCommand
+import dev.deskseed.ticketing.TriggerTicketCommandService
 import dev.deskseed.ticketing.internal.domain.ParentChildRelationRules
 import dev.deskseed.ticketing.internal.domain.Ticket
 import dev.deskseed.ticketing.internal.domain.TicketStatusTransitions
@@ -70,7 +75,7 @@ import java.util.UUID
 @Service
 internal class JpaAgentTicketCommandService(
     private val transaction: AgentTicketCommandTransaction,
-) : AgentTicketCommandService {
+) : AgentTicketCommandService, TriggerTicketCommandService, AutomationTicketCommandService {
     override fun create(command: CreateAgentTicketCommand): TicketCommandResult = translateStorageFailure {
         transaction.create(command)
     }
@@ -85,6 +90,14 @@ internal class JpaAgentTicketCommandService(
 
     override fun applyMacro(command: ApplyMacroTicketCommand): TicketCommandResult = executeRetriable {
         transaction.applyMacro(command)
+    }
+
+    override fun applyTrigger(command: ApplyTriggerTicketCommand): TicketCommandResult = executeRetriable {
+        transaction.applyTrigger(command)
+    }
+
+    override fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult = executeRetriable {
+        transaction.closeSolvedTicket(command)
     }
 
     override fun transfer(command: TransferTicketCommand): TicketCommandResult = executeRetriable {
@@ -915,6 +928,126 @@ internal class AgentTicketCommandTransaction(
     }
 
     @Transactional
+    fun applyTrigger(command: ApplyTriggerTicketCommand): TicketCommandResult {
+        require(command.context.source == RequestSource.TRIGGER) { "Trigger command source is invalid" }
+        require(command.triggerVersion > 0) { "Trigger version must be positive" }
+        require(command.expectedVersion >= 0) { "expectedVersion must be non-negative" }
+        organizationConsistencyGuard.acquire()
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (ticket.version != command.expectedVersion) throw TicketVersionPreconditionFailedException(ticket.version)
+        if (ticket.status == TicketStatus.CLOSED) throw TicketTransitionInvalidException("Closed tickets are immutable")
+
+        val oldGroupId = ticket.groupId
+        val targetGroupId = command.groupId ?: oldGroupId
+        if (command.groupId != null && !assignmentPolicy.isActiveGroup(command.groupId)) {
+            throw TicketAssignmentInvalidException("The trigger target group is not active")
+        }
+        if (targetGroupId != oldGroupId && ticket.assigneeId != null &&
+            (targetGroupId == null || !assignmentPolicy.isActiveMember(targetGroupId, ticket.assigneeId!!))
+        ) {
+            throw TicketAssignmentInvalidException("Trigger group change cannot retain an incompatible assignee")
+        }
+
+        val now = Instant.now(clock)
+        val actionEvents = mutableListOf<NewAuditEvent>()
+        if (targetGroupId != oldGroupId) {
+            ticket.groupId = targetGroupId
+            ticket.updatedAt = now
+            ticketRepository.saveAndFlush(ticket)
+            actionEvents += referenceAuditEvent("GROUP_CHANGED", TicketField.GROUP_ID, oldGroupId, targetGroupId)
+        }
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            resultVersion = ticket.version,
+            actorId = command.triggerId,
+            actorType = ActorType.TRIGGER,
+            context = command.context.toAuditContext(),
+            now = now,
+            events = listOf(NewAuditEvent(
+                type = "TRIGGER_APPLIED",
+                metadata = mapOf(
+                    "triggerId" to command.triggerId.toString(),
+                    "triggerVersion" to command.triggerVersion,
+                    "executionId" to command.executionId.toString(),
+                    "rootTicketAuditId" to command.rootTicketAuditId.toString(),
+                    "noOp" to (targetGroupId == oldGroupId),
+                ),
+                occurredAt = now,
+            )) + actionEvents,
+        )
+        if (targetGroupId != oldGroupId) {
+            ticketIntegrationEvents.ticketUpdated(
+                ticket.id,
+                ticket.ticketNumber,
+                ticket.kind,
+                setOf(TicketField.GROUP_ID.externalName),
+                ActorRef(ActorType.TRIGGER, command.triggerId),
+                command.context,
+                now,
+            )
+        }
+        return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId)
+    }
+
+    @Transactional
+    fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult {
+        require(command.context.source == RequestSource.AUTOMATION) { "Automation command source is invalid" }
+        require(command.automationVersion > 0) { "Automation version must be positive" }
+        val now = Instant.now(clock)
+        if (command.eligibleAt.isAfter(now)) throw AutomationTicketStateChangedException()
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
+            ?: throw AgentTicketNotFoundException()
+        if (ticket.version != command.expectedVersion || ticket.status != TicketStatus.SOLVED ||
+            ticket.solvedAt != command.expectedSolvedAt
+        ) {
+            throw AutomationTicketStateChangedException()
+        }
+
+        ticket.status = TicketStatus.CLOSED
+        ticket.updatedAt = now
+        ticketRepository.saveAndFlush(ticket)
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = command.expectedVersion,
+            resultVersion = ticket.version,
+            actorId = command.automationId,
+            actorType = ActorType.AUTOMATION,
+            context = command.context.toAuditContext(),
+            now = now,
+            events = listOf(
+                NewAuditEvent(
+                    type = "AUTOMATION_APPLIED",
+                    metadata = mapOf(
+                        "automationId" to command.automationId.toString(),
+                        "automationVersion" to command.automationVersion,
+                        "candidateId" to command.candidateId.toString(),
+                        "solvedAt" to command.expectedSolvedAt.toString(),
+                        "eligibleAt" to command.eligibleAt.toString(),
+                    ),
+                ),
+                fieldAuditEvent("STATUS_CHANGED", TicketField.STATUS, TicketStatus.SOLVED.name, TicketStatus.CLOSED.name),
+            ),
+        )
+        val actor = ActorRef(ActorType.AUTOMATION, command.automationId)
+        ticketIntegrationEvents.ticketUpdated(
+            ticket.id, ticket.ticketNumber, ticket.kind, setOf(TicketField.STATUS.externalName), actor, command.context, now,
+        )
+        ticketIntegrationEvents.statusChanged(
+            ticket.id, ticket.ticketNumber, ticket.kind, TicketStatus.SOLVED, TicketStatus.CLOSED, actor, command.context, now,
+        )
+        eventPublisher.publishEvent(
+            TicketSlaLifecycleChanged(
+                ticket.id, TicketStatus.SOLVED, TicketStatus.CLOSED, false, auditId,
+                command.automationId, command.context.source.name, command.context.requestId,
+                command.context.correlationId, now,
+            ),
+        )
+        return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId)
+    }
+
+    @Transactional
     fun transfer(command: TransferTicketCommand): TicketCommandResult {
         validateStaffContext(command.actor.id, command.context.source)
         if (command.expectedVersion < 0) throw TicketCommandInvalidException("expectedVersion must be non-negative")
@@ -1539,6 +1672,7 @@ internal class AgentTicketCommandTransaction(
         expectedVersion: Long,
         resultVersion: Long,
         actorId: UUID,
+        actorType: ActorType = ActorType.STAFF,
         context: AuditCommandContext,
         now: Instant,
         events: List<NewAuditEvent>,
@@ -1550,7 +1684,7 @@ internal class AgentTicketCommandTransaction(
                 ticketId = ticket.id,
                 ticketVersion = resultVersion,
                 expectedVersion = expectedVersion,
-                actorType = ActorType.STAFF.name,
+                actorType = actorType.name,
                 actorId = actorId,
                 source = context.source,
                 requestId = context.requestId,

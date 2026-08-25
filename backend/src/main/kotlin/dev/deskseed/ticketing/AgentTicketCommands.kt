@@ -108,6 +108,38 @@ data class ApplyMacroTicketCommand(
     val context: CommandContext,
 )
 
+data class ApplyTriggerTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val triggerId: UUID,
+    val triggerVersion: Int,
+    val executionId: UUID,
+    val rootTicketAuditId: UUID,
+    val groupId: UUID?,
+    val context: CommandContext,
+)
+
+interface TriggerTicketCommandService {
+    fun applyTrigger(command: ApplyTriggerTicketCommand): TicketCommandResult
+}
+
+data class ApplyAutomationTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val automationId: UUID,
+    val automationVersion: Int,
+    val candidateId: UUID,
+    val expectedSolvedAt: Instant,
+    val eligibleAt: Instant,
+    val context: CommandContext,
+)
+
+interface AutomationTicketCommandService {
+    fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult
+}
+
+class AutomationTicketStateChangedException : RuntimeException()
+
 /** Rechecked inside the ticket transaction after idempotent replay lookup. */
 fun interface TicketMacroActivationGuard {
     fun requireActive(macroId: UUID, macroVersion: Int, actorStaffId: UUID)

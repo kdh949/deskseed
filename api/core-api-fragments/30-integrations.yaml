@@ -471,7 +471,7 @@ components:
       additionalProperties: false
       required: [eventType, version, payloadPolicy]
       properties:
-        eventType: {type: string, enum: [ticket.created, ticket.updated, ticket.comment.created, ticket.status.changed, ticket.sla.changed, attachment.ready]}
+        eventType: {type: string, enum: [ticket.created, ticket.updated, ticket.comment.created, ticket.status.changed, ticket.sla.changed, attachment.ready, ticket.trigger.executed]}
         version: {type: integer, const: 1}
         payloadPolicy: {type: string, enum: [METADATA_ONLY, PUBLIC_CONTENT]}
       description: INTERNAL comment body, raw search query, secret와 attachment bytes는 어떤 subscription에도 포함하지 않습니다.
