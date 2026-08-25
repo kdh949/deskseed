@@ -64,6 +64,7 @@ paths:
       x-deskseed-required-authority: customer-consent:manage
       x-deskseed-security-audit-events: [CUSTOMER_CONSENT_POLICY_CREATED]
       x-deskseed-audit-failure: FAIL_CLOSED
+      x-deskseed-request-body-max-bytes: 262144
       security: [{staffSession: []}]
       parameters:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
@@ -118,6 +119,7 @@ paths:
       x-deskseed-required-authority: customer-consent:manage
       x-deskseed-security-audit-events: [CUSTOMER_CONSENT_POLICY_DRAFT_UPDATED]
       x-deskseed-audit-failure: FAIL_CLOSED
+      x-deskseed-request-body-max-bytes: 262144
       security: [{staffSession: []}]
       parameters:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
@@ -147,13 +149,20 @@ paths:
       description: >-
         Active ADMIN, authority, expected-actor, CSRF와 strong If-Match를 확인합니다. Valid draft를 새
         immutable version으로 복사하고 같은 key/context의 current published pointer를 원자적으로
-        전환합니다. 기존 published version과 acceptance reference는 바꾸지 않습니다. Publish와
-        CUSTOMER_CONSENT_POLICY_PUBLISHED audit는 함께 commit/rollback합니다.
+        전환합니다. P0는 예약 발효를 지원하지 않으며 같은 server Clock 값으로
+        effectiveAt = publishedAt을 기록합니다. Context별 current policy 수를 publish transaction에서
+        직렬화하여 최대 20개로 제한하므로 동시 20→21 publish 중 하나만 성공합니다. 기존 published
+        version과 acceptance reference는 바꾸지 않습니다. Publish와 CUSTOMER_CONSENT_POLICY_PUBLISHED
+        audit는 함께 commit/rollback합니다.
       x-deskseed-requirements: [REQ-CONSENT-001]
       x-deskseed-required-authority: customer-consent:manage
       x-deskseed-security-audit-events: [CUSTOMER_CONSENT_POLICY_PUBLISHED]
       x-deskseed-audit-failure: FAIL_CLOSED
       x-deskseed-immutable-published-versions: true
+      x-deskseed-effective-at: PUBLISHED_AT
+      x-deskseed-current-policy-cap:
+        contextMaximum: 20
+        enforcement: PUBLISH_TRANSACTION_CONTEXT_SERIALIZATION
       security: [{staffSession: []}]
       parameters:
       - $ref: '#/components/parameters/ExpectedStaffActorHeader'
@@ -370,7 +379,10 @@ components:
       additionalProperties: false
       description: >-
         Deskseed canonical block document의 consent subset입니다. Raw HTML/script/control character,
-        code/attachment block과 HTTPS가 아닌 link를 허용하지 않습니다.
+        code/attachment block과 HTTPS가 아닌 link를 허용하지 않습니다. canonicalization 후 plain text
+        전체를 50,000 characters 및 UTF-8 200,000 bytes 이하로 검증하며 이를 넘으면 publish하지 않습니다.
+      x-deskseed-canonical-plain-text-max-characters: 50000
+      x-deskseed-canonical-plain-text-max-utf8-bytes: 200000
       required: [schemaVersion, blocks]
       properties:
         schemaVersion: {type: integer, const: 1}
@@ -447,15 +459,15 @@ components:
         url: {type: string, format: uri, pattern: '^https://', maxLength: 2048, description: Browser가 표시할 수 있는 bounded HTTPS link이며 backend가 fetch하지 않습니다.}
     CustomerConsentDraftInput:
       type: object
-      required: [title, document, required, displayOrder, effectiveAt]
+      required: [title, document, required, displayOrder]
       properties:
         title: {type: string, minLength: 1, maxLength: 200, pattern: '^[^<>\x00-\x1F\x7F]*$', description: Customer에게 표시할 bounded plain-text policy title입니다.}
         document: {$ref: '#/components/schemas/CustomerConsentDocument'}
         required: {type: boolean, description: 해당 context command가 acceptance 없이 진행할 수 없는지 나타냅니다.}
         displayOrder: {type: integer, minimum: 0, maximum: 10000, description: Current customer projection의 stable ascending order입니다.}
-        effectiveAt: {type: string, format: date-time, description: Published version이 current eligibility를 얻는 server time boundary입니다.}
       description: >-
-        Immutable published version의 source가 될 bounded safe consent draft definition입니다.
+        Immutable published version의 source가 될 bounded safe consent draft definition입니다. P0 draft는
+        client-selected effectiveAt을 받지 않으며 publish 시 server가 즉시 발효 시각을 정합니다.
     CreateCustomerConsentPolicyRequest:
       allOf:
       - $ref: '#/components/schemas/CustomerConsentDraftInput'
@@ -477,7 +489,6 @@ components:
           - {type: paragraph, text: 테스트 환경에서만 사용하는 합성 정책 문서입니다.}
         required: true
         displayOrder: 10
-        effectiveAt: '2026-08-25T04:00:00Z'
     UpdateCustomerConsentPolicyDraftRequest:
       allOf:
       - $ref: '#/components/schemas/CustomerConsentDraftInput'
@@ -492,7 +503,6 @@ components:
           - {type: paragraph, text: 테스트 환경에서만 사용하는 합성 개정 정책 문서입니다.}
         required: true
         displayOrder: 10
-        effectiveAt: '2026-08-26T04:00:00Z'
     CurrentCustomerConsentPolicyList:
       type: object
       additionalProperties: false
@@ -502,7 +512,7 @@ components:
         policies:
           type: array
           maxItems: 20
-          description: Current published/effective policies만 displayOrder와 policyKey 순서로 반환합니다.
+          description: Publish transaction이 context별 최대 20개를 보장한 current policy만 displayOrder와 policyKey 순서로 반환합니다.
           items: {$ref: '#/components/schemas/CurrentCustomerConsentPolicy'}
       description: 하나의 customer command context에서 final validation에 제출할 current policy list입니다.
     CurrentCustomerConsentPolicy:

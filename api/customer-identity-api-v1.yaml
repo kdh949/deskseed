@@ -145,12 +145,13 @@ paths:
       operationId: requestCustomerMagicLink
       summary: Passwordless 고객 로그인용 일회성 링크 요청
       description: >-
-        Syntactically valid email에는 identity 존재·credential state·rate-limit 결과와 관계없이 같은
-        202 body와 cache policy를 반환합니다. PASSWORDLESS_LOGIN mail intent는 password credential이
-        없는 eligible identity에만 만들며 password account에는 만들지 않습니다. Token은 digest만
-        저장하고 delivery는 post-commit입니다. Response, audit, log에는 존재 여부, raw email/token,
-        company name이 없습니다.
-      x-deskseed-contract-status: FROZEN
+        Purpose/destination/requester-network limiter는 identity eligibility 조회 전에 적용하며 unknown,
+        password, passwordless identity가 동일한 limiter 조건이면 같은 429와 Retry-After를 반환합니다.
+        제한되지 않은 syntactically valid email에는 identity 존재·credential state와 관계없이 같은 202
+        body와 cache policy를 반환합니다. PASSWORDLESS_LOGIN mail intent는 password credential이 없는
+        eligible identity에만 만들며 password account에는 만들지 않습니다. Token은 digest만 저장하고
+        delivery는 post-commit입니다. Response, audit, log에는 존재 여부, raw email/token, company name이
+        없습니다.
       x-deskseed-requirements:
       - REQ-AUTH-001
       - REQ-AUTH-002
@@ -187,7 +188,6 @@ paths:
         registrationState=REGISTRATION_REQUIRED로 표시합니다. CustomerAccount 생성/연결은 기존 익명
         ticket ownership을 바꾸지 않습니다. Malformed, wrong-purpose, expired, replayed, concurrent
         token은 같은 invalid-proof problem을 사용하고 두 번째 session을 만들지 않습니다.
-      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-001
       - REQ-AUTH-002
@@ -348,7 +348,6 @@ paths:
         상태를 반환합니다. Password hash, token, session ID/cookie, limiter, consent acceptance, security
         audit, INTERNAL comment, child relation과 staff-only field는 포함하지 않습니다. Company name은
         본인 session projection에서만 반환하고 cache하지 않습니다.
-      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-001
       - REQ-AUTH-003

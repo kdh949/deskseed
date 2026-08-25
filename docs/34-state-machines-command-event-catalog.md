@@ -424,3 +424,24 @@ already verified/non-customer ticket   → NOT_FOUND
 - Comment, optional state transition, one TicketAudit with ordered events, a fresh request access
   grant, and the stable `customer-follow-up-received:{commentId}` mail intent share the business
   transaction. SMTP delivery remains post-commit under the outbound-mail state machine above.
+
+## 15. Initial customer request submission and replay
+
+```text
+rate-limit budget committed
+  → optional files quarantined/scanned under a server-only planned Customer UUID
+  → final transaction locks scoped clientCommandId
+      NEW + valid current form/consent → Customer/Ticket/PUBLIC comment/value/acceptance/link/audit/grant/mail/receipt
+      SAME HASH + committed receipt   → same ticket result + fresh request access grant
+      DIFFERENT HASH                  → CONFLICT, no business mutation
+```
+
+- The identity scope is the current authenticated customer ID or an anonymous requester-destination fingerprint. The raw
+  `clientCommandId` is never stored; the receipt retains a keyed scoped digest and canonical request/ordered attachment-manifest hash.
+- Concurrent finalization has one winner. An exact replay creates no duplicate Customer, Ticket, comment, acceptance, audit, attachment
+  link, or mail intent. It may create only a fresh bounded request access grant because raw capabilities are digest-only and absent from the
+  receipt; prior grants keep their normal expiry/claim lifecycle.
+- Anonymous multipart upload uses a server-generated `plannedCustomerId` that the client cannot choose. No Customer row exists during
+  quarantine/upload/scan. Finalization creates that exact Customer ID and owner-match links CLEAN files in the same transaction.
+- File failure leaves no Customer or Ticket. Earlier CLEAN files remain unlinked for existing TTL cleanup. Final form/consent conflict or
+  required audit/mail persistence failure rolls back Customer/Ticket/link state; the separate abuse budget remains consumed.

@@ -21,11 +21,12 @@ api/automation-api-v1.yaml   (later)
 api/analytics-api-v1.yaml    (later)
 ```
 
-`x-deskseed-contract-status: FROZEN`은 구현 계약인 동시에 해당 route가 runtime document에 존재한다는
-표시다. 구현 전 contract-freeze PR은 operationId와 full schema/examples/errors/security를 확정하고도 이
-표시를 생략하며, vertical implementation PR이 runtime route와 함께 `FROZEN`으로 승격한다. 현재 Platform
-v1 작업은 별도 surface 규칙에 따라 모든 operation을 구현 계약으로 본다. 나머지 outline 작업은 계약 동결
-전 단계다.
+`x-deskseed-contract-status: FROZEN`은 구현 계약인 동시에 해당 route와 계약된 request/response,
+status/problem, security 의미가 runtime에 존재한다는 표시다. 구현 전 contract-freeze PR은 operationId와 full
+schema/examples/errors/security를 확정하고도 이 표시를 생략하며, vertical implementation PR이 runtime parity
+증거와 함께 `FROZEN`으로 승격한다. path/method 일치만으로 payload나 failure 의미의 parity를 주장할 수 없다.
+현재 Platform v1 작업은 별도 surface 규칙에 따라 모든 operation을 구현 계약으로 본다. 나머지 outline 작업은
+계약 동결 전 단계다.
 
 Scalar `/docs/api`는 위 커밋 계약을 읽기 쉽게 렌더링할 뿐 source of truth를 바꾸지 않는다. springdoc `/v3/api-docs/**`는 Controller 구현과 커밋 계약의 경로·HTTP method 드리프트를 검출하는 보조 산출물이며 배포 계약이나 SDK 입력으로 사용하지 않는다.
 
