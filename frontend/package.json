@@ -27,7 +27,7 @@
   "dependencies": {
     "@tanstack/react-query": "5.101.4",
     "@zendeskgarden/react-buttons": "9.15.7",
-    "@zendeskgarden/react-theming": "9.15.7",
+    "@zendeskgarden/react-theming": "9.15.8",
     "@zendeskgarden/svg-icons": "7.6.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
