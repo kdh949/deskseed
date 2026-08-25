@@ -484,6 +484,184 @@ class CustomerConsentContractTest(unittest.TestCase):
         self.assertIn("ETag", response["headers"])
 
 
+class CustomerRequestFormContractTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.document: dict[str, Any] = yaml.safe_load(CORE_CONTRACT.read_text(encoding="utf-8"))
+
+    def operation(self, path: str, method: str = "post") -> dict[str, Any]:
+        operation = self.document["paths"][path][method]
+        self.assertIsInstance(operation, dict)
+        return operation
+
+    def resolve(self, value: dict[str, Any]) -> dict[str, Any]:
+        reference = value.get("$ref")
+        if reference is None:
+            return value
+        self.assertTrue(reference.startswith("#/"), f"only local references are supported: {reference}")
+        resolved: Any = self.document
+        for part in reference.removeprefix("#/").split("/"):
+            resolved = resolved[part]
+        self.assertIsInstance(resolved, dict)
+        return resolved
+
+    def validator(self, schema_name: str) -> Draft202012Validator:
+        return Draft202012Validator(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "components": self.document["components"],
+                "$ref": f"#/components/schemas/{schema_name}",
+            },
+        )
+
+    def test_candidate_projection_is_blueprint_only_and_has_no_ticket_view_side_effect(self) -> None:
+        operation = self.operation("/api/v1/customer/ticket-form-projections")
+
+        self.assertEqual("projectCustomerTicketForm", operation["operationId"])
+        self.assertNotIn("x-deskseed-contract-status", operation)
+        self.assertEqual("NONE", operation["x-deskseed-side-effects"])
+        self.assertEqual("NONE", operation["x-deskseed-semantic-ticket-view"])
+        self.assertIn("not an authorization token", operation["description"])
+        self.assertEqual([{}], operation["security"])
+
+    def test_customer_projection_schemas_are_closed_and_exclude_staff_metadata(self) -> None:
+        projection = self.document["components"]["schemas"]["CustomerTicketFormProjection"]
+        projected_field = self.document["components"]["schemas"]["CustomerProjectedTicketField"]
+        field = self.document["components"]["schemas"]["CustomerTicketFieldDefinition"]
+        option = self.document["components"]["schemas"]["CustomerTicketFieldOption"]
+
+        for schema in (projection, projected_field, field, option):
+            self.assertFalse(schema["additionalProperties"])
+        self.assertTrue(
+            {
+                "staffLabel",
+                "staffDescription",
+                "searchable",
+                "analyticsEligible",
+                "sensitive",
+                "agentVisible",
+                "agentEditable",
+            }.isdisjoint(field["properties"]),
+        )
+
+    def test_request_creation_replaces_anonymous_and_privacy_consent_legacy_contracts(self) -> None:
+        operation = self.operation("/api/v1/requests")
+        schemas = self.document["components"]["schemas"]
+        json_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+
+        self.assertEqual("#/components/schemas/CreateCustomerRequest", json_schema["$ref"])
+        self.assertNotIn("CreateAnonymousRequest", schemas)
+        self.assertNotIn("CreateAnonymousRequestMultipart", schemas)
+        self.assertNotIn("CreateAnonymousRequestResult", schemas)
+        self.assertNotIn("privacyConsent", str(operation))
+        self.assertNotIn("privacyConsent", str(schemas["CreateCustomerRequest"]))
+
+    def test_json_and_multipart_use_the_same_customer_request_domain_command(self) -> None:
+        operation = self.operation("/api/v1/requests")
+        content = operation["requestBody"]["content"]
+        multipart = self.resolve(content["multipart/form-data"]["schema"])
+
+        self.assertEqual(
+            "#/components/schemas/CreateCustomerRequest",
+            content["application/json"]["schema"]["$ref"],
+        )
+        self.assertEqual(
+            "#/components/schemas/CreateCustomerRequest",
+            multipart["properties"]["request"]["$ref"],
+        )
+        self.assertEqual(["request"], multipart["required"])
+        self.assertEqual(5, multipart["properties"]["attachments"]["maxItems"])
+        self.assertEqual(
+            "application/json",
+            content["multipart/form-data"]["encoding"]["request"]["contentType"],
+        )
+
+    def test_create_request_pairing_typed_values_and_policy_versions_are_schema_valid(self) -> None:
+        request = self.document["components"]["schemas"]["CreateCustomerRequest"]
+        example = request["example"]
+
+        self.assertEqual("MANUAL", request["x-deskseed-documentation-review"])
+        self.assertFalse(request["additionalProperties"])
+        self.assertEqual(["formVersion"], request["dependentRequired"]["formId"])
+        self.assertEqual(["formId"], request["dependentRequired"]["formVersion"])
+        self.assertEqual(
+            "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+            request["properties"]["fieldValues"]["propertyNames"]["pattern"],
+        )
+        self.assertTrue({"subject", "message", "fieldValues", "acceptedPolicies"}.issubset(request["required"]))
+        self.assertFalse(list(self.validator("CreateCustomerRequest").iter_errors(example)))
+
+        missing_version = copy.deepcopy(example)
+        missing_version.pop("formVersion")
+        self.assertTrue(list(self.validator("CreateCustomerRequest").iter_errors(missing_version)))
+
+        invalid_key = copy.deepcopy(example)
+        invalid_key["fieldValues"] = {"StaffOnly": {"shortTextValue": "protected"}}
+        self.assertTrue(list(self.validator("CreateCustomerRequest").iter_errors(invalid_key)))
+
+        policy = self.document["components"]["schemas"]["AcceptedCustomerPolicyVersion"]
+        self.assertFalse(policy["additionalProperties"])
+        self.assertEqual({"policyKey", "version"}, set(policy["required"]))
+
+    def test_customer_field_values_accept_exactly_one_known_typed_property(self) -> None:
+        validator = self.validator("CustomerTicketFieldValue")
+        valid_values = (
+            {"booleanValue": True},
+            {"numberValue": 3.5},
+            {"optionId": "00000000-0000-4000-8000-000000000101"},
+            {"shortTextValue": "ORD-2026-1042"},
+            {"longTextValue": "합성 테스트 문의의 추가 설명입니다."},
+        )
+        invalid_values = (
+            {"optionId": "00000000-0000-4000-8000-000000000101", "shortTextValue": "mixed"},
+            {"staffValue": "protected"},
+            {},
+        )
+
+        for value in valid_values:
+            with self.subTest(valid=value):
+                self.assertFalse(list(validator.iter_errors(value)))
+        for value in invalid_values:
+            with self.subTest(invalid=value):
+                self.assertTrue(list(validator.iter_errors(value)))
+
+    def test_candidate_and_create_use_stable_existence_safe_problem_catalog(self) -> None:
+        expected = {
+            ("/api/v1/customer/ticket-form-projections", "400"): (
+                "#/components/responses/CustomerTicketFormValidation",
+                "/problems/customer-ticket-form-validation-failed",
+            ),
+            ("/api/v1/customer/ticket-form-projections", "404"): (
+                "#/components/responses/CustomerTicketFormUnavailable",
+                "/problems/customer-ticket-form-unavailable",
+            ),
+            ("/api/v1/customer/ticket-form-projections", "409"): (
+                "#/components/responses/CustomerTicketFormVersionConflict",
+                "/problems/customer-ticket-form-version-conflict",
+            ),
+            ("/api/v1/requests", "400"): (
+                "#/components/responses/CustomerRequestValidation",
+                "/problems/customer-request-validation-failed",
+            ),
+            ("/api/v1/requests", "409"): (
+                "#/components/responses/CustomerRequestConfigurationConflict",
+                "/problems/customer-request-configuration-conflict",
+            ),
+            ("/api/v1/requests", "503"): (
+                "#/components/responses/CustomerRequestConfigurationUnavailable",
+                "/problems/customer-request-configuration-unavailable",
+            ),
+        }
+
+        for (path, status), (response_ref, problem_type) in expected.items():
+            with self.subTest(path=path, status=status):
+                response_value = self.operation(path)["responses"][status]
+                self.assertEqual(response_ref, response_value["$ref"])
+                response = self.resolve(response_value)
+                schema = self.resolve(response["content"]["application/problem+json"]["schema"])
+                self.assertEqual(problem_type, schema["allOf"][1]["properties"]["type"]["const"])
+                self.assertEqual("no-store", response["headers"]["Cache-Control"]["schema"]["const"])
+
+
 class KnowledgeBaseContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.document: dict[str, Any] = yaml.safe_load(CORE_CONTRACT.read_text(encoding="utf-8"))

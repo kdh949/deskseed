@@ -486,10 +486,10 @@ paths:
   /api/v1/customer/ticket-forms:
     get:
       summary: 고객 제출 context의 form projection 조회
-      description: 고객 제출 context에 허용된 active field만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다.
+      description: current published customer form의 초기 projection만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
       operationId: getCustomerTicketFormProjection
       x-deskseed-contract-status: FROZEN
-      x-deskseed-requirements: [REQ-CFG-011]
+      x-deskseed-requirements: [REQ-CFG-011, REQ-CFG-014]
       tags: [Ticket Configuration Runtime]
       security: [{}]
       parameters:
@@ -502,8 +502,65 @@ paths:
           required: true
           schema: {$ref: '#/components/schemas/TicketKind'}
       responses:
-        '200': {description: staff-only definition을 포함하지 않는 customer projection, content: {application/json: {schema: {$ref: '#/components/schemas/CustomerTicketFormProjection'}}}}
-        '404': {$ref: '#/components/responses/Problem'}
+        '200':
+          description: staff-only definition을 포함하지 않는 current customer projection입니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomerTicketFormProjection'}
+              example: &customerTicketFormProjectionExample
+                formId: 00000000-0000-4000-8000-000000000001
+                formVersion: 3
+                fields:
+                  - field:
+                      id: 00000000-0000-4000-8000-000000000011
+                      machineKey: request.type
+                      type: SINGLE_SELECT
+                      label: 문의 유형
+                      description: 합성 테스트 문의의 유형을 선택합니다.
+                    visible: true
+                    editable: true
+                    required: true
+                    options:
+                      - {id: 00000000-0000-4000-8000-000000000101, machineKey: order, label: 주문}
+        '404': {$ref: '#/components/responses/CustomerTicketFormUnavailable'}
+        '503': {$ref: '#/components/responses/CustomerRequestConfigurationUnavailable'}
+  /api/v1/customer/ticket-form-projections:
+    post:
+      summary: 고객 후보 field 값으로 form projection 재계산
+      description: allowlisted typed field machine key와 값만 평가해 current published customer form의 고객 공개 projection을 반환합니다. staff-only/unknown definition은 존재를 누출하지 않는 validation 또는 unavailable problem으로 처리합니다. 이 preview is not an authorization token이며 문의 생성 transaction은 current form/version, visibility, editability, requiredness, type과 option을 다시 검증합니다.
+      operationId: projectCustomerTicketForm
+      x-deskseed-requirements: [REQ-CFG-014]
+      x-deskseed-side-effects: NONE
+      x-deskseed-semantic-ticket-view: NONE
+      x-deskseed-documentation-review: MANUAL
+      tags: [Ticket Configuration Runtime]
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CustomerTicketFormProjectionRequest'}
+            example:
+              ticketKind: CUSTOMER_REQUEST
+              formId: 00000000-0000-4000-8000-000000000001
+              formVersion: 3
+              fieldValues:
+                request.type: {optionId: 00000000-0000-4000-8000-000000000101}
+      responses:
+        '200':
+          description: candidate 값에 조건을 적용한 customer-safe projection입니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomerTicketFormProjection'}
+              example: *customerTicketFormProjectionExample
+        '400': {$ref: '#/components/responses/CustomerTicketFormValidation'}
+        '404': {$ref: '#/components/responses/CustomerTicketFormUnavailable'}
+        '409': {$ref: '#/components/responses/CustomerTicketFormVersionConflict'}
+        '503': {$ref: '#/components/responses/CustomerRequestConfigurationUnavailable'}
   /api/v1/agent/ticket-configuration/descriptors:
     get:
       summary: 상담사 View/Search/Macro/Rules/Analytics용 configuration descriptor catalog 조회
@@ -582,7 +639,145 @@ components:
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
+    CustomerTicketFormValidation:
+      description: candidate 값의 key/type/option이 customer-safe form 입력으로 유효하지 않습니다. 보호된 definition의 존재 여부는 반환하지 않습니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerTicketFormValidationProblem'}
+          example: {type: /problems/customer-ticket-form-validation-failed, title: Customer ticket form validation failed, status: 400, detail: The candidate field values are invalid., requestId: req-form-400}
+    CustomerTicketFormUnavailable:
+      description: 요청한 ID의 부재, 비공개, 비활성, staff-only 상태를 구별하지 않는 customer form 응답입니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerTicketFormUnavailableProblem'}
+          example: {type: /problems/customer-ticket-form-unavailable, title: Customer ticket form unavailable, status: 404, detail: The customer ticket form is unavailable., requestId: req-form-404}
+    CustomerTicketFormVersionConflict:
+      description: projection 입력 version이 current published customer form version과 달라 새 projection 조회가 필요합니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerTicketFormVersionConflictProblem'}
+          example: {type: /problems/customer-ticket-form-version-conflict, title: Customer ticket form version changed, status: 409, detail: Refresh the customer ticket form before continuing., currentVersion: 4, requestId: req-form-409}
+    CustomerRequestValidation:
+      description: requester mode, form/version pair, typed field 값, attachment 또는 accepted policy 입력이 유효하지 않습니다. unknown/staff-only resource의 존재는 반환하지 않습니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerRequestValidationProblem'}
+          example: {type: /problems/customer-request-validation-failed, title: Customer request validation failed, status: 400, detail: The customer request is invalid., requestId: req-request-400}
+    CustomerRequestForbidden:
+      description: 현재 customer access mode, session/CSRF 또는 requester identity 규칙이 문의 제출을 허용하지 않습니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerRequestForbiddenProblem'}
+          example: {type: /problems/customer-request-not-allowed, title: Customer request not allowed, status: 403, detail: The customer request is not allowed., requestId: req-request-403}
+    CustomerRequestConfigurationConflict:
+      description: upload 또는 최종 validation 전에 current published form이나 required REQUEST_SUBMISSION policy version이 바뀌었습니다. Ticket과 acceptance는 생성되지 않습니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerRequestConfigurationConflictProblem'}
+          example: {type: /problems/customer-request-configuration-conflict, title: Customer request configuration changed, status: 409, detail: Refresh the form and policies before submitting again., requestId: req-request-409}
+    CustomerRequestRateLimited:
+      description: 이메일·신뢰된 client 주소·전체 요청 고정 창 중 하나가 초과되었습니다. 어떤 bucket인지 또는 원문 식별자는 반환하지 않습니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+        Retry-After: {description: 다음 고정 창까지의 양의 초 수입니다., schema: {type: integer, minimum: 1}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerRequestRateLimitedProblem'}
+          example: {type: /problems/customer-request-rate-limited, title: Customer request rate limited, status: 429, detail: Try again later., requestId: req-request-429}
+    CustomerRequestConfigurationUnavailable:
+      description: form/policy projection 또는 required audit persistence를 사용할 수 없어 문의나 preview 성공을 반환할 수 없습니다.
+      headers:
+        Cache-Control: {schema: {type: string, const: no-store}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CustomerRequestConfigurationUnavailableProblem'}
+          example: {type: /problems/customer-request-configuration-unavailable, title: Customer request configuration unavailable, status: 503, detail: Try again later., requestId: req-request-503}
   schemas:
+    CustomerTicketFormValidationProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-ticket-form-validation-failed}
+            title: {type: string, const: Customer ticket form validation failed}
+            status: {type: integer, const: 400}
+    CustomerTicketFormUnavailableProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-ticket-form-unavailable}
+            title: {type: string, const: Customer ticket form unavailable}
+            status: {type: integer, const: 404}
+    CustomerTicketFormVersionConflictProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status, currentVersion]
+          properties:
+            type: {type: string, const: /problems/customer-ticket-form-version-conflict}
+            title: {type: string, const: Customer ticket form version changed}
+            status: {type: integer, const: 409}
+            currentVersion: {type: integer, minimum: 1}
+    CustomerRequestValidationProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-request-validation-failed}
+            title: {type: string, const: Customer request validation failed}
+            status: {type: integer, const: 400}
+    CustomerRequestForbiddenProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-request-not-allowed}
+            title: {type: string, const: Customer request not allowed}
+            status: {type: integer, const: 403}
+    CustomerRequestConfigurationConflictProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-request-configuration-conflict}
+            title: {type: string, const: Customer request configuration changed}
+            status: {type: integer, const: 409}
+    CustomerRequestRateLimitedProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-request-rate-limited}
+            title: {type: string, const: Customer request rate limited}
+            status: {type: integer, const: 429}
+    CustomerRequestConfigurationUnavailableProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-request-configuration-unavailable}
+            title: {type: string, const: Customer request configuration unavailable}
+            status: {type: integer, const: 503}
     TicketFieldType:
       type: string
       enum: [CHECKBOX, SINGLE_SELECT, NUMBER, SHORT_TEXT, LONG_TEXT]
@@ -792,25 +987,79 @@ components:
         formId: {type: string, format: uuid}
         formVersion: {type: integer, minimum: 1}
         fields: {type: array, items: {$ref: '#/components/schemas/ProjectedTicketField'}}
+    CustomerTicketFieldValue:
+      description: customer form candidate와 최종 제출에서 정확히 하나의 field type 값을 전달하는 closed union입니다.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [booleanValue]
+          properties:
+            booleanValue: {type: boolean}
+        - type: object
+          additionalProperties: false
+          required: [numberValue]
+          properties:
+            numberValue: {type: number}
+        - type: object
+          additionalProperties: false
+          required: [optionId]
+          properties:
+            optionId: {type: string, format: uuid}
+        - type: object
+          additionalProperties: false
+          required: [shortTextValue]
+          properties:
+            shortTextValue: {type: string, maxLength: 1000}
+        - type: object
+          additionalProperties: false
+          required: [longTextValue]
+          properties:
+            longTextValue: {type: string, maxLength: 10000}
+    CustomerTicketFormProjectionRequest:
+      description: current customer form에 allowlisted typed candidate 값을 적용하는 side-effect-free projection 요청입니다. 응답은 최종 문의 생성 권한이 아닙니다.
+      x-deskseed-documentation-review: MANUAL
+      type: object
+      additionalProperties: false
+      required: [ticketKind, formId, formVersion, fieldValues]
+      properties:
+        ticketKind: {type: string, const: CUSTOMER_REQUEST}
+        formId: {type: string, format: uuid}
+        formVersion: {type: integer, minimum: 1}
+        fieldValues:
+          type: object
+          maxProperties: 100
+          propertyNames:
+            pattern: '^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$'
+            maxLength: 120
+          additionalProperties: {$ref: '#/components/schemas/CustomerTicketFieldValue'}
+      example:
+        ticketKind: CUSTOMER_REQUEST
+        formId: 00000000-0000-4000-8000-000000000001
+        formVersion: 3
+        fieldValues:
+          request.type: {optionId: 00000000-0000-4000-8000-000000000101}
     CustomerTicketFormProjection:
       description: 고객에게 허용된 label, option, projection policy만 반환하며 staff label/description, search/analytics/sensitive metadata는 포함하지 않습니다.
       type: object
+      additionalProperties: false
       required: [formId, formVersion, fields]
       properties:
         formId: {type: string, format: uuid}
         formVersion: {type: integer, minimum: 1}
-        fields: {type: array, items: {$ref: '#/components/schemas/CustomerProjectedTicketField'}}
+        fields: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/CustomerProjectedTicketField'}}
     CustomerProjectedTicketField:
       type: object
+      additionalProperties: false
       required: [field, visible, editable, required, options]
       properties:
         field: {$ref: '#/components/schemas/CustomerTicketFieldDefinition'}
         visible: {type: boolean}
         editable: {type: boolean, description: form state와 전역 customerEditable capability의 교집합입니다.}
         required: {type: boolean}
-        options: {type: array, items: {$ref: '#/components/schemas/CustomerTicketFieldOption'}}
+        options: {type: array, maxItems: 500, items: {$ref: '#/components/schemas/CustomerTicketFieldOption'}}
     CustomerTicketFieldDefinition:
       type: object
+      additionalProperties: false
       required: [id, machineKey, type, label]
       properties:
         id: {type: string, format: uuid}
@@ -820,6 +1069,7 @@ components:
         description: {type: string, maxLength: 500}
     CustomerTicketFieldOption:
       type: object
+      additionalProperties: false
       required: [id, machineKey, label]
       properties:
         id: {type: string, format: uuid}

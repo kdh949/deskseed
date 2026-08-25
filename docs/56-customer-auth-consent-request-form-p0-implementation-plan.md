@@ -387,9 +387,9 @@ The server evaluates allowlisted `field.<machineKey>` facts and returns only the
 
 ### 7.4 Request creation contract cleanup
 
-Replace `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. Remove `privacyConsent` rather than deprecating it because the application has not shipped.
+The frozen contract replaces `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. `privacyConsent` is removed rather than deprecated because the application has not shipped.
 
-Recommended JSON shape:
+Frozen JSON shape:
 
 ```json
 {
@@ -437,6 +437,13 @@ attachments  zero to five files
 ```
 
 The existing attachment quarantine/upload/link implementation is reused. Initial validation occurs before upload and is repeated in the final ticket transaction. A policy/form version changed during upload produces a stable conflict and leaves uploaded objects subject to the existing unlinked-object cleanup policy.
+
+The stable customer problem catalog is `/problems/customer-ticket-form-validation-failed`,
+`/problems/customer-ticket-form-unavailable`, `/problems/customer-ticket-form-version-conflict`,
+`/problems/customer-request-validation-failed`, `/problems/customer-request-not-allowed`,
+`/problems/customer-request-configuration-conflict`, `/problems/customer-request-rate-limited`, and
+`/problems/customer-request-configuration-unavailable`. All responses use `Cache-Control: no-store`;
+validation and unavailable responses do not disclose whether an unknown input names a staff-only definition.
 
 ## 8. Database migration plan
 

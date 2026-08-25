@@ -69,13 +69,16 @@ paths:
   /api/v1/requests:
     post:
       summary: 고객 문의 접수
-      description: '고객 문의 접수 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
-        익명 접수는 격리된 미검증 Customer를 만들며 같은 이메일 입력만으로 기존 profile을 병합하거나 claim하지 않습니다. 유효한 고객 세션이
-        있으면 세션 Customer가 requester가 되고 body의 name/email은 인증된 identity를 바꾸지 않습니다. 설정된 고객 접근 모드는 익명 접수를
-        거부할 수 있습니다. 두 경우 모두 명시적인 ticket 범위 조회 또는 claim 흐름에만 쓰는 일회성 request access token을 반환하고 ownership
-        claim 때 revoke합니다. 문의 대상 이메일·신뢰된 실제 클라이언트 주소·전체 요청 수에는 PostgreSQL 고정 창 제한을 적용합니다. 신뢰되지 않은
-        peer의 X-Forwarded-For는 client identity를 바꾸지 않으며, 제한 시 429와 초 단위 Retry-After를 반환합니다. 제한 버킷에는 원문 이메일이나
-        IP를 저장하지 않습니다.'
+      description: '고객 문의 접수 API입니다. JSON과 multipart의 request JSON part는 같은 CreateCustomerRequest command를 사용합니다.
+        익명 요청은 requester가 필수이고 격리된 미검증 Customer를 만들며 같은 이메일만으로 기존 profile을 병합하거나 claim하지 않습니다.
+        유효한 고객 세션 요청은 requester를 생략하고 서버 세션 identity를 사용하며 충돌하는 requester를 거부합니다. 최종 transaction에서
+        current published form/version, customer visibility/editability, requiredness, typed option/value와 REQUEST_SUBMISSION 필수 policy version을
+        다시 검증합니다. candidate projection은 authorization token이 아닙니다. hidden/readonly 값은 ADR 0041에 따라 버리고 선택한 form/version은
+        값이 없어도 보존합니다. Ticket, 첫 PUBLIC comment, 정규화한 값, 동의 acceptance, CLEAN attachment link, 하나의 ordered TicketAudit과
+        필요한 audit은 함께 commit/rollback하며 외부 network call은 transaction 밖에서 처리합니다. 응답은 customer projection만 반환하고
+        INTERNAL comment, child relation, 직원 전용 field와 audit metadata를 노출하지 않습니다. 두 identity mode 모두 ticket 범위 조회 또는
+        명시적 claim에만 쓰는 일회성 request access token을 생성 시 반환하고 ownership claim 때 revoke합니다. 이메일·신뢰된 실제 client 주소·전체
+        요청 수에는 PostgreSQL 고정 창 제한을 적용하고 제한 버킷에는 원문 이메일/IP를 저장하지 않습니다.'
       operationId: createCustomerRequest
       x-deskseed-contract-status: FROZEN
       tags:
@@ -91,22 +94,37 @@ paths:
       - REQ-TKT-006
       - REQ-AUD-007
       - REQ-FILE-001
+      - REQ-CONSENT-002
+      - REQ-CFG-014
+      x-deskseed-audit-failure: FAIL_CLOSED
+      x-deskseed-ticket-audit: ONE_TICKET_AUDIT_WITH_ORDERED_EVENTS
+      x-deskseed-ticket-audit-events: [TICKET_CREATED, COMMENT_CREATED, ATTACHMENT_ADDED]
+      x-deskseed-security-audit-events: [CUSTOMER_CONSENT_ACCEPTED]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateAnonymousRequest'
+              $ref: '#/components/schemas/CreateCustomerRequest'
             example:
-              name: 홍길동
-              email: customer@example.com
-              subject: 결제가 되지 않아요
-              message: 결제 버튼을 누르면 오류가 발생합니다.
-              privacyConsent: true
+              requester:
+                name: 김민아
+                email: mina.kim@example.test
+              subject: 주문 ORD-2026-1042 상태 확인 요청
+              message: 합성 테스트 주문의 현재 상태를 확인해 주세요.
+              formId: 00000000-0000-4000-8000-000000000001
+              formVersion: 3
+              fieldValues:
+                request.type: {optionId: 00000000-0000-4000-8000-000000000101}
+                order.reference: {shortTextValue: ORD-2026-1042}
+              acceptedPolicies:
+                - {policyKey: test-inquiry-data-processing, version: 2}
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/CreateAnonymousRequestMultipart'
+              $ref: '#/components/schemas/CreateCustomerRequestMultipart'
             encoding:
+              request:
+                contentType: application/json
               attachments:
                 style: form
                 explode: true
@@ -114,6 +132,7 @@ paths:
       - name: X-CSRF-TOKEN
         in: header
         required: false
+        description: customerSession으로 제출할 때 필수이며 현재 세션에 귀속됩니다. 익명 제출에는 사용하지 않습니다.
         schema:
           type: string
           minLength: 16
@@ -154,32 +173,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateAnonymousRequestResult'
+                $ref: '#/components/schemas/CreateCustomerRequestResult'
               example:
                 ticketNumber: 1001
                 status: NEW
                 accessToken: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU
                 createdAt: '2026-08-10T00:00:00Z'
-        '400': *id002
-        '403':
-          content: *id001
-          headers: *id003
-        '409': *id002
-        '429':
-          headers:
-            Retry-After:
-              description: 다음 고정 창이 시작될 때까지 기다릴 초 수입니다. 1 이상의 정수이며 원문 이메일이나 IP를 포함하지 않습니다.
-              schema:
-                type: integer
-                minimum: 1
-            Cache-Control:
-              description: 고객 데이터가 포함될 수 있는 capability 보호 응답이므로 항상 `no-store`를 사용합니다.
-              schema:
-                type: string
-                enum:
-                - no-store
-          content: *id001
-        '503': *id002
+        '400': {$ref: '#/components/responses/CustomerRequestValidation'}
+        '403': {$ref: '#/components/responses/CustomerRequestForbidden'}
+        '409': {$ref: '#/components/responses/CustomerRequestConfigurationConflict'}
+        '429': {$ref: '#/components/responses/CustomerRequestRateLimited'}
+        '503': {$ref: '#/components/responses/CustomerRequestConfigurationUnavailable'}
         '500': *id002
   /api/v1/requests/{ticketNumber}:
     get:
@@ -4268,44 +4272,96 @@ components:
           type: string
         code:
           type: string
-    CreateAnonymousRequest:
+    CustomerRequestRequester:
       type: object
       additionalProperties: false
-      required:
-      - name
-      - email
-      - subject
-      - message
+      required: [name, email]
       properties:
         name:
           type: string
           minLength: 1
           maxLength: 100
-          description: 익명 문의자의 이름입니다. 유효한 고객 세션이 요청자 신원을 제공하면 이 값은 사용하지 않습니다.
+          description: 익명 문의에서 격리된 미검증 Customer를 표시할 이름입니다.
         email:
           type: string
           format: email
           maxLength: 254
-          description: 익명 문의자의 이메일입니다. 유효한 고객 세션이 요청자 신원을 제공하면 이 값은 사용하지 않습니다.
+          description: 익명 문의의 연락·rate-limit 대상 이메일입니다. 입력만으로 기존 Customer를 병합하거나 ticket을 claim하지 않습니다.
+    AcceptedCustomerPolicyVersion:
+      type: object
+      additionalProperties: false
+      required: [policyKey, version]
+      properties:
+        policyKey:
+          type: string
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          maxLength: 100
+          description: REQUEST_SUBMISSION context에서 고객이 확인한 current published policy의 stable key입니다.
+        version:
+          type: integer
+          minimum: 1
+          description: 고객이 실제로 확인하고 수락한 immutable published version입니다.
+    CreateCustomerRequest:
+      type: object
+      additionalProperties: false
+      required: [subject, message, fieldValues, acceptedPolicies]
+      dependentRequired:
+        formId: [formVersion]
+        formVersion: [formId]
+      properties:
+        requester:
+          $ref: '#/components/schemas/CustomerRequestRequester'
+          description: 익명 요청에는 필수이고 customerSession 요청에는 생략합니다. 인증 세션과 함께 전달하면 identity 충돌로 거부합니다.
         subject:
           type: string
           minLength: 1
           maxLength: 200
+          description: 생성되는 고객 문의의 제목입니다.
         message:
           type: string
           minLength: 1
           maxLength: 20000
-        privacyConsent:
-          type: boolean
-      description: 로그인하지 않은 고객이 새 문의를 접수할 때 사용하는 본문입니다. message는 Ticket.description이 아니라 첫 번째 PUBLIC comment로 저장됩니다.
+          description: Ticket.description이 아니라 생성 Ticket의 첫 번째 PUBLIC comment body로 저장합니다.
+        formId:
+          type: string
+          format: uuid
+          description: 서버가 projection한 current published customer form ID입니다. formVersion과 함께 보내거나 둘 다 생략합니다.
+        formVersion:
+          type: integer
+          minimum: 1
+          description: 최종 transaction에서 current published version과 다시 비교하고 ticket에 값이 없어도 보존할 form version입니다.
+        fieldValues:
+          type: object
+          maxProperties: 100
+          propertyNames:
+            pattern: '^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$'
+            maxLength: 120
+          additionalProperties:
+            $ref: '#/components/schemas/CustomerTicketFieldValue'
+          description: customer-visible/editable field machine key에 대응하는 typed candidate 값입니다. unknown/staff-only 입력은 존재를 누출하지 않는 validation 실패입니다.
+        acceptedPolicies:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AcceptedCustomerPolicyVersion'
+          description: REQUEST_SUBMISSION context의 required current policy version 목록입니다. 중복 policyKey와 stale/missing version은 최종 transaction에서 거부합니다.
+      description: 익명 또는 customerSession 고객이 form-aware 문의를 생성하는 동일 domain command입니다. 익명은 requester가 필수이고 인증 고객은 세션 identity만 사용합니다.
       x-deskseed-documentation-review: MANUAL
       example:
-        name: 김민아
-        email: mina.kim@example.test
-        subject: 주문 ORD-2026-1042의 중복 결제 확인 요청
-        message: 같은 주문에 결제가 두 번 승인되었습니다. 결제 내역 확인 부탁드립니다.
-        privacyConsent: true
-    CreateAnonymousRequestResult:
+        requester:
+          name: 김민아
+          email: mina.kim@example.test
+        subject: 주문 ORD-2026-1042 상태 확인 요청
+        message: 합성 테스트 주문의 현재 상태를 확인해 주세요.
+        formId: 00000000-0000-4000-8000-000000000001
+        formVersion: 3
+        fieldValues:
+          request.type: {optionId: 00000000-0000-4000-8000-000000000101}
+          order.reference: {shortTextValue: ORD-2026-1042}
+        acceptedPolicies:
+          - {policyKey: test-inquiry-data-processing, version: 2}
+    CreateCustomerRequestResult:
       type: object
       additionalProperties: false
       required:
@@ -4326,47 +4382,33 @@ components:
         createdAt:
           type: string
           format: date-time
-    CreateAnonymousRequestMultipart:
+    CreateCustomerRequestMultipart:
       type: object
       additionalProperties: false
-      required:
-      - name
-      - email
-      - subject
-      - message
+      required: [request]
       properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 100
-        email:
-          type: string
-          format: email
-          maxLength: 254
-        subject:
-          type: string
-          minLength: 1
-          maxLength: 200
-        message:
-          type: string
-          minLength: 1
-          maxLength: 20000
-        privacyConsent:
-          type: boolean
+        request:
+          $ref: '#/components/schemas/CreateCustomerRequest'
+          description: application/json part로 보내는 CreateCustomerRequest이며 JSON endpoint와 같은 command와 validation을 사용합니다.
         attachments:
           type: array
           maxItems: 5
           items:
             type: string
             format: binary
-      description: 익명 고객이 최초 PUBLIC comment와 함께 최대 5개 파일을 multipart로 보내는 요청입니다. 서버는 ticket transaction을 열기 전에 bounded streaming, quarantine, MIME·malware 검사를 끝내고 CLEAN attachment만 첫 PUBLIC comment에 link합니다.
+      description: CreateCustomerRequest JSON part와 최대 5개 파일을 함께 보내는 요청입니다. 서버는 ticket transaction 전에 bounded streaming, quarantine, MIME·malware 검사를 끝내고 CLEAN attachment만 첫 PUBLIC comment에 link합니다. upload 중 form/policy version이 바뀌면 최종 검증은 stable 409를 반환하고 unlinked object cleanup policy를 적용합니다.
       x-deskseed-documentation-review: MANUAL
       example:
-        name: 김민아
-        email: mina.kim@example.test
-        subject: 주문 ORD-2026-1042의 중복 결제 확인 요청
-        message: 승인 내역 PDF를 함께 보냅니다.
-        privacyConsent: true
+        request:
+          requester: {name: 김민아, email: mina.kim@example.test}
+          subject: 주문 ORD-2026-1042 승인 내역 확인 요청
+          message: 합성 테스트 승인 내역 PDF를 함께 보냅니다.
+          formId: 00000000-0000-4000-8000-000000000001
+          formVersion: 3
+          fieldValues:
+            order.reference: {shortTextValue: ORD-2026-1042}
+          acceptedPolicies:
+            - {policyKey: test-inquiry-data-processing, version: 2}
         attachments:
         - approval-history.pdf
     AttachmentUploadForm:
