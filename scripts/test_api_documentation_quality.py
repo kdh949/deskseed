@@ -121,14 +121,11 @@ class CustomerIdentityContractTest(unittest.TestCase):
             with self.subTest(path=path, method=method):
                 operation = self.operation(path, method)
                 self.assertEqual(operation_id, operation["operationId"])
-                if operation_id == "getCurrentCustomer":
-                    self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
-                else:
-                    self.assertNotIn(
-                        "x-deskseed-contract-status",
-                        operation,
-                        "FROZEN is reserved for routes present in the runtime document",
-                    )
+                self.assertNotIn(
+                    "x-deskseed-contract-status",
+                    operation,
+                    "FROZEN is reserved for runtime-compatible operation semantics",
+                )
 
         self.assertNotIn(
             "/api/v1/customer/me",
@@ -177,10 +174,20 @@ class CustomerIdentityContractTest(unittest.TestCase):
             "/api/v1/customer/auth/magic-link-sessions",
         ):
             with self.subTest(path=path):
+                operation = self.operation(path)
                 self.assertEqual(
                     "PASSWORDLESS_ONLY",
-                    self.operation(path)["x-deskseed-authentication-eligibility"],
+                    operation["x-deskseed-authentication-eligibility"],
                 )
+                self.assertNotIn(
+                    "x-deskseed-contract-status",
+                    operation,
+                    "passwordless-only eligibility is not present in the current runtime",
+                )
+
+        magic_request = self.operation("/api/v1/customer/auth/magic-link-requests")
+        self.assertNotIn("rate-limit 결과와 관계없이", magic_request["description"])
+        self.assertIn("동일한 limiter 조건", magic_request["description"])
 
     def test_current_customer_exposes_bounded_registration_and_credential_state(self) -> None:
         current = self.document["components"]["schemas"]["CurrentCustomer"]
