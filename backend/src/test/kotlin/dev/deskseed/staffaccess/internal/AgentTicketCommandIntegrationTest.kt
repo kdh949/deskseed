@@ -347,6 +347,141 @@ class AgentTicketCommandIntegrationTest {
     }
 
     @Test
+    fun `configuration command evaluates conditional fields against the requested custom status`() {
+        val agentId = insertStaff("configuration-status-projection@example.com", "상태 투영 상담사", "AGENT")
+        val groupId = insertGroup("상태 투영 그룹", agentId)
+        val browser = login("configuration-status-projection@example.com")
+        val created = createAssignedTicket(browser, agentId, groupId, "configuration-status-projection-customer@example.com")
+        val fieldId = UUID.randomUUID()
+        val formId = UUID.randomUUID()
+        val openStatusId = UUID.randomUUID()
+        val pendingStatusId = UUID.randomUUID()
+        val definitionJson =
+            """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"statusCategory","equals":"PENDING"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]},{"id":"${UUID.randomUUID()}","priority":20,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"customStatusId","equals":"$pendingStatusId"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]}],"allowedCustomStatusIds":["$openStatusId","$pendingStatusId"]}"""
+
+        jdbcTemplate.update(
+            """
+            insert into ticket_field_definitions
+                (id, machine_key, field_type, staff_label, customer_visible, customer_editable, agent_visible,
+                 agent_editable, searchable, analytics_eligible, sensitive, validation_json, active,
+                 definition_version, created_at, updated_at)
+            values (?, 'refund.reason', 'SHORT_TEXT', '환불 사유', false, false, true, true, false, false,
+                    false, '{}'::jsonb, true, 1, now(), now())
+            """.trimIndent(),
+            fieldId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_forms
+                (id, name, lifecycle, default_for_customer, default_for_agent, draft_definition_json,
+                 current_version, published_version, aggregate_version, created_at, updated_at)
+            values (?, '상태 조건 상담사 폼', 'DRAFT', false, true, cast(? as jsonb), 1, null, 1, now(), now())
+            """.trimIndent(),
+            formId,
+            definitionJson,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_form_versions
+                (form_id, version, definition_json, published_by_staff_id, published_by_display, published_at)
+            values (?, 1, cast(? as jsonb), ?, '상태 투영 상담사', now())
+            """.trimIndent(),
+            formId,
+            definitionJson,
+            agentId,
+        )
+        jdbcTemplate.update(
+            "update ticket_forms set lifecycle = 'PUBLISHED', published_version = 1 where id = ?",
+            formId,
+        )
+        listOf(
+            Triple(openStatusId, "OPEN", "refund-open"),
+            Triple(pendingStatusId, "PENDING", "refund-pending"),
+        ).forEach { (statusId, category, machineKey) ->
+            jdbcTemplate.update(
+                """
+                insert into custom_ticket_statuses
+                    (id, machine_key, agent_label, status_category, active, display_order, default_for_category,
+                     allowed_form_ids, definition_version, created_at, updated_at)
+                values (?, ?, ?, ?, true, 0, false, cast(? as uuid[]), 1, now(), now())
+                """.trimIndent(),
+                statusId,
+                machineKey,
+                machineKey,
+                category,
+                arrayOf(formId),
+            )
+        }
+
+        jdbcTemplate.update(
+            "update tickets set status = 'OPEN', custom_status_id = ? where id = ?",
+            openStatusId,
+            created.ticketId,
+        )
+        mockMvc.perform(
+            configurationCommandRequest(
+                browser,
+                created.ticketNumber,
+                "request-status-projection-enter-pending",
+                "\"0\"",
+                """
+                {
+                  "formVersion": 1,
+                  "fieldValues": {"refund.reason": {"shortTextValue": "숨겨진 상태에서는 수정 불가"}},
+                  "customStatusId": "$pendingStatusId",
+                  "clientCommandId": "${UUID.randomUUID()}"
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/validation"))
+        assertThat(
+            jdbcTemplate.queryForMap("select status, custom_status_id::text, version from tickets where id = ?", created.ticketId),
+        )
+            .containsEntry("status", "OPEN")
+            .containsEntry("custom_status_id", openStatusId.toString())
+            .containsEntry("version", 0L)
+
+        jdbcTemplate.update(
+            "update tickets set status = 'PENDING', custom_status_id = ? where id = ?",
+            pendingStatusId,
+            created.ticketId,
+        )
+        mockMvc.perform(
+            configurationCommandRequest(
+                browser,
+                created.ticketNumber,
+                "request-status-projection-leave-pending",
+                "\"0\"",
+                """
+                {
+                  "formVersion": 1,
+                  "fieldValues": {"refund.reason": {"shortTextValue": "다시 편집 가능한 사유"}},
+                  "customStatusId": "$openStatusId",
+                  "clientCommandId": "${UUID.randomUUID()}"
+                }
+                """.trimIndent(),
+            ),
+        ).andExpect(status().isOk)
+
+        assertThat(
+            jdbcTemplate.queryForMap("select status, custom_status_id::text, version from tickets where id = ?", created.ticketId),
+        )
+            .containsEntry("status", "OPEN")
+            .containsEntry("custom_status_id", openStatusId.toString())
+            .containsEntry("version", 1L)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select short_text_value from ticket_custom_field_values where ticket_id = ? and field_definition_id = ?",
+                String::class.java,
+                created.ticketId,
+                fieldId,
+            ),
+        ).isEqualTo("다시 편집 가능한 사유")
+    }
+
+    @Test
     fun `tag only configuration mutation emits no status or SLA lifecycle event`() {
         val agentId = insertStaff("tag-only-command@example.com", "태그 전용 상담사", "AGENT")
         val groupId = insertGroup("태그 전용 그룹", agentId)
