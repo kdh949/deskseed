@@ -16,6 +16,31 @@ ADR 0039의 현재 운영 surface는 AGT-001, AGT-003, 읽기 전용 AGT-004, ca
 
 # Public screens
 
+## PUB-000 — Customer support home
+
+### Goal
+
+고객이 문의 번호로 기존 문의를 다시 열거나 새 문의·고객 로그인 경로로 이동한다.
+
+### Regions
+
+```text
+Deskseed global rail
+Customer support work navigation
+Request lookup form and state
+New request complementary action
+```
+
+### States and security
+
+- initial: one inquiry-number input and empty guidance
+- validation: invalid positive-integer input is identified in place
+- missing proof: require the original email link without rendering a capability-token input
+- success: navigate to the existing anonymous detail route only when the browser already holds that ticket-scoped sessionStorage proof
+- session loading/error and route denied content use canonical shell feedback states where applicable
+- keep the customer `no-referrer` policy and never put the access proof in a query string or persistent local storage
+- named navigation, main and complementary landmarks plus keyboard-visible focus are required
+
 ## PUB-001 — Request form
 
 ### Goal
