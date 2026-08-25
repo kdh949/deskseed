@@ -2,10 +2,10 @@ import { type ReactNode } from 'react'
 import { NavLink, useLocation, useOutlet } from 'react-router'
 import { DeskseedIcon } from '../../primitives/DeskseedIcon'
 import {
-  DeskseedBrandMark,
   DsIconButton,
   DsInitialAvatar,
 } from '../../primitives/DeskseedPrimitives'
+import { WorkspaceNavigationRail } from '../WorkspaceNavigationRail/WorkspaceNavigationRail'
 
 const navigationItems = [
   { id: 'views', icon: 'inbox' as const, label: 'Views', to: '/agent/views' },
@@ -57,48 +57,23 @@ export function AgentShell({
   const location = useLocation()
   const outlet = useOutlet()
   const isTicketRoute = location.pathname.startsWith('/agent/tickets/')
+  const railItems = [
+    ...navigationItems.map((item) => ({
+      ...item,
+      to: activeNavigationItem === item.id ? location.pathname : item.to,
+    })),
+    ...extensionNavigationItems,
+  ]
 
   return (
     <div className="agent-shell">
-      <nav className="agent-global-nav" aria-label="상담사 전역 탐색">
-        <NavLink
-          className="agent-brand"
-          to="/agent/views/my-open"
-          aria-label="Deskseed 티켓 큐"
-        >
-          <DeskseedBrandMark transparent />
-        </NavLink>
-        <div className="agent-nav-items">
-          {navigationItems.map((item) => (
-            <NavLink
-              className={({ isActive }) =>
-                isActive || activeNavigationItem === item.id
-                  ? 'agent-nav-link is-active'
-                  : 'agent-nav-link'
-              }
-              key={item.label}
-              to={
-                activeNavigationItem === item.id ? location.pathname : item.to
-              }
-              aria-label={item.label}
-            >
-              <DeskseedIcon name={item.icon} />
-              <span className="agent-nav-tooltip">{item.label}</span>
-            </NavLink>
-          ))}
-          {extensionNavigationItems.map((item) => (
-            <NavLink
-              aria-label={item.label}
-              className="agent-nav-link"
-              key={item.id}
-              to={item.to}
-            >
-              <span aria-hidden="true">{Array.from(item.label)[0]}</span>
-              <span className="agent-nav-tooltip">{item.label}</span>
-            </NavLink>
-          ))}
-        </div>
-      </nav>
+      <WorkspaceNavigationRail
+        activeItemId={activeNavigationItem}
+        ariaLabel="상담사 전역 탐색"
+        brandLabel="Deskseed 티켓 큐"
+        brandTo="/agent/views/my-open"
+        items={railItems}
+      />
       <div className="agent-main-column">
         <header className="agent-top-chrome">
           {isTicketRoute ? (

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
+import { mswHandlers } from '../../../.storybook/msw-handlers'
 import type { AgentTicketDetail } from '../../api/types'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
 
@@ -96,10 +97,63 @@ export const Writable: Story = {
   },
 }
 
+export const RecoversRemoteDrafts: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/agent/tickets/3001/drafts/PUBLIC_REPLY', () =>
+          HttpResponse.json({
+            ticketNumber: 3001,
+            channel: 'PUBLIC_REPLY',
+            body: '저장된 공개 답변 초안입니다.',
+            attachmentIds: [],
+            clientDeviceId: '33333333-3333-4333-8333-333333333333',
+            baseTicketVersion: 3,
+            draftVersion: 2,
+            updatedAt: '2026-08-22T00:00:00Z',
+            expiresAt: '2026-09-21T00:00:00Z',
+          }),
+        ),
+        http.get('/api/v1/agent/tickets/3001/drafts/INTERNAL_NOTE', () =>
+          HttpResponse.json({
+            ticketNumber: 3001,
+            channel: 'INTERNAL_NOTE',
+            body: '저장된 내부 메모 초안입니다.',
+            attachmentIds: [],
+            clientDeviceId: '33333333-3333-4333-8333-333333333333',
+            baseTicketVersion: 3,
+            draftVersion: 3,
+            updatedAt: '2026-08-22T00:00:00Z',
+            expiresAt: '2026-09-21T00:00:00Z',
+          }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => {
+      expect(
+        canvas.getByRole('textbox', { name: '공개 답변 내용' }),
+      ).toHaveValue('저장된 공개 답변 초안입니다.')
+    })
+
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+
+    await waitFor(() => {
+      expect(
+        canvas.getByRole('textbox', { name: '내부 메모 내용' }),
+      ).toHaveValue('저장된 내부 메모 초안입니다.')
+    })
+  },
+}
+
 export const SavingLocksInputs: Story = {
   parameters: {
     msw: {
       handlers: [
+        ...mswHandlers,
         http.get('/api/v1/agent/csrf', () =>
           HttpResponse.json({
             token: 'a'.repeat(32),

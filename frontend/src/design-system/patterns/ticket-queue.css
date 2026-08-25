@@ -1,6 +1,6 @@
 .agent-queue-workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: var(--ds-layout-work-navigation-width) minmax(0, 1fr);
   min-height: calc(100vh - var(--ds-layout-top-chrome-height));
   background: var(--ds-background-default);
 }
