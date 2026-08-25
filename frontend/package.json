@@ -35,7 +35,7 @@
     "styled-components": "6.5.2"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.12.1",
+    "@axe-core/playwright": "4.13.0",
     "@chromatic-com/storybook": "latest",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.62.1",
