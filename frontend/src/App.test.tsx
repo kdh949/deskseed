@@ -118,10 +118,12 @@ describe('App', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: '문의부터 답변 확인까지 한곳에서',
+        name: '문의 조회',
       }),
     ).toBeVisible()
-    expect(screen.getByRole('navigation', { name: '고객 탐색' })).toBeVisible()
+    expect(
+      screen.getByRole('navigation', { name: '고객 지원 메뉴' }),
+    ).toBeVisible()
     expect(
       screen.queryByRole('navigation', { name: '상담사 전역 탐색' }),
     ).not.toBeInTheDocument()

@@ -43,8 +43,8 @@ Compatibility exports, token aliases, fallback shells, duplicate wrappers, and f
 - Controls: buttons, icon buttons, selects, tabs, tags, split buttons
 - Feedback: screen states and notifications
 - Status: `DsStatusIndicator`, `StatusBadge`
-- Patterns: `QueueTicketTable`, `ViewNavigation`, `DsDrawer`, conversation and ticket workspace styles
-- Shell: `AgentShell`
+- Patterns: `QueueTicketTable`, `ViewNavigation`, `CustomerRequestLookupPanel`, `DsDrawer`, conversation and ticket workspace styles
+- Shells: `AgentShell`, `CustomerSiteLayout`, `CustomerSupportShell`, `WorkspaceNavigationRail`
 - Agent workspace patterns: properties, conversation, composer, customer context
 
 ## Extension rule
@@ -61,3 +61,5 @@ Direct Garden imports are restricted to the design-system root. The boundary che
 ## Visual contract
 
 Agent Queue, read-only Ticket Workspace, minimum login, and common states use the same Deskseed grammar: 64px white navigation rail with a dark-teal brand cell, dark-teal top chrome, Deskseed brand and icons, compact neutral workspaces, semantic tokens, 1px dividers, and shared focus/hover/disabled behavior. Deferred capabilities must recompose from this current system without creating another shell or token root.
+
+Customer Support Home reuses that grammar through an inverse Deskseed rail, work navigation, task-focused main region, and complementary action. Customer feature code owns route/session/proof orchestration; the reusable shell and lookup presentation remain inside the canonical design-system root.

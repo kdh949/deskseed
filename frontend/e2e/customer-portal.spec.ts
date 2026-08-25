@@ -134,7 +134,10 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
   })
 
   await page.goto('/')
-  await page.getByRole('link', { name: /새 문의 접수/ }).click()
+  await page
+    .getByRole('complementary', { name: '새 문의 접수' })
+    .getByRole('link', { name: '새 문의 접수' })
+    .click()
   await expect(page).toHaveURL(/\/requests\/new$/)
   await page.getByLabel('이름').fill('김민아')
   await page.getByLabel('이메일').fill('mina@example.test')
@@ -364,9 +367,7 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
 
   await page.getByRole('button', { name: '로그아웃' }).click()
   await expect(page).toHaveURL(/\/$/)
-  await expect(
-    page.getByRole('heading', { name: '문의부터 답변 확인까지 한곳에서' }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: '문의 조회' })).toBeVisible()
   await expectNoAxeViolations(page)
 })
 

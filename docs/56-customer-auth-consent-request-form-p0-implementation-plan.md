@@ -1,0 +1,804 @@
+# Customer Password Authentication, Consent, and Request Form P0 Implementation Plan
+
+Status: **implementation plan — contract approval required before code**
+Date: 2026-08-25
+Scope: customer identity, administrator-managed consent policies, and customer request-form submission
+
+## 1. Outcome
+
+This plan delivers three connected customer outcomes without introducing a second API version:
+
+1. A customer can register with email, password, display name, company name, and required policy consent; verify the email; then use email/password as the primary sign-in method.
+2. A customer identity that has no password, usually originating from an anonymous request, can still use the existing magic-link flow. After that sign-in, the server explicitly reports that registration completion is required and lets the customer set a password and finish the profile.
+3. Anonymous and signed-in customers can submit the fields selected by an administrator's published customer ticket form, including customer-visible custom fields. The backend remains authoritative for visibility, editability, requiredness, type validation, and the selected form version.
+
+The implementation reuses the existing customer session, CSRF, one-time-token, outbound-mail, customer access-mode, ticket form, typed EAV, ticket command, attachment, and audit foundations.
+
+## 2. Owner decisions incorporated
+
+- Registration collects **email, password, display name, company name, Terms of Service consent, and Privacy Policy consent**.
+- Email/password is the primary customer authentication method.
+- Magic-link login is available only for a customer identity without a password, including identities originating from anonymous requests.
+- A magic-link session must expose a registration-completion requirement so the UI can guide the customer to set a password and finish registration.
+- Customer access mode is `REGISTRATION_OPTIONAL`: anonymous and registered request submission are both allowed.
+- Consent policies use server-owned keys and immutable versions with append-only acceptance history.
+- An administrator can edit consent policy content through a draft/publish lifecycle.
+- An administrator can choose which built-in or custom fields appear on customer request forms.
+- This product has not been deployed. Existing v1 request and identity contracts may be changed directly; no v2 endpoint, legacy adapter, or deprecation window is required.
+
+Forward-only Flyway migrations are still required. “Not deployed” permits contract cleanup, but it does not permit editing already committed migration history.
+
+## 3. In scope and non-goals
+
+### In scope
+
+- password registration and email verification;
+- password login, logout, and server-side customer session reuse;
+- password-reset request and completion;
+- passwordless magic-link login for identities without a password;
+- authenticated registration completion after passwordless login;
+- customer company-name profile field;
+- administrator-managed Terms, Privacy, and request-submission consent policies;
+- immutable consent-policy versions and append-only acceptance records;
+- customer-facing current consent-policy projection;
+- dynamic customer ticket-form projection using candidate field values;
+- form/version/value persistence during request creation;
+- removal of the currently ignored `privacyConsent` field;
+- direct cleanup of the current request JSON and multipart contracts;
+- OpenAPI, requirement, ADR, audit catalog, verification gate, migration, and test updates.
+
+### Non-goals
+
+- social login, OIDC, SSO, or MFA;
+- organization membership or multi-user company accounts;
+- automatic claiming of historical anonymous tickets by email match;
+- administrator viewing or recovering customer passwords;
+- password history or breached-password provider integration;
+- marketing consent or arbitrary consent withdrawal workflow;
+- customer profile image, notification preferences, inbound email, or chat;
+- mapping customer-entered urgency directly to internal `TicketPriority`;
+- fetching an order or company record from an external system during submission;
+- a production legal-policy text bundled by the repository.
+
+## 4. Decisions and document changes required before implementation
+
+### 4.1 Replace the current customer-auth decision
+
+`D-040` and ADR 0029 currently say customer authentication begins with email magic links. The new requirement activates their password-authentication revisit trigger.
+
+Create a new accepted ADR, proposed as:
+
+```text
+ADR 0042 — Password-primary customer authentication with passwordless magic-link onboarding
+```
+
+Reserve the next three decision-register entries for:
+
+```text
+decision 57: customer authentication is password-primary; magic-link login is passwordless-only
+decision 58: consent policies are administrator-managed immutable versions with append-only acceptance
+decision 59: customer request submission binds a server-authorized form/version and typed values
+```
+
+Task 1 registers the final ASCII decision IDs in `docs/05-decision-register.md`; the plan intentionally does not activate those references before the register is updated.
+
+ADR 0042 supersedes the authentication-method portion of ADR 0029 but preserves its single-use token, enumeration safety, session security, explicit claim, and outbound-mail boundaries.
+
+### 4.2 Requirement IDs
+
+Add five narrow requirements rather than marking broad requirements complete:
+
+```text
+customer auth: password registration, email verification, password login, and reset
+customer auth: passwordless magic-link sign-in and explicit registration completion
+customer consent: administrator-managed immutable consent-policy versions
+customer consent: server-validated append-only customer consent acceptance
+ticket configuration: customer form projection, submission validation, and form snapshot binding
+```
+
+Task 1 allocates their final IDs in `docs/26-requirement-traceability.md`; candidate numbers are not used as active references in this plan.
+
+`REQ-CFG-002` remains broad. Completing the customer submission slice does not prove every custom-field query, search, and analytics capability.
+
+### 4.3 Verification gate additions
+
+Extend `docs/21-minimum-verification-gates.md` with seven newly allocated gates covering:
+
+```text
+customer authentication: password registration and email verification
+customer authentication: password login enumeration safety, throttling, and session rotation
+customer authentication: password reset single-use, expiry, and session revocation
+customer authentication: passwordless magic-link eligibility and registration completion
+customer consent: immutable policy lifecycle and administrator authorization
+customer consent: current-version enforcement and atomic acceptance persistence
+ticket configuration: customer form candidate projection and submission binding
+```
+
+Task 1 assigns the final gate IDs together with the traceability rows so the plan never presents an undefined gate as executable.
+
+Existing `AUTH-001` through `AUTH-004`, `ARCH-001/002/004`, `TKT-001/002`, `CHG-001/002/003`, `FILE-001/003/004/006`, and `DOC-001` remain applicable.
+
+## 5. Target architecture
+
+### 5.1 Module ownership
+
+```text
+customerauth
+  password credentials, registration intents, purpose-bound one-time tokens,
+  password login/reset, customer sessions, authentication security audits
+
+customer
+  customer profile, display name, company name, verified email state
+
+customerconsent (new bounded module)
+  policy draft/publish/archive lifecycle, immutable policy versions,
+  current policy projection, acceptance validation and persistence
+
+settings
+  REGISTRATION_OPTIONAL customer access mode
+
+ticketconfiguration
+  field/option/form administration, customer projection,
+  conditional evaluation, typed EAV persistence, selected form/version
+
+portal
+  customer HTTP translation and request-submission orchestration
+
+ticketing
+  ticket, first PUBLIC comment, one TicketAudit, ordered ticket events
+
+outboundmail
+  verification, password-reset, and passwordless-login delivery intents
+```
+
+Modules import only root APIs or named interfaces. No new `common`, `utils`, or cross-module `internal` import is introduced.
+
+### 5.2 Authentication state
+
+```text
+NO_ACCOUNT
+  └─ standard registration request
+       └─ PENDING_REGISTRATION intent
+            └─ verified email token + browser continuation proof
+                 └─ ACTIVE_PASSWORD account
+
+ANONYMOUS_REQUESTER or ACTIVE_PASSWORDLESS account
+  └─ eligible magic-link request
+       └─ single-use magic-link consume
+            └─ ACTIVE_PASSWORDLESS session
+                 └─ authenticated registration completion
+                      └─ ACTIVE_PASSWORD account
+
+ACTIVE_PASSWORD account
+  ├─ password login
+  └─ password-reset request/completion
+```
+
+Email equality never transitions ticket ownership. An anonymous request is linked only through the existing ticket-specific claim proof.
+
+### 5.3 One-time token purposes
+
+Generalize the current token store with an allowlisted purpose:
+
+```text
+PASSWORDLESS_LOGIN
+EMAIL_VERIFICATION
+PASSWORD_RESET
+```
+
+All purposes retain digest-only storage, single consume, expiry, request/correlation context, bounded cleanup, and raw-token-free logs/audits. A token issued for one purpose is rejected by every other consumer.
+
+`EMAIL_VERIFICATION` verifies a registration and does not serve as a normal login method. `PASSWORD_RESET` changes a credential and does not authenticate a session. `PASSWORDLESS_LOGIN` is issued only when the target identity has no password.
+
+### 5.4 Password storage
+
+Use a customer-specific `PasswordEncoder`; do not change the existing staff BCrypt bean or rewrite staff password hashes.
+
+Recommended initial customer encoder:
+
+```text
+Argon2id
+memory: 19 MiB
+iterations: 2
+parallelism: 1
+salt: 16 bytes
+hash: 32 bytes
+stored format includes an algorithm/version prefix
+```
+
+Tune the work factor on the supported deployment hardware and record the verification duration. Spring recommends adaptive one-way password hashing and exchanging the long-term password for a short-lived session; OWASP recommends Argon2id for new password storage. See:
+
+- <https://docs.spring.io/spring-security/reference/7.0/features/authentication/password-storage.html>
+- <https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html>
+
+Password input policy:
+
+- 12–128 characters;
+- spaces and Unicode are allowed;
+- control characters are rejected;
+- no forced composition rule;
+- plaintext exists only at the HTTP/application boundary and is never logged, audited, returned, cached, or stored.
+
+## 6. Consent architecture
+
+### 6.1 Policy model
+
+```text
+CustomerConsentPolicy
+  id
+  policyKey                 immutable, e.g. terms-of-service
+  context                   REGISTRATION | REQUEST_SUBMISSION
+  lifecycle                 DRAFT | PUBLISHED | ARCHIVED
+  draftDefinition
+  currentVersion
+  publishedVersion?
+  aggregateVersion
+
+CustomerConsentPolicyVersion
+  policyId
+  version
+  title
+  document                  canonical safe block document
+  plainText
+  checksumSha256
+  required
+  displayOrder
+  effectiveAt
+  publishedByStaffId/display
+  publishedAt
+```
+
+Published versions are immutable. Editing a published policy updates a draft and publishing creates a new version; it never rewrites what a customer previously accepted.
+
+Reuse the public, storage-neutral canonical block document codec/validator already used by Knowledge Base. Consent applies an additional allowlist and rejects raw HTML and attachments. This avoids a second rich-text format and preserves deterministic plain text and checksum behavior without importing Knowledge Base internals.
+
+### 6.2 Acceptance model
+
+```text
+CustomerConsentAcceptance
+  id
+  customerId
+  accountId?
+  ticketId?
+  policyId
+  policyVersion
+  context
+  acceptedAt              server Clock
+  source
+  requestId
+  correlationId
+```
+
+The acceptance row stores only the referenced immutable version, context, actor/resource linkage, and server time. It does not duplicate the policy body.
+
+Rules:
+
+- every required active policy for the operation context must be present exactly once;
+- the submitted version must be the current published version at final transaction time;
+- unknown, archived, optional-for-a-different-context, or duplicate policy references are rejected;
+- the client cannot supply canonical acceptance time;
+- acceptance rows are append-only;
+- policy and acceptance data are absent from ordinary application logs, webhooks, and ticket change metadata;
+- request submission stores the acceptance with the ticket transaction;
+- registration activation stores registration acceptances with account creation;
+- policy-version rows remain retained while referenced by an acceptance.
+
+### 6.3 Administrator permission and audit
+
+Add the explicit authority:
+
+```text
+customer-consent:manage
+```
+
+The initial ADMIN role receives it. AGENT and SECURITY_AUDITOR are denied unless a later explicit role/grant decision changes this.
+
+Admin/security events:
+
+```text
+CUSTOMER_CONSENT_POLICY_CREATED
+CUSTOMER_CONSENT_POLICY_DRAFT_UPDATED
+CUSTOMER_CONSENT_POLICY_PUBLISHED
+CUSTOMER_CONSENT_POLICY_ARCHIVED
+CUSTOMER_CONSENT_ACCEPTED
+```
+
+Policy mutation and its admin/security audit commit or roll back together. Audit metadata contains policy ID/key/version/context/checksum and never contains the document body.
+
+## 7. API contract plan
+
+### 7.1 Customer identity operations
+
+Update `api/customer-identity-api-v1.yaml` directly. No v2 surface is created.
+
+| Method and path | Operation ID | Contract |
+|---|---|---|
+| `POST /api/v1/customer/registrations` | `requestCustomerRegistration` | Accept email, password, display name, company name, registration policy versions; return enumeration-safe `202` and a browser-bound continuation cookie |
+| `POST /api/v1/customer/registration-verifications` | `verifyCustomerRegistration` | Consume email token plus continuation cookie; atomically create verified profile/account/consents; return `204` |
+| `POST /api/v1/customer/auth/password-sessions` | `createCustomerPasswordSession` | Generic email/password authentication; rotate any current customer session and return `CurrentCustomer` |
+| `POST /api/v1/customer/auth/magic-link-requests` | existing | Keep generic `202`; send only for an identity without a password |
+| `POST /api/v1/customer/auth/magic-link-sessions` | existing | Consume only `PASSWORDLESS_LOGIN`; create/rotate a session whose projection requires registration completion |
+| `PUT /api/v1/customer/me/registration` | `completePasswordlessCustomerRegistration` | Session+CSRF; set password, display name, company name, registration consents; rotate session |
+| `POST /api/v1/customer/auth/password-reset-requests` | `requestCustomerPasswordReset` | Enumeration-safe `202`; send only for active password accounts |
+| `POST /api/v1/customer/auth/password-resets` | `resetCustomerPassword` | Consume single-use reset token, set new password, revoke all customer sessions, return `204` |
+| `GET /api/v1/customer/me` | existing | Add `companyName`, `credentialState`, `registrationState`, and `availableAuthenticationMethods` |
+| `GET /api/v1/customer/csrf` | existing | Reuse unchanged |
+| `DELETE /api/v1/customer/session` | existing | Reuse unchanged |
+
+Registration, magic-link request, and password-reset request use generic response shapes and comparable timing classes. Login uses one generic invalid-credential problem for unknown email, wrong password, disabled account, passwordless account, and incomplete registration. Throttling returns `429` with `Retry-After` without identifying which condition occurred.
+
+To prevent account pre-hijacking, a pending registration is activated only when both the email token and the browser-bound continuation secret match the same intent. If the email link is opened without the continuation cookie, the customer restarts registration; the server does not activate a password selected by another browser.
+
+### 7.2 Consent operations
+
+Add an owned Core fragment, proposed `api/core-api-fragments/05-customer-consent.yaml`.
+
+Customer operation:
+
+```text
+GET /api/v1/customer/consent-policies?context=REGISTRATION|REQUEST_SUBMISSION
+operationId: listCurrentCustomerConsentPolicies
+```
+
+The response returns current published `policyId`, `policyKey`, `version`, `title`, safe canonical document, checksum, required flag, display order, and effective time. Public responses are cacheable only according to an explicit version/ETag policy; registration and submission responses remain `no-store`.
+
+Administrator operations:
+
+```text
+GET  /api/v1/admin/customer-consent-policies
+POST /api/v1/admin/customer-consent-policies
+GET  /api/v1/admin/customer-consent-policies/{policyId}
+PUT  /api/v1/admin/customer-consent-policies/{policyId}
+POST /api/v1/admin/customer-consent-policies/{policyId}/publish
+POST /api/v1/admin/customer-consent-policies/{policyId}/archive
+```
+
+Admin writes require staff session, ADMIN role, `customer-consent:manage`, expected-actor guard, CSRF, and `If-Match`. Stale drafts return `412`; lifecycle/key conflicts return `409`; unavailable resources return existence-safe `404`; required audit failure returns `503` with no mutation.
+
+### 7.3 Customer form projection
+
+Reuse the existing initial projection:
+
+```text
+GET /api/v1/customer/ticket-forms?ticketKind=CUSTOMER_REQUEST&formId=...
+```
+
+Add candidate-value projection:
+
+```text
+POST /api/v1/customer/ticket-form-projections
+operationId: projectCustomerTicketForm
+```
+
+Request:
+
+```json
+{
+  "ticketKind": "CUSTOMER_REQUEST",
+  "formId": "00000000-0000-4000-8000-000000000001",
+  "formVersion": 3,
+  "fieldValues": {
+    "request.type": {"optionId": "00000000-0000-4000-8000-000000000101"}
+  }
+}
+```
+
+The server evaluates allowlisted `field.<machineKey>` facts and returns only the customer-visible projection. The final create command always repeats validation; a projection response is not an authorization token.
+
+### 7.4 Request creation contract cleanup
+
+Replace `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. Remove `privacyConsent` rather than deprecating it because the application has not shipped.
+
+Recommended JSON shape:
+
+```json
+{
+  "requester": {
+    "name": "김민아",
+    "email": "mina.kim@example.test"
+  },
+  "subject": "주문 상태 확인 요청",
+  "message": "주문 상태를 확인해 주세요.",
+  "formId": "00000000-0000-4000-8000-000000000001",
+  "formVersion": 3,
+  "fieldValues": {
+    "request.type": {"optionId": "00000000-0000-4000-8000-000000000101"},
+    "customer.urgency": {"optionId": "00000000-0000-4000-8000-000000000201"},
+    "order.reference": {"shortTextValue": "ORD-2026-1042"}
+  },
+  "acceptedPolicies": [
+    {
+      "policyKey": "inquiry-data-processing",
+      "version": 2
+    }
+  ]
+}
+```
+
+Rules:
+
+- `requester` is required for an anonymous request and omitted for a signed-in request;
+- a signed-in request uses the server session identity and rejects a conflicting requester object;
+- `formId` and `formVersion` are either both present or both absent;
+- absence means the core subject/message form only when no published default customer form is available;
+- when a published default form exists, new UI clients obtain and submit its ID/version;
+- the submitted version must still be the current published customer form at final validation;
+- unknown or staff-only field keys return a generic field-validation problem without exposing the protected definition;
+- hidden/readonly values are dropped as required by ADR 0041;
+- active visible required fields must have valid values;
+- customer urgency remains a custom field and does not mutate internal priority;
+- order reference is a bounded string and triggers no external fetch.
+
+Replace the flat multipart schema with:
+
+```text
+request       application/json CreateCustomerRequest
+attachments  zero to five files
+```
+
+The existing attachment quarantine/upload/link implementation is reused. Initial validation occurs before upload and is repeated in the final ticket transaction. A policy/form version changed during upload produces a stable conflict and leaves uploaded objects subject to the existing unlinked-object cleanup policy.
+
+## 8. Database migration plan
+
+Wave 1's V40–V79 reservation is complete. Begin the next additive range at V80.
+
+### V80 — customer consent policies and acceptances
+
+- create `customer_consent_policies`;
+- create immutable `customer_consent_policy_versions` plus update/delete rejection trigger;
+- create `customer_consent_acceptances` with customer/account/ticket references;
+- add lifecycle, current-version, context/key, display-order, and current-published indexes;
+- add append-only protection for acceptance rows;
+- add `customer-consent:manage` to the authority vocabulary/default ADMIN grants;
+- do not seed production legal text.
+
+### V81 — password-primary customer authentication
+
+- add nullable `customers.company_name`;
+- add nullable `customer_accounts.password_hash`, `password_changed_at`, and `credential_version`;
+- add `customer_registration_intents` with email, password hash, profile values, continuation-secret digest, expiry, consume/cancel state;
+- add `customer_registration_intent_consents` referencing immutable policy versions;
+- generalize/rename `customer_magic_link_tokens` to purpose-bound customer one-time tokens;
+- generalize the magic-link limiter to an authentication-operation limiter while retaining content-free fingerprints;
+- add session authentication method and credential-version snapshot if required for invalidation;
+- keep raw passwords, raw tokens, and raw continuation secrets out of all tables.
+
+### V82 — customer request form binding
+
+- create `ticket_form_selections(ticket_id PK, form_id, form_version, selected_at)`;
+- preserve the existing typed `ticket_custom_field_values` rows;
+- add the exact FK/indexes needed by selected-form reads and immutable-version resolution;
+- update every FK-connected PostgreSQL `TRUNCATE` cleaner;
+- change the initial effective access mode to `REGISTRATION_OPTIONAL` only for the untouched seed setting, without overwriting an operator-edited row.
+
+All migrations require empty-database migration, upgrade-path migration, Hibernate validation, constraint tests, and forward-fix rollback notes.
+
+## 9. Transactions, failures, concurrency, and audit
+
+### Registration request
+
+```text
+rate limit
+→ validate current registration policy versions
+→ hash password
+→ replace/create bounded pending registration intent
+→ store token digest and continuation-secret digest
+→ enqueue EMAIL_VERIFICATION mail intent
+→ append CUSTOMER_REGISTRATION_REQUESTED
+→ commit
+```
+
+Mail network delivery remains post-commit. Failure to persist the intent, token, mail intent, or required audit returns no success and leaves no partial registration.
+
+### Registration verification
+
+```text
+consume email token + continuation proof under normalized-email lock
+→ confirm current intent and policy versions
+→ create verified Customer with name/company
+→ create ACTIVE_PASSWORD CustomerAccount with password hash
+→ append consent acceptances
+→ append CUSTOMER_REGISTRATION_VERIFIED and CUSTOMER_CONSENT_ACCEPTED
+→ consume intent/token
+→ commit
+```
+
+Concurrent consume produces one account. A race with an existing verified account fails closed without replacing its credential or profile.
+
+### Password login
+
+```text
+rate limit by purpose-bound normalized-email/network fingerprints
+→ always execute a real-or-dummy password hash comparison
+→ verify ACTIVE + PASSWORD credential
+→ rotate session
+→ append success/failure security event
+→ return CurrentCustomer or generic problem
+```
+
+Use a generic response and comparable work for unknown, wrong-password, disabled, pending, and passwordless identities. Follow the existing same-origin HttpOnly/Secure/SameSite session and CSRF design. OWASP's authentication guidance is the reference for generic errors and login throttling: <https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html>.
+
+### Password reset
+
+Reset request is enumeration-safe and mail-backed. Successful reset consumes one token, increments `credentialVersion`, replaces the hash, revokes every existing customer session, and writes the security audit in one transaction. Replay and concurrent consume cannot create a second password change.
+
+### Passwordless registration completion
+
+The current session must have `credentialState=PASSWORDLESS`; CSRF is required. Completion writes password/profile/registration consents, increments credential version, rotates the current session, revokes older sessions, and records registration completion atomically. A password account cannot use the endpoint to bypass the password-reset flow.
+
+### Request creation
+
+```text
+pre-committed abuse budget
+→ resolve anonymous or session customer
+→ validate current request consent policies
+→ resolve current customer form/version
+→ re-evaluate candidate values and normalize typed values
+→ create Ticket + first PUBLIC Comment
+→ persist selected form/version + field values
+→ append consent acceptances
+→ write one TicketAudit with ordered metadata-only events
+→ append consent security event
+→ link CLEAN PUBLIC attachments
+→ issue request access token and enqueue mail intent
+→ commit
+```
+
+Any form, consent, TicketAudit, security-audit, attachment-link, access-token, or mail-intent persistence failure rolls back the ticket mutation. The previously consumed public abuse budget remains consumed by its existing separate transaction.
+
+## 10. Security and privacy acceptance
+
+- Password hashes use the customer-specific adaptive encoder; plaintext is never persisted.
+- Login and recovery responses do not reveal account, credential, passwordless, disabled, or pending state.
+- All authentication request endpoints have PostgreSQL-backed throttling and `Retry-After`.
+- Registration intent, verification, reset, and magic tokens are purpose-bound, single-use, expiring, digest-only, and control-character bounded.
+- Session cookies remain HttpOnly, Secure in production, SameSite=Lax, and server-revocable.
+- Password reset and passwordless completion revoke/rotate sessions.
+- Existing anonymous tickets are never auto-claimed from email equality.
+- Company name is customer PII and is excluded from logs, routine auth audit metadata, webhooks, and customer-list projections unless explicitly contracted.
+- Consent documents reject raw HTML, scripts, attachment blocks, unsafe URLs, controls, and unbounded text.
+- Staff-only fields/options never appear in customer form projection, errors, counts, or audit metadata.
+- Customer-submitted custom values do not enter ordinary logs or unprotected admin/security audit.
+- Required audit failure is fail-closed for credential, policy, consent, and ticket mutations.
+
+## 11. Vertical implementation sequence
+
+Each numbered task uses `CODEX_TASK_TEMPLATE.md`, owns one branch/worktree, and records Requirement IDs, ADRs, operation IDs, migration files, audit events, gates, commands run, and explicit non-goals.
+
+### Phase 0 — Contract freeze
+
+#### Task 1: Supersede the customer authentication decision
+
+**Deliverable:** ADR 0042 plus decision, blueprint, requirement, privacy, settings-catalog, command/event, and gate updates.
+
+**Acceptance:** password-primary and passwordless-only magic semantics are unambiguous; claim behavior remains unchanged; new requirements and gates are traceable.
+
+**Likely files:** new ADR, `docs/25`, `docs/26`, `docs/34`, `docs/37`, `docs/52`.
+
+**Scope:** M. **Dependencies:** none.
+
+#### Task 2: Freeze customer identity and consent contracts
+
+**Deliverable:** all identity, public consent, and admin consent operations with request/response/problem/audit/rate-limit/PII examples.
+
+**Acceptance:** contract-quality validation passes; every mutation schema is marked `MANUAL`; no example contains a usable credential.
+
+**Likely files:** `api/customer-identity-api-v1.yaml`, new Core fragment, bundled Core artifact, API documentation tests.
+
+**Scope:** M. **Dependencies:** Task 1.
+
+#### Task 3: Freeze form projection and request-creation contracts
+
+**Deliverable:** candidate projection, form-aware JSON/multipart create body, direct removal of `privacyConsent`, and stable problem catalog.
+
+**Acceptance:** no v2/legacy schema remains; JSON and multipart represent the same domain command; customer/staff projection boundaries are explicit.
+
+**Likely files:** `api/core-api-base-v1.yaml`, `api/core-api-fragments/10-ticket-configuration.yaml`, bundled Core artifact, contract tests.
+
+**Scope:** M. **Dependencies:** Task 1.
+
+### Checkpoint A — contract approval
+
+- ADR/decision/requirement/gate review complete;
+- `make docs-check` passes;
+- deterministic Core bundle parity passes;
+- no backend production code begins before this checkpoint is approved.
+
+### Phase 1 — Consent policy vertical slices
+
+#### Task 4: Persist immutable consent policy versions
+
+**Deliverable:** V80 schema, root policy/acceptance types, canonical document validation adapter, and PostgreSQL migration/invariant tests.
+
+**Acceptance:** published rows and acceptance rows reject update/delete; one active published version per key/context is deterministic; unsafe documents fail before persistence.
+
+**Scope:** M. **Dependencies:** Task 2.
+
+#### Task 5: Deliver administrator consent-policy lifecycle
+
+**Deliverable:** list/create/read/update/publish/archive application service and Admin controllers with authority, expected actor, CSRF, If-Match, and audit.
+
+**Acceptance:** wrong role/capability is denied; stale writes are non-mutating; audit failure rolls back; published history remains resolvable.
+
+**Scope:** M. **Dependencies:** Task 4.
+
+#### Task 6: Deliver current customer consent projection
+
+**Deliverable:** context-filtered current-policy endpoint and strict response decoder tests.
+
+**Acceptance:** only active published versions appear in display order; archived/draft versions do not affect existence/count; safe document/checksum/version are stable.
+
+**Scope:** S. **Dependencies:** Task 4.
+
+### Checkpoint B — consent foundation
+
+- consent migration, administration integration, authorization, audit rollback, and public projection tests pass;
+- ADMIN can publish synthetic test policies;
+- registration remains disabled when required policies are unavailable.
+
+### Phase 2 — Password-primary authentication
+
+#### Task 7: Generalize customer credential and token storage
+
+**Deliverable:** V81, customer-specific Argon2id encoder, token purpose model, registration-intent persistence, generalized auth limiter, and cleaner updates.
+
+**Acceptance:** DB has no plaintext credential/token columns; purpose mismatch fails; clean migration and existing magic-link regression tests pass.
+
+**Scope:** M. **Dependencies:** Tasks 1, 4.
+
+#### Task 8: Deliver standard registration and email verification
+
+**Deliverable:** registration request, protected verification mail, continuation cookie, verification consume, profile/account creation, consents, and security audit.
+
+**Acceptance:** generic response for new/existing emails; browser-proof mismatch does not activate; concurrent verification creates one account; audit/outbox failure rolls back.
+
+**Scope:** M. **Dependencies:** Tasks 6, 7.
+
+#### Task 9: Deliver password login
+
+**Deliverable:** password-session endpoint, dummy hash path, rate limiting, session rotation, current-customer credential projection, and tests.
+
+**Acceptance:** unknown/wrong/disabled/passwordless are externally indistinguishable; throttling includes `Retry-After`; password success creates one audited session and no password appears in output/logs.
+
+**Scope:** M. **Dependencies:** Task 8.
+
+#### Task 10: Deliver password reset
+
+**Deliverable:** reset request/consume endpoints, reset mail template, credential-version update, all-session revocation, audit, and concurrency tests.
+
+**Acceptance:** request is enumeration-safe; token is single-use; reset replay cannot rotate twice; all old sessions fail immediately.
+
+**Scope:** M. **Dependencies:** Task 9.
+
+#### Task 11: Restrict magic links and complete passwordless registration
+
+**Deliverable:** existing magic request issues mail only for passwordless/anonymous identities, consume returns onboarding state, and authenticated completion sets password/profile/consents.
+
+**Acceptance:** password account receives no magic-login mail; passwordless login works; completion requires session+CSRF; completion never claims a ticket by email; explicit claim proof still works.
+
+**Scope:** M. **Dependencies:** Tasks 6, 9.
+
+### Checkpoint C — identity flow
+
+- registration → verification → password login → logout works through real HTTP and Mailpit;
+- anonymous identity → magic login → registration completion → password login works;
+- reset revokes old sessions;
+- existing customer-authentication gates plus all newly registered password and passwordless-onboarding gates, relevant mail gates, `ARCH-004`, and secret/log scans pass.
+
+### Phase 3 — Customer form submission
+
+#### Task 12: Project forms from candidate customer values
+
+**Deliverable:** candidate projection input/output types, customer condition facts, server projection endpoint, and visibility/type/stale-version tests.
+
+**Acceptance:** custom fields created by ADMIN can appear; staff-only fields never appear; conditional dependencies are deterministic; final validation does not trust the preview.
+
+**Scope:** M. **Dependencies:** Task 3.
+
+#### Task 13: Bind selected form and typed values to ticket creation
+
+**Deliverable:** V82, selected-form persistence, customer create mutation handler, `SubmitPublicRequestCommand` extension, typed value normalization, and ordered metadata-only audit events.
+
+**Acceptance:** form/version is retained even with zero values; invalid type/option/requiredness is non-mutating; hidden/readonly values are dropped; one TicketAudit covers ticket creation.
+
+**Scope:** M. **Dependencies:** Task 12.
+
+#### Task 14: Bind request consent and clean the JSON contract
+
+**Deliverable:** form-aware JSON controller/application orchestration, request-policy validation/acceptance, direct `privacyConsent` removal, and atomic failure tests.
+
+**Acceptance:** anonymous and session identities follow their distinct input rules; current consent version is required; consent/audit failure returns no ticket; INTERNAL/staff-only data is absent.
+
+**Scope:** M. **Dependencies:** Tasks 6, 13.
+
+#### Task 15: Replace multipart submission with JSON-part plus attachments
+
+**Deliverable:** new multipart adapter reusing existing upload/quarantine/link services and two-phase validation.
+
+**Acceptance:** JSON and multipart produce equivalent tickets/form values/consents; unsafe or unclean files do not link; stale policy/form conflict leaves no ticket and unlinked files follow cleanup.
+
+**Scope:** M. **Dependencies:** Task 14.
+
+### Checkpoint D — backend P0 complete
+
+- anonymous and password-authenticated request creation work;
+- administrator-selected customer fields and custom fields render and persist;
+- Terms/Privacy and request consent versions are provable;
+- attachments, first PUBLIC comment, customer isolation, and explicit claim regressions pass;
+- clean PostgreSQL migration, Modulith verification, OpenAPI drift, and `make docs-check` pass.
+
+### Phase 4 — UI consumers after backend freeze
+
+#### Task 16: Customer registration/login/onboarding UI
+
+Implement registration, verification, password login, password reset, passwordless onboarding, and all loading/validation/rate-limit/expired/denied/error states against the frozen identity contract.
+
+#### Task 17: Admin consent-policy UI
+
+Implement draft editor, preview, publish, archive, stale conflict, permission denial, and immutable version history using the canonical document editor contract.
+
+#### Task 18: Dynamic customer request-form UI
+
+Render the server projection, request candidate projections when dependencies change, preserve values/drafts, submit typed values and policy versions, and cover anonymous/authenticated/multipart flows.
+
+Frontend tasks must separately follow `frontend/AGENTS.md`, the Storybook MCP documentation contract, focused/full story tests as applicable, interaction tests, accessibility gates, and real browser E2E.
+
+## 12. Validation commands and evidence
+
+Minimum backend/document validation per affected slice:
+
+```text
+make docs-check
+python3 scripts/bundle_core_openapi.py --check
+cd backend && ./gradlew test --tests '*CustomerConsent*'
+cd backend && ./gradlew test --tests '*Customer*Auth*'
+cd backend && ./gradlew test --tests '*PublicRequest*'
+cd backend && ./gradlew test --tests '*TicketConfiguration*'
+cd backend && ./gradlew test
+```
+
+Required evidence classification:
+
+- `Passed`: command executed and completed successfully;
+- `Failed`: product/test failure with exact failing scenario;
+- `Blocked`: environment/infrastructure prevented execution;
+- `Not run`: validation was intentionally not executed.
+
+Local success is not remote CI success. Mailpit E2E, clean Flyway/PostgreSQL, audit failure injection, concurrent token consume, concurrent registration, login throttling, session revocation, attachment regression, and module verification require explicit evidence.
+
+## 13. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Existing ADR and code assume magic-link-only auth | High | Superseding ADR and contract-only checkpoint before code |
+| Account pre-hijacking through victim email registration | High | Email token plus browser-bound continuation proof; no token-only activation |
+| Password hash cost creates auth DoS | High | Argon2id benchmark, strict login limits, dummy comparison, bounded concurrency evidence |
+| Admin edits rewrite accepted legal text | High | Immutable published versions; acceptance references version/checksum |
+| Missing legal policy is silently accepted | High | Registration/request fail closed until required active policy exists |
+| Staff-only custom field leaks through projection/error | High | Server-side allowlist, existence-safe error, direct-ID negative tests |
+| New required form breaks current code paths | Medium | Directly update all current v1 clients/tests because there is no deployed consumer |
+| Form/policy changes during multipart upload | Medium | Validate before upload and again at final transaction; stable conflict and cleanup |
+| New FK tables break test isolation | Medium | Inventory and update every affected TRUNCATE cleaner in the migration slice |
+| Password reset becomes an alternate login bypass | High | Purpose-bound token, no session creation, all-session revocation, single use |
+| Company/consent data leaks to audit or integrations | High | Metadata allowlists and negative log/export/webhook tests |
+
+## 14. Recommended decisions made due to missing owner input
+
+The following are recommendations made by this plan and can be changed before Checkpoint A:
+
+1. Standard registration requires email verification; the verification link is a distinct `EMAIL_VERIFICATION` token and is not treated as magic-link login.
+2. Registration activation requires both the email token and an HttpOnly browser-bound continuation secret to prevent account pre-hijacking.
+3. Customer passwords use a dedicated Argon2id encoder with 19 MiB memory, 2 iterations, and parallelism 1; staff BCrypt behavior remains unchanged.
+4. Passwords allow 12–128 characters, spaces, and Unicode, reject controls, and have no composition rule.
+5. Password-reset token TTL is 30 minutes; magic-login TTL remains 15 minutes; registration-verification TTL is 24 hours.
+6. Password reset is included in P0 because password-primary login without credential recovery creates an avoidable account-lockout path.
+7. Consent policy content uses the existing canonical safe block-document contract with a stricter consent subset, rather than adding HTML/Markdown storage.
+8. No real Terms, Privacy, or request-processing legal text is seeded. Synthetic fixtures are test-only, and registration/request consent fails closed until ADMIN publishes required policies.
+9. Registration acceptance retention follows the account record plus 365 days after account deletion by default; request-submission acceptance follows the ticket/support-record retention. Referenced policy versions are retained at least as long as any acceptance.
+10. Production migrations do not seed tenant-specific request type/product area/urgency/order options. Development fixtures may demonstrate them; ADMIN creates the real fields/options/forms.
+11. Customer urgency remains a custom field and never automatically changes internal ticket priority.
+12. The current `/api/v1/requests` and identity contracts are changed in place; `privacyConsent`, the flat multipart body, compatibility adapters, and v2 endpoints are not retained.
+13. A new `customerconsent` module owns policy and acceptance semantics instead of storing legal content in generic system settings.
+14. The first implementation uses `REGISTRATION_OPTIONAL` as the effective customer access mode so anonymous and registered submission coexist.
+
+The implementation can begin without further structural questions once Checkpoint A approves these recommendations. Actual production legal text and jurisdiction-specific retention remain operator/legal-owner inputs, not values generated by the implementation.

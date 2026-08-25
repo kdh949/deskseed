@@ -2,9 +2,36 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
-import { CustomerSiteLayout } from './CustomerSiteLayout'
+import { CustomerSiteLayout } from '../../design-system'
 
 describe('CustomerSiteLayout', () => {
+  it('composes the approved customer workspace navigation and complementary action', () => {
+    render(
+      <MemoryRouter>
+        <CustomerSiteLayout
+          presentation="workspace"
+          session={{ status: 'anonymous' }}
+        >
+          <section>조회 작업</section>
+        </CustomerSiteLayout>
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByRole('navigation', { name: '고객 지원 메뉴' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('navigation', { name: '고객 지원 탐색 목록' }),
+    ).toBeVisible()
+    expect(screen.getByRole('main', { name: '문의 조회' })).toHaveAttribute(
+      'id',
+      'customer-main-content',
+    )
+    expect(
+      screen.getByRole('complementary', { name: '새 문의 접수' }),
+    ).toBeVisible()
+  })
+
   it('gives an anonymous visitor request, lookup, and sign-in navigation', () => {
     render(
       <MemoryRouter>
