@@ -2870,35 +2870,9 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503': *id006
       description: 감사 활동 조회 프로젝션 재구축 API입니다. 별도 감사 권한을 가진 직원만 사용할 수 있고 감사 화면 조회·공개·내보내기 행위도 다시 감사됩니다.
-  /api/v1/customer/me:
-    get:
-      summary: 현재 인증 고객 조회
-      operationId: getCurrentCustomer
-      x-deskseed-contract-status: FROZEN
-      tags:
-      - Customer Auth
-      x-deskseed-phase: P1
-      x-deskseed-requirements:
-      - REQ-AUTH-001
-      security: &id009
-      - customerSession: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CurrentCustomer'
-        '400':
-          $ref: '#/components/responses/InvalidExpectedStaffActor'
-        '401':
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-      description: 현재 인증 고객 조회 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
   /api/v1/customer/requests/{ticketNumber}:
     parameters:
-    - &id010
+    - &id009
       name: ticketNumber
       in: path
       required: true
@@ -2916,7 +2890,8 @@ paths:
       x-deskseed-requirements:
       - REQ-TKT-003
       - REQ-TKT-005
-      security: *id009
+      security: &id010
+      - customerSession: []
       responses:
         '200':
           headers:
@@ -2942,7 +2917,7 @@ paths:
       description: 인증 고객의 문의 상세 조회 API입니다. 고객용 projection만 반환하며 INTERNAL 댓글, 자식 관계, 직원 전용 필드와 감사 메타데이터를 노출하지 않습니다.
   /api/v1/customer/requests/{ticketNumber}/comments:
     parameters:
-    - *id010
+    - *id009
     post:
       summary: 인증 고객의 공개 답변 추가
       operationId: addAuthenticatedCustomerComment
@@ -2956,7 +2931,7 @@ paths:
       x-deskseed-phase: P1
       x-deskseed-requirements:
       - REQ-TKT-005
-      security: *id009
+      security: *id010
       requestBody:
         required: true
         content:
@@ -2994,7 +2969,7 @@ paths:
                 $ref: '#/components/schemas/Problem'
   /api/v1/customer/requests/{ticketNumber}/attachments/uploads:
     parameters:
-    - *id010
+    - *id009
     post:
       summary: 인증 고객 문의의 PUBLIC 첨부파일 업로드
       operationId: createAuthenticatedCustomerAttachmentUpload
@@ -3006,7 +2981,7 @@ paths:
       - REQ-FILE-001
       - REQ-TKT-003
       - REQ-TKT-008
-      security: *id009
+      security: *id010
       parameters:
       - $ref: '#/components/parameters/CustomerCsrfHeader'
       requestBody:
@@ -3041,7 +3016,7 @@ paths:
         scan detail, public URL 또는 bytes는 JSON에 포함하지 않습니다.
   /api/v1/customer/requests/{ticketNumber}/attachments/{attachmentId}/download:
     parameters:
-    - *id010
+    - *id009
     - $ref: '#/components/parameters/AttachmentId'
     get:
       summary: 인증 고객 문의의 PUBLIC 첨부파일 다운로드
@@ -3054,7 +3029,7 @@ paths:
       - REQ-FILE-001
       - REQ-TKT-005
       - REQ-TKT-008
-      security: *id009
+      security: *id010
       responses:
         '200':
           headers:
@@ -11709,27 +11684,6 @@ components:
           format: date-time
         projection:
           $ref: '#/components/schemas/AuditProjectionStatus'
-    CurrentCustomer:
-      type: object
-      additionalProperties: false
-      required:
-      - id
-      - email
-      - verifiedAt
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        displayName:
-          type:
-          - string
-          - 'null'
-        verifiedAt:
-          type: string
-          format: date-time
     BusinessInterval:
       type: object
       additionalProperties: false
