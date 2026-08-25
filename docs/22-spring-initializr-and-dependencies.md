@@ -96,7 +96,7 @@ Actuator health and basic Micrometer metrics come first.
 
 ### API documentation tooling
 
-커밋된 OpenAPI 3.1 문서가 계약의 source of truth다. Scalar WebMVC `0.6.62`는 이 파일을 `/docs/api`에서 렌더링하고, springdoc WebMVC API `3.1.0`은 구현된 Controller의 runtime 문서를 생성해 경로·HTTP method 드리프트를 검사한다. runtime annotation이나 생성 결과가 커밋 계약을 자동으로 덮어쓰면 안 된다.
+커밋된 OpenAPI 3.1 문서가 계약의 source of truth다. Scalar WebMVC `0.6.63`는 이 파일을 `/docs/api`에서 렌더링하고, springdoc WebMVC API `3.1.0`은 구현된 Controller의 runtime 문서를 생성해 경로·HTTP method 드리프트를 검사한다. runtime annotation이나 생성 결과가 커밋 계약을 자동으로 덮어쓰면 안 된다.
 
 - 개발 기본값: Scalar와 `/v3/api-docs/**` 활성화, Try it 허용, 인증 정보 저장·telemetry·Scalar agent 비활성화
 - production 기본값: 문서 전체 비활성화

@@ -73,7 +73,7 @@ dependencies {
     implementation("org.apache.httpcomponents.client5:httpclient5")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:3.1.0")
-    implementation("com.scalar.maven:scalar-webmvc:0.6.62")
+    implementation("com.scalar.maven:scalar-webmvc:0.6.63")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
