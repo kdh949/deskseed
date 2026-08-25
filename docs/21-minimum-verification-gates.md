@@ -941,6 +941,8 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - AGENT, SECURITY_AUDITOR, customer, and Integration Client direct access is denied without leaking protected resource state.
 - publishing creates an immutable version; accepted historical versions remain resolvable and cannot be updated or deleted through the runtime application role.
 - P0 rejects client-selected/future activation: publish uses one fixed server `Clock` value for both `effectiveAt` and `publishedAt`, atomically replaces the current pointer, and has no scheduled-version state.
+- create/update rejects an HTTP body over 262,144 bytes; publish canonicalizes first and accepts at most 50,000 plain-text characters and 200,000 UTF-8 bytes. Boundary coverage includes 49,999/50,000/50,001 characters and multi-byte input at the UTF-8 limit.
+- each context has at most 20 current policies. Publish serializes this check inside the mutation transaction so concurrent attempts to cross 20 allow at most one winner and never produce a truncated current-policy projection.
 - policy mutation and its metadata-only Admin/Security audit commit or roll back together; document body is absent from audit metadata.
 
 ### CONSENT-002 — Current-version validation and atomic acceptance

@@ -463,6 +463,54 @@ class CustomerConsentContractTest(unittest.TestCase):
             with self.subTest(description=description):
                 self.assertTrue(list(validator.iter_errors(document)))
 
+    def test_draft_has_no_client_selected_effective_time_and_publish_is_immediate(self) -> None:
+        draft = self.document["components"]["schemas"]["CustomerConsentDraftInput"]
+        self.assertNotIn("effectiveAt", draft["required"])
+        self.assertNotIn("effectiveAt", draft["properties"])
+
+        publish = self.operation(
+            "/api/v1/admin/customer-consent-policies/{policyId}/publish",
+            "post",
+        )
+        self.assertEqual("PUBLISHED_AT", publish["x-deskseed-effective-at"])
+        self.assertIn("effectiveAt = publishedAt", publish["description"])
+
+    def test_consent_document_declares_aggregate_and_transport_limits(self) -> None:
+        document = self.document["components"]["schemas"]["CustomerConsentDocument"]
+        self.assertEqual(
+            50_000,
+            document["x-deskseed-canonical-plain-text-max-characters"],
+        )
+        self.assertEqual(
+            200_000,
+            document["x-deskseed-canonical-plain-text-max-utf8-bytes"],
+        )
+        self.assertIn("canonicalization", document["description"])
+
+        for operation in (
+            self.operation("/api/v1/admin/customer-consent-policies", "post"),
+            self.operation("/api/v1/admin/customer-consent-policies/{policyId}", "put"),
+        ):
+            with self.subTest(operation=operation["operationId"]):
+                self.assertEqual(262_144, operation["x-deskseed-request-body-max-bytes"])
+
+    def test_publish_serializes_the_twenty_current_policy_cap_per_context(self) -> None:
+        current_list = self.document["components"]["schemas"][
+            "CurrentCustomerConsentPolicyList"
+        ]
+        self.assertEqual(20, current_list["properties"]["policies"]["maxItems"])
+
+        publish = self.operation(
+            "/api/v1/admin/customer-consent-policies/{policyId}/publish",
+            "post",
+        )
+        self.assertEqual(
+            {"contextMaximum": 20, "enforcement": "PUBLISH_TRANSACTION_CONTEXT_SERIALIZATION"},
+            publish["x-deskseed-current-policy-cap"],
+        )
+        self.assertIn("20", publish["description"])
+        self.assertIn("직렬화", publish["description"])
+
     def test_admin_request_examples_are_manual_synthetic_and_schema_valid(self) -> None:
         for schema_name in (
             "CreateCustomerConsentPolicyRequest",

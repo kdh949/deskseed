@@ -254,6 +254,12 @@ P0 does not schedule future policy activation. The draft and publish request do 
 scheduled version, transition worker, or future activation time requires a later decision amendment.
 
 Reuse the public, storage-neutral canonical block document codec/validator already used by Knowledge Base. Consent applies an additional allowlist and rejects raw HTML and attachments. This avoids a second rich-text format and preserves deterministic plain text and checksum behavior without importing Knowledge Base internals.
+Create/update rejects an HTTP request body larger than 262,144 bytes. Publish validates the canonicalized result at 50,000 plain-text
+characters and 200,000 UTF-8 bytes so a schema-valid block collection cannot exceed the immutable version storage contract.
+
+The current-policy projection is intentionally bounded to 20 policies per context. Publish enforces the same limit while serializing
+the context inside its transaction; concurrent attempts to move from 20 to 21 current policies can have at most one winner. Pagination
+is not introduced for this P0 command prerequisite set.
 
 ### 6.2 Acceptance model
 
