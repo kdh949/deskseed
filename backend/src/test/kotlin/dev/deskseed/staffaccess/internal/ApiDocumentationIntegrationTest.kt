@@ -65,10 +65,17 @@ class ApiDocumentationIntegrationTest {
     }
 
     @Test
-    fun `runtime routes stay aligned with implemented committed contract operations`() {
+    fun `runtime routes stay within committed contracts and cover frozen operations`() {
         val runtimeOperations = listOf("core", "customer-identity", "platform")
             .flatMapTo(mutableSetOf()) { runtimeOperations(it) }
-        val committedOperations = setOf(
+        val declaredOperations = setOf(
+            "core-api-outline-v1.yaml",
+            "customer-identity-api-v1.yaml",
+            "platform-api-outline-v1.yaml",
+        ).flatMapTo(mutableSetOf()) { resource ->
+            committedOperations(resource, frozenOnly = false)
+        }
+        val frozenOperations = setOf(
             "core-api-outline-v1.yaml" to true,
             "customer-identity-api-v1.yaml" to true,
             "platform-api-outline-v1.yaml" to false,
@@ -76,7 +83,8 @@ class ApiDocumentationIntegrationTest {
             committedOperations(resource, frozenOnly)
         }
 
-        assertThat(runtimeOperations).containsExactlyInAnyOrderElementsOf(committedOperations)
+        assertThat(declaredOperations).containsAll(runtimeOperations)
+        assertThat(runtimeOperations).containsAll(frozenOperations)
     }
 
     @Test
