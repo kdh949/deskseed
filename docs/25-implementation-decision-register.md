@@ -65,6 +65,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-057 | Customer authentication is password-primary; magic-link login is passwordless-only and registration activation also requires browser-bound continuation proof | accepted | SSO/MFA requirement, supported-hardware password benchmark failure, or credential-policy change |
 | D-058 | Customer consent policies use administrator-managed immutable published versions and append-only acceptances bound to the accepted version | accepted | legal withdrawal/renewal policy or document-format requirement changes |
 | D-059 | Customer request submission binds the current server-authorized form/version and normalized typed values; candidate projection is never an authorization token | accepted | form lifecycle, field type set, or deployed-client compatibility changes |
+| D-060 | Customer authentication throttling uses a storage-neutral port and selects PostgreSQL or Redis only after a target-environment hot-row/high-cardinality benchmark; PostgreSQL remains the preferred initial store | accepted | target traffic/SLO changes, benchmark evidence changes, or managed Redis/shared coordination is approved |
 
 D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
 IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.

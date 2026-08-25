@@ -137,20 +137,22 @@ class CustomerIdentityContractTest(unittest.TestCase):
         )
 
     def test_authentication_request_operations_expose_generic_rate_limit_contract(self) -> None:
-        paths = (
-            "/api/v1/customer/registrations",
-            "/api/v1/customer/auth/password-sessions",
-            "/api/v1/customer/auth/magic-link-requests",
-            "/api/v1/customer/auth/magic-link-sessions",
-            "/api/v1/customer/auth/password-reset-requests",
-            "/api/v1/customer/auth/password-resets",
+        operations = (
+            ("/api/v1/customer/registrations", "post"),
+            ("/api/v1/customer/registration-verifications", "post"),
+            ("/api/v1/customer/auth/password-sessions", "post"),
+            ("/api/v1/customer/auth/magic-link-requests", "post"),
+            ("/api/v1/customer/auth/magic-link-sessions", "post"),
+            ("/api/v1/customer/me/registration", "put"),
+            ("/api/v1/customer/auth/password-reset-requests", "post"),
+            ("/api/v1/customer/auth/password-resets", "post"),
         )
 
-        for path in paths:
-            with self.subTest(path=path):
-                operation = self.operation(path)
+        for path, method in operations:
+            with self.subTest(path=path, method=method):
+                operation = self.operation(path, method)
                 self.assertEqual(
-                    "POSTGRESQL_PURPOSE_DESTINATION_NETWORK",
+                    "PURPOSE_DESTINATION_NETWORK",
                     operation["x-deskseed-rate-limit"],
                 )
                 response = self.resolve(operation["responses"]["429"])

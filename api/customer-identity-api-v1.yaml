@@ -32,7 +32,7 @@ paths:
       x-deskseed-requirements:
       - REQ-AUTH-003
       - REQ-CONSENT-002
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-security-audit-events:
       - CUSTOMER_REGISTRATION_REQUESTED
       requestBody:
@@ -65,7 +65,7 @@ paths:
       x-deskseed-requirements:
       - REQ-AUTH-003
       - REQ-CONSENT-002
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-security-audit-events:
       - CUSTOMER_REGISTRATION_VERIFIED
       - CUSTOMER_CONSENT_ACCEPTED
@@ -115,7 +115,7 @@ paths:
         fingerprint만 저장하며 성공 audit에도 email, password/hash, company name, cookie가 없습니다.
       x-deskseed-requirements:
       - REQ-AUTH-003
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-session-transition: ROTATE
       x-deskseed-security-audit-events:
       - CUSTOMER_PASSWORD_LOGIN_SUCCEEDED
@@ -156,7 +156,7 @@ paths:
       - REQ-AUTH-002
       - REQ-AUTH-004
       x-deskseed-authentication-eligibility: PASSWORDLESS_ONLY
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-security-audit-events:
       - CUSTOMER_MAGIC_LINK_REQUESTED
       - CUSTOMER_MAGIC_LINK_RATE_LIMITED
@@ -193,7 +193,7 @@ paths:
       - REQ-AUTH-002
       - REQ-AUTH-004
       x-deskseed-authentication-eligibility: PASSWORDLESS_ONLY
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-session-transition: ROTATE
       x-deskseed-security-audit-events:
       - CUSTOMER_MAGIC_LINK_CONSUMED
@@ -232,7 +232,7 @@ paths:
       - REQ-AUTH-002
       - REQ-AUTH-004
       - REQ-CONSENT-002
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-session-transition: ROTATE_AND_REVOKE_OLDER
       x-deskseed-security-audit-events:
       - CUSTOMER_REGISTRATION_COMPLETED
@@ -275,7 +275,7 @@ paths:
         response, audit, log는 account existence, raw email/token, password state를 노출하지 않습니다.
       x-deskseed-requirements:
       - REQ-AUTH-003
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-security-audit-events:
       - CUSTOMER_PASSWORD_RESET_REQUESTED
       requestBody:
@@ -307,7 +307,7 @@ paths:
         만들지 않습니다. Raw password/token/hash는 response, audit, log에 없습니다.
       x-deskseed-requirements:
       - REQ-AUTH-003
-      x-deskseed-rate-limit: POSTGRESQL_PURPOSE_DESTINATION_NETWORK
+      x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-session-transition: REVOKE_ALL
       x-deskseed-security-audit-events:
       - CUSTOMER_PASSWORD_RESET_COMPLETED
