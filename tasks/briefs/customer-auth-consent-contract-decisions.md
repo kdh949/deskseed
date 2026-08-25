@@ -48,19 +48,19 @@
 
 ## Invariants and failure semantics
 
-- domain invariants: password account cannot use magic login; purpose-bound proofs are not interchangeable; email equality cannot claim tickets; published consent versions and acceptances are append-only; final customer submission revalidates current form/policy versions
+- domain invariants: password account cannot use magic login; purpose-bound proofs are not interchangeable; email equality cannot claim tickets; P0 consent publish is immediate with server-owned equal effective/published timestamps; published consent versions and acceptances are append-only; final customer submission revalidates current form/policy versions
 - transaction boundary: credential/profile/current registration consent; policy mutation/audit; and ticket/form/value/request consent are each atomic as defined in docs/34 and docs/56
 - audit obligation: every credential/policy/consent mutation and defined failure produces bounded metadata-only security/admin audit; ticket creation retains one TicketAudit with ordered metadata-only events
 - audit failure behavior: required audit failure returns no credential, policy, acceptance, or ticket success
-- concurrency: token/continuation consume is single winner; policy/form uses version preconditions; final submission rechecks current published versions
-- idempotency/retry: request endpoints use generic repeatable responses and throttling; consume/replay cannot mutate twice; final ticket command retains its stable command boundary
+- concurrency: token/continuation consume is single winner; policy/form uses version preconditions; initial request finalization locks a scoped client command identity; final submission rechecks current published versions
+- idempotency/retry: request endpoints use generic repeatable responses and throttling; consume/replay cannot mutate twice; initial request same-hash replay returns one logical ticket plus a fresh bounded access grant, mismatched reuse is non-mutating conflict, and no receipt stores the raw command ID or access token
 - external I/O boundary: email network delivery occurs only after durable intent commit; no external fetch occurs in credential, consent, or ticket transaction
 
 ## Data and privacy
 
 - data read/written: email/profile/company, adaptive password hash, digest-only proofs, customer session/credential version, immutable policy/version, append-only acceptance, selected form/version and typed values
 - PII/secrets: raw password/token/continuation/session cookie are never persisted in plaintext or emitted; company name and form values are high-sensitivity data
-- retention category: registration acceptance follows account +365 days after deletion by default; request acceptance follows ticket retention; referenced policy versions outlive references
+- retention category: registration acceptance follows account +365 days after deletion by default; request acceptance follows ticket retention; referenced policy versions outlive references; initial-request idempotency receipts expire after seven days and contain only content-free digests/result identifiers
 - redaction/encryption: audit/log/webhook metadata excludes document body, password/hash, token, session, company, and field values; environment-owned keys/secrets remain outside database
 - export/webhook exposure: absent until separately contracted and authorized
 
@@ -68,7 +68,7 @@
 
 - authorization bypass: explicit `customer-consent:manage`, current customer session/proof, server form projection
 - impersonation: email token plus browser continuation proof prevents token-only registration pre-hijack
-- replay/duplicate: purpose-bound digest tokens, single consume, credential version, `If-Match`, final version validation
+- replay/duplicate: purpose-bound digest tokens, single consume, credential version, `If-Match`, final version validation, and scoped initial-request client command hashing/single-winner receipt
 - SSRF/XSS: no external fetch; consent document uses safe block allowlist and rejects raw HTML/unsafe URL/attachments
 - secret leakage: generic responses, content-free fingerprints, bounded audits, no usable credential examples
 - audit bypass/tampering: mutation and required audit atomicity; published policies/acceptances append-only to runtime role
@@ -85,6 +85,9 @@
 7. Given missing, duplicate, wrong-context, archived, or stale policy references, when registration/request final validation runs, then the account/ticket transaction is non-mutating.
 8. Given staff-only, hidden, readonly, invalid-option, or stale form input, when customer projection/submission runs, then protected definitions do not leak and final ticket creation is rejected or values are dropped according to ADR 0041.
 9. Given matching verified email without ticket proof, when claim/list is attempted, then ownership does not change and AUTH-004 remains enforced.
+10. Given a consent publish request, when it commits under a fixed server Clock, then the immutable version has `effectiveAt = publishedAt`, immediately becomes current, and no scheduled version exists.
+11. Given the same initial-request identity/clientCommandId/payload and concurrent or later retry, when finalization runs, then one Customer/Ticket/mail/audit result exists and replay returns the same ticket plus a fresh bounded grant; different payload reuse returns conflict.
+12. Given anonymous multipart file failure, stale form/consent, or required audit/mail persistence failure, when submission aborts, then no Customer/Ticket/link business state remains and successful earlier file objects are unlinked cleanup candidates under the server-only planned UUID.
 
 ## Validation
 
