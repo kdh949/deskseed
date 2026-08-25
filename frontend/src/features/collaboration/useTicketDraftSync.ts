@@ -77,7 +77,6 @@ export function useTicketDraftSync({
     const recover = async () => {
       const recovered: Partial<ComposerDrafts> = {}
       let hadLocalFailure = false
-      let needsServerSync = migrateLegacy
       await Promise.all(
         (Object.keys(CHANNELS) as TicketVisibility[]).map(
           async (visibility) => {
@@ -111,14 +110,8 @@ export function useTicketDraftSync({
                 body: newest.body,
                 attachmentIds: [...newest.attachmentIds],
               }
-              if (newest === remote) {
+              if (newest === remote)
                 versions.current[visibility] = newest.draftVersion
-              } else {
-                // A recovered browser draft is newer than (or absent from) the
-                // server copy. Preserve the fetched optimistic version and let
-                // the normal synchronization effect persist this recovered copy.
-                needsServerSync = true
-              }
             } else if (remote && editorAlreadyContainsDraft) {
               // A browser that received local input before hydration must not use the
               // fetched version to silently replace another browser's server draft.
@@ -130,7 +123,7 @@ export function useTicketDraftSync({
       if (!active) return
       recoveryCallback.current(recovered)
       hydrated.current = true
-      lastSynchronized.current = needsServerSync
+      lastSynchronized.current = migrateLegacy
         ? null
         : JSON.stringify({
             baseTicketVersion: baseVersionRef.current,
@@ -139,9 +132,7 @@ export function useTicketDraftSync({
               INTERNAL: recovered.INTERNAL ?? draftsRef.current.INTERNAL,
             },
           })
-      setState(
-        hadLocalFailure ? 'local-only' : needsServerSync ? 'loading' : 'synced',
-      )
+      setState(hadLocalFailure ? 'local-only' : 'synced')
     }
     void recover()
     return () => {

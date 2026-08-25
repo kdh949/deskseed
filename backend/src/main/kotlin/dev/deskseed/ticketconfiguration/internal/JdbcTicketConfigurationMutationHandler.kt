@@ -39,8 +39,6 @@ internal class JdbcTicketConfigurationMutationHandler(
             request.ticketId,
         ).singleOrNull()
         val form = resolveAgentForm(request)
-        val requestedCustomStatus = request.customStatusId?.let(::activeStatus)
-        requestedCustomStatus?.let { validateStatusFormCompatibility(it, form) }
         val requestedFields = request.fieldValues.mapValues { (machineKey, _) ->
             fieldByMachineKey(machineKey) ?: invalid("FIELD_NOT_FOUND", "The configured field does not exist")
         }
@@ -48,9 +46,7 @@ internal class JdbcTicketConfigurationMutationHandler(
             ?.mapNotNull { placement -> fieldById(placement.fieldId) }
             ?.associateBy { it.id }
             ?: emptyMap()
-        val projection = form?.let {
-            projectAgentFields(it, request, projectionFields, currentCustomStatus, requestedCustomStatus)
-        }
+        val projection = form?.let { projectAgentFields(it, request, projectionFields, currentCustomStatus) }
             ?: emptyMap()
         if (request.fieldValues.isNotEmpty() && form == null) {
             invalid("AGENT_FORM_UNAVAILABLE", "Agent field updates require one published default agent form")
@@ -65,6 +61,7 @@ internal class JdbcTicketConfigurationMutationHandler(
         }
         requireTagDefinitions(request.addTagIds, activeOnly = true)
         requireTagDefinitions(request.removeTagIds, activeOnly = false)
+        request.customStatusId?.let { statusId -> validateStatusFormCompatibility(activeStatus(statusId), form) }
     }
 
     override fun apply(request: TicketConfigurationMutationRequest): TicketConfigurationMutationResult {
@@ -74,8 +71,6 @@ internal class JdbcTicketConfigurationMutationHandler(
             request.ticketId,
         ).singleOrNull()
         val form = resolveAgentForm(request)
-        val requestedCustomStatus = request.customStatusId?.let(::activeStatus)
-        requestedCustomStatus?.let { validateStatusFormCompatibility(it, form) }
         val requestedFields = request.fieldValues.mapValues { (machineKey, value) ->
             fieldByMachineKey(machineKey) ?: invalid("FIELD_NOT_FOUND", "The configured field does not exist")
         }
@@ -83,9 +78,7 @@ internal class JdbcTicketConfigurationMutationHandler(
             ?.mapNotNull { placement -> fieldById(placement.fieldId) }
             ?.associateBy { it.id }
             ?: emptyMap()
-        val projection = form?.let {
-            projectAgentFields(it, request, projectionFields, currentCustomStatus, requestedCustomStatus)
-        }
+        val projection = form?.let { projectAgentFields(it, request, projectionFields, currentCustomStatus) }
             ?: emptyMap()
         if (request.fieldValues.isNotEmpty() && form == null) {
             invalid("AGENT_FORM_UNAVAILABLE", "Agent field updates require one published default agent form")
@@ -129,10 +122,13 @@ internal class JdbcTicketConfigurationMutationHandler(
 
         val added = applyAddedTags(request.ticketId, request.addTagIds, request.occurredAt)
         val removed = applyRemovedTags(request.ticketId, request.removeTagIds)
-        val newCustomStatus = requestedCustomStatus?.also { status ->
-            if (currentCustomStatus != status.id) {
-                jdbc.update("update tickets set custom_status_id = ? where id = ?", status.id, request.ticketId)
+        val newCustomStatus = request.customStatusId?.let { statusId ->
+            val status = activeStatus(statusId)
+            validateStatusFormCompatibility(status, form)
+            if (currentCustomStatus != statusId) {
+                jdbc.update("update tickets set custom_status_id = ? where id = ?", statusId, request.ticketId)
             }
+            status
         }
         val newStatus = newCustomStatus?.category ?: request.currentStatus
         val customStatusChanged = request.customStatusId != null && request.customStatusId != currentCustomStatus
@@ -206,12 +202,11 @@ internal class JdbcTicketConfigurationMutationHandler(
         request: TicketConfigurationMutationRequest,
         fields: Map<UUID, FieldDefinition>,
         currentCustomStatus: UUID?,
-        requestedCustomStatus: CustomStatus?,
     ): Map<UUID, FieldState> {
         val states = form.definition.placements.associate { placement ->
             placement.fieldId to FieldState.from(placement.agent)
         }.toMutableMap()
-        val facts = currentFacts(request, form, fields.values, currentCustomStatus, requestedCustomStatus)
+        val facts = currentFacts(request, form, fields.values, currentCustomStatus)
         form.definition.conditionalRules.sortedWith(compareBy<TicketFormConditionalRule> { it.priority }.thenBy { it.id }).forEach { rule ->
             if (conditions.evaluate(rule.condition, facts) == dev.deskseed.workflow.ConditionTruth.TRUE) {
                 rule.effects.forEach { effect -> states[effect.fieldId]?.apply(effect.behavior) }
@@ -225,15 +220,14 @@ internal class JdbcTicketConfigurationMutationHandler(
         form: FormSnapshot,
         fields: Collection<FieldDefinition>,
         currentCustomStatus: UUID?,
-        requestedCustomStatus: CustomStatus?,
     ): MutableMap<String, String> = mutableMapOf(
         "actorKind" to "AGENT",
         "ticketKind" to request.ticketKind.name,
-        "statusCategory" to (requestedCustomStatus?.category ?: request.currentStatus).name,
+        "statusCategory" to request.currentStatus.name,
         "formId" to form.id.toString(),
         "formVersion" to form.version.toString(),
     ).apply {
-        (requestedCustomStatus?.id ?: currentCustomStatus)?.let { put("customStatusId", it.toString()) }
+        currentCustomStatus?.let { put("customStatusId", it.toString()) }
         fields.forEach { field ->
             currentValue(request.ticketId, field.id)?.factValue()?.let { put("field.${field.id}", it) }
             request.fieldValues[field.machineKey]?.let { value ->
