@@ -31,10 +31,10 @@ const preview: Preview = {
     },
   ],
   loaders: [mswLoader()],
-  async beforeEach({ msw }) {
-    msw.use(...mswHandlers)
-  },
   parameters: {
+    msw: {
+      handlers: mswHandlers,
+    },
     options: {
       storySort: {
         method: 'alphabetical',

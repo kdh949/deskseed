@@ -25,3 +25,4 @@ Thumbs.db
 .postgres-data/
 backend/.gradle-user-home/
 artifacts
+backend/bin/
