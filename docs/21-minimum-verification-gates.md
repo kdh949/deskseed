@@ -943,6 +943,9 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - only an active ADMIN with `customer-consent:manage`, current expected-actor guard, CSRF, and matching `If-Match` can create, edit, publish, or archive a policy.
 - AGENT, SECURITY_AUDITOR, customer, and Integration Client direct access is denied without leaking protected resource state.
 - publishing creates an immutable version; accepted historical versions remain resolvable and cannot be updated or deleted through the runtime application role.
+- P0 rejects client-selected/future activation: publish uses one fixed server `Clock` value for both `effectiveAt` and `publishedAt`, atomically replaces the current pointer, and has no scheduled-version state.
+- create/update rejects an HTTP body over 262,144 bytes; publish canonicalizes first and accepts at most 50,000 plain-text characters and 200,000 UTF-8 bytes. Boundary coverage includes 49,999/50,000/50,001 characters and multi-byte input at the UTF-8 limit.
+- each context has at most 20 current policies. Publish serializes this check inside the mutation transaction so concurrent attempts to cross 20 allow at most one winner and never produce a truncated current-policy projection.
 - policy mutation and its metadata-only Admin/Security audit commit or roll back together; document body is absent from audit metadata.
 
 ### CONSENT-002 — Current-version validation and atomic acceptance
@@ -984,10 +987,14 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 
 ### CFG-006 — Customer form candidate projection and submission binding
 
+- the public initial projection accepts only optional `formId`; the server fixes `ticketKind=CUSTOMER_REQUEST`. Internal ticket kinds supplied through public inputs are rejected with the same existence-safe validation/unavailable semantics.
 - initial and candidate projections expose only the current published customer form and customer-visible fields/options after server evaluation of allowlisted typed values.
 - candidate projection is not an authorization token; final create repeats current form/version, visibility, requiredness, type, and option validation.
+- a published form version freezes field/option IDs and machine keys, field type/validation, option membership/order, customer visibility/editability/requiredness, placement order, and condition rules. Display label/description resolves from current copy, is not historically reproducible, and a semantic field/option change requires a new ID.
 - selected form/version is preserved even with zero custom values; hidden/readonly values are dropped and staff-only/unknown input returns an existence-safe validation problem.
 - ticket, first PUBLIC comment, form selection, normalized values, one TicketAudit, required consent acceptances, CLEAN attachment links, access token, and mail intent obey the documented atomicity boundary.
+- initial JSON/multipart creation requires a stable high-entropy `clientCommandId`; the scoped canonical request and ordered attachment-manifest hash make same-payload replay return one logical ticket, mismatched reuse return `409`, and concurrent finalization single-winner without persisting a raw command ID or access token.
+- anonymous multipart uses a server-only planned Customer UUID for upload ownership before the final transaction. Third-file failure creates no Customer/Ticket/acceptance/mail intent, stale form/consent and audit/mail failure roll back Customer/Ticket/link state, earlier CLEAN objects remain unlinked for TTL cleanup, cross-owner linking is denied, and authenticated submission creates no new Customer.
 
 ### PERM-001 — Initial global agent read
 

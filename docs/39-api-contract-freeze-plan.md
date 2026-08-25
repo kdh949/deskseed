@@ -21,11 +21,12 @@ api/automation-api-v1.yaml   (later)
 api/analytics-api-v1.yaml    (later)
 ```
 
-`x-deskseed-contract-status: FROZEN`은 구현 계약인 동시에 해당 route가 runtime document에 존재한다는
-표시다. 구현 전 contract-freeze PR은 operationId와 full schema/examples/errors/security를 확정하고도 이
-표시를 생략하며, vertical implementation PR이 runtime route와 함께 `FROZEN`으로 승격한다. 현재 Platform
-v1 작업은 별도 surface 규칙에 따라 모든 operation을 구현 계약으로 본다. 나머지 outline 작업은 계약 동결
-전 단계다.
+`x-deskseed-contract-status: FROZEN`은 구현 계약인 동시에 해당 route와 계약된 request/response,
+status/problem, security 의미가 runtime에 존재한다는 표시다. 구현 전 contract-freeze PR은 operationId와 full
+schema/examples/errors/security를 확정하고도 이 표시를 생략하며, vertical implementation PR이 runtime parity
+증거와 함께 `FROZEN`으로 승격한다. path/method 일치만으로 payload나 failure 의미의 parity를 주장할 수 없다.
+현재 Platform v1 작업은 별도 surface 규칙에 따라 모든 operation을 구현 계약으로 본다. 나머지 outline 작업은
+계약 동결 전 단계다.
 
 Scalar `/docs/api`는 위 커밋 계약을 읽기 쉽게 렌더링할 뿐 source of truth를 바꾸지 않는다. springdoc `/v3/api-docs/**`는 Controller 구현과 커밋 계약의 경로·HTTP method 드리프트를 검출하는 보조 산출물이며 배포 계약이나 SDK 입력으로 사용하지 않는다.
 
@@ -68,8 +69,11 @@ GET  /api/v1/customer/requests/{ticketNumber}        account later
 
 #### `POST /api/v1/requests` 공개 접수 제한 경계
 
+- 이 blueprint operation은 legacy runtime과 새 request/status/problem 의미가 일치할 때까지 `x-deskseed-contract-status: FROZEN`을 표시하지 않는다.
 - JSON 본문과 multipart의 `request` JSON part는 같은 `CreateCustomerRequest` schema를 사용한다. 익명 요청은 requester가 필수이고, customerSession 요청은 requester를 생략하며 현재 session identity와 CSRF를 사용한다.
 - formId/formVersion은 함께 보내거나 함께 생략한다. typed field values와 REQUEST_SUBMISSION accepted policy versions는 최종 ticket transaction에서 current published snapshot에 대해 다시 검증한다.
+- required `clientCommandId`와 canonical request/ordered attachment-manifest hash는 exact retry를 같은 ticket과 fresh access grant로 replay하고 mismatched reuse를 non-mutating 409로 거부한다. Receipt는 raw command ID/request/access token 없이 7일 보존하며 동시 finalization은 single-winner다.
+- 익명 multipart는 서버가 만든 planned Customer UUID로 Customer row 없이 파일 검사를 끝내고, 최종 transaction에서 같은 UUID의 Customer/Ticket/link/audit/mail intent를 함께 commit한다.
 - `POST /api/v1/customer/ticket-form-projections`는 side-effect-free preview이며 권한 토큰이 아니다. unknown/staff-only 입력은 보호된 definition의 존재를 누출하지 않는 stable problem을 반환한다.
 - 서버는 customer/ticket 생성 전에 대상 이메일, 신뢰된 실제 client 주소, 전역 고정 창을 모두 PostgreSQL 버킷으로 차감한다.
 - 대상과 IP의 원문은 저장하지 않고 purpose-bound HMAC fingerprint만 저장한다. 버킷은 만료 시 bounded `FOR UPDATE SKIP LOCKED` cleanup으로 제거한다.

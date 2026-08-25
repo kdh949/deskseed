@@ -143,6 +143,12 @@ default. Final receipts are eligible at expiry; `IN_PROGRESS` rows are eligible 
 count, oldest expired backlog age, and cleanup failures are metrics without request or response content. Canonical ticket/comment retention
 remains separately governed.
 
+Initial customer-request idempotency also uses a seven-day receipt, but stores only a keyed scoped command-identity digest, canonical
+request/attachment-manifest hash, ticket/result identifiers, state, and timestamps. It stores neither the raw `clientCommandId`, requester
+content, attachment bytes, nor a raw request access token. An exact logical replay returns the original ticket and issues a fresh bounded
+ticket-scoped grant; prior grants retain their normal expiry or claim revocation. Receipt expiry permits a later command ID reuse to be
+treated as new, and bounded cleanup reports only content-free counts/ages/failures.
+
 ## 7. IP addresses and user agents
 
 These help security investigation but are personal/behavioral data.

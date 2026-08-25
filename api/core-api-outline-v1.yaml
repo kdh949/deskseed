@@ -100,10 +100,13 @@ paths:
         hidden/readonly 값은 ADR 0041에 따라 버리고 선택한 form/version은 값이 없어도 보존합니다. Ticket, 첫 PUBLIC comment, 정규화한 값, 동의 acceptance,
         CLEAN attachment link, 하나의 ordered TicketAudit과 필요한 audit은 함께 commit/rollback하며 외부 network call은 transaction 밖에서 처리합니다.
         응답은 customer projection만 반환하고 INTERNAL comment, child relation, 직원 전용 field와 audit metadata를 노출하지 않습니다. 두 identity
-        mode 모두 ticket 범위 조회 또는 명시적 claim에만 쓰는 일회성 request access token을 생성 시 반환하고 ownership claim 때 revoke합니다. 이메일·신뢰된 실제
-        client 주소·전체 요청 수에는 PostgreSQL 고정 창 제한을 적용하고 제한 버킷에는 원문 이메일/IP를 저장하지 않습니다.
+        mode 모두 ticket 범위 조회 또는 명시적 claim에만 쓰는 일회성 request access token을 생성 시 반환하고 ownership claim 때 revoke합니다. Required clientCommandId와
+        canonical request/ordered attachment-manifest hash는 동일 payload 재시도를 같은 logical ticket으로 replay하고 fresh access grant만
+        발급합니다. 같은 command ID의 다른 payload는 business mutation 없는 409이며 transaction lock으로 동시 finalization을 single-winner로 만듭니다.
+        Receipt는 raw command ID/request/access token 없이 7일 보존합니다. 익명 multipart는 서버가 plannedCustomerId를 만들고 Customer row 없이
+        파일 격리·검사를 끝낸 뒤 최종 transaction에서 같은 UUID의 Customer와 Ticket을 함께 생성합니다. 이메일·신뢰된 실제 client 주소·전체 요청 수에는 PostgreSQL 고정
+        창 제한을 적용하고 제한 버킷에는 원문 이메일/IP를 저장하지 않습니다.
       operationId: createCustomerRequest
-      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
       security:
@@ -127,6 +130,14 @@ paths:
       - ATTACHMENT_ADDED
       x-deskseed-security-audit-events:
       - CUSTOMER_CONSENT_ACCEPTED
+      x-deskseed-idempotency:
+        identity: CLIENT_COMMAND_ID
+        scope: CUSTOMER_OR_ANONYMOUS_DESTINATION
+        payloadHash: CANONICAL_REQUEST_AND_ORDERED_ATTACHMENT_MANIFEST
+        samePayload: SAME_TICKET_FRESH_ACCESS_GRANT
+        differentPayload: NON_MUTATING_409
+        concurrency: SINGLE_WINNER
+        receiptRetention: P7D
       requestBody:
         required: true
         content:
@@ -134,6 +145,7 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateCustomerRequest'
             example:
+              clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
               requester:
                 name: 김민아
                 email: mina.kim@example.test
@@ -209,12 +221,13 @@ paths:
                 status: NEW
                 accessToken: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU
                 createdAt: '2026-08-10T00:00:00Z'
+                replayed: false
         '400':
           $ref: '#/components/responses/CustomerRequestValidation'
         '403':
           $ref: '#/components/responses/CustomerRequestForbidden'
         '409':
-          $ref: '#/components/responses/CustomerRequestConfigurationConflict'
+          $ref: '#/components/responses/CustomerRequestConflict'
         '429':
           $ref: '#/components/responses/CustomerRequestRateLimited'
         '503':
@@ -4011,6 +4024,7 @@ paths:
       x-deskseed-security-audit-events:
       - CUSTOMER_CONSENT_POLICY_CREATED
       x-deskseed-audit-failure: FAIL_CLOSED
+      x-deskseed-request-body-max-bytes: 262144
       security:
       - staffSession: []
       parameters:
@@ -4082,6 +4096,7 @@ paths:
       x-deskseed-security-audit-events:
       - CUSTOMER_CONSENT_POLICY_DRAFT_UPDATED
       x-deskseed-audit-failure: FAIL_CLOSED
+      x-deskseed-request-body-max-bytes: 262144
       security:
       - staffSession: []
       parameters:
@@ -4119,8 +4134,9 @@ paths:
       operationId: publishCustomerConsentPolicy
       summary: 고객 동의 정책 draft를 immutable version으로 공개
       description: Active ADMIN, authority, expected-actor, CSRF와 strong If-Match를 확인합니다. Valid draft를 새 immutable version으로
-        복사하고 같은 key/context의 current published pointer를 원자적으로 전환합니다. 기존 published version과 acceptance reference는 바꾸지 않습니다.
-        Publish와 CUSTOMER_CONSENT_POLICY_PUBLISHED audit는 함께 commit/rollback합니다.
+        복사하고 같은 key/context의 current published pointer를 원자적으로 전환합니다. P0는 예약 발효를 지원하지 않으며 같은 server Clock 값으로 effectiveAt =
+        publishedAt을 기록합니다. Context별 current policy 수를 publish transaction에서 직렬화하여 최대 20개로 제한하므로 동시 20→21 publish 중 하나만 성공합니다.
+        기존 published version과 acceptance reference는 바꾸지 않습니다. Publish와 CUSTOMER_CONSENT_POLICY_PUBLISHED audit는 함께 commit/rollback합니다.
       x-deskseed-requirements:
       - REQ-CONSENT-001
       x-deskseed-required-authority: customer-consent:manage
@@ -4128,6 +4144,10 @@ paths:
       - CUSTOMER_CONSENT_POLICY_PUBLISHED
       x-deskseed-audit-failure: FAIL_CLOSED
       x-deskseed-immutable-published-versions: true
+      x-deskseed-effective-at: PUBLISHED_AT
+      x-deskseed-current-policy-cap:
+        contextMaximum: 20
+        enforcement: PUBLISH_TRANSACTION_CONTEXT_SERIALIZATION
       security:
       - staffSession: []
       parameters:
@@ -5076,11 +5096,10 @@ paths:
   /api/v1/customer/ticket-forms:
     get:
       summary: 고객 제출 context의 form projection 조회
-      description: current published customer form의 초기 projection만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다.
-        editable은 form state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종
-        문의 생성은 current form snapshot을 다시 검증합니다.
+      description: 공개 surface는 ticket kind 입력을 받지 않고 항상 CUSTOMER_REQUEST context의 current published customer form 초기 projection만
+        반환합니다. staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가
+        모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
       operationId: getCustomerTicketFormProjection
-      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-CFG-011
       - REQ-CFG-014
@@ -5095,11 +5114,6 @@ paths:
         schema:
           type: string
           format: uuid
-      - name: ticketKind
-        in: query
-        required: true
-        schema:
-          $ref: '#/components/schemas/TicketKind'
       responses:
         '200':
           description: staff-only definition을 포함하지 않는 current customer projection입니다.
@@ -5122,6 +5136,7 @@ paths:
                     type: SINGLE_SELECT
                     label: 문의 유형
                     description: 합성 테스트 문의의 유형을 선택합니다.
+                    validation: {}
                   visible: true
                   editable: true
                   required: true
@@ -5129,6 +5144,7 @@ paths:
                   - id: 00000000-0000-4000-8000-000000000101
                     machineKey: order
                     label: 주문
+                    order: 10
         '404':
           $ref: '#/components/responses/CustomerTicketFormUnavailable'
         '503':
@@ -5184,6 +5200,7 @@ paths:
                     type: SINGLE_SELECT
                     label: 문의 유형
                     description: 합성 테스트 문의의 유형을 선택합니다.
+                    validation: {}
                   visible: true
                   editable: true
                   required: true
@@ -5191,6 +5208,7 @@ paths:
                   - id: 00000000-0000-4000-8000-000000000101
                     machineKey: order
                     label: 주문
+                    order: 10
         '400':
           $ref: '#/components/responses/CustomerTicketFormValidation'
         '404':
@@ -8575,9 +8593,9 @@ components:
             status: 403
             detail: The customer request is not allowed.
             requestId: req-request-403
-    CustomerRequestConfigurationConflict:
-      description: upload 또는 최종 validation 전에 current published form이나 required REQUEST_SUBMISSION policy version이 바뀌었습니다.
-        Ticket과 acceptance는 생성되지 않습니다.
+    CustomerRequestConflict:
+      description: current form/policy가 바뀌었거나 같은 scoped clientCommandId가 다른 canonical payload에 재사용되었습니다. 별도 rate-limit budget
+        외 business mutation은 남기지 않습니다.
       headers:
         Cache-Control:
           schema:
@@ -8586,13 +8604,24 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/CustomerRequestConfigurationConflictProblem'
-          example:
-            type: /problems/customer-request-configuration-conflict
-            title: Customer request configuration changed
-            status: 409
-            detail: Refresh the form and policies before submitting again.
-            requestId: req-request-409
+            anyOf:
+            - $ref: '#/components/schemas/CustomerRequestConfigurationConflictProblem'
+            - $ref: '#/components/schemas/CustomerRequestCommandConflictProblem'
+          examples:
+            configurationChanged:
+              value:
+                type: /problems/customer-request-configuration-conflict
+                title: Customer request configuration changed
+                status: 409
+                detail: Refresh the form and policies before submitting again.
+                requestId: req-request-409
+            commandReused:
+              value:
+                type: /problems/customer-request-command-conflict
+                title: Customer request command conflicts
+                status: 409
+                detail: Reuse clientCommandId only for the exact same request.
+                requestId: req-request-command-409
     CustomerRequestRateLimited:
       description: 이메일·신뢰된 client 주소·전체 요청 고정 창 중 하나가 초과되었습니다. 어떤 bucket인지 또는 원문 식별자는 반환하지 않습니다.
       headers:
@@ -8940,6 +8969,7 @@ components:
       type: object
       additionalProperties: false
       required:
+      - clientCommandId
       - subject
       - message
       - fieldValues
@@ -8950,6 +8980,11 @@ components:
         formVersion:
         - formId
       properties:
+        clientCommandId:
+          type: string
+          format: uuid
+          description: First-party browser가 생성해 transport retry 동안 유지하는 high-entropy command identity입니다. 서버는 raw 값을 저장하지
+            않습니다.
         requester:
           $ref: '#/components/schemas/CustomerRequestRequester'
           description: 익명 요청에는 필수이고 customerSession 요청에는 생략합니다. 인증 세션과 함께 전달하면 identity 충돌로 거부합니다.
@@ -8993,6 +9028,7 @@ components:
         사용합니다.
       x-deskseed-documentation-review: MANUAL
       example:
+        clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
         requester:
           name: 김민아
           email: mina.kim@example.test
@@ -9016,6 +9052,7 @@ components:
       - status
       - accessToken
       - createdAt
+      - replayed
       properties:
         ticketNumber:
           type: integer
@@ -9029,6 +9066,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        replayed:
+          type: boolean
+          description: 기존 logical ticket의 exact command replay인지 나타냅니다. true여도 accessToken은 저장된 raw capability 재사용이 아닌 fresh
+            bounded grant입니다.
     CreateCustomerRequestMultipart:
       type: object
       additionalProperties: false
@@ -9044,12 +9085,15 @@ components:
           items:
             type: string
             format: binary
-      description: CreateCustomerRequest JSON part와 최대 5개 파일을 함께 보내는 요청입니다. 서버는 ticket transaction 전에 bounded streaming, quarantine,
-        MIME·malware 검사를 끝내고 CLEAN attachment만 첫 PUBLIC comment에 link합니다. upload 중 form/policy version이 바뀌면 최종 검증은 stable
-        409를 반환하고 unlinked object cleanup policy를 적용합니다.
+      description: CreateCustomerRequest JSON part와 최대 5개 파일을 함께 보내는 요청입니다. 익명 요청은 서버가 client가 보낼 수 없는 plannedCustomerId를
+        생성하고 Customer row를 만들지 않은 채 그 opaque UUID 소유로 bounded streaming, quarantine, MIME·malware 검사를 끝냅니다. 최종 검증 뒤 같은 최종
+        transaction에서 Customer(id = plannedCustomerId), Ticket, CLEAN attachment link, acceptance, audit, fresh access grant와
+        mail intent를 commit합니다. 파일 실패나 stale form/policy는 Customer/Ticket을 남기지 않으며 먼저 성공한 파일은 unlinked TTL cleanup 대상입니다.
+      x-deskseed-anonymous-attachment-owner: SERVER_PLANNED_CUSTOMER_UUID
       x-deskseed-documentation-review: MANUAL
       example:
         request:
+          clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
           requester:
             name: 김민아
             email: mina.kim@example.test
@@ -13050,7 +13094,10 @@ components:
       type: object
       additionalProperties: false
       description: Deskseed canonical block document의 consent subset입니다. Raw HTML/script/control character, code/attachment
-        block과 HTTPS가 아닌 link를 허용하지 않습니다.
+        block과 HTTPS가 아닌 link를 허용하지 않습니다. canonicalization 후 plain text 전체를 50,000 characters 및 UTF-8 200,000 bytes 이하로 검증하며
+        이를 넘으면 publish하지 않습니다.
+      x-deskseed-canonical-plain-text-max-characters: 50000
+      x-deskseed-canonical-plain-text-max-utf8-bytes: 200000
       required:
       - schemaVersion
       - blocks
@@ -13196,7 +13243,6 @@ components:
       - document
       - required
       - displayOrder
-      - effectiveAt
       properties:
         title:
           type: string
@@ -13214,11 +13260,8 @@ components:
           minimum: 0
           maximum: 10000
           description: Current customer projection의 stable ascending order입니다.
-        effectiveAt:
-          type: string
-          format: date-time
-          description: Published version이 current eligibility를 얻는 server time boundary입니다.
-      description: Immutable published version의 source가 될 bounded safe consent draft definition입니다.
+      description: Immutable published version의 source가 될 bounded safe consent draft definition입니다. P0 draft는 client-selected
+        effectiveAt을 받지 않으며 publish 시 server가 즉시 발효 시각을 정합니다.
     CreateCustomerConsentPolicyRequest:
       allOf:
       - $ref: '#/components/schemas/CustomerConsentDraftInput'
@@ -13249,7 +13292,6 @@ components:
             text: 테스트 환경에서만 사용하는 합성 정책 문서입니다.
         required: true
         displayOrder: 10
-        effectiveAt: '2026-08-25T04:00:00Z'
     UpdateCustomerConsentPolicyDraftRequest:
       allOf:
       - $ref: '#/components/schemas/CustomerConsentDraftInput'
@@ -13265,7 +13307,6 @@ components:
             text: 테스트 환경에서만 사용하는 합성 개정 정책 문서입니다.
         required: true
         displayOrder: 10
-        effectiveAt: '2026-08-26T04:00:00Z'
     CurrentCustomerConsentPolicyList:
       type: object
       additionalProperties: false
@@ -13278,7 +13319,7 @@ components:
         policies:
           type: array
           maxItems: 20
-          description: Current published/effective policies만 displayOrder와 policyKey 순서로 반환합니다.
+          description: Publish transaction이 context별 최대 20개를 보장한 current policy만 displayOrder와 policyKey 순서로 반환합니다.
           items:
             $ref: '#/components/schemas/CurrentCustomerConsentPolicy'
       description: 하나의 customer command context에서 final validation에 제출할 current policy list입니다.
@@ -13678,6 +13719,24 @@ components:
           title:
             type: string
             const: Customer request configuration changed
+          status:
+            type: integer
+            const: 409
+    CustomerRequestCommandConflictProblem:
+      allOf:
+      - $ref: '#/components/schemas/Problem'
+      - type: object
+        required:
+        - type
+        - title
+        - status
+        properties:
+          type:
+            type: string
+            const: /problems/customer-request-command-conflict
+          title:
+            type: string
+            const: Customer request command conflicts
           status:
             type: integer
             const: 409
@@ -14332,8 +14391,18 @@ components:
           request.type:
             optionId: 00000000-0000-4000-8000-000000000101
     CustomerTicketFormProjection:
-      description: 고객에게 허용된 label, option, projection policy만 반환하며 staff label/description, search/analytics/sensitive metadata는
-        포함하지 않습니다.
+      description: 고객에게 허용된 current display label/description, immutable semantic option set과 projection policy만 반환하며 staff
+        label/description, search/analytics/sensitive metadata는 포함하지 않습니다. formVersion은 검증 의미를 고정하지만 단순 표시 문구의 역사적 재현을 보장하지
+        않습니다.
+      x-deskseed-form-version-snapshot:
+        frozen:
+        - FIELD_AND_OPTION_IDENTITIES
+        - FIELD_TYPE_AND_VALIDATION
+        - OPTION_SET_AND_ORDER
+        - CUSTOMER_VISIBILITY_EDITABILITY_REQUIREDNESS
+        - PLACEMENT_ORDER_AND_CONDITION_RULES
+        displayLabelAndDescription: CURRENT_NOT_HISTORICAL
+        semanticChange: NEW_ID_REQUIRED
       type: object
       additionalProperties: false
       required:
@@ -14384,6 +14453,7 @@ components:
       - machineKey
       - type
       - label
+      - validation
       properties:
         id:
           type: string
@@ -14398,9 +14468,42 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+          description: 현재 customer display copy이며 formVersion snapshot 대상이 아닙니다.
         description:
           type: string
           maxLength: 500
+          description: 현재 customer display copy이며 과거 문구 재현을 보장하지 않습니다.
+        validation:
+          $ref: '#/components/schemas/CustomerTicketFieldValidation'
+    CustomerTicketFieldValidation:
+      type: object
+      additionalProperties: false
+      properties:
+        minimum:
+          type: number
+        maximum:
+          type: number
+        precision:
+          type: integer
+          minimum: 1
+          maximum: 18
+        scale:
+          type: integer
+          minimum: 0
+          maximum: 12
+        minLength:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        maxLength:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        regex:
+          type: string
+          maxLength: 300
+          description: 서버 allowlist로 승인된 safe regular expression만 허용합니다.
+      description: Published formVersion에 고정되어 final create validation에 다시 사용하는 customer-effective bounds입니다.
     CustomerTicketFieldOption:
       type: object
       additionalProperties: false
@@ -14408,6 +14511,7 @@ components:
       - id
       - machineKey
       - label
+      - order
       properties:
         id:
           type: string
@@ -14420,6 +14524,11 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+          description: 현재 customer display copy이며 formVersion snapshot 대상이 아닙니다.
+        order:
+          type: integer
+          minimum: 0
+          description: Published formVersion에 고정된 customer option order입니다.
     ProjectedTicketField:
       type: object
       required:

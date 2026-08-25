@@ -77,10 +77,13 @@ paths:
         값이 없어도 보존합니다. Ticket, 첫 PUBLIC comment, 정규화한 값, 동의 acceptance, CLEAN attachment link, 하나의 ordered TicketAudit과
         필요한 audit은 함께 commit/rollback하며 외부 network call은 transaction 밖에서 처리합니다. 응답은 customer projection만 반환하고
         INTERNAL comment, child relation, 직원 전용 field와 audit metadata를 노출하지 않습니다. 두 identity mode 모두 ticket 범위 조회 또는
-        명시적 claim에만 쓰는 일회성 request access token을 생성 시 반환하고 ownership claim 때 revoke합니다. 이메일·신뢰된 실제 client 주소·전체
+        명시적 claim에만 쓰는 일회성 request access token을 생성 시 반환하고 ownership claim 때 revoke합니다. Required clientCommandId와
+        canonical request/ordered attachment-manifest hash는 동일 payload 재시도를 같은 logical ticket으로 replay하고 fresh access grant만 발급합니다.
+        같은 command ID의 다른 payload는 business mutation 없는 409이며 transaction lock으로 동시 finalization을 single-winner로 만듭니다.
+        Receipt는 raw command ID/request/access token 없이 7일 보존합니다. 익명 multipart는 서버가 plannedCustomerId를 만들고 Customer row 없이
+        파일 격리·검사를 끝낸 뒤 최종 transaction에서 같은 UUID의 Customer와 Ticket을 함께 생성합니다. 이메일·신뢰된 실제 client 주소·전체
         요청 수에는 PostgreSQL 고정 창 제한을 적용하고 제한 버킷에는 원문 이메일/IP를 저장하지 않습니다.'
       operationId: createCustomerRequest
-      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
       security:
@@ -100,6 +103,14 @@ paths:
       x-deskseed-ticket-audit: ONE_TICKET_AUDIT_WITH_ORDERED_EVENTS
       x-deskseed-ticket-audit-events: [TICKET_CREATED, COMMENT_CREATED, ATTACHMENT_ADDED]
       x-deskseed-security-audit-events: [CUSTOMER_CONSENT_ACCEPTED]
+      x-deskseed-idempotency:
+        identity: CLIENT_COMMAND_ID
+        scope: CUSTOMER_OR_ANONYMOUS_DESTINATION
+        payloadHash: CANONICAL_REQUEST_AND_ORDERED_ATTACHMENT_MANIFEST
+        samePayload: SAME_TICKET_FRESH_ACCESS_GRANT
+        differentPayload: NON_MUTATING_409
+        concurrency: SINGLE_WINNER
+        receiptRetention: P7D
       requestBody:
         required: true
         content:
@@ -107,6 +118,7 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateCustomerRequest'
             example:
+              clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
               requester:
                 name: 김민아
                 email: mina.kim@example.test
@@ -179,9 +191,10 @@ paths:
                 status: NEW
                 accessToken: YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU
                 createdAt: '2026-08-10T00:00:00Z'
+                replayed: false
         '400': {$ref: '#/components/responses/CustomerRequestValidation'}
         '403': {$ref: '#/components/responses/CustomerRequestForbidden'}
-        '409': {$ref: '#/components/responses/CustomerRequestConfigurationConflict'}
+        '409': {$ref: '#/components/responses/CustomerRequestConflict'}
         '429': {$ref: '#/components/responses/CustomerRequestRateLimited'}
         '503': {$ref: '#/components/responses/CustomerRequestConfigurationUnavailable'}
         '500': *id002
@@ -4304,11 +4317,15 @@ components:
     CreateCustomerRequest:
       type: object
       additionalProperties: false
-      required: [subject, message, fieldValues, acceptedPolicies]
+      required: [clientCommandId, subject, message, fieldValues, acceptedPolicies]
       dependentRequired:
         formId: [formVersion]
         formVersion: [formId]
       properties:
+        clientCommandId:
+          type: string
+          format: uuid
+          description: First-party browser가 생성해 transport retry 동안 유지하는 high-entropy command identity입니다. 서버는 raw 값을 저장하지 않습니다.
         requester:
           $ref: '#/components/schemas/CustomerRequestRequester'
           description: 익명 요청에는 필수이고 customerSession 요청에는 생략합니다. 인증 세션과 함께 전달하면 identity 충돌로 거부합니다.
@@ -4349,6 +4366,7 @@ components:
       description: 익명 또는 customerSession 고객이 form-aware 문의를 생성하는 동일 domain command입니다. 익명은 requester가 필수이고 인증 고객은 세션 identity만 사용합니다.
       x-deskseed-documentation-review: MANUAL
       example:
+        clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
         requester:
           name: 김민아
           email: mina.kim@example.test
@@ -4369,6 +4387,7 @@ components:
       - status
       - accessToken
       - createdAt
+      - replayed
       properties:
         ticketNumber:
           type: integer
@@ -4382,6 +4401,9 @@ components:
         createdAt:
           type: string
           format: date-time
+        replayed:
+          type: boolean
+          description: 기존 logical ticket의 exact command replay인지 나타냅니다. true여도 accessToken은 저장된 raw capability 재사용이 아닌 fresh bounded grant입니다.
     CreateCustomerRequestMultipart:
       type: object
       additionalProperties: false
@@ -4396,10 +4418,12 @@ components:
           items:
             type: string
             format: binary
-      description: CreateCustomerRequest JSON part와 최대 5개 파일을 함께 보내는 요청입니다. 서버는 ticket transaction 전에 bounded streaming, quarantine, MIME·malware 검사를 끝내고 CLEAN attachment만 첫 PUBLIC comment에 link합니다. upload 중 form/policy version이 바뀌면 최종 검증은 stable 409를 반환하고 unlinked object cleanup policy를 적용합니다.
+      description: CreateCustomerRequest JSON part와 최대 5개 파일을 함께 보내는 요청입니다. 익명 요청은 서버가 client가 보낼 수 없는 plannedCustomerId를 생성하고 Customer row를 만들지 않은 채 그 opaque UUID 소유로 bounded streaming, quarantine, MIME·malware 검사를 끝냅니다. 최종 검증 뒤 같은 최종 transaction에서 Customer(id = plannedCustomerId), Ticket, CLEAN attachment link, acceptance, audit, fresh access grant와 mail intent를 commit합니다. 파일 실패나 stale form/policy는 Customer/Ticket을 남기지 않으며 먼저 성공한 파일은 unlinked TTL cleanup 대상입니다.
+      x-deskseed-anonymous-attachment-owner: SERVER_PLANNED_CUSTOMER_UUID
       x-deskseed-documentation-review: MANUAL
       example:
         request:
+          clientCommandId: 08a85f1c-9939-43f7-a90a-657ac5acb935
           requester: {name: 김민아, email: mina.kim@example.test}
           subject: 주문 ORD-2026-1042 승인 내역 확인 요청
           message: 합성 테스트 승인 내역 PDF를 함께 보냅니다.
