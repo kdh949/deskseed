@@ -7,6 +7,7 @@ import org.testcontainers.utility.DockerImageName
 import org.flywaydb.core.Flyway
 import java.sql.DriverManager
 
+@dev.deskseed.testsupport.category.MigrationTest
 class PlatformApiMigrationTest {
     @Test
     fun `migration adds internal work items integration authors and bounded idempotency identity`() {

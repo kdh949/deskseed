@@ -63,6 +63,20 @@ data class SavedViewExecutedAccessAudit(
     val occurredAt: Instant,
 )
 
+data class MacroPreviewedAccessAudit(
+    val eventId: UUID,
+    val context: AccessAuditContext,
+    val macroId: UUID,
+    val macroVersion: Int,
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ticketVersion: Long,
+    val interactionId: UUID,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
 data class AttachmentDownloadAccessAudit(
     val context: AccessAuditContext,
     val attachmentId: UUID,
@@ -156,6 +170,9 @@ interface AccessAuditWriter {
 
     /** Appends the required explicit execution/preview access audit for a saved view definition. */
     fun appendSavedViewExecuted(event: SavedViewExecutedAccessAudit)
+
+    /** Required explicit audit for a side-effect-free macro preview; failure withholds the projection. */
+    fun appendMacroPreviewed(event: MacroPreviewedAccessAudit)
 
     /** Required access audit for a private attachment byte stream; failure withholds bytes. */
     fun appendAttachmentDownloaded(event: AttachmentDownloadAccessAudit)

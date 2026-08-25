@@ -9,6 +9,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.core.io.ClassPathResource
 import org.springframework.mock.env.MockEnvironment
 
+@dev.deskseed.testsupport.category.FastTest
 class MailDeliveryConfigurationValidatorTest {
     private val protectedKey = "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
     private val contextRunner = ApplicationContextRunner()

@@ -3,8 +3,6 @@ package dev.deskseed.audit.internal
 import dev.deskseed.audit.AuditExportArtifactStore
 import dev.deskseed.audit.AuditExportArtifactStoreUnavailableException
 import dev.deskseed.audit.AuditExportFormat
-import org.springframework.context.annotation.Configuration
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
@@ -182,7 +180,3 @@ internal class AuditExportWorker(
 }
 
 private class AuditExportLeaseLostException : IllegalStateException()
-
-@Configuration(proxyBeanMethods = false)
-@EnableScheduling
-internal class AuditExportSchedulingConfiguration

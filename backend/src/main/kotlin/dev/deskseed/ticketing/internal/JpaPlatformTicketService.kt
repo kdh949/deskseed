@@ -21,10 +21,10 @@ import dev.deskseed.ticketing.TicketField
 import dev.deskseed.ticketing.TicketKind
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.TicketStatusTransitionPolicy
 import dev.deskseed.ticketing.TicketSubmitted
 import dev.deskseed.ticketing.UpdatePlatformTicketCommand
 import dev.deskseed.ticketing.ValidatePlatformTicketCreateCommand
-import dev.deskseed.ticketing.internal.domain.TicketStatusTransitions
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Service
@@ -200,7 +200,7 @@ internal class JpaPlatformTicketService(
         } else {
             oldStatus
         }
-        if (nextStatus == TicketStatus.CLOSED || !TicketStatusTransitions.isAllowed(oldStatus, nextStatus)) {
+        if (nextStatus == TicketStatus.CLOSED || !TicketStatusTransitionPolicy.isAllowed(oldStatus, nextStatus)) {
             throw PlatformTicketInvalidException("STATUS_TRANSITION_INVALID")
         }
         val nextPriority = if (TicketField.PRIORITY in command.changedFields) {

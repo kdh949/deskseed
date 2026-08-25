@@ -3,6 +3,7 @@ package dev.deskseed.portal.internal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
+@dev.deskseed.testsupport.category.FastTest
 class RequestAccessTokenCodecTest {
     private val codec = RequestAccessTokenCodec()
 

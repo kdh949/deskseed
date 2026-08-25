@@ -6,6 +6,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
+@dev.deskseed.testsupport.category.FastTest
 class IntegrationCredentialSecurityTest {
     private val hasher = IntegrationSecretHasher()
     private val ipPolicy = IpAllowlistPolicy(IntegrationNetworkPolicy())

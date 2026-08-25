@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class TicketIntegrationEventPublisherTest {
     private val recording = RecordingEventPublication()
     private val subject = TicketIntegrationEventPublisher(recording)
@@ -80,23 +81,45 @@ class TicketIntegrationEventPublisherTest {
     }
 
     @Test
-    fun `internal child ticket facts never become public by default`() {
-        subject.ticketCreated(
-            ticketId = ticketId,
-            ticketNumber = 1042,
-            kind = TicketKind.INTERNAL_CHILD,
-            priority = TicketPriority.NORMAL,
-            channel = TicketChannel.WEB,
-            status = TicketStatus.NEW,
-            firstCommentId = UUID.randomUUID(),
-            firstCommentVisibility = CommentVisibility.INTERNAL,
-            actor = actor,
-            context = context,
-            occurredAt = now,
-        )
+    fun `internal ticket facts never become public by default`() {
+        listOf(TicketKind.INTERNAL_CHILD, TicketKind.INTERNAL_WORK_ITEM).forEach { kind ->
+            recording.events.clear()
+            subject.ticketCreated(
+                ticketId = ticketId,
+                ticketNumber = 1042,
+                kind = kind,
+                priority = TicketPriority.NORMAL,
+                channel = TicketChannel.WEB,
+                status = TicketStatus.NEW,
+                firstCommentId = UUID.randomUUID(),
+                firstCommentVisibility = CommentVisibility.INTERNAL,
+                actor = actor,
+                context = context,
+                occurredAt = now,
+            )
+            subject.ticketUpdated(
+                ticketId = ticketId,
+                ticketNumber = 1042,
+                kind = kind,
+                changedFields = setOf("priority"),
+                actor = actor,
+                context = context,
+                occurredAt = now,
+            )
+            subject.statusChanged(
+                ticketId = ticketId,
+                ticketNumber = 1042,
+                kind = kind,
+                previousStatus = TicketStatus.NEW,
+                currentStatus = TicketStatus.OPEN,
+                actor = actor,
+                context = context,
+                occurredAt = now,
+            )
 
-        assertThat(recording.events).allSatisfy { event ->
-            assertThat(event.visibility).isEqualTo(DomainEventVisibility.INTERNAL)
+            assertThat(recording.events).allSatisfy { event ->
+                assertThat(event.visibility).isEqualTo(DomainEventVisibility.INTERNAL)
+            }
         }
     }
 

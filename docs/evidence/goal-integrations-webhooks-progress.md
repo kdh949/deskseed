@@ -5,7 +5,7 @@
 | Item | Evidence |
 |---|---|
 | Branch/base | `feature/goal/webhook-delivery` from Foundation F3 `4c06aca6560f7a8458992af6379c6954b1bc4dc1` |
-| Lane ownership | `tasks/goal-wave-ownership.yaml`: V60–V69, `api/core-api-fragments/30-integrations.yaml`, `frontend/src/features/integrations` |
+| Lane ownership | Historical delivery reservation: V60–V69, `api/core-api-fragments/30-integrations.yaml`, `frontend/src/features/integrations`; the completed Wave registry is retired |
 | Existing Platform boundary | `api/platform-api-outline-v1.yaml`, V21/V23/V31, `IntegrationClient`, idempotency, PostgreSQL limiter |
 | Event source | Foundation V36 `domain_event_outbox` and `eventpublication` root API |
 | External source contract | `/Users/donghyunkim/Downloads/codex-goals/04-integrations-webhooks-api.md`; not copied into this repository |

@@ -25,12 +25,14 @@ import dev.deskseed.attachments.TicketAttachment
 import dev.deskseed.attachments.TicketAttachmentLinkCommand
 import dev.deskseed.attachments.TicketAttachmentLinker
 import dev.deskseed.attachments.TicketAttachmentReadProjection
+import dev.deskseed.attachments.TicketDraftAttachmentReferenceValidator
 import dev.deskseed.audit.AccessAuditOutcome
 import dev.deskseed.audit.AccessAuditWriter
 import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.audit.AttachmentDownloadAccessAudit
+import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
@@ -55,7 +57,7 @@ internal class AttachmentApplicationService(
     private val malwareScanner: MalwareScanner,
     private val properties: AttachmentStorageProperties,
     private val clock: Clock,
-) : AttachmentUploadService, TicketAttachmentLinker, TicketAttachmentReadProjection, AttachmentDownloadService, AttachmentCleanupService {
+) : AttachmentUploadService, TicketAttachmentLinker, TicketAttachmentReadProjection, TicketDraftAttachmentReferenceValidator, AttachmentDownloadService, AttachmentCleanupService {
     override fun upload(command: AttachmentUploadCommand): AttachmentUploadResult {
         validateUpload(command)
         val now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
@@ -139,6 +141,34 @@ internal class AttachmentApplicationService(
                 TicketAttachment(row.id, row.fileName, row.sizeBytes, checkNotNull(row.contentType)),
                 command.visibility,
             )
+        }
+    }
+
+    @Transactional(readOnly = true)
+    override fun validateDraftReferences(
+        ticketId: UUID,
+        actor: ActorRef,
+        visibility: AttachmentVisibility,
+        attachmentIds: Set<UUID>,
+        now: Instant,
+    ) {
+        if (attachmentIds.isEmpty()) return
+        require(attachmentIds.size <= MAX_LINKED_ATTACHMENTS) { "Too many attachment references for one draft" }
+        val rows = metadata.findForDraftReference(attachmentIds)
+        if (rows.size != attachmentIds.size) throw AttachmentLinkInvalidException("Attachment does not exist")
+        rows.forEach { row ->
+            if (row.status != AttachmentScanStatus.CLEAN || row.linkedAt != null || !row.expiresAt.isAfter(now)) {
+                throw AttachmentLinkInvalidException("Attachment is not a current clean unlinked upload")
+            }
+            if (row.uploadedActorType != actor.actorType || row.uploadedActorId != actor.actorId) {
+                throw AttachmentLinkInvalidException("Attachment owner does not match the draft actor")
+            }
+            if (row.boundTicketId != null && row.boundTicketId != ticketId) {
+                throw AttachmentLinkInvalidException("Attachment is bound to another ticket")
+            }
+            if (row.allowedVisibility != null && row.allowedVisibility != visibility) {
+                throw AttachmentLinkInvalidException("Attachment visibility does not match the draft channel")
+            }
         }
     }
 
@@ -335,6 +365,18 @@ internal class AttachmentMetadataStore(
         where id in (${ids.joinToString(",") { "?" }})
         order by id
         for update
+        """.trimIndent(),
+        ::storedAttachment,
+        *ids.toTypedArray(),
+    )
+
+    fun findForDraftReference(ids: Set<UUID>): List<StoredAttachment> = jdbcTemplate.query(
+        """
+        select id, storage_key, uploaded_actor_type, uploaded_actor_id, bound_ticket_id, allowed_visibility,
+               file_name, size_bytes, content_type, scan_status, linked_at, expires_at
+        from attachment_objects
+        where id in (${ids.joinToString(",") { "?" }})
+        order by id
         """.trimIndent(),
         ::storedAttachment,
         *ids.toTypedArray(),

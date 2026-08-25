@@ -4,26 +4,20 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** PostgreSQL is the shared state: two independently constructed limiter instances share one quota. */
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
         "deskseed.platform.rate-limit.requests-per-minute=2",
     ],
 )
-@Testcontainers
+@dev.deskseed.testsupport.category.SlowTest
 class PlatformRateLimiterTest {
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
 
@@ -85,10 +79,4 @@ class PlatformRateLimiterTest {
         }
     }
 
-    companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
-    }
 }

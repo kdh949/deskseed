@@ -27,7 +27,7 @@ The customer projection currently exposes `NEW`, `OPEN`, `PENDING`, and `SOLVED`
 | PENDING | OPEN | Agent/Admin/Customer event | customer replies or agent resumes |
 | PENDING | SOLVED | Agent/Admin | resolution |
 | SOLVED | OPEN | Agent/Admin/Customer follow-up policy | reopen |
-| SOLVED | CLOSED | System | configured delay later |
+| SOLVED | CLOSED | Automation | active solved-age policy의 eligibleAt 경과 후 latest interval 재검사 |
 | CLOSED | any | none | immutable; follow-up creates new linked ticket |
 
 ## 3. Core commands
@@ -37,6 +37,13 @@ CreateAnonymousRequest
 CreateAgentTicket
 AddTicketComment
 UpdateTicket
+ApplyMacro
+CreateTriggerVersion
+ActivateTriggerVersion
+RepositionTrigger
+CreateAutomationVersion
+ActivateAutomationVersion
+CloseSolvedTicketAutomation
 AssignTicket
 TransferTicket
 CreateChildTicket
@@ -71,6 +78,9 @@ clock
 
 ```text
 TICKET_CREATED
+MACRO_APPLIED
+TRIGGER_APPLIED
+AUTOMATION_APPLIED
 UPDATE_COMMAND_RECEIVED
 COMMENT_CREATED
 STATUS_CHANGED
@@ -108,6 +118,7 @@ CUSTOMER_PROFILE_VIEWED
 SEARCH_EXECUTED
 SEARCH_RESULT_OPENED
 VIEW_EXECUTED
+MACRO_PREVIEWED
 ATTACHMENT_UPLOADED
 ATTACHMENT_VIEWED
 ATTACHMENT_DOWNLOADED
@@ -137,6 +148,10 @@ SAVED_VIEW_CREATED
 SAVED_VIEW_UPDATED
 SAVED_VIEW_REORDERED
 SAVED_VIEW_DELETED
+MACRO_CREATED
+MACRO_VERSION_CREATED
+MACRO_ACTIVATED
+MACRO_DEACTIVATED
 SETTING_CHANGED
 CUSTOMER_ACCESS_MODE_CHANGED
 INTEGRATION_CLIENT_CREATED

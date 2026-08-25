@@ -1,5 +1,364 @@
 x-deskseed-fragment:
   owner: views-macros
-paths: {}
-components: {}
-tags: []
+tags:
+  - name: Agent Macros
+    description: 상담사가 소유한 PERSONAL macro와 현재 활성화된 PERSONAL/SHARED macro를 관리·조회하는 API입니다.
+  - name: Admin Shared Macros
+    description: 별도 capability를 가진 ADMIN이 SHARED macro의 불변 version과 활성 이력을 관리하는 API입니다.
+
+paths:
+  /api/v1/agent/macros:
+    get:
+      summary: 적용 가능한 macro 목록 조회
+      description: 현재 상담사가 소유한 활성 PERSONAL macro와 활성 SHARED macro의 정확한 활성 version만 반환합니다.
+      operationId: listAccessibleMacros
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}]
+      responses:
+        '200': {$ref: '#/components/responses/MacroListResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+  /api/v1/agent/personal-macros:
+    get:
+      summary: 내 PERSONAL macro 목록 조회
+      description: 현재 상담사가 소유한 macro의 최신 version과 활성 version 포인터를 반환하며 다른 상담사의 정의는 숨깁니다.
+      operationId: listPersonalMacros
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}]
+      responses:
+        '200': {$ref: '#/components/responses/MacroListResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+    post:
+      summary: PERSONAL macro version 1 생성
+      description: 소유자가 typed action을 가진 비활성 version 1을 만들며 정의, 불변 version/action, 관리 감사를 한 transaction으로 저장합니다.
+      operationId: createPersonalMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      x-deskseed-documentation-review: MANUAL
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody: {$ref: '#/components/requestBodies/MacroDefinitionBody'}
+      responses:
+        '201': {$ref: '#/components/responses/MacroCreatedResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/agent/personal-macros/{macroId}/versions:
+    post:
+      summary: PERSONAL macro 새 version 생성
+      description: 소유권과 If-Match aggregate version을 검사한 뒤 기존 활성 version을 유지하면서 새 불변 definition/action version을 추가합니다.
+      operationId: createPersonalMacroVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      x-deskseed-documentation-review: MANUAL
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody: {$ref: '#/components/requestBodies/MacroDefinitionBody'}
+      responses:
+        '200': {$ref: '#/components/responses/MacroWriteResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/agent/personal-macros/{macroId}/activation:
+    put:
+      summary: PERSONAL macro version 활성화
+      description: 소유권과 If-Match를 검사하고 선택한 불변 version을 활성 포인터로 지정하며 활성 이력과 관리 감사를 함께 저장합니다.
+      operationId: activatePersonalMacroVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody: {$ref: '#/components/requestBodies/MacroActivationBody'}
+      responses:
+        '200': {$ref: '#/components/responses/MacroWriteResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+    delete:
+      summary: PERSONAL macro 비활성화
+      description: 소유권과 If-Match를 검사하고 불변 version을 보존한 채 활성 포인터만 제거하며 비활성 이력을 남깁니다.
+      operationId: deactivatePersonalMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      responses:
+        '200': {$ref: '#/components/responses/MacroWriteResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/admin/shared-macros:
+    get:
+      summary: SHARED macro 목록 조회
+      description: macro:shared:manage capability를 가진 ADMIN에게 최신 SHARED macro version과 활성 포인터를 반환합니다.
+      operationId: listSharedMacros
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Admin Shared Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}]
+      responses:
+        '200': {$ref: '#/components/responses/MacroListResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+    post:
+      summary: SHARED macro version 1 생성
+      description: capability를 가진 ADMIN이 비활성 SHARED macro를 만들며 정의, 불변 action version, 관리 감사를 원자적으로 저장합니다.
+      operationId: createSharedMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      x-deskseed-documentation-review: MANUAL
+      tags: [Admin Shared Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody: {$ref: '#/components/requestBodies/MacroDefinitionBody'}
+      responses:
+        '201': {$ref: '#/components/responses/MacroCreatedResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/preview:
+    post:
+      summary: 활성 macro의 티켓 변경 preview
+      description: 현재 ticket staff projection과 configuration을 기준으로 활성 macro version을 평가해 변경 계획과 렌더링된 댓글 draft를 반환합니다. Ticket row, comment, version, TicketAudit은 변경하지 않으며 `TICKET_VIEWED` 대신 required `MACRO_PREVIEWED` access audit을 원자적으로 저장합니다.
+      operationId: previewTicketMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/TicketConfigurationTicketNumber'}, {$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/AgentInteractionHeader'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      responses:
+        '200': {description: 정확한 macro/ticket version에 고정된 side-effect-free preview입니다., content: {application/json: {schema: {$ref: '#/components/schemas/MacroPreview'}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/admin/shared-macros/{macroId}/versions:
+    post:
+      summary: SHARED macro 새 version 생성
+      description: ADMIN capability와 If-Match를 검사하고 기존 활성 포인터를 유지하면서 새 불변 action version을 추가합니다.
+      operationId: createSharedMacroVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      x-deskseed-documentation-review: MANUAL
+      tags: [Admin Shared Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody: {$ref: '#/components/requestBodies/MacroDefinitionBody'}
+      responses:
+        '200': {$ref: '#/components/responses/MacroWriteResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/apply:
+    post:
+      summary: 검토한 macro preview를 티켓에 적용
+      description: If-Match ticket version과 현재 활성 macro version을 transaction 안에서 다시 확인하고 typed field, tag, custom field, comment를 하나의 일반 ticket command로 적용합니다. 티켓 version은 최대 한 번 증가하고 `MACRO_APPLIED` provenance를 첫 ordered event로 가진 TicketAudit 하나만 생성합니다.
+      operationId: applyTicketMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      x-deskseed-documentation-review: MANUAL
+      tags: [Agent Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/TicketConfigurationTicketNumber'}, {$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroTicketIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MacroApplyRequest'}}}
+      responses:
+        '200': {description: 한 번 commit된 macro ticket command 결과이며 exact clientCommandId 재시도에서는 replayed가 true입니다., headers: {ETag: {$ref: '#/components/headers/MacroApplyTicketETag'}}, content: {application/json: {schema: {$ref: '#/components/schemas/MacroApplyResult'}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/admin/shared-macros/{macroId}/activation:
+    put:
+      summary: SHARED macro version 활성화
+      description: ADMIN capability와 If-Match를 검사하고 선택한 version을 활성 포인터로 지정하며 활성 이력과 감사를 함께 저장합니다.
+      operationId: activateSharedMacroVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Admin Shared Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      requestBody: {$ref: '#/components/requestBodies/MacroActivationBody'}
+      responses:
+        '200': {$ref: '#/components/responses/MacroWriteResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+    delete:
+      summary: SHARED macro 비활성화
+      description: ADMIN capability와 If-Match를 검사하고 불변 version을 보존한 채 활성 포인터만 제거하며 비활성 이력을 남깁니다.
+      operationId: deactivateSharedMacro
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-003]
+      tags: [Admin Shared Macros]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/MacroId'}, {$ref: '#/components/parameters/MacroIfMatch'}, {$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}]
+      responses:
+        '200': {$ref: '#/components/responses/MacroWriteResponse'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '412': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+
+components:
+  parameters:
+    MacroId: {name: macroId, in: path, required: true, description: PERSONAL 또는 SHARED macro aggregate의 stable UUID입니다., schema: {type: string, format: uuid}}
+    MacroIfMatch: {name: If-Match, in: header, required: true, description: macro aggregateVersion과 정확히 일치해야 하는 strong precondition입니다., schema: {type: string, pattern: '^"[0-9]+"$', minLength: 3, maxLength: 24}}
+    MacroTicketIfMatch: {name: If-Match, in: header, required: true, description: preview가 반환한 ticketVersion과 정확히 일치해야 하며 replay 전에는 stale write를 거절하는 strong precondition입니다., schema: {type: string, pattern: '^"[0-9]+"$', minLength: 3, maxLength: 24}}
+  headers:
+    MacroETag: {description: 응답 시점의 macro aggregateVersion을 나타내는 strong ETag입니다., schema: {type: string, pattern: '^"[0-9]+"$'}}
+    MacroApplyTicketETag: {description: 모든 action을 반영한 뒤의 ticket version을 나타내며 exact replay에서도 원래 값을 유지합니다., schema: {type: string, pattern: '^"[0-9]+"$'}}
+  requestBodies:
+    MacroDefinitionBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MacroDefinitionRequest'}
+          example: {name: 긴급 문의 안내, actions: [{type: PRIORITY, priority: URGENT}, {type: COMMENT, visibility: PUBLIC, template: '안녕하세요 {{requester.name}}님. {{ticket.number}}번 문의를 확인하고 있습니다.'}]}
+    MacroActivationBody:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/MacroActivationRequest'}, example: {version: 1}}}
+  responses:
+    MacroListResponse: {description: 이름 순으로 정렬된 bounded macro 목록입니다., content: {application/json: {schema: {type: array, maxItems: 200, items: {$ref: '#/components/schemas/MacroDefinition'}}}}}
+    MacroCreatedResponse: {description: version 1을 가진 비활성 macro입니다., headers: {ETag: {$ref: '#/components/headers/MacroETag'}}, content: {application/json: {schema: {$ref: '#/components/schemas/MacroDefinition'}}}}
+    MacroWriteResponse: {description: version 또는 활성 포인터가 변경된 macro입니다., headers: {ETag: {$ref: '#/components/headers/MacroETag'}}, content: {application/json: {schema: {$ref: '#/components/schemas/MacroDefinition'}}}}
+  schemas:
+    MacroDefinitionRequest:
+      type: object
+      description: 소유 범위 안의 불변 macro version에 저장할 이름과 순서 보존 typed action 정의입니다.
+      x-deskseed-documentation-review: MANUAL
+      additionalProperties: false
+      required: [name, actions]
+      example: {name: 긴급 문의 안내, actions: [{type: PRIORITY, priority: URGENT}, {type: COMMENT, visibility: PUBLIC, template: '안녕하세요 {{requester.name}}님. 문의를 확인하고 있습니다.'}]}
+      properties:
+        name: {type: string, minLength: 1, maxLength: 120, description: 소유 범위 안에서 중복되지 않는 상담사용 macro 이름입니다.}
+        actions: {type: array, minItems: 1, maxItems: 50, description: preview와 apply에서 같은 순서로 해석하는 typed action 목록입니다., items: {$ref: '#/components/schemas/MacroAction'}}
+    MacroActivationRequest:
+      type: object
+      description: macro aggregate가 이미 보유한 불변 version을 활성 포인터로 선택하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      additionalProperties: false
+      required: [version]
+      example: {version: 1}
+      properties: {version: {type: integer, minimum: 1, description: 이미 저장된 불변 macro version입니다.}}
+    MacroDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, name, scope, currentVersion, aggregateVersion, actions, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid, description: macro aggregate의 stable ID입니다.}
+        name: {type: string, minLength: 1, maxLength: 120, description: 응답 actions가 속한 version의 표시 이름입니다.}
+        scope: {type: string, enum: [PERSONAL, SHARED], description: PERSONAL은 소유자 전용이고 SHARED는 모든 상담사에게 적용 후보로 보입니다.}
+        ownerStaffId: {type: [string, 'null'], format: uuid, description: PERSONAL 소유자이며 SHARED에서는 null입니다.}
+        currentVersion: {type: integer, minimum: 1, description: 가장 최근에 저장된 불변 definition version입니다.}
+        activeVersion: {type: [integer, 'null'], minimum: 1, description: 현재 적용 가능한 version이며 null이면 비활성입니다.}
+        aggregateVersion: {type: integer, format: int64, minimum: 1, description: If-Match와 ETag에 쓰는 lifecycle 변경 version입니다.}
+        actions: {type: array, minItems: 1, maxItems: 50, description: 응답 version에 고정된 순서 보존 typed action입니다., items: {$ref: '#/components/schemas/MacroAction'}}
+        createdAt: {type: string, format: date-time, description: macro aggregate 생성 시각입니다.}
+        updatedAt: {type: string, format: date-time, description: latest version 또는 활성 포인터 변경 시각입니다.}
+    MacroPreview:
+      type: object
+      additionalProperties: false
+      required: [macroId, macroVersion, ticketNumber, ticketVersion, changes]
+      properties:
+        macroId: {type: string, format: uuid, description: preview에 사용한 활성 macro ID입니다.}
+        macroVersion: {type: integer, minimum: 1, description: preview에 사용한 불변 활성 macro version입니다.}
+        ticketNumber: {type: integer, format: int64, minimum: 1, description: 대상 ticket 번호입니다.}
+        ticketVersion: {type: integer, format: int64, minimum: 0, description: apply의 If-Match로 다시 제출해야 하는 current ticket version입니다.}
+        changes: {type: array, maxItems: 50, description: 저장된 action 순서에서 댓글을 제외한 before/after 변경 계획입니다., items: {$ref: '#/components/schemas/MacroPreviewChange'}}
+        comment: {oneOf: [{$ref: '#/components/schemas/MacroPreviewComment'}, {type: 'null'}], description: COMMENT action이 없으면 null인 렌더링된 plain-text draft입니다.}
+    MacroPreviewChange:
+      type: object
+      additionalProperties: false
+      required: [field]
+      properties:
+        field: {type: string, maxLength: 200, description: 'status, priority, stable resource ID 또는 field machine key를 포함한 typed 변경 경로입니다.'}
+        before: {type: [string, 'null'], maxLength: 10000, description: 현재 ticket의 staff projection에서 읽어 변경 비교에 사용하는 기준입니다.}
+        after: {type: [string, 'null'], maxLength: 10000, description: 일반 ticket command에 다시 제출될 목표 값의 안전한 문자열 projection입니다.}
+    MacroPreviewComment:
+      type: object
+      additionalProperties: false
+      required: [visibility, body]
+      properties:
+        visibility: {type: string, enum: [PUBLIC, INTERNAL], description: 렌더링된 draft의 서버 검증 가시성입니다.}
+        body: {type: string, minLength: 1, maxLength: 10000, description: allowlisted ticket/requester/agent placeholder를 현재 projection으로 치환한 plain text입니다.}
+    MacroApplyRequest:
+      type: object
+      description: preview에서 검토한 활성 macro version과 댓글 draft를 idempotent ticket command로 제출하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      additionalProperties: false
+      required: [macroVersion, clientCommandId]
+      properties:
+        macroVersion: {type: integer, minimum: 1, description: preview 응답의 macroVersion이며 apply transaction 안에서 현재 활성 version과 다시 비교합니다.}
+        commentBodyOverride: {type: [string, 'null'], minLength: 1, maxLength: 20000, description: COMMENT action이 있으면 preview에서 검토·수정한 plain-text draft 전체를 반드시 전달하며 저장된 visibility는 바꾸지 않습니다.}
+        clientCommandId: {type: string, format: uuid, description: 동일 actor의 exact payload 재시도를 원래 TicketAudit 결과에 연결하며 다른 payload에는 재사용할 수 없습니다.}
+      example: {macroVersion: 1, commentBodyOverride: 상담사가 검토한 내부 결제 메모입니다., clientCommandId: '77777777-7777-4777-8777-777777777777'}
+    MacroApplyResult:
+      type: object
+      additionalProperties: false
+      required: [ticketNumber, version, auditId, replayed, warnings]
+      properties:
+        ticketNumber: {type: integer, format: int64, minimum: 1, description: macro command가 적용된 ticket 번호입니다.}
+        version: {type: integer, format: int64, minimum: 0, description: 모든 macro action을 원자적으로 반영한 뒤의 ticket version입니다.}
+        auditId: {type: string, format: uuid, description: '`MACRO_APPLIED`와 ordered action events를 보유한 단일 TicketAudit ID입니다.'}
+        replayed: {type: boolean, description: 새 mutation 없이 exact clientCommandId의 기존 결과를 반환했는지 나타냅니다.}
+        warnings: {type: array, description: 열린 child가 있는 solve처럼 commit은 허용하지만 상담사 확인이 필요한 경고입니다., items: {$ref: '#/components/schemas/CommandWarning'}}
+    MacroAction:
+      oneOf:
+        - {$ref: '#/components/schemas/MacroStatusAction'}
+        - {$ref: '#/components/schemas/MacroPriorityAction'}
+        - {$ref: '#/components/schemas/MacroGroupAction'}
+        - {$ref: '#/components/schemas/MacroAssigneeAction'}
+        - {$ref: '#/components/schemas/MacroAddTagAction'}
+        - {$ref: '#/components/schemas/MacroRemoveTagAction'}
+        - {$ref: '#/components/schemas/MacroCustomFieldAction'}
+        - {$ref: '#/components/schemas/MacroCustomStatusAction'}
+        - {$ref: '#/components/schemas/MacroCommentAction'}
+      discriminator: {propertyName: type}
+    MacroStatusAction: {type: object, additionalProperties: false, required: [type, status], properties: {type: {type: string, const: STATUS}, status: {type: string, enum: [NEW, OPEN, PENDING, ON_HOLD, SOLVED, CLOSED], description: 일반 ticket command가 검증할 목표 상태입니다.}}}
+    MacroPriorityAction: {type: object, additionalProperties: false, required: [type, priority], properties: {type: {type: string, const: PRIORITY}, priority: {type: string, enum: [LOW, NORMAL, HIGH, URGENT], description: 일반 ticket command가 적용할 우선순위입니다.}}}
+    MacroGroupAction: {type: object, additionalProperties: false, required: [type, groupId], properties: {type: {type: string, const: GROUP}, groupId: {type: string, format: uuid, description: 적용 시 active group 여부를 다시 검사할 목표 group입니다.}}}
+    MacroAssigneeAction: {type: object, additionalProperties: false, required: [type], properties: {type: {type: string, const: ASSIGNEE}, assigneeId: {type: [string, 'null'], format: uuid, description: null이면 담당자 해제이며 값이 있으면 active member 여부를 다시 검사합니다.}}}
+    MacroAddTagAction: {type: object, additionalProperties: false, required: [type, tagId], properties: {type: {type: string, const: ADD_TAG}, tagId: {type: string, format: uuid, description: 적용 시 active tag 여부를 다시 검사해 추가할 stable ID입니다.}}}
+    MacroRemoveTagAction: {type: object, additionalProperties: false, required: [type, tagId], properties: {type: {type: string, const: REMOVE_TAG}, tagId: {type: string, format: uuid, description: 티켓에서 제거할 stable tag ID입니다.}}}
+    MacroCustomFieldAction: {type: object, additionalProperties: false, required: [type, fieldKey, value], properties: {type: {type: string, const: CUSTOM_FIELD}, fieldKey: {type: string, pattern: '^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$', maxLength: 120, description: 적용 시 active definition과 form projection을 다시 검사할 machine key입니다.}, value: {$ref: '#/components/schemas/TicketFieldValue'}}}
+    MacroCustomStatusAction: {type: object, additionalProperties: false, required: [type, customStatusId], properties: {type: {type: string, const: CUSTOM_STATUS}, customStatusId: {type: string, format: uuid, description: 적용 시 현재 form과 fixed category 호환성을 다시 검사할 stable ID입니다.}}}
+    MacroCommentAction: {type: object, additionalProperties: false, required: [type, visibility, template], properties: {type: {type: string, const: COMMENT}, visibility: {type: string, enum: [PUBLIC, INTERNAL], description: PUBLIC과 INTERNAL draft를 섞지 않는 댓글 가시성입니다.}, template: {type: string, minLength: 1, maxLength: 10000, description: allowlisted placeholder만 허용하는 plain-text 댓글 template입니다.}}}

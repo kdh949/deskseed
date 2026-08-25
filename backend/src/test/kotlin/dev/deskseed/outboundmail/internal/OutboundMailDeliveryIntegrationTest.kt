@@ -19,33 +19,30 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
+import org.springframework.context.ApplicationContext
+import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.core.env.Environment
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.transaction.support.TransactionTemplate
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.mail.delivery-enabled=true",
-        "deskseed.mail.scheduling-enabled=false",
         "deskseed.mail.transport=fake",
         "deskseed.mail.retry-backoff[0]=0s",
         "deskseed.mail.retry-backoff[1]=1h",
@@ -53,8 +50,8 @@ import java.util.concurrent.TimeUnit
     ],
 )
 @Import(FakeMailTransportConfiguration::class)
-@Testcontainers
 @ExtendWith(OutputCaptureExtension::class)
+@dev.deskseed.testsupport.category.SlowTest
 class OutboundMailDeliveryIntegrationTest {
     @Autowired private lateinit var worker: MailDeliveryWorker
     @Autowired private lateinit var transport: FakeMailTransport
@@ -63,6 +60,8 @@ class OutboundMailDeliveryIntegrationTest {
     @Autowired private lateinit var publicRequestService: PublicRequestApplicationService
     @Autowired private lateinit var transactionTemplate: TransactionTemplate
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
+    @Autowired private lateinit var applicationContext: ApplicationContext
+    @Autowired private lateinit var environment: Environment
 
     @BeforeEach
     fun clearState() {
@@ -83,6 +82,21 @@ class OutboundMailDeliveryIntegrationTest {
             """.trimIndent(),
         )
         transport.reset()
+    }
+
+    @Test
+    fun `general integration test context disables scheduled infrastructure`() {
+        assertThat(environment.getProperty("deskseed.scheduling.enabled")).isEqualTo("false")
+        val processors = applicationContext.getBeansOfType(ScheduledAnnotationBeanPostProcessor::class.java)
+        val beanFactory = (applicationContext as ConfigurableApplicationContext).beanFactory
+        val origins = processors.keys.associateWith { name ->
+            beanFactory.getBeanDefinition(name).let { definition ->
+                "${definition.resourceDescription}#${definition.factoryBeanName}.${definition.factoryMethodName}"
+            }
+        }
+        assertThat(processors)
+            .withFailMessage("Scheduled processors must be absent but were registered from %s", origins)
+            .isEmpty()
     }
 
     @Test
@@ -505,12 +519,6 @@ class OutboundMailDeliveryIntegrationTest {
         ticketId,
     )!!
 
-    companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
-    }
 }
 
 @TestConfiguration(proxyBeanMethods = false)

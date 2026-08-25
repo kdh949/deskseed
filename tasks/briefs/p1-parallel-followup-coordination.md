@@ -39,7 +39,7 @@ git merge-base --is-ancestor 814fee56247444a8ac10b1a726703dd60cfa0864 "${PARALLE
 
 PR #70 head `814fee56247444a8ac10b1a726703dd60cfa0864`의 GitHub Actions run `32013378207`에는 다음 선행 실패가 있었다.
 
-- Documentation contracts: `docs/26`, `docs/55`, task brief 변경 뒤 `FILE-MANIFEST.txt`와 `VALIDATION-REPORT.md`가 재생성되지 않음.
+- Documentation contracts: 당시 생성 inventory 산출물이 작업 디렉터리 파일 수에 의존해 실제 계약 오류 없이 실패함. 해당 산출물은 semantic gate 전환과 함께 폐기됐다.
 - Frontend quality gates: `frontend/e2e/agent-views-workspace.spec.ts` Prettier check 실패.
 - Backend tests와 Compose health smoke는 성공.
 
@@ -99,8 +99,6 @@ Workstream B는 migration이 필요하지 않은 것으로 설계되었다. DB �
 - `api/core-api-outline-v1.yaml`
 - `docs/26-requirement-traceability.md`
 - `docs/55-frontend-capability-recomposition-matrix.md`
-- `VALIDATION-REPORT.md`
-- `FILE-MANIFEST.txt`
 
 각 workstream PR은 자신의 계약 변경을 포함한다. 먼저 병합되는 PR은 일반 절차로 merge한다. 두 번째 PR 담당자는 최신 `main`을 branch에 merge하고 shared file을 의미 기준으로 통합한 뒤 모든 contract/documentation gate를 다시 실행한다. 이미 push되어 공동 기준으로 쓰인 branch를 rebase/force-push하지 않는다.
 
@@ -140,8 +138,7 @@ cd frontend && npm run test:storybook
 cd frontend && npm run check:design-system-boundaries
 cd frontend && npm run build
 cd frontend && npm run test:e2e
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_documentation_quality.py
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_documentation.py --write
+make docs-check
 bash scripts/run-p1-contract-e2e.sh
 ```
 

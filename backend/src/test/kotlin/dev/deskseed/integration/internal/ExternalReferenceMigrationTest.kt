@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class ExternalReferenceMigrationTest {
     @Test
     fun `version twenty two upgrades version twenty one and enforces bounded unique external references`() {

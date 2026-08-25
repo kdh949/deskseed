@@ -5,9 +5,7 @@ import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
-import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -84,7 +82,3 @@ internal class SearchQueryCiphertextRetentionJob(
         const val POLICY_VERSION = "search-query-ciphertext-v1"
     }
 }
-
-@Configuration(proxyBeanMethods = false)
-@EnableScheduling
-internal class AuditRetentionSchedulingConfiguration

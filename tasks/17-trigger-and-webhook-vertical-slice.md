@@ -29,3 +29,13 @@ Time-based automation, arbitrary scripts, public automated replies, complex temp
 ## Acceptance
 
 AUT-001~008 and WH-001~005. Failure-injection proves committed ticket mutation is not rolled back by delivery failure.
+
+## Implemented slices
+
+- [x] typed `EVENT`/`PRIORITY`/`GROUP` conditions and `SET_GROUP`/`ENQUEUE_WEBHOOK` actions
+- [x] immutable versions, explicit activation/deactivation, audited position exchange
+- [x] server-side admin capability and atomic admin/security audit
+- [x] sample-ticket dry-run with zero ticket/job side effects
+- [x] ticket-transaction durable evaluation job with ordered immutable-version snapshot
+- [x] ordered worker execution, bounded loop controls, `TRIGGER_APPLIED` provenance and webhook outbox intent
+- [x] lease recovery, bounded retry and dead letter without partial ticket mutation

@@ -11,6 +11,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class Issue24RemediationMigrationTest {
     @Test
     fun `v15 data upgrades without implicit audit grants and enforces verified only email uniqueness`() {

@@ -7,10 +7,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -24,10 +22,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.transaction.support.TransactionTemplate
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.sql.Timestamp
@@ -39,7 +33,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.system.measureNanoTime
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
         "deskseed.customer-auth.magic-link-ttl=15m",
@@ -55,8 +49,8 @@ import kotlin.system.measureNanoTime
     ],
 )
 @AutoConfigureMockMvc
-@Testcontainers
 @ExtendWith(OutputCaptureExtension::class)
+@dev.deskseed.testsupport.category.IntegrationTest
 class CustomerMagicLinkAuthIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
@@ -402,10 +396,5 @@ class CustomerMagicLinkAuthIntegrationTest {
 
     companion object {
         private const val CUSTOMER_COOKIE = "DESKSEED_CUSTOMER_SESSION"
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

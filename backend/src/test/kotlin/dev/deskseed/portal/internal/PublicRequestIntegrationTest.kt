@@ -10,10 +10,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.ApplicationContext
 import org.springframework.dao.DataAccessException
@@ -26,10 +24,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.sql.Timestamp
 import java.time.Duration
 import java.time.Instant
@@ -39,10 +33,10 @@ import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-@SpringBootTest
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 @AutoConfigureMockMvc
-@Testcontainers
 @ExtendWith(OutputCaptureExtension::class)
+@dev.deskseed.testsupport.category.IntegrationTest
 class PublicRequestIntegrationTest {
     @Autowired
     private lateinit var service: PublicRequestApplicationService
@@ -1231,10 +1225,4 @@ class PublicRequestIntegrationTest {
         )
     }
 
-    companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
-    }
 }
