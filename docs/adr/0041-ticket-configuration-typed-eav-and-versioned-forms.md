@@ -13,8 +13,8 @@ Conditional form rules also cannot be executable expressions supplied by an admi
 ## Decision
 
 - Persist ticket field values in one typed EAV row per `(ticket_id, field_definition_id)`. Exactly one type-specific nullable value column is set; a PostgreSQL CHECK constraint and the field definition type are both enforced. `SINGLE_SELECT` stores a stable option UUID, never a display label.
-- Field machine keys are immutable. A definition that already has values cannot change type; a new definition plus an explicitly reviewed data migration is required.
-- Ticket forms are drafted and then published as immutable versions. Tickets retain their selected form/version so a later edit cannot reinterpret historical data. Publishing rejects a dependency cycle or any input whose rule set can produce contradictory visibility, requiredness, or editability.
+- Field machine keys are immutable. Published form semantics retain field ID/machine key/type/validation; changing that meaning requires a new field ID and an explicitly reviewed data migration.
+- Ticket forms are drafted and then published as immutable semantic versions. The version freezes placement/order, condition rules, customer visibility/editability/requiredness, field semantics, and eligible option ID/machine-key/order. Option meaning changes require a new option ID. Customer label/description is mutable current display copy and is intentionally excluded from the snapshot, so exact historical wording is not reproducible. Tickets retain their selected form/version so later semantic edits cannot reinterpret historical data. Publishing rejects a dependency cycle or any input whose rule set can produce contradictory visibility, requiredness, or editability.
 - Rules use Foundation's bounded versioned condition AST and feature-owned handlers. Raw expressions, scripts, and runtime code are not stored. The backend always re-evaluates submitted values and drops hidden/readonly values; hidden required fields cannot block a customer submission.
 - Tags use a normalized, immutable canonical machine value plus a mutable display label. Tag association is a ticket command with the normal ticket audit and idempotent duplicate-add behavior.
 - Custom status definitions map to a fixed `NEW`, `OPEN`, `PENDING`, `ON_HOLD`, `SOLVED`, or `CLOSED` category. The existing category column remains authoritative for state-machine/SLA compatibility; `status_definition_id` is additive. A `CLOSED` ticket remains terminal regardless of its displayed custom label.
@@ -32,6 +32,7 @@ Conditional form rules also cannot be executable expressions supplied by an admi
 - PostgreSQL remains the first and only configuration/query store. Type-specific partial indexes and long-text GIN are introduced only with query evidence; no external search service is added.
 - Field, option, tag, status, and form lifecycle APIs need optimistic version preconditions. Applied migrations are additive and repairs are forward migrations.
 - Older clients continue to use the persisted category `status`; new projections also return the optional custom status. Deactivated definitions remain resolvable for historical tickets but cannot be newly selected.
+- `ticket_form_selections` is the ticket-level source of truth. V82 deterministically backfills a single distinct non-null tuple from legacy value rows, fails on conflicting tuples, leaves zero-value historical tickets unselected, and then removes the redundant value-row form/version columns.
 
 ## References
 

@@ -578,6 +578,13 @@ class CustomerRequestFormContractTest(unittest.TestCase):
         self.assertIn("not an authorization token", operation["description"])
         self.assertEqual([{}], operation["security"])
 
+    def test_initial_projection_is_blueprint_only_and_fixed_to_customer_requests(self) -> None:
+        operation = self.operation("/api/v1/customer/ticket-forms", "get")
+
+        self.assertNotIn("x-deskseed-contract-status", operation)
+        self.assertEqual(["formId"], [parameter["name"] for parameter in operation["parameters"]])
+        self.assertIn("CUSTOMER_REQUEST", operation["description"])
+
     def test_customer_projection_schemas_are_closed_and_exclude_staff_metadata(self) -> None:
         projection = self.document["components"]["schemas"]["CustomerTicketFormProjection"]
         projected_field = self.document["components"]["schemas"]["CustomerProjectedTicketField"]
@@ -609,6 +616,70 @@ class CustomerRequestFormContractTest(unittest.TestCase):
         self.assertNotIn("CreateAnonymousRequestResult", schemas)
         self.assertNotIn("privacyConsent", str(operation))
         self.assertNotIn("privacyConsent", str(schemas["CreateCustomerRequest"]))
+        self.assertNotIn("x-deskseed-contract-status", operation)
+
+    def test_initial_request_has_stable_command_replay_and_conflict_contract(self) -> None:
+        operation = self.operation("/api/v1/requests")
+        request = self.document["components"]["schemas"]["CreateCustomerRequest"]
+        result = self.document["components"]["schemas"]["CreateCustomerRequestResult"]
+
+        self.assertIn("clientCommandId", request["required"])
+        self.assertEqual("uuid", request["properties"]["clientCommandId"]["format"])
+        self.assertEqual(
+            {
+                "identity": "CLIENT_COMMAND_ID",
+                "scope": "CUSTOMER_OR_ANONYMOUS_DESTINATION",
+                "payloadHash": "CANONICAL_REQUEST_AND_ORDERED_ATTACHMENT_MANIFEST",
+                "samePayload": "SAME_TICKET_FRESH_ACCESS_GRANT",
+                "differentPayload": "NON_MUTATING_409",
+                "concurrency": "SINGLE_WINNER",
+                "receiptRetention": "P7D",
+            },
+            operation["x-deskseed-idempotency"],
+        )
+        self.assertIn("replayed", result["required"])
+        self.assertEqual("boolean", result["properties"]["replayed"]["type"])
+
+        conflict = self.resolve(operation["responses"]["409"])
+        conflict_refs = {
+            schema["$ref"]
+            for schema in conflict["content"]["application/problem+json"]["schema"]["anyOf"]
+        }
+        self.assertIn("#/components/schemas/CustomerRequestCommandConflictProblem", conflict_refs)
+
+    def test_anonymous_multipart_uses_server_only_planned_customer_ownership(self) -> None:
+        multipart = self.document["components"]["schemas"]["CreateCustomerRequestMultipart"]
+
+        self.assertEqual(
+            "SERVER_PLANNED_CUSTOMER_UUID",
+            multipart["x-deskseed-anonymous-attachment-owner"],
+        )
+        self.assertIn("plannedCustomerId", multipart["description"])
+        self.assertIn("Customer row를 만들지", multipart["description"])
+        self.assertIn("같은 최종 transaction", multipart["description"])
+
+    def test_form_version_freezes_semantics_but_not_display_copy(self) -> None:
+        projection = self.document["components"]["schemas"]["CustomerTicketFormProjection"]
+        snapshot = projection["x-deskseed-form-version-snapshot"]
+        self.assertEqual(
+            [
+                "FIELD_AND_OPTION_IDENTITIES",
+                "FIELD_TYPE_AND_VALIDATION",
+                "OPTION_SET_AND_ORDER",
+                "CUSTOMER_VISIBILITY_EDITABILITY_REQUIREDNESS",
+                "PLACEMENT_ORDER_AND_CONDITION_RULES",
+            ],
+            snapshot["frozen"],
+        )
+        self.assertEqual("CURRENT_NOT_HISTORICAL", snapshot["displayLabelAndDescription"])
+        self.assertEqual("NEW_ID_REQUIRED", snapshot["semanticChange"])
+
+        field = self.document["components"]["schemas"]["CustomerTicketFieldDefinition"]
+        option = self.document["components"]["schemas"]["CustomerTicketFieldOption"]
+        self.assertIn("validation", field["required"])
+        self.assertIn("order", option["required"])
+        self.assertIn("snapshot 대상이 아닙니다", field["properties"]["label"]["description"])
+        self.assertIn("snapshot 대상이 아닙니다", option["properties"]["label"]["description"])
 
     def test_json_and_multipart_use_the_same_customer_request_domain_command(self) -> None:
         operation = self.operation("/api/v1/requests")
@@ -697,10 +768,6 @@ class CustomerRequestFormContractTest(unittest.TestCase):
                 "#/components/responses/CustomerRequestValidation",
                 "/problems/customer-request-validation-failed",
             ),
-            ("/api/v1/requests", "409"): (
-                "#/components/responses/CustomerRequestConfigurationConflict",
-                "/problems/customer-request-configuration-conflict",
-            ),
             ("/api/v1/requests", "503"): (
                 "#/components/responses/CustomerRequestConfigurationUnavailable",
                 "/problems/customer-request-configuration-unavailable",
@@ -715,6 +782,22 @@ class CustomerRequestFormContractTest(unittest.TestCase):
                 schema = self.resolve(response["content"]["application/problem+json"]["schema"])
                 self.assertEqual(problem_type, schema["allOf"][1]["properties"]["type"]["const"])
                 self.assertEqual("no-store", response["headers"]["Cache-Control"]["schema"]["const"])
+
+        conflict_value = self.operation("/api/v1/requests")["responses"]["409"]
+        self.assertEqual("#/components/responses/CustomerRequestConflict", conflict_value["$ref"])
+        conflict = self.resolve(conflict_value)
+        conflict_types = {
+            self.resolve(schema)["allOf"][1]["properties"]["type"]["const"]
+            for schema in conflict["content"]["application/problem+json"]["schema"]["anyOf"]
+        }
+        self.assertEqual(
+            {
+                "/problems/customer-request-configuration-conflict",
+                "/problems/customer-request-command-conflict",
+            },
+            conflict_types,
+        )
+        self.assertEqual("no-store", conflict["headers"]["Cache-Control"]["schema"]["const"])
 
 
 class KnowledgeBaseContractTest(unittest.TestCase):

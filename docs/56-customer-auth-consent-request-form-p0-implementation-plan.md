@@ -369,7 +369,7 @@ Admin writes require staff session, ADMIN role, `customer-consent:manage`, expec
 Reuse the existing initial projection:
 
 ```text
-GET /api/v1/customer/ticket-forms?ticketKind=CUSTOMER_REQUEST&formId=...
+GET /api/v1/customer/ticket-forms?formId=...
 ```
 
 Add candidate-value projection:
@@ -392,13 +392,21 @@ Request:
 }
 ```
 
-The server evaluates allowlisted `field.<machineKey>` facts and returns only the customer-visible projection. The final create command always repeats validation; a projection response is not an authorization token.
+The public adapter always evaluates `ticketKind=CUSTOMER_REQUEST`; it does not accept an internal ticket-kind input. The server evaluates
+allowlisted `field.<machineKey>` facts and returns only the customer-visible projection. The final create command always repeats validation;
+a projection response is not an authorization token.
+
+Each published `formVersion` freezes placement/order, condition rules, customer visibility/editability/requiredness, field and option IDs
+and machine keys, field type/validation bounds, and the eligible option set/order. Customer label and description are current display copy,
+not part of the snapshot; the contract does not promise exact historical UI wording. A field or option semantic change, including type,
+validation meaning, or option meaning, creates a new ID. A copy-only label/description change does not create a new form version.
 
 ### 7.4 Request creation contract cleanup
 
-The frozen contract replaces `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. `privacyConsent` is removed rather than deprecated because the application has not shipped.
+The implementation blueprint replaces `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. It omits the runtime `FROZEN`
+marker until the controller, persistence, error, and springdoc parity land. `privacyConsent` is removed rather than deprecated because the application has not shipped.
 
-Frozen JSON shape:
+Planned JSON shape:
 
 ```json
 {
@@ -472,7 +480,8 @@ already uploaded objects remain unlinked and use the existing TTL cleanup policy
 The stable customer problem catalog is `/problems/customer-ticket-form-validation-failed`,
 `/problems/customer-ticket-form-unavailable`, `/problems/customer-ticket-form-version-conflict`,
 `/problems/customer-request-validation-failed`, `/problems/customer-request-not-allowed`,
-`/problems/customer-request-configuration-conflict`, `/problems/customer-request-rate-limited`, and
+`/problems/customer-request-configuration-conflict`, `/problems/customer-request-command-conflict`,
+`/problems/customer-request-rate-limited`, and
 `/problems/customer-request-configuration-unavailable`. All responses use `Cache-Control: no-store`;
 validation and unavailable responses do not disclose whether an unknown input names a staff-only definition.
 
@@ -504,7 +513,11 @@ Wave 1's V40–V79 reservation is complete. Begin the next additive range at V80
 ### V82 — customer request form binding
 
 - create `ticket_form_selections(ticket_id PK, form_id, form_version, selected_at)`;
-- preserve the existing typed `ticket_custom_field_values` rows;
+- treat `ticket_form_selections` as the sole ticket-level selected form/version source of truth, including tickets with zero custom values;
+- backfill one selection for each historical ticket whose non-null `ticket_custom_field_values.form_id/form_version` rows contain exactly one distinct tuple;
+- fail migration when a ticket contains more than one distinct tuple; do not guess or add an operational backfill system;
+- do not infer a selection for historical tickets with zero values because the old schema did not preserve one;
+- after deterministic validation/backfill, drop the redundant value-row `form_id/form_version` columns while preserving typed value rows;
 - add the exact FK/indexes needed by selected-form reads and immutable-version resolution;
 - update every FK-connected PostgreSQL `TRUNCATE` cleaner;
 - change the initial effective access mode to `REGISTRATION_OPTIONAL` only for the untouched seed setting, without overwriting an operator-edited row.

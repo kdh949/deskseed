@@ -486,9 +486,8 @@ paths:
   /api/v1/customer/ticket-forms:
     get:
       summary: 고객 제출 context의 form projection 조회
-      description: current published customer form의 초기 projection만 반환하며 staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
+      description: 공개 surface는 ticket kind 입력을 받지 않고 항상 CUSTOMER_REQUEST context의 current published customer form 초기 projection만 반환합니다. staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
       operationId: getCustomerTicketFormProjection
-      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-011, REQ-CFG-014]
       tags: [Ticket Configuration Runtime]
       security: [{}]
@@ -497,10 +496,6 @@ paths:
           in: query
           required: false
           schema: {type: string, format: uuid}
-        - name: ticketKind
-          in: query
-          required: true
-          schema: {$ref: '#/components/schemas/TicketKind'}
       responses:
         '200':
           description: staff-only definition을 포함하지 않는 current customer projection입니다.
@@ -519,11 +514,12 @@ paths:
                       type: SINGLE_SELECT
                       label: 문의 유형
                       description: 합성 테스트 문의의 유형을 선택합니다.
+                      validation: {}
                     visible: true
                     editable: true
                     required: true
                     options:
-                      - {id: 00000000-0000-4000-8000-000000000101, machineKey: order, label: 주문}
+                      - {id: 00000000-0000-4000-8000-000000000101, machineKey: order, label: 주문, order: 10}
         '404': {$ref: '#/components/responses/CustomerTicketFormUnavailable'}
         '503': {$ref: '#/components/responses/CustomerRequestConfigurationUnavailable'}
   /api/v1/customer/ticket-form-projections:
@@ -679,14 +675,21 @@ components:
         application/problem+json:
           schema: {$ref: '#/components/schemas/CustomerRequestForbiddenProblem'}
           example: {type: /problems/customer-request-not-allowed, title: Customer request not allowed, status: 403, detail: The customer request is not allowed., requestId: req-request-403}
-    CustomerRequestConfigurationConflict:
-      description: upload 또는 최종 validation 전에 current published form이나 required REQUEST_SUBMISSION policy version이 바뀌었습니다. Ticket과 acceptance는 생성되지 않습니다.
+    CustomerRequestConflict:
+      description: current form/policy가 바뀌었거나 같은 scoped clientCommandId가 다른 canonical payload에 재사용되었습니다. 별도 rate-limit budget 외 business mutation은 남기지 않습니다.
       headers:
         Cache-Control: {schema: {type: string, const: no-store}}
       content:
         application/problem+json:
-          schema: {$ref: '#/components/schemas/CustomerRequestConfigurationConflictProblem'}
-          example: {type: /problems/customer-request-configuration-conflict, title: Customer request configuration changed, status: 409, detail: Refresh the form and policies before submitting again., requestId: req-request-409}
+          schema:
+            anyOf:
+              - {$ref: '#/components/schemas/CustomerRequestConfigurationConflictProblem'}
+              - {$ref: '#/components/schemas/CustomerRequestCommandConflictProblem'}
+          examples:
+            configurationChanged:
+              value: {type: /problems/customer-request-configuration-conflict, title: Customer request configuration changed, status: 409, detail: Refresh the form and policies before submitting again., requestId: req-request-409}
+            commandReused:
+              value: {type: /problems/customer-request-command-conflict, title: Customer request command conflicts, status: 409, detail: Reuse clientCommandId only for the exact same request., requestId: req-request-command-409}
     CustomerRequestRateLimited:
       description: 이메일·신뢰된 client 주소·전체 요청 고정 창 중 하나가 초과되었습니다. 어떤 bucket인지 또는 원문 식별자는 반환하지 않습니다.
       headers:
@@ -759,6 +762,15 @@ components:
           properties:
             type: {type: string, const: /problems/customer-request-configuration-conflict}
             title: {type: string, const: Customer request configuration changed}
+            status: {type: integer, const: 409}
+    CustomerRequestCommandConflictProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [type, title, status]
+          properties:
+            type: {type: string, const: /problems/customer-request-command-conflict}
+            title: {type: string, const: Customer request command conflicts}
             status: {type: integer, const: 409}
     CustomerRequestRateLimitedProblem:
       allOf:
@@ -1039,7 +1051,16 @@ components:
         fieldValues:
           request.type: {optionId: 00000000-0000-4000-8000-000000000101}
     CustomerTicketFormProjection:
-      description: 고객에게 허용된 label, option, projection policy만 반환하며 staff label/description, search/analytics/sensitive metadata는 포함하지 않습니다.
+      description: 고객에게 허용된 current display label/description, immutable semantic option set과 projection policy만 반환하며 staff label/description, search/analytics/sensitive metadata는 포함하지 않습니다. formVersion은 검증 의미를 고정하지만 단순 표시 문구의 역사적 재현을 보장하지 않습니다.
+      x-deskseed-form-version-snapshot:
+        frozen:
+          - FIELD_AND_OPTION_IDENTITIES
+          - FIELD_TYPE_AND_VALIDATION
+          - OPTION_SET_AND_ORDER
+          - CUSTOMER_VISIBILITY_EDITABILITY_REQUIREDNESS
+          - PLACEMENT_ORDER_AND_CONDITION_RULES
+        displayLabelAndDescription: CURRENT_NOT_HISTORICAL
+        semanticChange: NEW_ID_REQUIRED
       type: object
       additionalProperties: false
       required: [formId, formVersion, fields]
@@ -1060,21 +1081,35 @@ components:
     CustomerTicketFieldDefinition:
       type: object
       additionalProperties: false
-      required: [id, machineKey, type, label]
+      required: [id, machineKey, type, label, validation]
       properties:
         id: {type: string, format: uuid}
         machineKey: {type: string, pattern: '^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$', maxLength: 120}
         type: {$ref: '#/components/schemas/TicketFieldType'}
-        label: {type: string, minLength: 1, maxLength: 120}
-        description: {type: string, maxLength: 500}
+        label: {type: string, minLength: 1, maxLength: 120, description: 현재 customer display copy이며 formVersion snapshot 대상이 아닙니다.}
+        description: {type: string, maxLength: 500, description: 현재 customer display copy이며 과거 문구 재현을 보장하지 않습니다.}
+        validation: {$ref: '#/components/schemas/CustomerTicketFieldValidation'}
+    CustomerTicketFieldValidation:
+      type: object
+      additionalProperties: false
+      properties:
+        minimum: {type: number}
+        maximum: {type: number}
+        precision: {type: integer, minimum: 1, maximum: 18}
+        scale: {type: integer, minimum: 0, maximum: 12}
+        minLength: {type: integer, minimum: 0, maximum: 10000}
+        maxLength: {type: integer, minimum: 1, maximum: 10000}
+        regex: {type: string, maxLength: 300, description: 서버 allowlist로 승인된 safe regular expression만 허용합니다.}
+      description: Published formVersion에 고정되어 final create validation에 다시 사용하는 customer-effective bounds입니다.
     CustomerTicketFieldOption:
       type: object
       additionalProperties: false
-      required: [id, machineKey, label]
+      required: [id, machineKey, label, order]
       properties:
         id: {type: string, format: uuid}
         machineKey: {type: string, pattern: '^[a-z][a-z0-9-]*$', maxLength: 80}
-        label: {type: string, minLength: 1, maxLength: 120}
+        label: {type: string, minLength: 1, maxLength: 120, description: 현재 customer display copy이며 formVersion snapshot 대상이 아닙니다.}
+        order: {type: integer, minimum: 0, description: Published formVersion에 고정된 customer option order입니다.}
     ProjectedTicketField:
       type: object
       required: [field, visible, editable, required]

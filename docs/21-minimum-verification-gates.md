@@ -984,8 +984,10 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 
 ### CFG-006 — Customer form candidate projection and submission binding
 
+- the public initial projection accepts only optional `formId`; the server fixes `ticketKind=CUSTOMER_REQUEST`. Internal ticket kinds supplied through public inputs are rejected with the same existence-safe validation/unavailable semantics.
 - initial and candidate projections expose only the current published customer form and customer-visible fields/options after server evaluation of allowlisted typed values.
 - candidate projection is not an authorization token; final create repeats current form/version, visibility, requiredness, type, and option validation.
+- a published form version freezes field/option IDs and machine keys, field type/validation, option membership/order, customer visibility/editability/requiredness, placement order, and condition rules. Display label/description resolves from current copy, is not historically reproducible, and a semantic field/option change requires a new ID.
 - selected form/version is preserved even with zero custom values; hidden/readonly values are dropped and staff-only/unknown input returns an existence-safe validation problem.
 - ticket, first PUBLIC comment, form selection, normalized values, one TicketAudit, required consent acceptances, CLEAN attachment links, access token, and mail intent obey the documented atomicity boundary.
 - initial JSON/multipart creation requires a stable high-entropy `clientCommandId`; the scoped canonical request and ordered attachment-manifest hash make same-payload replay return one logical ticket, mismatched reuse return `409`, and concurrent finalization single-winner without persisting a raw command ID or access token.

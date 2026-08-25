@@ -171,6 +171,20 @@ unique(ticket_number)
 
 실제 인덱스는 query plan 근거로 조정한다.
 
+### ticket_form_selections
+
+```text
+ticket_id PK/FK
+form_id
+form_version
+selected_at
+```
+
+- 이 row가 값 개수와 무관한 ticket-level selected form/version의 유일한 source of truth다.
+- `ticket_custom_field_values.form_id/form_version`은 V82에서 selection을 backfill한 뒤 제거하는 중복 열이며 새 코드가 읽거나 쓰지 않는다.
+- Backfill은 ticket별 non-null form/version distinct tuple이 하나일 때만 selection을 만든다. 둘 이상이면 migration을 실패시켜 사람이 데이터를 정정한 뒤 forward migration을 다시 실행한다.
+- 기존 value가 0개인 ticket에는 구 schema가 form을 기록하지 못했으므로 selection을 추론하지 않는다. V82 이후 새 문의는 custom value가 없어도 selection을 함께 저장한다.
+
 ### ticket_comments
 
 ```text
