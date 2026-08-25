@@ -285,6 +285,28 @@ interface TicketAssignmentPolicy {
     fun isActiveGroup(groupId: UUID): Boolean
 
     fun isActiveMember(groupId: UUID, staffId: UUID): Boolean
+
+    fun requireValidChange(
+        currentAssigneeId: UUID?,
+        targetGroupId: UUID?,
+        targetAssigneeId: UUID?,
+        groupRequested: Boolean,
+        assigneeRequested: Boolean,
+    ) {
+        if (groupRequested && targetGroupId != null && !isActiveGroup(targetGroupId)) {
+            throw TicketAssignmentInvalidException("The target group is not active")
+        }
+        if (groupRequested && !assigneeRequested && currentAssigneeId != null &&
+            (targetGroupId == null || !isActiveMember(targetGroupId, currentAssigneeId))
+        ) {
+            throw TicketAssignmentInvalidException("Changing group requires an explicit compatible assignee or clear")
+        }
+        if ((groupRequested || assigneeRequested) && targetAssigneeId != null &&
+            (targetGroupId == null || !isActiveMember(targetGroupId, targetAssigneeId))
+        ) {
+            throw TicketAssignmentInvalidException("The assignee must be an active member of the target group")
+        }
+    }
 }
 
 interface TicketOrganizationConsistencyGuard {

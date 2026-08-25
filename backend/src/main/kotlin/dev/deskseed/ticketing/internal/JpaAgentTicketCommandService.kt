@@ -45,6 +45,7 @@ import dev.deskseed.ticketing.PublicAgentReplyRecorded
 import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketCollaborationUpdated
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.TicketStatusTransitionPolicy
 import dev.deskseed.ticketing.TicketSlaLifecycleChanged
 import dev.deskseed.ticketing.TicketSubmitted
 import dev.deskseed.ticketing.TicketTransitionInvalidException
@@ -58,7 +59,6 @@ import dev.deskseed.ticketing.TransferTicketCommand
 import dev.deskseed.ticketing.TriggerTicketCommandService
 import dev.deskseed.ticketing.internal.domain.ParentChildRelationRules
 import dev.deskseed.ticketing.internal.domain.Ticket
-import dev.deskseed.ticketing.internal.domain.TicketStatusTransitions
 import jakarta.persistence.OptimisticLockException
 import org.springframework.dao.DataAccessException
 import org.springframework.context.ApplicationEventPublisher
@@ -1607,9 +1607,7 @@ internal class AgentTicketCommandTransaction(
 
     private fun validateStatusChange(old: TicketStatus, new: TicketStatus, requested: Boolean) {
         if (!requested) return
-        if (new == TicketStatus.CLOSED || !TicketStatusTransitions.isAllowed(old, new)) {
-            throw TicketTransitionInvalidException("The requested staff status transition is not allowed")
-        }
+        TicketStatusTransitionPolicy.requireStaffTransition(old, new)
     }
 
     private fun validateAssignment(groupId: UUID?, assigneeId: UUID?) {
@@ -1627,21 +1625,13 @@ internal class AgentTicketCommandTransaction(
         newGroupId: UUID?,
         newAssigneeId: UUID?,
     ) {
-        val groupRequested = TicketField.GROUP_ID in command.changedFields
-        val assigneeRequested = TicketField.ASSIGNEE_ID in command.changedFields
-        if (groupRequested && newGroupId != null && !assignmentPolicy.isActiveGroup(newGroupId)) {
-            throw TicketAssignmentInvalidException("The target group is not active")
-        }
-        if (groupRequested && !assigneeRequested && oldAssigneeId != null &&
-            (newGroupId == null || !assignmentPolicy.isActiveMember(newGroupId, oldAssigneeId))
-        ) {
-            throw TicketAssignmentInvalidException("Changing group requires an explicit compatible assignee or clear")
-        }
-        if ((groupRequested || assigneeRequested) && newAssigneeId != null &&
-            (newGroupId == null || !assignmentPolicy.isActiveMember(newGroupId, newAssigneeId))
-        ) {
-            throw TicketAssignmentInvalidException("The assignee must be an active member of the target group")
-        }
+        assignmentPolicy.requireValidChange(
+            currentAssigneeId = oldAssigneeId,
+            targetGroupId = newGroupId,
+            targetAssigneeId = newAssigneeId,
+            groupRequested = TicketField.GROUP_ID in command.changedFields,
+            assigneeRequested = TicketField.ASSIGNEE_ID in command.changedFields,
+        )
     }
 
     private fun validateMacroAssignmentChange(
@@ -1650,21 +1640,13 @@ internal class AgentTicketCommandTransaction(
         newGroupId: UUID?,
         newAssigneeId: UUID?,
     ) {
-        val groupRequested = TicketField.GROUP_ID in command.changedFields
-        val assigneeRequested = TicketField.ASSIGNEE_ID in command.changedFields
-        if (groupRequested && newGroupId != null && !assignmentPolicy.isActiveGroup(newGroupId)) {
-            throw TicketAssignmentInvalidException("The target group is not active")
-        }
-        if (groupRequested && !assigneeRequested && oldAssigneeId != null &&
-            (newGroupId == null || !assignmentPolicy.isActiveMember(newGroupId, oldAssigneeId))
-        ) {
-            throw TicketAssignmentInvalidException("Changing group requires an explicit compatible assignee or clear")
-        }
-        if ((groupRequested || assigneeRequested) && newAssigneeId != null &&
-            (newGroupId == null || !assignmentPolicy.isActiveMember(newGroupId, newAssigneeId))
-        ) {
-            throw TicketAssignmentInvalidException("The assignee must be an active member of the target group")
-        }
+        assignmentPolicy.requireValidChange(
+            currentAssigneeId = oldAssigneeId,
+            targetGroupId = newGroupId,
+            targetAssigneeId = newAssigneeId,
+            groupRequested = TicketField.GROUP_ID in command.changedFields,
+            assigneeRequested = TicketField.ASSIGNEE_ID in command.changedFields,
+        )
     }
 
     private fun appendAudit(

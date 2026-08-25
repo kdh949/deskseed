@@ -246,6 +246,117 @@ class MacroDefinitionIntegrationTest {
     }
 
     @Test
+    fun `preview rejects a status transition that macro apply would reject and definitions reject CLOSED`() {
+        val agent = browser("AGENT")
+        val ticketJson = mockMvc.perform(
+            post("/api/v1/agent/tickets")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "requester":{"name":"상태 전이 고객","email":"macro-status-preview@example.com"},
+                      "subject":"상태 전이 미리보기",
+                      "firstComment":{"visibility":"PUBLIC","body":"현재 상태를 확인해 주세요."},
+                      "priority":"NORMAL"
+                    }
+                    """.trimIndent(),
+                ),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val ticketNumber = longField(ticketJson, "ticketNumber")
+        val createdMacro = mockMvc.perform(
+            post("/api/v1/agent/personal-macros")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"신규 보류 전이","actions":[{"type":"STATUS","status":"ON_HOLD"}]}"""),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val macroId = UUID.fromString(stringField(createdMacro, "id"))
+        mockMvc.perform(
+            put("/api/v1/agent/personal-macros/{macroId}/activation", macroId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isOk)
+
+        mockMvc.perform(
+            post("/api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/preview", ticketNumber, macroId)
+                .session(agent.session).csrf(agent).header("X-Interaction-Id", UUID.randomUUID()),
+        )
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.type").value("/problems/ticket-status-transition-invalid"))
+        assertThat(jdbc.queryForObject(
+            "select status from tickets where ticket_number = ?",
+            String::class.java,
+            ticketNumber,
+        )).isEqualTo("NEW")
+
+        mockMvc.perform(
+            post("/api/v1/agent/personal-macros")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"종료 상태 macro","actions":[{"type":"STATUS","status":"CLOSED"}]}"""),
+        ).andExpect(status().isBadRequest)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from macro_definitions where normalized_name = '종료 상태 macro'",
+            Long::class.java,
+        )).isZero()
+    }
+
+    @Test
+    fun `preview rejects a group-only macro that would leave the current assignee outside the target group`() {
+        val agent = browser("AGENT")
+        val sourceGroupId = UUID.randomUUID()
+        val targetGroupId = UUID.randomUUID()
+        listOf(sourceGroupId, targetGroupId).forEachIndexed { index, groupId ->
+            jdbc.update(
+                "insert into support_groups (id, name, status, created_at, updated_at, version) values (?, ?, 'ACTIVE', now(), now(), 0)",
+                groupId,
+                "매크로 그룹 ${index + 1}",
+            )
+        }
+        jdbc.update(
+            """
+            insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at, version)
+            values (?, ?, ?, 'ACTIVE', now(), now(), 0)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            sourceGroupId,
+            agent.staffId,
+        )
+        val ticketJson = mockMvc.perform(
+            post("/api/v1/agent/tickets")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "requester":{"name":"그룹 전환 고객","email":"macro-group-preview@example.com"},
+                      "subject":"그룹 전환 미리보기",
+                      "firstComment":{"visibility":"PUBLIC","body":"담당 그룹을 바꿔 주세요."},
+                      "priority":"NORMAL",
+                      "groupId":"$sourceGroupId",
+                      "assigneeId":"${agent.staffId}"
+                    }
+                    """.trimIndent(),
+                ),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val ticketNumber = longField(ticketJson, "ticketNumber")
+        val createdMacro = mockMvc.perform(
+            post("/api/v1/agent/personal-macros")
+                .session(agent.session).csrf(agent).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"그룹만 전환","actions":[{"type":"GROUP","groupId":"$targetGroupId"}]}"""),
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val macroId = UUID.fromString(stringField(createdMacro, "id"))
+        mockMvc.perform(
+            put("/api/v1/agent/personal-macros/{macroId}/activation", macroId)
+                .session(agent.session).csrf(agent).header("If-Match", "\"1\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""),
+        ).andExpect(status().isOk)
+
+        mockMvc.perform(
+            post("/api/v1/agent/tickets/{ticketNumber}/macros/{macroId}/preview", ticketNumber, macroId)
+                .session(agent.session).csrf(agent).header("X-Interaction-Id", UUID.randomUUID()),
+        )
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.type").value("/problems/ticket-assignment-invalid"))
+    }
+
+    @Test
     fun `apply commits fields configuration and edited comment as one replayable ticket audit`() {
         val agent = browser("AGENT")
         val groupId = UUID.randomUUID()
