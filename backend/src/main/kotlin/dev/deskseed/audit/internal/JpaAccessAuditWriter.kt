@@ -8,6 +8,7 @@ import dev.deskseed.audit.CustomerSearchExecutedAccessAudit
 import dev.deskseed.audit.SearchExecutedAccessAudit
 import dev.deskseed.audit.SearchResultOpenedAccessAudit
 import dev.deskseed.audit.SavedViewExecutedAccessAudit
+import dev.deskseed.audit.MacroPreviewedAccessAudit
 import dev.deskseed.audit.TicketResourceReadAccessAudit
 import dev.deskseed.audit.TicketViewAccessAudit
 import dev.deskseed.foundation.ActorType
@@ -84,6 +85,51 @@ internal class JpaAccessAuditWriter(
             sanitize(event.context.userAgent, 256),
             event.outcome.name,
             event.httpStatus,
+        )
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun appendMacroPreviewed(event: MacroPreviewedAccessAudit) {
+        validateStaffContext(event.context)
+        require(event.outcome == AccessAuditOutcome.SUCCEEDED) { "Macro preview audit requires success outcome" }
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                source, action, resource_type, resource_id, ticket_number,
+                interaction_id, session_fingerprint, auth_type, request_id, correlation_id,
+                ip_address, user_agent, outcome, http_status
+            ) values (?, ?, ?, ?, ?, ?, 'MACRO_PREVIEWED', 'MACRO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            Timestamp.from(event.occurredAt),
+            event.context.actorType.name,
+            event.context.actorId,
+            actorSnapshot(event.context.actorDisplaySnapshot),
+            event.context.source.name,
+            event.macroId,
+            event.ticketNumber,
+            event.interactionId,
+            event.context.sessionFingerprint,
+            event.context.authType.name,
+            event.context.requestId.take(100),
+            event.context.correlationId.take(100),
+            event.context.ipAddress?.take(64),
+            sanitize(event.context.userAgent, 256),
+            event.outcome.name,
+            event.httpStatus,
+        )
+        jdbcTemplate.update(
+            """
+            insert into macro_preview_audit_details (
+                access_event_id, macro_id, macro_version, ticket_id, ticket_version
+            ) values (?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            event.macroId,
+            event.macroVersion,
+            event.ticketId,
+            event.ticketVersion,
         )
     }
 

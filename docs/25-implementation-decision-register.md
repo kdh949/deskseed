@@ -60,7 +60,8 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-052 | Organization mutations and membership-dependent staff ticket commands share one PostgreSQL transaction consistency guard | accepted | measured command contention justifies ordered keyed locks |
 | D-053 | The current frontend ships Agent Queue/read-only Workspace only and preserves deferred capabilities as OpenAPI/headless contracts under one canonical design system | accepted | a deferred capability is recomposed as a current-design vertical slice |
 | D-054 | Committed OpenAPI remains authoritative; Scalar renders manually owned Korean domain documentation, while springdoc runtime output is drift evidence only and validators never generate inferred prose | accepted | contract ownership or API delivery model changes |
-| D-055 | Parallel Wave delivery uses owned Core OpenAPI fragments, a deterministic committed bundle, and an ownership registry; typed workflow extensions fail closed outside central switches | accepted | a different contract composition or extension boundary is approved |
+| D-055 | Parallel Wave delivery used delivery-time ownership reservations; the durable contract is owned Core OpenAPI fragments plus a deterministic committed bundle, and typed workflow extensions fail closed outside central switches | accepted | a different contract composition or extension boundary is approved |
+| D-056 | Ticket configuration uses typed EAV values, immutable form versions, server-authoritative conditional projection, normalized tags, and custom labels mapped to fixed status categories | accepted | field type set, query evidence, or status/state-machine policy changes |
 
 D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
 IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.

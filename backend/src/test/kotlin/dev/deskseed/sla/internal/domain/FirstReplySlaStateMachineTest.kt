@@ -18,6 +18,7 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 
+@dev.deskseed.testsupport.category.FastTest
 class FirstReplySlaStateMachineTest {
     private val machine = FirstReplySlaStateMachine(
         schedule = seoulWeekdays(),

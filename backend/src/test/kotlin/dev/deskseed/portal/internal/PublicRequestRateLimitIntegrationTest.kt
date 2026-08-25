@@ -5,8 +5,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -15,10 +13,6 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
@@ -28,7 +22,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.springframework.transaction.support.TransactionTemplate
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.portal.public-request-rate-limit.enabled=true",
         "deskseed.portal.public-request-rate-limit.window=1m",
@@ -42,7 +36,7 @@ import org.springframework.transaction.support.TransactionTemplate
     ],
 )
 @AutoConfigureMockMvc
-@Testcontainers
+@dev.deskseed.testsupport.category.IntegrationTest
 class PublicRequestRateLimitIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
@@ -325,10 +319,4 @@ class PublicRequestRateLimitIntegrationTest {
         )
     }
 
-    companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
-    }
 }

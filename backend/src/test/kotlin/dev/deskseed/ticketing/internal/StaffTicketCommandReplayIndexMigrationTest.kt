@@ -10,6 +10,7 @@ import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class StaffTicketCommandReplayIndexMigrationTest {
     @Test
     fun `version fourteen adds the query aligned partial staff command replay index`() {

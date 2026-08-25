@@ -37,6 +37,7 @@ object WebhookEventCatalog {
         WebhookEventDescriptor("ticket.status.changed", 1, WebhookPayloadPolicy.entries.toSet()),
         WebhookEventDescriptor("ticket.sla.changed", 1, WebhookPayloadPolicy.entries.toSet()),
         WebhookEventDescriptor("attachment.ready", 1, WebhookPayloadPolicy.entries.toSet()),
+        WebhookEventDescriptor("ticket.trigger.executed", 1, WebhookPayloadPolicy.entries.toSet()),
     ).also { values ->
         require(values.map { it.eventType to it.version }.distinct().size == values.size) {
             "Webhook event descriptors must not duplicate an event type and version"

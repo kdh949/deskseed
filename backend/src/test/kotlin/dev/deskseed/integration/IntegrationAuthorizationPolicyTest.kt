@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class IntegrationAuthorizationPolicyTest {
     private val policy = IntegrationAuthorizationPolicy()
     private val groupA = UUID.randomUUID()

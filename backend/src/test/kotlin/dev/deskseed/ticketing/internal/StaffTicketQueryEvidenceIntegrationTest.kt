@@ -11,19 +11,13 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.config.BeanPostProcessor
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.dao.InvalidDataAccessApiUsageException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DelegatingDataSource
 import org.springframework.transaction.annotation.Transactional
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.sql.Connection
@@ -32,9 +26,9 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import javax.sql.DataSource
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
-@Testcontainers
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 @Import(QueryCountTestConfiguration::class)
+@dev.deskseed.testsupport.category.IntegrationTest
 class StaffTicketQueryEvidenceIntegrationTest {
     @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
@@ -53,7 +47,8 @@ class StaffTicketQueryEvidenceIntegrationTest {
     @BeforeEach
     fun seed() {
         jdbcTemplate.execute(
-            "truncate table search_audit_query_ciphertexts, search_audit_customer_result_items, " +
+            "truncate table macro_preview_audit_details, search_audit_query_ciphertexts, " +
+                "search_audit_customer_result_items, " +
                 "search_audit_result_items, search_audit_details, access_audit_events",
         )
         jdbcTemplate.update("delete from request_access_tokens")
@@ -328,12 +323,6 @@ class StaffTicketQueryEvidenceIntegrationTest {
         }.hasMessageContaining("Access audit history is append-only")
     }
 
-    companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
-    }
 }
 
 internal class JdbcQueryCounter {

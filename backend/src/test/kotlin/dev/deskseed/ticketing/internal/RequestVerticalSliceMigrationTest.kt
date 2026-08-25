@@ -11,6 +11,7 @@ import java.sql.DriverManager
 import java.time.Duration
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class RequestVerticalSliceMigrationTest {
     @Test
     fun `existing request grants and audit events migrate to mandatory lifecycle metadata`() {

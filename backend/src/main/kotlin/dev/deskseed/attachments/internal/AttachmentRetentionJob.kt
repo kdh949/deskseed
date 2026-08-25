@@ -1,8 +1,6 @@
 package dev.deskseed.attachments.internal
 
 import dev.deskseed.attachments.AttachmentCleanupService
-import org.springframework.context.annotation.Configuration
-import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Clock
@@ -24,7 +22,3 @@ internal class AttachmentRetentionJob(
 
     fun purgeExpired(now: Instant): Int = cleanupService.purgeExpired(now)
 }
-
-@Configuration(proxyBeanMethods = false)
-@EnableScheduling
-internal class AttachmentSchedulingConfiguration

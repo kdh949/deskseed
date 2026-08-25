@@ -48,7 +48,7 @@ Detailed implementation specifications exist for Platform API/webhooks/exports/S
 - M2 regression tests cover generic and disabled login failure, lockout, logout/expiry, session/security headers, ADMIN API and method authorization, duplicate membership, audit rollback, direct admin URL denial, and CSRF-protected browser CRUD.
 - `V2__add_ticket_audit_command_context.sql` is additive. It preserves existing canonical audit rows with the bounded `legacy-migration` marker and requires context on new writes without bypassing append-only triggers.
 - Testcontainers requires a Docker-compatible container runtime. The repository does not use H2 as PostgreSQL proof.
-- `scripts/validate_documentation.py` verifies documentation structure and machine-readable contracts; it does not verify Kotlin/React runtime behavior.
+- `make docs-check` runs the read-only semantic documentation and machine-readable contract checks; it does not verify Kotlin/React runtime behavior.
 - `scripts/compose-smoke.sh` uses a unique Compose project name and removes only the disposable containers and volume it creates.
 
 ## Not yet implemented or intentionally limited

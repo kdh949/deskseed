@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class AuditActivityCursorCodecTest {
     private val filters = AuditActivityFilter(
         from = Instant.parse("2026-08-01T00:00:00Z"),

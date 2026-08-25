@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class TicketCommandAuditMigrationTest {
     @Test
     fun `version seven backfills expected version and preserves append-only audit protection`() {

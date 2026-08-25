@@ -12,6 +12,7 @@ import java.sql.DriverManager
 import java.sql.SQLException
 
 @Testcontainers
+@dev.deskseed.testsupport.category.MigrationTest
 class StaffOrganizationMigrationTest {
     @Test
     fun `migration creates constrained organization and append-only security audit tables`() {

@@ -220,3 +220,25 @@ Loop controls must cross this boundary using event/correlation IDs and integrati
 - `AUT-007`: dry run has zero side effects
 - `AUT-008`: version activation/rollback and audit
 - `AUT-009`: automation scanner idempotency/crash recovery
+
+## 17. Initial durable evaluation boundary
+
+The first implementation listens to the synchronous `TicketSubmitted` application event with transaction propagation `MANDATORY`. It snapshots active trigger IDs, immutable versions, and positions into one `trigger_evaluation_jobs` row before the originating customer, staff, or Platform API transaction commits.
+
+- no active trigger means no job row;
+- job insertion failure rolls back the ticket command and its audit because otherwise the trigger event would be lost;
+- later definition deactivation cannot rewrite an already captured version snapshot;
+- the job appender performs no condition action and no network I/O;
+- webhook delivery failure occurs after both ticket and trigger command commits and cannot roll either mutation back.
+
+The worker claims jobs with `FOR UPDATE SKIP LOCKED` and a 60-second lease in a separate transaction. One execution transaction walks the captured versions in `(position, triggerId)` order, reloads the latest ticket before every rule, invokes a typed `ActorType.TRIGGER` ticket command, appends `TRIGGER_APPLIED` provenance, and then appends the metadata-only `ticket.trigger.executed` event. A failed invariant rolls the entire execution transaction back and moves the job through bounded retry to dead letter; it never leaves a partial ticket mutation or webhook intent.
+
+## 18. Initial solved-ticket automation boundary
+
+The first time-based slice only accepts a versioned elapsed-time condition (`solvedAgeMinutes`) and the system-only `CLOSE_TICKET` action. A 60-second scanner uses one PostgreSQL advisory transaction lock, the partial `(solved_at, id)` index for `SOLVED` tickets, and a maximum batch of 100 candidate pairs.
+
+Candidate identity is `(automationId, automationVersion, ticketId, solvedAt)`. The discovery query excludes existing identities before its limit so repeated scans cannot starve later rows. Reopening and solving a ticket creates a different interval identity; rescanning the same SOLVED interval does not.
+
+Each candidate captures the active definition's immutable `position` snapshot. For one `(ticketId, solvedAt)` interval, only the earliest nonterminal candidate in `(positionSnapshot, automationId, automationVersion, candidateId)` order can be leased; later candidates remain blocked while that predecessor is pending, leased, or retry-scheduled. This preserves the policy that can emit `AUTOMATION_APPLIED` across multiple workers instead of letting UUID claim order decide it.
+
+Candidate execution claims one row with `FOR UPDATE SKIP LOCKED` and a 60-second lease. Before mutation it locks and compares the current ticket status and `solvedAt` to the captured interval. A mismatch produces immutable `SKIPPED_STATE_CHANGED` execution history; a match invokes the normal ticket transaction boundary with `ActorType.AUTOMATION`, records `AUTOMATION_APPLIED` plus `STATUS_CHANGED`, and preserves the original `solvedAt`. Audit or storage failure rolls back the close and execution together, then bounded retry moves the candidate to dead letter after five attempts.

@@ -113,6 +113,9 @@ import type {
   UpdateTicketCommand,
   AttachmentUpload,
   AttachmentDownload,
+  TicketDraft,
+  TicketDraftChannel,
+  SaveTicketDraftInput,
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -170,6 +173,10 @@ const TICKET_PRIORITIES = new Set<TicketPriority>([
   'URGENT',
 ])
 const TICKET_VISIBILITIES = new Set<TicketVisibility>(['PUBLIC', 'INTERNAL'])
+const TICKET_DRAFT_CHANNELS = new Set<TicketDraftChannel>([
+  'PUBLIC_REPLY',
+  'INTERNAL_NOTE',
+])
 const FIRST_REPLY_SLA_STATES = new Set<FirstReplySlaBadge['state']>([
   'ACTIVE',
   'AT_RISK',
@@ -495,6 +502,38 @@ function decodeAttachmentUpload(value: unknown): AttachmentUpload | undefined {
   return {
     ...attachment,
     scanStatus: 'CLEAN',
+    expiresAt: value.expiresAt,
+  }
+}
+
+function decodeTicketDraft(value: unknown): TicketDraft | undefined {
+  if (!isRecord(value) || !Array.isArray(value.attachmentIds)) return undefined
+  if (
+    !isTicketNumber(value.ticketNumber) ||
+    typeof value.channel !== 'string' ||
+    !TICKET_DRAFT_CHANNELS.has(value.channel as TicketDraftChannel) ||
+    typeof value.body !== 'string' ||
+    value.body.length > 20_000 ||
+    !value.attachmentIds.every(isUuid) ||
+    value.attachmentIds.length > 5 ||
+    new Set(value.attachmentIds).size !== value.attachmentIds.length ||
+    !isUuid(value.clientDeviceId) ||
+    !isNonNegativeSafeInteger(value.baseTicketVersion) ||
+    !isPositiveSafeInteger(value.draftVersion) ||
+    !isTimestamp(value.updatedAt) ||
+    !isTimestamp(value.expiresAt)
+  ) {
+    return undefined
+  }
+  return {
+    ticketNumber: value.ticketNumber,
+    channel: value.channel as TicketDraftChannel,
+    body: value.body,
+    attachmentIds: value.attachmentIds,
+    clientDeviceId: value.clientDeviceId,
+    baseTicketVersion: value.baseTicketVersion,
+    draftVersion: value.draftVersion,
+    updatedAt: value.updatedAt,
     expiresAt: value.expiresAt,
   }
 }
@@ -3260,6 +3299,46 @@ export async function updateAgentTicket(
   const result = decodeTicketCommandResult(await checkedBody(response))
   if (!result) throw malformedSuccess(response)
   return result
+}
+
+export async function getAgentTicketDraft(
+  ticketNumber: number,
+  channel: TicketDraftChannel,
+): Promise<TicketDraft> {
+  const response = await staffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/drafts/${channel}`,
+  )
+  const decoded = decodeTicketDraft(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function saveAgentTicketDraft(
+  ticketNumber: number,
+  channel: TicketDraftChannel,
+  input: SaveTicketDraftInput,
+): Promise<TicketDraft> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/drafts/${channel}`,
+    'PUT',
+    input,
+  )
+  const decoded = decodeTicketDraft(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function clearAgentTicketDraft(
+  ticketNumber: number,
+  channel: TicketDraftChannel,
+  expectedDraftVersion: number,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/agent/tickets/${ticketNumber}/drafts/${channel}?expectedDraftVersion=${expectedDraftVersion}`,
+      'DELETE',
+    ),
+  )
 }
 
 export async function transferAgentTicket(

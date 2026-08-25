@@ -13,8 +13,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
@@ -28,7 +26,6 @@ import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
@@ -42,10 +39,9 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.mail.delivery-enabled=true",
-        "deskseed.mail.scheduling-enabled=false",
         "deskseed.mail.transport=smtp",
         "deskseed.staff-auth.bootstrap.enabled=false",
         "spring.mail.properties[mail.smtp.connectiontimeout]=3000",
@@ -55,6 +51,7 @@ import java.util.UUID
 )
 @Testcontainers
 @AutoConfigureMockMvc
+@dev.deskseed.testsupport.category.SlowTest
 class MailpitApiE2ETest {
     @Autowired private lateinit var mailPort: OutboundMailPort
     @Autowired private lateinit var worker: MailDeliveryWorker
@@ -338,11 +335,6 @@ class MailpitApiE2ETest {
 
     companion object {
         private const val CUSTOMER_COOKIE = "DESKSEED_CUSTOMER_SESSION"
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
 
         @Container
         @JvmStatic

@@ -6,8 +6,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
@@ -21,10 +19,6 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.ObjectMapper
 import java.security.MessageDigest
 import java.sql.Timestamp
@@ -35,18 +29,17 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
         "deskseed.customer-portal.claim-grant-ttl=15m",
         "deskseed.customer-portal.claim-signing-key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
         "deskseed.customer-portal.claim-fingerprint-key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
-        "deskseed.attachments.cleanup-initial-delay=1d",
     ],
 )
 @AutoConfigureMockMvc
-@Testcontainers
 @ExtendWith(OutputCaptureExtension::class)
+@dev.deskseed.testsupport.category.IntegrationTest
 class CustomerRequestPortalIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
@@ -969,10 +962,5 @@ class CustomerRequestPortalIntegrationTest {
     companion object {
         private const val CUSTOMER_COOKIE = "DESKSEED_CUSTOMER_SESSION"
         private val PDF_BYTES = "%PDF-1.4\nclean authenticated customer attachment".toByteArray()
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

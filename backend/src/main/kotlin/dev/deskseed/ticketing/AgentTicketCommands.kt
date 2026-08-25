@@ -10,7 +10,9 @@ enum class TicketField(val externalName: String) {
     STATUS("status"),
     PRIORITY("priority"),
     GROUP_ID("groupId"),
-    ASSIGNEE_ID("assigneeId");
+    ASSIGNEE_ID("assigneeId"),
+    /** One optimistic-concurrency unit for typed values, tags, and custom status. */
+    CONFIGURATION("configuration");
 
     companion object {
         fun fromExternalName(value: String): TicketField? = entries.firstOrNull { it.externalName == value }
@@ -53,6 +55,129 @@ data class UpdateAgentTicketCommand(
     val actor: StaffTicketCommandActor,
     val context: CommandContext,
 )
+
+/**
+ * Deliberately typed, one-of wire value for the ticket configuration command.
+ * The ticketing module owns command/replay/audit semantics; the configuration
+ * module validates the field definition, projected form, and storage shape.
+ */
+data class TicketConfigurationFieldValue(
+    val booleanValue: Boolean? = null,
+    val numberValue: String? = null,
+    val optionId: UUID? = null,
+    val shortTextValue: String? = null,
+    val longTextValue: String? = null,
+) {
+    init {
+        require(
+            listOf(booleanValue, numberValue, optionId, shortTextValue, longTextValue).count { it != null } == 1,
+        ) { "A ticket configuration value must contain exactly one typed value" }
+    }
+}
+
+data class UpdateTicketConfigurationCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val formVersion: Int?,
+    val fieldValues: Map<String, TicketConfigurationFieldValue>,
+    val addTagIds: Set<UUID>,
+    val removeTagIds: Set<UUID>,
+    val customStatusId: UUID?,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class ApplyMacroTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val macroId: UUID,
+    val macroVersion: Int,
+    val orderedActionTypes: List<String>,
+    val changedFields: Set<TicketField>,
+    val status: TicketStatus?,
+    val priority: TicketPriority?,
+    val groupId: UUID?,
+    val assigneeId: UUID?,
+    val comment: AgentCommentDraft?,
+    val formVersion: Int?,
+    val fieldValues: Map<String, TicketConfigurationFieldValue>,
+    val addTagIds: Set<UUID>,
+    val removeTagIds: Set<UUID>,
+    val customStatusId: UUID?,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class ApplyTriggerTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val triggerId: UUID,
+    val triggerVersion: Int,
+    val executionId: UUID,
+    val rootTicketAuditId: UUID,
+    val groupId: UUID?,
+    val context: CommandContext,
+)
+
+interface TriggerTicketCommandService {
+    fun applyTrigger(command: ApplyTriggerTicketCommand): TicketCommandResult
+}
+
+data class ApplyAutomationTicketCommand(
+    val ticketNumber: Long,
+    val expectedVersion: Long,
+    val automationId: UUID,
+    val automationVersion: Int,
+    val candidateId: UUID,
+    val expectedSolvedAt: Instant,
+    val eligibleAt: Instant,
+    val context: CommandContext,
+)
+
+interface AutomationTicketCommandService {
+    fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult
+}
+
+class AutomationTicketStateChangedException : RuntimeException()
+
+/** Rechecked inside the ticket transaction after idempotent replay lookup. */
+fun interface TicketMacroActivationGuard {
+    fun requireActive(macroId: UUID, macroVersion: Int, actorStaffId: UUID)
+}
+
+data class TicketConfigurationMutationRequest(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ticketKind: TicketKind,
+    val currentStatus: TicketStatus,
+    val formVersion: Int?,
+    val fieldValues: Map<String, TicketConfigurationFieldValue>,
+    val addTagIds: Set<UUID>,
+    val removeTagIds: Set<UUID>,
+    val customStatusId: UUID?,
+    val occurredAt: Instant,
+)
+
+data class TicketConfigurationAuditChange(
+    val type: String,
+    /** Bounded JSON summaries only; typed field values are never copied into TicketAudit. */
+    val before: String?,
+    val after: String?,
+    val metadata: Map<String, Any?>,
+)
+
+data class TicketConfigurationMutationResult(
+    val status: TicketStatus,
+    val auditChanges: List<TicketConfigurationAuditChange>,
+)
+
+/** Public named interface that keeps ticketing independent of configuration persistence internals. */
+interface TicketConfigurationMutationHandler {
+    /** Validates the same current configuration boundary without writing rows. */
+    fun validate(request: TicketConfigurationMutationRequest)
+
+    fun apply(request: TicketConfigurationMutationRequest): TicketConfigurationMutationResult
+}
 
 data class TransferTicketCommand(
     val ticketNumber: Long,
@@ -135,6 +260,10 @@ interface AgentTicketCommandService {
 
     fun update(command: UpdateAgentTicketCommand): TicketCommandResult
 
+    fun updateConfiguration(command: UpdateTicketConfigurationCommand): TicketCommandResult
+
+    fun applyMacro(command: ApplyMacroTicketCommand): TicketCommandResult
+
     fun transfer(command: TransferTicketCommand): TicketCommandResult
 
     fun createChild(command: CreateChildTicketCommand): CreateChildTicketResult
@@ -156,6 +285,28 @@ interface TicketAssignmentPolicy {
     fun isActiveGroup(groupId: UUID): Boolean
 
     fun isActiveMember(groupId: UUID, staffId: UUID): Boolean
+
+    fun requireValidChange(
+        currentAssigneeId: UUID?,
+        targetGroupId: UUID?,
+        targetAssigneeId: UUID?,
+        groupRequested: Boolean,
+        assigneeRequested: Boolean,
+    ) {
+        if (groupRequested && targetGroupId != null && !isActiveGroup(targetGroupId)) {
+            throw TicketAssignmentInvalidException("The target group is not active")
+        }
+        if (groupRequested && !assigneeRequested && currentAssigneeId != null &&
+            (targetGroupId == null || !isActiveMember(targetGroupId, currentAssigneeId))
+        ) {
+            throw TicketAssignmentInvalidException("Changing group requires an explicit compatible assignee or clear")
+        }
+        if ((groupRequested || assigneeRequested) && targetAssigneeId != null &&
+            (targetGroupId == null || !isActiveMember(targetGroupId, targetAssigneeId))
+        ) {
+            throw TicketAssignmentInvalidException("The assignee must be an active member of the target group")
+        }
+    }
 }
 
 interface TicketOrganizationConsistencyGuard {
@@ -180,6 +331,8 @@ class TicketFieldConflictException(
 ) : RuntimeException()
 
 class TicketVersionPreconditionFailedException(val currentVersion: Long) : RuntimeException()
+
+class TicketMacroVersionUnavailableException : RuntimeException()
 
 class TicketRelationInvalidException(val reason: String) : RuntimeException(reason)
 

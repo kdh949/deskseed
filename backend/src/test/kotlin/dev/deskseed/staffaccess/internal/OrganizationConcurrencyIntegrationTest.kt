@@ -17,17 +17,11 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
@@ -36,8 +30,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
-@Testcontainers
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
+@dev.deskseed.testsupport.category.SlowTest
 class OrganizationConcurrencyIntegrationTest {
     @Autowired
     private lateinit var administration: OrganizationAdministration
@@ -51,26 +45,12 @@ class OrganizationConcurrencyIntegrationTest {
     @Autowired
     private lateinit var dataSource: DataSource
 
+    @Autowired
+    private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
+
     @BeforeEach
     fun clearState() {
-        jdbcTemplate.execute(
-            """
-            truncate table
-                access_audit_events,
-                admin_security_audit_events,
-                ticket_audit_events,
-                ticket_audits,
-                ticket_comments,
-                request_access_tokens,
-                tickets,
-                customers,
-                group_memberships,
-                support_groups,
-                staff_login_throttles,
-                staff_accounts
-            restart identity cascade
-            """.trimIndent(),
-        )
+        databaseCleaner.resetMutableStaffTicketState()
     }
 
     @Test
@@ -531,10 +511,5 @@ class OrganizationConcurrencyIntegrationTest {
         private const val ORGANIZATION_LOCK_RESOURCE = 1_330_797_127
         private const val TEST_LOCK_NAMESPACE = 1_146_309_958
         private const val TEST_LOCK_RESOURCE = 1_330_797_128
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }

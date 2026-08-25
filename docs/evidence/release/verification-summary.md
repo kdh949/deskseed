@@ -11,7 +11,7 @@ unexecuted rows remain `NOT RUN` rather than inheriting status from older artifa
 | Area | Status | Command / evidence |
 |---|---|---|
 | GitHub PR CI | PASS | PR #22 code-bearing head run `31564637144`: documentation contracts, backend, frontend quality, Chromium browser, Compose ownership/health, anonymous-request real stack and Audit Explorer real stack all passed; no retry/skip or auto-merge. Later evidence-only commits must retain a green documentation contract check before merge |
-| Documentation/OpenAPI validator | PASS | `python3 scripts/validate_documentation.py`; 55 canonical docs, 26 briefs, 37 ADRs, 56 operations, 84 visual baselines; 26/26 implemented staff-session operations expose the expected-actor header and actor 400/409 contract |
+| Documentation/OpenAPI validator | PASS | `make docs-check`; Core source/bundle parity, OpenAPI parsing and local references, traceability IDs, links, manually owned descriptions/examples, and implemented staff-session actor 400/409 plus CSRF metadata passed |
 | Frontend format/lint/type/unit/build | PASS | `npm run format:check && npm run lint && npm run typecheck && npm test && npm run build`; 14 files, 150/150, 0 failed/skipped; JS 136.08 kB gzip, CSS 9.74 kB gzip |
 | Backend fresh suite | PASS | `cd backend && ./gradlew clean test`; 29 suites, 134/134, 0 failed/errors/skipped; BUILD SUCCESSFUL in 1m11s |
 | Customer real-stack E2E | PASS | current ownership-isolated wrapper, `bash scripts/run-release-e2e.sh`; Core 5/5 in 7.5s including Views/Workspace, real two-session conflict, transfer and child |

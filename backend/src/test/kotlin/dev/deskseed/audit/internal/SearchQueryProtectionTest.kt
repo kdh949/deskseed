@@ -8,6 +8,7 @@ import java.time.Instant
 import java.util.Base64
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class SearchQueryProtectionTest {
     private val eventId = UUID.fromString("10000000-0000-0000-0000-000000000001")
     private val occurredAt = Instant.parse("2026-08-11T00:00:00Z")

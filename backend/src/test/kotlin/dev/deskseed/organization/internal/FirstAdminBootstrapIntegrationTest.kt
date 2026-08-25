@@ -5,22 +5,18 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.DefaultApplicationArguments
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 
-@SpringBootTest
-@Testcontainers
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
+    properties = ["deskseed.staff-auth.bootstrap.enabled=true"],
+)
+@dev.deskseed.testsupport.category.IntegrationTest
 class FirstAdminBootstrapIntegrationTest {
     @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
@@ -60,11 +56,6 @@ class FirstAdminBootstrapIntegrationTest {
         private val passwordFile: Path = Files.createTempFile("deskseed-bootstrap-", ".secret").also {
             Files.writeString(it, "$bootstrapPassword\n")
         }
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
 
         @DynamicPropertySource
         @JvmStatic

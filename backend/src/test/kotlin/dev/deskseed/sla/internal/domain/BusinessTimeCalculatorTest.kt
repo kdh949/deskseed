@@ -17,6 +17,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.util.TimeZone
 
+@dev.deskseed.testsupport.category.FastTest
 class BusinessTimeCalculatorTest {
     @Test
     fun `Seoul Friday addition crosses the closed weekend and elapsed minutes match`() {

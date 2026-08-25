@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import org.junit.jupiter.api.Test
 import java.util.UUID
 
+@dev.deskseed.testsupport.category.FastTest
 class ParentChildRelationRulesTest {
     @Test
     fun `self link is rejected`() {

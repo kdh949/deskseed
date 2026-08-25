@@ -4,8 +4,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.core.io.ClassPathResource
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
@@ -14,17 +12,13 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
 import org.yaml.snakeyaml.LoaderOptions
 import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.ObjectMapper
 
-@SpringBootTest(properties = ["deskseed.staff-auth.bootstrap.enabled=false"])
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 @AutoConfigureMockMvc
-@Testcontainers
+@dev.deskseed.testsupport.category.ContractTest
 class ApiDocumentationIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -140,15 +134,10 @@ class ApiDocumentationIntegrationTest {
 
     companion object {
         private val HTTP_METHODS = setOf("get", "post", "put", "patch", "delete", "head", "options", "trace")
-
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
     }
 }
 
-@SpringBootTest(
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
         "springdoc.api-docs.enabled=true",
@@ -157,7 +146,7 @@ class ApiDocumentationIntegrationTest {
     ],
 )
 @AutoConfigureMockMvc
-@Testcontainers
+@dev.deskseed.testsupport.category.ContractTest
 class ApiDocumentationAdminSecurityIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -174,10 +163,4 @@ class ApiDocumentationAdminSecurityIntegrationTest {
             .andExpect(status().isOk)
     }
 
-    companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres = PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine"))
-    }
 }

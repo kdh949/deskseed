@@ -31,12 +31,11 @@ import java.util.UUID
 @SpringBootTest(
     properties = [
         "deskseed.staff-auth.bootstrap.enabled=false",
-        "deskseed.audit-export.worker-initial-delay=1d",
-        "deskseed.audit-export.cleanup-initial-delay=1d",
     ],
 )
 @AutoConfigureMockMvc
 @Testcontainers
+@dev.deskseed.testsupport.category.IntegrationTest
 class AuditExplorerIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc

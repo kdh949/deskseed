@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean
 import org.springframework.core.io.ClassPathResource
 
+@dev.deskseed.testsupport.category.FastTest
 class CustomerPortalSecurityPropertiesTest {
     private val signingKey = "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ="
     private val fingerprintKey = "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="
