@@ -111,6 +111,14 @@ class CustomerIdentityContractTest(unittest.TestCase):
                 "post",
             ): "resetCustomerPassword",
             (
+                "/api/v1/customer/auth/magic-link-requests",
+                "post",
+            ): "requestCustomerMagicLink",
+            (
+                "/api/v1/customer/auth/magic-link-sessions",
+                "post",
+            ): "consumeCustomerMagicLink",
+            (
                 "/api/v1/customer/me/registration",
                 "put",
             ): "completePasswordlessCustomerRegistration",
@@ -127,6 +135,8 @@ class CustomerIdentityContractTest(unittest.TestCase):
                     "createCustomerPasswordSession",
                     "requestCustomerPasswordReset",
                     "resetCustomerPassword",
+                    "requestCustomerMagicLink",
+                    "consumeCustomerMagicLink",
                 }:
                     self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
                 else:
@@ -190,11 +200,7 @@ class CustomerIdentityContractTest(unittest.TestCase):
                     "PASSWORDLESS_ONLY",
                     operation["x-deskseed-authentication-eligibility"],
                 )
-                self.assertNotIn(
-                    "x-deskseed-contract-status",
-                    operation,
-                    "passwordless-only eligibility is not present in the current runtime",
-                )
+                self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
 
         magic_request = self.operation("/api/v1/customer/auth/magic-link-requests")
         self.assertNotIn("rate-limit 결과와 관계없이", magic_request["description"])
