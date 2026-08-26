@@ -3956,6 +3956,7 @@ paths:
       tags:
       - Customer Consent
       operationId: listCurrentCustomerConsentPolicies
+      x-deskseed-contract-status: FROZEN
       summary: 고객 작업에 필요한 현재 동의 정책 조회
       description: REGISTRATION 또는 REQUEST_SUBMISSION context의 current published policy만 displayOrder 순서로 반환합니다. Draft, archived
         version, admin aggregate version, staff identity와 acceptance history는 response/count에 포함하지 않습니다. Document는 raw HTML,
