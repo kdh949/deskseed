@@ -1,0 +1,228 @@
+package dev.deskseed.customerauth.internal
+
+import dev.deskseed.foundation.CommandContext
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
+import java.sql.ResultSet
+import java.sql.Timestamp
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.util.Locale
+import java.util.UUID
+
+internal data class CustomerRegistrationPolicySelection(
+    val policyId: UUID,
+    val policyVersion: Int,
+) {
+    init {
+        require(policyVersion >= 1) { "registration policy version must be positive" }
+    }
+}
+
+internal data class NewCustomerRegistrationIntent(
+    val emailDisplay: String,
+    val passwordHash: CustomerPasswordHash,
+    val displayName: String,
+    val companyName: String,
+    val policySelections: List<CustomerRegistrationPolicySelection>,
+    val ttl: Duration,
+    val context: CommandContext,
+) {
+    override fun toString(): String = "[PROTECTED NEW CUSTOMER REGISTRATION INTENT]"
+}
+
+internal data class CreatedCustomerRegistrationIntent(
+    val id: UUID,
+    val rawContinuationSecret: String,
+    val expiresAt: Instant,
+) {
+    override fun toString(): String = "[PROTECTED CREATED CUSTOMER REGISTRATION INTENT]"
+}
+
+internal data class PendingCustomerRegistrationIntent(
+    val id: UUID,
+    val emailNormalized: String,
+    val emailDisplay: String,
+    val passwordHash: CustomerPasswordHash,
+    val displayName: String,
+    val companyName: String,
+    val policySelections: List<CustomerRegistrationPolicySelection>,
+    val requestId: String,
+    val correlationId: String,
+    val createdAt: Instant,
+    val expiresAt: Instant,
+    val version: Long,
+) {
+    override fun toString(): String = "[PROTECTED PENDING CUSTOMER REGISTRATION INTENT]"
+}
+
+@Component
+internal class JdbcCustomerRegistrationIntentStore(
+    private val jdbc: JdbcTemplate,
+    private val clock: Clock,
+) {
+    @Transactional
+    fun replacePending(command: NewCustomerRegistrationIntent): CreatedCustomerRegistrationIntent {
+        validate(command)
+        val emailDisplay = command.emailDisplay.trim()
+        val emailNormalized = emailDisplay.lowercase(Locale.ROOT)
+        val displayName = command.displayName.trim()
+        val companyName = command.companyName.trim()
+        val now = Instant.now(clock)
+        val expiresAt = now.plus(command.ttl)
+        val id = UUID.randomUUID()
+        val rawContinuationSecret = CustomerAuthSecrets.randomBearer()
+
+        jdbc.queryForObject(
+            "select pg_advisory_xact_lock(hashtextextended(?, 0))",
+            { _, _ -> Unit },
+            "customer-registration-intent:$emailNormalized",
+        )
+        jdbc.update(
+            """
+            update customer_registration_intents
+               set status = 'CANCELLED', cancelled_at = ?, updated_at = ?, version = version + 1
+             where email_normalized = ?
+               and status = 'PENDING'
+            """.trimIndent(),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            emailNormalized,
+        )
+        jdbc.update(
+            """
+            insert into customer_registration_intents
+                (id, email_normalized, email_display, password_hash, display_name, company_name,
+                 continuation_secret_digest, status, request_id, correlation_id,
+                 created_at, updated_at, expires_at, consumed_at, cancelled_at, version)
+            values (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, null, null, 0)
+            """.trimIndent(),
+            id,
+            emailNormalized,
+            emailDisplay,
+            command.passwordHash.encoded,
+            displayName,
+            companyName,
+            CustomerAuthSecrets.digest(rawContinuationSecret),
+            command.context.requestId,
+            command.context.correlationId,
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(expiresAt),
+        )
+        command.policySelections.forEach { selection ->
+            jdbc.update(
+                """
+                insert into customer_registration_intent_consents
+                    (intent_id, policy_id, policy_version, context, selected_at)
+                values (?, ?, ?, 'REGISTRATION', ?)
+                """.trimIndent(),
+                id,
+                selection.policyId,
+                selection.policyVersion,
+                Timestamp.from(now),
+            )
+        }
+        return CreatedCustomerRegistrationIntent(id, rawContinuationSecret, expiresAt)
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockPendingByProof(intentId: UUID, rawContinuationSecret: String): PendingCustomerRegistrationIntent? {
+        if (rawContinuationSecret.length !in 1..256) return null
+        val now = Instant.now(clock)
+        val pending = jdbc.query(
+            """
+            select id, email_normalized, email_display, password_hash, display_name, company_name,
+                   request_id, correlation_id, created_at, expires_at, version
+              from customer_registration_intents
+             where id = ?
+               and continuation_secret_digest = ?
+               and status = 'PENDING'
+               and expires_at > ?
+             for update
+            """.trimIndent(),
+            { resultSet, _ -> pending(resultSet) },
+            intentId,
+            CustomerAuthSecrets.digest(rawContinuationSecret),
+            Timestamp.from(now),
+        ).singleOrNull() ?: return null
+        return pending.copy(policySelections = policySelections(intentId))
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun markConsumed(intentId: UUID, expectedVersion: Long): Boolean {
+        val now = Instant.now(clock)
+        return jdbc.update(
+            """
+            update customer_registration_intents
+               set status = 'CONSUMED', consumed_at = ?, updated_at = ?, version = version + 1
+             where id = ?
+               and status = 'PENDING'
+               and expires_at > ?
+               and version = ?
+            """.trimIndent(),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            intentId,
+            Timestamp.from(now),
+            expectedVersion,
+        ) == 1
+    }
+
+    private fun pending(resultSet: ResultSet) = PendingCustomerRegistrationIntent(
+        id = resultSet.getObject("id", UUID::class.java),
+        emailNormalized = resultSet.getString("email_normalized"),
+        emailDisplay = resultSet.getString("email_display"),
+        passwordHash = CustomerPasswordHash.fromEncoded(resultSet.getString("password_hash")),
+        displayName = resultSet.getString("display_name"),
+        companyName = resultSet.getString("company_name"),
+        policySelections = emptyList(),
+        requestId = resultSet.getString("request_id"),
+        correlationId = resultSet.getString("correlation_id"),
+        createdAt = resultSet.getTimestamp("created_at").toInstant(),
+        expiresAt = resultSet.getTimestamp("expires_at").toInstant(),
+        version = resultSet.getLong("version"),
+    )
+
+    private fun policySelections(intentId: UUID): List<CustomerRegistrationPolicySelection> = jdbc.query(
+        """
+        select policy_id, policy_version
+          from customer_registration_intent_consents
+         where intent_id = ?
+         order by policy_id
+        """.trimIndent(),
+        { resultSet, _ ->
+            CustomerRegistrationPolicySelection(
+                resultSet.getObject("policy_id", UUID::class.java),
+                resultSet.getInt("policy_version"),
+            )
+        },
+        intentId,
+    )
+
+    private fun validate(command: NewCustomerRegistrationIntent) {
+        val email = command.emailDisplay.trim()
+        require(email.length in 3..254 && email.none(::forbiddenTextCharacter)) {
+            "registration email is invalid"
+        }
+        require(command.displayName.trim().length in 1..100 && command.displayName.none(::forbiddenTextCharacter)) {
+            "registration display name is invalid"
+        }
+        require(command.companyName.trim().length in 1..160 && command.companyName.none(::forbiddenTextCharacter)) {
+            "registration company name is invalid"
+        }
+        require(command.ttl in Duration.ofMinutes(5)..Duration.ofHours(48)) {
+            "registration intent TTL is out of policy"
+        }
+        require(command.policySelections.size <= 20) { "registration policy selection count is invalid" }
+        require(command.policySelections.distinctBy { it.policyId }.size == command.policySelections.size) {
+            "registration policy selections must be unique"
+        }
+    }
+
+    private fun forbiddenTextCharacter(character: Char): Boolean =
+        character.isISOControl() || character == '<' || character == '>'
+}
