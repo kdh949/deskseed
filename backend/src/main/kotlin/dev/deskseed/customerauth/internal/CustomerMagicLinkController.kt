@@ -34,6 +34,7 @@ import kotlin.math.ceil
 internal class CustomerMagicLinkController(
     private val authenticationService: CustomerMagicLinkAuthenticationService,
     private val properties: CustomerAuthProperties,
+    private val clientAddressResolver: CustomerAuthClientAddressResolver,
     private val problemWriter: CustomerSecurityProblemWriter,
 ) {
     @PostMapping("/api/v1/customer/auth/magic-link-requests")
@@ -44,7 +45,7 @@ internal class CustomerMagicLinkController(
         val startedAt = System.nanoTime()
         authenticationService.request(
             email = body.email,
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
         padResponse(startedAt, properties.responseMinDuration)
