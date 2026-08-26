@@ -7,6 +7,7 @@ import java.util.UUID
 
 enum class OutboundMailTemplate(val version: Int) {
     CUSTOMER_MAGIC_LINK(1),
+    CUSTOMER_REGISTRATION_VERIFICATION(1),
     REQUEST_RECEIVED(1),
     PUBLIC_AGENT_REPLY(1),
 }
@@ -26,6 +27,15 @@ sealed interface OutboundMailContent {
 data class MagicLinkMail(val magicLink: String) : OutboundMailContent {
     override val template = OutboundMailTemplate.CUSTOMER_MAGIC_LINK
     override val renderedSensitivity = RenderedMailSensitivity.PROTECTED
+
+    override fun toString(): String = "[PROTECTED CUSTOMER MAGIC LINK MAIL]"
+}
+
+data class RegistrationVerificationMail(val verificationLink: String) : OutboundMailContent {
+    override val template = OutboundMailTemplate.CUSTOMER_REGISTRATION_VERIFICATION
+    override val renderedSensitivity = RenderedMailSensitivity.PROTECTED
+
+    override fun toString(): String = "[PROTECTED CUSTOMER REGISTRATION VERIFICATION MAIL]"
 }
 
 data class RequestReceivedMail(
