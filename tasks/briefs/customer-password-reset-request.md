@@ -22,7 +22,7 @@
 
 ## Product and API contract
 
-- `POST /api/v1/customer/auth/password-reset-requests`는 syntactically valid email에 generic `202`와 최소 응답 지연을 적용한다.
+- `POST /api/v1/customer/auth/password-reset-requests`는 syntactically valid email에 generic `202`를 적용하고, monotonic deadline loop로 configured 최소 응답 지연을 끝까지 채운 뒤 interrupt 상태를 복원한다.
 - Unknown, passwordless, disabled identity에도 같은 body/header를 반환하며 mail/token 생성 여부를 노출하지 않는다.
 - 목적·destination·network 제한 초과는 `Retry-After`가 있는 `429`, limiter/DB/outbox/audit 실패는 generic `503`이다.
 - `requestCustomerPasswordReset`는 runtime parity 증거와 함께 `FROZEN`으로 승격한다.
