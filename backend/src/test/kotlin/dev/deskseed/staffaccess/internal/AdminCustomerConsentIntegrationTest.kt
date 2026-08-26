@@ -223,6 +223,30 @@ class AdminCustomerConsentIntegrationTest {
         assertThat(auditCount(policyId)).isEqualTo(1)
     }
 
+    @Test
+    fun `list and detail read failures return the stable unavailable problem`() {
+        val admin = browser("ADMIN")
+        jdbc.execute("alter table customer_consent_policies rename to customer_consent_policies_unavailable")
+        try {
+            val responses = listOf(
+                mockMvc.perform(get("/api/v1/admin/customer-consent-policies").staff(admin)),
+                mockMvc.perform(
+                    get("/api/v1/admin/customer-consent-policies/{policyId}", UUID.randomUUID()).staff(admin),
+                ),
+            )
+            responses.forEach { response ->
+                val body = response
+                    .andExpect(status().isServiceUnavailable)
+                    .andExpect(header().string("Cache-Control", "no-store"))
+                    .andExpect(jsonPath("$.type").value("/problems/customer-consent-unavailable"))
+                    .andReturn().response.contentAsString
+                assertThat(body).doesNotContain("customer_consent_policies")
+            }
+        } finally {
+            jdbc.execute("alter table customer_consent_policies_unavailable rename to customer_consent_policies")
+        }
+    }
+
     private fun createBody() =
         """{"policyKey":"test-terms","context":"REGISTRATION","title":"합성 테스트 이용 조건","document":{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"합성 정책 본문"}]},"required":true,"displayOrder":10}"""
 

@@ -80,7 +80,71 @@ class CustomerConsentMigrationTest {
                         accountId = null,
                         ticketId = "00000000-0000-0000-0000-000000009999",
                     )
-                }.hasMessageContaining("customer_consent_acceptances_ticket_id_fkey")
+                }.hasMessageContaining("customer_consent_acceptances_ticket_customer_fkey")
+            }
+        }
+    }
+
+    @Test
+    fun `clean V80 rejects policy keys outside the API contract`() {
+        migrateTo("80")
+
+        connection().use { connection ->
+            connection.createStatement().use { statement ->
+                listOf(
+                    "00000000-0000-0000-0000-000000008010" to "1terms",
+                    "00000000-0000-0000-0000-000000008011" to "terms-",
+                    "00000000-0000-0000-0000-000000008012" to "terms--privacy",
+                ).forEach { (id, key) ->
+                    assertThatThrownBy {
+                        insertPolicy(statement, id, key, "REGISTRATION")
+                    }.hasMessageContaining("customer_consent_policies_key_valid")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `clean V80 rejects mismatched policy context and foreign customer resources`() {
+        migrateTo("80")
+
+        connection().use { connection ->
+            insertFixtures(connection)
+            connection.createStatement().use { statement ->
+                insertOtherCustomerResources(statement)
+                insertPublishedPolicy(statement, REQUEST_POLICY_ID, "request-terms", "REQUEST_SUBMISSION")
+
+                assertThatThrownBy {
+                    insertAcceptance(
+                        statement,
+                        SECOND_ACCEPTANCE_ID,
+                        "REGISTRATION",
+                        accountId = ACCOUNT_ID,
+                        ticketId = null,
+                        policyId = REQUEST_POLICY_ID,
+                    )
+                }.hasMessageContaining("customer_consent_acceptances_policy_context_fkey")
+
+                assertThatThrownBy {
+                    insertAcceptance(
+                        statement,
+                        SECOND_ACCEPTANCE_ID,
+                        "REGISTRATION",
+                        accountId = OTHER_ACCOUNT_ID,
+                        ticketId = null,
+                    )
+                }.hasMessageContaining("customer_consent_acceptances_account_customer_fkey")
+
+                assertThatThrownBy {
+                    insertAcceptance(
+                        statement,
+                        SECOND_ACCEPTANCE_ID,
+                        "REQUEST_SUBMISSION",
+                        accountId = null,
+                        ticketId = OTHER_TICKET_ID,
+                        policyId = REQUEST_POLICY_ID,
+                    )
+                }.hasMessageContaining("customer_consent_acceptances_ticket_customer_fkey")
             }
         }
     }
@@ -117,26 +181,56 @@ class CustomerConsentMigrationTest {
                         'NEW', 'NORMAL', 'WEB', now(), now())
                 """.trimIndent(),
             )
-            insertPolicy(statement, POLICY_ID, "test-terms", "REGISTRATION")
-            statement.executeUpdate(
-                """
-                insert into customer_consent_policy_versions
-                    (policy_id, version, title, document_json, plain_text, checksum_sha256, required,
-                     display_order, effective_at, published_by_staff_id, published_by_display, published_at)
-                values ('$POLICY_ID', 1, 'Synthetic terms',
-                        '{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"Synthetic policy"}]}'::jsonb,
-                        'Synthetic policy', repeat('a', 64), true, 10, now(), '$STAFF_ID', 'Consent Admin', now())
-                """.trimIndent(),
-            )
-            statement.executeUpdate(
-                """
-                update customer_consent_policies
-                   set lifecycle = 'PUBLISHED', published_version = 1, aggregate_version = 1, updated_at = now()
-                 where id = '$POLICY_ID'
-                """.trimIndent(),
-            )
+            insertPublishedPolicy(statement, POLICY_ID, "test-terms", "REGISTRATION")
             insertAcceptance(statement, REGISTRATION_ACCEPTANCE_ID, "REGISTRATION", ACCOUNT_ID, null)
         }
+    }
+
+    private fun insertOtherCustomerResources(statement: Statement) {
+        statement.executeUpdate(
+            """
+            insert into customers (id, name, email_normalized, email_display, created_at, updated_at)
+            values ('$OTHER_CUSTOMER_ID', 'Other Customer', 'other-customer@example.test',
+                    'other-customer@example.test', now(), now())
+            """.trimIndent(),
+        )
+        statement.executeUpdate(
+            """
+            insert into customer_accounts
+                (id, customer_id, email_normalized, status, verified_at, last_login_at, created_at, updated_at)
+            values ('$OTHER_ACCOUNT_ID', '$OTHER_CUSTOMER_ID', 'other-customer@example.test',
+                    'ACTIVE', now(), now(), now(), now())
+            """.trimIndent(),
+        )
+        statement.executeUpdate(
+            """
+            insert into tickets
+                (id, ticket_number, requester_id, kind, subject, status, priority, channel, created_at, updated_at)
+            values ('$OTHER_TICKET_ID', 9081, '$OTHER_CUSTOMER_ID', 'CUSTOMER_REQUEST',
+                    'Other customer ticket', 'NEW', 'NORMAL', 'WEB', now(), now())
+            """.trimIndent(),
+        )
+    }
+
+    private fun insertPublishedPolicy(statement: Statement, id: String, key: String, context: String) {
+        insertPolicy(statement, id, key, context)
+        statement.executeUpdate(
+            """
+            insert into customer_consent_policy_versions
+                (policy_id, version, title, document_json, plain_text, checksum_sha256, required,
+                 display_order, effective_at, published_by_staff_id, published_by_display, published_at)
+            values ('$id', 1, 'Synthetic terms',
+                    '{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"Synthetic policy"}]}'::jsonb,
+                    'Synthetic policy', repeat('a', 64), true, 10, now(), '$STAFF_ID', 'Consent Admin', now())
+            """.trimIndent(),
+        )
+        statement.executeUpdate(
+            """
+            update customer_consent_policies
+               set lifecycle = 'PUBLISHED', published_version = 1, aggregate_version = 1, updated_at = now()
+             where id = '$id'
+            """.trimIndent(),
+        )
     }
 
     private fun insertPolicy(statement: Statement, id: String, key: String, context: String) {
@@ -159,13 +253,15 @@ class CustomerConsentMigrationTest {
         context: String,
         accountId: String?,
         ticketId: String?,
+        customerId: String = CUSTOMER_ID,
+        policyId: String = POLICY_ID,
     ) {
         statement.executeUpdate(
             """
             insert into customer_consent_acceptances
                 (id, customer_id, account_id, ticket_id, policy_id, policy_version, context,
                  accepted_at, source, request_id, correlation_id)
-            values ('$id', '$CUSTOMER_ID', ${accountId.sqlUuid()}, ${ticketId.sqlUuid()}, '$POLICY_ID', 1,
+            values ('$id', '$customerId', ${accountId.sqlUuid()}, ${ticketId.sqlUuid()}, '$policyId', 1,
                     '$context', now(), 'CUSTOMER_PORTAL', 'request-consent-test', 'correlation-consent-test')
             """.trimIndent(),
         )
@@ -205,6 +301,10 @@ class CustomerConsentMigrationTest {
         private const val SECOND_POLICY_ID = "00000000-0000-0000-0000-000000008006"
         private const val REGISTRATION_ACCEPTANCE_ID = "00000000-0000-0000-0000-000000008007"
         private const val SECOND_ACCEPTANCE_ID = "00000000-0000-0000-0000-000000008008"
+        private const val OTHER_CUSTOMER_ID = "00000000-0000-0000-0000-000000008013"
+        private const val OTHER_ACCOUNT_ID = "00000000-0000-0000-0000-000000008014"
+        private const val OTHER_TICKET_ID = "00000000-0000-0000-0000-000000008015"
+        private const val REQUEST_POLICY_ID = "00000000-0000-0000-0000-000000008016"
 
         @Container
         @JvmStatic
