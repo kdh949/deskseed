@@ -1,5 +1,7 @@
 package dev.deskseed.customerauth.internal
 
+import dev.deskseed.customerconsent.CustomerConsentContext
+import dev.deskseed.customerconsent.CustomerConsentPolicyContextLock
 import dev.deskseed.outboundmail.internal.ProtectedMailContent
 import dev.deskseed.outboundmail.internal.ProtectedMailContentCipher
 import dev.deskseed.outboundmail.internal.ProtectedMailContentProperties
@@ -61,6 +63,7 @@ class CustomerRegistrationRequestIntegrationTest {
     @Autowired private lateinit var redis: StringRedisTemplate
     @Autowired private lateinit var oneTimeTokenService: OneTimeTokenService
     @Autowired private lateinit var intentStore: JdbcCustomerRegistrationIntentStore
+    @Autowired private lateinit var policyContextLock: CustomerConsentPolicyContextLock
     @Autowired private lateinit var transactionTemplate: TransactionTemplate
 
     @BeforeEach
@@ -482,6 +485,34 @@ class CustomerRegistrationRequestIntegrationTest {
             ),
         ).isTrue()
         assertPendingUnconsumed(EXISTING_EMAIL)
+        assertThat(jdbc.queryForObject("select count(*) from customer_consent_acceptances", Long::class.java)).isZero()
+    }
+
+    @Test
+    fun `verification waits for registration policy mutation and revalidates the committed version`() {
+        val proofs = registrationProofs(NEW_EMAIL)
+        val executor = Executors.newSingleThreadExecutor()
+        val verification = AtomicReference<Future<Int>>()
+        try {
+            transactionTemplate.executeWithoutResult {
+                policyContextLock.lock(CustomerConsentContext.REGISTRATION)
+                verification.set(
+                    executor.submit<Int> {
+                        verifyRegistration(proofs.rawToken, continuationCookie(proofs.continuation.value))
+                            .andReturn().response.status
+                    },
+                )
+                assertThatThrownBy { verification.get().get(1, TimeUnit.SECONDS) }
+                    .isInstanceOf(TimeoutException::class.java)
+                publishRegistrationPolicyVersionTwo()
+            }
+
+            assertThat(verification.get().get(5, TimeUnit.SECONDS)).isEqualTo(409)
+        } finally {
+            executor.shutdownNow()
+        }
+        assertPendingUnconsumed(NEW_EMAIL)
+        assertThat(jdbc.queryForObject("select count(*) from customer_accounts", Long::class.java)).isZero()
         assertThat(jdbc.queryForObject("select count(*) from customer_consent_acceptances", Long::class.java)).isZero()
     }
 

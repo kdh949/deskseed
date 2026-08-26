@@ -72,7 +72,7 @@ internal class CustomerRegistrationController(
         verificationService.verify(
             rawToken = body.token,
             rawContinuationSecret = request.registrationContinuationCookie(),
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
         response.addCookie(expiredContinuationCookie())
