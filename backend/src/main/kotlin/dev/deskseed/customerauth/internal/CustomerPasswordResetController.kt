@@ -29,6 +29,7 @@ import kotlin.math.ceil
 internal class CustomerPasswordResetController(
     private val resetService: CustomerPasswordResetApplicationService,
     private val properties: CustomerAuthProperties,
+    private val clientAddressResolver: CustomerAuthClientAddressResolver,
 ) {
     @PostMapping("/api/v1/customer/auth/password-reset-requests")
     fun requestPasswordReset(
@@ -38,7 +39,7 @@ internal class CustomerPasswordResetController(
         val startedAt = System.nanoTime()
         resetService.request(
             emailInput = body.email,
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
         padResponse(startedAt, properties.responseMinDuration)
@@ -68,8 +69,16 @@ internal class CustomerPasswordResetController(
     }
 
     private fun padResponse(startedAt: Long, minimum: Duration) {
-        val remaining = minimum.toNanos() - (System.nanoTime() - startedAt)
-        if (remaining > 0) LockSupport.parkNanos(remaining)
+        val deadline = startedAt + minimum.toNanos()
+        var interrupted = false
+        while (true) {
+            if (Thread.interrupted()) interrupted = true
+            val remaining = deadline - System.nanoTime()
+            if (remaining <= 0) break
+            LockSupport.parkNanos(remaining)
+        }
+        if (Thread.interrupted()) interrupted = true
+        if (interrupted) Thread.currentThread().interrupt()
     }
 }
 

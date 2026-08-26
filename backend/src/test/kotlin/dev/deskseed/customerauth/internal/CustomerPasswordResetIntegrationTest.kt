@@ -31,6 +31,7 @@ import org.testcontainers.utility.DockerImageName
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.sql.Timestamp
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -85,7 +86,7 @@ class CustomerPasswordResetIntegrationTest {
             assertThat(result.response.contentAsString).isEqualTo("{\"accepted\":true}")
             assertThat(result.response.getHeader("Cache-Control")).isEqualTo("no-store")
             assertThat(result.response.getHeader("Referrer-Policy")).isEqualTo("no-referrer")
-            assertThat(elapsed).isGreaterThan(15_000_000L)
+            assertThat(elapsed).isGreaterThanOrEqualTo(Duration.ofMillis(20).toNanos())
         }
 
         val tokenRow = jdbc.queryForMap(
@@ -659,7 +660,7 @@ class CustomerPasswordResetIntegrationTest {
 
         @Container
         @JvmStatic
-        val redis = GenericContainer(DockerImageName.parse("redis:8.2.7-alpine"))
+        val redis = GenericContainer(DockerImageName.parse("redis:8.2.9-alpine"))
             .withExposedPorts(6379)
 
         @DynamicPropertySource

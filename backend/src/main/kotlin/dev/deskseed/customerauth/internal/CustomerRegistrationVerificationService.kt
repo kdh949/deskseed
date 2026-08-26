@@ -10,6 +10,7 @@ import dev.deskseed.customerauth.CustomerAuthenticationPurpose
 import dev.deskseed.customerconsent.CustomerConsentAcceptanceWriter
 import dev.deskseed.customerconsent.CustomerConsentContext
 import dev.deskseed.customerconsent.CustomerConsentPolicyProjection
+import dev.deskseed.customerconsent.CustomerConsentPolicyContextLock
 import dev.deskseed.customerconsent.CustomerConsentUnavailableException
 import dev.deskseed.customerconsent.CurrentCustomerConsentPolicy
 import dev.deskseed.customerconsent.CustomerRegistrationConsentSelection
@@ -31,6 +32,7 @@ internal class CustomerRegistrationVerificationService(
     private val intentStore: JdbcCustomerRegistrationIntentStore,
     private val accountStore: CustomerAccountSessionStore,
     private val policyProjection: CustomerConsentPolicyProjection,
+    private val policyContextLock: CustomerConsentPolicyContextLock,
     private val acceptanceWriter: CustomerConsentAcceptanceWriter,
     private val rateLimiter: AuthenticationAttemptLimiter,
     private val auditWriter: AdminSecurityAuditWriter,
@@ -96,6 +98,7 @@ internal class CustomerRegistrationVerificationService(
         if (intent.emailNormalized != token.emailNormalized || intent.emailDisplay != token.emailDisplay) {
             throw CustomerRegistrationVerificationInvalidException()
         }
+        policyContextLock.lock(CustomerConsentContext.REGISTRATION)
         val currentPolicies = currentRegistrationPolicies()
         validateCurrentSelections(intent.policySelections, currentPolicies)
         val account = accountStore.createPasswordAccount(
@@ -117,7 +120,7 @@ internal class CustomerRegistrationVerificationService(
                 context = context,
             ),
         )
-        if (!intentStore.markConsumed(intent.id, intent.version)) {
+        if (!intentStore.markConsumed(intent)) {
             throw CustomerRegistrationVerificationConflictException()
         }
         auditRegistrationVerified(account, decision, context)
