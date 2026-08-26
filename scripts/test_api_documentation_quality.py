@@ -121,7 +121,11 @@ class CustomerIdentityContractTest(unittest.TestCase):
             with self.subTest(path=path, method=method):
                 operation = self.operation(path, method)
                 self.assertEqual(operation_id, operation["operationId"])
-                if operation_id in {"requestCustomerRegistration", "verifyCustomerRegistration"}:
+                if operation_id in {
+                    "requestCustomerRegistration",
+                    "verifyCustomerRegistration",
+                    "createCustomerPasswordSession",
+                }:
                     self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
                 else:
                     self.assertNotIn(

@@ -115,6 +115,7 @@ paths:
         passwordless account와 incomplete registration은 같은 invalid-credential problem을 반환하고
         real-or-dummy adaptive hash comparison을 수행합니다. Throttling은 destination/network
         fingerprint만 저장하며 성공 audit에도 email, password/hash, company name, cookie가 없습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-003
       x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
