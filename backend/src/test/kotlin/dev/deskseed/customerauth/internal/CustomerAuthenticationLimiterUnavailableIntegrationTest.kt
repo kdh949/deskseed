@@ -1,0 +1,71 @@
+package dev.deskseed.customerauth.internal
+
+import dev.deskseed.customerauth.AuthenticationAttemptLimiter
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
+import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.transaction.support.TransactionSynchronizationManager
+
+@dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
+@AutoConfigureMockMvc
+@Import(CustomerAuthenticationLimiterUnavailableTestConfiguration::class)
+@dev.deskseed.testsupport.category.IntegrationTest
+class CustomerAuthenticationLimiterUnavailableIntegrationTest {
+    @Autowired private lateinit var mockMvc: MockMvc
+    @Autowired private lateinit var jdbcTemplate: JdbcTemplate
+    @Autowired private lateinit var unavailableLimiter: RecordingUnavailableAuthenticationAttemptLimiter
+
+    @Test
+    fun `required limiter failure returns generic 503 before database authentication work`() {
+        val auditBefore = jdbcTemplate.queryForObject(
+            "select count(*) from admin_security_audit_events",
+            Long::class.java,
+        )!!
+        val tokenBefore = jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java)!!
+
+        mockMvc.perform(
+            post("/api/v1/customer/auth/magic-link-requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"email":"unavailable@example.test"}"""),
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Referrer-Policy", "no-referrer"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+            .andExpect(jsonPath("$.status").value(503))
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java))
+            .isEqualTo(auditBefore)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java))
+            .isEqualTo(tokenBefore)
+        assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
+    }
+}
+
+internal class RecordingUnavailableAuthenticationAttemptLimiter : AuthenticationAttemptLimiter {
+    var transactionActiveAtAcquire: Boolean? = null
+
+    override fun acquire(attempt: dev.deskseed.customerauth.AuthenticationAttempt): Nothing {
+        transactionActiveAtAcquire = TransactionSynchronizationManager.isActualTransactionActive()
+        throw AuthenticationAttemptLimiterUnavailableException()
+    }
+}
+
+@TestConfiguration(proxyBeanMethods = false)
+internal class CustomerAuthenticationLimiterUnavailableTestConfiguration {
+    @Bean
+    @Primary
+    fun unavailableAuthenticationAttemptLimiter() = RecordingUnavailableAuthenticationAttemptLimiter()
+}

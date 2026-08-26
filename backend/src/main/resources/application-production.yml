@@ -10,6 +10,14 @@ spring:
     url: ${DATABASE_MIGRATION_URL:${DATABASE_URL}}
     user: ${DATABASE_MIGRATION_USERNAME}
     password: ${DATABASE_MIGRATION_PASSWORD}
+  data:
+    redis:
+      host: ${DESKSEED_CUSTOMER_AUTH_REDIS_HOST}
+      port: ${DESKSEED_CUSTOMER_AUTH_REDIS_PORT}
+      username: ${DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME}
+      password: ${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD}
+      ssl:
+        enabled: true
   mail:
     host: ${DESKSEED_MAIL_SMTP_HOST:}
     port: ${DESKSEED_MAIL_SMTP_PORT:}

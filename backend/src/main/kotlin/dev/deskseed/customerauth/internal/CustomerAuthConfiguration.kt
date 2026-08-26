@@ -7,6 +7,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.io.ClassPathResource
+import org.springframework.data.redis.core.script.RedisScript
 import java.net.URI
 import java.time.Duration
 import java.util.Base64
@@ -15,7 +17,10 @@ import java.util.Base64
 internal data class CustomerAuthProperties(
     var magicLinkTtl: Duration = Duration.ofMinutes(15),
     var requestLimit: Int = 5,
+    var networkRequestLimit: Int = 100,
+    var globalRequestLimit: Int = 36_000,
     var requestWindow: Duration = Duration.ofMinutes(15),
+    var limiterKeyPrefix: String = "deskseed:customer-auth:limiter:v1",
     var responseMinDuration: Duration = Duration.ofMillis(100),
     var sessionIdle: Duration = Duration.ofMinutes(30),
     var sessionAbsolute: Duration = Duration.ofHours(12),
@@ -27,8 +32,15 @@ internal data class CustomerAuthProperties(
         require(magicLinkTtl in Duration.ofMinutes(5)..Duration.ofMinutes(60)) {
             "customer magic-link TTL must be between 5 and 60 minutes"
         }
-        require(requestLimit in 1..100) { "customer magic-link request limit is invalid" }
-        require(!requestWindow.isZero && !requestWindow.isNegative) { "customer magic-link request window is invalid" }
+        require(requestLimit in 1..10_000) { "customer authentication destination limit is invalid" }
+        require(networkRequestLimit in 1..1_000_000) { "customer authentication network limit is invalid" }
+        require(globalRequestLimit in 1..1_000_000) { "customer authentication global limit is invalid" }
+        require(requestWindow in Duration.ofSeconds(1)..Duration.ofHours(24)) {
+            "customer authentication request window is invalid"
+        }
+        require(limiterKeyPrefix.matches(Regex("^[a-z0-9:-]{1,100}$"))) {
+            "customer authentication limiter key prefix is invalid"
+        }
         require(responseMinDuration in Duration.ZERO..Duration.ofSeconds(2)) { "customer auth response padding is invalid" }
         require(!sessionIdle.isZero && !sessionIdle.isNegative) { "customer session idle duration is invalid" }
         require(sessionAbsolute >= sessionIdle) { "customer absolute session duration must cover idle duration" }
@@ -48,6 +60,12 @@ internal data class CustomerAuthProperties(
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(CustomerAuthProperties::class)
 internal class CustomerAuthConfiguration {
+    @Bean
+    fun customerAuthenticationRateLimitScript(): RedisScript<String> = RedisScript.of(
+        ClassPathResource("redis/customer-authentication-rate-limit.lua"),
+        String::class.java,
+    )
+
     @Bean
     fun customerSessionAuthenticationServletRegistration(
         filter: CustomerSessionAuthenticationFilter,

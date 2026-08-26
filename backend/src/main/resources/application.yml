@@ -18,6 +18,13 @@ spring:
         format_sql: false
   flyway:
     enabled: true
+  data:
+    redis:
+      host: ${DESKSEED_CUSTOMER_AUTH_REDIS_HOST:localhost}
+      port: ${DESKSEED_CUSTOMER_AUTH_REDIS_PORT:6379}
+      connect-timeout: ${DESKSEED_CUSTOMER_AUTH_REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${DESKSEED_CUSTOMER_AUTH_REDIS_COMMAND_TIMEOUT:500ms}
+      client-name: deskseed-customer-auth-limiter
   jackson:
     time-zone: UTC
     deserialization:
@@ -219,7 +226,10 @@ deskseed:
   customer-auth:
     magic-link-ttl: ${DESKSEED_CUSTOMER_MAGIC_LINK_TTL:15m}
     request-limit: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_LIMIT:5}
+    network-request-limit: ${DESKSEED_CUSTOMER_AUTH_NETWORK_REQUEST_LIMIT:100}
+    global-request-limit: ${DESKSEED_CUSTOMER_AUTH_GLOBAL_REQUEST_LIMIT:36000}
     request-window: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_WINDOW:15m}
+    limiter-key-prefix: ${DESKSEED_CUSTOMER_AUTH_LIMITER_KEY_PREFIX:deskseed:customer-auth:limiter:v1}
     response-min-duration: ${DESKSEED_CUSTOMER_MAGIC_LINK_RESPONSE_MIN_DURATION:100ms}
     session-idle: ${DESKSEED_CUSTOMER_SESSION_IDLE:30m}
     session-absolute: ${DESKSEED_CUSTOMER_SESSION_ABSOLUTE:12h}

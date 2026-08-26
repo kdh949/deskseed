@@ -4,6 +4,10 @@ import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.customerauth.AuthenticationAttempt
+import dev.deskseed.customerauth.AuthenticationAttemptDecision
+import dev.deskseed.customerauth.AuthenticationAttemptLimiter
+import dev.deskseed.customerauth.CustomerAuthenticationPurpose
 import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
@@ -15,57 +19,76 @@ import dev.deskseed.outboundmail.OutboundMailPort
 import jakarta.mail.internet.InternetAddress
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.net.URI
 import java.time.Clock
 import java.time.Instant
 import java.util.Locale
 
 internal class CustomerMagicLinkInvalidException : RuntimeException()
+internal class CustomerAuthenticationRateLimitedException(val retryAfter: java.time.Duration) : RuntimeException()
 
 @Service
 internal class CustomerMagicLinkAuthenticationService(
     private val customerDirectory: CustomerDirectory,
     private val tokenService: JdbcDigestOneTimeTokenService,
-    private val rateLimiter: CustomerMagicLinkRateLimiter,
+    private val rateLimiter: AuthenticationAttemptLimiter,
     private val accountSessionStore: CustomerAccountSessionStore,
     private val outboundMailPort: OutboundMailPort,
     private val auditWriter: AdminSecurityAuditWriter,
     private val properties: CustomerAuthProperties,
     private val clock: Clock,
+    private val transactionTemplate: TransactionTemplate,
 ) {
-    @Transactional
     fun request(email: String, remoteAddress: String, context: CommandContext) {
         val mailbox = requireMailbox(email)
         val normalized = mailbox.lowercase(Locale.ROOT)
-        val decision = rateLimiter.acquire(normalized, remoteAddress)
+        val purpose = CustomerAuthenticationPurpose.MAGIC_LINK_REQUEST
+        val decision = rateLimiter.acquire(
+            AuthenticationAttempt(
+                purpose = purpose,
+                destinationFingerprint = CustomerAuthSecrets.fingerprint(
+                    properties.fingerprintKey,
+                    "${purpose.keySegment}:destination:$normalized",
+                ),
+                requesterNetworkFingerprint = CustomerAuthSecrets.fingerprint(
+                    properties.fingerprintKey,
+                    "${purpose.keySegment}:network:$remoteAddress",
+                ),
+            ),
+        )
         if (!decision.allowed) {
+            transactionTemplate.executeWithoutResult {
+                audit(
+                    eventType = "CUSTOMER_MAGIC_LINK_RATE_LIMITED",
+                    outcome = AdminSecurityOutcome.DENIED,
+                    context = context,
+                    metadata = safeFingerprintMetadata(decision),
+                )
+            }
+            throw CustomerAuthenticationRateLimitedException(requireNotNull(decision.retryAfter))
+        }
+
+        transactionTemplate.executeWithoutResult {
             audit(
-                eventType = "CUSTOMER_MAGIC_LINK_RATE_LIMITED",
-                outcome = AdminSecurityOutcome.DENIED,
+                eventType = "CUSTOMER_MAGIC_LINK_REQUESTED",
+                outcome = AdminSecurityOutcome.SUCCEEDED,
                 context = context,
                 metadata = safeFingerprintMetadata(decision),
             )
-            return
+            if (customerDirectory.existsByNormalizedEmail(normalized)) {
+                val generated = tokenService.generate(mailbox, context)
+                outboundMailPort.enqueue(
+                    OutboundMailIntent(
+                        idempotencyKey = "customer-magic-link:${generated.id}",
+                        recipient = MailRecipient(mailbox),
+                        content = MagicLinkMail(magicLink(generated.rawToken)),
+                        actor = ActorRef(ActorType.SYSTEM, null),
+                        context = context,
+                    ),
+                )
+            }
         }
-
-        audit(
-            eventType = "CUSTOMER_MAGIC_LINK_REQUESTED",
-            outcome = AdminSecurityOutcome.SUCCEEDED,
-            context = context,
-            metadata = safeFingerprintMetadata(decision),
-        )
-        if (!customerDirectory.existsByNormalizedEmail(normalized)) return
-
-        val generated = tokenService.generate(mailbox, context)
-        outboundMailPort.enqueue(
-            OutboundMailIntent(
-                idempotencyKey = "customer-magic-link:${generated.id}",
-                recipient = MailRecipient(mailbox),
-                content = MagicLinkMail(magicLink(generated.rawToken)),
-                actor = ActorRef(ActorType.SYSTEM, null),
-                context = context,
-            ),
-        )
     }
 
     @Transactional(noRollbackFor = [CustomerMagicLinkInvalidException::class])
@@ -154,9 +177,9 @@ internal class CustomerMagicLinkAuthenticationService(
         )
     }
 
-    private fun safeFingerprintMetadata(decision: MagicLinkRateDecision) = mapOf(
+    private fun safeFingerprintMetadata(decision: AuthenticationAttemptDecision) = mapOf(
         "destinationFingerprint" to decision.destinationFingerprint,
-        "networkFingerprint" to decision.networkFingerprint,
+        "networkFingerprint" to decision.requesterNetworkFingerprint,
     )
 
     private fun magicLink(rawToken: String): String {

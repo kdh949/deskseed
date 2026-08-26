@@ -1,5 +1,9 @@
 package dev.deskseed.customer.internal
 
+import dev.deskseed.customerauth.AuthenticationAttempt
+import dev.deskseed.customerauth.AuthenticationAttemptLimiter
+import dev.deskseed.customerauth.CustomerAuthenticationPurpose
+import dev.deskseed.customerauth.internal.CustomerAuthSecrets
 import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -12,6 +16,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.security.authentication.ott.GenerateOneTimeTokenRequest
 import org.springframework.security.authentication.ott.OneTimeTokenService
 import org.springframework.test.web.servlet.MockMvc
@@ -21,7 +26,13 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.transaction.support.TransactionTemplate
+import org.testcontainers.containers.GenericContainer
+import org.testcontainers.junit.jupiter.Container
+import org.testcontainers.junit.jupiter.Testcontainers
+import org.testcontainers.utility.DockerImageName
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.sql.Timestamp
@@ -50,15 +61,20 @@ import kotlin.system.measureNanoTime
 )
 @AutoConfigureMockMvc
 @ExtendWith(OutputCaptureExtension::class)
+@Testcontainers
 @dev.deskseed.testsupport.category.IntegrationTest
 class CustomerMagicLinkAuthIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var transactionTemplate: TransactionTemplate
     @Autowired private lateinit var oneTimeTokenService: OneTimeTokenService
+    @Autowired private lateinit var rateLimiter: AuthenticationAttemptLimiter
+    @Autowired private lateinit var redisTemplate: StringRedisTemplate
 
     @BeforeEach
     fun clearState() {
+        val limiterKeys = redisTemplate.keys("deskseed:customer-auth:limiter:*")
+        if (limiterKeys.isNotEmpty()) redisTemplate.delete(limiterKeys)
         jdbcTemplate.execute(
             """
             truncate table
@@ -82,7 +98,7 @@ class CustomerMagicLinkAuthIntegrationTest {
     }
 
     @Test
-    fun `known unknown and rate limited requests return the same 202 contract and do not log existence`(output: CapturedOutput) {
+    fun `eligible and ineligible requests share 202 while exhausted budget returns generic 429`(output: CapturedOutput) {
         insertUnverifiedCustomer("known@example.com")
 
         val known = requestMagicLink("known@example.com")
@@ -90,12 +106,17 @@ class CustomerMagicLinkAuthIntegrationTest {
         val knownSecond = requestMagicLink("known@example.com")
         val rateLimited = requestMagicLink("known@example.com")
 
-        listOf(known, unknown, knownSecond, rateLimited).forEach { result ->
+        listOf(known, unknown, knownSecond).forEach { result ->
             assertThat(result.response.status).isEqualTo(202)
             assertThat(result.response.contentAsString).isEqualTo("{\"accepted\":true}")
             assertThat(result.response.getHeader("Cache-Control")).isEqualTo("no-store")
             assertThat(result.response.getHeader("Referrer-Policy")).isEqualTo("no-referrer")
         }
+        assertThat(rateLimited.response.status).isEqualTo(429)
+        assertThat(rateLimited.response.getHeader("Retry-After")?.toLong()).isBetween(1, 900)
+        assertThat(rateLimited.response.contentAsString)
+            .contains("/problems/customer-authentication-rate-limited")
+            .doesNotContain("known@example.com")
         assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java))
             .isEqualTo(2)
         assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java))
@@ -131,7 +152,7 @@ class CustomerMagicLinkAuthIntegrationTest {
     }
 
     @Test
-    fun `outbox insert failure rolls token rate and security audit back together`() {
+    fun `outbox insert failure rolls database effects back while limiter budget remains committed`() {
         insertUnverifiedCustomer("rollback@example.com")
         jdbcTemplate.execute(
             """
@@ -153,9 +174,52 @@ class CustomerMagicLinkAuthIntegrationTest {
         }
 
         assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java)).isZero()
-        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_request_limits", Long::class.java)).isZero()
         assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java)).isZero()
         assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java)).isZero()
+        assertThat(redisTemplate.keys("deskseed:customer-auth:limiter:*")).isNotEmpty
+    }
+
+    @Test
+    fun `redis script atomically enforces destination budget and stores only fingerprints`() {
+        val destination = "atomic-${UUID.randomUUID()}@example.test"
+        val executor = Executors.newFixedThreadPool(12)
+        val decisions = try {
+            executor.invokeAll(
+                (1..12).map { index ->
+                    Callable {
+                        rateLimiter.acquire(
+                            AuthenticationAttempt(
+                                purpose = CustomerAuthenticationPurpose.MAGIC_LINK_REQUEST,
+                                destinationFingerprint = CustomerAuthSecrets.fingerprint(
+                                    FINGERPRINT_KEY,
+                                    "magic-link-request:destination:$destination",
+                                ),
+                                requesterNetworkFingerprint = CustomerAuthSecrets.fingerprint(
+                                    FINGERPRINT_KEY,
+                                    "magic-link-request:network:192.0.2.$index",
+                                ),
+                            ),
+                        )
+                    }
+                },
+            ).map { it.get(10, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        assertThat(decisions.count { it.allowed }).isEqualTo(2)
+        assertThat(decisions.filterNot { it.allowed }).allSatisfy { decision ->
+            assertThat(decision.retryAfter).isNotNull
+            assertThat(decision.retryAfter!!).isGreaterThan(Duration.ZERO)
+        }
+        val keys = redisTemplate.keys("deskseed:customer-auth:limiter:*")
+        assertThat(keys).hasSizeGreaterThanOrEqualTo(4)
+        assertThat(keys.joinToString(","))
+            .doesNotContain(destination)
+            .doesNotContain("192.0.2.")
+        assertThat(keys.map { redisTemplate.getExpire(it) }).allSatisfy { ttlSeconds ->
+            assertThat(ttlSeconds).isBetween(1, 900)
+        }
     }
 
     @Test
@@ -396,5 +460,18 @@ class CustomerMagicLinkAuthIntegrationTest {
 
     companion object {
         private const val CUSTOMER_COOKIE = "DESKSEED_CUSTOMER_SESSION"
+        private const val FINGERPRINT_KEY = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+
+        @Container
+        @JvmStatic
+        val redis = GenericContainer(DockerImageName.parse("redis:8.2.7-alpine"))
+            .withExposedPorts(6379)
+
+        @DynamicPropertySource
+        @JvmStatic
+        fun redisProperties(registry: DynamicPropertyRegistry) {
+            registry.add("spring.data.redis.host", redis::getHost)
+            registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
+        }
     }
 }

@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.time.Duration
 import java.util.concurrent.locks.LockSupport
+import kotlin.math.ceil
 
 @RestController
 @Validated
@@ -114,6 +115,41 @@ internal class CustomerMagicLinkController(
             "/problems/customer-magic-link-invalid",
             "Customer magic link is invalid",
             "The link is invalid, expired, or already used. Request a new link.",
+        )
+    }
+
+    @ExceptionHandler(CustomerAuthenticationRateLimitedException::class)
+    fun rateLimited(
+        exception: CustomerAuthenticationRateLimitedException,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ) {
+        val retrySeconds = ceil(exception.retryAfter.toMillis() / 1000.0).toLong().coerceAtLeast(1)
+        response.setHeader("Retry-After", retrySeconds.toString())
+        problemWriter.write(
+            response,
+            request,
+            429,
+            "/problems/customer-authentication-rate-limited",
+            "잠시 후 다시 시도해 주세요",
+            "잠시 후 다시 시도해 주세요.",
+        )
+    }
+
+    @ExceptionHandler(AuthenticationAttemptLimiterUnavailableException::class)
+    fun limiterUnavailable(
+        exception: AuthenticationAttemptLimiterUnavailableException,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ) {
+        @Suppress("UNUSED_VARIABLE") val ignored = exception
+        problemWriter.write(
+            response,
+            request,
+            503,
+            "/problems/customer-authentication-unavailable",
+            "고객 인증 요청을 안전하게 완료할 수 없습니다",
+            "잠시 후 다시 시도해 주세요.",
         )
     }
 
