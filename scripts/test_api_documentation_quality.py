@@ -319,11 +319,8 @@ class CustomerConsentContractTest(unittest.TestCase):
             with self.subTest(path=path, method=method):
                 operation = self.operation(path, method)
                 self.assertEqual(operation_id, operation["operationId"])
-                if path.startswith("/api/v1/admin/"):
-                    self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
-                    self.assertNotIn(operation_id, declared_blueprints)
-                else:
-                    self.assertNotIn("x-deskseed-contract-status", operation)
+                self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
+                self.assertNotIn(operation_id, declared_blueprints)
 
     def test_admin_policy_boundary_requires_authority_actor_csrf_and_precondition(self) -> None:
         admin_operations = (
