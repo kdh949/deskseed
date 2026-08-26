@@ -51,6 +51,7 @@ class AdminKnowledgeIntegrationTest {
         jdbc.execute("delete from group_memberships")
         jdbc.execute("delete from support_groups")
         jdbc.execute("delete from staff_login_throttles")
+        jdbc.execute("truncate table customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade")
         jdbc.execute("delete from staff_accounts")
     }
 

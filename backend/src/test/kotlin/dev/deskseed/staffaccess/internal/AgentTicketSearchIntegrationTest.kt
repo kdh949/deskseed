@@ -54,6 +54,7 @@ class AgentTicketSearchIntegrationTest {
             jdbcTemplate.execute("truncate table access_audit_events")
         }
         jdbcTemplate.execute("truncate table admin_security_audit_events")
+        jdbcTemplate.execute("truncate table customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade")
         jdbcTemplate.update("delete from request_access_tokens")
         jdbcTemplate.update("delete from ticket_audit_events")
         jdbcTemplate.update("delete from ticket_audits")
