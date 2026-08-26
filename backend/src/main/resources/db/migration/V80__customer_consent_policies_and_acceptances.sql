@@ -15,7 +15,8 @@ create table customer_consent_policies (
     created_at timestamptz not null,
     updated_at timestamptz not null,
     constraint customer_consent_policies_context_key_unique unique (context, policy_key),
-    constraint customer_consent_policies_key_valid check (policy_key ~ '^[a-z0-9][a-z0-9-]{0,79}$'),
+    constraint customer_consent_policies_id_context_unique unique (id, context),
+    constraint customer_consent_policies_key_valid check (policy_key ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'),
     constraint customer_consent_policies_context_valid check (context in ('REGISTRATION', 'REQUEST_SUBMISSION')),
     constraint customer_consent_policies_lifecycle_valid check (lifecycle in ('DRAFT', 'PUBLISHED', 'ARCHIVED')),
     constraint customer_consent_policies_title_valid check (
@@ -103,10 +104,18 @@ create trigger customer_consent_policy_identity_immutable
 before update of policy_key, context on customer_consent_policies
 for each row execute function reject_customer_consent_policy_identity_change();
 
+alter table customer_accounts
+    add constraint customer_accounts_id_customer_id_unique
+    unique (id, customer_id);
+
+alter table tickets
+    add constraint tickets_id_requester_id_unique
+    unique (id, requester_id);
+
 create table customer_consent_acceptances (
     id uuid primary key,
     customer_id uuid not null references customers(id),
-    account_id uuid null references customer_accounts(id),
+    account_id uuid null,
     ticket_id uuid null,
     policy_id uuid not null,
     policy_version integer not null,
@@ -115,7 +124,15 @@ create table customer_consent_acceptances (
     source varchar(40) not null,
     request_id varchar(100) not null,
     correlation_id varchar(100) not null,
-    constraint customer_consent_acceptances_ticket_id_fkey foreign key (ticket_id) references tickets(id),
+    constraint customer_consent_acceptances_account_customer_fkey
+        foreign key (account_id, customer_id)
+        references customer_accounts(id, customer_id),
+    constraint customer_consent_acceptances_ticket_customer_fkey
+        foreign key (ticket_id, customer_id)
+        references tickets(id, requester_id),
+    constraint customer_consent_acceptances_policy_context_fkey
+        foreign key (policy_id, context)
+        references customer_consent_policies(id, context),
     constraint customer_consent_acceptances_policy_version_fkey
         foreign key (policy_id, policy_version)
         references customer_consent_policy_versions(policy_id, version),
