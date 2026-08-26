@@ -77,6 +77,7 @@ deskseed:
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
     consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL}
     registration-verification-url: ${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL}
+    password-reset-url: ${DESKSEED_CUSTOMER_PASSWORD_RESET_URL}
   portal:
     public-request-rate-limit:
       fingerprint-key: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY}

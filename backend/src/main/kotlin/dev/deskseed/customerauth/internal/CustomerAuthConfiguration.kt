@@ -17,6 +17,7 @@ import java.util.Base64
 internal data class CustomerAuthProperties(
     var magicLinkTtl: Duration = Duration.ofMinutes(15),
     var registrationVerificationTtl: Duration = Duration.ofHours(24),
+    var passwordResetTtl: Duration = Duration.ofMinutes(30),
     var requestLimit: Int = 5,
     var networkRequestLimit: Int = 100,
     var globalRequestLimit: Int = 36_000,
@@ -29,6 +30,7 @@ internal data class CustomerAuthProperties(
     var csrfKey: String = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
     var consumeUrl: String = "http://localhost:5173/customer/sign-in/consume",
     var registrationVerificationUrl: String = "http://localhost:5173/customer/register/verify",
+    var passwordResetUrl: String = "http://localhost:5173/customer/password/reset",
 ) {
     fun validate() {
         require(magicLinkTtl in Duration.ofMinutes(5)..Duration.ofMinutes(60)) {
@@ -36,6 +38,9 @@ internal data class CustomerAuthProperties(
         }
         require(registrationVerificationTtl in Duration.ofHours(1)..Duration.ofHours(48)) {
             "customer registration verification TTL must be between 1 and 48 hours"
+        }
+        require(passwordResetTtl in Duration.ofMinutes(5)..Duration.ofMinutes(60)) {
+            "customer password reset TTL must be between 5 and 60 minutes"
         }
         require(requestLimit in 1..10_000) { "customer authentication destination limit is invalid" }
         require(networkRequestLimit in 1..1_000_000) { "customer authentication network limit is invalid" }
@@ -56,6 +61,7 @@ internal data class CustomerAuthProperties(
         }
         validateAbsoluteUrl(consumeUrl, "customer magic-link consume URL")
         validateAbsoluteUrl(registrationVerificationUrl, "customer registration verification URL")
+        validateAbsoluteUrl(passwordResetUrl, "customer password reset URL")
     }
 
     private fun validateAbsoluteUrl(value: String, label: String) {

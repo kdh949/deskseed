@@ -8,6 +8,7 @@ import java.util.UUID
 enum class OutboundMailTemplate(val version: Int) {
     CUSTOMER_MAGIC_LINK(1),
     CUSTOMER_REGISTRATION_VERIFICATION(1),
+    CUSTOMER_PASSWORD_RESET(1),
     REQUEST_RECEIVED(1),
     PUBLIC_AGENT_REPLY(1),
 }
@@ -36,6 +37,13 @@ data class RegistrationVerificationMail(val verificationLink: String) : Outbound
     override val renderedSensitivity = RenderedMailSensitivity.PROTECTED
 
     override fun toString(): String = "[PROTECTED CUSTOMER REGISTRATION VERIFICATION MAIL]"
+}
+
+data class PasswordResetMail(val resetLink: String) : OutboundMailContent {
+    override val template = OutboundMailTemplate.CUSTOMER_PASSWORD_RESET
+    override val renderedSensitivity = RenderedMailSensitivity.PROTECTED
+
+    override fun toString(): String = "[PROTECTED CUSTOMER PASSWORD RESET MAIL]"
 }
 
 data class RequestReceivedMail(
