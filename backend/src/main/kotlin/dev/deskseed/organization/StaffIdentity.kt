@@ -32,6 +32,7 @@ object StaffAuthorityCatalog {
     const val MACRO_SHARED_MANAGE = "macro:shared:manage"
     const val TRIGGER_MANAGE = "trigger:manage"
     const val AUTOMATION_MANAGE = "automation:manage"
+    const val CUSTOMER_CONSENT_MANAGE = "customer-consent:manage"
 
     fun forRole(role: StaffRole): Set<String> = when (role) {
         StaffRole.ADMIN -> setOf(
@@ -44,6 +45,7 @@ object StaffAuthorityCatalog {
             MACRO_SHARED_MANAGE,
             TRIGGER_MANAGE,
             AUTOMATION_MANAGE,
+            CUSTOMER_CONSENT_MANAGE,
         )
         StaffRole.AGENT -> setOf(AGENT_WORKSPACE)
         StaffRole.SECURITY_AUDITOR -> setOf(

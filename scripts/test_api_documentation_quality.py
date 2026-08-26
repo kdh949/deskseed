@@ -289,7 +289,7 @@ class CustomerConsentContractTest(unittest.TestCase):
             },
         )
 
-    def test_customer_and_admin_operation_family_is_complete_and_blueprint_only(self) -> None:
+    def test_customer_and_admin_operation_family_tracks_runtime_freeze(self) -> None:
         expected = {
             ("/api/v1/customer/consent-policies", "get"): "listCurrentCustomerConsentPolicies",
             ("/api/v1/admin/customer-consent-policies", "get"): "listCustomerConsentPolicies",
@@ -319,9 +319,8 @@ class CustomerConsentContractTest(unittest.TestCase):
             with self.subTest(path=path, method=method):
                 operation = self.operation(path, method)
                 self.assertEqual(operation_id, operation["operationId"])
-                self.assertNotIn("x-deskseed-contract-status", operation)
-                if path.startswith("/api/v1/admin/"):
-                    self.assertIn(operation_id, declared_blueprints)
+                self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
+                self.assertNotIn(operation_id, declared_blueprints)
 
     def test_admin_policy_boundary_requires_authority_actor_csrf_and_precondition(self) -> None:
         admin_operations = (
@@ -382,6 +381,18 @@ class CustomerConsentContractTest(unittest.TestCase):
                 self.assertEqual(
                     [expected_events[operation_id]],
                     operation["x-deskseed-security-audit-events"],
+                )
+
+    def test_admin_policy_reads_declare_stable_storage_unavailable_problem(self) -> None:
+        reads = (
+            self.operation("/api/v1/admin/customer-consent-policies"),
+            self.operation("/api/v1/admin/customer-consent-policies/{policyId}"),
+        )
+        for operation in reads:
+            with self.subTest(operation=operation["operationId"]):
+                self.assertEqual(
+                    "#/components/responses/CustomerConsentUnavailable",
+                    operation["responses"]["503"]["$ref"],
                 )
 
     def test_public_projection_contains_only_current_customer_safe_version_fields(self) -> None:

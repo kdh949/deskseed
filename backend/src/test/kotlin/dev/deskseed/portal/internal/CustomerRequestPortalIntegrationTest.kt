@@ -13,6 +13,7 @@ import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.mock.web.MockMultipartFile
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -738,7 +739,10 @@ class CustomerRequestPortalIntegrationTest {
             ticketNumber,
             attachmentId,
         ).cookie(session.cookie),
-    )
+    ).let { initial ->
+        val result = initial.andReturn()
+        if (result.request.isAsyncStarted) mockMvc.perform(asyncDispatch(result)) else initial
+    }
 
     private fun csrf(cookie: Cookie): String {
         val response = mockMvc.perform(get("/api/v1/customer/csrf").cookie(cookie))

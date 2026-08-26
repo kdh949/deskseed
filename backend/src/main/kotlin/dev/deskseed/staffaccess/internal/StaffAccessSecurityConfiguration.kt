@@ -16,6 +16,7 @@ import org.springframework.security.web.servlet.util.matcher.PathPatternRequestM
 import dev.deskseed.integration.INTEGRATION_CLIENT_MANAGE_AUTHORITY
 import dev.deskseed.integration.EXTERNAL_SYSTEM_MANAGE_AUTHORITY
 import dev.deskseed.webhook.WEBHOOK_MANAGE_AUTHORITY
+import dev.deskseed.organization.StaffAuthorityCatalog
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
@@ -74,6 +75,7 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/magic-link-sessions").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/access-mode").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/ticket-forms").permitAll()
+                it.requestMatchers(HttpMethod.GET, "/api/v1/customer/consent-policies").permitAll()
                 it.requestMatchers("/api/v1/customer/**").hasRole("CUSTOMER")
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/me").authenticated()
@@ -85,6 +87,10 @@ internal class StaffAccessSecurityConfiguration(
                     .hasAuthority(WEBHOOK_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/external-systems/**")
                     .hasAuthority(EXTERNAL_SYSTEM_MANAGE_AUTHORITY)
+                it.requestMatchers(
+                    "/api/v1/admin/customer-consent-policies",
+                    "/api/v1/admin/customer-consent-policies/**",
+                ).hasAuthority(StaffAuthorityCatalog.CUSTOMER_CONSENT_MANAGE)
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 it.requestMatchers(HttpMethod.GET, "/api/v1/analytics/**").hasAnyRole("ADMIN", "AGENT")
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/activities/*/search-query-reveal")

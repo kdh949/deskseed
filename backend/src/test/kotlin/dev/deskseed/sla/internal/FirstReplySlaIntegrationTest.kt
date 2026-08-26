@@ -67,6 +67,7 @@ class FirstReplySlaIntegrationTest {
             restart identity cascade
             """.trimIndent(),
         )
+        jdbc.execute("truncate table customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade")
         jdbc.update("delete from staff_accounts")
         jdbc.update(
             """
