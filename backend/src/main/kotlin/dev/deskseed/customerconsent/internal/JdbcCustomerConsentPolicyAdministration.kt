@@ -182,10 +182,10 @@ internal class JdbcCustomerConsentPolicyAdministration(
         jdbc.update(
             """
             update customer_consent_policies
-               set lifecycle = 'PUBLISHED', published_version = ?, aggregate_version = aggregate_version + 1, updated_at = ?
+               set lifecycle = 'PUBLISHED', published_version = ?, aggregate_version = aggregate_version + 1
              where id = ?
             """.trimIndent(),
-            version, Timestamp.from(now), policyId,
+            version, policyId,
         )
         audit(
             "CUSTOMER_CONSENT_POLICY_PUBLISHED", policyId, current.policyKey, current.context,
@@ -213,10 +213,10 @@ internal class JdbcCustomerConsentPolicyAdministration(
         jdbc.update(
             """
             update customer_consent_policies
-               set lifecycle = 'ARCHIVED', aggregate_version = aggregate_version + 1, updated_at = ?
+               set lifecycle = 'ARCHIVED', aggregate_version = aggregate_version + 1
              where id = ?
             """.trimIndent(),
-            Timestamp.from(now), policyId,
+            policyId,
         )
         audit(
             "CUSTOMER_CONSENT_POLICY_ARCHIVED", policyId, current.policyKey, current.context,

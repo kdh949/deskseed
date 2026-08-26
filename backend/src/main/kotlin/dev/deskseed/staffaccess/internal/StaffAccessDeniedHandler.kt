@@ -54,13 +54,18 @@ internal class StaffAccessDeniedHandler(
                 ),
             )
         }
+        val customerConsentRoute = request.requestURI.startsWith("/api/v1/admin/customer-consent-policies")
         problemWriter.write(
             response = response,
             request = request,
             status = 403,
-            type = "/problems/staff-access-denied",
-            title = "Staff access denied",
-            detail = "You do not have permission to perform this action.",
+            type = if (customerConsentRoute) "/problems/customer-consent-forbidden" else "/problems/staff-access-denied",
+            title = if (customerConsentRoute) "고객 동의 정책 관리 권한이 없습니다" else "Staff access denied",
+            detail = if (customerConsentRoute) {
+                "이 고객 동의 정책을 관리할 권한이 없습니다."
+            } else {
+                "You do not have permission to perform this action."
+            },
         )
     }
 }

@@ -16,11 +16,16 @@ internal class StaffAuthenticationEntryPoint(
         authException: AuthenticationException,
     ) {
         val customerRoute = request.requestURI.startsWith("/api/v1/customer/")
+        val customerConsentAdminRoute = request.requestURI.startsWith("/api/v1/admin/customer-consent-policies")
         problemWriter.write(
             response = response,
             request = request,
             status = 401,
-            type = if (customerRoute) "/problems/customer-authentication-required" else "/problems/staff-authentication-required",
+            type = when {
+                customerRoute -> "/problems/customer-authentication-required"
+                customerConsentAdminRoute -> "/problems/staff-session-required"
+                else -> "/problems/staff-authentication-required"
+            },
             title = if (customerRoute) "Customer authentication required" else "Staff authentication required",
             detail = if (customerRoute) "Request a new sign-in link to continue." else "Sign in to continue.",
         )

@@ -289,7 +289,7 @@ class CustomerConsentContractTest(unittest.TestCase):
             },
         )
 
-    def test_customer_and_admin_operation_family_is_complete_and_blueprint_only(self) -> None:
+    def test_customer_and_admin_operation_family_tracks_runtime_freeze(self) -> None:
         expected = {
             ("/api/v1/customer/consent-policies", "get"): "listCurrentCustomerConsentPolicies",
             ("/api/v1/admin/customer-consent-policies", "get"): "listCustomerConsentPolicies",
@@ -319,9 +319,11 @@ class CustomerConsentContractTest(unittest.TestCase):
             with self.subTest(path=path, method=method):
                 operation = self.operation(path, method)
                 self.assertEqual(operation_id, operation["operationId"])
-                self.assertNotIn("x-deskseed-contract-status", operation)
                 if path.startswith("/api/v1/admin/"):
-                    self.assertIn(operation_id, declared_blueprints)
+                    self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
+                    self.assertNotIn(operation_id, declared_blueprints)
+                else:
+                    self.assertNotIn("x-deskseed-contract-status", operation)
 
     def test_admin_policy_boundary_requires_authority_actor_csrf_and_precondition(self) -> None:
         admin_operations = (

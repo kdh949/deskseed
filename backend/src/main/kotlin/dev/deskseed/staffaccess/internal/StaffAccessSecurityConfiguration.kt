@@ -16,6 +16,7 @@ import org.springframework.security.web.servlet.util.matcher.PathPatternRequestM
 import dev.deskseed.integration.INTEGRATION_CLIENT_MANAGE_AUTHORITY
 import dev.deskseed.integration.EXTERNAL_SYSTEM_MANAGE_AUTHORITY
 import dev.deskseed.webhook.WEBHOOK_MANAGE_AUTHORITY
+import dev.deskseed.organization.StaffAuthorityCatalog
 
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
@@ -85,6 +86,10 @@ internal class StaffAccessSecurityConfiguration(
                     .hasAuthority(WEBHOOK_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/external-systems/**")
                     .hasAuthority(EXTERNAL_SYSTEM_MANAGE_AUTHORITY)
+                it.requestMatchers(
+                    "/api/v1/admin/customer-consent-policies",
+                    "/api/v1/admin/customer-consent-policies/**",
+                ).hasAuthority(StaffAuthorityCatalog.CUSTOMER_CONSENT_MANAGE)
                 it.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 it.requestMatchers(HttpMethod.GET, "/api/v1/analytics/**").hasAnyRole("ADMIN", "AGENT")
                 it.requestMatchers(HttpMethod.POST, "/api/v1/audit/activities/*/search-query-reveal")
