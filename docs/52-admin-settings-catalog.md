@@ -36,14 +36,25 @@ SettingValue
 
 | Key | Type | Proposed default | Phase | Audit | Notes |
 |---|---|---|---|---|---|
-| `customer.accessMode` | enum | `ANONYMOUS_ALLOWED` | M6 | yes | optional/required registration later |
+| `customer.accessMode` | enum | `REGISTRATION_OPTIONAL` | P0 auth/form | yes | V82 changes only an untouched seed row; operator-edited values are preserved |
 | `customer.requestTokenTtlDays` | int | 30 | M1 hardening | yes | legal/security decision |
 | `customer.allowAnonymousFollowUp` | bool | false | P1 | yes | token security required |
 | `customer.emailVerificationRequiredForList` | bool | true | P1 | yes | prevents email-ownership assumption |
-| `customer.authMethod` | enum | `EMAIL_MAGIC_LINK` | P1 | yes | password/OIDC later |
-| `customer.magicLinkTtlMinutes` | int | 15 | P1 | yes | allowed 5–60 |
+| `customer.authMethod` | enum | `PASSWORD_PRIMARY` | P0 auth | yes | `EMAIL_MAGIC_LINK` login is passwordless-only; OIDC later |
+| `customer.magicLinkTtlMinutes` | int | 15 | P0 auth | yes | `PASSWORDLESS_LOGIN`, allowed 5–60 |
+| `customer.registrationVerificationTtlMinutes` | int | 1440 | P0 auth | yes | purpose-bound email token; allowed 15–2880 |
+| `customer.passwordResetTtlMinutes` | int | 30 | P0 auth | yes | purpose-bound reset token; allowed 5–60 |
+| `customer.passwordMinCharacters` | int | 12 | P0 auth | yes | cannot be configured below 12 |
+| `customer.passwordMaxCharacters` | int | 128 | P0 auth | yes | bounded work/input; cannot exceed 128 |
+| `customer.authRequestLimit` | int | 5 | P0 auth | yes | per operation/destination/network fingerprint |
+| `customer.authRequestWindowMinutes` | int | 15 | P0 auth | yes | PostgreSQL-backed; `Retry-After` required |
 | `customer.reopenWindowDays` | int | 14 | P1 | yes | provisional |
 | `customer.displayAgentFullName` | bool | false | M6 | yes | privacy/brand policy |
+
+Customer consent policy title/document/required/order/effective time are immutable-versioned domain
+records guarded by `customer-consent:manage`, not generic settings keys. Production legal text is not
+seeded by the repository. Password/hash/token/continuation-secret values are credential objects and
+never `SettingValue` rows.
 
 ## 3. Ticket workflow
 

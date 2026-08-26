@@ -66,55 +66,57 @@ Forward-only Flyway migrations are still required. “Not deployed” permits co
 
 `D-040` and ADR 0029 currently say customer authentication begins with email magic links. The new requirement activates their password-authentication revisit trigger.
 
-Create a new accepted ADR, proposed as:
+The new accepted ADR is:
 
 ```text
 ADR 0042 — Password-primary customer authentication with passwordless magic-link onboarding
 ```
 
-Reserve the next three decision-register entries for:
+The accepted decision-register entries are:
 
 ```text
-decision 57: customer authentication is password-primary; magic-link login is passwordless-only
-decision 58: consent policies are administrator-managed immutable versions with append-only acceptance
-decision 59: customer request submission binds a server-authorized form/version and typed values
+D-057: customer authentication is password-primary; magic-link login is passwordless-only
+D-058: consent policies are administrator-managed immutable versions with append-only acceptance
+D-059: customer request submission binds a server-authorized form/version and typed values
+D-060: customer auth throttling remains storage-neutral and selects PostgreSQL or Redis after benchmark evidence
 ```
 
-Task 1 registers the final ASCII decision IDs in `docs/05-decision-register.md`; the plan intentionally does not activate those references before the register is updated.
+Task 1 registers these final ASCII decision IDs in the canonical `docs/25-implementation-decision-register.md`.
 
 ADR 0042 supersedes the authentication-method portion of ADR 0029 but preserves its single-use token, enumeration safety, session security, explicit claim, and outbound-mail boundaries.
+ADR 0043 partially supersedes only ADR 0042's unconditional PostgreSQL-throttling sentence. It preserves the externally visible rate-limit, enumeration-safety, and fail-closed behavior while making the storage choice evidence-gated.
 
 ### 4.2 Requirement IDs
 
-Add five narrow requirements rather than marking broad requirements complete:
+The five narrow requirements are:
 
 ```text
-customer auth: password registration, email verification, password login, and reset
-customer auth: passwordless magic-link sign-in and explicit registration completion
-customer consent: administrator-managed immutable consent-policy versions
-customer consent: server-validated append-only customer consent acceptance
-ticket configuration: customer form projection, submission validation, and form snapshot binding
+REQ-AUTH-003: password registration, email verification, password login, and reset
+REQ-AUTH-004: passwordless magic-link sign-in and explicit registration completion
+REQ-CONSENT-001: administrator-managed immutable consent-policy versions
+REQ-CONSENT-002: server-validated append-only customer consent acceptance
+REQ-CFG-014: customer form projection, submission validation, and form snapshot binding
 ```
 
-Task 1 allocates their final IDs in `docs/26-requirement-traceability.md`; candidate numbers are not used as active references in this plan.
+Task 1 registers these IDs in `docs/26-requirement-traceability.md` as `BLUEPRINT_READY`; the matching contract-freeze PR promotes each row independently.
 
 `REQ-CFG-002` remains broad. Completing the customer submission slice does not prove every custom-field query, search, and analytics capability.
 
 ### 4.3 Verification gate additions
 
-Extend `docs/21-minimum-verification-gates.md` with seven newly allocated gates covering:
+Extend `docs/21-minimum-verification-gates.md` with these seven gates:
 
 ```text
-customer authentication: password registration and email verification
-customer authentication: password login enumeration safety, throttling, and session rotation
-customer authentication: password reset single-use, expiry, and session revocation
-customer authentication: passwordless magic-link eligibility and registration completion
-customer consent: immutable policy lifecycle and administrator authorization
-customer consent: current-version enforcement and atomic acceptance persistence
-ticket configuration: customer form candidate projection and submission binding
+AUTH-005: password registration and email verification
+AUTH-006: password login enumeration safety, throttling, and session rotation
+AUTH-007: password reset single-use, expiry, and session revocation
+AUTH-008: passwordless magic-link eligibility and registration completion
+CONSENT-001: immutable policy lifecycle and administrator authorization
+CONSENT-002: current-version enforcement and atomic acceptance persistence
+CFG-006: customer form candidate projection and submission binding
 ```
 
-Task 1 assigns the final gate IDs together with the traceability rows so the plan never presents an undefined gate as executable.
+Task 1 also restores the already-referenced `CFG-001` through `CFG-005` definitions from the delivered ticket-configuration evidence so every active traceability reference resolves.
 
 Existing `AUTH-001` through `AUTH-004`, `ARCH-001/002/004`, `TKT-001/002`, `CHG-001/002/003`, `FILE-001/003/004/006`, and `DOC-001` remain applicable.
 
@@ -219,6 +221,23 @@ Password input policy:
 - no forced composition rule;
 - plaintext exists only at the HTTP/application boundary and is never logged, audited, returned, cached, or stored.
 
+### 5.5 Authentication throttling storage decision
+
+The product owner considered introducing Redis immediately. The concern was that writing every failed or attempted authentication to PostgreSQL could turn malicious traffic into hot-row, WAL, connection-pool, and lock pressure, while implementing a full PostgreSQL limiter and later replacing it with Redis would duplicate migration, repository, test, and operational work.
+
+The accepted decision is benchmark-gated PostgreSQL-first, not unconditional PostgreSQL and not immediate Redis:
+
+- keep the HTTP/OpenAPI behavior storage-neutral behind an `AuthenticationAttemptLimiter` application port;
+- before a production limiter migration or adapter is written, run a small target-environment PostgreSQL prototype against one hot global key, one hot destination key, one hot network key, and high-cardinality traffic;
+- predeclare the expected sustained rate, burst, concurrency, safety factor, latency budget, and unaffected business-transaction SLO;
+- implement only the PostgreSQL adapter if that gate passes, or record the failed evidence and implement only the Redis adapter if it does not;
+- never dual-write PostgreSQL and Redis for the same decision;
+- keep a coarse ingress/proxy limit in front of the application regardless of the selected store;
+- a bounded local deny cache may suppress repeated store calls, but it can only deny and must never grant an allowance;
+- shared-store timeout or unavailable state fails closed with the generic authentication-unavailable `503` contract.
+
+The limiter transaction completes before adaptive password hashing, mail work, or authentication audit persistence. ADR 0043 owns the benchmark matrix, evidence fields, Redis acceptance requirements, and revisit conditions.
+
 ## 6. Consent architecture
 
 ### 6.1 Policy model
@@ -243,14 +262,23 @@ CustomerConsentPolicyVersion
   checksumSha256
   required
   displayOrder
-  effectiveAt
+  effectiveAt                server-owned; equals publishedAt in P0
   publishedByStaffId/display
   publishedAt
 ```
 
 Published versions are immutable. Editing a published policy updates a draft and publishing creates a new version; it never rewrites what a customer previously accepted.
+P0 does not schedule future policy activation. The draft and publish request do not accept `effectiveAt`; a successful publish sets
+`effectiveAt = publishedAt` from the same server `Clock` value and atomically replaces the one current pointer. Introducing a separate
+scheduled version, transition worker, or future activation time requires a later decision amendment.
 
 Reuse the public, storage-neutral canonical block document codec/validator already used by Knowledge Base. Consent applies an additional allowlist and rejects raw HTML and attachments. This avoids a second rich-text format and preserves deterministic plain text and checksum behavior without importing Knowledge Base internals.
+Create/update rejects an HTTP request body larger than 262,144 bytes. Publish validates the canonicalized result at 50,000 plain-text
+characters and 200,000 UTF-8 bytes so a schema-valid block collection cannot exceed the immutable version storage contract.
+
+The current-policy projection is intentionally bounded to 20 policies per context. Publish enforces the same limit while serializing
+the context inside its transaction; concurrent attempts to move from 20 to 21 current policies can have at most one winner. Pagination
+is not introduced for this P0 command prerequisite set.
 
 ### 6.2 Acceptance model
 
@@ -331,7 +359,7 @@ To prevent account pre-hijacking, a pending registration is activated only when 
 
 ### 7.2 Consent operations
 
-Add an owned Core fragment, proposed `api/core-api-fragments/05-customer-consent.yaml`.
+Add the owned Core fragment `api/core-api-fragments/05-customer-consent.yaml`.
 
 Customer operation:
 
@@ -340,7 +368,7 @@ GET /api/v1/customer/consent-policies?context=REGISTRATION|REQUEST_SUBMISSION
 operationId: listCurrentCustomerConsentPolicies
 ```
 
-The response returns current published `policyId`, `policyKey`, `version`, `title`, safe canonical document, checksum, required flag, display order, and effective time. Public responses are cacheable only according to an explicit version/ETag policy; registration and submission responses remain `no-store`.
+The response returns current published `policyId`, `policyKey`, `version`, `title`, safe canonical document, checksum, required flag, display order, and server-owned effective time equal to `publishedAt`. Public responses are cacheable only according to an explicit version/ETag policy; registration and submission responses remain `no-store`.
 
 Administrator operations:
 
@@ -360,7 +388,7 @@ Admin writes require staff session, ADMIN role, `customer-consent:manage`, expec
 Reuse the existing initial projection:
 
 ```text
-GET /api/v1/customer/ticket-forms?ticketKind=CUSTOMER_REQUEST&formId=...
+GET /api/v1/customer/ticket-forms?formId=...
 ```
 
 Add candidate-value projection:
@@ -383,16 +411,25 @@ Request:
 }
 ```
 
-The server evaluates allowlisted `field.<machineKey>` facts and returns only the customer-visible projection. The final create command always repeats validation; a projection response is not an authorization token.
+The public adapter always evaluates `ticketKind=CUSTOMER_REQUEST`; it does not accept an internal ticket-kind input. The server evaluates
+allowlisted `field.<machineKey>` facts and returns only the customer-visible projection. The final create command always repeats validation;
+a projection response is not an authorization token.
+
+Each published `formVersion` freezes placement/order, condition rules, customer visibility/editability/requiredness, field and option IDs
+and machine keys, field type/validation bounds, and the eligible option set/order. Customer label and description are current display copy,
+not part of the snapshot; the contract does not promise exact historical UI wording. A field or option semantic change, including type,
+validation meaning, or option meaning, creates a new ID. A copy-only label/description change does not create a new form version.
 
 ### 7.4 Request creation contract cleanup
 
-Replace `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. Remove `privacyConsent` rather than deprecating it because the application has not shipped.
+The implementation blueprint replaces `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. It omits the runtime `FROZEN`
+marker until the controller, persistence, error, and springdoc parity land. `privacyConsent` is removed rather than deprecated because the application has not shipped.
 
-Recommended JSON shape:
+Planned JSON shape:
 
 ```json
 {
+  "clientCommandId": "08a85f1c-9939-43f7-a90a-657ac5acb935",
   "requester": {
     "name": "김민아",
     "email": "mina.kim@example.test"
@@ -417,6 +454,7 @@ Recommended JSON shape:
 
 Rules:
 
+- `clientCommandId` is a required high-entropy UUID generated by the first-party browser and retained across transport retries;
 - `requester` is required for an anonymous request and omitted for a signed-in request;
 - a signed-in request uses the server session identity and rejects a conflicting requester object;
 - `formId` and `formVersion` are either both present or both absent;
@@ -429,6 +467,21 @@ Rules:
 - customer urgency remains a custom field and does not mutate internal priority;
 - order reference is a bounded string and triggers no external fetch.
 
+Initial request idempotency is scoped by the authenticated customer ID or anonymous requester destination fingerprint plus
+`clientCommandId`. The final command stores only a keyed command-identity digest, a canonical request/attachment-manifest hash,
+the committed ticket identity/result metadata, and expiry. The canonical hash covers identity mode, requester/session identity,
+subject, message, form/version, normalized typed values, accepted policies, and the ordered server-computed attachment
+SHA-256/size/media-type manifest. The raw command ID, requester content, and raw request access token are not stored in the receipt.
+
+- same identity and command ID with the same canonical payload returns the same logical ticket result without duplicating Customer,
+  Ticket, comment, form/value, acceptance, audit, or mail intent;
+- replay issues a fresh ticket-scoped request access grant while previously issued grants retain their normal expiry/claim lifecycle,
+  so no raw capability must be retained for response replay;
+- the same identity and command ID with a different canonical payload returns a non-mutating `409`, except that the separately
+  committed public abuse budget remains consumed;
+- a transaction-scoped lock makes concurrent finalization single-winner;
+- the receipt expires after seven days and bounded cleanup removes expired/abandoned rows; a retry after expiry is a new command.
+
 Replace the flat multipart schema with:
 
 ```text
@@ -436,7 +489,20 @@ request       application/json CreateCustomerRequest
 attachments  zero to five files
 ```
 
-The existing attachment quarantine/upload/link implementation is reused. Initial validation occurs before upload and is repeated in the final ticket transaction. A policy/form version changed during upload produces a stable conflict and leaves uploaded objects subject to the existing unlinked-object cleanup policy.
+The existing attachment quarantine/upload/link implementation is reused. For an anonymous multipart request the server generates a
+`plannedCustomerId` UUID, but does not insert a Customer before file work. Quarantine/upload/scan records only that opaque server-generated
+UUID as the CUSTOMER actor; the client cannot supply it and attachment metadata/audit contains no requester name or email. The final
+transaction creates `Customer(id = plannedCustomerId)` and links only CLEAN attachments owned by the same UUID. Initial validation occurs
+before upload and is repeated in the final ticket transaction. A file failure or policy/form version change leaves no Customer or Ticket;
+already uploaded objects remain unlinked and use the existing TTL cleanup policy.
+
+The stable customer problem catalog is `/problems/customer-ticket-form-validation-failed`,
+`/problems/customer-ticket-form-unavailable`, `/problems/customer-ticket-form-version-conflict`,
+`/problems/customer-request-validation-failed`, `/problems/customer-request-not-allowed`,
+`/problems/customer-request-configuration-conflict`, `/problems/customer-request-command-conflict`,
+`/problems/customer-request-rate-limited`, and
+`/problems/customer-request-configuration-unavailable`. All responses use `Cache-Control: no-store`;
+validation and unavailable responses do not disclose whether an unknown input names a staff-only definition.
 
 ## 8. Database migration plan
 
@@ -459,14 +525,18 @@ Wave 1's V40–V79 reservation is complete. Begin the next additive range at V80
 - add `customer_registration_intents` with email, password hash, profile values, continuation-secret digest, expiry, consume/cancel state;
 - add `customer_registration_intent_consents` referencing immutable policy versions;
 - generalize/rename `customer_magic_link_tokens` to purpose-bound customer one-time tokens;
-- generalize the magic-link limiter to an authentication-operation limiter while retaining content-free fingerprints;
+- introduce the storage-neutral `AuthenticationAttemptLimiter` port while retaining content-free fingerprints; add or alter PostgreSQL limiter tables only if the ADR 0043 benchmark selects PostgreSQL, and do not dual-write if Redis is selected;
 - add session authentication method and credential-version snapshot if required for invalidation;
 - keep raw passwords, raw tokens, and raw continuation secrets out of all tables.
 
 ### V82 — customer request form binding
 
 - create `ticket_form_selections(ticket_id PK, form_id, form_version, selected_at)`;
-- preserve the existing typed `ticket_custom_field_values` rows;
+- treat `ticket_form_selections` as the sole ticket-level selected form/version source of truth, including tickets with zero custom values;
+- backfill one selection for each historical ticket whose non-null `ticket_custom_field_values.form_id/form_version` rows contain exactly one distinct tuple;
+- fail migration when a ticket contains more than one distinct tuple; do not guess or add an operational backfill system;
+- do not infer a selection for historical tickets with zero values because the old schema did not preserve one;
+- after deterministic validation/backfill, drop the redundant value-row `form_id/form_version` columns while preserving typed value rows;
 - add the exact FK/indexes needed by selected-form reads and immutable-version resolution;
 - update every FK-connected PostgreSQL `TRUNCATE` cleaner;
 - change the initial effective access mode to `REGISTRATION_OPTIONAL` only for the untouched seed setting, without overwriting an operator-edited row.
@@ -478,7 +548,7 @@ All migrations require empty-database migration, upgrade-path migration, Hiberna
 ### Registration request
 
 ```text
-rate limit
+consume allowance through AuthenticationAttemptLimiter
 → validate current registration policy versions
 → hash password
 → replace/create bounded pending registration intent
@@ -508,7 +578,7 @@ Concurrent consume produces one account. A race with an existing verified accoun
 ### Password login
 
 ```text
-rate limit by purpose-bound normalized-email/network fingerprints
+consume allowance through AuthenticationAttemptLimiter using purpose-bound normalized-email/network fingerprints
 → always execute a real-or-dummy password hash comparison
 → verify ACTIVE + PASSWORD credential
 → rotate session
@@ -530,27 +600,31 @@ The current session must have `credentialState=PASSWORDLESS`; CSRF is required. 
 
 ```text
 pre-committed abuse budget
-→ resolve anonymous or session customer
-→ validate current request consent policies
-→ resolve current customer form/version
-→ re-evaluate candidate values and normalize typed values
-→ create Ticket + first PUBLIC Comment
-→ persist selected form/version + field values
-→ append consent acceptances
-→ write one TicketAudit with ordered metadata-only events
-→ append consent security event
-→ link CLEAN PUBLIC attachments
-→ issue request access token and enqueue mail intent
+→ for anonymous input, generate a server-only plannedCustomerId
+→ quarantine/upload/scan files outside the ticket transaction under that opaque owner UUID
+→ begin final database transaction
+   → lock scoped clientCommandId and compare the canonical request/attachment-manifest hash
+   → return the prior logical result plus a fresh access grant on an exact replay
+   → validate current request consent policies
+   → resolve current customer form/version and normalize candidate values
+   → create anonymous Customer(plannedCustomerId), or resolve the current session Customer
+   → create Ticket + first PUBLIC Comment
+   → persist selected form/version + field values and consent acceptances
+   → write one TicketAudit and required consent security event
+   → link CLEAN PUBLIC attachments owned by the same customer UUID
+   → persist request access token, idempotency receipt, and mail intent
 → commit
 ```
 
-Any form, consent, TicketAudit, security-audit, attachment-link, access-token, or mail-intent persistence failure rolls back the ticket mutation. The previously consumed public abuse budget remains consumed by its existing separate transaction.
+Any form, consent, Customer, TicketAudit, security-audit, attachment-link, access-token, idempotency-receipt, or mail-intent persistence
+failure rolls back the final transaction. File work remains outside it: successful earlier uploads are CLEAN but unlinked and cleanup-eligible.
+The previously consumed public abuse budget remains consumed by its existing separate transaction.
 
 ## 10. Security and privacy acceptance
 
 - Password hashes use the customer-specific adaptive encoder; plaintext is never persisted.
 - Login and recovery responses do not reveal account, credential, passwordless, disabled, or pending state.
-- All authentication request endpoints have PostgreSQL-backed throttling and `Retry-After`.
+- All authentication request endpoints use the storage-neutral purpose/destination/network throttling contract and return `Retry-After` on `429`; ADR 0043 benchmark evidence selects exactly one production adapter.
 - Registration intent, verification, reset, and magic tokens are purpose-bound, single-use, expiring, digest-only, and control-character bounded.
 - Session cookies remain HttpOnly, Secure in production, SameSite=Lax, and server-revocable.
 - Password reset and passwordless completion revoke/rotate sessions.
@@ -571,7 +645,7 @@ Each numbered task uses `CODEX_TASK_TEMPLATE.md`, owns one branch/worktree, and 
 
 **Deliverable:** ADR 0042 plus decision, blueprint, requirement, privacy, settings-catalog, command/event, and gate updates.
 
-**Acceptance:** password-primary and passwordless-only magic semantics are unambiguous; claim behavior remains unchanged; new requirements and gates are traceable.
+**Acceptance:** password-primary and passwordless-only magic semantics are unambiguous; consent publish is immediate with server-owned equal effective/published timestamps; initial request idempotency and capability replay are explicit; claim behavior remains unchanged; new requirements and gates are traceable.
 
 **Likely files:** new ADR, `docs/25`, `docs/26`, `docs/34`, `docs/37`, `docs/52`.
 
@@ -591,7 +665,7 @@ Each numbered task uses `CODEX_TASK_TEMPLATE.md`, owns one branch/worktree, and 
 
 **Deliverable:** candidate projection, form-aware JSON/multipart create body, direct removal of `privacyConsent`, and stable problem catalog.
 
-**Acceptance:** no v2/legacy schema remains; JSON and multipart represent the same domain command; customer/staff projection boundaries are explicit.
+**Acceptance:** no v2/legacy schema remains; JSON and multipart represent the same stable client command; same-payload replay and mismatched-payload conflict are contracted without retaining a raw access capability; customer/staff projection boundaries are explicit.
 
 **Likely files:** `api/core-api-base-v1.yaml`, `api/core-api-fragments/10-ticket-configuration.yaml`, bundled Core artifact, contract tests.
 
@@ -640,9 +714,9 @@ Each numbered task uses `CODEX_TASK_TEMPLATE.md`, owns one branch/worktree, and 
 
 #### Task 7: Generalize customer credential and token storage
 
-**Deliverable:** V81, customer-specific Argon2id encoder, token purpose model, registration-intent persistence, generalized auth limiter, and cleaner updates.
+**Deliverable:** ADR 0043 target/SLO declaration and PostgreSQL benchmark artifact, the storage-neutral limiter port with exactly one selected adapter, V81, customer-specific Argon2id encoder, token purpose model, registration-intent persistence, and cleaner updates.
 
-**Acceptance:** DB has no plaintext credential/token columns; purpose mismatch fails; clean migration and existing magic-link regression tests pass.
+**Acceptance:** the benchmark is classified `Passed`, `Failed`, or `Blocked` with reproducible environment/SQL/throughput/latency/lock/pool/WAL/business-SLO evidence; a pass selects PostgreSQL and a failure selects Redis through a decision amendment; a blocked run selects neither. No dual write exists, no shared-store lock is held during adaptive hashing, DB has no plaintext credential/token columns, purpose mismatch fails, and clean migration plus existing magic-link regression tests pass.
 
 **Scope:** M. **Dependencies:** Tasks 1, 4.
 
@@ -658,7 +732,7 @@ Each numbered task uses `CODEX_TASK_TEMPLATE.md`, owns one branch/worktree, and 
 
 **Deliverable:** password-session endpoint, dummy hash path, rate limiting, session rotation, current-customer credential projection, and tests.
 
-**Acceptance:** unknown/wrong/disabled/passwordless are externally indistinguishable; throttling includes `Retry-After`; password success creates one audited session and no password appears in output/logs.
+**Acceptance:** unknown/wrong/disabled/passwordless are externally indistinguishable; throttling includes `Retry-After`, shared-store failure returns generic `503`, and the target burst does not starve unrelated business transactions; password success creates one audited session and no password appears in output/logs.
 
 **Scope:** M. **Dependencies:** Task 8.
 
@@ -715,7 +789,7 @@ Each numbered task uses `CODEX_TASK_TEMPLATE.md`, owns one branch/worktree, and 
 
 **Deliverable:** new multipart adapter reusing existing upload/quarantine/link services and two-phase validation.
 
-**Acceptance:** JSON and multipart produce equivalent tickets/form values/consents; unsafe or unclean files do not link; stale policy/form conflict leaves no ticket and unlinked files follow cleanup.
+**Acceptance:** JSON and multipart produce equivalent tickets/form values/consents; an anonymous upload uses a server-only planned Customer UUID and creates no Customer before file validation; third-file failure leaves no Customer/Ticket/acceptance/mail intent, earlier CLEAN files are unlinked and cleanup-eligible; stale policy/form or audit/mail-intent failure rolls back Customer/Ticket/link state; cross-owner attachment linking is denied; authenticated submission creates no new Customer.
 
 **Scope:** M. **Dependencies:** Task 14.
 
@@ -773,6 +847,8 @@ Local success is not remote CI success. Mailpit E2E, clean Flyway/PostgreSQL, au
 | Existing ADR and code assume magic-link-only auth | High | Superseding ADR and contract-only checkpoint before code |
 | Account pre-hijacking through victim email registration | High | Email token plus browser-bound continuation proof; no token-only activation |
 | Password hash cost creates auth DoS | High | Argon2id benchmark, strict login limits, dummy comparison, bounded concurrency evidence |
+| Per-attempt PostgreSQL writes turn an authentication attack into hot-row, WAL, lock, or connection-pool pressure | High | ADR 0043 hot-key/high-cardinality benchmark, predeclared safety/SLO gate, coarse ingress limit, and storage-neutral port |
+| Redis is added before evidence and creates avoidable availability, failover, memory, and operational dependencies | Medium | PostgreSQL remains preferred; select Redis only after failed benchmark evidence and implement one adapter without dual writes |
 | Admin edits rewrite accepted legal text | High | Immutable published versions; acceptance references version/checksum |
 | Missing legal policy is silently accepted | High | Registration/request fail closed until required active policy exists |
 | Staff-only custom field leaks through projection/error | High | Server-side allowlist, existence-safe error, direct-ID negative tests |
@@ -782,7 +858,7 @@ Local success is not remote CI success. Mailpit E2E, clean Flyway/PostgreSQL, au
 | Password reset becomes an alternate login bypass | High | Purpose-bound token, no session creation, all-session revocation, single use |
 | Company/consent data leaks to audit or integrations | High | Metadata allowlists and negative log/export/webhook tests |
 
-## 14. Recommended decisions made due to missing owner input
+## 14. Recommended decisions and recorded owner decision
 
 The following are recommendations made by this plan and can be changed before Checkpoint A:
 
@@ -800,5 +876,6 @@ The following are recommendations made by this plan and can be changed before Ch
 12. The current `/api/v1/requests` and identity contracts are changed in place; `privacyConsent`, the flat multipart body, compatibility adapters, and v2 endpoints are not retained.
 13. A new `customerconsent` module owns policy and acceptance semantics instead of storing legal content in generic system settings.
 14. The first implementation uses `REGISTRATION_OPTIONAL` as the effective customer access mode so anonymous and registered submission coexist.
+15. The product owner raised the risk of database write/lock pressure and duplicated PostgreSQL-to-Redis implementation work, then accepted ADR 0043's benchmark-gated PostgreSQL-first decision: keep a storage-neutral port, benchmark before the production adapter/migration, and implement exactly one store selected by evidence.
 
-The implementation can begin without further structural questions once Checkpoint A approves these recommendations. Actual production legal text and jurisdiction-specific retention remain operator/legal-owner inputs, not values generated by the implementation.
+The authentication implementation can proceed only after Task 7 records the target load/SLO and classifies the benchmark evidence. Actual production legal text and jurisdiction-specific retention remain operator/legal-owner inputs, not values generated by the implementation.

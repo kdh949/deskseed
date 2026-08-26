@@ -5,7 +5,7 @@
 각 API surface는 독립 OpenAPI 문서로 관리한다.
 
 ```text
-api/core-api-outline-v1.yaml       customer/agent/admin/audit outline
+api/core-api-outline-v1.yaml       customer portal/ticket/agent/admin/audit outline
 api/customer-identity-api-v1.yaml  customer identity/session/claim contract
 api/platform-api-outline-v1.yaml   machine integration outline
 api/integration-event-envelope-v1.schema.json
@@ -21,7 +21,12 @@ api/automation-api-v1.yaml   (later)
 api/analytics-api-v1.yaml    (later)
 ```
 
-`x-deskseed-contract-status: FROZEN` 작업과 현재 Platform v1 작업은 구현 계약이다. 나머지 outline 작업은 계약 동결 전 단계다. 구현 PR은 해당 endpoint를 full schema/examples/errors/security까지 승격해야 한다.
+`x-deskseed-contract-status: FROZEN`은 구현 계약인 동시에 해당 route와 계약된 request/response,
+status/problem, security 의미가 runtime에 존재한다는 표시다. 구현 전 contract-freeze PR은 operationId와 full
+schema/examples/errors/security를 확정하고도 이 표시를 생략하며, vertical implementation PR이 runtime parity
+증거와 함께 `FROZEN`으로 승격한다. path/method 일치만으로 payload나 failure 의미의 parity를 주장할 수 없다.
+현재 Platform v1 작업은 별도 surface 규칙에 따라 모든 operation을 구현 계약으로 본다. 나머지 outline 작업은
+계약 동결 전 단계다.
 
 Scalar `/docs/api`는 위 커밋 계약을 읽기 쉽게 렌더링할 뿐 source of truth를 바꾸지 않는다. springdoc `/v3/api-docs/**`는 Controller 구현과 커밋 계약의 경로·HTTP method 드리프트를 검출하는 보조 산출물이며 배포 계약이나 SDK 입력으로 사용하지 않는다.
 
@@ -42,10 +47,19 @@ Scalar `/docs/api`는 위 커밋 계약을 읽기 쉽게 렌더링할 뿐 source
 
 ```text
 POST /api/v1/requests
+GET  /api/v1/customer/ticket-forms
+POST /api/v1/customer/ticket-form-projections
 GET  /api/v1/requests/{ticketNumber}
 POST /api/v1/requests/{ticketNumber}/comments       ticket-scoped anonymous PUBLIC follow-up
+POST /api/v1/customer/registrations
+POST /api/v1/customer/registration-verifications
+POST /api/v1/customer/auth/password-sessions
 POST /api/v1/customer/auth/magic-link-requests
 POST /api/v1/customer/auth/magic-link-sessions
+POST /api/v1/customer/auth/password-reset-requests
+POST /api/v1/customer/auth/password-resets
+PUT  /api/v1/customer/me/registration
+GET  /api/v1/customer/consent-policies
 GET  /api/v1/customer/csrf
 DELETE /api/v1/customer/session
 GET  /api/v1/customer/me
@@ -55,10 +69,16 @@ GET  /api/v1/customer/requests/{ticketNumber}        account later
 
 #### `POST /api/v1/requests` 공개 접수 제한 경계
 
+- 이 blueprint operation은 legacy runtime과 새 request/status/problem 의미가 일치할 때까지 `x-deskseed-contract-status: FROZEN`을 표시하지 않는다.
+- JSON 본문과 multipart의 `request` JSON part는 같은 `CreateCustomerRequest` schema를 사용한다. 익명 요청은 requester가 필수이고, customerSession 요청은 requester를 생략하며 현재 session identity와 CSRF를 사용한다.
+- formId/formVersion은 함께 보내거나 함께 생략한다. typed field values와 REQUEST_SUBMISSION accepted policy versions는 최종 ticket transaction에서 current published snapshot에 대해 다시 검증한다.
+- required `clientCommandId`와 canonical request/ordered attachment-manifest hash는 exact retry를 같은 ticket과 fresh access grant로 replay하고 mismatched reuse를 non-mutating 409로 거부한다. Receipt는 raw command ID/request/access token 없이 7일 보존하며 동시 finalization은 single-winner다.
+- 익명 multipart는 서버가 만든 planned Customer UUID로 Customer row 없이 파일 검사를 끝내고, 최종 transaction에서 같은 UUID의 Customer/Ticket/link/audit/mail intent를 함께 commit한다.
+- `POST /api/v1/customer/ticket-form-projections`는 side-effect-free preview이며 권한 토큰이 아니다. unknown/staff-only 입력은 보호된 definition의 존재를 누출하지 않는 stable problem을 반환한다.
 - 서버는 customer/ticket 생성 전에 대상 이메일, 신뢰된 실제 client 주소, 전역 고정 창을 모두 PostgreSQL 버킷으로 차감한다.
 - 대상과 IP의 원문은 저장하지 않고 purpose-bound HMAC fingerprint만 저장한다. 버킷은 만료 시 bounded `FOR UPDATE SKIP LOCKED` cleanup으로 제거한다.
 - `X-Forwarded-For`는 direct peer가 `trusted-proxy-cidrs`에 있을 때만 해석한다. 신뢰되지 않은 peer의 header는 무시하고, 신뢰 프록시의 손상·복수·상한 초과 chain은 400으로 fail closed한다.
-- 제한 초과는 `429 /problems/request-rate-limit-exceeded`, `Retry-After: <seconds>`, `Cache-Control: no-store`를 반환한다. limiter persistence가 불가능하면 customer/ticket을 만들지 않고 `503 /problems/request-rate-limit-unavailable`을 반환한다.
+- 제한 초과는 `429 /problems/customer-request-rate-limited`, `Retry-After: <seconds>`, `Cache-Control: no-store`를 반환한다. limiter, form/policy projection 또는 required audit persistence가 불가능하면 customer/ticket을 만들지 않고 `503 /problems/customer-request-configuration-unavailable`을 반환한다.
 - limiter transaction은 ticket transaction보다 먼저 독립적으로 commit한다. 이후 ticket/audit/outbox rollback도 이미 소비한 anti-abuse budget을 되돌리지 않는다.
 
 #### `/api/v1/admin/mail/*` 안전한 운영 경계
@@ -93,6 +113,10 @@ GET/POST/PATCH /api/v1/admin/staff...
 PUT/DELETE /api/v1/admin/staff/{staffId}/audit-authorities/{authority}
 GET/POST/PATCH /api/v1/admin/groups...
 PUT /api/v1/admin/settings/customer-access-mode
+GET/POST /api/v1/admin/customer-consent-policies
+GET/PUT  /api/v1/admin/customer-consent-policies/{policyId}
+POST     /api/v1/admin/customer-consent-policies/{policyId}/publish
+POST     /api/v1/admin/customer-consent-policies/{policyId}/archive
 GET/PUT /api/v1/admin/permissions...
 GET/POST /api/v1/admin/sla-policies
 POST /api/v1/admin/sla-policies/preview

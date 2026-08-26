@@ -33,7 +33,7 @@ The customer projection currently exposes `NEW`, `OPEN`, `PENDING`, and `SOLVED`
 ## 3. Core commands
 
 ```text
-CreateAnonymousRequest
+SubmitPublicRequest
 CreateAgentTicket
 AddTicketComment
 UpdateTicket
@@ -52,6 +52,18 @@ SolveTicket
 ReopenTicket
 LinkExternalReference
 RemoveExternalReference
+RequestCustomerRegistration
+VerifyCustomerRegistration
+CreateCustomerPasswordSession
+RequestCustomerMagicLink
+ConsumeCustomerMagicLink
+CompletePasswordlessCustomerRegistration
+RequestCustomerPasswordReset
+ResetCustomerPassword
+CreateCustomerConsentPolicy
+UpdateCustomerConsentPolicyDraft
+PublishCustomerConsentPolicy
+ArchiveCustomerConsentPolicy
 ```
 
 원칙:
@@ -154,6 +166,24 @@ MACRO_ACTIVATED
 MACRO_DEACTIVATED
 SETTING_CHANGED
 CUSTOMER_ACCESS_MODE_CHANGED
+CUSTOMER_REGISTRATION_REQUESTED
+CUSTOMER_REGISTRATION_VERIFIED
+CUSTOMER_REGISTRATION_COMPLETED
+CUSTOMER_PASSWORD_LOGIN_SUCCEEDED
+CUSTOMER_PASSWORD_LOGIN_FAILED
+CUSTOMER_PASSWORD_LOGIN_RATE_LIMITED
+CUSTOMER_PASSWORD_RESET_REQUESTED
+CUSTOMER_PASSWORD_RESET_COMPLETED
+CUSTOMER_MAGIC_LINK_REQUESTED
+CUSTOMER_MAGIC_LINK_RATE_LIMITED
+CUSTOMER_MAGIC_LINK_CONSUMED
+CUSTOMER_MAGIC_LINK_REPLAYED
+CUSTOMER_MAGIC_LINK_FAILED
+CUSTOMER_CONSENT_POLICY_CREATED
+CUSTOMER_CONSENT_POLICY_DRAFT_UPDATED
+CUSTOMER_CONSENT_POLICY_PUBLISHED
+CUSTOMER_CONSENT_POLICY_ARCHIVED
+CUSTOMER_CONSENT_ACCEPTED
 INTEGRATION_CLIENT_CREATED
 INTEGRATION_CLIENT_DISABLED
 INTEGRATION_CLIENT_ROTATED
@@ -172,6 +202,18 @@ AUDIT_EXPORT_DOWNLOADED
 RETENTION_POLICY_CHANGED
 RETENTION_JOB_EXECUTED
 ```
+
+Customer authentication request events contain only the operation, bounded outcome/reason code,
+request/correlation identity, and content-free destination/network fingerprints required by the
+limiter policy. They never contain email, company name, password/hash, raw token, continuation
+secret, session cookie, or mail URL. Generic external responses do not weaken required internal
+success/failure audit persistence.
+
+Consent policy lifecycle commands require an active ADMIN with `customer-consent:manage`.
+Policy mutation and `CUSTOMER_CONSENT_POLICY_*` audit commit or roll back together. Audit metadata
+contains policy ID/key/context/version/checksum and excludes the canonical document body.
+`CUSTOMER_CONSENT_ACCEPTED` records policy/version/context, actor/source, request/correlation, and
+account/ticket linkage only; acceptance time is server-owned and the policy body is not duplicated.
 
 `GrantStaffAuditAuthority`와 `RevokeStaffAuditAuthority`는 ADMIN actor만 실행하며,
 `AUDIT_SEARCH_QUERY_REVEAL`, `AUDIT_EXPORT`, `AUDIT_PROJECTION_REBUILD`만 허용한다.
@@ -196,6 +238,9 @@ TicketSolved
 TicketReopened
 ExternalReferenceLinked
 CustomerVerified
+CustomerRegistrationVerified
+CustomerCredentialChanged
+CustomerConsentAccepted
 SlaTargetStarted
 SlaTargetAchieved
 SlaTargetBreached
@@ -250,6 +295,38 @@ business commit + outbox event
 → delivery attempt
 → retry/dead-letter
 ```
+
+### Customer credential mutation
+
+```text
+rate limit outside credential mutation
+→ authorize or verify purpose-bound proof
+→ validate current registration consent versions when applicable
+→ mutate registration intent/account/credential/session state
+→ append consent acceptance when applicable
+→ append required security audit
+→ enqueue durable mail intent when applicable
+→ commit
+```
+
+SMTP/provider I/O remains post-commit. Registration verification and passwordless completion write
+profile/account/current consents atomically. Password reset consumes its token, increments the
+credential version, and revokes every customer session atomically. Required security-audit failure
+returns no authenticated or credential-mutation success.
+
+### Customer consent policy mutation
+
+```text
+authenticate staff session + expected actor + CSRF
+→ authorize ADMIN and customer-consent:manage
+→ lock policy and validate If-Match/lifecycle
+→ create draft or immutable published version / archive policy
+→ append metadata-only Admin/Security audit
+→ commit
+```
+
+Stale drafts are non-mutating. Published versions and referenced acceptance rows are append-only to
+the runtime application role.
 
 ## 10. Trigger execution
 
@@ -347,3 +424,24 @@ already verified/non-customer ticket   → NOT_FOUND
 - Comment, optional state transition, one TicketAudit with ordered events, a fresh request access
   grant, and the stable `customer-follow-up-received:{commentId}` mail intent share the business
   transaction. SMTP delivery remains post-commit under the outbound-mail state machine above.
+
+## 15. Initial customer request submission and replay
+
+```text
+rate-limit budget committed
+  → optional files quarantined/scanned under a server-only planned Customer UUID
+  → final transaction locks scoped clientCommandId
+      NEW + valid current form/consent → Customer/Ticket/PUBLIC comment/value/acceptance/link/audit/grant/mail/receipt
+      SAME HASH + committed receipt   → same ticket result + fresh request access grant
+      DIFFERENT HASH                  → CONFLICT, no business mutation
+```
+
+- The identity scope is the current authenticated customer ID or an anonymous requester-destination fingerprint. The raw
+  `clientCommandId` is never stored; the receipt retains a keyed scoped digest and canonical request/ordered attachment-manifest hash.
+- Concurrent finalization has one winner. An exact replay creates no duplicate Customer, Ticket, comment, acceptance, audit, attachment
+  link, or mail intent. It may create only a fresh bounded request access grant because raw capabilities are digest-only and absent from the
+  receipt; prior grants keep their normal expiry/claim lifecycle.
+- Anonymous multipart upload uses a server-generated `plannedCustomerId` that the client cannot choose. No Customer row exists during
+  quarantine/upload/scan. Finalization creates that exact Customer ID and owner-match links CLEAN files in the same transaction.
+- File failure leaves no Customer or Ticket. Earlier CLEAN files remain unlinked for existing TTL cleanup. Final form/consent conflict or
+  required audit/mail persistence failure rolls back Customer/Ticket/link state; the separate abuse budget remains consumed.

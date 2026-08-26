@@ -15,6 +15,9 @@ Status: product proposal, not legal advice
 | Access metadata | actor, ticket/customer, time, IP, client | high behavioral data |
 | Search query | raw text, filters | potentially very high |
 | Security events | login, denial, credential lifecycle | high |
+| Customer identity and profile | verified email, display name, company name, credential state | high PII; password hash is restricted credential data |
+| Customer consent policy | immutable legal document version, plain text, checksum, lifecycle | high integrity and legal evidence |
+| Customer consent acceptance | policy/version, account/ticket linkage, context, server time | high behavioral and legal evidence |
 | Integration secrets | API/webhook secret | critical |
 | Delivery metadata | endpoint, status, latency, failure | medium-high |
 | Export artifact | selected ticket/audit data | very high |
@@ -29,6 +32,9 @@ These are concrete defaults for development and first controlled deployment. Ope
 | Ticket and comments | operator support-record policy | primary records; not audit substitute |
 | Ticket change audit | ticket retention + 5 years, or indefinite when configured | append-only |
 | Admin/security audit | 365 days | append-only |
+| Customer registration consent acceptance | account lifetime + 365 days after account deletion | append-only; operator/legal review required |
+| Customer request consent acceptance | ticket/support-record retention | append-only; follows linked support record |
+| Referenced consent policy version | at least as long as any acceptance | immutable; document body is not duplicated into acceptance |
 | Access audit metadata | 180 days | append-only, partition-ready |
 | Raw search query ciphertext | 30 days | encrypted, key versioned |
 | Redacted query/fingerprint | 180 days | access event metadata |
@@ -109,12 +115,39 @@ scope/resource constraint summary
 last-used metadata
 ```
 
+Customer password, hash, raw registration/verification/reset/magic token, continuation secret,
+session cookie, and token-bearing mail URL are excluded from ordinary logs, audit metadata,
+webhooks, exports, analytics, and API examples. Authentication security events use bounded outcome
+codes and content-free destination/network fingerprints. Company name is profile PII and is not
+copied into routine authentication audit or customer ticket-list projections.
+
+## 6.1 Customer consent evidence
+
+- a policy version owns the reviewed canonical document, deterministic plain text, and checksum;
+- an acceptance stores only policy/version/context, customer/account/ticket linkage, server time,
+  source, request ID, and correlation ID;
+- policy body and customer-entered form values are absent from ordinary application logs,
+  webhooks, TicketAudit metadata, and unprotected Admin/Security audit;
+- published policy versions and acceptance rows are append-only to the runtime application role;
+- registration acceptance follows the account record plus 365 days after account deletion by
+  default; request-submission acceptance follows the ticket/support-record retention;
+- every referenced policy version remains retained at least as long as one acceptance references it;
+- production legal text, jurisdiction-specific retention, withdrawal, and data-subject handling are
+  operator/legal-owner decisions. Repository fixtures must be synthetic and must not be presented as
+  production legal policy.
+
 Platform idempotency rows store a SHA-256 key representation and canonical request hash, never the raw `Idempotency-Key` or Authorization
 value. Exact replay requires a bounded response copy, which can contain ticket subject or an INTERNAL comment response; it receives the
 7-day default expiry and is not exposed through a retrieval/list endpoint. An expiry-indexed cleanup job deletes at most 500 rows per run by
 default. Final receipts are eligible at expiry; `IN_PROGRESS` rows are eligible only after a separate one-hour abandonment grace. Deleted
 count, oldest expired backlog age, and cleanup failures are metrics without request or response content. Canonical ticket/comment retention
 remains separately governed.
+
+Initial customer-request idempotency also uses a seven-day receipt, but stores only a keyed scoped command-identity digest, canonical
+request/attachment-manifest hash, ticket/result identifiers, state, and timestamps. It stores neither the raw `clientCommandId`, requester
+content, attachment bytes, nor a raw request access token. An exact logical replay returns the original ticket and issues a fresh bounded
+ticket-scoped grant; prior grants retain their normal expiry or claim revocation. Receipt expiry permits a later command ID reuse to be
+treated as new, and bounded cleanup reports only content-free counts/ages/failures.
 
 ## 7. IP addresses and user agents
 

@@ -142,7 +142,8 @@ Field definition includes:
 
 A form selects and orders fields for a workflow. Initial product can have one default form before form selection is exposed.
 
-- form version is snapshotted or field interpretation remains historically resolvable
+- form version freezes placement/order, condition rules, customer visibility/editability/requiredness, field identity/type/validation, and option identity/order; semantic field/option changes require a new stable ID
+- customer label/description is current display copy rather than a historical form snapshot, so exact past wording is intentionally not reproducible
 - customer form does not receive staff-only field definitions
 - hidden required fields cannot block customer submission
 - admin preview shows customer and staff perspectives

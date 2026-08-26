@@ -38,6 +38,12 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | create web request | C | A | D | D | D | D |
 | read own public request | token C | own A | D | D | D | D |
 | add own public reply | later C | own A | D | D | D | D |
+| request/verify customer registration | intent proof C | D | D | D | D | D |
+| create customer password/magic session | credential/token C | credential/token C | D | D | D | D |
+| complete passwordless registration | D | own incomplete session C | D | D | D | D |
+| request/consume customer password reset | recovery proof C | recovery proof C | D | D | D | D |
+| list current customer consent policies | A | A | D | D | D | D |
+| accept customer consent in registration/request | context+current version C | context+current version C | D | D | D | D |
 | list staff ticket queue | D | D | C | A | D by default | scope C |
 | read staff ticket | D | D | C | A | D by default | scope+constraint C |
 | create staff ticket | D | D | C | A | D | scope C |
@@ -66,6 +72,7 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | rebuild audit projection | D | D | D | explicit C | separate grant C | D |
 | manage integration client | D | D | D | explicit capability C | D | D |
 | manage external system registry | D | D | D | explicit capability C | D | D |
+| manage customer consent policy | D | D | D | explicit capability C | D | D |
 
 ## 4. Agent ticket scope
 
@@ -194,6 +201,19 @@ definition lifecycle은 active `STAFF_ADMIN`과 현재 `macro:shared:manage` cap
 apply는 관리 capability를 티켓 권한으로 바꾸지 않으며, 대상 티켓의 일반 read/write policy,
 assignment invariant, comment visibility와 configuration validation을 다시 적용한다.
 
+## 9.3 Customer consent management capability
+
+```text
+customer-consent:manage
+```
+
+초기 ADMIN role이 받지만 모든 admin consent route와 application-service 경계에서 active role과
+authority를 함께 검사한다. AGENT와 SECURITY_AUDITOR는 direct URL에도 거부되고, 이 authority는 고객
+계정/티켓 읽기, policy body export, protected audit reveal, 또는 설정 generic CRUD 권한을 부여하지 않는다.
+Customer current-policy read는 공개된 현재 version만 projection하고 draft/archive/history를 노출하지
+않는다. Registration/request acceptance는 별도 CRUD가 아니라 해당 고객 command의 current-version
+validation 및 atomic transaction 일부다.
+
 ## 10. Integration scopes
 
 I1에서 발급 가능한 v1 vocabulary는 다음 네 개로 고정한다:
@@ -227,6 +247,12 @@ Configured group or ticket-kind constraint와 대조할 resource dimension이 �
 Integration client management uses the separate `integration:clients:manage` authority. The initial ADMIN role receives it, but both the HTTP route and application-service method boundary check the authority explicitly. AGENT and SECURITY_AUDITOR are denied even on direct URLs. This does not grant Platform Ticket API access.
 
 External system registry management independently uses `integration:systems:manage`. The initial ADMIN role receives it, while AGENT and SECURITY_AUDITOR are denied at the HTTP route and application-service method boundary. The authority can register exact HTTPS hostnames but does not grant ticket writes, Platform API access, provider credentials, or any external fetch capability. Staff reference reads follow the ticket read policy; create/remove additionally require the existing ticket write policy.
+
+Customer consent policy management independently uses `customer-consent:manage`. The initial ADMIN
+role receives it; AGENT and SECURITY_AUDITOR are denied. Admin writes additionally require the
+expected-actor guard, CSRF, `If-Match`, lifecycle validation, and an atomic metadata-only
+Admin/Security audit. Published versions are immutable and no administrator endpoint edits or
+deletes an existing acceptance.
 
 Admin role is not automatically Security Auditor in stricter deployments. Initial self-hosted MVP may allow Admin to explicitly receive audit read grants, but decision and audit must be visible.
 
