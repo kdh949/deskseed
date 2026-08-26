@@ -91,7 +91,7 @@ class CustomerIdentityContractTest(unittest.TestCase):
         self.assertIsInstance(resolved, dict)
         return resolved
 
-    def test_password_primary_operation_family_is_complete_without_claiming_runtime_delivery(self) -> None:
+    def test_password_primary_operation_family_tracks_runtime_delivery_per_operation(self) -> None:
         expected = {
             ("/api/v1/customer/registrations", "post"): "requestCustomerRegistration",
             (
@@ -121,11 +121,14 @@ class CustomerIdentityContractTest(unittest.TestCase):
             with self.subTest(path=path, method=method):
                 operation = self.operation(path, method)
                 self.assertEqual(operation_id, operation["operationId"])
-                self.assertNotIn(
-                    "x-deskseed-contract-status",
-                    operation,
-                    "FROZEN is reserved for runtime-compatible operation semantics",
-                )
+                if operation_id == "requestCustomerRegistration":
+                    self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
+                else:
+                    self.assertNotIn(
+                        "x-deskseed-contract-status",
+                        operation,
+                        "FROZEN is reserved for runtime-compatible operation semantics",
+                    )
 
         self.assertNotIn(
             "/api/v1/customer/me",

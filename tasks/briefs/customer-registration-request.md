@@ -80,7 +80,7 @@
 
 ## Compatibility and migration
 
-- OpenAPI source is unchanged because the operation was frozen contract-first in Checkpoint A.
+- Implemented `requestCustomerRegistration` is marked `FROZEN`; unimplemented identity operations remain unfrozen. Customer Identity is a separately owned contract, so the Core bundle has no generated diff and its parity is still checked.
 - Uses V81/V81.1 structures without another migration or backfill.
 - Application rollback leaves no new schema. Existing pending rows remain protected and can expire/cancel under the documented retention path.
 

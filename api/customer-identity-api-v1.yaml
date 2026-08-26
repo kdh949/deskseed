@@ -29,6 +29,7 @@ paths:
         hash로만 저장하고, email 확인 token과 browser continuation secret는 digest만 저장합니다.
         Mail delivery는 durable intent commit 뒤에 실행되며 response, audit, log는 계정 존재 여부와
         password/token/company name을 노출하지 않습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-003
       - REQ-CONSENT-002
