@@ -225,6 +225,7 @@ deskseed:
       initial-delay: ${DESKSEED_SLA_BREACH_SCAN_INITIAL_DELAY:30s}
   customer-auth:
     magic-link-ttl: ${DESKSEED_CUSTOMER_MAGIC_LINK_TTL:15m}
+    registration-verification-ttl: ${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_TTL:24h}
     request-limit: ${DESKSEED_CUSTOMER_MAGIC_LINK_REQUEST_LIMIT:5}
     network-request-limit: ${DESKSEED_CUSTOMER_AUTH_NETWORK_REQUEST_LIMIT:100}
     global-request-limit: ${DESKSEED_CUSTOMER_AUTH_GLOBAL_REQUEST_LIMIT:36000}
@@ -237,6 +238,7 @@ deskseed:
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY:AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=}
     consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL:http://localhost:5173/customer/sign-in/consume}
+    registration-verification-url: ${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL:http://localhost:5173/customer/register/verify}
   customer-portal:
     claim-grant-ttl: ${DESKSEED_CUSTOMER_CLAIM_GRANT_TTL:15m}
     # Independent public local-development keys. Production requires provisioned secrets.

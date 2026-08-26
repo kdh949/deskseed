@@ -16,6 +16,7 @@ import java.util.Base64
 @ConfigurationProperties("deskseed.customer-auth")
 internal data class CustomerAuthProperties(
     var magicLinkTtl: Duration = Duration.ofMinutes(15),
+    var registrationVerificationTtl: Duration = Duration.ofHours(24),
     var requestLimit: Int = 5,
     var networkRequestLimit: Int = 100,
     var globalRequestLimit: Int = 36_000,
@@ -27,10 +28,14 @@ internal data class CustomerAuthProperties(
     var fingerprintKey: String = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
     var csrfKey: String = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
     var consumeUrl: String = "http://localhost:5173/customer/sign-in/consume",
+    var registrationVerificationUrl: String = "http://localhost:5173/customer/register/verify",
 ) {
     fun validate() {
         require(magicLinkTtl in Duration.ofMinutes(5)..Duration.ofMinutes(60)) {
             "customer magic-link TTL must be between 5 and 60 minutes"
+        }
+        require(registrationVerificationTtl in Duration.ofHours(1)..Duration.ofHours(48)) {
+            "customer registration verification TTL must be between 1 and 48 hours"
         }
         require(requestLimit in 1..10_000) { "customer authentication destination limit is invalid" }
         require(networkRequestLimit in 1..1_000_000) { "customer authentication network limit is invalid" }
@@ -49,11 +54,16 @@ internal data class CustomerAuthProperties(
                 "customer authentication keys must contain at least 32 bytes"
             }
         }
-        val consumeUri = URI(consumeUrl)
+        validateAbsoluteUrl(consumeUrl, "customer magic-link consume URL")
+        validateAbsoluteUrl(registrationVerificationUrl, "customer registration verification URL")
+    }
+
+    private fun validateAbsoluteUrl(value: String, label: String) {
+        val uri = URI(value)
         require(
-            consumeUri.isAbsolute && consumeUri.host != null && consumeUri.scheme in setOf("http", "https") &&
-                consumeUri.rawQuery == null && consumeUri.rawFragment == null,
-        ) { "customer magic-link consume URL is invalid" }
+            uri.isAbsolute && uri.host != null && uri.scheme in setOf("http", "https") &&
+                uri.rawQuery == null && uri.rawFragment == null,
+        ) { "$label is invalid" }
     }
 }
 

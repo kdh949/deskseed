@@ -26,6 +26,29 @@ class CustomerAuthPropertiesTest {
     }
 
     @Test
+    fun `registration verification ttl accepts one to forty eight hours`() {
+        listOf(Duration.ofHours(1), Duration.ofHours(24), Duration.ofHours(48)).forEach { ttl ->
+            assertThatCode { CustomerAuthProperties(registrationVerificationTtl = ttl).validate() }
+                .doesNotThrowAnyException()
+        }
+    }
+
+    @Test
+    fun `registration verification ttl and URL reject unsafe configuration`() {
+        listOf(
+            CustomerAuthProperties(registrationVerificationTtl = Duration.ofMinutes(59)),
+            CustomerAuthProperties(registrationVerificationTtl = Duration.ofHours(49)),
+            CustomerAuthProperties(registrationVerificationUrl = "/customer/register/verify"),
+            CustomerAuthProperties(registrationVerificationUrl = "javascript:alert(1)"),
+            CustomerAuthProperties(registrationVerificationUrl = "https://deskseed.example/verify?token=placeholder"),
+            CustomerAuthProperties(registrationVerificationUrl = "https://deskseed.example/verify#token=placeholder"),
+        ).forEach { properties ->
+            assertThatThrownBy { properties.validate() }
+                .isInstanceOf(IllegalArgumentException::class.java)
+        }
+    }
+
+    @Test
     fun `authentication limiter accepts bounded independent dimension budgets`() {
         assertThatCode {
             CustomerAuthProperties(
@@ -66,5 +89,7 @@ class CustomerAuthPropertiesTest {
         assertThat(production?.getProperty("spring.data.redis.password"))
             .isEqualTo("\${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD}")
         assertThat(production?.getProperty("spring.data.redis.ssl.enabled")).isEqualTo("true")
+        assertThat(production?.getProperty("deskseed.customer-auth.registration-verification-url"))
+            .isEqualTo("\${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL}")
     }
 }
