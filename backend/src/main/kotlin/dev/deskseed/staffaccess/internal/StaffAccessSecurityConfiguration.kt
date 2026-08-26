@@ -75,6 +75,7 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/magic-link-sessions").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/password-sessions").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/password-reset-requests").permitAll()
+                it.requestMatchers(HttpMethod.POST, "/api/v1/customer/auth/password-resets").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/registrations").permitAll()
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/registration-verifications").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/access-mode").permitAll()

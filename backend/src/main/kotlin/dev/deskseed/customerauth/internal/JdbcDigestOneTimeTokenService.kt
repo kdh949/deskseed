@@ -40,6 +40,14 @@ internal data class ConsumedCustomerToken(
     override fun toString(): String = "[PROTECTED CONSUMED CUSTOMER TOKEN]"
 }
 
+internal data class ConsumableCustomerTokenTarget(
+    val id: UUID,
+    val accountId: UUID?,
+    val emailNormalized: String,
+) {
+    override fun toString(): String = "[PROTECTED CONSUMABLE CUSTOMER TOKEN TARGET]"
+}
+
 internal enum class TokenFailureClass { REPLAYED, EXPIRED_OR_INVALID }
 
 internal enum class CustomerOneTimeTokenPurpose {
@@ -206,6 +214,33 @@ internal class JdbcDigestOneTimeTokenService(
                 )
             },
             Timestamp.from(now),
+            CustomerAuthSecrets.digest(rawToken),
+            expectedPurpose.name,
+            Timestamp.from(now),
+        ).singleOrNull()
+    }
+
+    fun findConsumableTarget(
+        rawToken: String,
+        expectedPurpose: CustomerOneTimeTokenPurpose,
+    ): ConsumableCustomerTokenTarget? {
+        val now = Instant.now(clock)
+        return jdbcTemplate.query(
+            """
+            select id, account_id, email_normalized
+              from customer_one_time_tokens
+             where token_digest = ?
+               and purpose = ?
+               and consumed_at is null
+               and expires_at > ?
+            """.trimIndent(),
+            { resultSet, _ ->
+                ConsumableCustomerTokenTarget(
+                    id = resultSet.getObject("id", UUID::class.java),
+                    accountId = resultSet.getObject("account_id", UUID::class.java),
+                    emailNormalized = resultSet.getString("email_normalized"),
+                )
+            },
             CustomerAuthSecrets.digest(rawToken),
             expectedPurpose.name,
             Timestamp.from(now),

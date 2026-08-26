@@ -25,10 +25,13 @@ import java.util.Locale
 internal class CustomerPasswordResetUnavailableException(cause: Throwable? = null) :
     RuntimeException("customer password reset is unavailable", cause)
 
+internal class CustomerPasswordResetInvalidException : RuntimeException(null, null, false, false)
+
 @Service
 internal class CustomerPasswordResetApplicationService(
     private val resetStore: CustomerPasswordResetStore,
     private val tokenService: JdbcDigestOneTimeTokenService,
+    private val passwordHasher: CustomerPasswordHasher,
     private val rateLimiter: AuthenticationAttemptLimiter,
     private val outboundMailPort: OutboundMailPort,
     private val auditWriter: AdminSecurityAuditWriter,
@@ -86,6 +89,108 @@ internal class CustomerPasswordResetApplicationService(
         }
     }
 
+    fun consume(
+        rawToken: String,
+        newPassword: String,
+        remoteAddress: String,
+        context: CommandContext,
+    ) {
+        require(rawToken.length in 32..256 && rawToken.none(Char::isISOControl)) {
+            "password reset proof is invalid"
+        }
+        val purpose = CustomerAuthenticationPurpose.PASSWORD_RESET
+        val decision = rateLimiter.acquire(
+            AuthenticationAttempt(
+                purpose = purpose,
+                destinationFingerprint = CustomerAuthSecrets.fingerprint(
+                    properties.fingerprintKey,
+                    "${purpose.keySegment}:proof:$rawToken",
+                ),
+                requesterNetworkFingerprint = CustomerAuthSecrets.fingerprint(
+                    properties.fingerprintKey,
+                    "${purpose.keySegment}:network:$remoteAddress",
+                ),
+            ),
+        )
+        if (!decision.allowed) {
+            auditDenied("RATE_LIMITED", decision, context)
+            throw CustomerAuthenticationRateLimitedException(requireNotNull(decision.retryAfter))
+        }
+
+        val passwordHash = passwordHasher.encode(newPassword)
+        try {
+            requiredTransaction {
+                consumeInTransaction(rawToken, passwordHash, decision, context)
+            }
+        } catch (failure: CustomerPasswordResetInvalidException) {
+            auditDenied("INVALID_PROOF", decision, context)
+            throw failure
+        }
+    }
+
+    private fun consumeInTransaction(
+        rawToken: String,
+        passwordHash: CustomerPasswordHash,
+        decision: AuthenticationAttemptDecision,
+        context: CommandContext,
+    ) {
+        val target = tokenService.findConsumableTarget(rawToken, CustomerOneTimeTokenPurpose.PASSWORD_RESET)
+            ?: throw CustomerPasswordResetInvalidException()
+        if (target.accountId == null) throw CustomerPasswordResetInvalidException()
+        resetStore.lockAccountEmail(target.emailNormalized)
+        val token = tokenService.consume(rawToken, CustomerOneTimeTokenPurpose.PASSWORD_RESET)
+            ?: throw CustomerPasswordResetInvalidException()
+        if (
+            token.id != target.id || token.accountId != target.accountId ||
+            token.emailNormalized != target.emailNormalized
+        ) {
+            throw CustomerPasswordResetInvalidException()
+        }
+        val account = resetStore.replacePassword(token, passwordHash)
+            ?: throw CustomerPasswordResetInvalidException()
+        auditWriter.append(
+            AdminSecurityAudit(
+                eventType = "CUSTOMER_PASSWORD_RESET_COMPLETED",
+                actorType = ActorType.CUSTOMER,
+                actorId = account.customerId,
+                actorDisplaySnapshot = null,
+                source = RequestSource.CUSTOMER_PORTAL,
+                targetType = "CUSTOMER_ACCOUNT",
+                targetId = account.accountId,
+                outcome = AdminSecurityOutcome.SUCCEEDED,
+                requestId = context.requestId,
+                correlationId = context.correlationId,
+                metadata = safeFingerprintMetadata(decision),
+                occurredAt = Instant.now(clock),
+            ),
+        )
+    }
+
+    private fun auditDenied(
+        reason: String,
+        decision: AuthenticationAttemptDecision,
+        context: CommandContext,
+    ) {
+        requiredTransaction {
+            auditWriter.append(
+                AdminSecurityAudit(
+                    eventType = "CUSTOMER_PASSWORD_RESET_COMPLETED",
+                    actorType = ActorType.SYSTEM,
+                    actorId = null,
+                    actorDisplaySnapshot = null,
+                    source = RequestSource.CUSTOMER_PORTAL,
+                    targetType = "CUSTOMER_AUTH",
+                    targetId = null,
+                    outcome = AdminSecurityOutcome.DENIED,
+                    requestId = context.requestId,
+                    correlationId = context.correlationId,
+                    metadata = safeFingerprintMetadata(decision) + ("reason" to reason),
+                    occurredAt = Instant.now(clock),
+                ),
+            )
+        }
+    }
+
     private fun audit(
         outcome: AdminSecurityOutcome,
         decision: AuthenticationAttemptDecision,
@@ -115,6 +220,8 @@ internal class CustomerPasswordResetApplicationService(
     private fun requiredTransaction(action: () -> Unit) {
         try {
             transactionTemplate.executeWithoutResult { action() }
+        } catch (failure: CustomerPasswordResetInvalidException) {
+            throw failure
         } catch (failure: CustomerPasswordResetUnavailableException) {
             throw failure
         } catch (failure: RuntimeException) {
@@ -135,4 +242,9 @@ internal class CustomerPasswordResetApplicationService(
         require(domain.contains('.') && !domain.startsWith('.') && !domain.endsWith('.')) { "email is invalid" }
         return value
     }
+
+    private fun safeFingerprintMetadata(decision: AuthenticationAttemptDecision) = mapOf(
+        "destinationFingerprint" to decision.destinationFingerprint,
+        "networkFingerprint" to decision.requesterNetworkFingerprint,
+    )
 }

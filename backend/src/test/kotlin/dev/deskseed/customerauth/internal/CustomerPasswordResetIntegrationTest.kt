@@ -3,6 +3,7 @@ package dev.deskseed.customerauth.internal
 import dev.deskseed.outboundmail.internal.ProtectedMailContent
 import dev.deskseed.outboundmail.internal.ProtectedMailContentCipher
 import dev.deskseed.outboundmail.internal.ProtectedMailContentProperties
+import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -18,6 +19,7 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.MvcResult
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -31,6 +33,9 @@ import java.security.MessageDigest
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.system.measureNanoTime
 
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
@@ -195,6 +200,262 @@ class CustomerPasswordResetIntegrationTest {
         assertThat(redis.keys("deskseed:customer-auth:limiter:*")).isNotEmpty
     }
 
+    @Test
+    fun `valid reset changes password once revokes every old session and expires the current cookie`(
+        output: CapturedOutput,
+    ) {
+        val accountId = insertAccount(RESET_EMAIL, password = RAW_PASSWORD, credentialVersion = 4)
+        val customerId = jdbc.queryForObject(
+            "select customer_id from customer_accounts where id = ?",
+            UUID::class.java,
+            accountId,
+        )!!
+        val rawToken = "synthetic-reset-proof-success-0000000000000001"
+        val firstSession = "synthetic-reset-session-first-000000000000001"
+        val secondSession = "synthetic-reset-session-second-00000000000002"
+        insertOneTimeToken(rawToken, "PASSWORD_RESET", accountId, RESET_EMAIL)
+        insertSession(accountId, firstSession, credentialVersion = 4, authenticationMethod = "PASSWORD")
+        insertSession(accountId, secondSession, credentialVersion = 4, authenticationMethod = "MAGIC_LINK")
+
+        val reset = consumeReset(rawToken, NEW_PASSWORD, Cookie(CUSTOMER_COOKIE, firstSession))
+            .andExpect(status().isNoContent)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Referrer-Policy", "no-referrer"))
+            .andReturn()
+        val expired = requireNotNull(reset.response.getCookie(CUSTOMER_COOKIE))
+        assertThat(expired.value).isEmpty()
+        assertThat(expired.maxAge).isZero()
+        assertThat(expired.isHttpOnly).isTrue()
+        assertThat(expired.secure).isTrue()
+
+        val account = jdbc.queryForMap(
+            "select password_hash, credential_version, version from customer_accounts where id = ?",
+            accountId,
+        )
+        assertThat(passwordHasher.matches(NEW_PASSWORD, CustomerPasswordHash.fromEncoded(account["password_hash"] as String)))
+            .isTrue()
+        assertThat(account).containsEntry("credential_version", 5L).containsEntry("version", 1L)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from customer_sessions where account_id = ? and revoked_at is not null",
+            Long::class.java,
+            accountId,
+        )).isEqualTo(2)
+        assertThat(jdbc.queryForObject("select count(*) from customer_sessions", Long::class.java)).isEqualTo(2)
+        assertThat(jdbc.queryForObject(
+            "select consumed_at is not null from customer_one_time_tokens where token_digest = ?",
+            Boolean::class.java,
+            sha256(rawToken),
+        )).isTrue()
+        assertThat(jdbc.queryForMap(
+            """
+            select actor_type, actor_id, target_type, target_id, outcome
+              from admin_security_audit_events
+             where event_type = 'CUSTOMER_PASSWORD_RESET_COMPLETED'
+            """.trimIndent(),
+        )).containsEntry("actor_type", "CUSTOMER")
+            .containsEntry("actor_id", customerId)
+            .containsEntry("target_type", "CUSTOMER_ACCOUNT")
+            .containsEntry("target_id", accountId)
+            .containsEntry("outcome", "SUCCEEDED")
+
+        mockMvc.perform(get("/api/v1/customer/me").cookie(Cookie(CUSTOMER_COOKIE, firstSession)))
+            .andExpect(status().isUnauthorized)
+        login(RESET_EMAIL, RAW_PASSWORD).andExpect(status().isUnauthorized)
+        login(RESET_EMAIL, NEW_PASSWORD).andExpect(status().isOk)
+
+        consumeReset(rawToken, SECOND_NEW_PASSWORD)
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.type").value("/problems/customer-one-time-proof-invalid"))
+        assertThat(jdbc.queryForObject(
+            "select credential_version from customer_accounts where id = ?",
+            Long::class.java,
+            accountId,
+        )).isEqualTo(5L)
+        assertThat(auditText()).doesNotContain(
+            RESET_EMAIL,
+            RAW_PASSWORD,
+            NEW_PASSWORD,
+            SECOND_NEW_PASSWORD,
+            rawToken,
+            firstSession,
+            secondSession,
+        )
+        assertThat(output.all).doesNotContain(
+            RESET_EMAIL,
+            RAW_PASSWORD,
+            NEW_PASSWORD,
+            SECOND_NEW_PASSWORD,
+            rawToken,
+            firstSession,
+            secondSession,
+        )
+    }
+
+    @Test
+    fun `unknown wrong purpose and expired reset proofs share one 401 without credential mutation`() {
+        val accountId = insertAccount("invalid-reset-proof@example.test", password = RAW_PASSWORD)
+        val oldHash = passwordHash(accountId)
+        val expired = "synthetic-reset-proof-expired-00000000000000001"
+        val wrongPurpose = "synthetic-reset-proof-wrong-purpose-000000000001"
+        val unknown = "synthetic-reset-proof-unknown-00000000000000001"
+        insertOneTimeToken(
+            expired,
+            "PASSWORD_RESET",
+            accountId,
+            "invalid-reset-proof@example.test",
+            expiresAt = Instant.now().minusSeconds(1),
+        )
+        insertOneTimeToken(wrongPurpose, "PASSWORDLESS_LOGIN", null, "invalid-reset-proof@example.test")
+
+        listOf(expired, wrongPurpose, unknown).forEach { proof ->
+            consumeReset(proof, NEW_PASSWORD)
+                .andExpect(status().isUnauthorized)
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(jsonPath("$.type").value("/problems/customer-one-time-proof-invalid"))
+        }
+
+        assertThat(passwordHash(accountId)).isEqualTo(oldHash)
+        assertThat(jdbc.queryForObject(
+            "select credential_version from customer_accounts where id = ?",
+            Long::class.java,
+            accountId,
+        )).isZero()
+        assertThat(jdbc.queryForObject(
+            """
+            select count(*) from admin_security_audit_events
+             where event_type = 'CUSTOMER_PASSWORD_RESET_COMPLETED' and outcome = 'DENIED'
+            """.trimIndent(),
+            Long::class.java,
+        )).isEqualTo(3)
+    }
+
+    @Test
+    fun `concurrent reset proofs for one account produce one password change without deadlock`() {
+        val accountId = insertAccount("concurrent-reset@example.test", password = RAW_PASSWORD)
+        val firstProof = "synthetic-concurrent-reset-proof-first-00000000001"
+        val secondProof = "synthetic-concurrent-reset-proof-second-0000000002"
+        val oldSession = "synthetic-concurrent-reset-session-00000000000001"
+        insertOneTimeToken(firstProof, "PASSWORD_RESET", accountId, "concurrent-reset@example.test")
+        insertOneTimeToken(secondProof, "PASSWORD_RESET", accountId, "concurrent-reset@example.test")
+        insertSession(accountId, oldSession)
+
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val attempts = listOf(firstProof to NEW_PASSWORD, secondProof to SECOND_NEW_PASSWORD).map { (proof, password) ->
+                executor.submit<Int> {
+                    ready.countDown()
+                    check(start.await(5, TimeUnit.SECONDS))
+                    consumeReset(proof, password).andReturn().response.status
+                }
+            }
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue()
+            start.countDown()
+            assertThat(attempts.map { it.get(30, TimeUnit.SECONDS) }.sorted()).containsExactly(204, 401)
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val currentHash = CustomerPasswordHash.fromEncoded(passwordHash(accountId))
+        assertThat(
+            passwordHasher.matches(NEW_PASSWORD, currentHash) xor
+                passwordHasher.matches(SECOND_NEW_PASSWORD, currentHash),
+        ).isTrue()
+        assertThat(jdbc.queryForObject(
+            "select credential_version from customer_accounts where id = ?",
+            Long::class.java,
+            accountId,
+        )).isEqualTo(1L)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from customer_sessions where account_id = ? and revoked_at is not null",
+            Long::class.java,
+            accountId,
+        )).isEqualTo(1)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from customer_one_time_tokens where account_id = ? and consumed_at is not null",
+            Long::class.java,
+            accountId,
+        )).isEqualTo(2)
+        assertThat(jdbc.queryForObject(
+            """
+            select count(*) from admin_security_audit_events
+             where event_type = 'CUSTOMER_PASSWORD_RESET_COMPLETED' and outcome = 'SUCCEEDED'
+            """.trimIndent(),
+            Long::class.java,
+        )).isEqualTo(1)
+    }
+
+    @Test
+    fun `required reset completion audit failure rolls credential token and sessions back`() {
+        val accountId = insertAccount("reset-completion-audit-failure@example.test", password = RAW_PASSWORD)
+        val oldHash = passwordHash(accountId)
+        val rawToken = "synthetic-reset-completion-audit-proof-0000000001"
+        val oldSession = "synthetic-reset-completion-audit-session-00000001"
+        insertOneTimeToken(rawToken, "PASSWORD_RESET", accountId, "reset-completion-audit-failure@example.test")
+        insertSession(accountId, oldSession)
+        jdbc.execute(
+            """
+            create or replace function fail_password_reset_completion_audit_insert()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if new.event_type = 'CUSTOMER_PASSWORD_RESET_COMPLETED' then
+                    raise exception 'injected password reset completion audit failure';
+                end if;
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbc.execute(
+            "create trigger fail_password_reset_completion_audit_insert before insert on admin_security_audit_events " +
+                "for each row execute function fail_password_reset_completion_audit_insert()",
+        )
+        try {
+            consumeReset(rawToken, NEW_PASSWORD)
+                .andExpect(status().isServiceUnavailable)
+                .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+        } finally {
+            jdbc.execute(
+                "drop trigger if exists fail_password_reset_completion_audit_insert on admin_security_audit_events",
+            )
+            jdbc.execute("drop function if exists fail_password_reset_completion_audit_insert()")
+        }
+
+        assertThat(passwordHash(accountId)).isEqualTo(oldHash)
+        assertThat(jdbc.queryForObject(
+            "select credential_version from customer_accounts where id = ?",
+            Long::class.java,
+            accountId,
+        )).isZero()
+        assertThat(jdbc.queryForObject(
+            "select consumed_at is null from customer_one_time_tokens where token_digest = ?",
+            Boolean::class.java,
+            sha256(rawToken),
+        )).isTrue()
+        assertThat(jdbc.queryForObject(
+            "select revoked_at is null from customer_sessions where session_token_digest = ?",
+            Boolean::class.java,
+            sha256(oldSession),
+        )).isTrue()
+
+        consumeReset(rawToken, NEW_PASSWORD).andExpect(status().isNoContent)
+    }
+
+    @Test
+    fun `reset consume limit returns generic 429 with retry after`() {
+        val rawToken = "synthetic-reset-rate-limit-proof-0000000000000001"
+        repeat(2) {
+            consumeReset(rawToken, NEW_PASSWORD).andExpect(status().isUnauthorized)
+        }
+
+        consumeReset(rawToken, NEW_PASSWORD)
+            .andExpect(status().isTooManyRequests)
+            .andExpect(header().exists("Retry-After"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-rate-limited"))
+    }
+
     private fun requestReset(email: String) = mockMvc.perform(
         post("/api/v1/customer/auth/password-reset-requests")
             .with { request -> request.remoteAddr = "192.0.2.101"; request }
@@ -202,7 +463,27 @@ class CustomerPasswordResetIntegrationTest {
             .content("""{"email":"$email"}"""),
     )
 
-    private fun insertAccount(email: String, password: String?, status: String = "ACTIVE"): UUID {
+    private fun consumeReset(rawToken: String, newPassword: String, cookie: Cookie? = null) = mockMvc.perform(
+        post("/api/v1/customer/auth/password-resets")
+            .with { request -> request.remoteAddr = "192.0.2.102"; request }
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"token":"$rawToken","newPassword":"$newPassword"}""")
+            .let { request -> if (cookie == null) request else request.cookie(cookie) },
+    )
+
+    private fun login(email: String, password: String) = mockMvc.perform(
+        post("/api/v1/customer/auth/password-sessions")
+            .with { request -> request.remoteAddr = "192.0.2.103"; request }
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"email":"$email","password":"$password"}"""),
+    )
+
+    private fun insertAccount(
+        email: String,
+        password: String?,
+        status: String = "ACTIVE",
+        credentialVersion: Long = 0,
+    ): UUID {
         val customerId = UUID.randomUUID()
         val accountId = UUID.randomUUID()
         val now = Timestamp.from(Instant.now())
@@ -225,7 +506,7 @@ class CustomerPasswordResetIntegrationTest {
             insert into customer_accounts
                 (id, customer_id, email_normalized, status, verified_at, last_login_at,
                  created_at, updated_at, version, password_hash, password_changed_at, credential_version)
-            values (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)
+            values (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
             """.trimIndent(),
             accountId,
             customerId,
@@ -237,9 +518,70 @@ class CustomerPasswordResetIntegrationTest {
             now,
             hash?.encoded,
             hash?.let { now },
+            credentialVersion,
         )
         return accountId
     }
+
+    private fun insertOneTimeToken(
+        rawToken: String,
+        purpose: String,
+        accountId: UUID?,
+        email: String,
+        expiresAt: Instant = Instant.now().plusSeconds(1_800),
+    ) {
+        val createdAt = Instant.now().minusSeconds(2)
+        jdbc.update(
+            """
+            insert into customer_one_time_tokens
+                (id, token_digest, purpose, registration_intent_id, account_id,
+                 email_normalized, email_display, request_id, correlation_id,
+                 created_at, expires_at, consumed_at)
+            values (?, ?, ?, null, ?, ?, ?, 'reset-test-request', 'reset-test-correlation', ?, ?, null)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            sha256(rawToken),
+            purpose,
+            accountId,
+            email,
+            email,
+            Timestamp.from(createdAt),
+            Timestamp.from(expiresAt),
+        )
+    }
+
+    private fun insertSession(
+        accountId: UUID,
+        rawSession: String,
+        credentialVersion: Long = 0,
+        authenticationMethod: String = "PASSWORD",
+    ) {
+        val now = Instant.now()
+        jdbc.update(
+            """
+            insert into customer_sessions
+                (id, account_id, session_token_digest, created_at, last_activity_at,
+                 expires_at, absolute_expires_at, revoked_at, authentication_method,
+                 credential_version_snapshot)
+            values (?, ?, ?, ?, ?, ?, ?, null, ?, ?)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            accountId,
+            sha256(rawSession),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now.plusSeconds(1_800)),
+            Timestamp.from(now.plusSeconds(3_600)),
+            authenticationMethod,
+            credentialVersion,
+        )
+    }
+
+    private fun passwordHash(accountId: UUID): String = jdbc.queryForObject(
+        "select password_hash from customer_accounts where id = ?",
+        String::class.java,
+        accountId,
+    )!!
 
     private fun resetTokenFromProtectedMail(): String {
         val stored = jdbc.queryForMap(
@@ -309,6 +651,10 @@ class CustomerPasswordResetIntegrationTest {
         private const val PASSWORDLESS_EMAIL = "reset-passwordless@example.test"
         private const val DISABLED_EMAIL = "reset-disabled@example.test"
         private const val RAW_PASSWORD = "synthetic current password 🔐"
+        private const val NEW_PASSWORD = "synthetic replacement password one 🔐"
+        private const val SECOND_NEW_PASSWORD = "synthetic replacement password two 🔐"
+        private const val RESET_EMAIL = "reset-success@example.test"
+        private const val CUSTOMER_COOKIE = "DESKSEED_CUSTOMER_SESSION"
         private const val PROTECTED_MAIL_KEY = "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
 
         @Container

@@ -48,6 +48,25 @@ internal class CustomerPasswordResetController(
             .body(GenericAccepted(true))
     }
 
+    @PostMapping("/api/v1/customer/auth/password-resets")
+    fun resetPassword(
+        @Valid @RequestBody body: CustomerPasswordResetConsumeRequest,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ): ResponseEntity<Void> {
+        resetService.consume(
+            rawToken = body.token,
+            newPassword = body.newPassword,
+            remoteAddress = request.remoteAddr ?: "unknown",
+            context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
+        )
+        response.addCookie(CustomerMagicLinkController.expiredSessionCookie())
+        return ResponseEntity.noContent()
+            .cacheControl(CacheControl.noStore())
+            .header("Referrer-Policy", "no-referrer")
+            .build()
+    }
+
     private fun padResponse(startedAt: Long, minimum: Duration) {
         val remaining = minimum.toNanos() - (System.nanoTime() - startedAt)
         if (remaining > 0) LockSupport.parkNanos(remaining)
@@ -58,6 +77,23 @@ internal class CustomerPasswordResetController(
 internal class CustomerPasswordResetExceptionHandler(
     private val problemWriter: CustomerSecurityProblemWriter,
 ) {
+    @ExceptionHandler(CustomerPasswordResetInvalidException::class)
+    fun invalidProof(
+        exception: CustomerPasswordResetInvalidException,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ) {
+        @Suppress("UNUSED_VARIABLE") val ignored = exception
+        problemWriter.write(
+            response,
+            request,
+            401,
+            "/problems/customer-one-time-proof-invalid",
+            "고객 확인 정보를 사용할 수 없습니다",
+            "확인 정보가 만료되었거나 이미 사용되었습니다.",
+        )
+    }
+
     @ExceptionHandler(CustomerAuthenticationRateLimitedException::class)
     fun rateLimited(
         exception: CustomerAuthenticationRateLimitedException,
@@ -126,4 +162,13 @@ internal data class CustomerPasswordResetRequest(
     @field:NotBlank @field:Email @field:Size(max = 254) val email: String,
 ) {
     override fun toString(): String = "[PROTECTED CUSTOMER PASSWORD RESET HTTP REQUEST]"
+}
+
+@Schema(description = "일회성 reset proof로 고객 password를 교체하는 요청")
+internal data class CustomerPasswordResetConsumeRequest(
+    @field:NotBlank @field:Size(min = 32, max = 256) val token: String,
+    @field:Schema(minLength = 12, maxLength = 128)
+    @field:NotBlank @field:Size(max = 256) val newPassword: String,
+) {
+    override fun toString(): String = "[PROTECTED CUSTOMER PASSWORD RESET CONSUME HTTP REQUEST]"
 }
