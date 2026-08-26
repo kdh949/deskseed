@@ -52,6 +52,7 @@ paths:
         '401': {$ref: '#/components/responses/CustomerConsentUnauthorized'}
         '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
         '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+        '503': {$ref: '#/components/responses/CustomerConsentUnavailable'}
     post:
       tags: [Admin Customer Consent]
       operationId: createCustomerConsentPolicy
@@ -109,6 +110,7 @@ paths:
         '403': {$ref: '#/components/responses/CustomerConsentForbidden'}
         '404': {$ref: '#/components/responses/CustomerConsentNotFound'}
         '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+        '503': {$ref: '#/components/responses/CustomerConsentUnavailable'}
     put:
       tags: [Admin Customer Consent]
       operationId: updateCustomerConsentPolicyDraft

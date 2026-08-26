@@ -386,6 +386,18 @@ class CustomerConsentContractTest(unittest.TestCase):
                     operation["x-deskseed-security-audit-events"],
                 )
 
+    def test_admin_policy_reads_declare_stable_storage_unavailable_problem(self) -> None:
+        reads = (
+            self.operation("/api/v1/admin/customer-consent-policies"),
+            self.operation("/api/v1/admin/customer-consent-policies/{policyId}"),
+        )
+        for operation in reads:
+            with self.subTest(operation=operation["operationId"]):
+                self.assertEqual(
+                    "#/components/responses/CustomerConsentUnavailable",
+                    operation["responses"]["503"]["$ref"],
+                )
+
     def test_public_projection_contains_only_current_customer_safe_version_fields(self) -> None:
         operation = self.operation("/api/v1/customer/consent-policies")
         self.assertNotIn("security", operation)

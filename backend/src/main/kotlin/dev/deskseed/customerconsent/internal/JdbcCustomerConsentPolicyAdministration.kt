@@ -51,7 +51,7 @@ internal class JdbcCustomerConsentPolicyAdministration(
         page: Int,
         size: Int,
         actor: CustomerConsentPolicyActor,
-    ): CustomerConsentPolicyPage {
+    ): CustomerConsentPolicyPage = translateStorageFailure {
         requireAccess(actor)
         if (page < 0 || size !in 1..100) throw IllegalArgumentException("Customer consent page is invalid")
         val where = mutableListOf<String>()
@@ -71,7 +71,7 @@ internal class JdbcCustomerConsentPolicyAdministration(
             *(arguments + size + offset).toTypedArray(),
         )
         val totalPages = if (total == 0L) 0 else Math.toIntExact((total + size - 1) / size)
-        return CustomerConsentPolicyPage(items, page, size, total, totalPages)
+        CustomerConsentPolicyPage(items, page, size, total, totalPages)
     }
 
     @Transactional
@@ -107,9 +107,12 @@ internal class JdbcCustomerConsentPolicyAdministration(
     }
 
     @Transactional(readOnly = true)
-    override fun get(policyId: UUID, actor: CustomerConsentPolicyActor): CustomerConsentPolicyDetail {
+    override fun get(
+        policyId: UUID,
+        actor: CustomerConsentPolicyActor,
+    ): CustomerConsentPolicyDetail = translateStorageFailure {
         requireAccess(actor)
-        return detail(stateById(policyId))
+        detail(stateById(policyId))
     }
 
     @Transactional
