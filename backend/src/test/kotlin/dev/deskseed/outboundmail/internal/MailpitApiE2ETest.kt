@@ -342,11 +342,18 @@ class MailpitApiE2ETest {
             .withExposedPorts(1025, 8025)
             .waitingFor(Wait.forHttp("/readyz").forPort(8025))
 
+        @Container
+        @JvmStatic
+        val redis = GenericContainer(DockerImageName.parse("redis:8.2.7-alpine"))
+            .withExposedPorts(6379)
+
         @DynamicPropertySource
         @JvmStatic
         fun mailProperties(registry: DynamicPropertyRegistry) {
             registry.add("spring.mail.host", mailpit::getHost)
             registry.add("spring.mail.port") { mailpit.getMappedPort(1025) }
+            registry.add("spring.data.redis.host", redis::getHost)
+            registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
         }
     }
 
