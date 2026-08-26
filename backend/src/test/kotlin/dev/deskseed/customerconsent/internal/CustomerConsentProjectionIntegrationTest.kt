@@ -277,7 +277,8 @@ class CustomerConsentProjectionIntegrationTest {
     private fun clearState() {
         jdbc.execute(
             """
-            truncate table customer_consent_acceptances, customer_consent_policy_versions,
+            truncate table customer_registration_intent_consents, customer_registration_intents,
+                customer_consent_acceptances, customer_consent_policy_versions,
                 customer_consent_policies, admin_security_audit_events, staff_login_throttles,
                 staff_accounts restart identity cascade
             """.trimIndent(),

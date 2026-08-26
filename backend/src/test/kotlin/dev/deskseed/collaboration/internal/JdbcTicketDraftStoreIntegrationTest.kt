@@ -43,7 +43,10 @@ class JdbcTicketDraftStoreIntegrationTest {
             .migrate()
         jdbc = JdbcTemplate(dataSource)
         jdbc.update("truncate ticket_drafts")
-        jdbc.update("truncate table customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade")
+        jdbc.update(
+            "truncate table customer_registration_intent_consents, customer_registration_intents, " +
+                "customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade",
+        )
         jdbc.update("update ticket_draft_cleanup_lease set lease_owner = null, lease_expires_at = null")
         jdbc.update("delete from tickets where id = ?", ticketId)
         jdbc.update("delete from staff_accounts where id in (?, ?)", ownerId, otherOwnerId)

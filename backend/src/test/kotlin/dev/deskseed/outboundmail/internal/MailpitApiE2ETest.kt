@@ -68,7 +68,7 @@ class MailpitApiE2ETest {
             """
             truncate table
                 outbound_mail_delivery_events, outbound_mail_attempts, outbound_mail_intents,
-                customer_sessions, customer_magic_link_request_limits, customer_magic_link_tokens,
+                customer_sessions, customer_one_time_tokens,
                 customer_accounts, admin_security_audit_events, customers
             restart identity cascade
             """.trimIndent(),

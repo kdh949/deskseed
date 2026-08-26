@@ -76,7 +76,10 @@ class PlatformTicketIntegrationTest {
                 "support_groups, staff_authority_grants, " +
                 "customers cascade",
         )
-        jdbcTemplate.execute("truncate table customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade")
+        jdbcTemplate.execute(
+            "truncate table customer_registration_intent_consents, customer_registration_intents, " +
+                "customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade",
+        )
         jdbcTemplate.update("delete from staff_accounts")
         jdbcTemplate.execute("alter sequence ticket_number_seq restart with 1000")
         adminId = UUID.randomUUID()

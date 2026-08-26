@@ -81,10 +81,10 @@ internal class JdbcDigestOneTimeTokenService(
         )
         jdbcTemplate.update(
             """
-            insert into customer_magic_link_tokens
-                (id, token_digest, email_normalized, email_display, request_id, correlation_id,
+            insert into customer_one_time_tokens
+                (id, token_digest, purpose, email_normalized, email_display, request_id, correlation_id,
                  created_at, expires_at, consumed_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, null)
+            values (?, ?, 'PASSWORDLESS_LOGIN', ?, ?, ?, ?, ?, ?, null)
             """.trimIndent(),
             generated.id,
             CustomerAuthSecrets.digest(generated.rawToken),
@@ -109,9 +109,10 @@ internal class JdbcDigestOneTimeTokenService(
         val now = Instant.now(clock)
         return jdbcTemplate.query(
             """
-            update customer_magic_link_tokens
+            update customer_one_time_tokens
                set consumed_at = ?
              where token_digest = ?
+               and purpose = 'PASSWORDLESS_LOGIN'
                and consumed_at is null
                and expires_at > ?
             returning id, email_normalized, email_display, expires_at
@@ -131,7 +132,12 @@ internal class JdbcDigestOneTimeTokenService(
     }
 
     fun failureClass(rawToken: String): TokenFailureClass = jdbcTemplate.query(
-        "select consumed_at, expires_at from customer_magic_link_tokens where token_digest = ?",
+        """
+        select consumed_at, expires_at
+          from customer_one_time_tokens
+         where token_digest = ?
+           and purpose = 'PASSWORDLESS_LOGIN'
+        """.trimIndent(),
         { resultSet, _ ->
             if (resultSet.getTimestamp("consumed_at") != null) TokenFailureClass.REPLAYED
             else TokenFailureClass.EXPIRED_OR_INVALID

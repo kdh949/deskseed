@@ -82,8 +82,7 @@ class CustomerMagicLinkAuthIntegrationTest {
                 outbound_mail_attempts,
                 outbound_mail_intents,
                 customer_sessions,
-                customer_magic_link_request_limits,
-                customer_magic_link_tokens,
+                customer_one_time_tokens,
                 customer_accounts,
                 admin_security_audit_events,
                 ticket_audit_events,
@@ -117,7 +116,7 @@ class CustomerMagicLinkAuthIntegrationTest {
         assertThat(rateLimited.response.contentAsString)
             .contains("/problems/customer-authentication-rate-limited")
             .doesNotContain("known@example.com")
-        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java))
             .isEqualTo(2)
         assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java))
             .isEqualTo(2)
@@ -173,7 +172,7 @@ class CustomerMagicLinkAuthIntegrationTest {
             jdbcTemplate.execute("drop function if exists fail_customer_auth_mail_insert()")
         }
 
-        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java)).isZero()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java)).isZero()
         assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java)).isZero()
         assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java)).isZero()
         assertThat(redisTemplate.keys("deskseed:customer-auth:limiter:*")).isNotEmpty
@@ -244,7 +243,7 @@ class CustomerMagicLinkAuthIntegrationTest {
         val rawToken = generateToken("race@example.com")
         assertThat(
             jdbcTemplate.queryForObject(
-                "select token_digest from customer_magic_link_tokens where email_normalized = ?",
+                "select token_digest from customer_one_time_tokens where email_normalized = ?",
                 String::class.java,
                 "race@example.com",
             ),
@@ -417,10 +416,10 @@ class CustomerMagicLinkAuthIntegrationTest {
         val now = Instant.now().minusSeconds(120)
         jdbcTemplate.update(
             """
-            insert into customer_magic_link_tokens
-                (id, token_digest, email_normalized, email_display, request_id, correlation_id,
+            insert into customer_one_time_tokens
+                (id, token_digest, purpose, email_normalized, email_display, request_id, correlation_id,
                  created_at, expires_at, consumed_at)
-            values (?, ?, ?, ?, 'expired-request', 'expired-correlation', ?, ?, null)
+            values (?, ?, 'PASSWORDLESS_LOGIN', ?, ?, 'expired-request', 'expired-correlation', ?, ?, null)
             """.trimIndent(),
             UUID.randomUUID(),
             sha256(rawToken),
@@ -444,7 +443,7 @@ class CustomerMagicLinkAuthIntegrationTest {
         """
         select coalesce(string_agg(value, ''), '')
         from (
-            select token_digest as value from customer_magic_link_tokens
+            select token_digest as value from customer_one_time_tokens
             union all
             select session_token_digest from customer_sessions
             union all

@@ -51,7 +51,10 @@ class StaffTicketQueryEvidenceIntegrationTest {
                 "search_audit_customer_result_items, " +
                 "search_audit_result_items, search_audit_details, access_audit_events",
         )
-        jdbcTemplate.execute("truncate table customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade")
+        jdbcTemplate.execute(
+            "truncate table customer_registration_intent_consents, customer_registration_intents, " +
+                "customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade",
+        )
         jdbcTemplate.update("delete from request_access_tokens")
         jdbcTemplate.update("delete from ticket_audit_events")
         jdbcTemplate.update("delete from ticket_audits")

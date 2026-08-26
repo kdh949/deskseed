@@ -33,7 +33,7 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
             "select count(*) from admin_security_audit_events",
             Long::class.java,
         )!!
-        val tokenBefore = jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java)!!
+        val tokenBefore = jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java)!!
 
         mockMvc.perform(
             post("/api/v1/customer/auth/magic-link-requests")
@@ -48,7 +48,7 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
 
         assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java))
             .isEqualTo(auditBefore)
-        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_magic_link_tokens", Long::class.java))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java))
             .isEqualTo(tokenBefore)
         assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
     }
