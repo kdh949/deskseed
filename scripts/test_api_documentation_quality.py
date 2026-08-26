@@ -125,6 +125,7 @@ class CustomerIdentityContractTest(unittest.TestCase):
                     "requestCustomerRegistration",
                     "verifyCustomerRegistration",
                     "createCustomerPasswordSession",
+                    "requestCustomerPasswordReset",
                 }:
                     self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
                 else:
