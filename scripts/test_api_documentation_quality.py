@@ -259,6 +259,17 @@ class CustomerIdentityContractTest(unittest.TestCase):
                 if "token" in example:
                     self.assertIn("not-valid", str(example["token"]))
 
+    def test_magic_link_consume_validation_matches_generic_invalid_proof_boundary(self) -> None:
+        token = self.document["components"]["schemas"]["MagicLinkConsume"]["properties"]["token"]
+        self.assertEqual(1, token["minLength"])
+        self.assertEqual(256, token["maxLength"])
+        validator = Draft202012Validator(token)
+        self.assertFalse(list(validator.iter_errors("malformed-token-value")))
+        self.assertTrue(list(validator.iter_errors("")))
+        self.assertTrue(list(validator.iter_errors(" ")))
+        self.assertTrue(list(validator.iter_errors("a\n")))
+        self.assertTrue(list(validator.iter_errors("a" * 257)))
+
     def test_reset_revokes_sessions_without_implicitly_logging_in(self) -> None:
         operation = self.operation("/api/v1/customer/auth/password-resets")
         self.assertEqual("REVOKE_ALL", operation["x-deskseed-session-transition"])

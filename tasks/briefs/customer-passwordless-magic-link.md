@@ -28,6 +28,8 @@ Passwordless 또는 기존 익명 identity만 enumeration-safe magic-link mail�
   `202`를 반환하지만 active passwordless account와 기존 anonymous identity에만 mail intent를 만든다.
 - `POST /api/v1/customer/auth/magic-link-sessions`는 passwordless-only proof를 소비해 `200 CurrentCustomer`와
   rotated session cookie를 반환한다.
+- 1~256자의 non-blank, control-free token은 proof format을 사전 판별하지 않고 lookup 뒤 generic `401`로
+  처리한다. Blank, control character 포함, 256자 초과 token만 request validation `400` 경계다.
 - Password account, disabled account, unknown/wrong-purpose/expired/replayed/concurrent-loser proof는 세션을 만들지
   않고 외부에 account state를 노출하지 않는다.
 - 제한 초과는 `Retry-After`가 있는 generic `429`, limiter/DB/outbox/audit 실패는 generic `503`이다.
@@ -81,7 +83,8 @@ Passwordless 또는 기존 익명 identity만 enumeration-safe magic-link mail�
   while only anonymous/passwordless identities receive mail.
 - Given a valid passwordless proof, when consumed, then one audited onboarding session is created and the current session rotates.
 - Given a password account with an outstanding proof, when consumed, then generic `401` creates no session and consumes the proof.
-- Given replay, expiry, wrong purpose, malformed proof, or a concurrent loser, when consumed, then one invalid-proof problem is used.
+- Given replay, expiry, wrong purpose, short but bounded malformed proof, or a concurrent loser, when consumed, then one
+  invalid-proof problem is used; blank, control character, or oversized input remains a request-validation error.
 - Given exhausted or unavailable limiter, when request/consume starts, then generic `429`/`503` occurs before identity/proof work.
 - Given required audit or outbox persistence failure, when an otherwise-valid flow runs, then generic `503` rolls back token,
   mail, account, and session effects while the limiter allowance remains committed.

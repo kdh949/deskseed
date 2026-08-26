@@ -372,6 +372,20 @@ class CustomerMagicLinkAuthIntegrationTest {
     }
 
     @Test
+    fun `blank control and oversized tokens remain request validation errors`() {
+        listOf("", " ", "a".repeat(257)).forEach { token ->
+            consume(token).andExpect(status().isBadRequest)
+        }
+        mockMvc.perform(
+            post("/api/v1/customer/auth/magic-link-sessions")
+                .with { request -> request.remoteAddr = "192.0.2.11"; request }
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"token":"a\nb"}"""),
+        ).andExpect(status().isBadRequest)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java)).isZero()
+    }
+
+    @Test
     fun `password and disabled accounts cannot consume an outstanding passwordless token`() {
         val deniedProofs = listOf(
             insertPasswordAccount("password-magic-consume@example.com") to

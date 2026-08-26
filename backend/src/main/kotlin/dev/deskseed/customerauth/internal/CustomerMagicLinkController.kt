@@ -63,7 +63,7 @@ internal class CustomerMagicLinkController(
     ): ResponseEntity<CurrentCustomerResponse> {
         val session = authenticationService.consume(
             rawToken = body.token,
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             previousRawSession = request.customerSessionCookie(),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
@@ -204,7 +204,13 @@ internal data class MagicLinkRequest(
 
 @Schema(description = "일회성 매직 링크 소비 요청")
 internal data class MagicLinkConsumeRequest(
-    @field:Schema(description = "이메일 링크로 발급된 일회성 토큰", example = "example-token-not-valid-0000000000000000")
+    @field:Schema(
+        description = "1~256자 non-blank opaque proof. 발급 형식과 다른 bounded 값도 generic invalid-proof로 처리합니다.",
+        example = "example-token-not-valid-0000000000000000",
+        minLength = 1,
+        maxLength = 256,
+        pattern = "^(?![\\s\\S]*[\\x00-\\x1F\\x7F])(?=[\\s\\S]*\\S)[\\s\\S]+$",
+    )
     @field:NotBlank @field:Size(max = 256) val token: String,
 ) {
     override fun toString(): String = "[PROTECTED MAGIC LINK CONSUME REQUEST]"
