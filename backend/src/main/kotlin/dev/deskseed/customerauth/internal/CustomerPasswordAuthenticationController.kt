@@ -27,6 +27,7 @@ import kotlin.math.ceil
 @Validated
 internal class CustomerPasswordAuthenticationController(
     private val authenticationService: CustomerPasswordAuthenticationService,
+    private val clientAddressResolver: CustomerAuthClientAddressResolver,
 ) {
     @PostMapping("/api/v1/customer/auth/password-sessions")
     fun createPasswordSession(
@@ -37,7 +38,7 @@ internal class CustomerPasswordAuthenticationController(
         val session = authenticationService.login(
             emailInput = body.email,
             rawPassword = body.password,
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             previousRawSession = request.customerSessionCookie(),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )

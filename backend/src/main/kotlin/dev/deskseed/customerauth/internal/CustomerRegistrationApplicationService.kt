@@ -112,7 +112,6 @@ internal class CustomerRegistrationApplicationService(
             )
             if (created != null) {
                 val verification = tokenService.generate(
-                    emailDisplay = email,
                     target = CustomerOneTimeTokenTarget.EmailVerification(created.id),
                     ttl = properties.registrationVerificationTtl,
                     context = context,
@@ -120,7 +119,7 @@ internal class CustomerRegistrationApplicationService(
                 outboundMailPort.enqueue(
                     OutboundMailIntent(
                         idempotencyKey = "customer-registration-verification:${verification.id}",
-                        recipient = MailRecipient(email),
+                        recipient = MailRecipient(verification.emailDisplay),
                         content = RegistrationVerificationMail(
                             "${properties.registrationVerificationUrl}#token=${verification.rawToken}",
                         ),
