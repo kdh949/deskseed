@@ -311,6 +311,7 @@ paths:
         만들지 않습니다. Raw password/token/hash는 response, audit, log에 없습니다.
       x-deskseed-requirements:
       - REQ-AUTH-003
+      x-deskseed-contract-status: FROZEN
       x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-session-transition: REVOKE_ALL
       x-deskseed-security-audit-events:
