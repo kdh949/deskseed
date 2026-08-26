@@ -4005,6 +4005,8 @@ paths:
           $ref: '#/components/responses/CustomerConsentForbidden'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503':
+          $ref: '#/components/responses/CustomerConsentUnavailable'
     post:
       tags:
       - Admin Customer Consent
@@ -4079,6 +4081,8 @@ paths:
           $ref: '#/components/responses/CustomerConsentNotFound'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503':
+          $ref: '#/components/responses/CustomerConsentUnavailable'
     put:
       tags:
       - Admin Customer Consent
