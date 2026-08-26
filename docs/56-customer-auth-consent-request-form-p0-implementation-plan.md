@@ -526,6 +526,7 @@ Wave 1's V40–V79 reservation is complete. Begin the next additive range at V80
 - add `customer_registration_intents` with email, password hash, profile values, continuation-secret digest, expiry, consume/cancel state;
 - add `customer_registration_intent_consents` referencing immutable policy versions;
 - generalize/rename `customer_magic_link_tokens` to purpose-bound customer one-time tokens;
+- require every new token writer to provide `purpose`, and bind EMAIL_VERIFICATION/PASSWORD_RESET token email to its intent/account identity with composite foreign keys;
 - introduce the storage-neutral `AuthenticationAttemptLimiter` port with content-free fingerprints and the single ADR 0043 Redis adapter; do not add, alter, or dual-write a PostgreSQL customer-auth limiter;
 - add session authentication method and credential-version snapshot if required for invalidation;
 - keep raw passwords, raw tokens, and raw continuation secrets out of all tables.

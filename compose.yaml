@@ -23,7 +23,7 @@ services:
       - "1025"
 
   redis:
-    image: redis:8.2.7-alpine
+    image: redis:8.2.9-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
     restart: unless-stopped
     expose:
