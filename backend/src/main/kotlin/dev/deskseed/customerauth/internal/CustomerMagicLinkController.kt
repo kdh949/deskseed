@@ -170,13 +170,6 @@ internal class CustomerMagicLinkController(
         )
     }
 
-    private fun CustomerPrincipal.toResponse() = CurrentCustomerResponse(
-        id = customerId.toString(),
-        email = email,
-        displayName = displayName,
-        verifiedAt = verifiedAt.toString(),
-    )
-
     private fun padResponse(startedAt: Long, minimum: Duration) {
         val remaining = minimum.toNanos() - (System.nanoTime() - startedAt)
         if (remaining > 0) LockSupport.parkNanos(remaining)
@@ -216,7 +209,24 @@ internal data class CurrentCustomerResponse(
     val id: String,
     val email: String,
     val displayName: String,
+    val companyName: String?,
     val verifiedAt: String,
+    val credentialState: dev.deskseed.customerauth.CustomerCredentialState,
+    val registrationState: dev.deskseed.customerauth.CustomerRegistrationState,
+    val availableAuthenticationMethods: List<dev.deskseed.customerauth.CustomerAuthenticationMethod>,
+) {
+    override fun toString(): String = "[PROTECTED CURRENT CUSTOMER RESPONSE]"
+}
+
+internal fun CustomerPrincipal.toResponse() = CurrentCustomerResponse(
+    id = customerId.toString(),
+    email = email,
+    displayName = displayName,
+    companyName = companyName,
+    verifiedAt = verifiedAt.toString(),
+    credentialState = credentialState,
+    registrationState = registrationState,
+    availableAuthenticationMethods = availableAuthenticationMethods,
 )
 
 @Schema(description = "고객 세션에 귀속된 CSRF 토큰")

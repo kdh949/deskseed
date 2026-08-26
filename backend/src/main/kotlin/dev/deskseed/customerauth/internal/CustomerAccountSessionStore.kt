@@ -1,7 +1,10 @@
 package dev.deskseed.customerauth.internal
 
 import dev.deskseed.customer.CustomerDirectory
+import dev.deskseed.customerauth.CustomerAuthenticationMethod
+import dev.deskseed.customerauth.CustomerCredentialState
 import dev.deskseed.customerauth.CustomerPrincipal
+import dev.deskseed.customerauth.CustomerRegistrationState
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Propagation
@@ -14,12 +17,25 @@ import java.util.UUID
 internal data class CustomerAccountIdentity(
     val accountId: UUID,
     val principal: CustomerPrincipal,
+    val credentialVersion: Long,
 )
+
+internal data class CustomerPasswordLoginCandidate(
+    val accountId: UUID,
+    val principal: CustomerPrincipal,
+    val status: String,
+    val passwordHash: CustomerPasswordHash?,
+    val credentialVersion: Long,
+) {
+    override fun toString(): String = "[PROTECTED CUSTOMER PASSWORD LOGIN CANDIDATE]"
+}
 
 internal data class NewCustomerSession(
     val rawToken: String,
     val principal: CustomerPrincipal,
-)
+) {
+    override fun toString(): String = "[PROTECTED NEW CUSTOMER SESSION]"
+}
 
 internal data class NewCustomerPasswordAccount(
     val emailNormalized: String,
@@ -82,7 +98,18 @@ internal class CustomerAccountSessionStore(
         )
         return CustomerAccountIdentity(
             accountId,
-            CustomerPrincipal(accountId, customer.id, command.emailNormalized, customer.name, now),
+            CustomerPrincipal(
+                accountId = accountId,
+                customerId = customer.id,
+                email = command.emailNormalized,
+                displayName = customer.name,
+                verifiedAt = now,
+                companyName = command.companyName,
+                credentialState = CustomerCredentialState.PASSWORD,
+                registrationState = CustomerRegistrationState.COMPLETE,
+                availableAuthenticationMethods = listOf(CustomerAuthenticationMethod.PASSWORD),
+            ),
+            credentialVersion = 0,
         )
     }
 
@@ -112,10 +139,16 @@ internal class CustomerAccountSessionStore(
         return CustomerAccountIdentity(
             accountId,
             CustomerPrincipal(accountId, customer.id, emailNormalized, customer.name, requireNotNull(customer.verifiedAt)),
+            credentialVersion = 0,
         )
     }
 
-    fun createSession(account: CustomerAccountIdentity, previousRawSession: String?): NewCustomerSession {
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun createSession(
+        account: CustomerAccountIdentity,
+        previousRawSession: String?,
+        authenticationMethod: CustomerAuthenticationMethod = CustomerAuthenticationMethod.MAGIC_LINK,
+    ): NewCustomerSession {
         val now = Instant.now(clock)
         if (!previousRawSession.isNullOrBlank()) {
             jdbcTemplate.update(
@@ -130,8 +163,9 @@ internal class CustomerAccountSessionStore(
             """
             insert into customer_sessions
                 (id, account_id, session_token_digest, created_at, last_activity_at,
-                 expires_at, absolute_expires_at, revoked_at)
-            values (?, ?, ?, ?, ?, ?, ?, null)
+                 expires_at, absolute_expires_at, revoked_at, authentication_method,
+                 credential_version_snapshot)
+            values (?, ?, ?, ?, ?, ?, ?, null, ?, ?)
             """.trimIndent(),
             sessionId,
             account.accountId,
@@ -140,6 +174,14 @@ internal class CustomerAccountSessionStore(
             Timestamp.from(now),
             Timestamp.from(now.plus(properties.sessionIdle)),
             Timestamp.from(now.plus(properties.sessionAbsolute)),
+            authenticationMethod.name,
+            account.credentialVersion,
+        )
+        jdbcTemplate.update(
+            "update customer_accounts set last_login_at = ?, updated_at = ? where id = ?",
+            Timestamp.from(now),
+            Timestamp.from(now),
+            account.accountId,
         )
         return NewCustomerSession(
             raw,
@@ -163,9 +205,11 @@ internal class CustomerAccountSessionStore(
                and session.absolute_expires_at > ?
                and account.id = session.account_id
                and account.status = 'ACTIVE'
+               and session.credential_version_snapshot = account.credential_version
                and customer.id = account.customer_id
             returning session.id as session_id, account.id as account_id, customer.id as customer_id,
-                      account.email_normalized, customer.name, account.verified_at
+                      account.email_normalized, customer.name, customer.company_name, account.verified_at,
+                      account.password_hash
             """.trimIndent(),
             { resultSet, _ ->
                 CustomerPrincipal(
@@ -174,6 +218,10 @@ internal class CustomerAccountSessionStore(
                     email = resultSet.getString("email_normalized"),
                     displayName = resultSet.getString("name"),
                     verifiedAt = resultSet.getTimestamp("verified_at").toInstant(),
+                    companyName = resultSet.getString("company_name"),
+                    credentialState = credentialState(resultSet.getString("password_hash")),
+                    registrationState = registrationState(resultSet.getString("password_hash")),
+                    availableAuthenticationMethods = authenticationMethods(resultSet.getString("password_hash")),
                     sessionFingerprint = CustomerAuthSecrets.customerSessionFingerprint(
                         properties.fingerprintKey,
                         resultSet.getObject("session_id", UUID::class.java),
@@ -198,10 +246,51 @@ internal class CustomerAccountSessionStore(
         return principal
     }
 
+    fun findPasswordLoginCandidate(emailNormalized: String): CustomerPasswordLoginCandidate? = jdbcTemplate.query(
+        """
+        select account.id as account_id, account.customer_id, account.email_normalized,
+               account.status, account.verified_at, account.password_hash, account.credential_version,
+               customer.name, customer.company_name
+          from customer_accounts account
+          join customers customer on customer.id = account.customer_id
+         where account.email_normalized = ?
+        """.trimIndent(),
+        { resultSet, _ ->
+            val passwordHash = resultSet.getString("password_hash")?.let(CustomerPasswordHash::fromEncoded)
+            val accountId = resultSet.getObject("account_id", UUID::class.java)
+            val credentialVersion = resultSet.getLong("credential_version")
+            CustomerPasswordLoginCandidate(
+                accountId = accountId,
+                principal = CustomerPrincipal(
+                    accountId = accountId,
+                    customerId = resultSet.getObject("customer_id", UUID::class.java),
+                    email = resultSet.getString("email_normalized"),
+                    displayName = resultSet.getString("name"),
+                    verifiedAt = resultSet.getTimestamp("verified_at").toInstant(),
+                    companyName = resultSet.getString("company_name"),
+                    credentialState = credentialState(passwordHash?.encoded),
+                    registrationState = registrationState(passwordHash?.encoded),
+                    availableAuthenticationMethods = authenticationMethods(passwordHash?.encoded),
+                ),
+                status = resultSet.getString("status"),
+                passwordHash = passwordHash,
+                credentialVersion = credentialVersion,
+            )
+        },
+        emailNormalized,
+    ).singleOrNull()
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockAndFindPasswordLoginCandidate(emailNormalized: String): CustomerPasswordLoginCandidate? {
+        lockAccountEmail(emailNormalized)
+        return findPasswordLoginCandidate(emailNormalized)
+    }
+
     private fun findAccount(emailNormalized: String): CustomerAccountIdentity? = jdbcTemplate.query(
         """
         select account.id as account_id, account.customer_id, account.email_normalized,
-               account.status, customer.name, account.verified_at
+               account.status, customer.name, customer.company_name, account.verified_at,
+               account.password_hash, account.credential_version
           from customer_accounts account
           join customers customer on customer.id = account.customer_id
          where account.email_normalized = ?
@@ -217,9 +306,23 @@ internal class CustomerAccountSessionStore(
                     email = resultSet.getString("email_normalized"),
                     displayName = resultSet.getString("name"),
                     verifiedAt = resultSet.getTimestamp("verified_at").toInstant(),
+                    companyName = resultSet.getString("company_name"),
+                    credentialState = credentialState(resultSet.getString("password_hash")),
+                    registrationState = registrationState(resultSet.getString("password_hash")),
+                    availableAuthenticationMethods = authenticationMethods(resultSet.getString("password_hash")),
                 ),
+                credentialVersion = resultSet.getLong("credential_version"),
             )
         },
         emailNormalized,
     ).singleOrNull()
+
+    private fun credentialState(passwordHash: String?): CustomerCredentialState =
+        if (passwordHash == null) CustomerCredentialState.PASSWORDLESS else CustomerCredentialState.PASSWORD
+
+    private fun registrationState(passwordHash: String?): CustomerRegistrationState =
+        if (passwordHash == null) CustomerRegistrationState.REGISTRATION_REQUIRED else CustomerRegistrationState.COMPLETE
+
+    private fun authenticationMethods(passwordHash: String?): List<CustomerAuthenticationMethod> =
+        listOf(if (passwordHash == null) CustomerAuthenticationMethod.MAGIC_LINK else CustomerAuthenticationMethod.PASSWORD)
 }

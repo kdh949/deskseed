@@ -33,6 +33,9 @@ internal class CustomerPasswordHasher {
         MEMORY_KIB,
         ITERATIONS,
     )
+    private val dummyHash = CustomerPasswordHash.fromEncoded(
+        requireNotNull(encoder.encode(DUMMY_PASSWORD)),
+    )
 
     fun encode(rawPassword: String): CustomerPasswordHash {
         validate(rawPassword)
@@ -41,6 +44,13 @@ internal class CustomerPasswordHasher {
 
     fun matches(rawPassword: String, encoded: CustomerPasswordHash): Boolean =
         encoder.matches(rawPassword, encoded.encoded)
+
+    /** Executes one adaptive comparison even when no usable customer credential exists. */
+    fun matchesOrDummy(rawPassword: String, encoded: CustomerPasswordHash?): Boolean = try {
+        encoder.matches(rawPassword, (encoded ?: dummyHash).encoded)
+    } catch (_: IllegalArgumentException) {
+        encoder.matches(rawPassword, dummyHash.encoded)
+    }
 
     private fun validate(rawPassword: String) {
         val codePointCount = rawPassword.codePointCount(0, rawPassword.length)
@@ -60,5 +70,6 @@ internal class CustomerPasswordHasher {
         private const val ITERATIONS = 2
         private const val MIN_LENGTH = 12
         private const val MAX_LENGTH = 128
+        private const val DUMMY_PASSWORD = "deskseed customer dummy credential"
     }
 }
