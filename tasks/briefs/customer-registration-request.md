@@ -48,7 +48,7 @@
 - Registration intent stores only Argon2id password hash and continuation digest; one-time token storage contains only a digest.
 - Existing accounts execute the same policy/password work but create no intent, token, or mail intent and receive an indistinguishable dummy continuation proof.
 - Current required policies are fail-closed; duplicate, unknown, wrong/stale version, or missing required selection is rejected.
-- The account check and pending-intent replacement share one normalized-email advisory-lock transaction.
+- The account check and pending-intent replacement use the same `customer-account:<normalized-email>` advisory-lock namespace as every account creation path, so an account commit wins before registration artifacts can be created.
 - Intent, token, durable mail intent, and `CUSTOMER_REGISTRATION_REQUESTED` audit commit or roll back together.
 - Redis allowance is intentionally outside that transaction and remains consumed after database/audit/outbox failure.
 - Provider delivery remains post-commit; the registration request itself has no network mail call.
