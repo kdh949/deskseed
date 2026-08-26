@@ -9,6 +9,7 @@ import dev.deskseed.outboundmail.MailRecipient
 import dev.deskseed.outboundmail.OutboundMailIntent
 import dev.deskseed.outboundmail.OutboundMailTemplate
 import dev.deskseed.outboundmail.PublicAgentReplyMail
+import dev.deskseed.outboundmail.PasswordResetMail
 import dev.deskseed.outboundmail.RegistrationVerificationMail
 import dev.deskseed.outboundmail.RequestReceivedMail
 import org.assertj.core.api.Assertions.assertThat
@@ -48,9 +49,11 @@ class OutboundMailPolicyTest {
     fun `versioned templates render fragment request links and classify token-bearing bodies as protected`() {
         val magicLink = "https://deskseed.example/customer/magic/opaque-token"
         val verificationLink = "https://deskseed.example/customer/register/verify#token=opaque-token"
+        val resetLink = "https://deskseed.example/customer/password/reset#token=opaque-reset-token"
         val requestAccessToken = "a".repeat(43)
         val magic = renderer.render(intent(MagicLinkMail(magicLink)))
         val verification = renderer.render(intent(RegistrationVerificationMail(verificationLink)))
+        val reset = renderer.render(intent(PasswordResetMail(resetLink)))
         val received = renderer.render(
             intent(RequestReceivedMail(ticketNumber = 1042, requestAccessToken = requestAccessToken)),
         )
@@ -76,6 +79,12 @@ class OutboundMailPolicyTest {
         assertThat(verification.sensitivity).isEqualTo(dev.deskseed.outboundmail.RenderedMailSensitivity.PROTECTED)
         assertThat(RegistrationVerificationMail(verificationLink).toString()).doesNotContain(verificationLink)
         assertThat(MagicLinkMail(magicLink).toString()).doesNotContain(magicLink)
+        assertThat(reset.template).isEqualTo(OutboundMailTemplate.CUSTOMER_PASSWORD_RESET)
+        assertThat(reset.templateVersion).isEqualTo(1)
+        assertThat(reset.subject).contains("비밀번호", "재설정")
+        assertThat(reset.textBody).contains(resetLink).doesNotContain("로그인 링크", "고객 등록")
+        assertThat(reset.sensitivity).isEqualTo(dev.deskseed.outboundmail.RenderedMailSensitivity.PROTECTED)
+        assertThat(PasswordResetMail(resetLink).toString()).doesNotContain(resetLink)
         assertThat(received.subject).contains("#1042", "접수")
         assertThat(received.textBody).contains("http://localhost:5173/requests/1042#token=$requestAccessToken")
         assertThat(received.textBody).doesNotContain("?token=")

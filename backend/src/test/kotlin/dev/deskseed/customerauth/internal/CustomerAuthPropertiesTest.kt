@@ -49,6 +49,25 @@ class CustomerAuthPropertiesTest {
     }
 
     @Test
+    fun `password reset ttl and URL enforce the thirty minute recovery policy`() {
+        listOf(Duration.ofMinutes(5), Duration.ofMinutes(30), Duration.ofMinutes(60)).forEach { ttl ->
+            assertThatCode { CustomerAuthProperties(passwordResetTtl = ttl).validate() }
+                .doesNotThrowAnyException()
+        }
+        listOf(
+            CustomerAuthProperties(passwordResetTtl = Duration.ofMinutes(4)),
+            CustomerAuthProperties(passwordResetTtl = Duration.ofMinutes(61)),
+            CustomerAuthProperties(passwordResetUrl = "/customer/password/reset"),
+            CustomerAuthProperties(passwordResetUrl = "javascript:alert(1)"),
+            CustomerAuthProperties(passwordResetUrl = "https://deskseed.example/reset?token=placeholder"),
+            CustomerAuthProperties(passwordResetUrl = "https://deskseed.example/reset#token=placeholder"),
+        ).forEach { properties ->
+            assertThatThrownBy { properties.validate() }
+                .isInstanceOf(IllegalArgumentException::class.java)
+        }
+    }
+
+    @Test
     fun `authentication limiter accepts bounded independent dimension budgets`() {
         assertThatCode {
             CustomerAuthProperties(
@@ -91,5 +110,7 @@ class CustomerAuthPropertiesTest {
         assertThat(production?.getProperty("spring.data.redis.ssl.enabled")).isEqualTo("true")
         assertThat(production?.getProperty("deskseed.customer-auth.registration-verification-url"))
             .isEqualTo("\${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL}")
+        assertThat(production?.getProperty("deskseed.customer-auth.password-reset-url"))
+            .isEqualTo("\${DESKSEED_CUSTOMER_PASSWORD_RESET_URL}")
     }
 }
