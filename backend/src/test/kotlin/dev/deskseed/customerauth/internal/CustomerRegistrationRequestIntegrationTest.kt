@@ -1,10 +1,13 @@
 package dev.deskseed.customerauth.internal
 
+import dev.deskseed.customerconsent.CustomerConsentContext
+import dev.deskseed.customerconsent.CustomerConsentPolicyContextLock
 import dev.deskseed.outboundmail.internal.ProtectedMailContent
 import dev.deskseed.outboundmail.internal.ProtectedMailContentCipher
 import dev.deskseed.outboundmail.internal.ProtectedMailContentProperties
 import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -33,7 +36,10 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicReference
 
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
     properties = [
@@ -56,6 +62,8 @@ class CustomerRegistrationRequestIntegrationTest {
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var redis: StringRedisTemplate
     @Autowired private lateinit var oneTimeTokenService: OneTimeTokenService
+    @Autowired private lateinit var intentStore: JdbcCustomerRegistrationIntentStore
+    @Autowired private lateinit var policyContextLock: CustomerConsentPolicyContextLock
     @Autowired private lateinit var transactionTemplate: TransactionTemplate
 
     @BeforeEach
@@ -152,6 +160,43 @@ class CustomerRegistrationRequestIntegrationTest {
             ),
         ).isEqualTo(2)
         assertThat(auditMetadata()).doesNotContain(NEW_EMAIL, EXISTING_EMAIL, RAW_PASSWORD)
+    }
+
+    @Test
+    fun `registration request waits for account creation lock and creates no registration artifacts`() {
+        val executor = Executors.newSingleThreadExecutor()
+        val pendingRequest = AtomicReference<Future<CreatedCustomerRegistrationIntent?>>()
+        try {
+            transactionTemplate.executeWithoutResult {
+                jdbc.queryForObject(
+                    "select pg_advisory_xact_lock(hashtextextended(?, 0))",
+                    { _, _ -> Unit },
+                    "customer-account:$RACING_EMAIL",
+                )
+                pendingRequest.set(
+                    executor.submit<CreatedCustomerRegistrationIntent?> {
+                        intentStore.replacePendingIfAccountAbsent(registrationIntent(RACING_EMAIL))
+                    },
+                )
+
+                assertThatThrownBy { pendingRequest.get().get(1, TimeUnit.SECONDS) }
+                    .isInstanceOf(TimeoutException::class.java)
+                insertExistingAccount(RACING_EMAIL)
+            }
+
+            assertThat(pendingRequest.get().get(5, TimeUnit.SECONDS)).isNull()
+        } finally {
+            executor.shutdownNow()
+        }
+        assertThat(
+            jdbc.queryForObject(
+                "select count(*) from customer_registration_intents where email_normalized = ?",
+                Long::class.java,
+                RACING_EMAIL,
+            ),
+        ).isZero()
+        assertThat(jdbc.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java)).isZero()
+        assertThat(jdbc.queryForObject("select count(*) from outbound_mail_intents", Long::class.java)).isZero()
     }
 
     @Test
@@ -444,6 +489,34 @@ class CustomerRegistrationRequestIntegrationTest {
     }
 
     @Test
+    fun `verification waits for registration policy mutation and revalidates the committed version`() {
+        val proofs = registrationProofs(NEW_EMAIL)
+        val executor = Executors.newSingleThreadExecutor()
+        val verification = AtomicReference<Future<Int>>()
+        try {
+            transactionTemplate.executeWithoutResult {
+                policyContextLock.lock(CustomerConsentContext.REGISTRATION)
+                verification.set(
+                    executor.submit<Int> {
+                        verifyRegistration(proofs.rawToken, continuationCookie(proofs.continuation.value))
+                            .andReturn().response.status
+                    },
+                )
+                assertThatThrownBy { verification.get().get(1, TimeUnit.SECONDS) }
+                    .isInstanceOf(TimeoutException::class.java)
+                publishRegistrationPolicyVersionTwo()
+            }
+
+            assertThat(verification.get().get(5, TimeUnit.SECONDS)).isEqualTo(409)
+        } finally {
+            executor.shutdownNow()
+        }
+        assertPendingUnconsumed(NEW_EMAIL)
+        assertThat(jdbc.queryForObject("select count(*) from customer_accounts", Long::class.java)).isZero()
+        assertThat(jdbc.queryForObject("select count(*) from customer_consent_acceptances", Long::class.java)).isZero()
+    }
+
+    @Test
     fun `concurrent verification consumes proofs once and creates one account`() {
         val proofs = registrationProofs(NEW_EMAIL)
         val executor = Executors.newFixedThreadPool(2)
@@ -693,6 +766,23 @@ class CustomerRegistrationRequestIntegrationTest {
         )
     }
 
+    private fun registrationIntent(email: String) = NewCustomerRegistrationIntent(
+        emailDisplay = email,
+        passwordHash = CustomerPasswordHash.fromEncoded(
+            "${'$'}argon2id${'$'}v=19${'$'}m=19456,t=2,p=1${'$'}synthetic-salt${'$'}synthetic-hash",
+        ),
+        displayName = "경합 고객",
+        companyName = "경합 회사",
+        policySelections = listOf(CustomerRegistrationPolicySelection(POLICY_ID, 1)),
+        ttl = java.time.Duration.ofHours(24),
+        context = dev.deskseed.foundation.CommandContext(
+            source = dev.deskseed.foundation.RequestSource.CUSTOMER_PORTAL,
+            requestId = "registration-account-race",
+            correlationId = "registration-account-race",
+            commandId = "registration-account-race",
+        ),
+    )
+
     private fun auditMetadata(): String = jdbc.queryForObject(
         "select coalesce(string_agg(metadata_json, ''), '') from admin_security_audit_events",
         String::class.java,
@@ -740,6 +830,7 @@ class CustomerRegistrationRequestIntegrationTest {
     companion object {
         private const val NEW_EMAIL = "new-registration@example.test"
         private const val EXISTING_EMAIL = "existing-registration@example.test"
+        private const val RACING_EMAIL = "racing-registration@example.test"
         private const val RAW_PASSWORD = "synthetic registration password 🔐"
         private const val REGISTRATION_COOKIE = "DESKSEED_CUSTOMER_REGISTRATION"
         private const val PROTECTED_MAIL_KEY = "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM="
@@ -749,7 +840,7 @@ class CustomerRegistrationRequestIntegrationTest {
 
         @Container
         @JvmStatic
-        val redisContainer = GenericContainer(DockerImageName.parse("redis:8.2.7-alpine"))
+        val redisContainer = GenericContainer(DockerImageName.parse("redis:8.2.9-alpine"))
             .withExposedPorts(6379)
 
         @DynamicPropertySource

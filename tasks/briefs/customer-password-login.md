@@ -46,7 +46,7 @@ bounded `CurrentCustomer` projection으로 로그인한다.
 ## Invariants and failure semantics
 
 - Limiter는 account 조회와 adaptive hashing 및 DB transaction 전에 allowance를 소비한다.
-- 모든 syntactically valid credential 시도는 저장 hash 또는 process-local dummy hash에 대해 adaptive 비교를 한 번 수행한다.
+- 모든 syntactically valid credential 시도는 저장 hash 또는 process-local dummy hash에 대해 adaptive 비교를 정확히 한 번 수행한다. 저장 hash의 Argon2id envelope/parameter/salt/hash 길이가 사용할 수 없으면 비교 전에 dummy를 선택한다.
 - 성공 전 normalized-email advisory lock 아래 status/hash/credential version을 다시 확인한다.
 - 새 session, 이전 current session revocation, `last_login_at`, 성공 security audit는 함께 commit/rollback한다.
 - 성공 session은 `PASSWORD` authentication method와 현재 credential version snapshot에 묶인다.

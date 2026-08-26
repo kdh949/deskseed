@@ -188,7 +188,6 @@ class CustomerCredentialPersistenceIntegrationTest {
             registration(hasher.encode("purpose isolated password"), "request-purpose"),
         )
         val verification = tokenService.generate(
-            emailDisplay = REGISTRATION_EMAIL,
             target = CustomerOneTimeTokenTarget.EmailVerification(created.id),
             ttl = Duration.ofHours(24),
             context = context("token-verification"),
@@ -219,12 +218,13 @@ class CustomerCredentialPersistenceIntegrationTest {
         ).isNull()
 
         val reset = tokenService.generate(
-            emailDisplay = RESET_EMAIL,
             target = CustomerOneTimeTokenTarget.PasswordReset(ACCOUNT_ID),
             ttl = Duration.ofMinutes(30),
             context = context("token-reset"),
         )
         val consumedReset = tokenService.consume(reset.rawToken, CustomerOneTimeTokenPurpose.PASSWORD_RESET)
+        assertThat(reset.emailNormalized).isEqualTo(RESET_EMAIL)
+        assertThat(reset.emailDisplay).isEqualTo(RESET_EMAIL_DISPLAY)
         assertThat(consumedReset?.accountId).isEqualTo(ACCOUNT_ID)
         assertThat(consumedReset?.registrationIntentId).isNull()
         assertThat(databaseText())
@@ -247,8 +247,8 @@ class CustomerCredentialPersistenceIntegrationTest {
 
         val first = transactionTemplate.execute {
             val pending = requireNotNull(intentStore.lockPendingByProof(created.id, created.rawContinuationSecret))
-            assertThat(intentStore.markConsumed(pending.id, pending.version)).isTrue()
-            intentStore.markConsumed(pending.id, pending.version)
+            assertThat(intentStore.markConsumed(pending)).isTrue()
+            intentStore.markConsumed(pending)
         }
         assertThat(first).isFalse()
         assertThat(
@@ -330,7 +330,7 @@ class CustomerCredentialPersistenceIntegrationTest {
             """.trimIndent(),
             CUSTOMER_ID,
             RESET_EMAIL,
-            RESET_EMAIL,
+            RESET_EMAIL_DISPLAY,
             now,
             now,
             now,
@@ -379,6 +379,7 @@ class CustomerCredentialPersistenceIntegrationTest {
     private companion object {
         private const val REGISTRATION_EMAIL = "new-customer@example.test"
         private const val RESET_EMAIL = "reset-customer@example.test"
+        private const val RESET_EMAIL_DISPLAY = "Reset-Customer@example.test"
         private val STAFF_ID = UUID.fromString("00000000-0000-4000-8000-000000008201")
         private val POLICY_ID = UUID.fromString("00000000-0000-4000-8000-000000008202")
         private val CUSTOMER_ID = UUID.fromString("00000000-0000-4000-8000-000000008203")
