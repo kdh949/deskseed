@@ -143,6 +143,24 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
             .isEqualTo(auditBefore)
         assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
     }
+
+    @Test
+    fun `password reset request limiter failure returns generic 503 before token work`() {
+        val tokenBefore = jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java)!!
+
+        mockMvc.perform(
+            post("/api/v1/customer/auth/password-reset-requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"email":"unavailable-reset@example.test"}"""),
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java))
+            .isEqualTo(tokenBefore)
+        assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
+    }
 }
 
 internal class RecordingUnavailableAuthenticationAttemptLimiter : AuthenticationAttemptLimiter {
