@@ -63,6 +63,7 @@ paths:
         일치할 때 verified Customer, ACTIVE_PASSWORD account, consent acceptances를 만들고 proof를
         소비합니다. Mismatch, expiry, replay, purpose mismatch와 concurrent consume은 계정을 만들지
         않습니다. Profile/account/consents/security audit는 원자적이며 SMTP 호출은 transaction 밖입니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-003
       - REQ-CONSENT-002
