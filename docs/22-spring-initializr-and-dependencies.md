@@ -62,6 +62,10 @@ Use the Spring Boot/Spring Modulith BOMs or dependency management recommended by
 
 These may be added only with the relevant ADR and user/operational problem.
 
+ADR 0043's 2026-08-26 amendment activates this exception for the customer-authentication limiter only. Use
+Spring Data Redis with the Boot-managed Lettuce client; Redis is not authorized as a general cache, session,
+event, audit, or domain-state store.
+
 ## 4. Add later by capability
 
 ### Machine API JWT validation, when OAuth exists

@@ -1,8 +1,8 @@
-# ADR 0043 — Benchmark-gated customer authentication throttling store
+# ADR 0043 — Redis-backed customer authentication throttling store
 
 ## Status
 
-Accepted — 2026-08-25
+Accepted — 2026-08-25; amended by product owner — 2026-08-26
 
 ## Context
 
@@ -27,17 +27,16 @@ absorb an unbounded attack.
 
 ## Decision
 
-- Keep PostgreSQL as the preferred initial store, but do not build the production PostgreSQL adapter before
-  running the benchmark gate below on the supported deployment topology.
+- The product owner selected Redis as the one authoritative customer-authentication limiter store and waived
+  the PostgreSQL comparison benchmark. This is an explicit operational-risk decision, not measured evidence
+  that Redis meets the target or that PostgreSQL would fail it.
 - Express the committed HTTP/OpenAPI contract in terms of purpose, destination, network identity, generic
   problems, and `Retry-After`; do not freeze PostgreSQL or Redis as an HTTP contract property.
 - Application services depend on an `AuthenticationAttemptLimiter` port. Key derivation, generic responses,
   dummy password work, security audit, and `Retry-After` semantics remain outside the storage adapter.
-- Before Task 7 chooses a production adapter, run a small PostgreSQL prototype/`pgbench` workload rather than
-  implementing the full repository, cleanup worker, migration, and operational integration.
-- If the benchmark passes the predeclared deployment target and isolation criteria, implement only the
-  PostgreSQL adapter. If it fails, amend the affected decision/contract documents and implement only the Redis
-  adapter. Do not dual-write limiter state during normal operation.
+- Implement one Redis adapter with an atomic expiring server-side script. Do not implement or dual-write a
+  customer-authentication PostgreSQL limiter adapter. The staff-authentication PostgreSQL lockout and the
+  separate public-request limiter are unchanged.
 - A reverse proxy or ingress applies coarse path/network throttling before the application. It is a protective
   capacity layer, not a replacement for the enumeration-safe application limiter.
 - Once a shared-store decision blocks a fingerprint, each instance may keep a bounded deny cache until the
@@ -47,37 +46,30 @@ absorb an unbounded attack.
   audit persistence. Store timeout/unavailability returns the generic contracted `503`; it never bypasses
   throttling.
 
-This ADR supersedes only ADR 0042's storage-specific statement that every customer-authentication limiter is
-PostgreSQL-backed. ADR 0042's throttling dimensions, generic response, `429`, `Retry-After`, dummy-work, and
-authentication invariants remain accepted. ADR 0008's PostgreSQL-first and measured-Redis trigger remain in
-force.
+This ADR supersedes ADR 0042's storage-specific customer-authentication limiter statement and applies ADR
+0008's separately approved shared-coordination exception to this one capability. ADR 0042's throttling
+dimensions, generic response, `429`, `Retry-After`, dummy-work, and authentication invariants remain accepted.
 
-## Benchmark gate
+## Declared capacity target and unmeasured release evidence
 
-The deployment owner records the target sustained rate, malicious burst rate, concurrency, safety factor,
-latency budget, and ordinary-workload SLO before execution. A result without those inputs is exploratory and
-cannot select the store.
+The product owner declared the following target before implementation:
 
-The reproducible matrix includes:
+- 20 requests/second sustained;
+- 100 requests/second for a 60-second malicious burst;
+- concurrency 100;
+- 2x safety factor;
+- limiter p95 at most 20 ms and p99 at most 50 ms;
+- representative ordinary-transaction p95 degradation at most 10%;
+- zero limiter errors, timeouts, or database connection-pool starvation at the target.
 
-- one hot global key;
-- one hot normalized-destination fingerprint;
-- one hot requester-network fingerprint;
-- high-cardinality destination/network fingerprints;
-- concurrency 1, 10, 50, and 100 plus the declared deployment burst;
-- limiter-only traffic and limiter traffic mixed with representative ticket/session transactions.
+The owner explicitly chose not to run the comparison benchmark because customer-authentication writes under
+malicious traffic were considered an avoidable PostgreSQL I/O and lock-pressure risk. These values are targets,
+not observations. Task 7 may implement Redis, but AUTH-006 performance/capacity evidence remains `Not run` and
+release readiness cannot claim that the target or SLO passed until a supported-deployment test records the
+environment, traffic matrix, p50/p95/p99, errors/timeouts, Redis memory/eviction behavior, and ordinary workload
+impact under `docs/performance/`.
 
-Record exact hardware/service tier, PostgreSQL settings, schema/indexes, statement, client/pool configuration,
-duration, warm-up, throughput, p50/p95/p99 latency, errors/timeouts, tuple/transaction lock waits, pool wait,
-WAL bytes, table/index growth, cleanup behavior, and the impact on the ordinary-workload SLO. Store the result
-under `docs/performance/`.
-
-PostgreSQL passes only when the declared sustained and burst targets, safety factor, limiter latency budget,
-and ordinary-workload isolation all pass without pool starvation or an unbounded lock/WAL/cleanup condition.
-Otherwise Redis is justified before production limiter implementation. A missing target environment or
-unavailable benchmark is `Blocked`, not evidence that either store passed.
-
-## Redis requirements if the trigger fires
+## Redis requirements
 
 - Use an atomic expiring counter operation or reviewed server-side script/function; separate `INCR` and expiry
   calls with a leak window are not acceptable.
@@ -87,14 +79,16 @@ unavailable benchmark is `Blocked`, not evidence that either store passed.
 - Define failover data-loss tolerance and fail-closed behavior. Redis replication or persistence is not assumed
   to make limiter state strongly consistent.
 - Preserve the same external `429`, `Retry-After`, generic `503`, enumeration, audit, and privacy contract.
+- Use Redis only for customer-authentication limiter counters. It is not the customer account, credential,
+  session, token, consent, audit, or ticket source of truth.
 
 ## Alternatives considered
 
 ### Introduce Redis immediately without measurement
 
-Rejected for now. It avoids a possible adapter replacement but commits the MVP to another operated system
-before the expected deployment target or PostgreSQL failure is demonstrated. It remains the selected fallback
-when the benchmark gate fails or a separately approved shared coordination requirement justifies Redis.
+Accepted by the product owner in the 2026-08-26 amendment. The trade-off is one more required networked
+dependency and an unverified capacity target in exchange for keeping malicious limiter writes and lock pressure
+off the transactional PostgreSQL source of truth and avoiding a disposable PostgreSQL adapter.
 
 ### Fully implement PostgreSQL and optimize only after production contention
 
@@ -113,12 +107,11 @@ local allowances, although these controls remain useful capacity shields.
 
 ## Consequences
 
-- The current decision is benchmark-gated PostgreSQL-first, not an unconditional promise to implement either
-  PostgreSQL or Redis.
-- Task 7 begins with the benchmark artifact and adapter decision before production limiter code or migration.
+- The current decision is Redis-first for customer-authentication throttling only.
+- Task 7 begins by recording this amendment, then implements the storage-neutral port and one Redis adapter.
 - Storage replacement is localized to an adapter because application behavior depends on a stable port.
 - Redis adoption requires explicit documentation and operational ownership, but no public API version change.
-- Performance evidence becomes a release input for AUTH-006 rather than an optional optimization note.
+- The declared performance target remains an unverified AUTH-006 release input, not an implementation claim.
 
 ## References
 
@@ -131,4 +124,6 @@ local allowances, although these controls remain useful capacity shields.
 - PostgreSQL locking: <https://www.postgresql.org/docs/current/explicit-locking.html>
 - PostgreSQL pgbench: <https://www.postgresql.org/docs/current/pgbench.html>
 - Redis rate limiter pattern: <https://redis.io/docs/latest/develop/use-cases/rate-limiter/>
+- Spring Data Redis scripting: <https://docs.spring.io/spring-data/redis/reference/redis/scripting.html>
+- Official Redis container image: <https://hub.docker.com/_/redis>
 - Redis replication: <https://redis.io/docs/latest/operate/oss_and_stack/management/replication/>

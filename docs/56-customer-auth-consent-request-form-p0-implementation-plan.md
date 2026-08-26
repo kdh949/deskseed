@@ -78,13 +78,13 @@ The accepted decision-register entries are:
 D-057: customer authentication is password-primary; magic-link login is passwordless-only
 D-058: consent policies are administrator-managed immutable versions with append-only acceptance
 D-059: customer request submission binds a server-authorized form/version and typed values
-D-060: customer auth throttling remains storage-neutral and selects PostgreSQL or Redis after benchmark evidence
+D-060: customer auth throttling remains storage-neutral at the application boundary and uses one Redis adapter
 ```
 
 Task 1 registers these final ASCII decision IDs in the canonical `docs/25-implementation-decision-register.md`.
 
 ADR 0042 supersedes the authentication-method portion of ADR 0029 but preserves its single-use token, enumeration safety, session security, explicit claim, and outbound-mail boundaries.
-ADR 0043 partially supersedes only ADR 0042's unconditional PostgreSQL-throttling sentence. It preserves the externally visible rate-limit, enumeration-safety, and fail-closed behavior while making the storage choice evidence-gated.
+ADR 0043 supersedes only ADR 0042's customer-authentication PostgreSQL-throttling sentence. Its 2026-08-26 owner amendment selects Redis without a PostgreSQL comparison benchmark while preserving the externally visible rate-limit, enumeration-safety, and fail-closed behavior.
 
 ### 4.2 Requirement IDs
 
@@ -225,18 +225,19 @@ Password input policy:
 
 The product owner considered introducing Redis immediately. The concern was that writing every failed or attempted authentication to PostgreSQL could turn malicious traffic into hot-row, WAL, connection-pool, and lock pressure, while implementing a full PostgreSQL limiter and later replacing it with Redis would duplicate migration, repository, test, and operational work.
 
-The accepted decision is benchmark-gated PostgreSQL-first, not unconditional PostgreSQL and not immediate Redis:
+The accepted 2026-08-26 owner amendment selects Redis directly:
 
 - keep the HTTP/OpenAPI behavior storage-neutral behind an `AuthenticationAttemptLimiter` application port;
-- before a production limiter migration or adapter is written, run a small target-environment PostgreSQL prototype against one hot global key, one hot destination key, one hot network key, and high-cardinality traffic;
-- predeclare the expected sustained rate, burst, concurrency, safety factor, latency budget, and unaffected business-transaction SLO;
-- implement only the PostgreSQL adapter if that gate passes, or record the failed evidence and implement only the Redis adapter if it does not;
+- use one atomic TTL-backed Redis adapter and do not implement a customer-authentication PostgreSQL limiter adapter;
+- the owner-declared target is 20 req/s sustained, 100 req/s for a 60-second burst, concurrency 100, and a 2x safety factor;
+- the owner-declared SLO is limiter p95 at most 20 ms, p99 at most 50 ms, ordinary-transaction p95 degradation at most 10%, and zero errors/timeouts/database-pool starvation;
+- the comparison benchmark is waived, so these are unmeasured targets and AUTH-006 capacity remains `Not run` until a supported-deployment test records evidence;
 - never dual-write PostgreSQL and Redis for the same decision;
 - keep a coarse ingress/proxy limit in front of the application regardless of the selected store;
 - a bounded local deny cache may suppress repeated store calls, but it can only deny and must never grant an allowance;
 - shared-store timeout or unavailable state fails closed with the generic authentication-unavailable `503` contract.
 
-The limiter transaction completes before adaptive password hashing, mail work, or authentication audit persistence. ADR 0043 owns the benchmark matrix, evidence fields, Redis acceptance requirements, and revisit conditions.
+The limiter operation completes before adaptive password hashing, mail work, or authentication audit persistence. ADR 0043 owns the Redis acceptance requirements, declared but unmeasured capacity target, and revisit conditions.
 
 ## 6. Consent architecture
 
@@ -525,7 +526,7 @@ Wave 1's V40–V79 reservation is complete. Begin the next additive range at V80
 - add `customer_registration_intents` with email, password hash, profile values, continuation-secret digest, expiry, consume/cancel state;
 - add `customer_registration_intent_consents` referencing immutable policy versions;
 - generalize/rename `customer_magic_link_tokens` to purpose-bound customer one-time tokens;
-- introduce the storage-neutral `AuthenticationAttemptLimiter` port while retaining content-free fingerprints; add or alter PostgreSQL limiter tables only if the ADR 0043 benchmark selects PostgreSQL, and do not dual-write if Redis is selected;
+- introduce the storage-neutral `AuthenticationAttemptLimiter` port with content-free fingerprints and the single ADR 0043 Redis adapter; do not add, alter, or dual-write a PostgreSQL customer-auth limiter;
 - add session authentication method and credential-version snapshot if required for invalidation;
 - keep raw passwords, raw tokens, and raw continuation secrets out of all tables.
 
@@ -624,7 +625,7 @@ The previously consumed public abuse budget remains consumed by its existing sep
 
 - Password hashes use the customer-specific adaptive encoder; plaintext is never persisted.
 - Login and recovery responses do not reveal account, credential, passwordless, disabled, or pending state.
-- All authentication request endpoints use the storage-neutral purpose/destination/network throttling contract and return `Retry-After` on `429`; ADR 0043 benchmark evidence selects exactly one production adapter.
+- All authentication request endpoints use the storage-neutral purpose/destination/network throttling contract and return `Retry-After` on `429`; ADR 0043 selects exactly one Redis adapter while capacity evidence remains a separate release gate.
 - Registration intent, verification, reset, and magic tokens are purpose-bound, single-use, expiring, digest-only, and control-character bounded.
 - Session cookies remain HttpOnly, Secure in production, SameSite=Lax, and server-revocable.
 - Password reset and passwordless completion revoke/rotate sessions.
@@ -714,9 +715,9 @@ Each numbered task uses `CODEX_TASK_TEMPLATE.md`, owns one branch/worktree, and 
 
 #### Task 7: Generalize customer credential and token storage
 
-**Deliverable:** ADR 0043 target/SLO declaration and PostgreSQL benchmark artifact, the storage-neutral limiter port with exactly one selected adapter, V81, customer-specific Argon2id encoder, token purpose model, registration-intent persistence, and cleaner updates.
+**Deliverable:** ADR 0043 Redis owner-decision amendment and declared target/SLO, the storage-neutral limiter port with exactly one Redis adapter, V81, customer-specific Argon2id encoder, token purpose model, registration-intent persistence, and cleaner updates.
 
-**Acceptance:** the benchmark is classified `Passed`, `Failed`, or `Blocked` with reproducible environment/SQL/throughput/latency/lock/pool/WAL/business-SLO evidence; a pass selects PostgreSQL and a failure selects Redis through a decision amendment; a blocked run selects neither. No dual write exists, no shared-store lock is held during adaptive hashing, DB has no plaintext credential/token columns, purpose mismatch fails, and clean migration plus existing magic-link regression tests pass.
+**Acceptance:** the Redis adapter uses atomic expiring counters, keyed purpose/destination/network fingerprints, bounded TTL, and generic fail-closed `503`; declared performance targets are reported `Not run`, not passed. No dual write exists, no shared-store operation is held during adaptive hashing, DB has no plaintext credential/token columns, purpose mismatch fails, and clean migration plus existing magic-link regression tests pass.
 
 **Scope:** M. **Dependencies:** Tasks 1, 4.
 
@@ -847,8 +848,8 @@ Local success is not remote CI success. Mailpit E2E, clean Flyway/PostgreSQL, au
 | Existing ADR and code assume magic-link-only auth | High | Superseding ADR and contract-only checkpoint before code |
 | Account pre-hijacking through victim email registration | High | Email token plus browser-bound continuation proof; no token-only activation |
 | Password hash cost creates auth DoS | High | Argon2id benchmark, strict login limits, dummy comparison, bounded concurrency evidence |
-| Per-attempt PostgreSQL writes turn an authentication attack into hot-row, WAL, lock, or connection-pool pressure | High | ADR 0043 hot-key/high-cardinality benchmark, predeclared safety/SLO gate, coarse ingress limit, and storage-neutral port |
-| Redis is added before evidence and creates avoidable availability, failover, memory, and operational dependencies | Medium | PostgreSQL remains preferred; select Redis only after failed benchmark evidence and implement one adapter without dual writes |
+| Per-attempt PostgreSQL writes turn an authentication attack into hot-row, WAL, lock, or connection-pool pressure | High | ADR 0043 owner-selected Redis adapter, coarse ingress limit, storage-neutral port, and no customer-auth limiter write in PostgreSQL |
+| Redis creates availability, failover, memory, and operational dependencies before capacity evidence | Medium | Atomic TTL script, noeviction/reserved capacity, TLS/auth/network isolation, health/metrics, fail-closed `503`, one adapter without dual writes, and explicit `Not run` capacity status |
 | Admin edits rewrite accepted legal text | High | Immutable published versions; acceptance references version/checksum |
 | Missing legal policy is silently accepted | High | Registration/request fail closed until required active policy exists |
 | Staff-only custom field leaks through projection/error | High | Server-side allowlist, existence-safe error, direct-ID negative tests |
@@ -876,6 +877,6 @@ The following are recommendations made by this plan and can be changed before Ch
 12. The current `/api/v1/requests` and identity contracts are changed in place; `privacyConsent`, the flat multipart body, compatibility adapters, and v2 endpoints are not retained.
 13. A new `customerconsent` module owns policy and acceptance semantics instead of storing legal content in generic system settings.
 14. The first implementation uses `REGISTRATION_OPTIONAL` as the effective customer access mode so anonymous and registered submission coexist.
-15. The product owner raised the risk of database write/lock pressure and duplicated PostgreSQL-to-Redis implementation work, then accepted ADR 0043's benchmark-gated PostgreSQL-first decision: keep a storage-neutral port, benchmark before the production adapter/migration, and implement exactly one store selected by evidence.
+15. The product owner raised the risk of database write/lock pressure and duplicated PostgreSQL-to-Redis implementation work, then amended ADR 0043 on 2026-08-26 to select one Redis adapter directly. The PostgreSQL comparison benchmark is waived; the declared capacity/SLO remains unmeasured release evidence.
 
-The authentication implementation can proceed only after Task 7 records the target load/SLO and classifies the benchmark evidence. Actual production legal text and jurisdiction-specific retention remain operator/legal-owner inputs, not values generated by the implementation.
+The authentication implementation can proceed after Task 7 records the Redis owner decision and target load/SLO. It must report capacity evidence as `Not run` until measured. Actual production legal text and jurisdiction-specific retention remain operator/legal-owner inputs, not values generated by the implementation.

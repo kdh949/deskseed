@@ -79,7 +79,7 @@ ACTIVE_PASSWORD
   same intent's browser-bound continuation proof both match;
 - login always performs real-or-dummy password-hash work and uses one generic invalid-credential
   response for unknown, wrong-password, disabled, passwordless, and incomplete states;
-- normalized destination and requester network identity have PostgreSQL-backed rate limits;
+- normalized purpose, destination, and requester-network identity use the ADR 0043 Redis-backed limiter port;
 - successful login rotates the server-side customer session and appends a metadata-only security
   event before returning success;
 - password reset is enumeration-safe, purpose-bound, single-use, expiring, and revokes all existing
