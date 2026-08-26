@@ -409,6 +409,34 @@ class CustomerMagicLinkAuthIntegrationTest {
     }
 
     @Test
+    fun `wrong purpose proof uses the generic response and remains available to its own flow`() {
+        val accountId = insertPasswordAccount("wrong-purpose-magic@example.com")
+        val rawToken = "wrong-purpose-magic-proof-000000000000000001"
+        insertToken(
+            rawToken = rawToken,
+            email = "wrong-purpose-magic@example.com",
+            expiresAt = Instant.now().plusSeconds(600),
+            purpose = "PASSWORD_RESET",
+            accountId = accountId,
+        )
+
+        consume(rawToken)
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.type").value("/problems/customer-one-time-proof-invalid"))
+
+        assertThat(jdbcTemplate.queryForObject(
+            "select consumed_at is null from customer_one_time_tokens where token_digest = ?",
+            Boolean::class.java,
+            sha256(rawToken),
+        )).isTrue()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java)).isZero()
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from admin_security_audit_events where event_type = 'CUSTOMER_MAGIC_LINK_FAILED'",
+            Long::class.java,
+        )).isEqualTo(1)
+    }
+
+    @Test
     fun `magic consume budget returns generic 429 without token state disclosure`() {
         val rawToken = "synthetic-magic-consume-rate-proof-000000000001"
         repeat(2) {
@@ -621,17 +649,25 @@ class CustomerMagicLinkAuthIntegrationTest {
         return id
     }
 
-    private fun insertToken(rawToken: String, email: String, expiresAt: Instant) {
+    private fun insertToken(
+        rawToken: String,
+        email: String,
+        expiresAt: Instant,
+        purpose: String = "PASSWORDLESS_LOGIN",
+        accountId: UUID? = null,
+    ) {
         val now = Instant.now().minusSeconds(120)
         jdbcTemplate.update(
             """
             insert into customer_one_time_tokens
-                (id, token_digest, purpose, email_normalized, email_display, request_id, correlation_id,
+                (id, token_digest, purpose, account_id, email_normalized, email_display, request_id, correlation_id,
                  created_at, expires_at, consumed_at)
-            values (?, ?, 'PASSWORDLESS_LOGIN', ?, ?, 'expired-request', 'expired-correlation', ?, ?, null)
+            values (?, ?, ?, ?, ?, ?, 'synthetic-request', 'synthetic-correlation', ?, ?, null)
             """.trimIndent(),
             UUID.randomUUID(),
             sha256(rawToken),
+            purpose,
+            accountId,
             email,
             email,
             Timestamp.from(now),
