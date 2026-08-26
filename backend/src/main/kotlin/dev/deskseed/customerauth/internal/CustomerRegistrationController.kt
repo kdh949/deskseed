@@ -32,6 +32,7 @@ import kotlin.math.ceil
 internal class CustomerRegistrationController(
     private val registrationService: CustomerRegistrationApplicationService,
     private val properties: CustomerAuthProperties,
+    private val clientAddressResolver: CustomerAuthClientAddressResolver,
 ) {
     @PostMapping("/api/v1/customer/registrations")
     fun requestRegistration(
@@ -50,7 +51,7 @@ internal class CustomerRegistrationController(
                     RequestedRegistrationPolicyVersion(it.policyKey, it.version)
                 },
             ),
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
         response.addCookie(continuationCookie(result.rawContinuationSecret, properties.registrationVerificationTtl))

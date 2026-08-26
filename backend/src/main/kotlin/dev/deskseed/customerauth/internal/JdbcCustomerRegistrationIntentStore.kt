@@ -119,7 +119,7 @@ internal class JdbcCustomerRegistrationIntentStore(
         jdbc.queryForObject(
             "select pg_advisory_xact_lock(hashtextextended(?, 0))",
             { _, _ -> Unit },
-            "customer-registration-intent:$emailNormalized",
+            "customer-account:$emailNormalized",
         )
     }
 
