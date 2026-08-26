@@ -116,12 +116,11 @@ internal class JdbcDigestOneTimeTokenService(
     )
 
     fun generate(
-        emailDisplay: String,
         target: CustomerOneTimeTokenTarget,
         ttl: Duration,
         context: CommandContext,
     ): GeneratedCustomerToken = generate(
-        emailDisplay = emailDisplay,
+        mailbox = canonicalMailbox(target),
         target = target,
         ttl = ttl,
         requestId = context.requestId,
@@ -134,6 +133,20 @@ internal class JdbcDigestOneTimeTokenService(
         ttl: Duration,
         requestId: String,
         correlationId: String,
+    ): GeneratedCustomerToken = generate(
+        mailbox = CustomerTokenMailbox(emailDisplay.trim().lowercase(Locale.ROOT), emailDisplay.trim()),
+        target = target,
+        ttl = ttl,
+        requestId = requestId,
+        correlationId = correlationId,
+    )
+
+    private fun generate(
+        mailbox: CustomerTokenMailbox,
+        target: CustomerOneTimeTokenTarget,
+        ttl: Duration,
+        requestId: String,
+        correlationId: String,
     ): GeneratedCustomerToken {
         val maximumTtl = if (target.purpose == CustomerOneTimeTokenPurpose.EMAIL_VERIFICATION) {
             Duration.ofHours(48)
@@ -141,7 +154,7 @@ internal class JdbcDigestOneTimeTokenService(
             Duration.ofMinutes(60)
         }
         require(ttl in Duration.ofMinutes(5)..maximumTtl) { "one-time token TTL is out of policy" }
-        val normalized = emailDisplay.trim().lowercase(Locale.ROOT)
+        val normalized = mailbox.emailNormalized
         val now = Instant.now(clock)
         val generated = GeneratedCustomerToken(
             id = UUID.randomUUID(),
@@ -150,7 +163,7 @@ internal class JdbcDigestOneTimeTokenService(
             registrationIntentId = target.registrationIntentId,
             accountId = target.accountId,
             emailNormalized = normalized,
-            emailDisplay = emailDisplay.trim(),
+            emailDisplay = mailbox.emailDisplay,
             expiresAt = now.plus(ttl),
         )
         jdbcTemplate.update(
@@ -174,6 +187,44 @@ internal class JdbcDigestOneTimeTokenService(
             Timestamp.from(generated.expiresAt),
         )
         return generated
+    }
+
+    private fun canonicalMailbox(target: CustomerOneTimeTokenTarget): CustomerTokenMailbox {
+        require(target !is CustomerOneTimeTokenTarget.PasswordlessLogin) {
+            "passwordless token generation requires an explicit mailbox"
+        }
+        val query = when (target) {
+            is CustomerOneTimeTokenTarget.EmailVerification -> CanonicalMailboxQuery(
+                """
+                select email_normalized, email_display
+                  from customer_registration_intents
+                 where id = ?
+                """.trimIndent(),
+                target.registrationIntentId,
+            )
+            is CustomerOneTimeTokenTarget.PasswordReset -> CanonicalMailboxQuery(
+                """
+                select account.email_normalized, customer.email_display
+                  from customer_accounts account
+                  join customers customer on customer.id = account.customer_id
+                 where account.id = ?
+                """.trimIndent(),
+                target.accountId,
+            )
+            CustomerOneTimeTokenTarget.PasswordlessLogin -> error("unreachable")
+        }
+        return requireNotNull(
+            jdbcTemplate.query(
+                query.sql,
+                { resultSet, _ ->
+                    CustomerTokenMailbox(
+                        resultSet.getString("email_normalized"),
+                        resultSet.getString("email_display"),
+                    )
+                },
+                query.targetId,
+            ).singleOrNull(),
+        ) { "one-time token target is unavailable" }
     }
 
     override fun consume(authenticationToken: OneTimeTokenAuthenticationToken): OneTimeToken? =
@@ -268,3 +319,13 @@ internal class JdbcDigestOneTimeTokenService(
         expectedPurpose.name,
     ).singleOrNull() ?: TokenFailureClass.EXPIRED_OR_INVALID
 }
+
+private data class CustomerTokenMailbox(
+    val emailNormalized: String,
+    val emailDisplay: String,
+)
+
+private data class CanonicalMailboxQuery(
+    val sql: String,
+    val targetId: UUID,
+)

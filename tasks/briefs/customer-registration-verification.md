@@ -32,7 +32,7 @@ verified profile, password account, registration consent acceptances를 한 번 
 
 - purpose-bound verification throttling with token/network HMAC fingerprints
 - shared normalized-email account advisory lock
-- atomic token consume, continuation proof lock, current-policy revalidation, customer/password account creation
+- atomic token consume, continuation proof lock, shared REGISTRATION policy-context lock, current-policy revalidation, customer/password account creation
 - append-only registration acceptances and metadata-only `CUSTOMER_REGISTRATION_VERIFIED` / `CUSTOMER_CONSENT_ACCEPTED` audits
 - cookie expiry, concurrency/replay/conflict/audit-failure/secret-output integration tests
 - customer root profile creation with bounded optional company name
@@ -65,7 +65,7 @@ verified profile, password account, registration consent acceptances를 한 번 
 
 - Matching token/cookie activates one verified password account, one acceptance per selected policy, and expires the cookie.
 - Mismatch, wrong purpose, expiry, replay, or missing cookie returns `401`, keeps valid proof state when retry is possible, and creates no account.
-- Current policy change or an account created during the flow returns `409` without replacing identity data.
+- Current policy publish/archive and final activation use one REGISTRATION context lock; either activation commits before the mutation or it revalidates the newly committed policy and returns `409` without replacing identity data.
 - Concurrent consumes produce statuses `204` and `401` with exactly one account/acceptance.
 - Required audit failure returns `503` and rolls customer/account/acceptance/token/intent effects back.
 - Redis unavailable returns `503` before proof consumption.

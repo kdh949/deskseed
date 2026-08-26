@@ -70,7 +70,6 @@ internal class CustomerPasswordResetApplicationService(
         requiredTransaction {
             resetStore.lockEligibleAccount(normalizedEmail)?.let { accountId ->
                 val generated = tokenService.generate(
-                    emailDisplay = email,
                     target = CustomerOneTimeTokenTarget.PasswordReset(accountId),
                     ttl = properties.passwordResetTtl,
                     context = context,
@@ -78,7 +77,7 @@ internal class CustomerPasswordResetApplicationService(
                 outboundMailPort.enqueue(
                     OutboundMailIntent(
                         idempotencyKey = "customer-password-reset:${generated.id}",
-                        recipient = MailRecipient(email),
+                        recipient = MailRecipient(generated.emailDisplay),
                         content = PasswordResetMail("${properties.passwordResetUrl}#token=${generated.rawToken}"),
                         actor = ActorRef(ActorType.SYSTEM, null),
                         context = context,

@@ -11,6 +11,7 @@ import dev.deskseed.customerconsent.CustomerConsentLifecycle
 import dev.deskseed.customerconsent.CustomerConsentNotFoundException
 import dev.deskseed.customerconsent.CustomerConsentPolicyActor
 import dev.deskseed.customerconsent.CustomerConsentPolicyAdministration
+import dev.deskseed.customerconsent.CustomerConsentPolicyContextLock
 import dev.deskseed.customerconsent.CustomerConsentPolicyDetail
 import dev.deskseed.customerconsent.CustomerConsentPolicyDraft
 import dev.deskseed.customerconsent.CustomerConsentPolicyDraftInput
@@ -41,6 +42,7 @@ internal class JdbcCustomerConsentPolicyAdministration(
     private val objectMapper: ObjectMapper,
     private val auditWriter: AdminSecurityAuditWriter,
     private val clock: Clock,
+    private val contextLock: CustomerConsentPolicyContextLock,
 ) : CustomerConsentPolicyAdministration {
     private val documents = CanonicalCustomerConsentDocumentCodec()
 
@@ -162,7 +164,7 @@ internal class JdbcCustomerConsentPolicyAdministration(
             throw CustomerConsentConflictException("POLICY_ARCHIVED")
         }
         val validated = documents.validateForPublish(current.draft.document)
-        lockContext(current.context)
+        contextLock.lock(current.context)
         if (current.lifecycle != CustomerConsentLifecycle.PUBLISHED && currentPublishedCount(current.context) >= MAX_CURRENT_POLICIES) {
             throw CustomerConsentConflictException("CURRENT_POLICY_LIMIT_REACHED")
         }
@@ -209,7 +211,7 @@ internal class JdbcCustomerConsentPolicyAdministration(
         if (current.lifecycle != CustomerConsentLifecycle.PUBLISHED) {
             throw CustomerConsentConflictException("POLICY_NOT_PUBLISHED")
         }
-        lockContext(current.context)
+        contextLock.lock(current.context)
         val publishedVersion = requireNotNull(current.publishedVersion)
         val publishedChecksum = publishedChecksum(policyId, publishedVersion)
         val now = Instant.now(clock)
@@ -322,14 +324,6 @@ internal class JdbcCustomerConsentPolicyAdministration(
         version,
     ) ?: throw CustomerConsentNotFoundException()
 
-    private fun lockContext(context: CustomerConsentContext) {
-        jdbc.query(
-            "select pg_advisory_xact_lock(?)",
-            { _, _ -> Unit },
-            if (context == CustomerConsentContext.REGISTRATION) REGISTRATION_LOCK else REQUEST_SUBMISSION_LOCK,
-        )
-    }
-
     private fun requireExpected(current: PolicyState, expected: Long) {
         if (current.aggregateVersion != expected) {
             throw CustomerConsentPreconditionFailedException(current.aggregateVersion)
@@ -396,8 +390,6 @@ internal class JdbcCustomerConsentPolicyAdministration(
     private companion object {
         const val MAX_CURRENT_POLICIES = 20
         const val MAX_PUBLISHED_VERSIONS = 200
-        const val REGISTRATION_LOCK = 1_067_539_001L
-        const val REQUEST_SUBMISSION_LOCK = 1_067_539_002L
         const val SUMMARY_SELECT = """
             select id, policy_key, context, lifecycle, aggregate_version, published_version,
                    draft_required, draft_display_order, created_at, updated_at

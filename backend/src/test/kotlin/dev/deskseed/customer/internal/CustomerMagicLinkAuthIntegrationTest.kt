@@ -708,7 +708,7 @@ class CustomerMagicLinkAuthIntegrationTest {
 
         @Container
         @JvmStatic
-        val redis = GenericContainer(DockerImageName.parse("redis:8.2.7-alpine"))
+        val redis = GenericContainer(DockerImageName.parse("redis:8.2.9-alpine"))
             .withExposedPorts(6379)
 
         @DynamicPropertySource

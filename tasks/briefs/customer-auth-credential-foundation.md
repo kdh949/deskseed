@@ -28,7 +28,7 @@ one-time token을 raw secret 없이 원자적으로 저장·소비할 수 있는
 - protected customer password-hash value type; existing staff `PasswordEncoder` remains BCrypt
 - typed PASSWORDLESS_LOGIN / EMAIL_VERIFICATION / PASSWORD_RESET target and expected-purpose consume
 - advisory-lock serialized pending registration replacement, immutable policy selections, continuation digest
-- transaction-mandatory proof lock and expected-version single consume
+- transaction-mandatory proof lock, opaque proof-verified handle, and expected-version single consume
 - rollback, concurrency, purpose mismatch, raw-secret absence tests
 
 ## Out of scope
@@ -43,7 +43,8 @@ one-time token을 raw secret 없이 원자적으로 저장·소비할 수 있는
 - generated token and continuation values override string rendering and DB stores SHA-256 digests only.
 - one normalized email has one PENDING intent; replacement cancels the prior intent in the same transaction.
 - failed consent FK insertion rolls the cancellation and new intent back together.
-- proof lock requires an existing outer transaction; consume uses expected version and succeeds once.
+- EMAIL_VERIFICATION and PASSWORD_RESET derive their canonical mailbox from the target intent/account; callers cannot pair an arbitrary mailbox with a typed target.
+- proof lock requires an existing outer transaction; only its opaque proof-verified handle can consume the intent, using the locked expected version exactly once.
 - wrong-purpose token consume mutates nothing and does not reveal the actual purpose.
 - adaptive hashing finishes before any registration store transaction starts.
 

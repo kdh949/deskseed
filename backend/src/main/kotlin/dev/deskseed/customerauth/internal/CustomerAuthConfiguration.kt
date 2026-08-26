@@ -2,6 +2,7 @@ package dev.deskseed.customerauth.internal
 
 import dev.deskseed.customerauth.CustomerCsrfFilter
 import dev.deskseed.customerauth.CustomerSessionAuthenticationFilter
+import dev.deskseed.integration.IntegrationNetworkPolicy
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean
@@ -23,6 +24,8 @@ internal data class CustomerAuthProperties(
     var globalRequestLimit: Int = 36_000,
     var requestWindow: Duration = Duration.ofMinutes(15),
     var limiterKeyPrefix: String = "deskseed:customer-auth:limiter:v1",
+    var trustedProxyCidrs: String = "127.0.0.0/8,::1/128",
+    var maxForwardedHops: Int = 10,
     var responseMinDuration: Duration = Duration.ofMillis(100),
     var sessionIdle: Duration = Duration.ofMinutes(30),
     var sessionAbsolute: Duration = Duration.ofHours(12),
@@ -51,6 +54,8 @@ internal data class CustomerAuthProperties(
         require(limiterKeyPrefix.matches(Regex("^[a-z0-9:-]{1,100}$"))) {
             "customer authentication limiter key prefix is invalid"
         }
+        require(maxForwardedHops in 1..10) { "customer authentication forwarded hop bound must be between 1 and 10" }
+        IntegrationNetworkPolicy().validateCidrs(trustedProxyNetworks())
         require(responseMinDuration in Duration.ZERO..Duration.ofSeconds(2)) { "customer auth response padding is invalid" }
         require(!sessionIdle.isZero && !sessionIdle.isNegative) { "customer session idle duration is invalid" }
         require(sessionAbsolute >= sessionIdle) { "customer absolute session duration must cover idle duration" }
@@ -71,6 +76,11 @@ internal data class CustomerAuthProperties(
                 uri.rawQuery == null && uri.rawFragment == null,
         ) { "$label is invalid" }
     }
+
+    fun trustedProxyNetworks(): List<String> = trustedProxyCidrs
+        .split(',')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
 }
 
 @Configuration(proxyBeanMethods = false)
