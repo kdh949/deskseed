@@ -42,21 +42,35 @@ internal data class CreatedCustomerRegistrationIntent(
     override fun toString(): String = "[PROTECTED CREATED CUSTOMER REGISTRATION INTENT]"
 }
 
-internal data class PendingCustomerRegistrationIntent(
-    val id: UUID,
-    val emailNormalized: String,
-    val emailDisplay: String,
-    val passwordHash: CustomerPasswordHash,
-    val displayName: String,
-    val companyName: String,
-    val policySelections: List<CustomerRegistrationPolicySelection>,
-    val requestId: String,
-    val correlationId: String,
-    val createdAt: Instant,
-    val expiresAt: Instant,
+internal sealed interface ProofVerifiedCustomerRegistrationIntent {
+    val id: UUID
+    val emailNormalized: String
+    val emailDisplay: String
+    val passwordHash: CustomerPasswordHash
+    val displayName: String
+    val companyName: String
+    val policySelections: List<CustomerRegistrationPolicySelection>
+    val requestId: String
+    val correlationId: String
+    val createdAt: Instant
+    val expiresAt: Instant
+}
+
+private data class JdbcProofVerifiedCustomerRegistrationIntent(
+    override val id: UUID,
+    override val emailNormalized: String,
+    override val emailDisplay: String,
+    override val passwordHash: CustomerPasswordHash,
+    override val displayName: String,
+    override val companyName: String,
+    override val policySelections: List<CustomerRegistrationPolicySelection>,
+    override val requestId: String,
+    override val correlationId: String,
+    override val createdAt: Instant,
+    override val expiresAt: Instant,
     val version: Long,
-) {
-    override fun toString(): String = "[PROTECTED PENDING CUSTOMER REGISTRATION INTENT]"
+) : ProofVerifiedCustomerRegistrationIntent {
+    override fun toString(): String = "[PROTECTED PROOF-VERIFIED CUSTOMER REGISTRATION INTENT]"
 }
 
 @Component
@@ -130,7 +144,7 @@ internal class JdbcCustomerRegistrationIntentStore(
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    fun lockPendingByProof(intentId: UUID, rawContinuationSecret: String): PendingCustomerRegistrationIntent? {
+    fun lockPendingByProof(intentId: UUID, rawContinuationSecret: String): ProofVerifiedCustomerRegistrationIntent? {
         if (rawContinuationSecret.length !in 1..256) return null
         val now = Instant.now(clock)
         val pending = jdbc.query(
@@ -153,7 +167,8 @@ internal class JdbcCustomerRegistrationIntentStore(
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    fun markConsumed(intentId: UUID, expectedVersion: Long): Boolean {
+    fun markConsumed(intent: ProofVerifiedCustomerRegistrationIntent): Boolean {
+        val verified = intent as? JdbcProofVerifiedCustomerRegistrationIntent ?: return false
         val now = Instant.now(clock)
         return jdbc.update(
             """
@@ -166,13 +181,13 @@ internal class JdbcCustomerRegistrationIntentStore(
             """.trimIndent(),
             Timestamp.from(now),
             Timestamp.from(now),
-            intentId,
+            verified.id,
             Timestamp.from(now),
-            expectedVersion,
+            verified.version,
         ) == 1
     }
 
-    private fun pending(resultSet: ResultSet) = PendingCustomerRegistrationIntent(
+    private fun pending(resultSet: ResultSet) = JdbcProofVerifiedCustomerRegistrationIntent(
         id = resultSet.getObject("id", UUID::class.java),
         emailNormalized = resultSet.getString("email_normalized"),
         emailDisplay = resultSet.getString("email_display"),

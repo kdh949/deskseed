@@ -7,7 +7,7 @@
 | 구성 요소 | 현재 릴리스 | 역할 |
 |---|---|---|
 | PostgreSQL | `postgres:17-alpine` | current state, canonical audit ledger, audit projection |
-| Redis | `redis:8.2.7-alpine` | customer-auth purpose/global/destination/network limiter counters only |
+| Redis | `redis:8.2.9-alpine` | customer-auth purpose/global/destination/network limiter counters only |
 | Backend | Java 21, Spring Boot 4.1 | Flyway migration, HTTP API, authorization, audit |
 | Frontend | Node 26 build, Nginx 1.31 runtime | customer portal, staff/admin workspace, Audit Explorer |
 | Object storage | 미구현 | attachment 자체가 릴리스 범위 밖이므로 backup 대상도 없음 |
