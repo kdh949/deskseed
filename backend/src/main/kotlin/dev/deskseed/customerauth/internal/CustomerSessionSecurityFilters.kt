@@ -56,6 +56,7 @@ internal class CustomerCsrfFilter(
             !(request.method == "POST" && request.requestURI == "/api/v1/requests" && authenticatedCustomer()))) ||
             request.requestURI.startsWith("/api/v1/customer/auth/") ||
             (request.method == "POST" && request.requestURI == "/api/v1/customer/registrations") ||
+            (request.method == "POST" && request.requestURI == "/api/v1/customer/registration-verifications") ||
             request.method in setOf("GET", "HEAD", "OPTIONS", "TRACE")
 
     private fun authenticatedCustomer(): Boolean = SecurityContextHolder.getContext().authentication

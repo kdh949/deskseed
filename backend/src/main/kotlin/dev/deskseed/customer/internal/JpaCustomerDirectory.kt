@@ -62,7 +62,12 @@ internal class JpaCustomerDirectory(
         repository.findFirstByEmailNormalizedAndVerifiedAtIsNotNull(email.lowercase(Locale.ROOT))?.toRef()
 
     @Transactional
-    override fun createVerified(name: String, email: String, verifiedAt: Instant): CustomerRef {
+    override fun createVerified(
+        name: String,
+        email: String,
+        verifiedAt: Instant,
+        companyName: String?,
+    ): CustomerRef {
         val now = Instant.now(clock)
         return repository.saveAndFlush(
             CustomerEntity(
@@ -73,6 +78,7 @@ internal class JpaCustomerDirectory(
                 verifiedAt = verifiedAt,
                 createdAt = now,
                 updatedAt = now,
+                companyName = companyName?.trim(),
             ),
         ).toRef()
     }

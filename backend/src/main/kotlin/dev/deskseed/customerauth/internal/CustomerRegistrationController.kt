@@ -31,6 +31,7 @@ import kotlin.math.ceil
 @Validated
 internal class CustomerRegistrationController(
     private val registrationService: CustomerRegistrationApplicationService,
+    private val verificationService: CustomerRegistrationVerificationService,
     private val properties: CustomerAuthProperties,
 ) {
     @PostMapping("/api/v1/customer/registrations")
@@ -61,6 +62,25 @@ internal class CustomerRegistrationController(
             .body(GenericAccepted(true))
     }
 
+    @PostMapping("/api/v1/customer/registration-verifications")
+    fun verifyRegistration(
+        @Valid @RequestBody body: CustomerRegistrationVerificationRequest,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ): ResponseEntity<Void> {
+        verificationService.verify(
+            rawToken = body.token,
+            rawContinuationSecret = request.registrationContinuationCookie(),
+            remoteAddress = request.remoteAddr ?: "unknown",
+            context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
+        )
+        response.addCookie(expiredContinuationCookie())
+        return ResponseEntity.noContent()
+            .cacheControl(CacheControl.noStore())
+            .header("Referrer-Policy", "no-referrer")
+            .build()
+    }
+
     private fun padResponse(startedAt: Long, minimum: Duration) {
         val remaining = minimum.toNanos() - (System.nanoTime() - startedAt)
         if (remaining > 0) LockSupport.parkNanos(remaining)
@@ -76,6 +96,8 @@ internal class CustomerRegistrationController(
             maxAge = ttl.seconds.toInt()
             setAttribute("SameSite", "Lax")
         }
+
+        fun expiredContinuationCookie() = continuationCookie("", Duration.ZERO).apply { maxAge = 0 }
     }
 }
 
@@ -121,6 +143,40 @@ internal class CustomerRegistrationExceptionHandler(
         )
     }
 
+    @ExceptionHandler(CustomerRegistrationVerificationInvalidException::class)
+    fun invalidVerification(
+        exception: CustomerRegistrationVerificationInvalidException,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ) {
+        @Suppress("UNUSED_VARIABLE") val ignored = exception
+        problemWriter.write(
+            response,
+            request,
+            401,
+            "/problems/customer-registration-verification-invalid",
+            "Customer registration verification is invalid",
+            "The verification proof is invalid, expired, or already used.",
+        )
+    }
+
+    @ExceptionHandler(CustomerRegistrationVerificationConflictException::class)
+    fun verificationConflict(
+        exception: CustomerRegistrationVerificationConflictException,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ) {
+        @Suppress("UNUSED_VARIABLE") val ignored = exception
+        problemWriter.write(
+            response,
+            request,
+            409,
+            "/problems/customer-registration-conflict",
+            "Customer registration state changed",
+            "Restart registration with the current policy state.",
+        )
+    }
+
     @ExceptionHandler(
         IllegalArgumentException::class,
         ConstraintViolationException::class,
@@ -162,3 +218,16 @@ internal data class AcceptedRegistrationPolicyVersion(
     val policyKey: String,
     @field:Min(1) val version: Int,
 )
+
+@Schema(description = "이메일 token과 browser continuation proof를 함께 소비하는 등록 검증 요청")
+internal data class CustomerRegistrationVerificationRequest(
+    @field:NotBlank @field:Size(min = 32, max = 256) val token: String,
+) {
+    override fun toString(): String = "[PROTECTED CUSTOMER REGISTRATION VERIFICATION HTTP REQUEST]"
+}
+
+private fun HttpServletRequest.registrationContinuationCookie(): String? =
+    cookies?.filter { it.name == CustomerRegistrationController.REGISTRATION_COOKIE }
+        ?.singleOrNull()
+        ?.value
+        ?.takeIf { it.length in 32..256 }

@@ -4,6 +4,8 @@ import dev.deskseed.customer.CustomerDirectory
 import dev.deskseed.customerauth.CustomerPrincipal
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
 import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
@@ -19,6 +21,16 @@ internal data class NewCustomerSession(
     val principal: CustomerPrincipal,
 )
 
+internal data class NewCustomerPasswordAccount(
+    val emailNormalized: String,
+    val emailDisplay: String,
+    val displayName: String,
+    val companyName: String,
+    val passwordHash: CustomerPasswordHash,
+) {
+    override fun toString(): String = "[PROTECTED NEW CUSTOMER PASSWORD ACCOUNT]"
+}
+
 @Component
 internal class CustomerAccountSessionStore(
     private val jdbcTemplate: JdbcTemplate,
@@ -26,12 +38,56 @@ internal class CustomerAccountSessionStore(
     private val properties: CustomerAuthProperties,
     private val clock: Clock,
 ) {
-    fun resolveOrCreateAccount(emailNormalized: String, emailDisplay: String): CustomerAccountIdentity {
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockAccountEmail(emailNormalized: String) {
         jdbcTemplate.queryForObject(
             "select pg_advisory_xact_lock(hashtextextended(?, 0))",
             { _, _ -> Unit },
             "customer-account:$emailNormalized",
         )
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun createPasswordAccount(command: NewCustomerPasswordAccount): CustomerAccountIdentity? {
+        val exists = jdbcTemplate.queryForObject(
+            "select exists(select 1 from customer_accounts where email_normalized = ?)",
+            Boolean::class.java,
+            command.emailNormalized,
+        ) == true
+        if (exists) return null
+        val now = Instant.now(clock)
+        val customer = customerDirectory.createVerified(
+            name = command.displayName,
+            email = command.emailDisplay,
+            verifiedAt = now,
+            companyName = command.companyName,
+        )
+        val accountId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into customer_accounts
+                (id, customer_id, email_normalized, status, verified_at, last_login_at,
+                 created_at, updated_at, version, password_hash, password_changed_at, credential_version)
+            values (?, ?, ?, 'ACTIVE', ?, ?, ?, ?, 0, ?, ?, 0)
+            """.trimIndent(),
+            accountId,
+            customer.id,
+            command.emailNormalized,
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            command.passwordHash.encoded,
+            Timestamp.from(now),
+        )
+        return CustomerAccountIdentity(
+            accountId,
+            CustomerPrincipal(accountId, customer.id, command.emailNormalized, customer.name, now),
+        )
+    }
+
+    fun resolveOrCreateAccount(emailNormalized: String, emailDisplay: String): CustomerAccountIdentity {
+        lockAccountEmail(emailNormalized)
         findAccount(emailNormalized)?.let { return it }
         val now = Instant.now(clock)
         // Authentication proves control of the address, but does not prove ownership of old anonymous tickets.

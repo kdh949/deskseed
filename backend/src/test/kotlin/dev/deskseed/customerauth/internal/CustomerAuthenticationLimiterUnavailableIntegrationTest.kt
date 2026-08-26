@@ -91,6 +91,34 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
             .isEqualTo(auditBefore)
         assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
     }
+
+    @Test
+    fun `registration verification limiter failure returns generic 503 before proof consumption`() {
+        val tokenBefore = jdbcTemplate.queryForObject(
+            "select count(*) from customer_one_time_tokens",
+            Long::class.java,
+        )!!
+        val accountBefore = jdbcTemplate.queryForObject(
+            "select count(*) from customer_accounts",
+            Long::class.java,
+        )!!
+
+        mockMvc.perform(
+            post("/api/v1/customer/registration-verifications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"token":"${"a".repeat(43)}"}"""),
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Referrer-Policy", "no-referrer"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java))
+            .isEqualTo(tokenBefore)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_accounts", Long::class.java))
+            .isEqualTo(accountBefore)
+        assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
+    }
 }
 
 internal class RecordingUnavailableAuthenticationAttemptLimiter : AuthenticationAttemptLimiter {

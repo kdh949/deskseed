@@ -30,4 +30,7 @@ internal class CustomerEntity(
 
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant,
+
+    @Column(name = "company_name", length = 160)
+    var companyName: String? = null,
 )

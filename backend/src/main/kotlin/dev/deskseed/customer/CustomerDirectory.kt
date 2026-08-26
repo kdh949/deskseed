@@ -29,5 +29,5 @@ interface CustomerDirectory {
     fun search(query: String, limit: Int): CustomerSearchResult
 
     /** Creates a new verified identity. It intentionally never upgrades an anonymous historical requester. */
-    fun createVerified(name: String, email: String, verifiedAt: Instant): CustomerRef
+    fun createVerified(name: String, email: String, verifiedAt: Instant, companyName: String? = null): CustomerRef
 }
