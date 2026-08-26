@@ -1,6 +1,7 @@
 package dev.deskseed.customerauth.internal
 
 import dev.deskseed.customerauth.AuthenticationAttemptLimiter
+import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -13,10 +14,14 @@ import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import java.sql.Timestamp
+import java.time.Instant
+import java.util.UUID
 
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 @AutoConfigureMockMvc
@@ -26,6 +31,7 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var unavailableLimiter: RecordingUnavailableAuthenticationAttemptLimiter
+    @Autowired private lateinit var properties: CustomerAuthProperties
 
     @Test
     fun `required limiter failure returns generic 503 before database authentication work`() {
@@ -71,6 +77,82 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
             .isEqualTo(tokenBefore)
         assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java))
             .isEqualTo(sessionBefore)
+        assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
+    }
+
+    @Test
+    fun `registration completion limiter failure returns generic 503 before credential work`() {
+        val customerId = UUID.randomUUID()
+        val accountId = UUID.randomUUID()
+        val rawSession = CustomerAuthSecrets.randomBearer()
+        val now = Instant.now()
+        jdbcTemplate.update(
+            """
+            insert into customers (id, name, email_normalized, email_display, verified_at, created_at, updated_at)
+            values (?, 'Completion Customer', ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            customerId,
+            "completion-limiter-${accountId}@example.test",
+            "completion-limiter-${accountId}@example.test",
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+        )
+        jdbcTemplate.update(
+            """
+            insert into customer_accounts
+                (id, customer_id, email_normalized, status, verified_at, last_login_at,
+                 created_at, updated_at, version, credential_version)
+            values (?, ?, ?, 'ACTIVE', ?, ?, ?, ?, 0, 0)
+            """.trimIndent(),
+            accountId,
+            customerId,
+            "completion-limiter-${accountId}@example.test",
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now),
+        )
+        jdbcTemplate.update(
+            """
+            insert into customer_sessions
+                (id, account_id, session_token_digest, created_at, last_activity_at,
+                 expires_at, absolute_expires_at, revoked_at, authentication_method, credential_version_snapshot)
+            values (?, ?, ?, ?, ?, ?, ?, null, 'MAGIC_LINK', 0)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            accountId,
+            CustomerAuthSecrets.digest(rawSession),
+            Timestamp.from(now),
+            Timestamp.from(now),
+            Timestamp.from(now.plusSeconds(1_800)),
+            Timestamp.from(now.plusSeconds(43_200)),
+        )
+
+        mockMvc.perform(
+            put("/api/v1/customer/me/registration")
+                .cookie(Cookie("DESKSEED_CUSTOMER_SESSION", rawSession))
+                .header("X-CSRF-TOKEN", CustomerAuthSecrets.csrf(properties.csrfKey, rawSession))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "password":"synthetic completion password",
+                      "displayName":"Completion Customer",
+                      "companyName":"Completion Company",
+                      "acceptedPolicies":[{"policyKey":"synthetic-policy","version":1}]
+                    }
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+
+        assertThat(jdbcTemplate.queryForObject(
+            "select password_hash is null from customer_accounts where id = ?",
+            Boolean::class.java,
+            accountId,
+        )).isTrue()
         assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
     }
 

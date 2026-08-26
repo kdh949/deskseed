@@ -22,12 +22,12 @@ internal class StaffAuthenticationEntryPoint(
             request = request,
             status = 401,
             type = when {
-                customerRoute -> "/problems/customer-authentication-required"
+                customerRoute -> "/problems/customer-session-required"
                 customerConsentAdminRoute -> "/problems/staff-session-required"
                 else -> "/problems/staff-authentication-required"
             },
-            title = if (customerRoute) "Customer authentication required" else "Staff authentication required",
-            detail = if (customerRoute) "Request a new sign-in link to continue." else "Sign in to continue.",
+            title = if (customerRoute) "고객 로그인이 필요합니다" else "Staff authentication required",
+            detail = if (customerRoute) "다시 로그인한 뒤 계속해 주세요." else "Sign in to continue.",
         )
     }
 }

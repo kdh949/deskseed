@@ -47,6 +47,16 @@ internal data class NewCustomerPasswordAccount(
     override fun toString(): String = "[PROTECTED NEW CUSTOMER PASSWORD ACCOUNT]"
 }
 
+internal data class CustomerPasswordlessRegistrationCandidate(
+    val accountId: UUID,
+    val customerId: UUID,
+    val emailNormalized: String,
+    val verifiedAt: Instant,
+    val credentialVersion: Long,
+) {
+    override fun toString(): String = "[PROTECTED CUSTOMER PASSWORDLESS REGISTRATION CANDIDATE]"
+}
+
 private data class CustomerMagicLinkAccountState(
     val status: String,
     val hasPassword: Boolean,
@@ -216,6 +226,115 @@ internal class CustomerAccountSessionStore(
             account.principal.copy(
                 sessionFingerprint = CustomerAuthSecrets.customerSessionFingerprint(properties.fingerprintKey, sessionId),
             ),
+        )
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockPasswordlessRegistrationCandidate(
+        accountId: UUID,
+        emailNormalized: String,
+        rawSession: String,
+    ): CustomerPasswordlessRegistrationCandidate? {
+        lockAccountEmail(emailNormalized)
+        val now = Instant.now(clock)
+        return jdbcTemplate.query(
+            """
+            select account.id as account_id, account.customer_id, account.email_normalized,
+                   account.verified_at, account.credential_version
+              from customer_accounts account
+              join customers customer on customer.id = account.customer_id
+              join customer_sessions session on session.account_id = account.id
+             where account.id = ?
+               and account.email_normalized = ?
+               and account.status = 'ACTIVE'
+               and account.password_hash is null
+               and session.session_token_digest = ?
+               and session.revoked_at is null
+               and session.expires_at > ?
+               and session.absolute_expires_at > ?
+               and session.authentication_method = 'MAGIC_LINK'
+               and session.credential_version_snapshot = account.credential_version
+             for update of account, customer, session
+            """.trimIndent(),
+            { resultSet, _ ->
+                CustomerPasswordlessRegistrationCandidate(
+                    accountId = resultSet.getObject("account_id", UUID::class.java),
+                    customerId = resultSet.getObject("customer_id", UUID::class.java),
+                    emailNormalized = resultSet.getString("email_normalized"),
+                    verifiedAt = resultSet.getTimestamp("verified_at").toInstant(),
+                    credentialVersion = resultSet.getLong("credential_version"),
+                )
+            },
+            accountId,
+            emailNormalized,
+            CustomerAuthSecrets.digest(rawSession),
+            Timestamp.from(now),
+            Timestamp.from(now),
+        ).singleOrNull()
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun completePasswordlessRegistration(
+        candidate: CustomerPasswordlessRegistrationCandidate,
+        passwordHash: CustomerPasswordHash,
+        displayName: String,
+        companyName: String,
+    ): NewCustomerSession? {
+        val now = Instant.now(clock)
+        val updated = jdbcTemplate.update(
+            """
+            update customer_accounts
+               set password_hash = ?, password_changed_at = ?, credential_version = credential_version + 1,
+                   version = version + 1, updated_at = ?
+             where id = ?
+               and customer_id = ?
+               and email_normalized = ?
+               and status = 'ACTIVE'
+               and password_hash is null
+               and credential_version = ?
+            """.trimIndent(),
+            passwordHash.encoded,
+            Timestamp.from(now),
+            Timestamp.from(now),
+            candidate.accountId,
+            candidate.customerId,
+            candidate.emailNormalized,
+            candidate.credentialVersion,
+        )
+        if (updated != 1) return null
+        check(
+            jdbcTemplate.update(
+                "update customers set name = ?, company_name = ?, updated_at = ? where id = ?",
+                displayName,
+                companyName,
+                Timestamp.from(now),
+                candidate.customerId,
+            ) == 1,
+        ) { "customer profile is missing" }
+        jdbcTemplate.update(
+            "update customer_sessions set revoked_at = ? where account_id = ? and revoked_at is null",
+            Timestamp.from(now),
+            candidate.accountId,
+        )
+        val credentialVersion = candidate.credentialVersion + 1
+        return createSession(
+            account = CustomerAccountIdentity(
+                accountId = candidate.accountId,
+                principal = CustomerPrincipal(
+                    accountId = candidate.accountId,
+                    customerId = candidate.customerId,
+                    email = candidate.emailNormalized,
+                    displayName = displayName,
+                    verifiedAt = candidate.verifiedAt,
+                    companyName = companyName,
+                    credentialState = CustomerCredentialState.PASSWORD,
+                    registrationState = CustomerRegistrationState.COMPLETE,
+                    availableAuthenticationMethods = listOf(CustomerAuthenticationMethod.PASSWORD),
+                ),
+                credentialVersion = credentialVersion,
+            ),
+            previousRawSession = null,
+            authenticationMethod = CustomerAuthenticationMethod.PASSWORD,
         )
     }
 

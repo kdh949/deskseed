@@ -102,7 +102,12 @@ internal class CustomerRegistrationController(
     }
 }
 
-@RestControllerAdvice(assignableTypes = [CustomerRegistrationController::class])
+@RestControllerAdvice(
+    assignableTypes = [
+        CustomerRegistrationController::class,
+        CustomerPasswordlessRegistrationController::class,
+    ],
+)
 internal class CustomerRegistrationExceptionHandler(
     private val problemWriter: CustomerSecurityProblemWriter,
 ) {
@@ -127,6 +132,7 @@ internal class CustomerRegistrationExceptionHandler(
     @ExceptionHandler(
         AuthenticationAttemptLimiterUnavailableException::class,
         CustomerRegistrationUnavailableException::class,
+        CustomerPasswordlessRegistrationUnavailableException::class,
     )
     fun unavailable(
         exception: RuntimeException,
@@ -161,9 +167,12 @@ internal class CustomerRegistrationExceptionHandler(
         )
     }
 
-    @ExceptionHandler(CustomerRegistrationVerificationConflictException::class)
+    @ExceptionHandler(
+        CustomerRegistrationVerificationConflictException::class,
+        CustomerPasswordlessRegistrationConflictException::class,
+    )
     fun verificationConflict(
-        exception: CustomerRegistrationVerificationConflictException,
+        exception: RuntimeException,
         request: HttpServletRequest,
         response: HttpServletResponse,
     ) {
@@ -173,8 +182,8 @@ internal class CustomerRegistrationExceptionHandler(
             request,
             409,
             "/problems/customer-registration-conflict",
-            "Customer registration state changed",
-            "Restart registration with the current policy state.",
+            "현재 고객 등록 상태와 요청이 충돌합니다",
+            "현재 동의 정책과 고객 등록 상태를 확인한 뒤 다시 시도해 주세요.",
         )
     }
 
