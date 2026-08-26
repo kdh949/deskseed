@@ -52,6 +52,45 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
             .isEqualTo(tokenBefore)
         assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
     }
+
+    @Test
+    fun `registration limiter failure returns generic 503 before database registration work`() {
+        val intentBefore = jdbcTemplate.queryForObject(
+            "select count(*) from customer_registration_intents",
+            Long::class.java,
+        )!!
+        val auditBefore = jdbcTemplate.queryForObject(
+            "select count(*) from admin_security_audit_events",
+            Long::class.java,
+        )!!
+
+        mockMvc.perform(
+            post("/api/v1/customer/registrations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "email": "unavailable-registration@example.test",
+                      "password": "synthetic registration password",
+                      "displayName": "합성 고객",
+                      "companyName": "합성 회사",
+                      "acceptedPolicies": [{"policyKey":"synthetic-policy","version":1}]
+                    }
+                    """.trimIndent(),
+                ),
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Referrer-Policy", "no-referrer"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+            .andExpect(jsonPath("$.status").value(503))
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_registration_intents", Long::class.java))
+            .isEqualTo(intentBefore)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java))
+            .isEqualTo(auditBefore)
+        assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
+    }
 }
 
 internal class RecordingUnavailableAuthenticationAttemptLimiter : AuthenticationAttemptLimiter {

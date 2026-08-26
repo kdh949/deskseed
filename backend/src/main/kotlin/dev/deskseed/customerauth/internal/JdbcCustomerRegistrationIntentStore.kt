@@ -66,21 +66,53 @@ internal class JdbcCustomerRegistrationIntentStore(
 ) {
     @Transactional
     fun replacePending(command: NewCustomerRegistrationIntent): CreatedCustomerRegistrationIntent {
+        val prepared = prepare(command)
+        lockEmail(prepared.emailNormalized)
+        return replacePendingLocked(command, prepared)
+    }
+
+    @Transactional
+    fun replacePendingIfAccountAbsent(command: NewCustomerRegistrationIntent): CreatedCustomerRegistrationIntent? {
+        val prepared = prepare(command)
+        lockEmail(prepared.emailNormalized)
+        val accountExists = jdbc.queryForObject(
+            "select exists(select 1 from customer_accounts where email_normalized = ?)",
+            Boolean::class.java,
+            prepared.emailNormalized,
+        ) == true
+        if (accountExists) return null
+        return replacePendingLocked(command, prepared)
+    }
+
+    private fun prepare(command: NewCustomerRegistrationIntent): PreparedRegistrationIntent {
         validate(command)
         val emailDisplay = command.emailDisplay.trim()
         val emailNormalized = emailDisplay.lowercase(Locale.ROOT)
-        val displayName = command.displayName.trim()
-        val companyName = command.companyName.trim()
         val now = Instant.now(clock)
-        val expiresAt = now.plus(command.ttl)
-        val id = UUID.randomUUID()
-        val rawContinuationSecret = CustomerAuthSecrets.randomBearer()
+        return PreparedRegistrationIntent(
+            emailDisplay = emailDisplay,
+            emailNormalized = emailNormalized,
+            displayName = command.displayName.trim(),
+            companyName = command.companyName.trim(),
+            now = now,
+            expiresAt = now.plus(command.ttl),
+            id = UUID.randomUUID(),
+            rawContinuationSecret = CustomerAuthSecrets.randomBearer(),
+        )
+    }
 
+    private fun lockEmail(emailNormalized: String) {
         jdbc.queryForObject(
             "select pg_advisory_xact_lock(hashtextextended(?, 0))",
             { _, _ -> Unit },
             "customer-registration-intent:$emailNormalized",
         )
+    }
+
+    private fun replacePendingLocked(
+        command: NewCustomerRegistrationIntent,
+        prepared: PreparedRegistrationIntent,
+    ): CreatedCustomerRegistrationIntent {
         jdbc.update(
             """
             update customer_registration_intents
@@ -88,9 +120,9 @@ internal class JdbcCustomerRegistrationIntentStore(
              where email_normalized = ?
                and status = 'PENDING'
             """.trimIndent(),
-            Timestamp.from(now),
-            Timestamp.from(now),
-            emailNormalized,
+            Timestamp.from(prepared.now),
+            Timestamp.from(prepared.now),
+            prepared.emailNormalized,
         )
         jdbc.update(
             """
@@ -100,18 +132,18 @@ internal class JdbcCustomerRegistrationIntentStore(
                  created_at, updated_at, expires_at, consumed_at, cancelled_at, version)
             values (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, null, null, 0)
             """.trimIndent(),
-            id,
-            emailNormalized,
-            emailDisplay,
+            prepared.id,
+            prepared.emailNormalized,
+            prepared.emailDisplay,
             command.passwordHash.encoded,
-            displayName,
-            companyName,
-            CustomerAuthSecrets.digest(rawContinuationSecret),
+            prepared.displayName,
+            prepared.companyName,
+            CustomerAuthSecrets.digest(prepared.rawContinuationSecret),
             command.context.requestId,
             command.context.correlationId,
-            Timestamp.from(now),
-            Timestamp.from(now),
-            Timestamp.from(expiresAt),
+            Timestamp.from(prepared.now),
+            Timestamp.from(prepared.now),
+            Timestamp.from(prepared.expiresAt),
         )
         command.policySelections.forEach { selection ->
             jdbc.update(
@@ -120,13 +152,17 @@ internal class JdbcCustomerRegistrationIntentStore(
                     (intent_id, policy_id, policy_version, context, selected_at)
                 values (?, ?, ?, 'REGISTRATION', ?)
                 """.trimIndent(),
-                id,
+                prepared.id,
                 selection.policyId,
                 selection.policyVersion,
-                Timestamp.from(now),
+                Timestamp.from(prepared.now),
             )
         }
-        return CreatedCustomerRegistrationIntent(id, rawContinuationSecret, expiresAt)
+        return CreatedCustomerRegistrationIntent(
+            prepared.id,
+            prepared.rawContinuationSecret,
+            prepared.expiresAt,
+        )
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -208,10 +244,10 @@ internal class JdbcCustomerRegistrationIntentStore(
         require(email.length in 3..254 && email.none(::forbiddenTextCharacter)) {
             "registration email is invalid"
         }
-        require(command.displayName.trim().length in 1..100 && command.displayName.none(::forbiddenTextCharacter)) {
+        require(command.displayName.trim().hasCodePointLength(1, 100) && command.displayName.none(::forbiddenTextCharacter)) {
             "registration display name is invalid"
         }
-        require(command.companyName.trim().length in 1..160 && command.companyName.none(::forbiddenTextCharacter)) {
+        require(command.companyName.trim().hasCodePointLength(1, 160) && command.companyName.none(::forbiddenTextCharacter)) {
             "registration company name is invalid"
         }
         require(command.ttl in Duration.ofMinutes(5)..Duration.ofHours(48)) {
@@ -225,4 +261,18 @@ internal class JdbcCustomerRegistrationIntentStore(
 
     private fun forbiddenTextCharacter(character: Char): Boolean =
         character.isISOControl() || character == '<' || character == '>'
+
+    private fun String.hasCodePointLength(minimum: Int, maximum: Int): Boolean =
+        codePointCount(0, length) in minimum..maximum
+
+    private data class PreparedRegistrationIntent(
+        val emailDisplay: String,
+        val emailNormalized: String,
+        val displayName: String,
+        val companyName: String,
+        val now: Instant,
+        val expiresAt: Instant,
+        val id: UUID,
+        val rawContinuationSecret: String,
+    )
 }
