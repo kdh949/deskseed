@@ -4,9 +4,9 @@ import dev.deskseed.customerauth.AuthenticationAttempt
 import dev.deskseed.customerauth.AuthenticationAttemptLimiter
 import dev.deskseed.customerauth.CustomerAuthenticationPurpose
 import dev.deskseed.customerauth.internal.CustomerAuthSecrets
+import dev.deskseed.customerauth.internal.CustomerPasswordHasher
 import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -70,6 +70,7 @@ class CustomerMagicLinkAuthIntegrationTest {
     @Autowired private lateinit var oneTimeTokenService: OneTimeTokenService
     @Autowired private lateinit var rateLimiter: AuthenticationAttemptLimiter
     @Autowired private lateinit var redisTemplate: StringRedisTemplate
+    @Autowired private lateinit var passwordHasher: CustomerPasswordHasher
 
     @BeforeEach
     fun clearState() {
@@ -97,50 +98,87 @@ class CustomerMagicLinkAuthIntegrationTest {
     }
 
     @Test
-    fun `eligible and ineligible requests share 202 while exhausted budget returns generic 429`(output: CapturedOutput) {
-        insertUnverifiedCustomer("known@example.com")
+    fun `anonymous passwordless password disabled and unknown requests share 202 while only eligible identities get mail`(
+        output: CapturedOutput,
+    ) {
+        insertUnverifiedCustomer("anonymous@example.com")
+        insertPasswordlessAccount("passwordless@example.com")
+        insertPasswordAccount("password@example.com")
+        insertPasswordlessAccount("disabled@example.com", status = "DISABLED")
 
-        val known = requestMagicLink("known@example.com")
-        val unknown = requestMagicLink("unknown@example.com")
-        val knownSecond = requestMagicLink("known@example.com")
-        val rateLimited = requestMagicLink("known@example.com")
+        val attempts = listOf(
+            "anonymous@example.com",
+            "passwordless@example.com",
+            "password@example.com",
+            "disabled@example.com",
+            "unknown@example.com",
+        ).map(::requestMagicLink)
 
-        listOf(known, unknown, knownSecond).forEach { result ->
+        attempts.forEach { result ->
             assertThat(result.response.status).isEqualTo(202)
             assertThat(result.response.contentAsString).isEqualTo("{\"accepted\":true}")
             assertThat(result.response.getHeader("Cache-Control")).isEqualTo("no-store")
             assertThat(result.response.getHeader("Referrer-Policy")).isEqualTo("no-referrer")
         }
+        assertThat(jdbcTemplate.queryForList(
+            "select email_normalized from customer_one_time_tokens order by email_normalized",
+            String::class.java,
+        )).containsExactly("anonymous@example.com", "passwordless@example.com")
+        assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java))
+            .isEqualTo(2)
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from admin_security_audit_events where event_type = 'CUSTOMER_MAGIC_LINK_REQUESTED'",
+            Long::class.java,
+        )).isEqualTo(5)
+        assertThat(jdbcTemplate.queryForObject(
+            "select string_agg(metadata_json, '') from admin_security_audit_events",
+            String::class.java,
+        )).doesNotContain(
+            "anonymous@example.com",
+            "passwordless@example.com",
+            "password@example.com",
+            "disabled@example.com",
+            "unknown@example.com",
+        )
+        assertThat(output.all).doesNotContain(
+            "anonymous@example.com",
+            "passwordless@example.com",
+            "password@example.com",
+            "disabled@example.com",
+            "unknown@example.com",
+        )
+    }
+
+    @Test
+    fun `exhausted magic request budget returns generic 429`() {
+        insertUnverifiedCustomer("rate-limited-magic@example.com")
+        repeat(2) { requestMagicLink("rate-limited-magic@example.com") }
+        val rateLimited = requestMagicLink("rate-limited-magic@example.com")
+
         assertThat(rateLimited.response.status).isEqualTo(429)
         assertThat(rateLimited.response.getHeader("Retry-After")?.toLong()).isBetween(1, 900)
         assertThat(rateLimited.response.contentAsString)
             .contains("/problems/customer-authentication-rate-limited")
-            .doesNotContain("known@example.com")
-        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java))
-            .isEqualTo(2)
-        assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java))
-            .isEqualTo(2)
-        assertThat(
-            jdbcTemplate.queryForObject(
-                "select count(*) from admin_security_audit_events where event_type = 'CUSTOMER_MAGIC_LINK_REQUESTED'",
-                Long::class.java,
-            ),
-        ).isEqualTo(3)
+            .doesNotContain("rate-limited-magic@example.com")
         assertThat(
             jdbcTemplate.queryForObject(
                 "select count(*) from admin_security_audit_events where event_type = 'CUSTOMER_MAGIC_LINK_RATE_LIMITED'",
                 Long::class.java,
             ),
         ).isEqualTo(1)
-        assertThat(jdbcTemplate.queryForObject("select string_agg(metadata_json, '') from admin_security_audit_events", String::class.java))
-            .doesNotContain("known@example.com", "unknown@example.com")
-        assertThat(output.all).doesNotContain("known@example.com", "unknown@example.com")
     }
 
     @Test
     fun `known and unknown requests are padded into the same response timing class`() {
         insertUnverifiedCustomer("timing-known@example.com")
-        val elapsed = listOf("timing-known@example.com", "timing-unknown@example.com").map { email ->
+        insertPasswordlessAccount("timing-passwordless@example.com")
+        insertPasswordAccount("timing-password@example.com")
+        val elapsed = listOf(
+            "timing-known@example.com",
+            "timing-passwordless@example.com",
+            "timing-password@example.com",
+            "timing-unknown@example.com",
+        ).map { email ->
             measureNanoTime { requestMagicLink(email) }
         }.map { Duration.ofNanos(it) }
 
@@ -165,11 +203,49 @@ class CustomerMagicLinkAuthIntegrationTest {
             "create trigger fail_customer_auth_mail_insert before insert on outbound_mail_intents for each row execute function fail_customer_auth_mail_insert()",
         )
         try {
-            assertThatThrownBy { requestMagicLink("rollback@example.com") }
-                .hasRootCauseInstanceOf(java.sql.SQLException::class.java)
+            val result = requestMagicLink("rollback@example.com")
+            assertThat(result.response.status).isEqualTo(503)
+            assertThat(result.response.contentAsString).contains("/problems/customer-authentication-unavailable")
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_customer_auth_mail_insert on outbound_mail_intents")
             jdbcTemplate.execute("drop function if exists fail_customer_auth_mail_insert()")
+        }
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java)).isZero()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from outbound_mail_intents", Long::class.java)).isZero()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java)).isZero()
+        assertThat(redisTemplate.keys("deskseed:customer-auth:limiter:*")).isNotEmpty
+    }
+
+    @Test
+    fun `required request audit failure returns 503 and rolls token and mail back`() {
+        insertUnverifiedCustomer("request-audit-failure@example.com")
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_customer_magic_request_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if new.event_type = 'CUSTOMER_MAGIC_LINK_REQUESTED' then
+                    raise exception 'injected customer magic request audit failure';
+                end if;
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_customer_magic_request_audit before insert on admin_security_audit_events " +
+                "for each row execute function fail_customer_magic_request_audit()",
+        )
+        try {
+            val result = requestMagicLink("request-audit-failure@example.com")
+            assertThat(result.response.status).isEqualTo(503)
+            assertThat(result.response.contentAsString).contains("/problems/customer-authentication-unavailable")
+        } finally {
+            jdbcTemplate.execute(
+                "drop trigger if exists fail_customer_magic_request_audit on admin_security_audit_events",
+            )
+            jdbcTemplate.execute("drop function if exists fail_customer_magic_request_audit()")
         }
 
         assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java)).isZero()
@@ -284,7 +360,7 @@ class CustomerMagicLinkAuthIntegrationTest {
             consume(token)
                 .andExpect(status().isUnauthorized)
                 .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(jsonPath("$.type").value("/problems/customer-magic-link-invalid"))
+                .andExpect(jsonPath("$.type").value("/problems/customer-one-time-proof-invalid"))
         }
         assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java)).isZero()
         assertThat(
@@ -293,6 +369,56 @@ class CustomerMagicLinkAuthIntegrationTest {
                 Long::class.java,
             ),
         ).isEqualTo(2)
+    }
+
+    @Test
+    fun `password and disabled accounts cannot consume an outstanding passwordless token`() {
+        val deniedProofs = listOf(
+            insertPasswordAccount("password-magic-consume@example.com") to
+                generateToken("password-magic-consume@example.com"),
+            insertPasswordlessAccount("disabled-magic-consume@example.com", status = "DISABLED") to
+                generateToken("disabled-magic-consume@example.com"),
+        )
+
+        deniedProofs.forEach { (_, rawToken) ->
+            consume(rawToken)
+                .andExpect(status().isUnauthorized)
+                .andExpect(jsonPath("$.type").value("/problems/customer-one-time-proof-invalid"))
+        }
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java)).isZero()
+        deniedProofs.forEach { (accountId, rawToken) ->
+            assertThat(jdbcTemplate.queryForObject(
+                "select consumed_at is not null from customer_one_time_tokens where token_digest = ?",
+                Boolean::class.java,
+                sha256(rawToken),
+            )).isTrue()
+            assertThat(jdbcTemplate.queryForObject(
+                "select credential_version from customer_accounts where id = ?",
+                Long::class.java,
+                accountId,
+            )).isZero()
+        }
+        assertThat(jdbcTemplate.queryForObject(
+            """
+            select count(*) from admin_security_audit_events
+             where event_type = 'CUSTOMER_MAGIC_LINK_FAILED' and outcome = 'DENIED'
+            """.trimIndent(),
+            Long::class.java,
+        )).isEqualTo(2)
+    }
+
+    @Test
+    fun `magic consume budget returns generic 429 without token state disclosure`() {
+        val rawToken = "synthetic-magic-consume-rate-proof-000000000001"
+        repeat(2) {
+            consume(rawToken).andExpect(status().isUnauthorized)
+        }
+
+        consume(rawToken)
+            .andExpect(status().isTooManyRequests)
+            .andExpect(header().exists("Retry-After"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-rate-limited"))
     }
 
     @Test
@@ -338,6 +464,51 @@ class CustomerMagicLinkAuthIntegrationTest {
     }
 
     @Test
+    fun `required consume audit failure returns 503 and preserves proof and previous session`() {
+        insertVerifiedCustomer("consume-audit-failure@example.com")
+        val first = consume(generateToken("consume-audit-failure@example.com"))
+            .andExpect(status().isOk)
+            .andReturn()
+        val previousCookie = first.response.getCookie(CUSTOMER_COOKIE)!!
+        val replacementProof = generateToken("consume-audit-failure@example.com")
+        jdbcTemplate.execute(
+            """
+            create or replace function fail_customer_magic_consume_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                if new.event_type = 'CUSTOMER_MAGIC_LINK_CONSUMED' then
+                    raise exception 'injected customer magic consume audit failure';
+                end if;
+                return new;
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            "create trigger fail_customer_magic_consume_audit before insert on admin_security_audit_events " +
+                "for each row execute function fail_customer_magic_consume_audit()",
+        )
+        try {
+            consume(replacementProof, previousCookie)
+                .andExpect(status().isServiceUnavailable)
+                .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+        } finally {
+            jdbcTemplate.execute(
+                "drop trigger if exists fail_customer_magic_consume_audit on admin_security_audit_events",
+            )
+            jdbcTemplate.execute("drop function if exists fail_customer_magic_consume_audit()")
+        }
+
+        assertThat(jdbcTemplate.queryForObject(
+            "select consumed_at is null from customer_one_time_tokens where token_digest = ?",
+            Boolean::class.java,
+            sha256(replacementProof),
+        )).isTrue()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java)).isEqualTo(1)
+        currentCustomer(previousCookie).andExpect(status().isOk)
+    }
+
+    @Test
     fun `verified account creation never rewrites an anonymous ticket requester`() {
         val anonymousCustomer = insertUnverifiedCustomer("claim-safety@example.com")
         val ticketId = insertAnonymousTicket(anonymousCustomer)
@@ -368,6 +539,7 @@ class CustomerMagicLinkAuthIntegrationTest {
 
     private fun consume(token: String, cookie: Cookie? = null) = mockMvc.perform(
         post("/api/v1/customer/auth/magic-link-sessions")
+            .with { request -> request.remoteAddr = "192.0.2.11"; request }
             .apply { if (cookie != null) cookie(cookie) }
             .contentType(MediaType.APPLICATION_JSON)
             .content("""{"token":"$token"}"""),
@@ -380,6 +552,37 @@ class CustomerMagicLinkAuthIntegrationTest {
     private fun insertUnverifiedCustomer(email: String): UUID = insertCustomer(email, null)
 
     private fun insertVerifiedCustomer(email: String): UUID = insertCustomer(email, Instant.now())
+
+    private fun insertPasswordlessAccount(email: String, status: String = "ACTIVE"): UUID =
+        insertAccount(email, password = null, status = status)
+
+    private fun insertPasswordAccount(email: String): UUID = insertAccount(email, password = "synthetic magic password")
+
+    private fun insertAccount(email: String, password: String?, status: String = "ACTIVE"): UUID {
+        val customerId = insertVerifiedCustomer(email)
+        val accountId = UUID.randomUUID()
+        val now = Timestamp.from(Instant.now())
+        val hash = password?.let(passwordHasher::encode)
+        jdbcTemplate.update(
+            """
+            insert into customer_accounts
+                (id, customer_id, email_normalized, status, verified_at, last_login_at,
+                 created_at, updated_at, version, password_hash, password_changed_at, credential_version)
+            values (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)
+            """.trimIndent(),
+            accountId,
+            customerId,
+            email,
+            status,
+            now,
+            now,
+            now,
+            now,
+            hash?.encoded,
+            hash?.let { now },
+        )
+        return accountId
+    }
 
     private fun insertCustomer(email: String, verifiedAt: Instant?): UUID {
         val id = UUID.randomUUID()

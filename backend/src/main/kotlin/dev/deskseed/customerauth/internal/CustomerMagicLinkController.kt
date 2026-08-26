@@ -62,6 +62,7 @@ internal class CustomerMagicLinkController(
     ): ResponseEntity<CurrentCustomerResponse> {
         val session = authenticationService.consume(
             rawToken = body.token,
+            remoteAddress = request.remoteAddr ?: "unknown",
             previousRawSession = request.customerSessionCookie(),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
@@ -112,9 +113,9 @@ internal class CustomerMagicLinkController(
             response,
             request,
             401,
-            "/problems/customer-magic-link-invalid",
-            "Customer magic link is invalid",
-            "The link is invalid, expired, or already used. Request a new link.",
+            "/problems/customer-one-time-proof-invalid",
+            "일회성 인증 정보를 확인할 수 없습니다",
+            "인증 정보가 올바르지 않거나 만료되었거나 이미 사용되었습니다.",
         )
     }
 
@@ -136,9 +137,12 @@ internal class CustomerMagicLinkController(
         )
     }
 
-    @ExceptionHandler(AuthenticationAttemptLimiterUnavailableException::class)
+    @ExceptionHandler(
+        AuthenticationAttemptLimiterUnavailableException::class,
+        CustomerMagicLinkUnavailableException::class,
+    )
     fun limiterUnavailable(
-        exception: AuthenticationAttemptLimiterUnavailableException,
+        exception: RuntimeException,
         request: HttpServletRequest,
         response: HttpServletResponse,
     ) {
@@ -193,13 +197,17 @@ internal class CustomerMagicLinkController(
 internal data class MagicLinkRequest(
     @field:Schema(description = "검증 링크를 받을 고객 이메일", example = "customer@example.com")
     @field:NotBlank @field:Email @field:Size(max = 254) val email: String,
-)
+) {
+    override fun toString(): String = "[PROTECTED MAGIC LINK REQUEST]"
+}
 
 @Schema(description = "일회성 매직 링크 소비 요청")
 internal data class MagicLinkConsumeRequest(
     @field:Schema(description = "이메일 링크로 발급된 일회성 토큰", example = "example-token-not-valid-0000000000000000")
     @field:NotBlank @field:Size(max = 256) val token: String,
-)
+) {
+    override fun toString(): String = "[PROTECTED MAGIC LINK CONSUME REQUEST]"
+}
 
 @Schema(description = "요청 수락 여부만 표시하는 열거 방지 응답")
 internal data class GenericAccepted(val accepted: Boolean)

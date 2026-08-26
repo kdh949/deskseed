@@ -47,6 +47,11 @@ internal data class NewCustomerPasswordAccount(
     override fun toString(): String = "[PROTECTED NEW CUSTOMER PASSWORD ACCOUNT]"
 }
 
+private data class CustomerMagicLinkAccountState(
+    val status: String,
+    val hasPassword: Boolean,
+)
+
 @Component
 internal class CustomerAccountSessionStore(
     private val jdbcTemplate: JdbcTemplate,
@@ -113,11 +118,28 @@ internal class CustomerAccountSessionStore(
         )
     }
 
-    fun resolveOrCreateAccount(emailNormalized: String, emailDisplay: String): CustomerAccountIdentity {
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun isPasswordlessMagicLinkEligible(emailNormalized: String): Boolean {
         lockAccountEmail(emailNormalized)
-        findAccount(emailNormalized)?.let { return it }
+        return magicLinkAccountState(emailNormalized)?.let { state ->
+            state.status == "ACTIVE" && !state.hasPassword
+        } ?: customerDirectory.existsByNormalizedEmail(emailNormalized)
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun resolveOrCreatePasswordlessAccount(
+        emailNormalized: String,
+        emailDisplay: String,
+    ): CustomerAccountIdentity? {
+        lockAccountEmail(emailNormalized)
+        magicLinkAccountState(emailNormalized)?.let { state ->
+            if (state.status != "ACTIVE" || state.hasPassword) return null
+            return findAccount(emailNormalized)
+        }
+        if (!customerDirectory.existsByNormalizedEmail(emailNormalized)) return null
+
         val now = Instant.now(clock)
-        // Authentication proves control of the address, but does not prove ownership of old anonymous tickets.
+        // Reuse only an already-verified identity. An anonymous requester is never upgraded or claimed by email equality.
         val customer = customerDirectory.findVerifiedByNormalizedEmail(emailNormalized)
             ?: customerDirectory.createVerified("고객", emailDisplay, now)
         val accountId = UUID.randomUUID()
@@ -131,14 +153,20 @@ internal class CustomerAccountSessionStore(
             accountId,
             customer.id,
             emailNormalized,
-            Timestamp.from(requireNotNull(customer.verifiedAt)),
+            Timestamp.from(now),
             Timestamp.from(now),
             Timestamp.from(now),
             Timestamp.from(now),
         )
         return CustomerAccountIdentity(
-            accountId,
-            CustomerPrincipal(accountId, customer.id, emailNormalized, customer.name, requireNotNull(customer.verifiedAt)),
+            accountId = accountId,
+            principal = CustomerPrincipal(
+                accountId = accountId,
+                customerId = customer.id,
+                email = emailNormalized,
+                displayName = customer.name,
+                verifiedAt = now,
+            ),
             credentialVersion = 0,
         )
     }
@@ -312,6 +340,21 @@ internal class CustomerAccountSessionStore(
                     availableAuthenticationMethods = authenticationMethods(resultSet.getString("password_hash")),
                 ),
                 credentialVersion = resultSet.getLong("credential_version"),
+            )
+        },
+        emailNormalized,
+    ).singleOrNull()
+
+    private fun magicLinkAccountState(emailNormalized: String): CustomerMagicLinkAccountState? = jdbcTemplate.query(
+        """
+        select status, password_hash is not null as has_password
+          from customer_accounts
+         where email_normalized = ?
+        """.trimIndent(),
+        { resultSet, _ ->
+            CustomerMagicLinkAccountState(
+                status = resultSet.getString("status"),
+                hasPassword = resultSet.getBoolean("has_password"),
             )
         },
         emailNormalized,

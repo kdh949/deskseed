@@ -54,6 +54,27 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
     }
 
     @Test
+    fun `magic consume limiter failure returns generic 503 before proof work`() {
+        val tokenBefore = jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java)!!
+        val sessionBefore = jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java)!!
+
+        mockMvc.perform(
+            post("/api/v1/customer/auth/magic-link-sessions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"token":"${"m".repeat(43)}"}"""),
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_one_time_tokens", Long::class.java))
+            .isEqualTo(tokenBefore)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java))
+            .isEqualTo(sessionBefore)
+        assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
+    }
+
+    @Test
     fun `registration limiter failure returns generic 503 before database registration work`() {
         val intentBefore = jdbcTemplate.queryForObject(
             "select count(*) from customer_registration_intents",

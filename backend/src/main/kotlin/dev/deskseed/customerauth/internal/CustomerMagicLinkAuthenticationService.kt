@@ -3,10 +3,10 @@ package dev.deskseed.customerauth.internal
 import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
-import dev.deskseed.customer.CustomerDirectory
 import dev.deskseed.customerauth.AuthenticationAttempt
 import dev.deskseed.customerauth.AuthenticationAttemptDecision
 import dev.deskseed.customerauth.AuthenticationAttemptLimiter
+import dev.deskseed.customerauth.CustomerAuthenticationMethod
 import dev.deskseed.customerauth.CustomerAuthenticationPurpose
 import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
@@ -27,10 +27,13 @@ import java.util.Locale
 
 internal class CustomerMagicLinkInvalidException : RuntimeException()
 internal class CustomerAuthenticationRateLimitedException(val retryAfter: java.time.Duration) : RuntimeException()
+internal class CustomerMagicLinkUnavailableException(cause: Throwable? = null) :
+    RuntimeException("customer magic-link authentication is unavailable", cause)
+
+private data class MagicLinkConsumeTransactionResult(val session: NewCustomerSession?)
 
 @Service
 internal class CustomerMagicLinkAuthenticationService(
-    private val customerDirectory: CustomerDirectory,
     private val tokenService: JdbcDigestOneTimeTokenService,
     private val rateLimiter: AuthenticationAttemptLimiter,
     private val accountSessionStore: CustomerAccountSessionStore,
@@ -58,7 +61,7 @@ internal class CustomerMagicLinkAuthenticationService(
             ),
         )
         if (!decision.allowed) {
-            transactionTemplate.executeWithoutResult {
+            requiredTransaction {
                 audit(
                     eventType = "CUSTOMER_MAGIC_LINK_RATE_LIMITED",
                     outcome = AdminSecurityOutcome.DENIED,
@@ -69,14 +72,8 @@ internal class CustomerMagicLinkAuthenticationService(
             throw CustomerAuthenticationRateLimitedException(requireNotNull(decision.retryAfter))
         }
 
-        transactionTemplate.executeWithoutResult {
-            audit(
-                eventType = "CUSTOMER_MAGIC_LINK_REQUESTED",
-                outcome = AdminSecurityOutcome.SUCCEEDED,
-                context = context,
-                metadata = safeFingerprintMetadata(decision),
-            )
-            if (customerDirectory.existsByNormalizedEmail(normalized)) {
+        requiredTransaction {
+            if (accountSessionStore.isPasswordlessMagicLinkEligible(normalized)) {
                 val generated = tokenService.generate(mailbox, context)
                 outboundMailPort.enqueue(
                     OutboundMailIntent(
@@ -88,49 +85,105 @@ internal class CustomerMagicLinkAuthenticationService(
                     ),
                 )
             }
+            audit(
+                eventType = "CUSTOMER_MAGIC_LINK_REQUESTED",
+                outcome = AdminSecurityOutcome.SUCCEEDED,
+                context = context,
+                metadata = safeFingerprintMetadata(decision),
+            )
         }
     }
 
-    @Transactional(noRollbackFor = [CustomerMagicLinkInvalidException::class])
     fun consume(
         rawToken: String,
+        remoteAddress: String,
         previousRawSession: String?,
         context: CommandContext,
     ): NewCustomerSession {
-        val consumed = tokenService.consume(rawToken)
-        if (consumed == null) {
-            val failureClass = tokenService.failureClass(rawToken)
-            audit(
-                eventType = if (failureClass == TokenFailureClass.REPLAYED) {
-                    "CUSTOMER_MAGIC_LINK_REPLAYED"
-                } else {
-                    "CUSTOMER_MAGIC_LINK_FAILED"
-                },
-                outcome = AdminSecurityOutcome.DENIED,
-                context = context,
-                metadata = mapOf("reason" to failureClass.name),
-            )
-            throw CustomerMagicLinkInvalidException()
+        require(rawToken.length in 1..256 && rawToken.none(Char::isISOControl)) {
+            "magic-link proof is invalid"
         }
-
-        val account = accountSessionStore.resolveOrCreateAccount(consumed.emailNormalized, consumed.emailDisplay)
-        val session = accountSessionStore.createSession(account, previousRawSession)
-        auditWriter.append(
-            AdminSecurityAudit(
-                eventType = "CUSTOMER_MAGIC_LINK_CONSUMED",
-                actorType = ActorType.CUSTOMER,
-                actorId = session.principal.customerId,
-                actorDisplaySnapshot = session.principal.displayName,
-                source = RequestSource.CUSTOMER_PORTAL,
-                targetType = "CUSTOMER_ACCOUNT",
-                targetId = session.principal.accountId,
-                outcome = AdminSecurityOutcome.SUCCEEDED,
-                requestId = context.requestId,
-                correlationId = context.correlationId,
-                occurredAt = Instant.now(clock),
+        val purpose = CustomerAuthenticationPurpose.MAGIC_LINK_CONSUME
+        val decision = rateLimiter.acquire(
+            AuthenticationAttempt(
+                purpose = purpose,
+                destinationFingerprint = CustomerAuthSecrets.fingerprint(
+                    properties.fingerprintKey,
+                    "${purpose.keySegment}:proof:$rawToken",
+                ),
+                requesterNetworkFingerprint = CustomerAuthSecrets.fingerprint(
+                    properties.fingerprintKey,
+                    "${purpose.keySegment}:network:$remoteAddress",
+                ),
             ),
         )
-        return session
+        if (!decision.allowed) {
+            requiredTransaction {
+                audit(
+                    eventType = "CUSTOMER_MAGIC_LINK_FAILED",
+                    outcome = AdminSecurityOutcome.DENIED,
+                    context = context,
+                    metadata = safeFingerprintMetadata(decision) + ("reason" to "RATE_LIMITED"),
+                )
+            }
+            throw CustomerAuthenticationRateLimitedException(requireNotNull(decision.retryAfter))
+        }
+
+        val result = requiredTransaction {
+            val consumed = tokenService.consume(rawToken)
+            if (consumed == null) {
+                val failureClass = tokenService.failureClass(rawToken)
+                audit(
+                    eventType = if (failureClass == TokenFailureClass.REPLAYED) {
+                        "CUSTOMER_MAGIC_LINK_REPLAYED"
+                    } else {
+                        "CUSTOMER_MAGIC_LINK_FAILED"
+                    },
+                    outcome = AdminSecurityOutcome.DENIED,
+                    context = context,
+                    metadata = safeFingerprintMetadata(decision) + ("reason" to failureClass.name),
+                )
+                MagicLinkConsumeTransactionResult(null)
+            } else {
+                val account = accountSessionStore.resolveOrCreatePasswordlessAccount(
+                    consumed.emailNormalized,
+                    consumed.emailDisplay,
+                )
+                if (account == null) {
+                    audit(
+                        eventType = "CUSTOMER_MAGIC_LINK_FAILED",
+                        outcome = AdminSecurityOutcome.DENIED,
+                        context = context,
+                        metadata = safeFingerprintMetadata(decision) + ("reason" to "INELIGIBLE_IDENTITY"),
+                    )
+                    MagicLinkConsumeTransactionResult(null)
+                } else {
+                    val session = accountSessionStore.createSession(
+                        account = account,
+                        previousRawSession = previousRawSession,
+                        authenticationMethod = CustomerAuthenticationMethod.MAGIC_LINK,
+                    )
+                    auditWriter.append(
+                        AdminSecurityAudit(
+                            eventType = "CUSTOMER_MAGIC_LINK_CONSUMED",
+                            actorType = ActorType.CUSTOMER,
+                            actorId = session.principal.customerId,
+                            actorDisplaySnapshot = null,
+                            source = RequestSource.CUSTOMER_PORTAL,
+                            targetType = "CUSTOMER_ACCOUNT",
+                            targetId = session.principal.accountId,
+                            outcome = AdminSecurityOutcome.SUCCEEDED,
+                            requestId = context.requestId,
+                            correlationId = context.correlationId,
+                            metadata = safeFingerprintMetadata(decision),
+                            occurredAt = Instant.now(clock),
+                        ),
+                    )
+                    MagicLinkConsumeTransactionResult(session)
+                }
+            }
+        }
+        return result.session ?: throw CustomerMagicLinkInvalidException()
     }
 
     @Transactional
@@ -181,6 +234,15 @@ internal class CustomerMagicLinkAuthenticationService(
         "destinationFingerprint" to decision.destinationFingerprint,
         "networkFingerprint" to decision.requesterNetworkFingerprint,
     )
+
+    private fun <T> requiredTransaction(action: () -> T): T = try {
+        transactionTemplate.execute { action() }
+            ?: throw CustomerMagicLinkUnavailableException()
+    } catch (failure: CustomerMagicLinkUnavailableException) {
+        throw failure
+    } catch (failure: RuntimeException) {
+        throw CustomerMagicLinkUnavailableException(failure)
+    }
 
     private fun magicLink(rawToken: String): String {
         val base = URI(properties.consumeUrl)
