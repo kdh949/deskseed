@@ -306,7 +306,13 @@ class CustomerMagicLinkAuthIntegrationTest {
 
         assertSecureCookie(firstCookie)
         assertThat(firstCookie.value).isNotEqualTo(secondCookie.value)
-        currentCustomer(firstCookie).andExpect(status().isOk).andExpect(jsonPath("$.email").value("first@example.com"))
+        currentCustomer(firstCookie)
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.email").value("first@example.com"))
+            .andExpect(jsonPath("$.companyName").doesNotExist())
+            .andExpect(jsonPath("$.credentialState").value("PASSWORDLESS"))
+            .andExpect(jsonPath("$.registrationState").value("REGISTRATION_REQUIRED"))
+            .andExpect(jsonPath("$.availableAuthenticationMethods[0]").value("MAGIC_LINK"))
         currentCustomer(secondCookie).andExpect(status().isOk).andExpect(jsonPath("$.email").value("second@example.com"))
 
         val rotatedCookie = consume(generateToken("first@example.com"), firstCookie)

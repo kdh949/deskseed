@@ -44,4 +44,10 @@ class CustomerPasswordHasherTest {
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessage("customer password hash must use Argon2id")
     }
+
+    @Test
+    fun `missing credentials still execute the protected dummy comparison`() {
+        assertThat(hasher.matchesOrDummy("submitted password", null)).isFalse()
+        assertThat(hasher.matchesOrDummy("another submitted password", null)).isFalse()
+    }
 }

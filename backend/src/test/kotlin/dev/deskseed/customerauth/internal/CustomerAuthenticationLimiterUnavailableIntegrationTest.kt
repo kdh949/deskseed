@@ -119,6 +119,30 @@ class CustomerAuthenticationLimiterUnavailableIntegrationTest {
             .isEqualTo(accountBefore)
         assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
     }
+
+    @Test
+    fun `password login limiter failure returns generic 503 before credential work`() {
+        val sessionBefore = jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java)!!
+        val auditBefore = jdbcTemplate.queryForObject(
+            "select count(*) from admin_security_audit_events",
+            Long::class.java,
+        )!!
+
+        mockMvc.perform(
+            post("/api/v1/customer/auth/password-sessions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"email":"unavailable-password@example.test","password":"synthetic password"}"""),
+        )
+            .andExpect(status().isServiceUnavailable)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-authentication-unavailable"))
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customer_sessions", Long::class.java))
+            .isEqualTo(sessionBefore)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from admin_security_audit_events", Long::class.java))
+            .isEqualTo(auditBefore)
+        assertThat(unavailableLimiter.transactionActiveAtAcquire).isFalse()
+    }
 }
 
 internal class RecordingUnavailableAuthenticationAttemptLimiter : AuthenticationAttemptLimiter {
