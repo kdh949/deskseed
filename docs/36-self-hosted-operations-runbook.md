@@ -1,12 +1,13 @@
 # Self-hosted Operations Runbook
 
-이 문서는 현재 저장소로 재현 가능한 로컬 운영 리허설과 아직 구현되지 않은 production 운영 능력을 구분한다. 현재 제공되는 `compose.yaml`은 단일 조직용 모듈러 모놀리스의 **로컬 데모 구성**이며 production 배포 manifest/profile이 아니다. TLS, production secret wiring, split-role production Compose는 제공하지 않는다. Kubernetes, Redis, Kafka, Elasticsearch/OpenSearch도 지원 범위가 아니다.
+이 문서는 현재 저장소로 재현 가능한 로컬 운영 리허설과 아직 구현되지 않은 production 운영 능력을 구분한다. 현재 제공되는 `compose.yaml`은 단일 조직용 모듈러 모놀리스의 **로컬 데모 구성**이며 production 배포 manifest/profile이 아니다. TLS, production secret wiring, split-role production Compose는 제공하지 않는다. Redis는 고객 인증 limiter의 로컬 필수 의존성으로만 제공하며 Kubernetes, Kafka, Elasticsearch/OpenSearch는 지원 범위가 아니다.
 
 ## 1. 현재 지원 표면
 
 | 구성 요소 | 현재 릴리스 | 역할 |
 |---|---|---|
 | PostgreSQL | `postgres:17-alpine` | current state, canonical audit ledger, audit projection |
+| Redis | `redis:8.2.9-alpine` | customer-auth purpose/global/destination/network limiter counters only |
 | Backend | Java 21, Spring Boot 4.1 | Flyway migration, HTTP API, authorization, audit |
 | Frontend | Node 26 build, Nginx 1.31 runtime | customer portal, staff/admin workspace, Audit Explorer |
 | Object storage | 미구현 | attachment 자체가 릴리스 범위 밖이므로 backup 대상도 없음 |
@@ -89,8 +90,11 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 - delivery를 활성화하는 경우 bare sender mailbox, HTTPS public base URL, active 32-byte base64 protected-mail key와 key version
 - 허용된 CORS origin
 - TLS reverse proxy 설정
+- 고객 인증 Redis host/port/username/password, TLS, private network placement, `noeviction` 또는 동등한 reserved-capacity policy, health/metrics/alerting, failover 시 counter-loss tolerance
 
-현재 Compose는 TLS reverse proxy, rate limit, CAPTCHA/email ownership verification, centralized secret rotation을 제공하지 않는다. `DATABASE_MIGRATION_*`/`DATABASE_RUNTIME_*`도 base Compose에 연결하거나 별도 role을 생성하지 않는다. 따라서 base Compose를 공용 인터넷에 노출하는 형태와 production self-hosting은 모두 unsupported다.
+기본 Compose Redis는 backend와의 internal network에만 expose되고 인증/TLS/persistence가 없으며 64 MiB `noeviction`으로 실행된다. 짧은 TTL limiter state는 로컬 Redis 재시작 때 사라지는 것을 허용한다. Production은 이 구성을 복사하지 말고 TLS/auth/private network, 용량 예약, health/metrics, failover data-loss tolerance와 coarse ingress limit을 별도 manifest에서 증명해야 한다. Redis 장애나 OOM은 customer-auth 요청을 generic `503`으로 fail closed하며 PostgreSQL customer/account/session/token/audit state를 대신하지 않는다.
+
+현재 Compose는 TLS reverse proxy, coarse ingress rate limit, CAPTCHA/email ownership verification, centralized secret rotation을 제공하지 않는다. `DATABASE_MIGRATION_*`/`DATABASE_RUNTIME_*`도 base Compose에 연결하거나 별도 role을 생성하지 않는다. 따라서 base Compose를 공용 인터넷에 노출하는 형태와 production self-hosting은 모두 unsupported다.
 
 ## 4. DB ownership과 least privilege
 

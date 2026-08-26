@@ -29,6 +29,7 @@ paths:
         hash로만 저장하고, email 확인 token과 browser continuation secret는 digest만 저장합니다.
         Mail delivery는 durable intent commit 뒤에 실행되며 response, audit, log는 계정 존재 여부와
         password/token/company name을 노출하지 않습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-003
       - REQ-CONSENT-002
@@ -62,6 +63,7 @@ paths:
         일치할 때 verified Customer, ACTIVE_PASSWORD account, consent acceptances를 만들고 proof를
         소비합니다. Mismatch, expiry, replay, purpose mismatch와 concurrent consume은 계정을 만들지
         않습니다. Profile/account/consents/security audit는 원자적이며 SMTP 호출은 transaction 밖입니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-003
       - REQ-CONSENT-002
@@ -113,6 +115,7 @@ paths:
         passwordless account와 incomplete registration은 같은 invalid-credential problem을 반환하고
         real-or-dummy adaptive hash comparison을 수행합니다. Throttling은 destination/network
         fingerprint만 저장하며 성공 audit에도 email, password/hash, company name, cookie가 없습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-003
       x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
@@ -152,6 +155,7 @@ paths:
         eligible identity에만 만들며 password account에는 만들지 않습니다. Token은 digest만 저장하고
         delivery는 post-commit입니다. Response, audit, log에는 존재 여부, raw email/token, company name이
         없습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-001
       - REQ-AUTH-002
@@ -186,8 +190,11 @@ paths:
         JSON body의 single-use PASSWORDLESS_LOGIN token만 소비합니다. Success는 presented customer
         session을 rotate하고 CurrentCustomer를 반환하며 registration이 미완료라면
         registrationState=REGISTRATION_REQUIRED로 표시합니다. CustomerAccount 생성/연결은 기존 익명
-        ticket ownership을 바꾸지 않습니다. Malformed, wrong-purpose, expired, replayed, concurrent
-        token은 같은 invalid-proof problem을 사용하고 두 번째 session을 만들지 않습니다.
+        ticket ownership을 바꾸지 않습니다. 1~256자의 non-blank token은 opaque proof로 평가하므로
+        발급 형식보다 짧더라도 unknown, wrong-purpose, expired, replayed, concurrent token과 같은
+        invalid-proof problem을 사용하고 두 번째 session을 만들지 않습니다. Blank, control character 포함,
+        256자 초과 token은 request validation에서 거절합니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-001
       - REQ-AUTH-002
@@ -275,6 +282,7 @@ paths:
         response, audit, log는 account existence, raw email/token, password state를 노출하지 않습니다.
       x-deskseed-requirements:
       - REQ-AUTH-003
+      x-deskseed-contract-status: FROZEN
       x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-security-audit-events:
       - CUSTOMER_PASSWORD_RESET_REQUESTED
@@ -307,6 +315,7 @@ paths:
         만들지 않습니다. Raw password/token/hash는 response, audit, log에 없습니다.
       x-deskseed-requirements:
       - REQ-AUTH-003
+      x-deskseed-contract-status: FROZEN
       x-deskseed-rate-limit: PURPOSE_DESTINATION_NETWORK
       x-deskseed-session-transition: REVOKE_ALL
       x-deskseed-security-audit-events:
@@ -837,11 +846,13 @@ components:
       properties:
         token:
           type: string
-          minLength: 32
+          minLength: 1
           maxLength: 256
+          pattern: '^(?![\s\S]*[\x00-\x1F\x7F])(?=[\s\S]*\S)[\s\S]+$'
           writeOnly: true
           description: >-
             PASSWORDLESS_LOGIN purpose로만 한 번 소비하는 opaque proof이며 persistence에는 digest만 남습니다.
+            Non-blank bounded 값은 길이나 발급 형식이 달라도 proof lookup 뒤 generic invalid-proof로 처리합니다.
       description: >-
         Email로 받은 passwordless login proof를 소비해 customer session을 만들 때 사용하는 요청입니다.
       x-deskseed-documentation-review: MANUAL

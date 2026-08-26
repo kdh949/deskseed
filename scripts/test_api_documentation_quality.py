@@ -91,7 +91,7 @@ class CustomerIdentityContractTest(unittest.TestCase):
         self.assertIsInstance(resolved, dict)
         return resolved
 
-    def test_password_primary_operation_family_is_complete_without_claiming_runtime_delivery(self) -> None:
+    def test_password_primary_operation_family_tracks_runtime_delivery_per_operation(self) -> None:
         expected = {
             ("/api/v1/customer/registrations", "post"): "requestCustomerRegistration",
             (
@@ -111,6 +111,14 @@ class CustomerIdentityContractTest(unittest.TestCase):
                 "post",
             ): "resetCustomerPassword",
             (
+                "/api/v1/customer/auth/magic-link-requests",
+                "post",
+            ): "requestCustomerMagicLink",
+            (
+                "/api/v1/customer/auth/magic-link-sessions",
+                "post",
+            ): "consumeCustomerMagicLink",
+            (
                 "/api/v1/customer/me/registration",
                 "put",
             ): "completePasswordlessCustomerRegistration",
@@ -121,11 +129,22 @@ class CustomerIdentityContractTest(unittest.TestCase):
             with self.subTest(path=path, method=method):
                 operation = self.operation(path, method)
                 self.assertEqual(operation_id, operation["operationId"])
-                self.assertNotIn(
-                    "x-deskseed-contract-status",
-                    operation,
-                    "FROZEN is reserved for runtime-compatible operation semantics",
-                )
+                if operation_id in {
+                    "requestCustomerRegistration",
+                    "verifyCustomerRegistration",
+                    "createCustomerPasswordSession",
+                    "requestCustomerPasswordReset",
+                    "resetCustomerPassword",
+                    "requestCustomerMagicLink",
+                    "consumeCustomerMagicLink",
+                }:
+                    self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
+                else:
+                    self.assertNotIn(
+                        "x-deskseed-contract-status",
+                        operation,
+                        "FROZEN is reserved for runtime-compatible operation semantics",
+                    )
 
         self.assertNotIn(
             "/api/v1/customer/me",
@@ -181,11 +200,7 @@ class CustomerIdentityContractTest(unittest.TestCase):
                     "PASSWORDLESS_ONLY",
                     operation["x-deskseed-authentication-eligibility"],
                 )
-                self.assertNotIn(
-                    "x-deskseed-contract-status",
-                    operation,
-                    "passwordless-only eligibility is not present in the current runtime",
-                )
+                self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
 
         magic_request = self.operation("/api/v1/customer/auth/magic-link-requests")
         self.assertNotIn("rate-limit 결과와 관계없이", magic_request["description"])
@@ -243,6 +258,17 @@ class CustomerIdentityContractTest(unittest.TestCase):
                         self.assertTrue(str(example[key]).startswith("synthetic "))
                 if "token" in example:
                     self.assertIn("not-valid", str(example["token"]))
+
+    def test_magic_link_consume_validation_matches_generic_invalid_proof_boundary(self) -> None:
+        token = self.document["components"]["schemas"]["MagicLinkConsume"]["properties"]["token"]
+        self.assertEqual(1, token["minLength"])
+        self.assertEqual(256, token["maxLength"])
+        validator = Draft202012Validator(token)
+        self.assertFalse(list(validator.iter_errors("malformed-token-value")))
+        self.assertTrue(list(validator.iter_errors("")))
+        self.assertTrue(list(validator.iter_errors(" ")))
+        self.assertTrue(list(validator.iter_errors("a\n")))
+        self.assertTrue(list(validator.iter_errors("a" * 257)))
 
     def test_reset_revokes_sessions_without_implicitly_logging_in(self) -> None:
         operation = self.operation("/api/v1/customer/auth/password-resets")

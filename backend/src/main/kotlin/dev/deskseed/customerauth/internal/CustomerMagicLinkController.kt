@@ -27,12 +27,14 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.time.Duration
 import java.util.concurrent.locks.LockSupport
+import kotlin.math.ceil
 
 @RestController
 @Validated
 internal class CustomerMagicLinkController(
     private val authenticationService: CustomerMagicLinkAuthenticationService,
     private val properties: CustomerAuthProperties,
+    private val clientAddressResolver: CustomerAuthClientAddressResolver,
     private val problemWriter: CustomerSecurityProblemWriter,
 ) {
     @PostMapping("/api/v1/customer/auth/magic-link-requests")
@@ -43,7 +45,7 @@ internal class CustomerMagicLinkController(
         val startedAt = System.nanoTime()
         authenticationService.request(
             email = body.email,
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
         padResponse(startedAt, properties.responseMinDuration)
@@ -61,6 +63,7 @@ internal class CustomerMagicLinkController(
     ): ResponseEntity<CurrentCustomerResponse> {
         val session = authenticationService.consume(
             rawToken = body.token,
+            remoteAddress = clientAddressResolver.resolve(request),
             previousRawSession = request.customerSessionCookie(),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
@@ -111,9 +114,47 @@ internal class CustomerMagicLinkController(
             response,
             request,
             401,
-            "/problems/customer-magic-link-invalid",
-            "Customer magic link is invalid",
-            "The link is invalid, expired, or already used. Request a new link.",
+            "/problems/customer-one-time-proof-invalid",
+            "일회성 인증 정보를 확인할 수 없습니다",
+            "인증 정보가 올바르지 않거나 만료되었거나 이미 사용되었습니다.",
+        )
+    }
+
+    @ExceptionHandler(CustomerAuthenticationRateLimitedException::class)
+    fun rateLimited(
+        exception: CustomerAuthenticationRateLimitedException,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ) {
+        val retrySeconds = ceil(exception.retryAfter.toMillis() / 1000.0).toLong().coerceAtLeast(1)
+        response.setHeader("Retry-After", retrySeconds.toString())
+        problemWriter.write(
+            response,
+            request,
+            429,
+            "/problems/customer-authentication-rate-limited",
+            "잠시 후 다시 시도해 주세요",
+            "잠시 후 다시 시도해 주세요.",
+        )
+    }
+
+    @ExceptionHandler(
+        AuthenticationAttemptLimiterUnavailableException::class,
+        CustomerMagicLinkUnavailableException::class,
+    )
+    fun limiterUnavailable(
+        exception: RuntimeException,
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ) {
+        @Suppress("UNUSED_VARIABLE") val ignored = exception
+        problemWriter.write(
+            response,
+            request,
+            503,
+            "/problems/customer-authentication-unavailable",
+            "고객 인증 요청을 안전하게 완료할 수 없습니다",
+            "잠시 후 다시 시도해 주세요.",
         )
     }
 
@@ -133,13 +174,6 @@ internal class CustomerMagicLinkController(
             "Check the request and try again.",
         )
     }
-
-    private fun CustomerPrincipal.toResponse() = CurrentCustomerResponse(
-        id = customerId.toString(),
-        email = email,
-        displayName = displayName,
-        verifiedAt = verifiedAt.toString(),
-    )
 
     private fun padResponse(startedAt: Long, minimum: Duration) {
         val remaining = minimum.toNanos() - (System.nanoTime() - startedAt)
@@ -164,13 +198,23 @@ internal class CustomerMagicLinkController(
 internal data class MagicLinkRequest(
     @field:Schema(description = "검증 링크를 받을 고객 이메일", example = "customer@example.com")
     @field:NotBlank @field:Email @field:Size(max = 254) val email: String,
-)
+) {
+    override fun toString(): String = "[PROTECTED MAGIC LINK REQUEST]"
+}
 
 @Schema(description = "일회성 매직 링크 소비 요청")
 internal data class MagicLinkConsumeRequest(
-    @field:Schema(description = "이메일 링크로 발급된 일회성 토큰", example = "example-token-not-valid-0000000000000000")
+    @field:Schema(
+        description = "1~256자 non-blank opaque proof. 발급 형식과 다른 bounded 값도 generic invalid-proof로 처리합니다.",
+        example = "example-token-not-valid-0000000000000000",
+        minLength = 1,
+        maxLength = 256,
+        pattern = "^(?![\\s\\S]*[\\x00-\\x1F\\x7F])(?=[\\s\\S]*\\S)[\\s\\S]+$",
+    )
     @field:NotBlank @field:Size(max = 256) val token: String,
-)
+) {
+    override fun toString(): String = "[PROTECTED MAGIC LINK CONSUME REQUEST]"
+}
 
 @Schema(description = "요청 수락 여부만 표시하는 열거 방지 응답")
 internal data class GenericAccepted(val accepted: Boolean)
@@ -180,7 +224,24 @@ internal data class CurrentCustomerResponse(
     val id: String,
     val email: String,
     val displayName: String,
+    val companyName: String?,
     val verifiedAt: String,
+    val credentialState: dev.deskseed.customerauth.CustomerCredentialState,
+    val registrationState: dev.deskseed.customerauth.CustomerRegistrationState,
+    val availableAuthenticationMethods: List<dev.deskseed.customerauth.CustomerAuthenticationMethod>,
+) {
+    override fun toString(): String = "[PROTECTED CURRENT CUSTOMER RESPONSE]"
+}
+
+internal fun CustomerPrincipal.toResponse() = CurrentCustomerResponse(
+    id = customerId.toString(),
+    email = email,
+    displayName = displayName,
+    companyName = companyName,
+    verifiedAt = verifiedAt.toString(),
+    credentialState = credentialState,
+    registrationState = registrationState,
+    availableAuthenticationMethods = availableAuthenticationMethods,
 )
 
 @Schema(description = "고객 세션에 귀속된 CSRF 토큰")

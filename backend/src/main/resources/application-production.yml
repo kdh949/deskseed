@@ -10,6 +10,14 @@ spring:
     url: ${DATABASE_MIGRATION_URL:${DATABASE_URL}}
     user: ${DATABASE_MIGRATION_USERNAME}
     password: ${DATABASE_MIGRATION_PASSWORD}
+  data:
+    redis:
+      host: ${DESKSEED_CUSTOMER_AUTH_REDIS_HOST}
+      port: ${DESKSEED_CUSTOMER_AUTH_REDIS_PORT}
+      username: ${DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME}
+      password: ${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD}
+      ssl:
+        enabled: true
   mail:
     host: ${DESKSEED_MAIL_SMTP_HOST:}
     port: ${DESKSEED_MAIL_SMTP_PORT:}
@@ -67,7 +75,10 @@ deskseed:
   customer-auth:
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
+    trusted-proxy-cidrs: ${DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS}
     consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL}
+    registration-verification-url: ${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL}
+    password-reset-url: ${DESKSEED_CUSTOMER_PASSWORD_RESET_URL}
   portal:
     public-request-rate-limit:
       fingerprint-key: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY}

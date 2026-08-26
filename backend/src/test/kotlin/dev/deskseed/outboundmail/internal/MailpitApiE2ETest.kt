@@ -68,7 +68,7 @@ class MailpitApiE2ETest {
             """
             truncate table
                 outbound_mail_delivery_events, outbound_mail_attempts, outbound_mail_intents,
-                customer_sessions, customer_magic_link_request_limits, customer_magic_link_tokens,
+                customer_sessions, customer_one_time_tokens,
                 customer_accounts, admin_security_audit_events, customers
             restart identity cascade
             """.trimIndent(),
@@ -342,11 +342,18 @@ class MailpitApiE2ETest {
             .withExposedPorts(1025, 8025)
             .waitingFor(Wait.forHttp("/readyz").forPort(8025))
 
+        @Container
+        @JvmStatic
+        val redis = GenericContainer(DockerImageName.parse("redis:8.2.9-alpine"))
+            .withExposedPorts(6379)
+
         @DynamicPropertySource
         @JvmStatic
         fun mailProperties(registry: DynamicPropertyRegistry) {
             registry.add("spring.mail.host", mailpit::getHost)
             registry.add("spring.mail.port") { mailpit.getMappedPort(1025) }
+            registry.add("spring.data.redis.host", redis::getHost)
+            registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
         }
     }
 

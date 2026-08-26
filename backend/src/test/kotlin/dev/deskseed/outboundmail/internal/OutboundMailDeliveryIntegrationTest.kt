@@ -11,6 +11,8 @@ import dev.deskseed.outboundmail.OutboundMailIntent
 import dev.deskseed.outboundmail.OutboundMailIntentConflictException
 import dev.deskseed.outboundmail.OutboundMailOperations
 import dev.deskseed.outboundmail.OutboundMailPort
+import dev.deskseed.outboundmail.PasswordResetMail
+import dev.deskseed.outboundmail.RegistrationVerificationMail
 import dev.deskseed.portal.internal.PublicRequestApplicationService
 import dev.deskseed.portal.internal.SubmitAnonymousRequest
 import org.assertj.core.api.Assertions.assertThat
@@ -97,6 +99,78 @@ class OutboundMailDeliveryIntegrationTest {
         assertThat(processors)
             .withFailMessage("Scheduled processors must be absent but were registered from %s", origins)
             .isEmpty()
+    }
+
+    @Test
+    fun `registration verification mail persists only encrypted protected content`() {
+        val verificationLink = "https://deskseed.example/customer/register/verify#token=${"a".repeat(43)}"
+        val intentId = transactionTemplate.execute {
+            mailPort.enqueue(
+                OutboundMailIntent(
+                    idempotencyKey = "registration-verification:${UUID.randomUUID()}",
+                    recipient = MailRecipient("registration@example.test"),
+                    content = RegistrationVerificationMail(verificationLink),
+                    actor = ActorRef(ActorType.SYSTEM, null),
+                    context = context("registration-verification", RequestSource.CUSTOMER_PORTAL),
+                ),
+            )
+        }
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                """
+                select template_key, text_body, protected_body_ciphertext is not null as protected
+                  from outbound_mail_intents
+                 where id = ?
+                """.trimIndent(),
+                intentId,
+            ),
+        ).containsEntry("template_key", "CUSTOMER_REGISTRATION_VERIFICATION")
+            .containsEntry("text_body", JpaOutboundMailService.PROTECTED_BODY_PLACEHOLDER)
+            .containsEntry("protected", true)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select text_body from outbound_mail_intents where id = ?",
+                String::class.java,
+                intentId,
+            ),
+        ).doesNotContain(verificationLink)
+    }
+
+    @Test
+    fun `password reset mail persists only encrypted protected content`() {
+        val resetLink = "https://deskseed.example/customer/password/reset#token=${"b".repeat(43)}"
+        val intentId = transactionTemplate.execute {
+            mailPort.enqueue(
+                OutboundMailIntent(
+                    idempotencyKey = "password-reset:${UUID.randomUUID()}",
+                    recipient = MailRecipient("reset@example.test"),
+                    content = PasswordResetMail(resetLink),
+                    actor = ActorRef(ActorType.SYSTEM, null),
+                    context = context("password-reset", RequestSource.CUSTOMER_PORTAL),
+                ),
+            )
+        }
+
+        assertThat(
+            jdbcTemplate.queryForMap(
+                """
+                select template_key, text_body, protected_body_ciphertext is not null as protected
+                  from outbound_mail_intents
+                 where id = ?
+                """.trimIndent(),
+                intentId,
+            ),
+        ).containsEntry("template_key", "CUSTOMER_PASSWORD_RESET")
+            .containsEntry("text_body", JpaOutboundMailService.PROTECTED_BODY_PLACEHOLDER)
+            .containsEntry("protected", true)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select text_body from outbound_mail_intents where id = ?",
+                String::class.java,
+                intentId,
+            ),
+        ).doesNotContain(resetLink)
     }
 
     @Test

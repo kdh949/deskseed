@@ -3,7 +3,9 @@ package dev.deskseed.outboundmail.internal
 import dev.deskseed.outboundmail.MagicLinkMail
 import dev.deskseed.outboundmail.OutboundMailIntent
 import dev.deskseed.outboundmail.OutboundMailTemplate
+import dev.deskseed.outboundmail.PasswordResetMail
 import dev.deskseed.outboundmail.PublicAgentReplyMail
+import dev.deskseed.outboundmail.RegistrationVerificationMail
 import dev.deskseed.outboundmail.RenderedMailSensitivity
 import dev.deskseed.outboundmail.RequestReceivedMail
 import jakarta.mail.internet.InternetAddress
@@ -123,6 +125,26 @@ internal class MailTemplateRenderer(
                 val link = safety.requireAbsoluteHttpUrl(content.magicLink, "magic link")
                 "[Deskseed] 로그인 링크" to """
                     Deskseed 로그인 링크입니다.
+
+                    $link
+
+                    요청하지 않았다면 이 메일을 무시하세요.
+                """.trimIndent()
+            }
+            is RegistrationVerificationMail -> {
+                val link = safety.requireAbsoluteHttpUrl(content.verificationLink, "registration verification link")
+                "[Deskseed] 고객 등록 이메일 확인" to """
+                    Deskseed 고객 등록을 완료하려면 이메일 주소를 확인해 주세요.
+
+                    $link
+
+                    이 브라우저에서 등록을 시작하지 않았다면 이 메일을 무시하세요.
+                """.trimIndent()
+            }
+            is PasswordResetMail -> {
+                val link = safety.requireAbsoluteHttpUrl(content.resetLink, "password reset link")
+                "[Deskseed] 고객 비밀번호 재설정" to """
+                    Deskseed 고객 비밀번호를 재설정하려면 아래 링크를 사용해 주세요.
 
                     $link
 

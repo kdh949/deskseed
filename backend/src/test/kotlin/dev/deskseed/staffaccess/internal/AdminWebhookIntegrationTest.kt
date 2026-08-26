@@ -36,7 +36,10 @@ class AdminWebhookIntegrationTest {
                 "webhook_endpoints, staff_authority_grants, admin_security_audit_events, audit_activity_projection cascade",
         )
         jdbcTemplate.update("delete from staff_login_throttles")
-        jdbcTemplate.execute("truncate table customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade")
+        jdbcTemplate.execute(
+            "truncate table customer_registration_intent_consents, customer_registration_intents, " +
+                "customer_consent_acceptances, customer_consent_policy_versions, customer_consent_policies cascade",
+        )
         jdbcTemplate.update("delete from staff_accounts")
     }
 

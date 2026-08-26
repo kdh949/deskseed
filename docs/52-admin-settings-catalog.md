@@ -47,7 +47,7 @@ SettingValue
 | `customer.passwordMinCharacters` | int | 12 | P0 auth | yes | cannot be configured below 12 |
 | `customer.passwordMaxCharacters` | int | 128 | P0 auth | yes | bounded work/input; cannot exceed 128 |
 | `customer.authRequestLimit` | int | 5 | P0 auth | yes | per operation/destination/network fingerprint |
-| `customer.authRequestWindowMinutes` | int | 15 | P0 auth | yes | PostgreSQL-backed; `Retry-After` required |
+| `customer.authRequestWindowMinutes` | int | 15 | P0 auth | yes | Redis-backed by ADR 0043; `Retry-After` required |
 | `customer.reopenWindowDays` | int | 14 | P1 | yes | provisional |
 | `customer.displayAgentFullName` | bool | false | M6 | yes | privacy/brand policy |
 
