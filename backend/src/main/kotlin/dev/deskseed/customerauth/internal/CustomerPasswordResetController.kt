@@ -58,7 +58,7 @@ internal class CustomerPasswordResetController(
         resetService.consume(
             rawToken = body.token,
             newPassword = body.newPassword,
-            remoteAddress = request.remoteAddr ?: "unknown",
+            remoteAddress = clientAddressResolver.resolve(request),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
         )
         response.addCookie(CustomerMagicLinkController.expiredSessionCookie())
