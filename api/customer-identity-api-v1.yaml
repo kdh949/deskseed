@@ -235,6 +235,7 @@ paths:
         version을 증가시킵니다. Current session은 rotate하고 다른 session은 revoke하며 mutation,
         acceptances와 required security audit는 원자적입니다. Password account는 password reset을
         우회할 수 없고, email equality로 anonymous ticket을 list/claim하지 않습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-002
       - REQ-AUTH-004
@@ -357,6 +358,7 @@ paths:
         상태를 반환합니다. Password hash, token, session ID/cookie, limiter, consent acceptance, security
         audit, INTERNAL comment, child relation과 staff-only field는 포함하지 않습니다. Company name은
         본인 session projection에서만 반환하고 cache하지 않습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-001
       - REQ-AUTH-003
