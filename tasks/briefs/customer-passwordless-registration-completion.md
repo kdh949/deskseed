@@ -95,6 +95,7 @@ session으로 rotate하며, 이메일 일치만으로 기존 익명 ticket owner
 - focused `CustomerPasswordlessRegistrationCompletionIntegrationTest`
 - focused `CustomerAuthenticationLimiterUnavailableIntegrationTest`
 - focused `ApiDocumentationIntegrationTest`
+- `MailpitApiE2ETest`의 registration→verification→password login→logout 및 magic login→completion→password login
 - `./gradlew --no-daemon fastTest contractTest integrationTest`
 - `make docs-check` and bundle parity
 - `git diff --check` and secret/output scans
