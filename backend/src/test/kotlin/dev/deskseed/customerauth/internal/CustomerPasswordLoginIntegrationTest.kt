@@ -126,6 +126,21 @@ class CustomerPasswordLoginIntegrationTest {
     }
 
     @Test
+    fun `malformed stored Argon2 hash uses dummy work and the generic credential response`() {
+        insertPasswordAccount(MALFORMED_EMAIL, passwordHash = MALFORMED_ARGON2_HASH)
+
+        login(MALFORMED_EMAIL, RAW_PASSWORD)
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.type").value("/problems/customer-credentials-invalid"))
+        assertThat(
+            jdbc.queryForObject(
+                "select count(*) from admin_security_audit_events where event_type = 'CUSTOMER_PASSWORD_LOGIN_FAILED'",
+                Long::class.java,
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
     fun `password success rotates the current session and returns the bounded credential projection`(
         output: CapturedOutput,
     ) {
@@ -244,6 +259,7 @@ class CustomerPasswordLoginIntegrationTest {
         status: String = "ACTIVE",
         companyName: String = "합성 회사",
         credentialVersion: Long = 0,
+        passwordHash: String? = null,
     ): AccountIds {
         val ids = insertCustomer(email, companyName)
         val now = Timestamp.from(Instant.now())
@@ -262,7 +278,7 @@ class CustomerPasswordLoginIntegrationTest {
             now,
             now,
             now,
-            passwordHasher.encode(RAW_PASSWORD).encoded,
+            passwordHash ?: passwordHasher.encode(RAW_PASSWORD).encoded,
             now,
             credentialVersion,
         )
@@ -380,12 +396,15 @@ class CustomerPasswordLoginIntegrationTest {
         private const val PASSWORDLESS_EMAIL = "passwordless@example.test"
         private const val INCOMPLETE_EMAIL = "password-incomplete@example.test"
         private const val UNKNOWN_EMAIL = "password-unknown@example.test"
+        private const val MALFORMED_EMAIL = "password-malformed@example.test"
+        private const val MALFORMED_ARGON2_HASH =
+            "${'$'}argon2id${'$'}v=19${'$'}m=19456,t=2,p=1${'$'}not-base64***${'$'}still-not-base64***"
         private const val DISPLAY_NAME = "합성 고객"
         private const val COMPANY_NAME = "합성 회사"
 
         @Container
         @JvmStatic
-        val redis = GenericContainer(DockerImageName.parse("redis:8.2.7-alpine"))
+        val redis = GenericContainer(DockerImageName.parse("redis:8.2.9-alpine"))
             .withExposedPorts(6379)
 
         @DynamicPropertySource
