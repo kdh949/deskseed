@@ -26,7 +26,7 @@ class CustomerAuthenticationMigrationTest {
         migrateTo("80")
         insertV80AuthenticationFixture()
 
-        migrateTo("81")
+        migrateTo("81.0.1")
 
         connection().use { connection ->
             connection.createStatement().use { statement ->
@@ -44,15 +44,19 @@ class CustomerAuthenticationMigrationTest {
                     .isEqualTo("MAGIC_LINK")
                 assertThat(queryLong(statement, "select credential_version_snapshot from customer_sessions where id = '$SESSION_ID'"))
                     .isZero()
-                assertThat(queryLong(statement, "select count(*) from flyway_schema_history where version in ('80', '81') and success"))
-                    .isEqualTo(2)
+                assertThat(
+                    queryLong(
+                        statement,
+                        "select count(*) from flyway_schema_history where version in ('80', '81', '81.0.1') and success",
+                    ),
+                ).isEqualTo(3)
             }
         }
     }
 
     @Test
     fun `clean V81 constrains pending registration proofs consent references and token purposes`() {
-        migrateTo("81")
+        migrateTo("81.0.1")
 
         connection().use { connection ->
             insertPolicyAndAccountFixtures(connection)
@@ -86,6 +90,43 @@ class CustomerAuthenticationMigrationTest {
                 insertToken(statement, TOKEN_ID, "b".repeat(64), "EMAIL_VERIFICATION", INTENT_ID, null)
                 insertToken(statement, RESET_TOKEN_ID, "c".repeat(64), "PASSWORD_RESET", null, ACCOUNT_ID)
                 insertToken(statement, MAGIC_TOKEN_ID, "d".repeat(64), "PASSWORDLESS_LOGIN", null, null)
+
+                assertThatThrownBy {
+                    insertToken(
+                        statement,
+                        MISMATCHED_INTENT_TOKEN_ID,
+                        "1".repeat(64),
+                        "EMAIL_VERIFICATION",
+                        INTENT_ID,
+                        null,
+                        "attacker@example.test",
+                    )
+                }.hasMessageContaining("customer_one_time_tokens_registration_email_fkey")
+
+                assertThatThrownBy {
+                    insertToken(
+                        statement,
+                        MISMATCHED_ACCOUNT_TOKEN_ID,
+                        "2".repeat(64),
+                        "PASSWORD_RESET",
+                        null,
+                        ACCOUNT_ID,
+                        "attacker@example.test",
+                    )
+                }.hasMessageContaining("customer_one_time_tokens_account_email_fkey")
+
+                assertThatThrownBy {
+                    statement.executeUpdate(
+                        """
+                        insert into customer_one_time_tokens
+                            (id, token_digest, email_normalized, email_display, request_id, correlation_id,
+                             created_at, expires_at, consumed_at)
+                        values ('$MISSING_PURPOSE_TOKEN_ID', '${"3".repeat(64)}', 'proof@example.test',
+                                'proof@example.test', 'request', 'correlation', now(),
+                                now() + interval '1 hour', null)
+                        """.trimIndent(),
+                    )
+                }.hasMessageContaining("null value in column \"purpose\"")
 
                 assertThatThrownBy {
                     insertToken(
@@ -248,6 +289,11 @@ class CustomerAuthenticationMigrationTest {
         purpose: String,
         intentId: String?,
         accountId: String?,
+        email: String = when {
+            intentId != null -> "pending@example.test"
+            accountId != null -> "account@example.test"
+            else -> "proof@example.test"
+        },
     ) {
         statement.executeUpdate(
             """
@@ -256,7 +302,7 @@ class CustomerAuthenticationMigrationTest {
                  email_normalized, email_display, request_id, correlation_id,
                  created_at, expires_at, consumed_at)
             values ('$id', '$digest', '$purpose', ${intentId.sqlUuid()}, ${accountId.sqlUuid()},
-                    'proof@example.test', 'proof@example.test', 'request-token', 'correlation-token',
+                    '$email', '$email', 'request-token', 'correlation-token',
                     now(), now() + interval '1 hour', null)
             """.trimIndent(),
         )
@@ -302,6 +348,9 @@ class CustomerAuthenticationMigrationTest {
         private const val RESET_TOKEN_ID = "00000000-0000-4000-8000-000000008109"
         private const val MAGIC_TOKEN_ID = "00000000-0000-4000-8000-000000008110"
         private const val INVALID_MAGIC_TOKEN_ID = "00000000-0000-4000-8000-000000008111"
+        private const val MISMATCHED_INTENT_TOKEN_ID = "00000000-0000-4000-8000-000000008112"
+        private const val MISMATCHED_ACCOUNT_TOKEN_ID = "00000000-0000-4000-8000-000000008113"
+        private const val MISSING_PURPOSE_TOKEN_ID = "00000000-0000-4000-8000-000000008114"
 
         @Container
         @JvmStatic
