@@ -203,9 +203,9 @@ internal class CustomerRegistrationExceptionHandler(
             response,
             request,
             400,
-            "/problems/customer-auth-request-invalid",
-            "Customer authentication request is invalid",
-            "Check the request and try again.",
+            "/problems/customer-identity-request-invalid",
+            "고객 인증 요청을 처리할 수 없습니다",
+            "요청 형식과 입력 범위를 확인한 뒤 다시 시도해 주세요.",
         )
     }
 }

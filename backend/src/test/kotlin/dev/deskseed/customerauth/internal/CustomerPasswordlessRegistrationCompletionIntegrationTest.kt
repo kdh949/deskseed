@@ -205,6 +205,17 @@ class CustomerPasswordlessRegistrationCompletionIntegrationTest {
     }
 
     @Test
+    fun `invalid completion input matches the frozen identity problem`() {
+        insertCurrentRegistrationPolicy()
+        val invalidAccount = insertAccount("completion-contract-400@example.test")
+        complete(invalidAccount, password = "short")
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.type").value("/problems/customer-identity-request-invalid"))
+            .andExpect(jsonPath("$.title").value("고객 인증 요청을 처리할 수 없습니다"))
+            .andExpect(jsonPath("$.status").value(400))
+    }
+
+    @Test
     fun `consent and audit persistence failures return 503 and preserve passwordless state and session`() {
         insertCurrentRegistrationPolicy()
         val account = insertAccount("completion-rollback@example.test")
@@ -271,6 +282,7 @@ class CustomerPasswordlessRegistrationCompletionIntegrationTest {
         account: TestAccount,
         csrf: String? = CustomerAuthSecrets.csrf(properties.csrfKey, account.rawSession),
         acceptedPolicies: String = """[{"policyKey":"registration-terms","version":1}]""",
+        password: String = RAW_PASSWORD,
     ) = mockMvc.perform(
         put("/api/v1/customer/me/registration")
             .with { request -> request.remoteAddr = "192.0.2.31"; request }
@@ -280,7 +292,7 @@ class CustomerPasswordlessRegistrationCompletionIntegrationTest {
             .content(
                 """
                 {
-                  "password": "$RAW_PASSWORD",
+                  "password": "$password",
                   "displayName": "김민아",
                   "companyName": "가온상사",
                   "acceptedPolicies": $acceptedPolicies
