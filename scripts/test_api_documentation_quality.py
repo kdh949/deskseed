@@ -137,6 +137,8 @@ class CustomerIdentityContractTest(unittest.TestCase):
                     "resetCustomerPassword",
                     "requestCustomerMagicLink",
                     "consumeCustomerMagicLink",
+                    "completePasswordlessCustomerRegistration",
+                    "getCurrentCustomer",
                 }:
                     self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
                 else:
@@ -276,6 +278,37 @@ class CustomerIdentityContractTest(unittest.TestCase):
         success = operation["responses"]["204"]
         self.assertNotIn("content", success)
         self.assertIn("Set-Cookie", success["headers"])
+
+    def test_fixed_customer_security_problem_examples_match_the_closed_runtime_shape(self) -> None:
+        problem_schema_names = (
+            "InvalidCustomerIdentityRequestProblem",
+            "InvalidCustomerCredentialsProblem",
+            "InvalidCustomerOneTimeProofProblem",
+            "CustomerSessionRequiredProblem",
+            "CustomerCsrfRejectedProblem",
+            "CustomerRegistrationConflictProblem",
+            "CustomerAuthenticationRateLimitedProblem",
+            "CustomerAuthenticationUnavailableProblem",
+        )
+
+        for schema_name in problem_schema_names:
+            with self.subTest(schema=schema_name):
+                schema = self.document["components"]["schemas"][schema_name]
+                self.assertFalse(schema["additionalProperties"])
+                self.assertTrue({"detail", "instance"}.issubset(schema["required"]))
+                self.assertEqual(500, schema["properties"]["detail"]["maxLength"])
+                self.assertEqual(2048, schema["properties"]["instance"]["maxLength"])
+                validator = Draft202012Validator(
+                    {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "components": self.document["components"],
+                        "$ref": f"#/components/schemas/{schema_name}",
+                    },
+                )
+                self.assertFalse(
+                    list(validator.iter_errors(schema["example"])),
+                    f"problem example must satisfy {schema_name}",
+                )
 
 
 class CustomerConsentContractTest(unittest.TestCase):

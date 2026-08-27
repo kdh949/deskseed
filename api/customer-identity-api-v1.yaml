@@ -235,6 +235,7 @@ paths:
         version을 증가시킵니다. Current session은 rotate하고 다른 session은 revoke하며 mutation,
         acceptances와 required security audit는 원자적입니다. Password account는 password reset을
         우회할 수 없고, email equality로 anonymous ticket을 list/claim하지 않습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-002
       - REQ-AUTH-004
@@ -357,6 +358,7 @@ paths:
         상태를 반환합니다. Password hash, token, session ID/cookie, limiter, consent acceptance, security
         audit, INTERNAL comment, child relation과 staff-only field는 포함하지 않습니다. Company name은
         본인 session projection에서만 반환하고 cache하지 않습니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-001
       - REQ-AUTH-003
@@ -1134,6 +1136,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1148,6 +1152,15 @@ components:
           type: integer
           const: 400
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: Request input을 반사하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 secret 없이 실패한 customer identity route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1157,6 +1170,8 @@ components:
         type: /problems/customer-identity-request-invalid
         title: 고객 인증 요청을 처리할 수 없습니다
         status: 400
+        detail: 요청 형식과 입력 범위를 확인한 뒤 다시 시도해 주세요.
+        instance: /api/v1/customer/me/registration
         requestId: req-example-identity-invalid
     InvalidCustomerCredentialsProblem:
       type: object
@@ -1165,6 +1180,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1179,6 +1196,15 @@ components:
           type: integer
           const: 401
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: Credential failure reason을 구분하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 credential 없이 실패한 customer identity route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1188,6 +1214,8 @@ components:
         type: /problems/customer-credentials-invalid
         title: 고객 인증 정보를 확인할 수 없습니다
         status: 401
+        detail: 이메일과 비밀번호를 확인해 주세요.
+        instance: /api/v1/customer/auth/password-sessions
         requestId: req-example-credentials-invalid
     InvalidCustomerOneTimeProofProblem:
       type: object
@@ -1196,6 +1224,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1210,6 +1240,15 @@ components:
           type: integer
           const: 401
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: One-time proof 상태를 구분하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 proof 없이 실패한 customer identity route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1219,6 +1258,8 @@ components:
         type: /problems/customer-one-time-proof-invalid
         title: 고객 확인 정보를 사용할 수 없습니다
         status: 401
+        detail: 확인 정보가 만료되었거나 이미 사용되었습니다.
+        instance: /api/v1/customer/auth/password-resets
         requestId: req-example-proof-invalid
     CustomerSessionRequiredProblem:
       type: object
@@ -1227,6 +1268,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1241,6 +1284,15 @@ components:
           type: integer
           const: 401
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: Session 상태를 추가로 노출하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 session secret 없이 실패한 customer route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1250,6 +1302,8 @@ components:
         type: /problems/customer-session-required
         title: 고객 로그인이 필요합니다
         status: 401
+        detail: 다시 로그인한 뒤 계속해 주세요.
+        instance: /api/v1/customer/me
         requestId: req-example-session-required
     CustomerCsrfRejectedProblem:
       type: object
@@ -1258,6 +1312,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1272,6 +1328,15 @@ components:
           type: integer
           const: 403
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: CSRF proof를 반사하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 CSRF secret 없이 실패한 customer route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1281,6 +1346,8 @@ components:
         type: /problems/customer-csrf-rejected
         title: 고객 요청을 확인할 수 없습니다
         status: 403
+        detail: CSRF 정보를 새로 받은 뒤 다시 시도해 주세요.
+        instance: /api/v1/customer/me/registration
         requestId: req-example-csrf-rejected
     CustomerRegistrationConflictProblem:
       type: object
@@ -1289,6 +1356,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1303,6 +1372,15 @@ components:
           type: integer
           const: 409
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: Credential이나 policy 원문을 노출하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 credential 없이 실패한 registration route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1312,6 +1390,8 @@ components:
         type: /problems/customer-registration-conflict
         title: 현재 고객 등록 상태와 요청이 충돌합니다
         status: 409
+        detail: 현재 동의 정책과 고객 등록 상태를 확인한 뒤 다시 시도해 주세요.
+        instance: /api/v1/customer/me/registration
         requestId: req-example-registration-conflict
     CustomerAuthenticationRateLimitedProblem:
       type: object
@@ -1320,6 +1400,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1334,6 +1416,15 @@ components:
           type: integer
           const: 429
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: 소진된 limiter bucket을 구분하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 limiter fingerprint 없이 실패한 customer identity route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1343,6 +1434,8 @@ components:
         type: /problems/customer-authentication-rate-limited
         title: 잠시 후 다시 시도해 주세요
         status: 429
+        detail: 잠시 후 다시 시도해 주세요.
+        instance: /api/v1/customer/me/registration
         requestId: req-example-auth-rate-limited
     CustomerAuthenticationUnavailableProblem:
       type: object
@@ -1351,6 +1444,8 @@ components:
       - type
       - title
       - status
+      - detail
+      - instance
       - requestId
       properties:
         type:
@@ -1365,6 +1460,15 @@ components:
           type: integer
           const: 503
           description: HTTP status와 일치하는 정수입니다.
+        detail:
+          type: string
+          maxLength: 500
+          description: Dependency나 persistence failure를 구분하지 않는 customer-safe 고정 안내입니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 protected state 없이 실패한 customer identity route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128
@@ -1374,6 +1478,8 @@ components:
         type: /problems/customer-authentication-unavailable
         title: 고객 인증 요청을 안전하게 완료할 수 없습니다
         status: 503
+        detail: 잠시 후 다시 시도해 주세요.
+        instance: /api/v1/customer/me/registration
         requestId: req-example-auth-unavailable
     Problem:
       type: object
@@ -1399,6 +1505,11 @@ components:
           type: string
           maxLength: 500
           description: Customer-safe allowlist로 만든 bounded detail이며 request input을 그대로 반사하지 않습니다.
+        instance:
+          type: string
+          format: uri-reference
+          maxLength: 2048
+          description: Query나 secret 없이 실패한 customer route를 식별하는 bounded URI reference입니다.
         requestId:
           type: string
           maxLength: 128

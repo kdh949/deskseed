@@ -6,9 +6,11 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.core.io.ClassPathResource
+import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -88,6 +90,50 @@ class ApiDocumentationIntegrationTest {
     }
 
     @Test
+    fun `frozen customer session problem response matches the committed schema`() {
+        val result = mockMvc.perform(
+            put("/api/v1/customer/me/registration")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"),
+        )
+            .andExpect(status().isUnauthorized)
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andReturn()
+
+        val document = committedDocument("customer-identity-api-v1.yaml")
+        val operation = document.mapAt("paths").mapAt("/api/v1/customer/me/registration").mapAt("put")
+        val response = resolve(document, operation.mapAt("responses").mapAt("401"))
+        val schema = resolve(
+            document,
+            response.mapAt("content").mapAt("application/problem+json").mapAt("schema"),
+        )
+        assertThat(schema["additionalProperties"]).isEqualTo(false)
+        val properties = schema.mapAt("properties")
+        @Suppress("UNCHECKED_CAST")
+        val required = schema["required"] as List<String>
+        @Suppress("UNCHECKED_CAST")
+        val actual = objectMapper.readValue(result.response.contentAsString, Map::class.java) as Map<String, Any?>
+
+        assertThat(actual.keys).containsAll(required).isEqualTo(properties.keys)
+        properties.forEach { (name, rawDefinition) ->
+            val value = actual[name] ?: return@forEach
+            val definition = rawDefinition.asMap()
+            definition["const"]?.let { expected ->
+                assertThat(value).describedAs("%s const", name).isEqualTo(expected)
+            }
+            when (definition["type"]) {
+                "string" -> assertThat(value).describedAs("%s type", name).isInstanceOf(String::class.java)
+                "integer" -> assertThat(value).describedAs("%s type", name).isInstanceOf(Number::class.java)
+            }
+            (definition["maxLength"] as? Number)?.let { maximum ->
+                assertThat(value.toString().length)
+                    .describedAs("%s maxLength", name)
+                    .isLessThanOrEqualTo(maximum.toInt())
+            }
+        }
+    }
+
+    @Test
     fun `production defaults disable documents and require admin when enabled`() {
         val properties = YamlPropertiesFactoryBean().apply {
             setResources(ClassPathResource("application-production.yml"))
@@ -122,10 +168,8 @@ class ApiDocumentationIntegrationTest {
     }
 
     private fun committedOperations(resource: String, frozenOnly: Boolean): Set<String> {
+        val document = committedDocument(resource)
         @Suppress("UNCHECKED_CAST")
-        val document = ClassPathResource("static/api-docs/specs/$resource").inputStream.use {
-            Yaml(LoaderOptions().apply { maxAliasesForCollections = 10_000 }).load<Map<String, Any?>>(it)
-        }
         val paths = document["paths"] as Map<String, Map<String, Any?>>
         val pathPrefix = if (resource == "platform-api-outline-v1.yaml") "/api/v1/platform" else ""
         return buildSet {
@@ -139,6 +183,26 @@ class ApiDocumentationIntegrationTest {
             }
         }
     }
+
+    private fun committedDocument(resource: String): Map<String, Any?> =
+        ClassPathResource("static/api-docs/specs/$resource").inputStream.use {
+            requireNotNull(
+                Yaml(LoaderOptions().apply { maxAliasesForCollections = 10_000 }).load<Map<String, Any?>>(it),
+            )
+        }
+
+    private fun resolve(document: Map<String, Any?>, value: Map<String, Any?>): Map<String, Any?> {
+        val reference = value["\$ref"] as? String ?: return value
+        require(reference.startsWith("#/")) { "only local OpenAPI references are supported: $reference" }
+        var resolved: Any? = document
+        reference.removePrefix("#/").split('/').forEach { part -> resolved = resolved.asMap()[part] }
+        return resolved.asMap()
+    }
+
+    private fun Map<String, Any?>.mapAt(key: String): Map<String, Any?> = get(key).asMap()
+
+    @Suppress("UNCHECKED_CAST")
+    private fun Any?.asMap(): Map<String, Any?> = this as Map<String, Any?>
 
     companion object {
         private val HTTP_METHODS = setOf("get", "post", "put", "patch", "delete", "head", "options", "trace")

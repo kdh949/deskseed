@@ -57,7 +57,8 @@ internal class CustomerCsrfFilter(
             request.requestURI.startsWith("/api/v1/customer/auth/") ||
             (request.method == "POST" && request.requestURI == "/api/v1/customer/registrations") ||
             (request.method == "POST" && request.requestURI == "/api/v1/customer/registration-verifications") ||
-            request.method in setOf("GET", "HEAD", "OPTIONS", "TRACE")
+            request.method in setOf("GET", "HEAD", "OPTIONS", "TRACE") ||
+            !authenticatedCustomer()
 
     private fun authenticatedCustomer(): Boolean = SecurityContextHolder.getContext().authentication
         ?.takeIf { it.isAuthenticated }
@@ -77,9 +78,9 @@ internal class CustomerCsrfFilter(
                 response,
                 request,
                 403,
-                "/problems/customer-csrf-invalid",
-                "Customer CSRF token is invalid",
-                "Refresh the CSRF token and try again.",
+                "/problems/customer-csrf-rejected",
+                "고객 요청을 확인할 수 없습니다",
+                "CSRF 정보를 새로 받은 뒤 다시 시도해 주세요.",
             )
             return
         }
