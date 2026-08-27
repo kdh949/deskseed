@@ -1,7 +1,9 @@
 {
   "files": [],
   "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
+    { "path": "./apps/customer-portal/tsconfig.app.json" },
+    { "path": "./apps/customer-portal/tsconfig.node.json" },
+    { "path": "./apps/staff-console/tsconfig.app.json" },
+    { "path": "./apps/staff-console/tsconfig.node.json" }
   ]
 }

@@ -6,10 +6,16 @@ const contractPath = fileURLToPath(
   new URL('../../api/core-api-outline-v1.yaml', import.meta.url),
 )
 const manifestPath = fileURLToPath(
-  new URL('../src/api/p1-contract-manifest.json', import.meta.url),
+  new URL(
+    '../apps/staff-console/src/api/p1-contract-manifest.json',
+    import.meta.url,
+  ),
 )
 const fixtureOperationsPath = fileURLToPath(
-  new URL('../src/api/p1-msw-fixture-operations.json', import.meta.url),
+  new URL(
+    '../apps/staff-console/src/api/p1-msw-fixture-operations.json',
+    import.meta.url,
+  ),
 )
 
 const [contract, manifestSource, fixtureOperationsSource] = await Promise.all([

@@ -122,14 +122,14 @@ Post-MVP changes must read the matching detailed specification under `docs/44~49
 
 ## Frontend Storybook MCP
 
-`frontend/` is the frontend package, Storybook working directory, and location of the `deskseed-design-proj` MCP configuration (`frontend/.mcp.json`). Run frontend and Storybook commands from this directory, and use it as the workspace root when project-local MCP discovery is required.
+`frontend/` is the frontend package-script working directory. Customer and staff UI are isolated applications under `frontend/apps/customer-portal/` and `frontend/apps/staff-console/`; each owns its own Storybook configuration, MCP configuration, design system, tokens, assets, and route tree. Use the target app directory as the workspace root for project-local MCP discovery.
 
 For UI work, treat the `deskseed-design-proj` documentation tools as the source of truth for documented design-system contracts:
 
 1. Call `list-all-documentation` once at the start of each UI task.
 2. Before creating or editing components or stories, changing rendered UI, or running story tests, call `get-storybook-story-instructions` and follow its current output.
 3. Before relying on an existing design-system component's props, API, or usage, call `get-documentation` using an ID returned by `list-all-documentation`. Use `get-documentation-for-story` when a specific variant needs more detail. Never infer props from names, source code, or type definitions.
-4. If a required capability is undocumented, use a documented composition or, when authorized by the task, add a reusable public API under `frontend/src/design-system/` with Storybook documentation. Ask the user only when a product or visual-design decision remains unresolved.
+4. If a required capability is undocumented, use a documented composition or, when authorized by the task, add a reusable public API under the target app's `src/design-system/` with Storybook documentation. Never import or copy a capability from the other app merely because it looks similar. Ask the user only when a product or visual-design decision remains unresolved.
 5. After component, story, or rendered-UI changes, run focused `run-story-tests`. After visual changes, also call `get-changed-stories` and preview relevant stories with `preview-stories`. Run the full story-test suite when impact is broad or unclear, and include returned preview URLs in the handoff. Package scripts do not substitute for `run-story-tests`.
 
 If the MCP tools are unavailable, do not guess component contracts or claim Storybook verification passed; report the verification gap.

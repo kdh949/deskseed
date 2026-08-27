@@ -200,3 +200,41 @@ final result: passed
 - None required for this scope.
 
 final result: passed
+
+---
+
+# Customer Portal Design QA
+
+## Scope
+
+- Reference set: the 11 user-provided DeskSeed customer portal screenshots under `Downloads/DeskSeed-새로운 화면/`
+- Primary same-state comparisons:
+  - customer main screen ↔ `/_customer/`
+  - request submitted screen ↔ `/_customer/requests/submitted/1288`
+  - customer login screen ↔ `/_customer/customer/sign-in`
+- Desktop comparison viewport: 1448 × 1086 CSS pixels (Browser viewport chrome offset compensated)
+- Responsive check: 413 × 890 content viewport
+
+## Findings and resolutions
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | Vite's `/_customer/` asset base initially appeared in the router pathname and rendered the not-found state. | Added a runtime-only basename for `/_customer` and `/_staff`; production root routes remain unchanged. |
+| P2 | The first home rendering was materially taller than the reference, keeping the footer below the target viewport. | Reduced hero type/image height, card height, navigation spacing, and lower-panel padding while preserving responsive hierarchy. |
+| P2 | Customer feature pages nested their own `main` landmarks inside the customer shell. | Replaced inner page landmarks with neutral containers; Browser confirms exactly one `main`. |
+
+## Browser evidence
+
+- Home: hero, search, quick actions, five topic cards, featured documents, announcements, and footer rendered with no horizontal overflow.
+- Login: email-link and password tabs, labeled email field, original DeskSeed illustration, account benefit list, and footer rendered.
+- Request success: ticket number `#DS-1288`, response-time panel, next-step actions, summary, and suggested articles rendered.
+- Navigation: success → home and home search → `/search?q=내보내기` completed through accessible links and buttons.
+- Failure state: with the backend intentionally absent, help search preserved the query and rendered its retryable error state.
+- Responsive: customer home rendered one topic column, one `main` landmark, and no horizontal overflow at the narrow viewport.
+
+## Verification limits
+
+- The local backend was not started, so authenticated account/profile and API-backed successful submit/search/article data states were verified through unit fixtures and the customer Storybook production build instead of live HTTP integration.
+- DeskSeed Storybook MCP tools were unavailable in this session. MCP story tests, changed-story discovery, preview URLs, and MCP accessibility reports were not run or claimed.
+
+result: passed

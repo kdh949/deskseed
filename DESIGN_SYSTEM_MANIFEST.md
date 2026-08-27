@@ -52,7 +52,7 @@ Do not create a reusable feature-local UI clone. When a required element is miss
 3. Add it under the owning application's `src/design-system/`.
 4. Consume the canonical export from the feature.
 
-Direct Garden imports are restricted to each app's design-system root. `npm run check:ui-surface-boundaries` verifies import, token, story, asset, and build-manifest isolation in CI.
+Direct Garden imports are restricted to each app's design-system root. `npm run check:design-system-boundaries` verifies import, token, story, asset, and build-manifest isolation in CI.
 
 ## Visual contract
 

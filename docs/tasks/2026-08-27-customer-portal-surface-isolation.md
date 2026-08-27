@@ -76,7 +76,7 @@
 
 ## Validation
 
-- `npm run check:ui-surface-boundaries`
+- `npm run check:design-system-boundaries`
 - per-app lint, typecheck, unit test, Storybook build/test, and Vite build
 - Playwright route, security, keyboard, accessibility, and responsive scenarios
 - visual comparison against selected customer references at 1448×1086

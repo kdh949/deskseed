@@ -4,8 +4,8 @@ This file applies to all work under `frontend/` and extends the repository-root 
 
 ## Working directory and required context
 
-- Run frontend, Storybook, and package commands from `frontend/`.
-- Use `frontend/` as the workspace root when project-local MCP configuration discovery is required; the `deskseed-design-proj` configuration is in `.mcp.json`.
+- Run package scripts from `frontend/`. The production apps are `apps/customer-portal/` and `apps/staff-console/`.
+- Use the target app directory as the workspace root for project-local MCP discovery. Each app owns its own `.mcp.json`, Storybook configuration, source tree, and app-local `AGENTS.md`.
 - Before frontend implementation, read the relevant parts of `../DESIGN_SYSTEM_MANIFEST.md`, `../docs/28-frontend-product-and-information-architecture.md`, `../docs/29-zendesk-inspired-design-system.md`, `../docs/30-screen-specifications.md`, `../docs/31-frontend-state-and-interaction-contracts.md`, `../docs/40-frontend-visual-regression-and-accessibility.md`, and `../docs/51-zendesk-parity-and-visual-acceptance.md`.
 
 ## Sources of truth
@@ -14,7 +14,7 @@ Do not collapse different kinds of authority into one priority list:
 
 - Product behavior, state, authorization, and information architecture come from Accepted ADRs, the PRD, frozen API contracts, applicable frontend specifications, and the current task within those constraints. An ad hoc task does not override a non-negotiable repository rule without an explicit repository decision.
 - Documented design-system props, APIs, and intended usage come from the current Storybook MCP documentation.
-- The canonical implementation and import boundary are `src/design-system/`, its public exports, `index.css`, and `../DESIGN_SYSTEM_MANIFEST.md`.
+- The canonical implementation and import boundary is the target app's `src/design-system/`, its public exports, `index.css`, and `../DESIGN_SYSTEM_MANIFEST.md`. Customer and staff contracts are intentionally independent.
 - Approved reference images and visual baselines are comparison evidence. They do not override product behavior, accessibility, security, or Deskseed branding.
 
 Do not use `artifacts/`, deleted UI roots, feature-local legacy components, old screenshots, or previous design-system copies as the contract for new production UI. They may be consulted only as explicitly authorized reference material.
@@ -41,7 +41,7 @@ Choose the smallest appropriate change in this order:
 3. Extend an existing design-system component when the capability is reusable, belongs naturally to its responsibility, and can preserve compatibility.
 4. Add a canonical design-system component only when it has a clear reusable UI contract.
 
-Feature and page code may own route state, data loading, permissions, and domain-specific composition. Reusable presentation belongs in `src/design-system/`. Do not create reusable feature-local clones, compatibility wrappers, duplicate token systems, or new generic UI roots. Direct Garden imports are restricted to `src/design-system/`.
+Feature and page code may own route state, data loading, permissions, and domain-specific composition. Reusable presentation belongs in the current app's `src/design-system/`. Do not create reusable feature-local clones, compatibility wrappers, or new generic UI roots. The customer and staff token systems are separate by design; neither may import the other. Direct Garden imports are restricted to the current app's design-system directory.
 
 Do not broaden or break an existing public API merely to satisfy one screen. Keep one-off domain orchestration in the feature unless a reusable visual contract is demonstrated.
 

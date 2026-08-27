@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "deskseed-customer-design-proj": {
+      "url": "http://localhost:6007/mcp",
+      "type": "http"
+    }
+  }
+}
