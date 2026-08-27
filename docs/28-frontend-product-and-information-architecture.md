@@ -2,7 +2,7 @@
 
 ## 1. 목표
 
-Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시간 사용하는 고밀도 업무 도구다. Zendesk Agent Workspace의 정보 구조를 참고하되, Deskseed 고유 브랜드와 용어를 사용한다.
+Deskseed 프론트엔드는 고밀도 Staff Console과 반응형 Customer Portal이라는 두 제품 표면을 같은 origin에서 제공한다. 상담사 표면은 Zendesk Agent Workspace의 정보 구조를 참고하되 Deskseed 고유 브랜드와 용어를 사용하고, 고객 표면은 독립된 Help Center 정보 구조와 디자인 시스템을 사용한다.
 
 핵심 UX 원칙:
 
@@ -15,14 +15,18 @@ Deskseed 프론트엔드는 일반 웹사이트가 아니라 상담원이 장시
 ## 2. 현재 제공 표면
 
 ```text
-/                       → /agent/views/my-open
+/                       Customer Help Center
+/help/**                Customer Knowledge Base
+/requests/**            anonymous/customer request flow
+/account/**             authenticated customer requests
+/customer/**            customer identity
 /agent/login            최소 직원 로그인
-/agent/views/:viewKey   Agent Queue
-/agent/tickets/:number  읽기 전용 Ticket Workspace
-그 외 경로               canonical not-found
+/agent/**                Agent Workspace
+/admin/**                Admin surfaces
+/audit/**                Audit surfaces
 ```
 
-Customer, Admin, Audit, Search, Integration, SLA 화면은 ADR 0039에 따라 `DEFERRED_UI`다. 서버 기능과 OpenAPI는 유지되며 재조합 계약은 `docs/55-frontend-capability-recomposition-matrix.md`가 소유한다. 이 문서 아래의 해당 정보 구조는 후속 재조합 시의 제품 의도이며 현재 라우트 제공을 뜻하지 않는다.
+ADR 0044에 따라 Customer Portal과 Staff Console은 별도 앱·번들·CSS·토큰·Storybook으로 제공된다. 구현 상태와 UI 제공 상태는 `docs/55-frontend-capability-recomposition-matrix.md`가 소유하며, 준비되지 않은 기능은 화면을 채우기 위해 발명하지 않는다.
 
 ## 3. 역할별 홈
 
@@ -81,30 +85,33 @@ Customer, Admin, Audit, Search, Integration, SLA 화면은 ADR 0039에 따라 `D
 - 1500px 이하에서는 context panel을 헤더의 접근 가능한 토글로 연다.
 - 신규 comment는 아래쪽에 쌓이며 composer는 대화 하단에 고정한다.
 
-## 6. Deferred Customer portal intent
+## 6. Customer Portal
 
 ```text
 /requests/new
 /requests/lookup
-/requests/:ticketNumber?access=...
-/account/sign-in             (later)
-/account/requests            (later)
-/account/requests/:number    (later)
+/requests/:ticketNumber
+/account/requests
+/account/requests/:number
+/customer/sign-in
+/customer/register
+/help/search
+/help/articles/:articleSlug
 ```
 
 익명 MVP:
 
-- 문의 제출
-- 접수 완료 번호와 조회 키 표시
-- 조회 키로 public conversation 조회
+- 문의 제출과 접수 완료
+- 조회 키로 public conversation 조회·답변
 - 내부 field, child, audit, assignee 상세 비노출
 
 계정 버전:
 
-- Open/Solved 필터
-- 제목·번호 검색
+- 상태 필터와 opaque cursor
 - 추가 public comment
-- follow-up/reopen 정책
+- password-primary login과 passwordless-only magic link
+
+Customer Portal은 390px부터 정상 responsive이며 Staff Console 컴포넌트, `--ds-*` 토큰, operational chrome을 사용하지 않는다.
 
 ## 7. Deferred Admin information architecture
 

@@ -164,6 +164,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-UI-004 | 고객·앱·자식 티켓·외부 참조를 context panel에서 전환한다 | DEFERRED | M5/I4/P7 | 28, 30, 55 | Customer/child/외부 참조 탭과 external lazy CRUD/safe deep link는 구현됨; app marketplace surface는 계속 deferred |
 | REQ-UI-005 | WCAG 2.2 AA 수준과 키보드 조작을 목표로 한다 | IMPLEMENTATION_READY | 전 단계 | 29, 35, 40 | 전체 Storybook interaction+axe, Queue keyboard·production composer tab/draft·navigation guard·focus Playwright 검증 |
 | REQ-UI-006 | Zendesk 상표·로고를 복제하지 않고 독립 브랜드를 사용한다 | IMPLEMENTATION_READY | M0 | 29, 39 ADR | Deskseed-only current baselines, design-system boundary 및 proprietary asset scan |
+| REQ-UI-007 | 고객 포털과 상담사 콘솔은 별도 앱·번들·디자인 시스템·토큰·Storybook으로 격리하고 같은 origin에서 route별로 제공한다 | IMPLEMENTATION_READY | Customer Portal | 28, 29, 40, 44 ADR, D-061 | UI-006 surface boundary/import/token/manifest/route hard-refresh 검사와 두 Storybook inventory 분리 |
 
 ## 10. 추적 규칙
 

@@ -545,6 +545,15 @@ For queue, ticket, customer, admin and audit screens:
 - intentional changes are reviewed against task-level acceptance, not merely pixel approval.
 - Garden major upgrade includes license, accessibility and snapshot review.
 
+### UI-006 — Frontend surface isolation
+
+- Customer Portal and Staff Console have separate application entrypoints, production bundles, global CSS roots, token namespaces, design-system public exports, and Storybook configurations.
+- source, ESLint, TypeScript, CSS, story graph, and production manifest checks reject customer-to-staff and staff-to-customer imports or asset references.
+- customer output contains no `--ds-*`, staff design-system module, staff story/provider, or staff-only asset; staff output contains no `--customer-*`, customer module, customer story/provider, or customer-only illustration.
+- `/`, `/help`, `/requests`, `/account`, and `/customer` hard refresh to the customer application; `/agent`, `/admin`, and `/audit` hard refresh to the staff application; backend proxy routes take precedence.
+- a rendered document loads assets from only its owning `/_customer/` or `/_staff/` prefix.
+- immutable Deskseed brand sources and license notices are the only allowed cross-surface visual inputs.
+
 ## 15. SLA/OLA gates
 
 ### SLA-001 — Business time calculator

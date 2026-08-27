@@ -4,6 +4,8 @@
 
 Deskseed는 Zendesk의 업무 정보 구조와 상호작용 패턴을 참고한다. 다만 Zendesk 로고·이름·브랜드 자산·픽셀 단위 복제는 사용하지 않는다. 제품은 독립 브랜드로 보여야 하며 Zendesk의 trademark 또는 trade dress를 그대로 복제하지 않는다.
 
+ADR 0044 이후 이 문서의 Agent Workspace 계약은 `staff-console`에만 적용된다. `customer-portal`은 별도 `--customer-*` 토큰, provider, component, shell, Storybook을 가지며 Staff Console의 `--ds-*`, component export, CSS, fixture를 참조하지 않는다. 두 표면이 공유할 수 있는 것은 immutable Deskseed brand source와 license notice뿐이다.
+
 권장 방식:
 
 - Zendesk Garden React components와 SVG icons를 기반 구성 요소로 사용한다.
@@ -14,7 +16,7 @@ Deskseed는 Zendesk의 업무 정보 구조와 상호작용 패턴을 참고한�
 
 ## 2. 프론트 의존성 기준
 
-현재 runtime과 개발 도구의 정확한 버전은 `frontend/package-lock.json`이 소유한다. Garden은 `frontend/src/design-system/` 내부 provider, primitive, icon 구현에서만 직접 import할 수 있다. feature/page/shell은 canonical public export를 사용하며 호환 wrapper를 만들지 않는다.
+현재 runtime과 개발 도구의 정확한 버전은 `frontend/package-lock.json`이 소유한다. Garden은 각 앱의 `src/design-system/` 내부 provider, primitive, icon 구현에서만 직접 import할 수 있다. feature/page/shell은 자기 앱의 canonical public export를 사용하며 호환 wrapper를 만들지 않는다.
 
 핵심 계층:
 

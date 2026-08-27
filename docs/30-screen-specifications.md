@@ -12,7 +12,7 @@
 
 ## 1.1 Current delivery overlay
 
-ADR 0039의 현재 운영 surface는 AGT-001, AGT-003, 읽기 전용 AGT-004, canonical denied/not-found뿐이다. 이 문서의 PUB/ADM/AUD/INT 화면과 Agent create/search/mutation 동작은 API·도메인 재조합 요구사항이며 현재 라우트나 React 화면이 아니다. 구현 상태와 UI 제공 상태는 `docs/55-frontend-capability-recomposition-matrix.md`에서 별도로 추적한다.
+ADR 0044의 현재 운영 surface는 PUB-000~004 중 frozen operation으로 구성 가능한 고객 Help Center/문의/인증 흐름과 Staff Console의 shipped AGT/ADM/AUD 화면이다. Customer Portal은 별도 앱과 디자인 시스템으로 제공하며, profile/preferences/SSO/channel/SLA/announcement처럼 계약이 없는 reference-image 요소는 현재 화면이 아니다. 구현 상태와 UI 제공 상태는 `docs/55-frontend-capability-recomposition-matrix.md`에서 별도로 추적한다.
 
 # Public screens
 

@@ -2,7 +2,7 @@
 
 Status: **Normative UX comparison v0.6**
 
-ADR 0039 overlay: 현재 visual acceptance 대상은 Agent Queue, 읽기 전용 Ticket Workspace, 최소 로그인, canonical 상태뿐이다. 아래의 Customer/Admin/SLA/Apps 항목은 미래 recomposition intent이며 shipped screen을 뜻하지 않는다.
+ADR 0044 overlay: Staff visual acceptance와 Customer Portal visual acceptance는 별도 앱·디자인 시스템·baseline으로 운영한다. Customer Portal은 현재 frozen Knowledge Base, request, identity operation으로 구성 가능한 화면만 shipped로 간주하고 profile/preferences/SSO/channel/SLA/announcement 항목은 미래 intent로 남긴다.
 
 Deskseed의 목표는 Zendesk로 오인되는 복제품이 아니라, Zendesk 경험자가 즉시 사용할 수 있는 유사한 업무 정보 구조와 상호작용이다.
 
@@ -64,7 +64,7 @@ Ticket properties | Conversation + fixed composer | Context panel
 | Context panel | customer, related work, apps | M2→P7 | children/external refs first | resize/tab/access tests |
 | Side work | internal child ticket | M5 | explicit TicketRelation model | ownership/customer-invisibility E2E |
 | Audit/events | ticket-local event view | M3 | security audit is separate ledger | audit reconciliation |
-| Customer portal | request submission/tracking/comment | deferred UI | anonymous token first | API/headless contract tests |
+| Customer portal | Help Center, request submission/tracking/comment, password login/registration, passwordless magic link | Customer Portal | anonymous token remains ticket-scoped; no staff UI reuse | customer unit/Storybook/E2E, UI-006, responsive reference comparison |
 | Admin Center | staff/group/settings/integrations | deferred UI | staged recomposition | API permission/audit tests |
 | SLA | badges, views, policy admin | deferred UI | first reply first | clock/policy contract tests |
 | Explore | curated dashboards, drill-down | P5 | no arbitrary report builder first | metric reconciliation |

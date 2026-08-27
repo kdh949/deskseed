@@ -56,10 +56,15 @@ shortcut은 설정에서 끌 수 있고 도움말 dialog를 제공한다.
 Viewports:
 
 ```text
+390x844
+768x1024
+1448x1086
 1280x800
 1440x900
 1920x1080
 ```
+
+앞의 세 viewport는 Customer Portal mobile/tablet/reference 비교이고, 뒤의 세 viewport는 Staff Console baseline이다. Customer와 Staff baseline은 독립적으로 생성·검토하며 한 표면의 시각 변경이 다른 표면의 baseline이나 asset을 갱신하면 안 된다. UI-006은 baseline 검토 전에 두 build manifest를 검사한다.
 
 Themes:
 
