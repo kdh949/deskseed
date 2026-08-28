@@ -76,7 +76,10 @@ GENERATED_DIRECTORY_NAMES = {
 }
 GENERATED_PATH_PREFIXES = {Path("backend/bin")}
 E2E_VISUAL_BASELINE_DIRECTORY = ROOT / "frontend/e2e/__screenshots__"
-APPROVED_DESKSEED_ASSET_DIRECTORY = ROOT / "frontend/src/assets/deskseed"
+APPROVED_DESKSEED_ASSET_DIRECTORIES = (
+    ROOT / "frontend/apps/customer-portal/src/assets/deskseed",
+    ROOT / "frontend/apps/staff-console/src/assets/deskseed",
+)
 
 
 def rel(path: Path) -> str:
@@ -563,7 +566,10 @@ def validate() -> list[str]:
         if path.is_file()
         and not is_generated(path)
         and not path.is_relative_to(E2E_VISUAL_BASELINE_DIRECTORY)
-        and not path.is_relative_to(APPROVED_DESKSEED_ASSET_DIRECTORY)
+        and not any(
+            path.is_relative_to(directory)
+            for directory in APPROVED_DESKSEED_ASSET_DIRECTORIES
+        )
         and path.suffix.lower() in IMAGE_EXTENSIONS
     ]
     if image_assets:

@@ -1,9 +1,65 @@
 version: "0.6"
 routes:
   - path: "/"
-    actor: anonymous_or_staff
-    phase: m2
-    screen: redirect_agent_my_open
+    actor: anonymous_or_customer
+    phase: customer_portal
+    screen: customer_help_center_home
+  - path: "/help/search"
+    actor: anonymous_or_customer
+    phase: customer_portal
+    screen: customer_help_search
+  - path: "/help/articles/:articleSlug"
+    actor: anonymous_or_customer
+    phase: customer_portal
+    screen: customer_help_article
+  - path: "/requests/new"
+    actor: anonymous_or_customer
+    phase: customer_portal
+    screen: customer_request_create
+  - path: "/requests/submitted/:ticketNumber"
+    actor: anonymous_or_customer
+    phase: customer_portal
+    screen: customer_request_submitted
+  - path: "/requests/lookup"
+    actor: anonymous_or_customer
+    phase: customer_portal
+    screen: anonymous_request_lookup
+  - path: "/requests/:ticketNumber"
+    actor: anonymous_customer
+    phase: customer_portal
+    screen: anonymous_request_detail
+  - path: "/account/requests"
+    actor: authenticated_customer
+    phase: customer_portal
+    screen: customer_request_list
+  - path: "/account/requests/:ticketNumber"
+    actor: authenticated_customer
+    phase: customer_portal
+    screen: customer_request_detail
+  - path: "/customer/sign-in"
+    actor: anonymous_customer
+    phase: customer_portal
+    screen: customer_password_sign_in
+  - path: "/customer/sign-in/check-email"
+    actor: anonymous_customer
+    phase: customer_portal
+    screen: customer_magic_link_check_email
+  - path: "/customer/sign-in/consume"
+    actor: anonymous_customer
+    phase: customer_portal
+    screen: customer_magic_link_consume
+  - path: "/customer/register"
+    actor: anonymous_customer
+    phase: customer_portal
+    screen: customer_registration
+  - path: "/customer/register/check-email"
+    actor: anonymous_customer
+    phase: customer_portal
+    screen: customer_registration_check_email
+  - path: "/customer/register/verify"
+    actor: anonymous_customer
+    phase: customer_portal
+    screen: customer_registration_verify
   - path: "/agent/login"
     actor: anonymous_staff
     phase: m2

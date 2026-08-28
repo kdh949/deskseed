@@ -200,3 +200,238 @@ final result: passed
 - None required for this scope.
 
 final result: passed
+
+---
+
+# Customer Portal Design QA
+
+## Scope
+
+- Reference set: the 11 user-provided DeskSeed customer portal screenshots under `Downloads/DeskSeed-새로운 화면/`
+- Primary same-state comparisons:
+  - customer main screen ↔ `/_customer/`
+  - request submitted screen ↔ `/_customer/requests/submitted/1288`
+  - customer login screen ↔ `/_customer/customer/sign-in`
+- Desktop comparison viewport: 1448 × 1086 CSS pixels (Browser viewport chrome offset compensated)
+- Responsive check: 413 × 890 content viewport
+
+## Findings and resolutions
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | Vite's `/_customer/` asset base initially appeared in the router pathname and rendered the not-found state. | Added a runtime-only basename for `/_customer` and `/_staff`; production root routes remain unchanged. |
+| P2 | The first home rendering was materially taller than the reference, keeping the footer below the target viewport. | Reduced hero type/image height, card height, navigation spacing, and lower-panel padding while preserving responsive hierarchy. |
+| P2 | Customer feature pages nested their own `main` landmarks inside the customer shell. | Replaced inner page landmarks with neutral containers; Browser confirms exactly one `main`. |
+
+## Browser evidence
+
+- Home: hero, search, quick actions, five topic cards, featured documents, announcements, and footer rendered with no horizontal overflow.
+- Login: email-link and password tabs, labeled email field, original DeskSeed illustration, account benefit list, and footer rendered.
+- Request success: ticket number `#DS-1288`, response-time panel, next-step actions, summary, and suggested articles rendered.
+- Navigation: success → home and home search → `/search?q=내보내기` completed through accessible links and buttons.
+- Failure state: with the backend intentionally absent, help search preserved the query and rendered its retryable error state.
+- Responsive: customer home rendered one topic column, one `main` landmark, and no horizontal overflow at the narrow viewport.
+
+## Verification limits
+
+- The local backend was not started, so authenticated account/profile and API-backed successful submit/search/article data states were verified through unit fixtures and the customer Storybook production build instead of live HTTP integration.
+- DeskSeed Storybook MCP tools were unavailable in this session. MCP story tests, changed-story discovery, preview URLs, and MCP accessibility reports were not run or claimed.
+
+result: passed
+
+---
+
+# Customer Portal Home Annotation QA — 2026-08-28
+
+## Evidence
+
+- Source visual truth: browser comment screenshots attached to the 2026-08-28 task. The equivalent pre-change story state was reproduced from commit `591259c` and captured at `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/before-home-906x791.png`.
+- Implementation screenshot: `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/current-home-906x791.png`
+- Viewport and density: both captures are `1265 x 712` pixels from the same Codex in-app browser viewport at device scale factor 1, with no resizing between captures.
+- State: anonymous customer, Help Center Home, populated categories, and two populated announcements.
+- Full-view comparison: `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/home-before-after-comparison.png`
+- Focused lower-page comparison: `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/home-lower-before-after-comparison.png`
+
+## Findings
+
+- [P0] Customer-wide contrast tokens still fail the accessibility release gate.
+  - Location: common customer header/footer, status chips, and muted/support text outside the selected Home-only regions.
+  - Evidence: the full Storybook MCP accessibility run reports contrast ratios from `3.05:1` to `4.16:1` where WCAG 2 AA requires `4.5:1`. The Home story's remaining violations are the shared search shortcut and footer text/links.
+  - Impact: the three requested Home refinements are visually correct, but the customer portal cannot be declared accessibility-green.
+  - Fix: after explicit visual approval, darken the customer design-system muted, success, warning, and danger foreground tokens and re-run the full Storybook accessibility suite.
+
+No other actionable P0/P1/P2 mismatch remains in the three annotated regions.
+
+## Required fidelity surfaces
+
+- Fonts and typography: the Help Center eyebrow is now `14px` with `19.6px` computed line height and remains subordinate to the hero heading.
+- Spacing and layout rhythm: all five topic cards resolve to the same icon/title/description offsets (`29px`, `73px`, `102px`) in the inspected desktop state.
+- Colors and visual tokens: Home content colors are readable after scoped overrides; shared customer tokens remain blocked as described above.
+- Image quality and asset fidelity: the existing DeskSeed hero raster is unchanged, sharp, correctly cropped, and no placeholder or code-drawn asset was introduced.
+- Copy and content: announcements now contain administrator-published KB article titles and summaries, with links to the corresponding public articles.
+
+## Comparison history
+
+1. Earlier findings: undersized eyebrow, subtly inconsistent topic-card icon/text rhythm, and static hard-coded announcements.
+2. Fixes made: increased the eyebrow size; introduced explicit topic-card grid rows; loaded the `announcements` public Knowledge Base section with loading, empty, and error states.
+3. Post-fix evidence: the full-view and focused comparison images above; browser measurements confirm equal topic-card offsets; announcement links resolve to `/articles/customer-portal-update` and `/articles/support-hours-update`.
+
+## Primary interactions and runtime checks
+
+- Confirmed both published announcement links are present and route to public article paths.
+- Confirmed no application runtime error appeared in the inspected Home story. Storybook manager deprecation warnings are unrelated to the customer page.
+- Functional Storybook run: 37/37 stories passed.
+- Accessibility Storybook run: completed with the contrast blocker above.
+
+## Follow-up polish
+
+- No P3 polish is required for the selected regions.
+
+final result: blocked
+
+# Customer Portal Ornamental Micro-heading Removal QA — 2026-08-28
+
+## Scope and evidence
+
+- Requested change: remove the small, letter-spaced, heading-adjacent label pattern from every customer-facing screen and prevent it from being reintroduced.
+- Before state: commit `e0726c5`, served from the same customer Storybook configuration on port 6008.
+- After state: current `feature/customer-portal-isolation` working tree, served on port 6007.
+- Viewport and density: both captures used a `1280 x 720` CSS viewport at device scale factor 1. Full-page output is `1265 x 1139` pixels for both Home captures.
+- Before/after Home captures:
+  - `/private/tmp/customer-home-eyebrow-before.png`
+  - `/private/tmp/customer-home-eyebrow-after.png`
+  - Combined same-state comparison: `/private/tmp/customer-home-eyebrow-comparison.png` (before on the left, after on the right)
+- Additional same-state captures:
+  - `/private/tmp/customer-eyebrow-customer-home-before.png` and `/private/tmp/customer-eyebrow-customer-home-after.png`
+  - `/private/tmp/customer-eyebrow-request-form-before.png` and `/private/tmp/customer-eyebrow-request-form-after.png`
+  - `/private/tmp/customer-eyebrow-request-list-before.png` and `/private/tmp/customer-eyebrow-request-list-after.png`
+  - `/private/tmp/customer-eyebrow-conversation-before.png` and `/private/tmp/customer-eyebrow-conversation-after.png`
+  - `/private/tmp/customer-eyebrow-profile-before.png` and `/private/tmp/customer-eyebrow-profile-after.png`
+
+## Findings and resolutions
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | Help Center Home placed the ornamental uppercase label `DESKSEED HELP CENTER` above its semantic `h1`. | Removed the label and its dedicated typography rule; the semantic heading now begins the hero content. |
+| P1 | The same pattern appeared in customer sign-in, request lookup, request form, request list, and request conversation surfaces. | Removed all `customer-eyebrow` and `customer-page-eyebrow` render sites and adjusted heading margins to preserve vertical rhythm. |
+| P1 | Profile navigation used forced-uppercase 11 px group labels. | Removed the decorative group labels and replaced the sidebar structure with one named navigation landmark containing only the current destination and actionable link. |
+| P1 | Future customer work could reintroduce the same visual pattern. | Added repository and customer-app typography rules plus a boundary scan that rejects eyebrow/kicker/overline-style identifiers and CSS-forced uppercase in customer source. A deliberate temporary violation was detected by the check before the probe was removed. |
+| P0 | Customer-wide contrast tokens still fail the existing accessibility release gate. | Not changed in this typography-only scope because the Storybook contract requires explicit approval before visual color changes. The full accessibility run still reports shared token ratios from `3.05:1` to `4.16:1` against the required `4.5:1`. |
+
+## Browser and Storybook evidence
+
+- Browser DOM comparison confirmed the ornamental element count changed from one to zero in Help Center Home, customer request lookup Home, sign-in, request form, request list, and request conversation.
+- Browser computed-style comparison confirmed the profile sidebar's forced-uppercase labels changed from two to zero.
+- All inspected after states retain one visible semantic page heading and report no CSS-forced uppercase content in `main`.
+- Full functional Storybook MCP run: 37/37 stories passed.
+- Focused visual stories and the full customer production Storybook build passed.
+- Full accessibility Storybook MCP run completed; only the previously documented shared color-contrast blocker remains.
+
+## Required fidelity surfaces
+
+- Typography: the removed text no longer competes with page headings; actual acronyms and functional status/metadata remain unchanged.
+- Spacing and layout rhythm: heading top margins were normalized to zero where the deleted label previously supplied spacing. The same-state Home comparison shows no downstream card or panel displacement.
+- Navigation semantics: profile sidebar labels were not replaced with new decorative copy; the navigation now has the accessible name `계정 메뉴`, and the current destination exposes `aria-current="page"`.
+- Design isolation: the new prohibition is scoped to `apps/customer-portal/src`, so it cannot import or alter staff typography rules.
+
+## Verification boundary
+
+- The requested ornamental micro-heading pattern is removed and guarded.
+- Accessibility release status remains blocked only by the pre-existing shared customer color tokens; changing those colors requires a separate explicit visual decision.
+
+final result: blocked
+
+---
+
+# Customer Portal Search Shortcut Removal QA — 2026-08-28
+
+## Scope and evidence
+
+- Requested change: remove the visible `⌘ K` hint from every customer-facing screen and common customer presentation surface.
+- Before state: commit `8f94e6e`, served from the customer Storybook on port 6008.
+- After state: current `feature/customer-portal-isolation` working tree, served on port 6007.
+- Both captures use the Help Center Home story at a `1280 x 720` CSS viewport and device scale factor 1.
+- Before capture: `/private/tmp/customer-shortcut-before.png`
+- After capture: `/private/tmp/customer-shortcut-after.png`
+- Combined same-state comparison: `/private/tmp/customer-shortcut-comparison.png` (before on the left, after on the right)
+
+## Findings and resolution
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | The customer-wide search header rendered an 11 px `⌘ K` hint even though the customer search did not expose a matching keyboard-shortcut interaction. | Removed the hint from `CustomerSiteLayout` and deleted its customer-only style contract. The actual search input, label, submit behavior, and customer navigation remain unchanged. |
+| P1 | The shared layout change needed coverage beyond the annotated Help Center Home story. | Added negative assertions to the layout unit test and both Help Center Home and Customer Home stories. The shared component dependency graph maps the change to 35 customer stories. |
+| P0 | Customer-wide contrast and inline-link styling violations still block the existing accessibility release gate. | Not changed in this element-removal scope because the Storybook contract requires explicit approval before visual color or link-style changes. |
+
+## Browser measurements
+
+- Visible `⌘ K` text nodes: `1 → 0`.
+- `.customer-search-shortcut` elements: `1 → 0`.
+- Header search form bounds remain `x=251`, width `420`, right edge `671`.
+- Search input width expands from `321` to `366` pixels and uses the released space.
+- Customer navigation bounds remain `x=699`, width `524`, right edge `1223`.
+- No horizontal overflow appears before or after the change.
+- Help Center Home, Customer Home, Profile, Registration, and Request Success after states each report zero shortcut text/classes while retaining the labeled search input.
+
+## Verification
+
+- Focused Storybook MCP functional run: 5/5 representative common-layout stories passed.
+- Full Storybook MCP functional run: 37/37 stories passed.
+- Full Storybook MCP accessibility run completed. The removed shortcut no longer appears in the violation report; the previously documented shared color-contrast and link-distinction violations remain.
+- Customer unit run: 21 files and 53 tests passed.
+- Customer production build, customer Storybook production build, lint, typecheck, formatting, and customer/staff design-system boundary checks passed.
+- Production customer source contains no `customer-search-shortcut` class or visible `⌘ K` copy. Remaining occurrences are negative regression assertions only.
+
+## Verification boundary
+
+- The requested customer-only shortcut removal is complete and verified across the common layout.
+- The overall customer accessibility release status remains blocked by unrelated pre-existing visual token and inline-link findings.
+
+final result: blocked
+
+---
+
+# Customer Portal Responsive Header Collision QA — 2026-08-28
+
+## Scope and evidence
+
+- Requested change: prevent the shared customer header search and navigation from overlapping at intermediate viewport widths, with the fix owned by the common customer layout.
+- Before state: commit `4ad84a5`, served from the customer Storybook on port 6008.
+- After state: current `feature/customer-portal-isolation` working tree, served on port 6007.
+- Both comparison captures use the Help Center Home story with a `906 x 1024` Storybook canvas. The browser captures are both `1280 x 720` at device scale factor 1.
+- Before capture: `/private/tmp/customer-header-responsive-before-906.png`
+- After capture: `/private/tmp/customer-header-responsive-after-906.png`
+- Combined same-state comparison: `/private/tmp/customer-header-responsive-comparison-906.jpg` (before on the left, after on the right)
+
+## Findings and resolution
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | At 906 px, the 420 px shared header search ended at `x=648`, while `문서 둘러보기` began at `x=620.625`. Their visible intersection measured `27.375 x 17 = 465.375 px²`. | Added a customer-only intermediate breakpoint. From 641–1100 px, the brand and full navigation remain on the first row while the search occupies the full second row. |
+| P1 | The collision affected every anonymous screen using `CustomerSiteLayout`, and authenticated navigation has a wider profile group. | Kept the change in the customer design-system stylesheet and verified both the anonymous Help Center Home and authenticated Profile story at 906 px. The dependency graph maps the shared layout to 35 customer stories. |
+| P0 | Customer-wide contrast and inline-link styling violations still block the existing accessibility release gate. | Not changed in this responsive-layout scope because Storybook instructions require explicit approval before changing visual colors or link styling. |
+
+## Responsive browser measurements
+
+- 320 px: the existing compact mobile rule keeps the search and first navigation link hidden; the brand ends at `x=173.75`, and the visible action group begins at `x=185.75`, leaving a 12 px gap.
+- 768 px: the search occupies `x=20..733`, `y=65..107`; the full navigation occupies the first row at `y=12..53`.
+- 906 px: the search occupies `x=20..871`, `y=65..107`; the full navigation occupies the first row at `y=12..53`. Search/navigation collision area is zero.
+- 1024 px: the search occupies `x=20..989`, `y=65..107`; the full navigation occupies the first row at `y=12..53`.
+- 1440 px: the desktop one-row layout remains active. The search ends at `x=750.5`, and the navigation starts at `x=778.5`, preserving the intended 28 px gap.
+- Authenticated 906 px: the search occupies the second row at `y=65..107`; `내 문의`, `문의 접수`, avatar, and profile name remain together on the first row at `y=12..53` with no collision.
+
+## Verification
+
+- Focused Storybook MCP functional run: Help Center Home and authenticated Profile passed.
+- Full Storybook MCP functional run: 37/37 stories passed.
+- Full Storybook MCP accessibility run completed. The responsive header introduced no new semantic violation; the previously documented customer color-contrast and link-distinction findings remain.
+- Browser responsive checks completed at 320, 768, 906, 1024, and 1440 px.
+- Customer unit run: 21 files and 53 tests passed.
+- Customer production build, customer Storybook production build, lint, typecheck, formatting, design-system boundary check, and repository documentation check passed.
+
+## Verification boundary
+
+- The requested common-header collision is removed across anonymous and authenticated customer surfaces.
+- The overall customer accessibility release status remains blocked by unrelated pre-existing visual token and inline-link findings.
+
+final result: blocked

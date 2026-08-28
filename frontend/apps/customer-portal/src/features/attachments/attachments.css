@@ -1,0 +1,57 @@
+.attachment-upload-field {
+  display: grid;
+  gap: 10px;
+  padding-block: 10px;
+}
+.attachment-upload-heading,
+.attachment-upload-list li,
+.linked-attachment-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.attachment-upload-heading {
+  align-items: flex-start;
+  flex-direction: column;
+}
+.attachment-upload-heading label {
+  color: var(--customer-color-ink);
+  font-weight: 700;
+}
+.attachment-upload-list,
+.linked-attachment-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.attachment-upload-list li,
+.linked-attachment-list li {
+  padding: 9px 12px;
+  border: 1px solid var(--customer-color-border);
+  border-radius: 8px;
+}
+.attachment-upload-list span,
+.linked-attachment-list span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.attachment-upload-list strong,
+.linked-attachment-list strong {
+  overflow-wrap: anywhere;
+}
+.attachment-upload-list progress {
+  width: min(18rem, 100%);
+}
+.attachment-upload-empty,
+.attachment-upload-blocker {
+  margin: 0;
+  color: var(--customer-color-muted);
+  font-size: 12px;
+}
+.attachment-upload-blocker {
+  color: var(--customer-color-danger);
+}

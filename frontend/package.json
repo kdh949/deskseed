@@ -3,26 +3,43 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "apps/customer-portal",
+    "apps/staff-console"
+  ],
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
+    "dev": "node scripts/dev-isolated-apps.mjs",
+    "dev:customer": "vite --config apps/customer-portal/vite.config.ts",
+    "dev:staff": "vite --config apps/staff-console/vite.config.ts",
+    "build": "tsc -b && npm run build:customer && npm run build:staff",
+    "build:customer": "vite build --config apps/customer-portal/vite.config.ts",
+    "build:staff": "vite build --config apps/staff-console/vite.config.ts",
+    "preview:customer": "vite preview --config apps/customer-portal/vite.config.ts",
+    "preview:staff": "vite preview --config apps/staff-console/vite.config.ts",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "contract:check": "node scripts/check-p1-openapi-contract.mjs",
-    "check:design-system-boundaries": "node scripts/check-design-system-boundaries.mjs",
-    "test": "vitest run --project unit",
-    "test:storybook": "vitest run --project storybook",
+    "check:design-system-boundaries": "node --test scripts/check-design-system-boundaries.test.mjs && node scripts/check-design-system-boundaries.mjs",
+    "test": "npm run test:customer && npm run test:staff",
+    "test:customer": "vitest run --config apps/customer-portal/vite.config.ts --project unit",
+    "test:staff": "vitest run --config apps/staff-console/vite.config.ts --project unit",
+    "test:storybook": "npm run test:storybook:customer && npm run test:storybook:staff",
+    "test:storybook:customer": "vitest run --config apps/customer-portal/vite.config.ts --project storybook",
+    "test:storybook:staff": "vitest run --config apps/staff-console/vite.config.ts --project storybook",
     "test:e2e": "playwright test",
     "test:e2e:dev": "playwright test access-surface.spec.ts admin-operations.spec.ts agent-views-workspace.spec.ts agent-ticket-write.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts",
     "test:e2e:update": "playwright test access-surface.spec.ts admin-operations.spec.ts agent-views-workspace.spec.ts agent-ticket-write.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts --update-snapshots=all",
-    "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "storybook": "npm run storybook:staff",
+    "storybook:customer": "storybook dev -p 6007 -c apps/customer-portal/.storybook",
+    "storybook:staff": "storybook dev -p 6006 -c apps/staff-console/.storybook",
+    "build-storybook": "npm run build-storybook:customer && npm run build-storybook:staff",
+    "build-storybook:customer": "storybook build -c apps/customer-portal/.storybook -o storybook-static/customer",
+    "build-storybook:staff": "storybook build -c apps/staff-console/.storybook -o storybook-static/staff"
   },
   "dependencies": {
     "@tanstack/react-query": "5.101.4",
@@ -69,7 +86,8 @@
   },
   "msw": {
     "workerDirectory": [
-      "public"
+      "apps/customer-portal/public",
+      "apps/staff-console/public"
     ]
   },
   "overrides": {

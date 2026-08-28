@@ -133,10 +133,11 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
     return route.abort()
   })
 
-  await page.goto('/')
+  await page.setViewportSize({ height: 900, width: 390 })
+  await page.goto('/_customer/')
   await page
-    .getByRole('complementary', { name: '새 문의 접수' })
-    .getByRole('link', { name: '새 문의 접수' })
+    .getByRole('navigation', { name: '고객 메뉴' })
+    .getByRole('link', { name: '문의 접수', exact: true })
     .click()
   await expect(page).toHaveURL(/\/requests\/new$/)
   await page.getByLabel('이름').fill('김민아')
@@ -145,6 +146,14 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
   await page.getByLabel('문의 내용').fill('결제 승인 내역을 확인해 주세요.')
   await page.getByRole('button', { name: '문의 접수' }).click()
 
+  await expect(page).toHaveURL(/\/requests\/submitted\/1042$/)
+  await expect(
+    page.getByRole('heading', { name: '문의 접수가 완료되었습니다' }),
+  ).toBeVisible()
+  await expect(page.getByText(/예상 첫 답변|4시간 이내/)).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '추천 문서' })).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+  await page.getByRole('link', { name: '문의 보기' }).click()
   await expect(page).toHaveURL(/\/requests\/1042$/)
   await expect(
     page.getByRole('heading', { name: '#1042 결제 확인 요청' }),
@@ -158,6 +167,13 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
   )
   expect(observedRequestHeaders[0]?.referer).toBeUndefined()
 
+  await page.setViewportSize({ height: 900, width: 768 })
+  await page.goto('/_customer/requests/lookup')
+  await page.getByLabel('문의 번호').fill('1042')
+  await page.getByRole('button', { name: '문의 열기' }).click()
+  await expect(page).toHaveURL(/\/requests\/1042$/)
+  await expectNoHorizontalOverflow(page)
+
   await page.getByLabel('추가 답변').fill('추가 정보입니다.')
   await page.getByRole('button', { name: '답변 보내기' }).click()
   await expect(page.getByText('답변이 저장되었습니다.')).toBeVisible()
@@ -166,6 +182,8 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
   expect(commandIds[0]).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
   )
+  await page.setViewportSize({ height: 900, width: 1440 })
+  await expectNoHorizontalOverflow(page)
   await expectNoAxeViolations(page)
 })
 
@@ -189,7 +207,11 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
                 id: 'customer-e2e',
                 email: 'mina@example.test',
                 displayName: '김민아',
+                companyName: '가온상사',
                 verifiedAt: '2026-08-15T00:00:00Z',
+                credentialState: 'PASSWORDLESS',
+                registrationState: 'COMPLETE',
+                availableAuthenticationMethods: ['MAGIC_LINK'],
               },
             }
           : { status: 401, json: { status: 401 } },
@@ -209,7 +231,11 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
           id: 'customer-e2e',
           email: 'mina@example.test',
           displayName: '김민아',
+          companyName: '가온상사',
           verifiedAt: '2026-08-15T00:00:00Z',
+          credentialState: 'PASSWORDLESS',
+          registrationState: 'COMPLETE',
+          availableAuthenticationMethods: ['MAGIC_LINK'],
         },
       })
     }
@@ -327,17 +353,21 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
     return route.abort()
   })
 
-  await page.goto('/customer/sign-in')
+  await page.setViewportSize({ height: 900, width: 390 })
+  await page.goto('/_customer/customer/sign-in')
   await page
-    .getByRole('textbox', { name: '이메일', exact: true })
+    .getByRole('textbox', { name: '이메일 주소', exact: true })
     .fill('mina@example.test')
   await page.getByRole('button', { name: '로그인 링크 보내기' }).click()
   await expect(
-    page.getByText('입력한 이메일 주소가 유효하면 로그인 링크를 보냈습니다.'),
+    page.getByRole('heading', { name: '받은 편지함을 확인해 주세요' }),
   ).toBeVisible()
+  await expect(page.getByText('mina@example.test')).toBeVisible()
 
-  await page.goto(`/customer/sign-in/consume#token=${magicLinkToken}`)
+  await page.goto(`/_customer/customer/sign-in/consume#token=${magicLinkToken}`)
   await expect(page).toHaveURL(/\/account\/requests$/)
+  await page.setViewportSize({ height: 900, width: 768 })
+  await expectNoHorizontalOverflow(page)
   await expect(page.getByText('김민아')).toBeVisible()
   await expect(
     page.getByRole('link', { name: /#1042 결제 확인 요청/ }),
@@ -346,12 +376,14 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
 
   await page.getByRole('link', { name: /#1042 결제 확인 요청/ }).click()
   await expect(page).toHaveURL(/\/account\/requests\/1042$/)
-  await page.getByLabel('PUBLIC 첨부 파일').setInputFiles({
+  await page.setViewportSize({ height: 900, width: 1440 })
+  await page.getByLabel('첨부 파일').setInputFiles({
     name: 'approval.pdf',
     mimeType: 'application/pdf',
     buffer: Buffer.from('safe'),
   })
-  await expect(page.getByText(/CLEAN/)).toBeVisible()
+  await expect(page.getByText(/첨부 가능/)).toBeVisible()
+  await expect(page.getByText(/CLEAN|PUBLIC 첨부 파일/)).toHaveCount(0)
   await page.getByLabel('추가 답변').fill('인증 고객의 첨부 정보입니다.')
   await page.getByRole('button', { name: '답변 보내기' }).click()
   await expect(page.getByText('답변이 저장되었습니다.')).toBeVisible()
@@ -364,12 +396,68 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
   await page.getByRole('button', { name: '다운로드' }).click()
   expect((await download).suggestedFilename()).toBe('approval.pdf')
   expect(downloadCount).toBe(1)
+  await expectNoHorizontalOverflow(page)
 
+  await page.setViewportSize({ height: 844, width: 390 })
+  await expect(page.getByRole('button', { name: '로그아웃' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
   await page.getByRole('button', { name: '로그아웃' }).click()
-  await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByRole('heading', { name: '문의 조회' })).toBeVisible()
+  await expect(page).toHaveURL(/\/_customer\/?$/)
+  await expect(
+    page.getByRole('heading', { name: '안녕하세요! 무엇을 도와드릴까요?' }),
+  ).toBeVisible()
   await expectNoAxeViolations(page)
 })
+
+for (const width of [390, 768, 1440]) {
+  test(`Help Center API empty/error states stay content-only at ${width}px`, async ({
+    page,
+  }) => {
+    let categoryResponse: 'empty' | 'error' = 'empty'
+    await page.route('**/api/v1/**', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.pathname === '/api/v1/customer/me') {
+        return route.fulfill({ status: 401, json: { status: 401 } })
+      }
+      if (url.pathname === '/api/v1/help/categories') {
+        return categoryResponse === 'empty'
+          ? route.fulfill({ status: 200, json: [] })
+          : route.fulfill({ status: 503, json: { status: 503 } })
+      }
+      if (url.pathname === '/api/v1/help/sections/announcements') {
+        return route.fulfill({
+          status: 200,
+          json: {
+            articles: [],
+            categoryId: 'category-announcements',
+            id: 'section-announcements',
+            slug: 'announcements',
+            title: '공지사항',
+          },
+        })
+      }
+      return route.abort()
+    })
+
+    await page.setViewportSize({ height: 900, width })
+    await page.goto(`/_customer/?state=empty&width=${width}`)
+    await expect(
+      page.getByRole('heading', { name: '등록된 도움말 주제가 없습니다.' }),
+    ).toBeVisible()
+    await expect(page.getByText('주문', { exact: true })).toHaveCount(0)
+    await expectNoHorizontalOverflow(page)
+
+    categoryResponse = 'error'
+    await page.goto(`/_customer/?state=error&width=${width}`)
+    await expect(
+      page.getByRole('heading', {
+        name: '도움말 주제를 불러올 수 없습니다.',
+      }),
+    ).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('주문', { exact: true })).toHaveCount(0)
+    await expectNoHorizontalOverflow(page)
+  })
+}
 
 test('authenticated customer attachment real stack preserves ownership and PUBLIC visibility', async ({
   browser,
@@ -412,7 +500,7 @@ test('authenticated customer attachment real stack preserves ownership and PUBLI
       ticketNumber,
       createdRequest.accessToken,
     )
-    await page.goto(`/account/requests/${ticketNumber}`)
+    await page.goto(`/_customer/account/requests/${ticketNumber}`)
     await expect(
       page.getByRole('heading', {
         name: `#${ticketNumber} Real-stack attachment request`,
@@ -428,7 +516,7 @@ test('authenticated customer attachment real stack preserves ownership and PUBLI
           `/api/v1/customer/requests/${ticketNumber}/attachments/uploads` &&
         response.request().method() === 'POST',
     )
-    await page.getByLabel('PUBLIC 첨부 파일').setInputFiles({
+    await page.getByLabel('첨부 파일').setInputFiles({
       name: 'customer-public.pdf',
       mimeType: 'application/pdf',
       buffer: publicBytes,
@@ -437,7 +525,8 @@ test('authenticated customer attachment real stack preserves ownership and PUBLI
     expect(uploadResponse.status()).toBe(201)
     const uploaded = (await uploadResponse.json()) as { id: string }
     expect(uploaded.id).toMatch(/^[0-9a-f-]{36}$/i)
-    await expect(page.getByText(/CLEAN/)).toBeVisible()
+    await expect(page.getByText(/첨부 가능/)).toBeVisible()
+    await expect(page.getByText(/CLEAN|PUBLIC 첨부 파일/)).toHaveCount(0)
 
     await page
       .getByLabel('추가 답변')
@@ -519,6 +608,15 @@ test('authenticated customer attachment real stack preserves ownership and PUBLI
     await mailpit.dispose()
   }
 })
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const overflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+  )
+  expect(overflow).toBeLessThanOrEqual(1)
+}
 
 async function createRealCustomerRequest(
   context: BrowserContext,
