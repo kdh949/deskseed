@@ -64,7 +64,6 @@ export function HelpCenterHomePage() {
     <div className="customer-home">
       <section className="customer-home-hero">
         <div>
-          <span className="customer-eyebrow">DeskSeed Help Center</span>
           <h1>
             안녕하세요!
             <br />

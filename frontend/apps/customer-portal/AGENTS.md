@@ -16,6 +16,13 @@ This file applies to `frontend/apps/customer-portal/` and extends both parent in
 - Preserve ticket access proof in session storage. A ticket number is never authorization and proof must not be placed in a query string.
 - New or changed screens cover applicable loading, empty, error, denied, stale/conflict, and success states without inventing endpoints.
 
+## Typography policy
+
+- Do not add ornamental eyebrow, kicker, overline, supertitle, pretitle, pre-heading, or micro-heading copy above customer headings.
+- Do not force customer copy to uppercase with CSS. Acronyms such as SSO may remain uppercase only when uppercase is part of the actual product term.
+- Start each content region with its semantic heading and place necessary context in normal body copy, breadcrumbs, status, or metadata rather than a small letter-spaced label.
+- `npm run check:design-system-boundaries` rejects the prohibited class concepts and uppercase transformation inside the customer source tree.
+
 ## Storybook and verification
 
 - Run package commands from `frontend/`; use this directory for customer Storybook MCP discovery through `.mcp.json`.

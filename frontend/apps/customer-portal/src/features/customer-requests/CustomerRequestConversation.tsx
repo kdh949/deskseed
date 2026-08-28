@@ -46,7 +46,6 @@ export function CustomerRequestConversation({
   return (
     <div aria-label={`문의 #${request.ticketNumber}`} className="customer-page">
       <header className="customer-page-header customer-request-header">
-        <p className="customer-page-eyebrow">문의 #{request.ticketNumber}</p>
         <h1>{`#${request.ticketNumber} ${request.subject}`}</h1>
         <div className="customer-request-meta">
           <DsStatusIndicator tone={statusTone(request.status)}>

@@ -55,7 +55,6 @@ export function CustomerSignInPage() {
   return (
     <div className="customer-auth-page">
       <section className="customer-auth-card">
-        <span className="customer-eyebrow">고객 로그인</span>
         <h1>DeskSeed에 로그인</h1>
         <p>이메일로 안전한 일회성 링크를 받거나 비밀번호로 로그인하세요.</p>
         <div

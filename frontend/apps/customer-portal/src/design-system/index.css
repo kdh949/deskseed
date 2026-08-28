@@ -387,13 +387,6 @@ p {
   margin: 0;
   line-height: 1.65;
 }
-.customer-eyebrow {
-  color: var(--customer-color-primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 .customer-lookup-card form {
   display: grid;
   gap: 8px;

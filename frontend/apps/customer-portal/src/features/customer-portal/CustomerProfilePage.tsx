@@ -7,15 +7,15 @@ export function CustomerProfilePage() {
   return (
     <div className="customer-account-layout">
       <aside>
-        <span>계정</span>
-        <strong>
-          <CustomerIcon name="user" />
-          계정 설정
-        </strong>
-        <span>문의</span>
-        <a href="/account/requests">
-          <CustomerIcon name="inbox" />내 문의
-        </a>
+        <nav aria-label="계정 메뉴">
+          <strong aria-current="page">
+            <CustomerIcon name="user" />
+            계정 설정
+          </strong>
+          <a href="/account/requests">
+            <CustomerIcon name="inbox" />내 문의
+          </a>
+        </nav>
       </aside>
       <div className="customer-account-content">
         <header>

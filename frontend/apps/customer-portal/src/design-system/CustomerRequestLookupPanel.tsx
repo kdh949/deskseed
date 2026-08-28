@@ -22,7 +22,6 @@ export function CustomerRequestLookupPanel({
   return (
     <section className="customer-lookup-card">
       <header>
-        <span className="customer-eyebrow">문의 상태 확인</span>
         <h1>문의 번호로 빠르게 확인하세요</h1>
         <p>
           이메일의 안전한 문의 링크를 먼저 연 브라우저에서 조회할 수 있습니다.

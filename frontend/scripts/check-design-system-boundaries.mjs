@@ -20,6 +20,13 @@ const forbiddenReferences = [
     /export\s+const\s+(IconButton|Avatar|StatusIndicator)\s*=/,
   ],
 ]
+const forbiddenCustomerTypographyReferences = [
+  [
+    'ornamental customer micro-heading',
+    /\b(?:eyebrow|kicker|overline|supertitle|pretitle|pre-heading|micro-heading)\b/i,
+  ],
+  ['forced uppercase customer text', /text-transform\s*:\s*uppercase\b/i],
+]
 
 function filesUnder(directory) {
   return readdirSync(directory).flatMap((entry) => {
@@ -74,6 +81,11 @@ for (const path of filesUnder(customerRoot)) {
     failures.push(
       `Garden import outside customer design-system: ${relative(root, path)}`,
     )
+  }
+  for (const [label, pattern] of forbiddenCustomerTypographyReferences) {
+    if (pattern.test(source)) {
+      failures.push(`${label}: ${relative(root, path)}`)
+    }
   }
 }
 

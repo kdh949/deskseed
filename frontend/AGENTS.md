@@ -90,6 +90,7 @@ Continue directly with implementation.
 - Implement the documented task flow and information architecture with Deskseed branding. Never ship Zendesk logos, wordmarks, screenshots, illustrations, copied CSS/assets, or a pixel-for-pixel proprietary clone.
 - Do not add unsupported headings, subtitles, explanatory copy, cards, badges, icons, illustrations, toolbar actions, decorative surfaces, or section wrappers merely to make a screen appear more complete.
 - Every visible element must be grounded in the current requirement, an applicable specification, an approved reference, or an existing documented Deskseed pattern.
+- Customer screens must not introduce ornamental small eyebrow/kicker/overline labels above headings or CSS-forced uppercase micro-headings. The customer screen starts with the semantic heading; contextual information belongs in normal body copy, breadcrumbs, status, or metadata.
 - Do not expose engineering explanations, fixture controls, unsupported-action notices, or implementation placeholders in production UI. Omit unavailable actions or implement the specified product state.
 
 ## Accessibility and interaction

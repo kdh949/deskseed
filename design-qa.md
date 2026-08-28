@@ -288,3 +288,57 @@ No other actionable P0/P1/P2 mismatch remains in the three annotated regions.
 - No P3 polish is required for the selected regions.
 
 final result: blocked
+
+---
+
+# Customer Portal Ornamental Micro-heading Removal QA — 2026-08-28
+
+## Scope and evidence
+
+- Requested change: remove the small, letter-spaced, heading-adjacent label pattern from every customer-facing screen and prevent it from being reintroduced.
+- Before state: commit `e0726c5`, served from the same customer Storybook configuration on port 6008.
+- After state: current `feature/customer-portal-isolation` working tree, served on port 6007.
+- Viewport and density: both captures used a `1280 x 720` CSS viewport at device scale factor 1. Full-page output is `1265 x 1139` pixels for both Home captures.
+- Before/after Home captures:
+  - `/private/tmp/customer-home-eyebrow-before.png`
+  - `/private/tmp/customer-home-eyebrow-after.png`
+  - Combined same-state comparison: `/private/tmp/customer-home-eyebrow-comparison.png` (before on the left, after on the right)
+- Additional same-state captures:
+  - `/private/tmp/customer-eyebrow-customer-home-before.png` and `/private/tmp/customer-eyebrow-customer-home-after.png`
+  - `/private/tmp/customer-eyebrow-request-form-before.png` and `/private/tmp/customer-eyebrow-request-form-after.png`
+  - `/private/tmp/customer-eyebrow-request-list-before.png` and `/private/tmp/customer-eyebrow-request-list-after.png`
+  - `/private/tmp/customer-eyebrow-conversation-before.png` and `/private/tmp/customer-eyebrow-conversation-after.png`
+  - `/private/tmp/customer-eyebrow-profile-before.png` and `/private/tmp/customer-eyebrow-profile-after.png`
+
+## Findings and resolutions
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | Help Center Home placed the ornamental uppercase label `DESKSEED HELP CENTER` above its semantic `h1`. | Removed the label and its dedicated typography rule; the semantic heading now begins the hero content. |
+| P1 | The same pattern appeared in customer sign-in, request lookup, request form, request list, and request conversation surfaces. | Removed all `customer-eyebrow` and `customer-page-eyebrow` render sites and adjusted heading margins to preserve vertical rhythm. |
+| P1 | Profile navigation used forced-uppercase 11 px group labels. | Removed the decorative group labels and replaced the sidebar structure with one named navigation landmark containing only the current destination and actionable link. |
+| P1 | Future customer work could reintroduce the same visual pattern. | Added repository and customer-app typography rules plus a boundary scan that rejects eyebrow/kicker/overline-style identifiers and CSS-forced uppercase in customer source. A deliberate temporary violation was detected by the check before the probe was removed. |
+| P0 | Customer-wide contrast tokens still fail the existing accessibility release gate. | Not changed in this typography-only scope because the Storybook contract requires explicit approval before visual color changes. The full accessibility run still reports shared token ratios from `3.05:1` to `4.16:1` against the required `4.5:1`. |
+
+## Browser and Storybook evidence
+
+- Browser DOM comparison confirmed the ornamental element count changed from one to zero in Help Center Home, customer request lookup Home, sign-in, request form, request list, and request conversation.
+- Browser computed-style comparison confirmed the profile sidebar's forced-uppercase labels changed from two to zero.
+- All inspected after states retain one visible semantic page heading and report no CSS-forced uppercase content in `main`.
+- Full functional Storybook MCP run: 37/37 stories passed.
+- Focused visual stories and the full customer production Storybook build passed.
+- Full accessibility Storybook MCP run completed; only the previously documented shared color-contrast blocker remains.
+
+## Required fidelity surfaces
+
+- Typography: the removed text no longer competes with page headings; actual acronyms and functional status/metadata remain unchanged.
+- Spacing and layout rhythm: heading top margins were normalized to zero where the deleted label previously supplied spacing. The same-state Home comparison shows no downstream card or panel displacement.
+- Navigation semantics: profile sidebar labels were not replaced with new decorative copy; the navigation now has the accessible name `계정 메뉴`, and the current destination exposes `aria-current="page"`.
+- Design isolation: the new prohibition is scoped to `apps/customer-portal/src`, so it cannot import or alter staff typography rules.
+
+## Verification boundary
+
+- The requested ornamental micro-heading pattern is removed and guarded.
+- Accessibility release status remains blocked only by the pre-existing shared customer color tokens; changing those colors requires a separate explicit visual decision.
+
+final result: blocked

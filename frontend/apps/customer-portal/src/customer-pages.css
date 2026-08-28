@@ -12,7 +12,7 @@
   margin-bottom: 24px;
 }
 .customer-page-header h1 {
-  margin: 5px 0 8px;
+  margin: 0 0 8px;
   color: var(--customer-color-ink);
   font-size: clamp(30px, 4vw, 40px);
   letter-spacing: -0.04em;
@@ -20,13 +20,6 @@
 .customer-page-header p {
   color: var(--customer-color-muted);
   line-height: 1.65;
-}
-.customer-page-eyebrow {
-  color: var(--customer-color-primary) !important;
-  font-size: 12px !important;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 .customer-breadcrumb {
   display: block;
@@ -47,11 +40,6 @@
   margin: 0 auto;
   padding: 24px 0 44px;
 }
-.customer-home .customer-eyebrow {
-  font-size: 14px;
-  line-height: 1.4;
-  letter-spacing: 0.07em;
-}
 .customer-home-hero {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
@@ -59,7 +47,7 @@
   column-gap: 48px;
 }
 .customer-home-hero h1 {
-  margin: 6px 0 10px;
+  margin: 0 0 10px;
   color: var(--customer-color-ink);
   font-size: clamp(40px, 4.3vw, 52px);
   line-height: 1.06;
@@ -530,7 +518,7 @@
 }
 .customer-auth-card h1,
 .customer-register-card h1 {
-  margin: 8px 0 10px;
+  margin: 0 0 10px;
   color: var(--customer-color-ink);
   font-size: 38px;
   letter-spacing: -0.045em;
@@ -1136,21 +1124,17 @@
   min-height: 720px;
 }
 .customer-account-layout > aside {
-  display: grid;
-  align-content: start;
-  gap: 10px;
   padding: 32px 22px;
   border-right: 1px solid var(--customer-color-border);
   background: #fff;
 }
-.customer-account-layout > aside span {
-  margin-top: 10px;
-  color: var(--customer-color-muted);
-  font-size: 11px;
-  text-transform: uppercase;
+.customer-account-layout > aside nav {
+  display: grid;
+  align-content: start;
+  gap: 10px;
 }
-.customer-account-layout > aside strong,
-.customer-account-layout > aside a {
+.customer-account-layout > aside nav strong,
+.customer-account-layout > aside nav a {
   display: flex;
   align-items: center;
   gap: 9px;

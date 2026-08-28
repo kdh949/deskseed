@@ -80,7 +80,6 @@ export function CustomerRequestForm({
   return (
     <div className="customer-page">
       <header className="customer-page-header">
-        <p className="customer-page-eyebrow">고객 지원</p>
         <h1>문의하기</h1>
         <p>문의 내용을 남겨 주시면 공개 대화로 진행 상황을 알려 드립니다.</p>
       </header>

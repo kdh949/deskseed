@@ -23,7 +23,6 @@ export function CustomerRequestList({
   return (
     <div className="customer-page">
       <header className="customer-page-header">
-        <p className="customer-page-eyebrow">내 문의</p>
         <h1>내 문의</h1>
         <p>로그인한 계정에 연결된 공개 문의만 표시합니다.</p>
       </header>
