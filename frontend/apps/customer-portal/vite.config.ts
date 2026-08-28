@@ -8,9 +8,9 @@ import { defineConfig } from 'vitest/config'
 const frontendRoot = path.resolve(import.meta.dirname, '../..')
 const nodeModulesRoot = realpathSync(path.join(frontendRoot, 'node_modules'))
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   root: import.meta.dirname,
-  base: '/_customer/',
+  base: command === 'serve' ? '/' : '/_customer/',
   build: {
     emptyOutDir: true,
     manifest: true,
@@ -24,8 +24,14 @@ export default defineConfig({
     port: 5174,
     proxy: {
       '/_staff': 'http://127.0.0.1:45174',
-      '/agent': 'http://127.0.0.1:45174',
-      '/admin': 'http://127.0.0.1:45174',
+      '/agent': {
+        target: 'http://127.0.0.1:45174',
+        rewrite: (requestPath) => `/_staff${requestPath}`,
+      },
+      '/admin': {
+        target: 'http://127.0.0.1:45174',
+        rewrite: (requestPath) => `/_staff${requestPath}`,
+      },
       '/api': 'http://localhost:8080',
       '/actuator': 'http://localhost:8080',
     },
@@ -60,4 +66,4 @@ export default defineConfig({
       },
     ],
   },
-})
+}))
