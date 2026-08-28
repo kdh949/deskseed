@@ -132,13 +132,6 @@ export function CustomerSignInPage() {
                 : '로그인'}
           </DsButton>
         </form>
-        <div className="customer-auth-note">
-          <CustomerIcon name="check" />
-          <p>
-            비밀번호와 로그인 링크는 브라우저 기록이나 일반 로그에 남기지
-            않습니다.
-          </p>
-        </div>
         <p className="customer-auth-switch">
           아직 계정이 없나요? <Link to="/customer/register">회원가입</Link>
         </p>
@@ -160,8 +153,8 @@ export function CustomerSignInPage() {
         />
         <Feature
           icon="user"
-          title="계정 정보 관리"
-          description="프로필과 알림 설정을 관리하세요."
+          title="안전한 로그인"
+          description="로그인한 뒤 내 문의와 답변을 확인하세요."
         />
       </aside>
     </div>

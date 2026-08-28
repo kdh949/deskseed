@@ -64,13 +64,13 @@ export function CustomerRequestConversation({
         aria-labelledby="customer-conversation-title"
         className="customer-conversation"
       >
-        <h2 id="customer-conversation-title">공개 대화</h2>
+        <h2 id="customer-conversation-title">문의 대화</h2>
         {request.comments.length === 0 ? (
           <ScreenState
             compact
-            description="아직 표시할 공개 대화가 없습니다."
+            description="답변이 등록되면 이곳에서 확인할 수 있습니다."
             kind="empty"
-            title="공개 대화가 비어 있습니다."
+            title="아직 문의 대화가 없습니다."
           />
         ) : (
           <ol>

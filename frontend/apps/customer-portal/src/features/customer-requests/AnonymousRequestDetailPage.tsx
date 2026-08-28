@@ -54,7 +54,7 @@ export function AnonymousRequestDetailPage() {
     return (
       <CustomerDetailState
         action={<Link to="/requests/lookup">문의 조회 안내</Link>}
-        description="접근 토큰은 주소창의 fragment에서만 읽고 이 브라우저의 해당 문의 세션에만 보관합니다."
+        description="이메일로 받은 문의 링크를 다시 열어 주세요."
         kind="denied"
         title="이메일 문의 링크가 필요합니다."
       />
@@ -65,7 +65,7 @@ export function AnonymousRequestDetailPage() {
     return (
       <CustomerDetailState
         kind="loading"
-        title="공개 문의 대화를 불러오고 있습니다."
+        title="문의 대화를 불러오고 있습니다."
       />
     )
   }
@@ -162,10 +162,10 @@ function AnonymousDetailError({
     return (
       <CustomerDetailState
         action={<Link to="/requests/lookup">문의 조회 안내</Link>}
-        description="문의 링크가 만료되었거나 현재 브라우저에서 더 이상 사용할 수 없습니다."
+        description="이메일로 받은 문의 링크를 다시 열어 주세요. 계속 열리지 않으면 새 문의를 접수해 주세요."
         kind="not-found"
         requestId={requestId}
-        title="문의 내용을 찾을 수 없습니다."
+        title="문의 내용을 열 수 없습니다."
       />
     )
   }
@@ -173,10 +173,10 @@ function AnonymousDetailError({
     return (
       <CustomerDetailState
         action={<Link to="/requests/lookup">문의 조회 안내</Link>}
-        description="이 문의를 볼 수 있는 권한을 확인할 수 없습니다."
+        description="이메일로 받은 문의 링크를 다시 열어 주세요. 계속 열리지 않으면 새 문의를 접수해 주세요."
         kind="denied"
         requestId={requestId}
-        title="문의 조회가 허용되지 않았습니다."
+        title="문의 내용을 열 수 없습니다."
       />
     )
   }
@@ -194,7 +194,7 @@ function AnonymousDetailError({
   return (
     <CustomerDetailState
       action={<RetryButton onClick={onRetry} />}
-      description="공개 문의 대화를 불러오지 못했습니다. 입력한 후속 답변 초안은 이 화면에 표시되지 않았습니다."
+      description="잠시 후 다시 시도해 주세요."
       kind="error"
       requestId={requestId}
       title="문의 내용을 불러올 수 없습니다."

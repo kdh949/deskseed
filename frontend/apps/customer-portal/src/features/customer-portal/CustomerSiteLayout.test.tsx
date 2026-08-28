@@ -71,6 +71,11 @@ describe('CustomerSiteLayout', () => {
       '/account/requests',
     )
     expect(screen.getByText('고객')).toBeVisible()
+    expect(screen.getByText('고객').closest('a')).toBeNull()
+    expect(screen.queryByRole('link', { name: '시스템 상태' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'DeskSeed 소개' })).toBeNull()
+    expect(screen.queryByRole('link', { name: '개인정보 처리방침' })).toBeNull()
+    expect(screen.queryByRole('link', { name: '이용약관' })).toBeNull()
     await user.click(screen.getByRole('button', { name: '로그아웃' }))
     expect(onSignOut).toHaveBeenCalledOnce()
   })

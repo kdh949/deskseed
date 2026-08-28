@@ -191,7 +191,7 @@ export function AttachmentUploadField({
       )}
       {blocked ? (
         <p className="attachment-upload-blocker" role="status">
-          모든 파일이 CLEAN 상태여야 제출할 수 있습니다.
+          안전 검사가 끝난 파일만 제출할 수 있습니다.
         </p>
       ) : null}
       {limitError ? (
@@ -208,15 +208,15 @@ function isRejected(item: UploadState) {
 }
 
 function uploadStatus(item: UploadState, expired: boolean) {
-  if (item.status === 'RESTORED') return '이전 저장 시도에서 복원됨'
-  if (item.status === 'UPLOADING') return '업로드 및 악성 파일 검사 중'
+  if (item.status === 'RESTORED') return '이전 첨부 복원'
+  if (item.status === 'UPLOADING') return '업로드 및 안전 검사 중'
   if (item.status !== 'CLEAN') {
     return item.status === 'REJECTED'
       ? `감염 또는 격리됨 · ${item.message}`
       : `업로드 실패 · ${item.message}`
   }
   if (expired) return '업로드 만료 · 파일을 다시 선택해 주세요.'
-  return `CLEAN · ${formatBytes(item.upload.sizeBytes)}`
+  return `첨부 가능 · ${formatBytes(item.upload.sizeBytes)}`
 }
 
 function restoredItems(attachmentIds: string[]): UploadState[] {
@@ -232,9 +232,9 @@ function uploadFailureMessage(error: unknown) {
   const status = statusOf(error)
   if (status === undefined) return '네트워크 상태를 확인해 주세요.'
   if (status === 413) return '허용된 파일 크기를 초과했습니다.'
-  if (status === 415) return '허용되지 않는 파일 형식입니다.'
+  if (status === 415) return '지원하지 않는 파일 형식입니다.'
   if (status === 422) return '안전 검사를 통과하지 못했습니다.'
-  if (status === 403) return '업로드 권한이 없습니다.'
+  if (status === 403) return '이 파일을 업로드할 수 없습니다.'
   return '파일을 다시 선택해 주세요.'
 }
 

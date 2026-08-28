@@ -231,10 +231,10 @@ describe('CustomerRequestDetailPage', () => {
     await user.click(screen.getByRole('button', { name: '다운로드' }))
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1))
     await user.upload(
-      screen.getByLabelText('PUBLIC 첨부 파일'),
+      screen.getByLabelText('첨부 파일'),
       new File(['safe'], 'additional.pdf', { type: 'application/pdf' }),
     )
-    expect(await screen.findByText(/CLEAN/)).toBeVisible()
+    expect(await screen.findByText(/^첨부 가능/)).toBeVisible()
     await user.type(screen.getByLabelText('추가 답변'), '추가 정보입니다.')
     await user.click(screen.getByRole('button', { name: '답변 보내기' }))
 

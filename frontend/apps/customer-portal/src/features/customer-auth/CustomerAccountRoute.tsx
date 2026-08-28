@@ -11,7 +11,7 @@ export function CustomerAccountRoute() {
     return (
       <CustomerAccountState
         kind="loading"
-        title="고객 세션을 확인하고 있습니다."
+        title="로그인 상태를 확인하고 있습니다."
       />
     )
   }
@@ -20,9 +20,9 @@ export function CustomerAccountRoute() {
     return (
       <CustomerAccountState
         action={<RetryButton onClick={() => void session.retry()} />}
-        description="내 문의를 표시하기 전에 고객 세션을 다시 확인해 주세요."
+        description="로그인 상태를 다시 확인해 주세요."
         kind="error"
-        title="고객 세션을 확인할 수 없습니다."
+        title="로그인 상태를 확인할 수 없습니다."
       />
     )
   }

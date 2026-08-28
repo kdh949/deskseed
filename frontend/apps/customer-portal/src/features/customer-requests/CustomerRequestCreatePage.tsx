@@ -22,7 +22,7 @@ export function CustomerRequestCreatePage() {
     return (
       <CustomerRouteState
         kind="loading"
-        title="고객 세션을 확인하고 있습니다."
+        title="로그인 상태를 확인하고 있습니다."
       />
     )
   }
@@ -31,9 +31,9 @@ export function CustomerRequestCreatePage() {
     return (
       <CustomerRouteState
         action={<RetryButton onClick={() => void session.retry()} />}
-        description="로그인 여부를 확인할 수 없어 안전하게 문의를 접수하지 않았습니다."
+        description="로그인 상태를 확인한 뒤 다시 시도해 주세요."
         kind="error"
-        title="고객 세션을 확인할 수 없습니다."
+        title="로그인 상태를 확인할 수 없습니다."
       />
     )
   }
@@ -42,7 +42,7 @@ export function CustomerRequestCreatePage() {
     return (
       <CustomerRouteState
         kind="loading"
-        title="문의 접수 설정을 확인하고 있습니다."
+        title="문의 접수 가능 여부를 확인하고 있습니다."
       />
     )
   }
@@ -53,7 +53,7 @@ export function CustomerRequestCreatePage() {
         action={<RetryButton onClick={() => void accessModeQuery.refetch()} />}
         description="접수 가능 여부를 확인한 뒤 다시 시도해 주세요."
         kind="error"
-        title="문의 접수 설정을 불러올 수 없습니다."
+        title="문의 접수 가능 여부를 확인할 수 없습니다."
       />
     )
   }

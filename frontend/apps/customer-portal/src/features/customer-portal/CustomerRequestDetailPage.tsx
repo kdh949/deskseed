@@ -49,9 +49,9 @@ export function CustomerRequestDetailPage() {
     return (
       <CustomerDetailState
         action={<Link to="/customer/sign-in">고객 로그인</Link>}
-        description="내 문의는 로그인한 고객 계정에서만 볼 수 있습니다."
+        description="로그인한 뒤 내 문의 목록에서 다시 열어 주세요."
         kind="denied"
-        title="내 문의 접근이 허용되지 않았습니다."
+        title="문의 내용을 열 수 없습니다."
       />
     )
   }
@@ -102,10 +102,10 @@ function CustomerAccountDetailError({
     return (
       <CustomerDetailState
         action={<Link to="/customer/sign-in">고객 로그인</Link>}
-        description="내 문의는 로그인한 고객 계정에서만 볼 수 있습니다."
+        description="로그인한 뒤 내 문의 목록에서 다시 열어 주세요."
         kind="denied"
         requestId={apiError.requestId}
-        title="내 문의 접근이 허용되지 않았습니다."
+        title="문의 내용을 열 수 없습니다."
       />
     )
   }
@@ -113,17 +113,17 @@ function CustomerAccountDetailError({
     return (
       <CustomerDetailState
         action={<Link to="/account/requests">내 문의 목록</Link>}
-        description="문의가 없거나 현재 계정에 연결되어 있지 않습니다."
+        description="내 문의 목록으로 돌아가 문의를 다시 선택해 주세요."
         kind="not-found"
         requestId={apiError.requestId}
-        title="문의 내용을 찾을 수 없습니다."
+        title="문의 내용을 열 수 없습니다."
       />
     )
   }
   return (
     <CustomerDetailState
       action={<RetryButton onClick={onRetry} />}
-      description="고객 문의 내용을 불러오지 못했습니다."
+      description="잠시 후 다시 시도해 주세요."
       kind="error"
       requestId={apiError?.requestId}
       title="문의 내용을 불러올 수 없습니다."

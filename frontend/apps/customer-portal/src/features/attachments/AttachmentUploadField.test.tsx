@@ -25,7 +25,7 @@ describe('AttachmentUploadField', () => {
       screen.getByLabelText('첨부 파일'),
       new File(['safe'], 'safe.png', { type: 'image/png' }),
     )
-    expect(screen.getByText(/업로드 및 악성 파일 검사 중/)).toBeVisible()
+    expect(screen.getByText(/업로드 및 안전 검사 중/)).toBeVisible()
     expect(screen.getByTestId('blocked-state')).toHaveTextContent('blocked')
 
     resolveUpload(cleanUpload)
@@ -34,7 +34,7 @@ describe('AttachmentUploadField', () => {
         cleanUpload.id,
       ),
     )
-    expect(screen.getByText(/CLEAN/)).toBeVisible()
+    expect(screen.getByText(/^첨부 가능/)).toBeVisible()
   })
 
   it('keeps an infected or quarantined response rejected', async () => {
@@ -106,7 +106,7 @@ describe('AttachmentUploadField', () => {
     await user.click(screen.getByRole('button', { name: '초안에서 제거' }))
     await user.upload(input, new File(['x'], 'safe.png'))
 
-    expect(await screen.findByText(/CLEAN/)).toBeVisible()
+    expect(await screen.findByText(/^첨부 가능/)).toBeVisible()
     expect(upload).toHaveBeenCalledTimes(2)
   })
 })

@@ -48,10 +48,11 @@ describe('CustomerRequestLookupPage', () => {
     await user.click(screen.getByRole('button', { name: '문의 열기' }))
 
     expect(
-      await screen.findByText(
-        /이 브라우저에서 이 문의를 열었던 이메일 링크가 필요합니다/,
-      ),
+      await screen.findByText('이메일로 받은 문의 링크를 다시 열어 주세요.'),
     ).toBeVisible()
+    expect(
+      screen.queryByText(/이 브라우저|보안을 위해/),
+    ).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/토큰/)).not.toBeInTheDocument()
   })
 })

@@ -22,6 +22,15 @@ function renderPage() {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('CustomerSignInPage', () => {
+  it('promises only the account capabilities that are implemented', () => {
+    renderPage()
+
+    expect(screen.queryByText('계정 정보 관리')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('프로필과 알림 설정을 관리하세요.'),
+    ).not.toBeInTheDocument()
+  })
+
   it('requests a customer magic link with no-referrer transport and gives the same accepted message without account enumeration', async () => {
     const user = userEvent.setup()
     const fetchMock = vi

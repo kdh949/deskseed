@@ -60,7 +60,7 @@ export const Empty: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole('heading', { name: '표시할 문의가 없습니다.' }),
+      canvas.getByRole('heading', { name: '아직 접수한 문의가 없습니다.' }),
     ).toBeVisible()
   },
 }

@@ -46,6 +46,11 @@ export const AmbiguousRetry: Story = {
     await expect(
       canvas.getByText('답변 전송 결과를 확인할 수 없습니다.'),
     ).toBeVisible()
+    await expect(
+      canvas.getByText(
+        '입력한 내용은 그대로 남아 있습니다. 다시 보내도 같은 답변이 두 번 등록되지 않습니다.',
+      ),
+    ).toBeVisible()
   },
 }
 
@@ -67,10 +72,10 @@ export const WithCleanAttachment: Story = {
       '첨부 자료를 전달합니다.',
     )
     await userEvent.upload(
-      canvas.getByLabelText('PUBLIC 첨부 파일'),
+      canvas.getByLabelText('첨부 파일'),
       new File(['safe'], 'evidence.png', { type: 'image/png' }),
     )
-    await expect(await canvas.findByText(/CLEAN/)).toBeVisible()
+    await expect(await canvas.findByText(/^첨부 가능/)).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
     await expect(canvas.getByText('답변이 저장되었습니다.')).toBeVisible()
   },

@@ -45,5 +45,6 @@ export const MissingFragment: Story = {
         name: '로그인 링크를 찾을 수 없습니다.',
       }),
     ).toBeVisible()
+    await expect(canvas.queryByText(/fragment/i)).not.toBeInTheDocument()
   },
 }

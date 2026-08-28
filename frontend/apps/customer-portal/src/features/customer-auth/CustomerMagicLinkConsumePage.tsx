@@ -50,7 +50,7 @@ export function CustomerMagicLinkConsumePage() {
     return (
       <CustomerConsumeState
         action={<Link to="/customer/sign-in">새 로그인 링크 요청</Link>}
-        description="로그인 링크의 fragment가 없거나 이미 제거되었습니다."
+        description="이 링크로 로그인할 수 없습니다. 이메일 주소를 입력해 새 링크를 받아 주세요."
         kind="not-found"
         title="로그인 링크를 찾을 수 없습니다."
       />
@@ -71,7 +71,7 @@ export function CustomerMagicLinkConsumePage() {
       action={<Link to="/customer/sign-in">새 로그인 링크 요청</Link>}
       description="로그인 링크를 확인하지 못했습니다. 새 링크를 요청한 뒤 다시 시도해 주세요."
       kind="error"
-      title="로그인 상태를 만들 수 없습니다."
+      title="로그인할 수 없습니다."
     />
   )
 }

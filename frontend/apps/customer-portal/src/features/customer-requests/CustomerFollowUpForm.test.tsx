@@ -20,6 +20,10 @@ describe('CustomerFollowUpForm', () => {
       .mockResolvedValueOnce(undefined)
     renderForm(<CustomerFollowUpForm onSubmit={submit} />)
 
+    expect(
+      screen.queryByText(/같은 답변을 다시 보내도 중복되지 않습니다/),
+    ).not.toBeInTheDocument()
+
     await user.type(
       screen.getByLabelText('추가 답변'),
       '주문 번호는 ORD-1042입니다.',
@@ -28,6 +32,11 @@ describe('CustomerFollowUpForm', () => {
 
     expect(
       await screen.findByText('답변 전송 결과를 확인할 수 없습니다.'),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        '입력한 내용은 그대로 남아 있습니다. 다시 보내도 같은 답변이 두 번 등록되지 않습니다.',
+      ),
     ).toBeVisible()
     expect(screen.getByText('주문 번호는 ORD-1042입니다.')).toBeVisible()
     expect(screen.queryByText('답변이 저장되었습니다.')).not.toBeInTheDocument()
@@ -92,19 +101,19 @@ describe('CustomerFollowUpForm', () => {
     )
     await user.type(screen.getByLabelText('추가 답변'), '첨부를 확인해 주세요.')
     await user.upload(
-      screen.getByLabelText('PUBLIC 첨부 파일'),
+      screen.getByLabelText('첨부 파일'),
       new File(['a'], 'a.png', { type: 'image/png' }),
     )
-    await screen.findByText(/^CLEAN/)
+    await screen.findByText(/^첨부 가능/)
     await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await screen.findByText('답변 전송 결과를 확인할 수 없습니다.')
     const firstAttempt = submit.mock.calls[0]
     await user.click(screen.getByRole('button', { name: '초안에서 제거' }))
     await user.upload(
-      screen.getByLabelText('PUBLIC 첨부 파일'),
+      screen.getByLabelText('첨부 파일'),
       new File(['b'], 'b.png', { type: 'image/png' }),
     )
-    await screen.findByText(/^CLEAN/)
+    await screen.findByText(/^첨부 가능/)
     await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
     expect(submit.mock.calls[1]?.[1]).not.toBe(firstAttempt?.[1])
@@ -142,7 +151,7 @@ describe('CustomerFollowUpForm', () => {
       ])
       render(<RouterProvider router={router} />)
       await user.upload(
-        screen.getByLabelText('PUBLIC 첨부 파일'),
+        screen.getByLabelText('첨부 파일'),
         new File(['x'], 'x.exe'),
       )
       if (String(_).includes('rejected'))

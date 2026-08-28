@@ -6,7 +6,6 @@ import { CustomerMagicLinkConsumePage } from './features/customer-auth/CustomerM
 import { CustomerRegisterPage } from './features/customer-auth/CustomerRegisterPage'
 import { CustomerRouteLayout } from './features/customer-auth/CustomerRouteLayout'
 import { CustomerSignInPage } from './features/customer-auth/CustomerSignInPage'
-import { CustomerProfilePage } from './features/customer-portal/CustomerProfilePage'
 import { CustomerRequestDetailPage } from './features/customer-portal/CustomerRequestDetailPage'
 import { CustomerRequestListPage } from './features/customer-portal/CustomerRequestListPage'
 import { AnonymousRequestDetailPage } from './features/customer-requests/AnonymousRequestDetailPage'
@@ -56,7 +55,6 @@ export const customerRoutes: RouteObject[] = [
             path: 'requests/:ticketNumber',
             element: <CustomerRequestDetailPage />,
           },
-          { path: 'settings', element: <CustomerProfilePage /> },
         ],
       },
       {

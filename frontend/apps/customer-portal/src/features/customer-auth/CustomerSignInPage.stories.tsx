@@ -46,6 +46,7 @@ type Story = StoryObj<typeof meta>
 
 export const RequestLink: Story = {
   play: async ({ canvas }) => {
+    await expect(canvas.queryByText('계정 정보 관리')).not.toBeInTheDocument()
     await userEvent.type(
       canvas.getByRole('textbox', { name: /이메일 주소/ }),
       'mina@example.test',

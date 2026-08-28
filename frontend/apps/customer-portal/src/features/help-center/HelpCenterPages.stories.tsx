@@ -119,8 +119,33 @@ export const Home: Story = {
     ).toBeVisible()
     await expect(canvas.queryByText('⌘ K')).not.toBeInTheDocument()
     await expect(
+      canvas.queryByRole('heading', { name: '추천 문서' }),
+    ).not.toBeInTheDocument()
+    await expect(
       await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
     ).toHaveAttribute('href', '/articles/customer-portal-update')
+  },
+}
+
+export const HomeWithoutCategories: Story = {
+  ...Home,
+  parameters: {
+    msw: {
+      handlers: {
+        ...homeHandlers,
+        helpCategories: http.get('/api/v1/help/categories', () =>
+          HttpResponse.json([]),
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('등록된 도움말 주제가 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByText('주문 상태, 배송, 반품과 교환'),
+    ).not.toBeInTheDocument()
   },
 }
 
@@ -190,6 +215,7 @@ export const SearchResults: Story = {
             ],
           }),
         ),
+        homeHandlers.helpCategories,
       ],
     },
   },
@@ -204,6 +230,45 @@ export const SearchResults: Story = {
     await expect(
       await canvas.findByRole('heading', { name: '보고서 데이터 내보내기' }),
     ).toBeVisible()
+    await expect(
+      canvas.queryByText('DeskSeed 시작하기'),
+    ).not.toBeInTheDocument()
+  },
+}
+
+export const EmptyArticle: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/help/articles/:slug', ({ params }) =>
+          HttpResponse.json({
+            slug: params.slug,
+            currentPublishedRevision: {
+              title: '비어 있는 도움말 문서',
+              createdAt: '2026-08-27T00:00:00Z',
+              document: { blocks: [] },
+            },
+          }),
+        ),
+      ],
+    },
+  },
+  render: () => (
+    <AnonymousChrome>
+      <StoryRoute path="/articles/:articleSlug" to="/articles/empty-article">
+        <HelpArticlePage />
+      </StoryRoute>
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('heading', {
+        name: '이 문서는 아직 내용이 없습니다.',
+      }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('link', { name: '지원팀에 문의하기' }),
+    ).toHaveAttribute('href', '/requests/new')
   },
 }
 

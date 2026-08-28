@@ -81,7 +81,7 @@ export function CustomerRequestForm({
     <div className="customer-page">
       <header className="customer-page-header">
         <h1>문의하기</h1>
-        <p>문의 내용을 남겨 주시면 공개 대화로 진행 상황을 알려 드립니다.</p>
+        <p>문의 내용을 남겨 주시면 진행 상황과 답변을 알려 드립니다.</p>
       </header>
 
       {submitError ? <SubmitErrorNotice error={submitError} /> : null}
@@ -208,7 +208,7 @@ export function CustomerRequestForm({
             {submitting ? '문의 접수 중…' : '문의 접수'}
           </DsButton>
           <p>
-            접수 후 이메일 링크 또는 문의 조회 화면에서 공개 대화를 확인할 수
+            접수 후 이메일 링크 또는 문의 조회 화면에서 대화를 확인할 수
             있습니다.
           </p>
         </footer>

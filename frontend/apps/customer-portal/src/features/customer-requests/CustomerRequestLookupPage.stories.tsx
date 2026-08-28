@@ -46,7 +46,10 @@ export const NoSavedEmailLink: Story = {
     await userEvent.type(canvas.getByLabelText('문의 번호'), '1042')
     await userEvent.click(canvas.getByRole('button', { name: '문의 열기' }))
     await expect(
-      canvas.getByText('이메일 문의 링크가 필요합니다.'),
+      canvas.getByText('이메일로 받은 문의 링크를 다시 열어 주세요.'),
     ).toBeVisible()
+    await expect(
+      canvas.queryByText(/이 브라우저|보안을 위해/),
+    ).not.toBeInTheDocument()
   },
 }

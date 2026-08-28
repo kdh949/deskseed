@@ -24,13 +24,12 @@ export function CustomerRequestList({
     <div className="customer-page">
       <header className="customer-page-header">
         <h1>내 문의</h1>
-        <p>로그인한 계정에 연결된 공개 문의만 표시합니다.</p>
       </header>
       {items.length === 0 ? (
         <ScreenState
-          description="새 문의를 접수하면 이곳에서 진행 상황과 공개 답변을 확인할 수 있습니다."
+          description="새 문의를 접수하면 이곳에서 진행 상황과 답변을 확인할 수 있습니다."
           kind="empty"
-          title="표시할 문의가 없습니다."
+          title="아직 접수한 문의가 없습니다."
         />
       ) : (
         <section aria-label="내 문의 목록" className="customer-request-list">

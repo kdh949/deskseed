@@ -111,7 +111,7 @@ export function CustomerFollowUpForm({
   return (
     <section aria-label="고객 후속 답변" className="customer-follow-up">
       <h2 id="customer-follow-up-title">추가 답변</h2>
-      <p>답변은 담당자와 공유되는 공개 대화에만 추가됩니다.</p>
+      <p>담당자에게 추가로 전달할 내용을 입력해 주세요.</p>
       {notice ? <FollowUpNoticeView notice={notice} /> : null}
       {attachments.needsNavigationWarning ? (
         <AttachmentNavigationGuard />
@@ -138,7 +138,7 @@ export function CustomerFollowUpForm({
         {uploadAttachment ? (
           <AttachmentUploadField
             disabled={submitting}
-            label="PUBLIC 첨부 파일"
+            label="첨부 파일"
             onStateChange={updateAttachments}
             resetVersion={attachmentResetVersion}
             upload={uploadAttachment}
@@ -152,10 +152,6 @@ export function CustomerFollowUpForm({
           >
             {submitting ? '답변 전송 중…' : '답변 보내기'}
           </DsButton>
-          <p>
-            전송 결과를 확인할 수 없으면 같은 답변을 다시 보내도 중복되지
-            않습니다.
-          </p>
         </div>
       </form>
     </section>
@@ -207,27 +203,27 @@ function FollowUpNoticeView({ notice }: { notice: FollowUpNotice }) {
   const content =
     notice.kind === 'success'
       ? {
-          description: '최신 공개 대화를 불러오고 있습니다.',
+          description: '최신 문의 대화를 불러오고 있습니다.',
           title: '답변이 저장되었습니다.',
           tone: 'success' as const,
         }
       : notice.kind === 'validation'
         ? {
-            description: '답변 내용을 확인한 뒤 새 명령으로 다시 보내 주세요.',
+            description: '답변 내용을 확인한 뒤 다시 보내 주세요.',
             title: '답변을 저장할 수 없습니다.',
             tone: 'danger' as const,
           }
         : notice.kind === 'denied'
           ? {
               description:
-                '이 문의에 더 이상 답변할 수 없습니다. 이메일의 최신 문의 링크를 확인해 주세요.',
-              title: '답변 권한이 만료되었거나 허용되지 않았습니다.',
+                '이 화면을 새로 열어 문의 상태를 확인한 뒤 다시 시도해 주세요.',
+              title: '답변을 보낼 수 없습니다.',
               tone: 'danger' as const,
             }
           : notice.kind === 'conflict'
             ? {
                 description:
-                  '최신 문의 상태를 확인한 뒤 초안을 검토하고 새 명령으로 다시 보내 주세요.',
+                  '최신 문의 상태를 확인한 뒤 초안을 검토하고 다시 보내 주세요.',
                 title: '문의 상태가 변경되었습니다.',
                 tone: 'conflict' as const,
               }
@@ -239,7 +235,7 @@ function FollowUpNoticeView({ notice }: { notice: FollowUpNotice }) {
                 }
               : {
                   description:
-                    '초안과 명령 식별자는 유지됩니다. 같은 답변을 다시 보내 결과를 확인해 주세요.',
+                    '입력한 내용은 그대로 남아 있습니다. 다시 보내도 같은 답변이 두 번 등록되지 않습니다.',
                   title: '답변 전송 결과를 확인할 수 없습니다.',
                   tone: 'danger' as const,
                 }

@@ -81,9 +81,9 @@ export function CustomerSiteLayout({
                     .slice(0, 1)
                     .toUpperCase()}
                 </span>
-                <Link to="/account/settings">
+                <span className="customer-profile-name">
                   {customer.displayName || customer.email}
-                </Link>
+                </span>
                 {onSignOut ? (
                   <DsButton
                     disabled={session.signingOut}
@@ -121,15 +121,6 @@ export function CustomerSiteLayout({
             links={[
               ['도움말 검색', '/search'],
               ['가이드', '/search?q=가이드'],
-              ['시스템 상태', '/'],
-            ]}
-          />
-          <FooterLinks
-            title="회사"
-            links={[
-              ['DeskSeed 소개', '/'],
-              ['개인정보 처리방침', '/'],
-              ['이용약관', '/'],
             ]}
           />
         </div>

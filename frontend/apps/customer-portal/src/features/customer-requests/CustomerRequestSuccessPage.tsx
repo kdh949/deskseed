@@ -33,16 +33,6 @@ export function CustomerRequestSuccessPage() {
             <dd>접수됨</dd>
           </div>
         </dl>
-        <div className="customer-response-time">
-          <span>
-            <CustomerIcon name="clock" size="lg" />
-          </span>
-          <div>
-            <small>예상 첫 답변</small>
-            <strong>영업시간 기준 4시간 이내</strong>
-          </div>
-          <p>문의량과 접수 시간에 따라 달라질 수 있습니다.</p>
-        </div>
         <h2>다음 단계</h2>
         <div className="customer-success-actions">
           <SuccessAction
@@ -90,12 +80,6 @@ export function CustomerRequestSuccessPage() {
             <span>상태</span>
             <strong>접수됨</strong>
           </div>
-        </section>
-        <section>
-          <h2>추천 문서</h2>
-          <Link to="/articles/export-data">데이터 내보내기 방법</Link>
-          <Link to="/articles/troubleshooting-export">내보내기 문제 해결</Link>
-          <Link to="/articles/data-limits">데이터 제한 이해하기</Link>
         </section>
       </aside>
     </div>

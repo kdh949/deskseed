@@ -61,7 +61,7 @@ export const FeedbackAndStates: Story = {
   render: () => (
     <div className="customer-page">
       <Notification title="문의가 저장되었습니다." tone="success">
-        <p>고객에게 공개되는 답변만 표시됩니다.</p>
+        <p>문의 답변을 확인할 수 있습니다.</p>
       </Notification>
       <Notification title="새로고침이 필요합니다." tone="conflict">
         <p>최신 상태를 확인한 뒤 다시 시도해 주세요.</p>

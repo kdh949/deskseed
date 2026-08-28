@@ -47,7 +47,7 @@ function CustomerRouteContent() {
             <p>
               {logoutError.requestId
                 ? `요청 ID: ${logoutError.requestId}`
-                : '현재 세션을 확인한 뒤 다시 시도해 주세요.'}
+                : '현재 로그인 상태를 확인한 뒤 다시 시도해 주세요.'}
             </p>
           </Notification>
         </div>

@@ -39,7 +39,7 @@ export function AttachmentList({
   }
 
   return (
-    <ul aria-label="첨부 파일" className="linked-attachment-list">
+    <ul aria-label="답변 첨부 파일" className="linked-attachment-list">
       {attachments.map((attachment) => (
         <li key={attachment.id}>
           <span>

@@ -18,7 +18,7 @@ const request = {
     {
       id: 'comment-agent-1',
       authorDisplayName: 'Deskseed 지원팀',
-      body: '확인 후 공개 대화로 안내드리겠습니다.',
+      body: '확인 후 문의 대화로 안내드리겠습니다.',
       createdAt: '2026-08-15T00:30:00Z',
     },
   ],
@@ -64,7 +64,7 @@ export const EmptyConversation: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole('heading', { name: '공개 대화가 비어 있습니다.' }),
+      canvas.getByRole('heading', { name: '아직 문의 대화가 없습니다.' }),
     ).toBeVisible()
   },
 }

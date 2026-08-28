@@ -110,6 +110,12 @@ describe('CustomerMagicLinkConsumePage', () => {
         name: '로그인 링크를 찾을 수 없습니다.',
       }),
     ).toBeVisible()
+    expect(
+      screen.getByText(
+        '이 링크로 로그인할 수 없습니다. 이메일 주소를 입력해 새 링크를 받아 주세요.',
+      ),
+    ).toBeVisible()
+    expect(screen.queryByText(/fragment/i)).not.toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

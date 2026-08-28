@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
@@ -8,30 +8,14 @@ import {
   ScreenState,
 } from '../../design-system'
 import heroImage from '../../assets/deskseed/customer-help-hero.png'
-import articleImage from '../../assets/deskseed/customer-article-billing.png'
 import {
   getHelpArticle,
   getHelpSection,
   listHelpCategories,
   recordHelpArticleFeedback,
   searchHelpArticles,
+  type HelpCategory,
 } from './helpCenterClient'
-
-const fallbackTopics = [
-  ['orders', '주문', '주문 상태, 배송, 반품과 교환'],
-  ['billing', '결제', '청구서, 결제 수단과 환불'],
-  ['technical', '기술 문제', '오류와 연결 문제 해결'],
-  ['account', '계정', '프로필, 보안과 설정'],
-  ['feedback', '제품 의견', '아이디어와 개선 제안'],
-] as const
-
-const featured = [
-  ['getting-started', 'DeskSeed 시작하기'],
-  ['update-billing-information', '결제 정보 변경 방법'],
-  ['troubleshooting-login', '로그인 문제 해결'],
-  ['understanding-plans', 'DeskSeed 플랜과 기능'],
-  ['export-data', '데이터 내보내기'],
-] as const
 
 export function HelpCenterHomePage() {
   const navigate = useNavigate()
@@ -44,18 +28,6 @@ export function HelpCenterHomePage() {
     queryKey: ['help', 'section', 'announcements'],
     queryFn: () => getHelpSection('announcements'),
   })
-  const topics = categories.data?.length
-    ? categories.data
-        .slice(0, 5)
-        .map(
-          (item) =>
-            [
-              item.slug,
-              item.title,
-              item.description || '관련 도움말을 확인하세요.',
-            ] as const,
-        )
-    : fallbackTopics
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`)
@@ -108,52 +80,9 @@ export function HelpCenterHomePage() {
       </section>
       <section className="customer-home-section">
         <h2>주제별 둘러보기</h2>
-        <div className="customer-topic-grid">
-          {topics.map(([slug, title, description], index) => (
-            <Link
-              className={`customer-topic customer-topic--${index + 1}`}
-              key={slug}
-              to={`/search?q=${encodeURIComponent(title)}`}
-            >
-              <span>
-                <CustomerIcon
-                  name={
-                    index === 1
-                      ? 'inbox'
-                      : index === 2
-                        ? 'pencil'
-                        : index === 3
-                          ? 'user'
-                          : index === 4
-                            ? 'speechBubble'
-                            : 'book'
-                  }
-                  size="lg"
-                />
-              </span>
-              <h3>{title}</h3>
-              <p>{description}</p>
-              <b aria-hidden="true">›</b>
-            </Link>
-          ))}
-        </div>
+        <CategoryCollection query={categories} />
       </section>
-      <section className="customer-home-lower">
-        <div className="customer-panel">
-          <header>
-            <h2>추천 문서</h2>
-            <Link to="/search">전체 보기</Link>
-          </header>
-          <ul>
-            {featured.map(([slug, title]) => (
-              <li key={slug}>
-                <CustomerIcon name="book" />
-                <Link to={`/articles/${slug}`}>{title}</Link>
-                <time>2026. 8.</time>
-              </li>
-            ))}
-          </ul>
-        </div>
+      <section className="customer-home-lower customer-home-lower--single">
         <div className="customer-panel customer-announcements">
           <header>
             <h2>공지사항</h2>
@@ -184,7 +113,7 @@ export function HelpCenterHomePage() {
                     {announcement.title}
                   </Link>
                 </h3>
-                <p>{announcement.summary}</p>
+                {announcement.summary ? <p>{announcement.summary}</p> : null}
               </div>
               <span>공지</span>
             </article>
@@ -265,7 +194,7 @@ export function HelpSearchPage() {
                         .join(' · ')}
                     </em>
                   </div>
-                  <b>›</b>
+                  <b aria-hidden="true">›</b>
                 </Link>
               ))}
             </div>
@@ -284,17 +213,15 @@ export function HelpSearchPage() {
 }
 
 function SearchSidebar() {
+  const categories = useQuery({
+    queryKey: ['help', 'categories'],
+    queryFn: listHelpCategories,
+  })
   return (
     <aside className="customer-aside">
       <section>
-        <h2>인기 주제</h2>
-        {fallbackTopics.map(([slug, title]) => (
-          <Link key={slug} to={`/search?q=${encodeURIComponent(title)}`}>
-            <CustomerIcon name="book" />
-            {title}
-            <span>›</span>
-          </Link>
-        ))}
+        <h2>주제</h2>
+        <CategoryLinks query={categories} />
       </section>
       <section>
         <h2>원하는 답을 찾지 못했나요?</h2>
@@ -332,72 +259,51 @@ export function HelpArticlePage() {
       </div>
     )
   const data = article.data
+  const textBlocks = data.blocks.flatMap((block, index) => {
+    const text = block.text?.trim()
+    return text ? [{ key: `${block.type}-${index}`, text }] : []
+  })
   return (
-    <div className="customer-article-layout">
-      <aside aria-label="이 페이지 목차" className="customer-article-nav">
-        <strong>이 페이지에서</strong>
-        <a href="#overview">개요</a>
-        <a href="#steps">변경 방법</a>
-        <a href="#troubleshooting">문제 해결</a>
-        <button onClick={() => window.print()} type="button">
-          문서 인쇄
-        </button>
-      </aside>
+    <div className="customer-article-layout customer-article-layout--content-only">
       <article className="customer-article">
         <span className="customer-breadcrumb">
-          <Link to="/">모든 문서</Link> / 도움말
+          <Link to="/search">모든 문서</Link> / 도움말
         </span>
-        <header id="overview">
+        <header>
           <div>
             <h1>{data.title}</h1>
-            <p>
-              {data.summary ||
-                'DeskSeed에서 필요한 설정을 안전하게 변경하는 방법을 안내합니다.'}
-            </p>
-            <small>업데이트 {formatDate(data.updatedAt)}</small>
+            {data.summary ? <p>{data.summary}</p> : null}
+            {data.updatedAt ? (
+              <small>업데이트 {formatDate(data.updatedAt)}</small>
+            ) : null}
           </div>
-          <img alt="결제 정보 도움말 일러스트" src={articleImage} />
+          <button onClick={() => window.print()} type="button">
+            문서 인쇄
+          </button>
         </header>
-        <section id="steps">
-          <h2>변경 방법</h2>
-          {data.blocks.length ? (
-            data.blocks.map((block, index) => (
-              <p key={index}>{block.text || ''}</p>
-            ))
-          ) : (
-            <>
-              <p>계정에 로그인한 뒤 설정 메뉴에서 필요한 정보를 선택하세요.</p>
-              <ol>
-                <li>오른쪽 위 프로필 메뉴를 엽니다.</li>
-                <li>계정 설정에서 변경할 항목을 선택합니다.</li>
-                <li>입력 내용을 확인하고 저장합니다.</li>
-              </ol>
-            </>
-          )}
-          <div className="customer-inline-info">
-            <CustomerIcon name="info" />
-            저장한 변경 사항은 다음 처리부터 적용됩니다.
-          </div>
-        </section>
-        <section id="troubleshooting">
-          <h2>문제가 계속되나요?</h2>
-          <p>
-            변경할 수 없거나 예상과 다른 결과가 보이면 지원팀에 문의해 주세요.
-          </p>
-          <Link className="customer-inline-cta" to="/requests/new">
-            문의 접수
-          </Link>
-        </section>
+        {textBlocks.length ? (
+          <section aria-label="문서 본문" className="customer-article-body">
+            {textBlocks.map((block) => (
+              <p key={block.key}>{block.text}</p>
+            ))}
+          </section>
+        ) : (
+          <ScreenState
+            action={<Link to="/requests/new">지원팀에 문의하기</Link>}
+            compact
+            description="필요한 도움이 있다면 지원팀에 문의해 주세요."
+            kind="empty"
+            title="이 문서는 아직 내용이 없습니다."
+          />
+        )}
       </article>
       <aside className="customer-aside customer-article-aside">
         <section>
-          <h2>관련 문서</h2>
-          {featured.slice(0, 4).map(([slug, title]) => (
-            <Link key={slug} to={`/articles/${slug}`}>
-              <CustomerIcon name="book" />
-              {title}
-            </Link>
-          ))}
+          <h2>도움이 더 필요한가요?</h2>
+          <p>지원팀이 함께 해결해 드립니다.</p>
+          <Link className="customer-aside-cta" to="/requests/new">
+            문의 접수
+          </Link>
         </section>
         <section>
           <h2>이 문서가 도움이 되었나요?</h2>
@@ -430,10 +336,93 @@ export function HelpArticlePage() {
   )
 }
 
-function formatDate(value?: string) {
-  return value
-    ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' }).format(
-        new Date(value),
-      )
-    : '2026. 8. 27.'
+type CategoriesQuery = UseQueryResult<HelpCategory[], Error>
+
+function CategoryCollection({ query }: { query: CategoriesQuery }) {
+  if (query.isPending)
+    return (
+      <div className="customer-topic-state" role="status">
+        도움말 주제를 불러오고 있습니다.
+      </div>
+    )
+  if (query.isError)
+    return (
+      <ScreenState
+        action={<RetryButton onClick={() => void query.refetch()} />}
+        compact
+        kind="error"
+        title="도움말 주제를 불러올 수 없습니다."
+      />
+    )
+  if (!query.data.length)
+    return (
+      <ScreenState
+        action={<Link to="/requests/new">지원팀에 문의하기</Link>}
+        compact
+        description="필요한 도움이 있다면 지원팀에 문의해 주세요."
+        kind="empty"
+        title="등록된 도움말 주제가 없습니다."
+      />
+    )
+  return (
+    <div className="customer-topic-grid">
+      {query.data.slice(0, 5).map((item, index) => (
+        <CategoryCard category={item} index={index} key={item.slug} />
+      ))}
+    </div>
+  )
+}
+
+function CategoryLinks({ query }: { query: CategoriesQuery }) {
+  if (query.isPending) return <p role="status">주제를 불러오고 있습니다.</p>
+  if (query.isError) return <p role="alert">주제를 불러올 수 없습니다.</p>
+  if (!query.data.length) return <p>등록된 주제가 없습니다.</p>
+  return query.data.slice(0, 5).map((item) => (
+    <Link key={item.slug} to={`/search?q=${encodeURIComponent(item.title)}`}>
+      <CustomerIcon name="book" />
+      {item.title}
+      <span aria-hidden="true">›</span>
+    </Link>
+  ))
+}
+
+function CategoryCard({
+  category,
+  index,
+}: {
+  category: HelpCategory
+  index: number
+}) {
+  return (
+    <Link
+      className={`customer-topic customer-topic--${index + 1}`}
+      to={`/search?q=${encodeURIComponent(category.title)}`}
+    >
+      <span>
+        <CustomerIcon
+          name={
+            index === 1
+              ? 'inbox'
+              : index === 2
+                ? 'pencil'
+                : index === 3
+                  ? 'user'
+                  : index === 4
+                    ? 'speechBubble'
+                    : 'book'
+          }
+          size="lg"
+        />
+      </span>
+      <h3>{category.title}</h3>
+      {category.description ? <p>{category.description}</p> : null}
+      <b aria-hidden="true">›</b>
+    </Link>
+  )
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' }).format(
+    new Date(value),
+  )
 }

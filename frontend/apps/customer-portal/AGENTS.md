@@ -23,6 +23,15 @@ This file applies to `frontend/apps/customer-portal/` and extends both parent in
 - Start each content region with its semantic heading and place necessary context in normal body copy, breadcrumbs, status, or metadata rather than a small letter-spaced label.
 - `npm run check:design-system-boundaries` rejects the prohibited class concepts and uppercase transformation inside the customer source tree.
 
+## Customer copy policy
+
+- Server authorization, projection, and tests guarantee the customer's data boundary. Do not explain that boundary with defensive copy in the rendered customer UI.
+- Use terms customers act on: `내 문의`, `문의 대화`, `답변`, `첨부 파일`, `로그인 상태`, and `문의 접수 가능 여부`.
+- Production customer TSX must not render implementation terms such as `PUBLIC`, `INTERNAL`, `projection`, `fragment`, `고객 API`, `고객 세션`, `접근 토큰`, `명령 식별자`, `새 명령`, `CLEAN 상태`, `공개 대화/답변/문의`, or `접수 설정`.
+- When access or delivery fails, describe the next action without revealing whether an account or request exists. Request IDs and actionable retry guidance may remain.
+- Security and projection terminology may remain in tests, Storybook documentation, API adapters, and developer documents. Story canvas copy must still follow the customer language policy.
+- `npm run check:design-system-boundaries` enforces these terms in production customer TSX while excluding tests, stories, API adapters, and developer documentation.
+
 ## Storybook and verification
 
 - Run package commands from `frontend/`; use this directory for customer Storybook MCP discovery through `.mcp.json`.

@@ -5,6 +5,22 @@ import { ApiError } from '../../api/client'
 import { CustomerRequestForm } from './CustomerRequestForm'
 
 describe('CustomerRequestForm', () => {
+  it('describes the request journey without exposing conversation visibility terms', () => {
+    render(<CustomerRequestForm onSubmitted={vi.fn()} submit={vi.fn()} />)
+
+    expect(
+      screen.getByText(
+        '문의 내용을 남겨 주시면 진행 상황과 답변을 알려 드립니다.',
+      ),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        '접수 후 이메일 링크 또는 문의 조회 화면에서 대화를 확인할 수 있습니다.',
+      ),
+    ).toBeVisible()
+    expect(screen.queryByText(/공개 대화/)).not.toBeInTheDocument()
+  })
+
   it('submits a valid anonymous request and hands its one-time result to the route owner', async () => {
     const user = userEvent.setup()
     const submit = vi.fn().mockResolvedValue({

@@ -27,6 +27,20 @@ const forbiddenCustomerTypographyReferences = [
   ],
   ['forced uppercase customer text', /text-transform\s*:\s*uppercase\b/i],
 ]
+const forbiddenCustomerCopyReferences = [
+  ['customer-visible PUBLIC term', /\bPUBLIC\b/],
+  ['customer-visible INTERNAL term', /\bINTERNAL\b/],
+  ['customer-visible access explanation', /공개\s*(?:대화|답변|문의)/],
+  ['customer-visible projection term', /\bprojection\b/i],
+  ['customer-visible fragment term', /\bfragment\b/i],
+  ['customer-visible implementation surface', /고객\s*(?:API|세션)/],
+  ['customer-visible command identity', /명령 식별자|새 명령/],
+  ['customer-visible attachment state', /CLEAN 상태/],
+  ['customer-visible intake configuration', /접수 설정/],
+  ['customer-visible access token', /접근 토큰/],
+  ['customer-visible security defense', /보안을 위해|이 브라우저에서/],
+  ['customer-visible access denial', /접근이 허용되지/],
+]
 
 function filesUnder(directory) {
   return readdirSync(directory).flatMap((entry) => {
@@ -85,6 +99,19 @@ for (const path of filesUnder(customerRoot)) {
   for (const [label, pattern] of forbiddenCustomerTypographyReferences) {
     if (pattern.test(source)) {
       failures.push(`${label}: ${relative(root, path)}`)
+    }
+  }
+  const isRenderedCustomerSource =
+    path.endsWith('.tsx') &&
+    !/\.(?:stories|test)\.tsx$/.test(path) &&
+    !path.includes(`${join('src', 'api')}`) &&
+    !path.includes(`${join('features', 'customer-auth', 'api')}`) &&
+    !path.includes(`${join('features', 'customer-portal', 'api')}`)
+  if (isRenderedCustomerSource) {
+    for (const [label, pattern] of forbiddenCustomerCopyReferences) {
+      if (pattern.test(source)) {
+        failures.push(`${label}: ${relative(root, path)}`)
+      }
     }
   }
 }

@@ -35,5 +35,31 @@ describe('CustomerRequestList', () => {
       screen.getByText('최근 업데이트').closest('p')?.querySelector('time'),
     ).toHaveAttribute('datetime', '2026-08-15T01:00:00Z')
     expect(screen.queryByText('must-not-render')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('로그인한 계정에 연결된 공개 문의만 표시합니다.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('uses a direct empty state without explaining the server-side access boundary', () => {
+    render(
+      <MemoryRouter>
+        <CustomerRequestList
+          items={[]}
+          loadingMore={false}
+          nextCursor={null}
+          onLoadMore={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByRole('heading', { name: '아직 접수한 문의가 없습니다.' }),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        '새 문의를 접수하면 이곳에서 진행 상황과 답변을 확인할 수 있습니다.',
+      ),
+    ).toBeVisible()
+    expect(screen.queryByText(/공개 문의|공개 답변/)).not.toBeInTheDocument()
   })
 })

@@ -1,5 +1,6 @@
 import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router'
 import { RetryButton, ScreenState } from '../../design-system'
 import { useCustomerSession } from '../customer-auth/CustomerSessionContext'
 import {
@@ -41,9 +42,10 @@ export function CustomerRequestListPage() {
   if (session.customer === null) {
     return (
       <CustomerListState
-        description="내 문의를 보려면 고객 로그인이 필요합니다."
+        action={<Link to="/customer/sign-in">고객 로그인</Link>}
+        description="로그인한 뒤 다시 시도해 주세요."
         kind="denied"
-        title="내 문의 접근이 허용되지 않았습니다."
+        title="내 문의를 열 수 없습니다."
       />
     )
   }
@@ -84,17 +86,18 @@ function CustomerListError({
   if (apiError?.status === 401 || apiError?.status === 403) {
     return (
       <CustomerListState
-        description="내 문의를 보려면 고객 로그인이 필요합니다."
+        action={<Link to="/customer/sign-in">고객 로그인</Link>}
+        description="로그인한 뒤 다시 시도해 주세요."
         kind="denied"
         requestId={apiError.requestId}
-        title="내 문의 접근이 허용되지 않았습니다."
+        title="내 문의를 열 수 없습니다."
       />
     )
   }
   return (
     <CustomerListState
       action={<RetryButton onClick={onRetry} />}
-      description="고객 문의 목록을 불러오지 못했습니다."
+      description="잠시 후 다시 시도해 주세요."
       kind="error"
       requestId={apiError?.requestId}
       title="내 문의를 불러올 수 없습니다."

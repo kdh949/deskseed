@@ -36,10 +36,32 @@ describe('CustomerRequestConversation', () => {
       screen.getByRole('heading', { name: '#1042 결제 확인 요청' }),
     ).toBeVisible()
     expect(screen.getByText('처리 중')).toBeVisible()
+    expect(screen.getByRole('heading', { name: '문의 대화' })).toBeVisible()
     expect(screen.getByText('결제 승인 내역을 확인해 주세요.')).toBeVisible()
     expect(screen.getByRole('textbox', { name: '추가 답변' })).toBeVisible()
     expect(screen.queryByText('must-not-render')).not.toBeInTheDocument()
     expect(screen.queryByText('staff-1')).not.toBeInTheDocument()
     expect(screen.queryByText('1043')).not.toBeInTheDocument()
+    expect(screen.queryByText(/공개 대화/)).not.toBeInTheDocument()
+  })
+
+  it('describes an empty conversation in customer language', () => {
+    render(
+      <CustomerRequestConversation
+        request={{
+          ticketNumber: 1042,
+          subject: '결제 확인 요청',
+          status: 'OPEN',
+          createdAt: '2026-08-15T00:00:00Z',
+          updatedAt: '2026-08-15T01:00:00Z',
+          comments: [],
+        }}
+      />,
+    )
+
+    expect(
+      screen.getByRole('heading', { name: '아직 문의 대화가 없습니다.' }),
+    ).toBeVisible()
+    expect(screen.queryByText(/공개 대화/)).not.toBeInTheDocument()
   })
 })

@@ -92,6 +92,12 @@ describe('AnonymousRequestDetailPage', () => {
         name: '이메일 문의 링크가 필요합니다.',
       }),
     ).toBeVisible()
+    expect(
+      screen.getByText('이메일로 받은 문의 링크를 다시 열어 주세요.'),
+    ).toBeVisible()
+    expect(
+      screen.queryByText(/접근 토큰|fragment|세션/),
+    ).not.toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

@@ -31,9 +31,9 @@ describe('customer production route inventory', () => {
         '/customer/sign-in/check-email',
         '/customer/register',
         '/account/requests',
-        '/account/settings',
       ]),
     )
+    expect(routePaths(customerRoutes)).not.toContain('/account/settings')
   })
 
   it('does not expose staff routes from the customer router', () => {

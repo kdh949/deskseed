@@ -36,7 +36,7 @@ export const UploadAndScanClean: Story = {
       type: 'image/png',
     })
     await userEvent.upload(canvas.getByLabelText('첨부 파일'), file)
-    await expect(await canvas.findByText(/^CLEAN/)).toBeVisible()
+    await expect(await canvas.findByText(/^첨부 가능 ·/)).toBeVisible()
     await expect(
       canvas.getByRole('button', { name: '초안에서 제거' }),
     ).toBeEnabled()
@@ -59,7 +59,7 @@ function UploadExample() {
         onStateChange={onStateChange}
         upload={async () => cleanUpload}
       />
-      <p aria-live="polite">연결 가능한 CLEAN 파일 {state.ids.length}개</p>
+      <p aria-live="polite">첨부 가능한 파일 {state.ids.length}개</p>
     </div>
   )
 }

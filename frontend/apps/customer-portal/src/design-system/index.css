@@ -143,6 +143,15 @@ p {
   align-items: center;
   gap: 9px;
 }
+.customer-profile-name {
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--customer-color-ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .customer-avatar {
   display: inline-grid;
   width: 34px;
@@ -160,7 +169,7 @@ p {
 }
 .customer-footer__inner {
   display: grid;
-  grid-template-columns: 1.7fr repeat(3, 1fr);
+  grid-template-columns: 1.7fr repeat(2, 1fr);
   gap: 54px;
   width: min(calc(100% - 40px), var(--customer-width-content));
   margin: 0 auto;
@@ -447,7 +456,7 @@ p {
   .customer-header__nav .customer-header__cta {
     padding: 9px 11px;
   }
-  .customer-profile-menu > a,
+  .customer-profile-name,
   .customer-profile-menu .customer-button {
     display: none;
   }
