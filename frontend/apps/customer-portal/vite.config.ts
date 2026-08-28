@@ -1,8 +1,12 @@
 import react from '@vitejs/plugin-react'
 import { storybookTest } from '@storybook/addon-vitest/vitest-plugin'
 import { playwright } from '@vitest/browser-playwright'
+import { realpathSync } from 'node:fs'
 import path from 'node:path'
 import { defineConfig } from 'vitest/config'
+
+const frontendRoot = path.resolve(import.meta.dirname, '../..')
+const nodeModulesRoot = realpathSync(path.join(frontendRoot, 'node_modules'))
 
 export default defineConfig({
   root: import.meta.dirname,
@@ -14,6 +18,9 @@ export default defineConfig({
   },
   plugins: [react()],
   server: {
+    fs: {
+      allow: [frontendRoot, nodeModulesRoot],
+    },
     port: 5174,
     proxy: {
       '/_staff': 'http://127.0.0.1:45174',

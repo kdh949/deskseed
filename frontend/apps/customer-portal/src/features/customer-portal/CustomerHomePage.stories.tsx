@@ -35,10 +35,13 @@ export const Default: Story = {
   ),
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole('heading', { level: 1, name: '문의 조회' }),
+      canvas.getByRole('heading', {
+        level: 1,
+        name: '문의 번호로 빠르게 확인하세요',
+      }),
     ).toBeVisible()
     await expect(
-      canvas.getByRole('navigation', { name: '고객 지원 메뉴' }),
+      canvas.getByRole('navigation', { name: '고객 메뉴' }),
     ).toBeVisible()
     await expect(
       canvas.queryByText('DESKSEED 고객 지원'),

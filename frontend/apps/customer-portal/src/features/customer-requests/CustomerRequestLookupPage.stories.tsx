@@ -25,7 +25,10 @@ type Story = StoryObj<typeof meta>
 export const Empty: Story = {
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole('status', { name: '열 문의를 선택하세요' }),
+      canvas.getByRole('heading', {
+        level: 2,
+        name: '조회할 문의를 선택하세요',
+      }),
     ).toBeVisible()
   },
 }

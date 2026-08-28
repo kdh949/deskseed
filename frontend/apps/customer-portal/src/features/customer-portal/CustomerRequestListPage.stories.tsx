@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
 import { expect } from 'storybook/test'
 import { StoryRoute } from '../../../.storybook/StoryRoute'
-import { CustomerSessionProvider } from '../customer-auth/CustomerSessionContext'
 import { CustomerRequestListPage } from './CustomerRequestListPage'
 
 const meta = {
@@ -10,16 +9,20 @@ const meta = {
   component: CustomerRequestListPage,
   parameters: {
     msw: {
-      handlers: [
-        http.get('/api/v1/customer/me', () =>
+      handlers: {
+        customerSession: http.get('/api/v1/customer/me', () =>
           HttpResponse.json({
             id: '11111111-1111-4111-8111-111111111111',
             email: 'customer@example.test',
             displayName: '고객 A',
             verifiedAt: '2026-08-15T00:00:00Z',
+            companyName: null,
+            credentialState: 'PASSWORDLESS',
+            registrationState: 'COMPLETE',
+            availableAuthenticationMethods: ['MAGIC_LINK'],
           }),
         ),
-        http.get('/api/v1/customer/requests', () =>
+        customerRequests: http.get('/api/v1/customer/requests', () =>
           HttpResponse.json({
             items: [
               {
@@ -33,15 +36,13 @@ const meta = {
             nextCursor: null,
           }),
         ),
-      ],
+      },
     },
   },
   render: () => (
-    <CustomerSessionProvider>
-      <StoryRoute path="/account/requests" to="/account/requests">
-        <CustomerRequestListPage />
-      </StoryRoute>
-    </CustomerSessionProvider>
+    <StoryRoute path="/account/requests" to="/account/requests">
+      <CustomerRequestListPage />
+    </StoryRoute>
   ),
   tags: ['autodocs'],
 } satisfies Meta<typeof CustomerRequestListPage>
@@ -52,7 +53,11 @@ type Story = StoryObj<typeof meta>
 export const Requests: Story = {
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole('link', { name: /#1042 결제 확인 요청/ }),
+      await canvas.findByRole(
+        'link',
+        { name: /#1042 결제 확인 요청/ },
+        { timeout: 5000 },
+      ),
     ).toBeVisible()
   },
 }

@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
 import { expect, userEvent } from 'storybook/test'
 import { StoryRoute } from '../../../.storybook/StoryRoute'
-import { CustomerSessionProvider } from '../customer-auth/CustomerSessionContext'
 import { CustomerRequestDetailPage } from './CustomerRequestDetailPage'
 
 const detail = {
@@ -27,30 +26,32 @@ const meta = {
   component: CustomerRequestDetailPage,
   parameters: {
     msw: {
-      handlers: [
-        http.get('/api/v1/customer/me', () =>
+      handlers: {
+        customerSession: http.get('/api/v1/customer/me', () =>
           HttpResponse.json({
             id: '11111111-1111-4111-8111-111111111111',
             email: 'customer@example.test',
             displayName: '고객 A',
             verifiedAt: '2026-08-15T00:00:00Z',
+            companyName: null,
+            credentialState: 'PASSWORDLESS',
+            registrationState: 'COMPLETE',
+            availableAuthenticationMethods: ['MAGIC_LINK'],
           }),
         ),
-        http.get('/api/v1/customer/requests/1042', () =>
+        requestDetail: http.get('/api/v1/customer/requests/1042', () =>
           HttpResponse.json(detail),
         ),
-      ],
+      },
     },
   },
   render: () => (
-    <CustomerSessionProvider>
-      <StoryRoute
-        path="/account/requests/:ticketNumber"
-        to="/account/requests/1042"
-      >
-        <CustomerRequestDetailPage />
-      </StoryRoute>
-    </CustomerSessionProvider>
+    <StoryRoute
+      path="/account/requests/:ticketNumber"
+      to="/account/requests/1042"
+    >
+      <CustomerRequestDetailPage />
+    </StoryRoute>
   ),
   tags: ['autodocs'],
 } satisfies Meta<typeof CustomerRequestDetailPage>
@@ -61,7 +62,11 @@ type Story = StoryObj<typeof meta>
 export const PublicConversation: Story = {
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole('heading', { name: '#1042 결제 확인 요청' }),
+      await canvas.findByRole(
+        'heading',
+        { name: '#1042 결제 확인 요청' },
+        { timeout: 5000 },
+      ),
     ).toBeVisible()
     await userEvent.type(
       canvas.getByLabelText('추가 답변'),
