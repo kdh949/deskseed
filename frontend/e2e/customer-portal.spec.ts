@@ -398,6 +398,9 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
   expect(downloadCount).toBe(1)
   await expectNoHorizontalOverflow(page)
 
+  await page.setViewportSize({ height: 844, width: 390 })
+  await expect(page.getByRole('button', { name: '로그아웃' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
   await page.getByRole('button', { name: '로그아웃' }).click()
   await expect(page).toHaveURL(/\/_customer\/?$/)
   await expect(

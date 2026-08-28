@@ -76,13 +76,13 @@ export function CustomerRequestList({
 function statusTone(status: CustomerVisibleRequestSummary['status']) {
   switch (status) {
     case 'NEW':
-      return 'new' as const
+      return 'success' as const
     case 'OPEN':
-      return 'open' as const
+      return 'success' as const
     case 'PENDING':
-      return 'pending' as const
+      return 'warning' as const
     case 'SOLVED':
-      return 'solved' as const
+      return 'neutral' as const
   }
 }
 

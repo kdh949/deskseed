@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
-import { expect } from 'storybook/test'
+import { expect, fn, userEvent } from 'storybook/test'
 import { StoryRoute } from '../../../.storybook/StoryRoute'
 import { CustomerSiteLayout } from '../../design-system'
 import {
@@ -124,6 +124,51 @@ export const Home: Story = {
     await expect(
       await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
     ).toHaveAttribute('href', '/articles/customer-portal-update')
+  },
+}
+
+const signOutFromMobile = fn()
+
+export const AuthenticatedMobileHome: Story = {
+  parameters: {
+    msw: {
+      handlers: homeHandlers,
+    },
+    viewport: {
+      options: {
+        customerMobile: {
+          name: '고객 모바일 390px',
+          styles: { height: '844px', width: '390px' },
+          type: 'mobile',
+        },
+      },
+    },
+  },
+  globals: {
+    viewport: { isRotated: false, value: 'customerMobile' },
+  },
+  render: () => (
+    <CustomerSiteLayout
+      onSignOut={signOutFromMobile}
+      session={{
+        customer: {
+          displayName: '김민아',
+          email: 'mina@example.test',
+          id: '11111111-1111-4111-8111-111111111111',
+          verifiedAt: '2026-08-15T00:00:00Z',
+        },
+        status: 'authenticated',
+      }}
+    >
+      <HelpCenterHomePage />
+    </CustomerSiteLayout>
+  ),
+  play: async ({ canvas }) => {
+    signOutFromMobile.mockClear()
+    const signOut = canvas.getByRole('button', { name: '로그아웃' })
+    await expect(signOut).toBeVisible()
+    await userEvent.click(signOut)
+    await expect(signOutFromMobile).toHaveBeenCalledOnce()
   },
 }
 

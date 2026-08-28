@@ -24,7 +24,7 @@
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "contract:check": "node scripts/check-p1-openapi-contract.mjs",
-    "check:design-system-boundaries": "node scripts/check-design-system-boundaries.mjs",
+    "check:design-system-boundaries": "node --test scripts/check-design-system-boundaries.test.mjs && node scripts/check-design-system-boundaries.mjs",
     "test": "npm run test:customer && npm run test:staff",
     "test:customer": "vitest run --config apps/customer-portal/vite.config.ts --project unit",
     "test:staff": "vitest run --config apps/staff-console/vite.config.ts --project unit",

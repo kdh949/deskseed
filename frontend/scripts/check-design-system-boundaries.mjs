@@ -1,6 +1,16 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path'
 import process from 'node:process'
+import ts from 'typescript'
 
 const root = resolve(import.meta.dirname, '..')
 const customerRoot = join(root, 'apps', 'customer-portal', 'src')
@@ -49,76 +59,140 @@ function filesUnder(directory) {
   })
 }
 
-const failures = []
-for (const path of forbiddenRoots) {
-  if (existsSync(path))
-    failures.push(`forbidden path exists: ${relative(root, path)}`)
+function importedSpecifiers(importer, source) {
+  if (extname(importer) === '.css') {
+    const specifiers = []
+    const pattern = /@import\s+(?:url\(\s*)?(['"])([^'"]+)\1\s*\)?/g
+    for (const match of source.matchAll(pattern)) specifiers.push(match[2])
+    return specifiers
+  }
+
+  return ts
+    .preProcessFile(source, true, true)
+    .importedFiles.map(({ fileName }) => fileName)
 }
 
-for (const path of filesUnder(staffRoot)) {
-  if (!/\.(css|ts|tsx)$/.test(path)) continue
-  const source = readFileSync(path, 'utf8')
-  for (const [label, pattern] of forbiddenReferences) {
-    if (pattern.test(source)) {
-      failures.push(`${label}: ${relative(root, path)}`)
-    }
-  }
-  if (
-    !path.includes(`${join('src', 'design-system')}`) &&
-    source.includes('@zendeskgarden/')
-  ) {
-    failures.push(
-      `Garden import outside design-system: ${relative(root, path)}`,
-    )
-  }
-  if (source.includes('--customer-')) {
-    failures.push(`customer token in staff app: ${relative(root, path)}`)
-  }
-  if (/apps\/customer-portal|@deskseed\/customer-portal/.test(source)) {
-    failures.push(`customer app import in staff app: ${relative(root, path)}`)
-  }
+function isWithin(candidate, ownerRoot) {
+  const ownerRelative = relative(ownerRoot, candidate)
+  return (
+    ownerRelative === '' ||
+    (ownerRelative !== '..' &&
+      !ownerRelative.startsWith(`..${sep}`) &&
+      !isAbsolute(ownerRelative))
+  )
 }
 
-for (const path of filesUnder(customerRoot)) {
-  if (!/\.(css|ts|tsx)$/.test(path)) continue
-  const source = readFileSync(path, 'utf8')
-  if (source.includes('--ds-')) {
-    failures.push(`staff token in customer app: ${relative(root, path)}`)
-  }
-  if (/apps\/staff-console|@deskseed\/staff-console/.test(source)) {
-    failures.push(`staff app import in customer app: ${relative(root, path)}`)
-  }
-  if (
-    !path.includes(`${join('src', 'design-system')}`) &&
-    source.includes('@zendeskgarden/')
-  ) {
-    failures.push(
-      `Garden import outside customer design-system: ${relative(root, path)}`,
-    )
-  }
-  for (const [label, pattern] of forbiddenCustomerTypographyReferences) {
-    if (pattern.test(source)) {
-      failures.push(`${label}: ${relative(root, path)}`)
+export function findCrossAppImports({
+  importer,
+  oppositeAliases,
+  oppositeRoot,
+  source,
+}) {
+  return importedSpecifiers(importer, source).filter((specifier) => {
+    if (
+      oppositeAliases.some(
+        (alias) => specifier === alias || specifier.startsWith(`${alias}/`),
+      )
+    ) {
+      return true
     }
+    if (!specifier.startsWith('.') && !isAbsolute(specifier)) return false
+    return isWithin(resolve(dirname(importer), specifier), oppositeRoot)
+  })
+}
+
+export function runBoundaryCheck() {
+  const failures = []
+  for (const path of forbiddenRoots) {
+    if (existsSync(path))
+      failures.push(`forbidden path exists: ${relative(root, path)}`)
   }
-  const isRenderedCustomerSource =
-    path.endsWith('.tsx') &&
-    !/\.(?:stories|test)\.tsx$/.test(path) &&
-    !path.includes(`${join('src', 'api')}`) &&
-    !path.includes(`${join('features', 'customer-auth', 'api')}`) &&
-    !path.includes(`${join('features', 'customer-portal', 'api')}`)
-  if (isRenderedCustomerSource) {
-    for (const [label, pattern] of forbiddenCustomerCopyReferences) {
+
+  for (const path of filesUnder(staffRoot)) {
+    if (!/\.(css|ts|tsx)$/.test(path)) continue
+    const source = readFileSync(path, 'utf8')
+    for (const [label, pattern] of forbiddenReferences) {
       if (pattern.test(source)) {
         failures.push(`${label}: ${relative(root, path)}`)
       }
     }
+    if (
+      !path.includes(`${join('src', 'design-system')}`) &&
+      source.includes('@zendeskgarden/')
+    ) {
+      failures.push(
+        `Garden import outside design-system: ${relative(root, path)}`,
+      )
+    }
+    if (source.includes('--customer-')) {
+      failures.push(`customer token in staff app: ${relative(root, path)}`)
+    }
+    for (const specifier of findCrossAppImports({
+      importer: path,
+      oppositeAliases: ['apps/customer-portal', '@deskseed/customer-portal'],
+      oppositeRoot: customerRoot,
+      source,
+    })) {
+      failures.push(
+        `customer app import in staff app: ${relative(root, path)} (${specifier})`,
+      )
+    }
   }
+
+  for (const path of filesUnder(customerRoot)) {
+    if (!/\.(css|ts|tsx)$/.test(path)) continue
+    const source = readFileSync(path, 'utf8')
+    if (source.includes('--ds-')) {
+      failures.push(`staff token in customer app: ${relative(root, path)}`)
+    }
+    for (const specifier of findCrossAppImports({
+      importer: path,
+      oppositeAliases: ['apps/staff-console', '@deskseed/staff-console'],
+      oppositeRoot: staffRoot,
+      source,
+    })) {
+      failures.push(
+        `staff app import in customer app: ${relative(root, path)} (${specifier})`,
+      )
+    }
+    if (
+      !path.includes(`${join('src', 'design-system')}`) &&
+      source.includes('@zendeskgarden/')
+    ) {
+      failures.push(
+        `Garden import outside customer design-system: ${relative(root, path)}`,
+      )
+    }
+    for (const [label, pattern] of forbiddenCustomerTypographyReferences) {
+      if (pattern.test(source)) {
+        failures.push(`${label}: ${relative(root, path)}`)
+      }
+    }
+    const isRenderedCustomerSource =
+      path.endsWith('.tsx') &&
+      !/\.(?:stories|test)\.tsx$/.test(path) &&
+      !path.includes(`${join('src', 'api')}`) &&
+      !path.includes(`${join('features', 'customer-auth', 'api')}`) &&
+      !path.includes(`${join('features', 'customer-portal', 'api')}`)
+    if (isRenderedCustomerSource) {
+      for (const [label, pattern] of forbiddenCustomerCopyReferences) {
+        if (pattern.test(source)) {
+          failures.push(`${label}: ${relative(root, path)}`)
+        }
+      }
+    }
+  }
+
+  return failures
 }
 
+const isMain =
+  process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+
+const failures = isMain ? runBoundaryCheck() : []
 if (failures.length) {
   console.error(failures.join('\n'))
   process.exit(1)
 }
 
-console.log('Customer and staff design-system boundaries verified.')
+if (isMain) console.log('Customer and staff design-system boundaries verified.')

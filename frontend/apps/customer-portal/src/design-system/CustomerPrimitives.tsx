@@ -130,7 +130,7 @@ export function DsStatusIndicator({
   tone,
 }: {
   children: ReactNode
-  tone: 'new' | 'open' | 'pending' | 'onHold' | 'solved' | 'high'
+  tone: 'danger' | 'neutral' | 'success' | 'warning'
 }) {
   return (
     <span className={`customer-status customer-status--${tone}`}>

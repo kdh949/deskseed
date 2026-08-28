@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router'
+import { Outlet, useNavigate } from 'react-router'
 import { CustomerSiteLayout, Notification } from '../../design-system'
 import { CustomerAuthApiError } from './api/customerAuthClient'
 import {
@@ -17,7 +17,6 @@ export function CustomerRouteLayout() {
 
 function CustomerRouteContent() {
   const navigate = useNavigate()
-  const location = useLocation()
   const session = useCustomerSession()
   const [logoutError, setLogoutError] = useState<LogoutError | null>(null)
 
@@ -34,7 +33,6 @@ function CustomerRouteContent() {
   return (
     <CustomerSiteLayout
       onSignOut={() => void signOut()}
-      presentation={location.pathname === '/' ? 'workspace' : 'site'}
       session={{
         customer: session.customer,
         signingOut: session.signingOut,

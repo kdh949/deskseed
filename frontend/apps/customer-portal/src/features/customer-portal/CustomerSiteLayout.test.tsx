@@ -8,10 +8,7 @@ describe('CustomerSiteLayout', () => {
   it('composes the isolated customer header, main, and footer landmarks', () => {
     render(
       <MemoryRouter>
-        <CustomerSiteLayout
-          presentation="workspace"
-          session={{ status: 'anonymous' }}
-        >
+        <CustomerSiteLayout session={{ status: 'anonymous' }}>
           <section>조회 작업</section>
         </CustomerSiteLayout>
       </MemoryRouter>,

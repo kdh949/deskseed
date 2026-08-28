@@ -26,7 +26,6 @@ export function CustomerSiteLayout({
 }: {
   children: ReactNode
   onSignOut?: () => void
-  presentation?: 'site' | 'workspace'
   session: CustomerSiteSession
 }) {
   useCustomerNoReferrerPolicy()

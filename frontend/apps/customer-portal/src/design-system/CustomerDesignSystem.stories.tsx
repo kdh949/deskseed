@@ -42,9 +42,9 @@ export const Primitives: Story = {
         </DsButton>
       </div>
       <div className="customer-success-actions">
-        <DsStatusIndicator tone="open">접수됨</DsStatusIndicator>
-        <DsStatusIndicator tone="pending">답변 대기</DsStatusIndicator>
-        <DsStatusIndicator tone="solved">해결됨</DsStatusIndicator>
+        <DsStatusIndicator tone="success">접수됨</DsStatusIndicator>
+        <DsStatusIndicator tone="warning">답변 대기</DsStatusIndicator>
+        <DsStatusIndicator tone="neutral">해결됨</DsStatusIndicator>
       </div>
       <div className="customer-success-actions">
         {(

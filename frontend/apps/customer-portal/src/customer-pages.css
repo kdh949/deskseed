@@ -28,14 +28,11 @@
   font-size: 13px;
 }
 .customer-breadcrumb a {
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .customer-home {
-  --customer-color-muted: #5f6f91;
-  --customer-color-success: #087a57;
-  --customer-color-warning: #915600;
-  --customer-color-danger: #b9343c;
   width: min(calc(100% - 40px), var(--customer-width-content));
   margin: 0 auto;
   padding: 24px 0 44px;
