@@ -117,6 +117,7 @@ export const Home: Story = {
     await expect(
       canvas.getByRole('navigation', { name: '빠른 작업' }),
     ).toBeVisible()
+    await expect(canvas.queryByText('⌘ K')).not.toBeInTheDocument()
     await expect(
       await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
     ).toHaveAttribute('href', '/articles/customer-portal-update')

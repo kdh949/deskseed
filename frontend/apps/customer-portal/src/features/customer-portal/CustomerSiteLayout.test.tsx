@@ -18,6 +18,7 @@ describe('CustomerSiteLayout', () => {
     )
 
     expect(screen.getByRole('navigation', { name: '고객 메뉴' })).toBeVisible()
+    expect(screen.queryByText('⌘ K')).not.toBeInTheDocument()
     expect(screen.getByRole('main')).toHaveAttribute(
       'id',
       'customer-main-content',

@@ -64,9 +64,6 @@ export function CustomerSiteLayout({
               placeholder="도움말 문서 검색..."
               value={query}
             />
-            <span aria-hidden="true" className="customer-search-shortcut">
-              ⌘ K
-            </span>
           </form>
           <nav aria-label="고객 메뉴" className="customer-header__nav">
             {customer ? (

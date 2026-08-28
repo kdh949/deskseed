@@ -289,8 +289,6 @@ No other actionable P0/P1/P2 mismatch remains in the three annotated regions.
 
 final result: blocked
 
----
-
 # Customer Portal Ornamental Micro-heading Removal QA — 2026-08-28
 
 ## Scope and evidence
@@ -340,5 +338,53 @@ final result: blocked
 
 - The requested ornamental micro-heading pattern is removed and guarded.
 - Accessibility release status remains blocked only by the pre-existing shared customer color tokens; changing those colors requires a separate explicit visual decision.
+
+final result: blocked
+
+---
+
+# Customer Portal Search Shortcut Removal QA — 2026-08-28
+
+## Scope and evidence
+
+- Requested change: remove the visible `⌘ K` hint from every customer-facing screen and common customer presentation surface.
+- Before state: commit `8f94e6e`, served from the customer Storybook on port 6008.
+- After state: current `feature/customer-portal-isolation` working tree, served on port 6007.
+- Both captures use the Help Center Home story at a `1280 x 720` CSS viewport and device scale factor 1.
+- Before capture: `/private/tmp/customer-shortcut-before.png`
+- After capture: `/private/tmp/customer-shortcut-after.png`
+- Combined same-state comparison: `/private/tmp/customer-shortcut-comparison.png` (before on the left, after on the right)
+
+## Findings and resolution
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | The customer-wide search header rendered an 11 px `⌘ K` hint even though the customer search did not expose a matching keyboard-shortcut interaction. | Removed the hint from `CustomerSiteLayout` and deleted its customer-only style contract. The actual search input, label, submit behavior, and customer navigation remain unchanged. |
+| P1 | The shared layout change needed coverage beyond the annotated Help Center Home story. | Added negative assertions to the layout unit test and both Help Center Home and Customer Home stories. The shared component dependency graph maps the change to 35 customer stories. |
+| P0 | Customer-wide contrast and inline-link styling violations still block the existing accessibility release gate. | Not changed in this element-removal scope because the Storybook contract requires explicit approval before visual color or link-style changes. |
+
+## Browser measurements
+
+- Visible `⌘ K` text nodes: `1 → 0`.
+- `.customer-search-shortcut` elements: `1 → 0`.
+- Header search form bounds remain `x=251`, width `420`, right edge `671`.
+- Search input width expands from `321` to `366` pixels and uses the released space.
+- Customer navigation bounds remain `x=699`, width `524`, right edge `1223`.
+- No horizontal overflow appears before or after the change.
+- Help Center Home, Customer Home, Profile, Registration, and Request Success after states each report zero shortcut text/classes while retaining the labeled search input.
+
+## Verification
+
+- Focused Storybook MCP functional run: 5/5 representative common-layout stories passed.
+- Full Storybook MCP functional run: 37/37 stories passed.
+- Full Storybook MCP accessibility run completed. The removed shortcut no longer appears in the violation report; the previously documented shared color-contrast and link-distinction violations remain.
+- Customer unit run: 21 files and 53 tests passed.
+- Customer production build, customer Storybook production build, lint, typecheck, formatting, and customer/staff design-system boundary checks passed.
+- Production customer source contains no `customer-search-shortcut` class or visible `⌘ K` copy. Remaining occurrences are negative regression assertions only.
+
+## Verification boundary
+
+- The requested customer-only shortcut removal is complete and verified across the common layout.
+- The overall customer accessibility release status remains blocked by unrelated pre-existing visual token and inline-link findings.
 
 final result: blocked

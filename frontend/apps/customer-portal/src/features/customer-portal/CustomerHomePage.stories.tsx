@@ -46,6 +46,7 @@ export const Default: Story = {
     await expect(
       canvas.queryByText('DESKSEED 고객 지원'),
     ).not.toBeInTheDocument()
+    await expect(canvas.queryByText('⌘ K')).not.toBeInTheDocument()
     await expect(
       canvas.queryByLabelText(/토큰|조회 키/),
     ).not.toBeInTheDocument()

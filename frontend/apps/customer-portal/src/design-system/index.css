@@ -118,13 +118,6 @@ p {
   color: var(--customer-color-ink);
   background: transparent;
 }
-.customer-search-shortcut {
-  padding: 3px 6px;
-  border: 1px solid var(--customer-color-border);
-  border-radius: 5px;
-  color: var(--customer-color-muted);
-  font-size: 11px;
-}
 .customer-header__nav {
   display: flex;
   align-items: center;
