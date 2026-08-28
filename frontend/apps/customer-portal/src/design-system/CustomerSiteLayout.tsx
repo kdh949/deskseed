@@ -49,6 +49,7 @@ export function CustomerSiteLayout({
             <CustomerBrand />
           </Link>
           <form
+            aria-label="전체 도움말 검색"
             className="customer-header-search"
             onSubmit={submitSearch}
             role="search"

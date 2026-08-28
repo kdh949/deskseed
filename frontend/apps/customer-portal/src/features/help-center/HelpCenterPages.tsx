@@ -49,7 +49,7 @@ export function HelpCenterHomePage() {
           alt="DeskSeed 도움말과 채팅을 표현한 노트북 일러스트"
           src={heroImage}
         />
-        <form onSubmit={submit} role="search">
+        <form aria-label="도움말 홈 검색" onSubmit={submit} role="search">
           <CustomerIcon name="search" size="lg" />
           <label className="customer-sr-only" htmlFor="home-help-search">
             도움말 검색
@@ -148,7 +148,7 @@ export function HelpSearchPage() {
         <p>
           {normalized ? `“${normalized}” 검색 결과` : '검색어를 입력해 주세요.'}
         </p>
-        <form onSubmit={submit} role="search">
+        <form aria-label="도움말 결과 검색" onSubmit={submit} role="search">
           <CustomerIcon name="search" />
           <input
             aria-label="도움말 검색어"
