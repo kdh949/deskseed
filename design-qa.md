@@ -388,3 +388,50 @@ final result: blocked
 - The overall customer accessibility release status remains blocked by unrelated pre-existing visual token and inline-link findings.
 
 final result: blocked
+
+---
+
+# Customer Portal Responsive Header Collision QA — 2026-08-28
+
+## Scope and evidence
+
+- Requested change: prevent the shared customer header search and navigation from overlapping at intermediate viewport widths, with the fix owned by the common customer layout.
+- Before state: commit `4ad84a5`, served from the customer Storybook on port 6008.
+- After state: current `feature/customer-portal-isolation` working tree, served on port 6007.
+- Both comparison captures use the Help Center Home story with a `906 x 1024` Storybook canvas. The browser captures are both `1280 x 720` at device scale factor 1.
+- Before capture: `/private/tmp/customer-header-responsive-before-906.png`
+- After capture: `/private/tmp/customer-header-responsive-after-906.png`
+- Combined same-state comparison: `/private/tmp/customer-header-responsive-comparison-906.jpg` (before on the left, after on the right)
+
+## Findings and resolution
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | At 906 px, the 420 px shared header search ended at `x=648`, while `문서 둘러보기` began at `x=620.625`. Their visible intersection measured `27.375 x 17 = 465.375 px²`. | Added a customer-only intermediate breakpoint. From 641–1100 px, the brand and full navigation remain on the first row while the search occupies the full second row. |
+| P1 | The collision affected every anonymous screen using `CustomerSiteLayout`, and authenticated navigation has a wider profile group. | Kept the change in the customer design-system stylesheet and verified both the anonymous Help Center Home and authenticated Profile story at 906 px. The dependency graph maps the shared layout to 35 customer stories. |
+| P0 | Customer-wide contrast and inline-link styling violations still block the existing accessibility release gate. | Not changed in this responsive-layout scope because Storybook instructions require explicit approval before changing visual colors or link styling. |
+
+## Responsive browser measurements
+
+- 320 px: the existing compact mobile rule keeps the search and first navigation link hidden; the brand ends at `x=173.75`, and the visible action group begins at `x=185.75`, leaving a 12 px gap.
+- 768 px: the search occupies `x=20..733`, `y=65..107`; the full navigation occupies the first row at `y=12..53`.
+- 906 px: the search occupies `x=20..871`, `y=65..107`; the full navigation occupies the first row at `y=12..53`. Search/navigation collision area is zero.
+- 1024 px: the search occupies `x=20..989`, `y=65..107`; the full navigation occupies the first row at `y=12..53`.
+- 1440 px: the desktop one-row layout remains active. The search ends at `x=750.5`, and the navigation starts at `x=778.5`, preserving the intended 28 px gap.
+- Authenticated 906 px: the search occupies the second row at `y=65..107`; `내 문의`, `문의 접수`, avatar, and profile name remain together on the first row at `y=12..53` with no collision.
+
+## Verification
+
+- Focused Storybook MCP functional run: Help Center Home and authenticated Profile passed.
+- Full Storybook MCP functional run: 37/37 stories passed.
+- Full Storybook MCP accessibility run completed. The responsive header introduced no new semantic violation; the previously documented customer color-contrast and link-distinction findings remain.
+- Browser responsive checks completed at 320, 768, 906, 1024, and 1440 px.
+- Customer unit run: 21 files and 53 tests passed.
+- Customer production build, customer Storybook production build, lint, typecheck, formatting, design-system boundary check, and repository documentation check passed.
+
+## Verification boundary
+
+- The requested common-header collision is removed across anonymous and authenticated customer surfaces.
+- The overall customer accessibility release status remains blocked by unrelated pre-existing visual token and inline-link findings.
+
+final result: blocked
