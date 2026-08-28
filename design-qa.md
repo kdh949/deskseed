@@ -238,3 +238,53 @@ final result: passed
 - DeskSeed Storybook MCP tools were unavailable in this session. MCP story tests, changed-story discovery, preview URLs, and MCP accessibility reports were not run or claimed.
 
 result: passed
+
+---
+
+# Customer Portal Home Annotation QA — 2026-08-28
+
+## Evidence
+
+- Source visual truth: browser comment screenshots attached to the 2026-08-28 task. The equivalent pre-change story state was reproduced from commit `591259c` and captured at `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/before-home-906x791.png`.
+- Implementation screenshot: `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/current-home-906x791.png`
+- Viewport and density: both captures are `1265 x 712` pixels from the same Codex in-app browser viewport at device scale factor 1, with no resizing between captures.
+- State: anonymous customer, Help Center Home, populated categories, and two populated announcements.
+- Full-view comparison: `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/home-before-after-comparison.png`
+- Focused lower-page comparison: `/private/tmp/deskseed-customer-portal-mcp-validation-20260828/home-lower-before-after-comparison.png`
+
+## Findings
+
+- [P0] Customer-wide contrast tokens still fail the accessibility release gate.
+  - Location: common customer header/footer, status chips, and muted/support text outside the selected Home-only regions.
+  - Evidence: the full Storybook MCP accessibility run reports contrast ratios from `3.05:1` to `4.16:1` where WCAG 2 AA requires `4.5:1`. The Home story's remaining violations are the shared search shortcut and footer text/links.
+  - Impact: the three requested Home refinements are visually correct, but the customer portal cannot be declared accessibility-green.
+  - Fix: after explicit visual approval, darken the customer design-system muted, success, warning, and danger foreground tokens and re-run the full Storybook accessibility suite.
+
+No other actionable P0/P1/P2 mismatch remains in the three annotated regions.
+
+## Required fidelity surfaces
+
+- Fonts and typography: the Help Center eyebrow is now `14px` with `19.6px` computed line height and remains subordinate to the hero heading.
+- Spacing and layout rhythm: all five topic cards resolve to the same icon/title/description offsets (`29px`, `73px`, `102px`) in the inspected desktop state.
+- Colors and visual tokens: Home content colors are readable after scoped overrides; shared customer tokens remain blocked as described above.
+- Image quality and asset fidelity: the existing DeskSeed hero raster is unchanged, sharp, correctly cropped, and no placeholder or code-drawn asset was introduced.
+- Copy and content: announcements now contain administrator-published KB article titles and summaries, with links to the corresponding public articles.
+
+## Comparison history
+
+1. Earlier findings: undersized eyebrow, subtly inconsistent topic-card icon/text rhythm, and static hard-coded announcements.
+2. Fixes made: increased the eyebrow size; introduced explicit topic-card grid rows; loaded the `announcements` public Knowledge Base section with loading, empty, and error states.
+3. Post-fix evidence: the full-view and focused comparison images above; browser measurements confirm equal topic-card offsets; announcement links resolve to `/articles/customer-portal-update` and `/articles/support-hours-update`.
+
+## Primary interactions and runtime checks
+
+- Confirmed both published announcement links are present and route to public article paths.
+- Confirmed no application runtime error appeared in the inspected Home story. Storybook manager deprecation warnings are unrelated to the customer page.
+- Functional Storybook run: 37/37 stories passed.
+- Accessibility Storybook run: completed with the contrast blocker above.
+
+## Follow-up polish
+
+- No P3 polish is required for the selected regions.
+
+final result: blocked
