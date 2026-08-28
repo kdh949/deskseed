@@ -60,6 +60,37 @@ const categories = [
   },
 ]
 
+const announcements = {
+  id: 'section-announcements',
+  categoryId: 'cat-announcements',
+  slug: 'announcements',
+  title: '공지사항',
+  description: 'DeskSeed 서비스와 고객 지원 업데이트',
+  articles: [
+    {
+      slug: 'customer-portal-update',
+      title: '고객 포털 업데이트 안내',
+      summary: '더 빠른 도움말 검색과 문의 조회 기능을 확인해 보세요.',
+      audience: 'PUBLIC',
+    },
+    {
+      slug: 'support-hours-update',
+      title: '고객 지원 운영 시간 안내',
+      summary: '고객 지원 운영 시간 변경 내용을 안내합니다.',
+      audience: 'PUBLIC',
+    },
+  ],
+}
+
+const homeHandlers = {
+  helpCategories: http.get('/api/v1/help/categories', () =>
+    HttpResponse.json(categories),
+  ),
+  helpAnnouncements: http.get('/api/v1/help/sections/announcements', () =>
+    HttpResponse.json(announcements),
+  ),
+}
+
 function AnonymousChrome({ children }: { children: React.ReactNode }) {
   return (
     <CustomerSiteLayout session={{ status: 'anonymous' }}>
@@ -71,11 +102,7 @@ function AnonymousChrome({ children }: { children: React.ReactNode }) {
 export const Home: Story = {
   parameters: {
     msw: {
-      handlers: [
-        http.get('/api/v1/help/categories', () =>
-          HttpResponse.json(categories),
-        ),
-      ],
+      handlers: homeHandlers,
     },
   },
   render: () => (
@@ -89,6 +116,51 @@ export const Home: Story = {
     ).toBeVisible()
     await expect(
       canvas.getByRole('navigation', { name: '빠른 작업' }),
+    ).toBeVisible()
+    await expect(
+      await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
+    ).toHaveAttribute('href', '/articles/customer-portal-update')
+  },
+}
+
+export const HomeWithoutAnnouncements: Story = {
+  ...Home,
+  parameters: {
+    msw: {
+      handlers: {
+        ...homeHandlers,
+        helpAnnouncements: http.get('/api/v1/help/sections/announcements', () =>
+          HttpResponse.json({ ...announcements, articles: [] }),
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('등록된 공지사항이 없습니다.'),
+    ).toBeVisible()
+  },
+}
+
+export const HomeWithAnnouncementsUnavailable: Story = {
+  ...Home,
+  parameters: {
+    msw: {
+      handlers: {
+        ...homeHandlers,
+        helpAnnouncements: http.get(
+          '/api/v1/help/sections/announcements',
+          () => new HttpResponse(null, { status: 503 }),
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('공지사항을 불러올 수 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '다시 시도' }),
     ).toBeVisible()
   },
 }

@@ -23,6 +23,19 @@ export interface HelpArticle {
   blocks: Array<{ type: string; text?: string }>
 }
 
+export interface HelpArticleListing {
+  slug: string
+  title: string
+  summary: string
+}
+
+export interface HelpSection {
+  slug: string
+  title: string
+  description: string
+  articles: HelpArticleListing[]
+}
+
 export async function listHelpCategories(): Promise<HelpCategory[]> {
   const response = await customerFetch('/api/v1/help/categories')
   const body: unknown = await checkedJson(response)
@@ -50,6 +63,38 @@ export async function listHelpCategories(): Promise<HelpCategory[]> {
       },
     ]
   })
+}
+
+export async function getHelpSection(slug: string): Promise<HelpSection> {
+  const response = await customerFetch(
+    `/api/v1/help/sections/${encodeURIComponent(slug)}`,
+  )
+  const body: unknown = await checkedJson(response)
+  if (
+    !isRecord(body) ||
+    typeof body.slug !== 'string' ||
+    typeof body.title !== 'string' ||
+    !Array.isArray(body.articles)
+  )
+    throw new Error('help-section-response-invalid')
+
+  const articles = body.articles.flatMap((item) => {
+    if (
+      !isRecord(item) ||
+      typeof item.slug !== 'string' ||
+      typeof item.title !== 'string' ||
+      typeof item.summary !== 'string'
+    )
+      return []
+    return [{ slug: item.slug, title: item.title, summary: item.summary }]
+  })
+
+  return {
+    slug: body.slug,
+    title: body.title,
+    description: typeof body.description === 'string' ? body.description : '',
+    articles,
+  }
 }
 
 export async function searchHelpArticles(

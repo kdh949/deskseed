@@ -12,7 +12,7 @@
 
 ## 1.1 Current delivery overlay
 
-ADR 0044의 현재 운영 surface는 PUB-000~004 중 frozen operation으로 구성 가능한 고객 Help Center/문의/인증 흐름과 Staff Console의 shipped AGT/ADM/AUD 화면이다. Customer Portal은 별도 앱과 디자인 시스템으로 제공하며, profile/preferences/SSO/channel/SLA/announcement처럼 계약이 없는 reference-image 요소는 현재 화면이 아니다. 구현 상태와 UI 제공 상태는 `docs/55-frontend-capability-recomposition-matrix.md`에서 별도로 추적한다.
+ADR 0044의 현재 운영 surface는 PUB-000~004 중 frozen operation으로 구성 가능한 고객 Help Center/문의/인증 흐름과 Staff Console의 shipped AGT/ADM/AUD 화면이다. Customer Portal은 별도 앱과 디자인 시스템으로 제공하며, profile/preferences/SSO/channel/SLA와 별도 announcement/system-status 도메인처럼 계약이 없는 reference-image 요소는 현재 화면이 아니다. 고객 홈 공지는 별도 도메인이 아니라 `announcements` 공개 Knowledge Base section의 published article만 사용하고 기존 관리자 knowledge lifecycle로 관리한다. 구현 상태와 UI 제공 상태는 `docs/55-frontend-capability-recomposition-matrix.md`에서 별도로 추적한다.
 
 # Public screens
 

@@ -34,12 +34,13 @@
 - separate customer/staff applications, builds, style roots, Storybooks, MCP configuration, and production routing;
 - customer-only design tokens, components, shells, illustrations, and route composition;
 - contract-backed customer Help Center, requests, password login, registration verification, passwordless magic-link, and logout;
+- `announcements` 공개 Knowledge Base section의 published article을 고객 홈 공지로 표시하며 기존 관리자 knowledge draft/revision/publish API로 내용을 관리;
 - unit, Storybook, E2E, accessibility, boundary, build, and visual evidence.
 
 ## Out of scope
 
 - profile/avatar/preferences/notification settings, organization/team/role screens, SSO/MFA;
-- live chat, phone, inbound email, announcements/system status;
+- live chat, phone, inbound email, 별도 announcement/system-status 도메인과 전용 관리자 편집 화면;
 - customer-visible SLA, internal priority/assignee/source, request aggregate counts, automatic related-article suggestions;
 - password-reset screens, because no selected reference in this customer-screen batch requires them;
 - backend schema, migration, authorization, audit, or API wire-shape changes.

@@ -11,6 +11,7 @@ import heroImage from '../../assets/deskseed/customer-help-hero.png'
 import articleImage from '../../assets/deskseed/customer-article-billing.png'
 import {
   getHelpArticle,
+  getHelpSection,
   listHelpCategories,
   recordHelpArticleFeedback,
   searchHelpArticles,
@@ -38,6 +39,10 @@ export function HelpCenterHomePage() {
   const categories = useQuery({
     queryKey: ['help', 'categories'],
     queryFn: listHelpCategories,
+  })
+  const announcements = useQuery({
+    queryKey: ['help', 'section', 'announcements'],
+    queryFn: () => getHelpSection('announcements'),
   })
   const topics = categories.data?.length
     ? categories.data
@@ -155,24 +160,36 @@ export function HelpCenterHomePage() {
             <h2>공지사항</h2>
             <Link to="/search?q=공지">전체 보기</Link>
           </header>
-          <article>
-            <CustomerIcon name="check" />
-            <div>
-              <h3>모든 시스템 정상 운영 중</h3>
-              <p>현재 보고된 장애가 없습니다.</p>
-              <small>방금 업데이트</small>
+          {announcements.isPending ? (
+            <div className="customer-announcement-state" role="status">
+              <p>공지사항을 불러오고 있습니다.</p>
             </div>
-            <span>정상</span>
-          </article>
-          <article>
-            <CustomerIcon name="speechBubble" />
-            <div>
-              <h3>새로운 DeskSeed 고객 포털</h3>
-              <p>더 빠른 도움말 검색과 문의 조회를 만나보세요.</p>
-              <small>2026. 8. 27.</small>
+          ) : null}
+          {announcements.isError ? (
+            <div className="customer-announcement-state" role="alert">
+              <p>공지사항을 불러올 수 없습니다.</p>
+              <RetryButton onClick={() => void announcements.refetch()} />
             </div>
-            <span>새 소식</span>
-          </article>
+          ) : null}
+          {announcements.isSuccess && !announcements.data.articles.length ? (
+            <div className="customer-announcement-state" role="status">
+              <p>등록된 공지사항이 없습니다.</p>
+            </div>
+          ) : null}
+          {announcements.data?.articles.slice(0, 2).map((announcement) => (
+            <article key={announcement.slug}>
+              <CustomerIcon name="speechBubble" />
+              <div>
+                <h3>
+                  <Link to={`/articles/${announcement.slug}`}>
+                    {announcement.title}
+                  </Link>
+                </h3>
+                <p>{announcement.summary}</p>
+              </div>
+              <span>공지</span>
+            </article>
+          ))}
         </div>
       </section>
     </div>
@@ -318,7 +335,7 @@ export function HelpArticlePage() {
   const data = article.data
   return (
     <div className="customer-article-layout">
-      <aside className="customer-article-nav">
+      <aside aria-label="이 페이지 목차" className="customer-article-nav">
         <strong>이 페이지에서</strong>
         <a href="#overview">개요</a>
         <a href="#steps">변경 방법</a>

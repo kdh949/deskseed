@@ -2,7 +2,7 @@
 
 Status: **Normative UX comparison v0.6**
 
-ADR 0044 overlay: Staff visual acceptance와 Customer Portal visual acceptance는 별도 앱·디자인 시스템·baseline으로 운영한다. Customer Portal은 현재 frozen Knowledge Base, request, identity operation으로 구성 가능한 화면만 shipped로 간주하고 profile/preferences/SSO/channel/SLA/announcement 항목은 미래 intent로 남긴다.
+ADR 0044 overlay: Staff visual acceptance와 Customer Portal visual acceptance는 별도 앱·디자인 시스템·baseline으로 운영한다. Customer Portal은 현재 frozen Knowledge Base, request, identity operation으로 구성 가능한 화면만 shipped로 간주한다. 고객 홈 공지는 `announcements` 공개 Knowledge Base section의 published article로 제한하며 기존 관리자 knowledge lifecycle을 사용한다. profile/preferences/SSO/channel/SLA와 별도 announcement/system-status 도메인은 미래 intent로 남긴다.
 
 Deskseed의 목표는 Zendesk로 오인되는 복제품이 아니라, Zendesk 경험자가 즉시 사용할 수 있는 유사한 업무 정보 구조와 상호작용이다.
 
