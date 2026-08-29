@@ -463,7 +463,7 @@ export function AgentViewsPage() {
   }
 
   return (
-    <main className="seed-queue" aria-label="티켓 큐">
+    <section className="seed-queue" aria-label="티켓 큐">
       <SeedSavedViewNavigation
         activeKey={viewKey}
         onCreate={openCreateEditor}
@@ -732,7 +732,7 @@ export function AgentViewsPage() {
         }
         returnFocusRef={editorTriggerRef}
       />
-    </main>
+    </section>
   )
 }
 

@@ -9,6 +9,7 @@ const ticket = {
   requester: { id: 'customer-1', type: 'CUSTOMER', displayName: '김민수' },
   group: { id: 'payments', name: '결제 지원' },
   assignee: { id: 'agent-other', displayName: '박서연' },
+  createdAt: '2026-08-10T09:00:00Z',
   updatedAt: '2026-08-10T10:02:00Z',
   version: 7,
   isChild: false,
@@ -83,6 +84,10 @@ const ticketDetail = {
       visibility: 'PUBLIC',
       actor: ticket.requester,
       body: '어제 저녁 결제 인증은 완료됐는데 주문 내역이 만들어지지 않았습니다.',
+      content: {
+        format: 'PLAIN_TEXT',
+        text: '어제 저녁 결제 인증은 완료됐는데 주문 내역이 만들어지지 않았습니다.',
+      },
       createdAt: '2026-08-10T09:00:00Z',
       source: 'WEB',
       attachments: [],
@@ -92,6 +97,10 @@ const ticketDetail = {
       visibility: 'INTERNAL',
       actor: { id: 'agent-other', type: 'STAFF', displayName: '박서연' },
       body: 'PG 승인 번호는 확인됨. 주문 생성 로그를 다음 담당자가 확인해야 합니다.',
+      content: {
+        format: 'PLAIN_TEXT',
+        text: 'PG 승인 번호는 확인됨. 주문 생성 로그를 다음 담당자가 확인해야 합니다.',
+      },
       createdAt: '2026-08-10T09:28:00Z',
       source: 'STAFF_WEB',
       attachments: [],
@@ -248,7 +257,9 @@ for (const viewport of [
       page.getByRole('table', { name: '내 티켓 티켓' }),
     ).toBeVisible()
     await expect(
-      page.getByRole('navigation', { name: '상담사 전역 탐색' }),
+      page.getByRole('complementary', {
+        name: 'Deskseed 상담사 전역 탐색',
+      }),
     ).toBeVisible()
     await expect(page).toHaveScreenshot(
       `frontend-system-view-queue-${viewport.width}.png`,
@@ -259,10 +270,12 @@ for (const viewport of [
     await page.getByRole('link', { name: /티켓 #1042/ }).click()
     await expect(page).toHaveURL(/\/agent\/tickets\/1042$/)
     await expect(
-      page.getByRole('main', { name: '티켓 #1042 작업 공간' }),
+      page.getByRole('region', { name: '티켓 #1042 작업 공간' }),
     ).toBeVisible()
     await expect(
-      page.getByText('INTERNAL · 직원 전용', { exact: true }).first(),
+      page
+        .getByRole('region', { name: '티켓 대화 기록' })
+        .getByText('INTERNAL', { exact: true }),
     ).toBeVisible()
     expect(detailHeaders).toHaveLength(1)
     expect(detailHeaders[0]?.['x-deskseed-read-intent']).toBe('NAVIGATION')
@@ -294,9 +307,9 @@ test('Queue filters and keyboard selection keep their product behavior', async (
   await page.keyboard.press('ArrowDown')
   await expect(second).toBeFocused()
   await page.keyboard.press('Space')
-  await expect(page.getByRole('region', { name: '선택된 티켓' })).toContainText(
-    '1개 선택됨',
-  )
+  await expect(
+    page.getByRole('region', { name: '선택된 티켓', exact: true }),
+  ).toContainText('1개 선택됨')
 })
 
 test('Personal view configuration persists on the server and returns focus to its trigger', async ({
@@ -337,6 +350,7 @@ test('Workspace refresh reuses its navigation interaction without creating a sec
 }) => {
   const { detailHeaders } = await mockAgentReadApi(page)
   await page.goto('/agent/tickets/1042')
+  await page.locator('summary[aria-label="티켓 추가 작업"]').click()
   await page.getByRole('button', { name: '최신 정보 새로고침' }).click()
   await expect.poll(() => detailHeaders.length).toBe(2)
   expect(detailHeaders[1]?.['x-interaction-id']).toBe(

@@ -125,29 +125,58 @@ function WritableWorkspace({
 }) {
   const editor = useTicketEditor({ detail, refreshLatest, staffId })
   return (
-    <WorkspaceFrame
-      detail={detail}
-      extensionAccess={extensionAccess}
-      onRefresh={() => void editor.refreshEditor()}
-      properties={<EditableProperties detail={detail} editor={editor} />}
-      refreshLatest={refreshLatest}
-      conversation={
-        <div className="seed-workspace-column">
-          <div className="seed-workspace-column__scroll">
-            <EditorFeedback editor={editor} />
-            <Conversation comments={detail.comments} />
+    <>
+      <WorkspaceFrame
+        detail={detail}
+        extensionAccess={extensionAccess}
+        onRefresh={() => void editor.refreshEditor()}
+        properties={<EditableProperties detail={detail} editor={editor} />}
+        refreshLatest={refreshLatest}
+        conversation={
+          <div className="seed-workspace-column">
+            <div className="seed-workspace-column__scroll">
+              <EditorFeedback editor={editor} />
+              <Conversation comments={detail.comments} />
+            </div>
+            <div className="seed-workspace-column__composer">
+              <ConflictResolution detail={detail} editor={editor} />
+              <Composer
+                detail={detail}
+                editor={editor}
+                extensionAccess={extensionAccess}
+              />
+            </div>
           </div>
-          <div className="seed-workspace-column__composer">
-            <ConflictResolution detail={detail} editor={editor} />
-            <Composer
-              detail={detail}
-              editor={editor}
-              extensionAccess={extensionAccess}
-            />
-          </div>
+        }
+      />
+      <SeedDrawer
+        description="작성 중인 답변과 변경사항이 아직 제출되지 않았습니다."
+        onClose={() => {
+          if (editor.blocker.state === 'blocked') editor.blocker.reset()
+        }}
+        open={editor.blocker.state === 'blocked'}
+        title="저장하지 않은 변경사항"
+      >
+        <p>이 페이지를 떠나면 제출하지 않은 변경사항이 사라집니다.</p>
+        <div aria-label="페이지 이동 선택" role="group">
+          <SeedButton
+            onClick={() => {
+              if (editor.blocker.state === 'blocked') editor.blocker.reset()
+            }}
+            variant="primary"
+          >
+            계속 작성
+          </SeedButton>
+          <SeedButton
+            onClick={() => {
+              if (editor.blocker.state === 'blocked') editor.blocker.proceed()
+            }}
+          >
+            변경사항 버리고 이동
+          </SeedButton>
         </div>
-      }
-    />
+      </SeedDrawer>
+    </>
   )
 }
 
@@ -601,6 +630,7 @@ function Composer({
           <SeedRichTextEditor
             ariaLabel={internal ? '내부 메모 내용' : '공개 답변 내용'}
             disabled={editor.submitting}
+            key={mode}
             onChange={(document, plainText) =>
               editor.updateRichDraft(mode, document, plainText)
             }

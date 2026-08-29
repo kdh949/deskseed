@@ -189,8 +189,12 @@ export function SeedDrawer({
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useRef<HTMLElement>(null)
+  const fallbackReturnFocusRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (!open) return
+    if (document.activeElement instanceof HTMLElement) {
+      fallbackReturnFocusRef.current = document.activeElement
+    }
     panelRef.current?.focus()
     const closeFromKeyboard = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -223,7 +227,10 @@ export function SeedDrawer({
     window.addEventListener('keydown', closeFromKeyboard)
     return () => {
       window.removeEventListener('keydown', closeFromKeyboard)
-      returnFocusRef?.current?.focus()
+      const focusTarget =
+        returnFocusRef?.current ?? fallbackReturnFocusRef.current
+      focusTarget?.focus()
+      fallbackReturnFocusRef.current = null
     }
   }, [onClose, open, returnFocusRef])
   if (!open) return null

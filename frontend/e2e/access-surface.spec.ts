@@ -13,7 +13,9 @@ test('anonymous staff sees the minimum login surface', async ({ page }) => {
   await mockStaff(page, null)
   await page.goto('/agent/login')
 
-  await expect(page.getByRole('heading', { name: '직원 로그인' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Deskseed 로그인' }),
+  ).toBeVisible()
   await expect(page.getByLabel('이메일')).toBeEnabled()
   await expect(page.getByLabel('비밀번호')).toBeEnabled()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])

@@ -137,7 +137,7 @@ describe('App', () => {
       }),
     ).toBeVisible()
     expect(
-      screen.queryByRole('main', { name: '티켓 큐' }),
+      screen.queryByRole('region', { name: '티켓 큐' }),
     ).not.toBeInTheDocument()
   })
 
@@ -151,7 +151,7 @@ describe('App', () => {
       </DeskseedThemeProvider>,
     )
 
-    expect(await screen.findByRole('main', { name: '티켓 큐' })).toBeVisible()
+    expect(await screen.findByRole('region', { name: '티켓 큐' })).toBeVisible()
     expect(
       screen.queryByRole('heading', { name: '직원 로그인' }),
     ).not.toBeInTheDocument()

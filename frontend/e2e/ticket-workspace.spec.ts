@@ -39,6 +39,10 @@ const detail = {
         displayName: '고객 A',
       },
       body: '결제가 완료됐는지 확인하고 싶습니다.',
+      content: {
+        format: 'PLAIN_TEXT',
+        text: '결제가 완료됐는지 확인하고 싶습니다.',
+      },
       createdAt: '2026-08-15T09:00:00Z',
       source: 'WEB',
       attachments: [],
@@ -113,9 +117,7 @@ test('production workspace preserves separate PUBLIC and INTERNAL drafts from a 
   await expect(
     page.getByRole('region', { name: '티켓 #3001 작업 공간' }),
   ).toBeVisible()
-  await expect(
-    page.getByLabel('티켓 대화 및 답변').getByText('보류', { exact: true }),
-  ).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '상태' })).toHaveText('보류')
   await expect(page.getByText('Pending', { exact: true })).toHaveCount(0)
 
   await page.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }).click()
@@ -129,10 +131,10 @@ test('production workspace preserves separate PUBLIC and INTERNAL drafts from a 
   await page.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }).click()
   await expect(
     page.getByRole('textbox', { name: '공개 답변 내용' }),
-  ).toHaveValue('고객 안내 초안')
+  ).toHaveText('고객 안내 초안')
   await page.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }).click()
   await expect(
     page.getByRole('textbox', { name: '내부 메모 내용' }),
-  ).toHaveValue('팀 확인 메모')
+  ).toHaveText('팀 확인 메모')
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })
