@@ -173,6 +173,134 @@ paths:
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/agent/tickets/{ticketNumber}/collaboration-notes:
+    get:
+      tags: [티켓 내부 협업]
+      summary: 티켓의 내부 협업 메모 조회
+      description: 티켓 읽기 권한이 있는 직원에게만 append-only 협업 메모와 구조화된 mention 대상을 최근 순으로 반환합니다. 고객·Platform·검색·메일 projection에는 포함하지 않으며 응답은 항상 no-store입니다.
+      operationId: listAgentTicketCollaborationNotes
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements: [REQ-COL-003, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/TicketNumber'
+        - $ref: '#/components/parameters/AgentInteractionHeader'
+        - name: before
+          in: query
+          required: false
+          description: 이전 응답의 nextCursor입니다. opaque cursor를 수정하지 않고 다시 전달합니다.
+          schema: {type: string, minLength: 1, maxLength: 512}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 현재 직원에게 보이는 내부 협업 메모 page입니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollaborationNotePage'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActor'}
+        '404':
+          description: 티켓이 없거나 현재 직원이 읽을 수 없습니다.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+    post:
+      tags: [티켓 내부 협업]
+      summary: 티켓에 append-only 내부 협업 메모 작성
+      description: 티켓 write policy를 통과한 직원이 plain-text 협업 메모를 작성합니다. mention 대상은 활성 직원이면서 해당 티켓을 읽을 수 있어야 하며 note, mentions, 수신자 notification과 하나의 COLLABORATION_NOTE_CREATED TicketAudit를 같은 transaction에서 저장합니다.
+      operationId: createAgentTicketCollaborationNote
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements: [REQ-COL-003, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/TicketNumber'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateCollaborationNoteRequest'}
+      responses:
+        '201':
+          description: 새 메모가 생성됐거나 exact clientCommandId 재시도 결과를 반환합니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreateCollaborationNoteResult'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '404':
+          description: 티켓이 없거나 현재 직원이 읽을 수 없습니다.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+        '422':
+          description: 티켓 write policy 또는 mention 대상의 활성·읽기 권한 검증에 실패했습니다.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+  /api/v1/agent/notifications:
+    get:
+      tags: [상담사 알림]
+      summary: 현재 상담사의 내부 멘션 알림 조회
+      description: 인증된 직원에게 발행된 body-free 알림을 최근 순으로 반환합니다. 알림은 note body나 고객 PII를 포함하지 않고 안전한 ticket deep link 정보만 제공합니다.
+      operationId: listAgentNotifications
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements: [REQ-COL-003, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - name: before
+          in: query
+          required: false
+          schema: {type: string, minLength: 1, maxLength: 512}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: 현재 상담사의 알림 page와 unread count입니다.
+          headers:
+            Cache-Control: {schema: {type: string, const: no-store}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentNotificationPage'}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActor'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+  /api/v1/agent/notifications/{notificationId}/read:
+    put:
+      tags: [상담사 알림]
+      summary: 현재 상담사의 알림 읽음 처리
+      description: 현재 authenticated staff가 소유한 알림만 idempotent하게 읽음 처리합니다. 다른 직원의 알림 존재 여부는 노출하지 않습니다.
+      operationId: markAgentNotificationRead
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements: [REQ-COL-003, REQ-FND-004]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/CsrfHeader'
+        - name: notificationId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '204': {description: 알림을 읽음 처리했거나 이미 읽은 상태입니다.}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActor'}
+        '404':
+          description: 현재 직원이 소유한 알림이 아닙니다.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
 components:
   x-deskseed-realtime-protocol-v1:
     endpoint: /ws/agent/collaboration
@@ -284,6 +412,7 @@ components:
         - $ref: '#/components/schemas/TicketPresenceSnapshotMessage'
         - $ref: '#/components/schemas/TicketPresenceDeltaMessage'
         - $ref: '#/components/schemas/TicketCommittedUpdateMessage'
+        - $ref: '#/components/schemas/AgentNotificationHintMessage'
         - $ref: '#/components/schemas/CollaborationRealtimeErrorMessage'
       discriminator:
         propertyName: type
@@ -380,6 +509,16 @@ components:
           type: string
           format: date-time
       description: ticket command commit 뒤 발행되는 safe stale 알림입니다. changedFields는 허용된 field 이름만 포함하며 comment body나 고객 데이터는 전달하지 않습니다.
+    AgentNotificationHintMessage:
+      type: object
+      additionalProperties: false
+      required: [version, type, notificationId, occurredAt]
+      properties:
+        version: {type: integer, const: 1}
+        type: {type: string, const: notification.created}
+        notificationId: {type: string, format: uuid}
+        occurredAt: {type: string, format: date-time}
+      description: transaction commit 뒤 수신자에게 보내는 body-free invalidation hint입니다. 클라이언트는 REST 알림 목록을 다시 읽어 내용을 확인합니다.
     CollaborationRealtimeErrorMessage:
       type: object
       additionalProperties: false
@@ -408,7 +547,7 @@ components:
     TicketDraft:
       type: object
       required:
-        [ticketNumber, channel, body, attachmentIds, clientDeviceId, baseTicketVersion, draftVersion, updatedAt, expiresAt]
+        [ticketNumber, channel, body, content, attachmentIds, clientDeviceId, baseTicketVersion, draftVersion, updatedAt, expiresAt]
       properties:
         ticketNumber:
           type: integer
@@ -418,6 +557,9 @@ components:
         body:
           type: string
           maxLength: 20000
+          description: content에서 서버가 파생한 호환용 plain text입니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5
@@ -444,7 +586,12 @@ components:
           format: date-time
     SaveTicketDraftRequest:
       type: object
-      required: [body, attachmentIds, clientDeviceId, baseTicketVersion, expectedDraftVersion]
+      required: [attachmentIds, clientDeviceId, baseTicketVersion, expectedDraftVersion]
+      oneOf:
+        - required: [body]
+          not: {required: [content]}
+        - required: [content]
+          not: {required: [body]}
       description: 한 직원이 한 티켓의 한 PUBLIC 또는 INTERNAL channel에서 복구할 작성 내용을 저장할 때 사용합니다. 이 요청은 티켓이나 댓글을 변경하지 않습니다.
       x-deskseed-documentation-review: MANUAL
       example:
@@ -458,6 +605,8 @@ components:
           type: string
           maxLength: 20000
           description: 제출 전 작성 본문입니다. 소유자 연결 초안 저장소에만 보관하며 TicketAudit 값으로 만들지 않습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5
@@ -493,6 +642,95 @@ components:
             updatedAt:
               type: string
               format: date-time
+    CollaborationMentionedStaff:
+      type: object
+      additionalProperties: false
+      required: [id, displayName]
+      properties:
+        id: {type: string, format: uuid}
+        displayName: {type: string, minLength: 1, maxLength: 120}
+    CollaborationNote:
+      type: object
+      additionalProperties: false
+      required: [id, ticketNumber, author, body, mentionedStaff, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        ticketNumber: {type: integer, format: int64, minimum: 1}
+        author: {$ref: '#/components/schemas/ActorSummary'}
+        body: {type: string, minLength: 1, maxLength: 4000}
+        mentionedStaff:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/CollaborationMentionedStaff'}
+        createdAt: {type: string, format: date-time}
+      description: staff-only append-only collaboration note입니다. customer와 external projection에 포함하지 않습니다.
+    CollaborationNotePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/CollaborationNote'}}
+        nextCursor: {type: [string, 'null'], maxLength: 512}
+    CreateCollaborationNoteRequest:
+      type: object
+      additionalProperties: false
+      required: [body, mentionedStaffIds, clientCommandId]
+      description: 티켓 write 권한이 있는 상담사가 고객에게 공개되지 않는 append-only 내부 협업 메모와 읽기 권한이 검증될 mention 대상을 함께 제출하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: staff-only append-only note 본문이며 ordinary log, TicketAudit metadata, notification payload에는 저장하지 않습니다.
+        mentionedStaffIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: {type: string, format: uuid}
+          description: active staff이면서 이 ticket을 읽을 수 있는 대상만 transaction 안에서 허용합니다.
+        clientCommandId:
+          type: string
+          format: uuid
+          description: 같은 actor, ticket, body hash와 mention 집합의 exact retry에만 재사용합니다.
+      example:
+        body: 최근 인증 이슈와 연관된 건인지 확인 부탁드립니다.
+        mentionedStaffIds: [22222222-2222-4222-8222-222222222222]
+        clientCommandId: 88888888-8888-4888-8888-888888888888
+    CreateCollaborationNoteResult:
+      type: object
+      additionalProperties: false
+      required: [note, auditId, replayed]
+      properties:
+        note: {$ref: '#/components/schemas/CollaborationNote'}
+        auditId: {type: string, format: uuid}
+        replayed: {type: boolean}
+    AgentNotification:
+      type: object
+      additionalProperties: false
+      required: [id, type, ticketNumber, noteId, actor, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string, const: COLLABORATION_MENTION}
+        ticketNumber: {type: integer, format: int64, minimum: 1}
+        noteId: {type: string, format: uuid}
+        actor: {$ref: '#/components/schemas/ActorSummary'}
+        createdAt: {type: string, format: date-time}
+        readAt: {type: [string, 'null'], format: date-time}
+      description: note body와 customer PII 없이 안전한 ticket deep link에 필요한 식별자만 보유합니다.
+    AgentNotificationPage:
+      type: object
+      additionalProperties: false
+      required: [items, unreadCount]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AgentNotification'}}
+        unreadCount: {type: integer, minimum: 0}
+        nextCursor: {type: [string, 'null'], maxLength: 512}
 tags:
   - name: 협업 초안
     description: 소유자 연결 초안 복구와 보조 협업 API입니다.
+  - name: 티켓 내부 협업
+    description: 고객에게 노출되지 않는 append-only staff 협업 메모와 mention API입니다.
+  - name: 상담사 알림
+    description: 현재 authenticated staff만 조회하고 읽음 처리할 수 있는 body-free 알림 API입니다.

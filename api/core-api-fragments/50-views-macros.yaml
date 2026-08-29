@@ -304,7 +304,7 @@ components:
         ticketNumber: {type: integer, format: int64, minimum: 1, description: 대상 ticket 번호입니다.}
         ticketVersion: {type: integer, format: int64, minimum: 0, description: apply의 If-Match로 다시 제출해야 하는 current ticket version입니다.}
         changes: {type: array, maxItems: 50, description: 저장된 action 순서에서 댓글을 제외한 before/after 변경 계획입니다., items: {$ref: '#/components/schemas/MacroPreviewChange'}}
-        comment: {oneOf: [{$ref: '#/components/schemas/MacroPreviewComment'}, {type: 'null'}], description: COMMENT action이 없으면 null인 렌더링된 plain-text draft입니다.}
+        comment: {oneOf: [{$ref: '#/components/schemas/MacroPreviewComment'}, {type: 'null'}], description: COMMENT action이 없으면 null인 렌더링된 draft입니다. 기존 macro body는 RICH_TEXT_V1 paragraph document로 변환합니다.}
     MacroPreviewChange:
       type: object
       additionalProperties: false
@@ -316,19 +316,27 @@ components:
     MacroPreviewComment:
       type: object
       additionalProperties: false
-      required: [visibility, body]
+      required: [visibility, body, content]
       properties:
         visibility: {type: string, enum: [PUBLIC, INTERNAL], description: 렌더링된 draft의 서버 검증 가시성입니다.}
-        body: {type: string, minLength: 1, maxLength: 10000, description: allowlisted ticket/requester/agent placeholder를 현재 projection으로 치환한 plain text입니다.}
+        body: {type: string, minLength: 1, maxLength: 10000, description: content에서 서버가 파생한 호환용 plain text입니다.}
+        content: {$ref: '#/components/schemas/CommentContent'}
     MacroApplyRequest:
       type: object
       description: preview에서 검토한 활성 macro version과 댓글 draft를 idempotent ticket command로 제출하는 요청입니다.
       x-deskseed-documentation-review: MANUAL
       additionalProperties: false
       required: [macroVersion, clientCommandId]
+      not:
+        required: [commentBodyOverride, commentContentOverride]
       properties:
         macroVersion: {type: integer, minimum: 1, description: preview 응답의 macroVersion이며 apply transaction 안에서 현재 활성 version과 다시 비교합니다.}
-        commentBodyOverride: {type: [string, 'null'], minLength: 1, maxLength: 20000, description: COMMENT action이 있으면 preview에서 검토·수정한 plain-text draft 전체를 반드시 전달하며 저장된 visibility는 바꾸지 않습니다.}
+        commentBodyOverride: {type: [string, 'null'], minLength: 1, maxLength: 20000, description: COMMENT action이 있으면 preview에서 검토·수정한 plain-text draft 전체를 전달하며 저장된 visibility는 바꾸지 않습니다.}
+        commentContentOverride:
+          oneOf:
+          - $ref: '#/components/schemas/CommentContent'
+          - type: 'null'
+          description: COMMENT action이 있으면 preview에서 검토·수정한 structured draft 전체를 전달합니다. commentBodyOverride와 동시에 보낼 수 없습니다.
         clientCommandId: {type: string, format: uuid, description: 동일 actor의 exact payload 재시도를 원래 TicketAudit 결과에 연결하며 다른 payload에는 재사용할 수 없습니다.}
       example: {macroVersion: 1, commentBodyOverride: 상담사가 검토한 내부 결제 메모입니다., clientCommandId: '77777777-7777-4777-8777-777777777777'}
     MacroApplyResult:
