@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -118,9 +118,83 @@ describe('useTicketDraftSync', () => {
     )
     expect(clearAgentTicketDraft).not.toHaveBeenCalled()
   })
+
+  it('serializes an in-flight autosave with a manual flush and cancels its pending timer', async () => {
+    vi.mocked(readLocalTicketDraft).mockResolvedValue(null)
+    vi.mocked(getAgentTicketDraft).mockRejectedValue(
+      new ApiError('draft not found', 404),
+    )
+    const firstSave = deferred<TicketDraft>()
+    const secondSave = deferred<TicketDraft>()
+    vi.mocked(saveAgentTicketDraft)
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise)
+    let sync: { flush: () => Promise<void> } | undefined
+
+    render(<DraftSyncHarness onSync={(next) => (sync = next)} />)
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '초안 변경' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000)
+    })
+    expect(saveAgentTicketDraft).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '초안 변경' }))
+    let flushPromise: Promise<void> | undefined
+    act(() => {
+      flushPromise = sync?.flush()
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveAgentTicketDraft).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      firstSave.resolve(
+        ticketDraft({
+          body: 'first draft',
+          draftVersion: 1,
+          updatedAt: '2026-08-24T12:00:03Z',
+        }),
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(saveAgentTicketDraft).toHaveBeenCalledTimes(2)
+    expect(saveAgentTicketDraft).toHaveBeenLastCalledWith(
+      ticketNumber,
+      'PUBLIC_REPLY',
+      expect.objectContaining({
+        content: { format: 'PLAIN_TEXT', text: 'second draft' },
+        expectedDraftVersion: 1,
+      }),
+    )
+
+    secondSave.resolve(
+      ticketDraft({
+        body: 'second draft',
+        draftVersion: 2,
+        updatedAt: '2026-08-24T12:00:04Z',
+      }),
+    )
+    await act(async () => {
+      await flushPromise
+      await vi.advanceTimersByTimeAsync(3_000)
+    })
+    expect(saveAgentTicketDraft).toHaveBeenCalledTimes(2)
+  })
 })
 
-function DraftSyncHarness() {
+function DraftSyncHarness({
+  onSync,
+}: {
+  onSync?: (sync: { flush: () => Promise<void> }) => void
+}) {
   const [drafts, setDrafts] = useState<ComposerDrafts>({
     PUBLIC: {
       body: '',
@@ -133,7 +207,7 @@ function DraftSyncHarness() {
       attachmentIds: [],
     },
   })
-  useTicketDraftSync({
+  const sync = useTicketDraftSync({
     staffId,
     ticketNumber,
     baseTicketVersion,
@@ -143,7 +217,28 @@ function DraftSyncHarness() {
       setDrafts((current) => ({ ...current, ...recovered })),
     onFailure: () => undefined,
   })
-  return null
+  onSync?.(sync)
+  return (
+    <button
+      onClick={() =>
+        setDrafts((current) => {
+          const body =
+            current.PUBLIC.body === '' ? 'first draft' : 'second draft'
+          return {
+            ...current,
+            PUBLIC: {
+              ...current.PUBLIC,
+              body,
+              content: { format: 'PLAIN_TEXT', text: body },
+            },
+          }
+        })
+      }
+      type="button"
+    >
+      초안 변경
+    </button>
+  )
 }
 
 type ComposerDrafts = Record<
@@ -172,4 +267,12 @@ function ticketDraft({
     updatedAt,
     expiresAt: '2026-08-31T12:00:00Z',
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
 }

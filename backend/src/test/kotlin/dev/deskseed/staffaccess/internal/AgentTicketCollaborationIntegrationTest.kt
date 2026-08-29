@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
@@ -25,6 +26,7 @@ class AgentTicketCollaborationIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
+    private val objectMapper = ObjectMapper()
 
     @BeforeEach
     fun clearState() {
@@ -139,6 +141,94 @@ class AgentTicketCollaborationIntegrationTest {
         assertThat(count("ticket_collaboration_note_mentions")).isZero()
         assertThat(count("staff_notifications")).isZero()
         assertThat(count("ticket_audits")).isZero()
+    }
+
+    @Test
+    fun `collaboration note pagination returns the look-ahead boundary row on the next page`() {
+        val writer = insertStaff("collaboration-pagination-writer@example.com", "Pagination writer")
+        val group = insertGroup("Pagination support", writer)
+        val ticket = insertAssignedTicket(8_221, group, writer)
+        val browser = login("collaboration-pagination-writer@example.com")
+        val createdNoteIds = (1..21).map { index ->
+            val response = mockMvc.perform(
+                createNote(browser, ticket.number, UUID.randomUUID(), "pagination note $index"),
+            )
+                .andExpect(status().isCreated)
+                .andReturn().response.contentAsString
+            UUID.fromString(objectMapper.readTree(response).path("note").path("id").asText())
+        }
+
+        val first = mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}/collaboration-notes", ticket.number)
+                .session(browser.session)
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .param("limit", "20"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(20))
+            .andExpect(jsonPath("$.nextCursor").isNotEmpty)
+            .andReturn().response.contentAsString
+        val firstPage = objectMapper.readTree(first)
+        val cursor = firstPage.path("nextCursor").asText()
+        val second = mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}/collaboration-notes", ticket.number)
+                .session(browser.session)
+                .header("X-Interaction-Id", UUID.randomUUID())
+                .param("limit", "20")
+                .param("before", cursor),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").isEmpty)
+            .andReturn().response.contentAsString
+
+        val pagedNoteIds = noteIds(first) + noteIds(second)
+        assertThat(pagedNoteIds).hasSize(21).doesNotHaveDuplicates()
+        assertThat(pagedNoteIds).containsExactlyInAnyOrderElementsOf(createdNoteIds)
+    }
+
+    @Test
+    fun `notification pagination returns the look-ahead boundary row on the next page`() {
+        val writer = insertStaff("notification-pagination-writer@example.com", "Notification writer")
+        val mentioned = insertStaff("notification-pagination-mentioned@example.com", "Notification recipient")
+        val group = insertGroup("Notification support", writer, mentioned)
+        val ticket = insertAssignedTicket(8_222, group, writer)
+        val writerBrowser = login("notification-pagination-writer@example.com")
+        val mentionedBrowser = login("notification-pagination-mentioned@example.com")
+        val createdNoteIds = (1..21).map { index ->
+            val response = mockMvc.perform(
+                createNote(writerBrowser, ticket.number, UUID.randomUUID(), "notification note $index", mentioned),
+            )
+                .andExpect(status().isCreated)
+                .andReturn().response.contentAsString
+            UUID.fromString(objectMapper.readTree(response).path("note").path("id").asText())
+        }
+
+        val first = mockMvc.perform(
+            get("/api/v1/agent/notifications")
+                .session(mentionedBrowser.session)
+                .param("limit", "20"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(20))
+            .andExpect(jsonPath("$.unreadCount").value(21))
+            .andExpect(jsonPath("$.nextCursor").isNotEmpty)
+            .andReturn().response.contentAsString
+        val cursor = objectMapper.readTree(first).path("nextCursor").asText()
+        val second = mockMvc.perform(
+            get("/api/v1/agent/notifications")
+                .session(mentionedBrowser.session)
+                .param("limit", "20")
+                .param("before", cursor),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.nextCursor").isEmpty)
+            .andReturn().response.contentAsString
+
+        val pagedNoteIds = notificationNoteIds(first) + notificationNoteIds(second)
+        assertThat(pagedNoteIds).hasSize(21).doesNotHaveDuplicates()
+        assertThat(pagedNoteIds).containsExactlyInAnyOrderElementsOf(createdNoteIds)
     }
 
     private fun createNote(browser: Browser, ticketNumber: Long, commandId: UUID, body: String, vararg mentions: UUID) =
@@ -259,6 +349,16 @@ class AgentTicketCollaborationIntegrationTest {
 
     private fun field(json: String, name: String): String =
         Regex("\\\"$name\\\":\\\"([^\\\"]+)\\\"").find(json)!!.groupValues[1]
+
+    private fun noteIds(json: String): List<UUID> = objectMapper.readTree(json).path("items").values()
+        .asSequence()
+        .map { UUID.fromString(it.path("id").asText()) }
+        .toList()
+
+    private fun notificationNoteIds(json: String): List<UUID> = objectMapper.readTree(json).path("items").values()
+        .asSequence()
+        .map { UUID.fromString(it.path("noteId").asText()) }
+        .toList()
 
     private data class Browser(val session: MockHttpSession, val csrfToken: String)
     private data class Ticket(val id: UUID, val number: Long)

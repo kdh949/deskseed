@@ -85,6 +85,56 @@ function savedViewResponse(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function agentTicketDetailResponseWithContent(content: unknown, body: string) {
+  return {
+    ticket: {
+      ticketNumber: 1042,
+      subject: '리치 콘텐츠 경계 검증',
+      status: 'OPEN',
+      priority: 'NORMAL',
+      requester: {
+        id: 'customer-id',
+        type: 'CUSTOMER',
+        displayName: '김고객',
+      },
+      group: null,
+      assignee: null,
+      createdAt: '2026-08-09T23:40:00Z',
+      updatedAt: '2026-08-10T00:00:00Z',
+      version: 3,
+      isChild: false,
+      openChildCount: 0,
+      sla: null,
+    },
+    comments: [
+      {
+        id: 'comment-rich-boundary',
+        visibility: 'PUBLIC',
+        actor: {
+          id: 'staff-id',
+          type: 'STAFF',
+          displayName: '상담사',
+        },
+        body,
+        content,
+        createdAt: '2026-08-10T00:00:00Z',
+        source: 'AGENT_UI',
+        attachments: [],
+      },
+    ],
+    capabilities: ['READ'],
+    assignmentOptions: { groups: [] },
+    context: {
+      customer: null,
+      parent: null,
+      children: [],
+      externalReferenceCount: 0,
+    },
+    history: [],
+    warnings: [],
+  }
+}
+
 afterEach(() => {
   setConfirmedStaffActor(null)
   localStorage.removeItem('deskseed:staff-session:last-authenticated-staff:v1')
@@ -671,6 +721,48 @@ describe('customer request API client', () => {
 })
 
 describe('agent ticket read API client', () => {
+  it('accepts a server-valid rich document with more than 500 total nodes', async () => {
+    const blocks = Array.from({ length: 251 }, (_, index) => ({
+      type: 'paragraph',
+      content: [{ type: 'text', text: `line ${index}` }],
+    }))
+    const body = blocks.map((block) => block.content[0]!.text).join('\n')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify(
+            agentTicketDetailResponseWithContent(
+              {
+                format: 'RICH_TEXT_V1',
+                document: { type: 'doc', content: blocks },
+              },
+              body,
+            ),
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+
+    await expect(
+      getAgentTicket(
+        1042,
+        '11111111-1111-4111-8111-111111111111',
+        'NAVIGATION',
+      ),
+    ).resolves.toMatchObject({
+      comments: [
+        {
+          content: {
+            format: 'RICH_TEXT_V1',
+            document: { content: expect.arrayContaining([blocks[250]]) },
+          },
+        },
+      ],
+    })
+  })
+
   it('sends the tab-local confirmed actor on ordinary staff reads and writes', async () => {
     const confirmedActor = '11111111-1111-4111-8111-111111111111'
     setConfirmedStaffActor(confirmedActor)

@@ -398,7 +398,11 @@ internal class JpaCustomerTicketPortal(
         require(clientCommandId.matches(Regex("[A-Za-z0-9._:-]{1,100}"))) {
             "Customer command ID is invalid"
         }
-        return submittedContent.also { content ->
+        val normalizedContent = when (submittedContent.format) {
+            CommentContentFormat.PLAIN_TEXT -> submittedContent.copy(body = submittedContent.body.trim())
+            CommentContentFormat.RICH_TEXT_V1 -> submittedContent
+        }
+        return normalizedContent.also { content ->
             require(content.body.isNotBlank() && content.body.length <= 20_000) { "Customer follow-up body is invalid" }
         }
     }

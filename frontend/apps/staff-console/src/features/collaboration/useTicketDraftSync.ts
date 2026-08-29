@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiError,
   clearAgentTicketDraft,
@@ -73,9 +73,36 @@ export function useTicketDraftSync({
   const lastSynchronized = useRef<string | null>(null)
   const draftsRef = useRef(drafts)
   const baseVersionRef = useRef(baseTicketVersion)
-  const synchronizeRef = useRef<() => Promise<void>>(async () => undefined)
+  const synchronizeRef = useRef<{
+    fingerprint: string
+    run: () => Promise<void>
+  }>({ fingerprint: '', run: async () => undefined })
+  const timerRef = useRef<number | null>(null)
+  const inFlightRef = useRef<Promise<void> | null>(null)
+  const queuedRef = useRef(false)
   draftsRef.current = drafts
   baseVersionRef.current = baseTicketVersion
+
+  const requestSynchronization = useCallback(() => {
+    if (!hydrated.current) return Promise.resolve()
+    queuedRef.current = true
+    if (inFlightRef.current) return inFlightRef.current
+
+    const drain = async () => {
+      while (queuedRef.current) {
+        queuedRef.current = false
+        const synchronizer = synchronizeRef.current
+        if (lastSynchronized.current !== synchronizer.fingerprint) {
+          await synchronizer.run()
+        }
+      }
+    }
+    const flight = drain().finally(() => {
+      if (inFlightRef.current === flight) inFlightRef.current = null
+    })
+    inFlightRef.current = flight
+    return flight
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -160,12 +187,18 @@ export function useTicketDraftSync({
   }, [migrateLegacy, staffId, ticketNumber])
 
   useEffect(() => {
+    synchronizeRef.current = { fingerprint, run: synchronize }
     if (!hydrated.current || lastSynchronized.current === fingerprint) return
-    synchronizeRef.current = synchronize
-    const timer = window.setTimeout(() => {
-      void synchronize()
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null
+      void requestSynchronization()
     }, DEBOUNCE_MS)
-    return () => window.clearTimeout(timer)
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
 
     async function synchronize() {
       let hasServerFailure = false
@@ -247,7 +280,23 @@ export function useTicketDraftSync({
       else setState('synced')
       lastSynchronized.current = fingerprint
     }
-  }, [baseTicketVersion, drafts, fingerprint, staffId, ticketNumber])
+  }, [
+    baseTicketVersion,
+    drafts,
+    fingerprint,
+    requestSynchronization,
+    staffId,
+    ticketNumber,
+  ])
 
-  return { state, flush: () => synchronizeRef.current() }
+  return {
+    state,
+    flush: () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      return requestSynchronization()
+    },
+  }
 }

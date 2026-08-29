@@ -4,6 +4,8 @@ export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 export type TicketVisibility = 'PUBLIC' | 'INTERNAL'
 export type TicketDraftChannel = 'PUBLIC_REPLY' | 'INTERNAL_NOTE'
 
+export const MAX_RICH_TEXT_NODES = 5_000
+
 export type RichTextMarkV1 =
   | { type: 'bold' | 'italic' | 'underline' | 'code' }
   | { type: 'link'; attrs: { href: string } }

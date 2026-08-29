@@ -126,6 +126,7 @@ import type {
   TicketCollaborationNote,
   SaveTicketDraftInput,
 } from './types'
+import { MAX_RICH_TEXT_NODES } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 export const STAFF_SESSION_INVALID_EVENT = 'deskseed:staff-session-invalid'
@@ -531,7 +532,8 @@ function decodeCommentContent(value: unknown): CommentContent | undefined {
   let nodeCount = 0
   const decodeNode = (node: unknown, depth: number): boolean => {
     nodeCount += 1
-    if (depth > 12 || nodeCount > 500 || !isRecord(node)) return false
+    if (depth > 12 || nodeCount > MAX_RICH_TEXT_NODES || !isRecord(node))
+      return false
     const allowedTypes = new Set([
       'paragraph',
       'heading',

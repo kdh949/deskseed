@@ -135,7 +135,9 @@ internal class JdbcTicketCollaborationStore(
         val mentionsByNote = mentions(pageRows.map(TicketCollaborationNote::id))
         return CollaborationNotePage(
             items = pageRows.map { it.copy(mentionedStaff = mentionsByNote[it.id].orEmpty()) },
-            nextCursor = rows.getOrNull(limit)?.let { CollaborationCursor(it.createdAt, it.id) },
+            nextCursor = pageRows.lastOrNull()
+                ?.takeIf { rows.size > limit }
+                ?.let { CollaborationCursor(it.createdAt, it.id) },
         )
     }
 
@@ -188,10 +190,13 @@ internal class JdbcTicketCollaborationStore(
             Int::class.java,
             recipientStaffId,
         ) ?: 0
+        val pageRows = rows.take(limit)
         return AgentNotificationPage(
-            items = rows.take(limit),
+            items = pageRows,
             unreadCount = unreadCount,
-            nextCursor = rows.getOrNull(limit)?.let { CollaborationCursor(it.createdAt, it.id) },
+            nextCursor = pageRows.lastOrNull()
+                ?.takeIf { rows.size > limit }
+                ?.let { CollaborationCursor(it.createdAt, it.id) },
         )
     }
 

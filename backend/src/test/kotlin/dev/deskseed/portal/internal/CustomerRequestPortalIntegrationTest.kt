@@ -508,7 +508,7 @@ class CustomerRequestPortalIntegrationTest {
             session,
             request.ticketNumber,
             commandId,
-            "추가 정보를 남깁니다.",
+            "  추가 정보를 남깁니다.  ",
             listOf(attachmentId),
         )
             .andExpect(status().isCreated)

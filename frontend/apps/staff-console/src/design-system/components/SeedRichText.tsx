@@ -60,6 +60,9 @@ const AttachmentImage = Node.create<{
           ['span', {}, `첨부 이미지: ${alt}`],
         ]
   },
+  renderText({ node }) {
+    return String(node.attrs.alt ?? '')
+  },
 })
 
 export interface SeedRichTextEditorProps {
@@ -137,7 +140,7 @@ export function SeedRichTextEditor({
       lastEmittedRef.current = JSON.stringify(document)
       changeRef.current(
         document,
-        currentEditor.getText({ blockSeparator: '\n' }),
+        currentEditor.getText({ blockSeparator: '\n' }).trimEnd(),
       )
       setRevision((current) => current + 1)
     },

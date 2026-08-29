@@ -7,6 +7,7 @@ import type {
   TicketVisibility,
   UpdateTicketCommand,
 } from '../../../api/types'
+import { MAX_RICH_TEXT_NODES } from '../../../api/types'
 
 export interface EditableTicketFields {
   status: AgentTicketStatus
@@ -444,7 +445,12 @@ function isRichTextDocument(value: unknown): value is RichTextDocumentV1 {
   let count = 0
   const visit = (node: unknown, depth: number): boolean => {
     count += 1
-    if (!node || typeof node !== 'object' || depth > 12 || count > 500)
+    if (
+      !node ||
+      typeof node !== 'object' ||
+      depth > 12 ||
+      count > MAX_RICH_TEXT_NODES
+    )
       return false
     const candidate = node as {
       type?: unknown
