@@ -17,6 +17,7 @@ import dev.deskseed.macro.MacroRemoveTagAction
 import dev.deskseed.macro.MacroStatusAction
 import dev.deskseed.organization.StaffRole
 import dev.deskseed.ticketing.AgentCommentDraft
+import dev.deskseed.ticketing.CanonicalCommentContent
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.ApplyMacroTicketCommand
@@ -38,7 +39,7 @@ internal class MacroApplyApplicationService(
         macroId: UUID,
         expectedTicketVersion: Long,
         macroVersion: Int,
-        commentBodyOverride: String?,
+        commentOverride: CanonicalCommentContent?,
         context: CommandContext,
     ): TicketCommandResult {
         ticketRead.requireReadableTicket(principal, ticketNumber)
@@ -57,14 +58,20 @@ internal class MacroApplyApplicationService(
             throw AgentTicketNotFoundException()
         }
         val commentAction = macro.actions.filterIsInstance<MacroCommentAction>().singleOrNull()
-        if (commentAction == null && commentBodyOverride != null) {
-            throw IllegalArgumentException("commentBodyOverride requires a COMMENT macro action")
+        if (commentAction == null && commentOverride != null) {
+            throw IllegalArgumentException("comment override requires a COMMENT macro action")
         }
-        if (commentAction != null && commentBodyOverride == null) {
-            throw IllegalArgumentException("commentBodyOverride must carry the reviewed preview draft")
+        if (commentAction != null && commentOverride == null) {
+            throw IllegalArgumentException("comment override must carry the reviewed preview draft")
         }
         val comment = commentAction?.let { action ->
-            AgentCommentDraft(action.visibility, checkNotNull(commentBodyOverride))
+            val content = checkNotNull(commentOverride)
+            AgentCommentDraft(
+                visibility = action.visibility,
+                body = content.body,
+                contentFormat = content.format,
+                contentDocument = content.document,
+            )
         }
         val actionTypes = macro.actions.map { it.type.name }
         val changedFields = buildSet {

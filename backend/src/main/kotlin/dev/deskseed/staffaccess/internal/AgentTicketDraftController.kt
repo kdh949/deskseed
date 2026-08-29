@@ -4,6 +4,11 @@ import dev.deskseed.collaboration.TicketDraft
 import dev.deskseed.collaboration.TicketDraftChannel
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.ticketing.CanonicalCommentContentCodec
+import dev.deskseed.ticketing.CommentContentView
+import dev.deskseed.ticketing.InvalidCommentContentException
+import dev.deskseed.ticketing.TicketCommandInvalidException
+import dev.deskseed.ticketing.commentContentView
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
@@ -24,12 +29,15 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.time.Instant
 import java.util.UUID
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 
 @RestController
 @RequestMapping("/api/v1/agent")
 @Validated
 internal class AgentTicketDraftController(
     private val applicationService: AgentTicketDraftApplicationService,
+    private val objectMapper: ObjectMapper,
 ) {
     @GetMapping("/tickets/{ticketNumber}/drafts/{channel}")
     fun draft(
@@ -54,7 +62,7 @@ internal class AgentTicketDraftController(
                 principal,
                 ticketNumber,
                 channel,
-                body.toCommand(),
+                body.toCommand(objectMapper),
                 CommandContexts.from(request, RequestSource.AGENT_UI),
             ).toResponse(),
         )
@@ -88,7 +96,8 @@ internal class AgentTicketDraftController(
 
 internal data class SaveTicketDraftRequest(
     @field:Size(max = 20_000)
-    val body: String,
+    val body: String? = null,
+    val content: JsonNode? = null,
     @field:Size(max = 5)
     val attachmentIds: List<@NotNull UUID>,
     @field:NotNull
@@ -98,19 +107,34 @@ internal data class SaveTicketDraftRequest(
     @field:PositiveOrZero
     val expectedDraftVersion: Long,
 ) {
-    fun toCommand() = SaveAgentTicketDraft(
-        body = body,
+    fun toCommand(objectMapper: ObjectMapper): SaveAgentTicketDraft {
+        val canonical = try {
+            CanonicalCommentContentCodec(objectMapper).decode(
+                body = body,
+                content = content,
+                attachmentIds = attachmentIds.toSet(),
+                allowEmpty = attachmentIds.isNotEmpty(),
+            )
+        } catch (failure: InvalidCommentContentException) {
+            throw TicketCommandInvalidException(failure.message ?: "Draft content is invalid")
+        }
+        return SaveAgentTicketDraft(
+        body = canonical.body,
         attachmentIds = attachmentIds,
         clientDeviceId = clientDeviceId,
         baseTicketVersion = baseTicketVersion,
         expectedDraftVersion = expectedDraftVersion,
-    )
+        contentFormat = canonical.format,
+        contentDocument = canonical.document,
+        )
+    }
 }
 
 internal data class TicketDraftResponse(
     val ticketNumber: Long,
     val channel: TicketDraftChannel,
     val body: String,
+    val content: CommentContentView,
     val attachmentIds: List<UUID>,
     val clientDeviceId: UUID,
     val baseTicketVersion: Long,
@@ -127,6 +151,7 @@ private fun TicketDraft.toResponse() = TicketDraftResponse(
     ticketNumber = ticketNumber,
     channel = channel,
     body = body,
+    content = commentContentView(contentFormat, body, contentDocument),
     attachmentIds = attachmentIds,
     clientDeviceId = clientDeviceId,
     baseTicketVersion = baseTicketVersion,

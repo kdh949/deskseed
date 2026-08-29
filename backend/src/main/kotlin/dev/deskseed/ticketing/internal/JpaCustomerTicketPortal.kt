@@ -9,6 +9,8 @@ import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.AnonymousCustomerFollowUpCommand
+import dev.deskseed.ticketing.CanonicalCommentContent
+import dev.deskseed.ticketing.CommentContentFormat
 import dev.deskseed.ticketing.ClaimCustomerTicketCommand
 import dev.deskseed.ticketing.ClaimableCustomerTicket
 import dev.deskseed.ticketing.CommentAuthorType
@@ -103,14 +105,14 @@ internal class JpaCustomerTicketPortal(
 
     @Transactional
     override fun addFollowUp(command: CustomerFollowUpCommand): CustomerFollowUpResult {
-        val body = validateFollowUp(command.context, command.clientCommandId, command.body)
+        val content = validateFollowUp(command.context, command.clientCommandId, command.content)
         val attachmentIds = validateAttachmentIds(command.attachmentIds)
         val ticket = lockCustomerRequestTicket(command.ticketNumber)
             ?.takeIf { it.requesterId == command.requesterId }
             ?: throw CustomerTicketNotFoundException()
         lockCommand(command.requesterId, command.clientCommandId)
         findReplay(command.requesterId, command.clientCommandId)?.let { replay ->
-            if (replay.ticketNumber != command.ticketNumber || replay.requestDescriptor != followUpDescriptor(command.ticketNumber, body, attachmentIds)) {
+            if (replay.ticketNumber != command.ticketNumber || replay.requestDescriptor != followUpDescriptor(command.ticketNumber, content, attachmentIds)) {
                 throw CustomerCommandIdReusedException()
             }
             return CustomerFollowUpResult(replay.comment, replay.auditId, replay.ticketId, command.requesterId, replayed = true)
@@ -126,7 +128,7 @@ internal class JpaCustomerTicketPortal(
             ticket = ticket,
             requesterId = customer.id,
             authorDisplayName = customer.name,
-            body = body,
+            content = content,
             attachmentIds = attachmentIds,
             clientCommandId = command.clientCommandId,
             context = command.context,
@@ -135,7 +137,7 @@ internal class JpaCustomerTicketPortal(
 
     @Transactional
     override fun addAnonymousFollowUp(command: AnonymousCustomerFollowUpCommand): CustomerFollowUpResult {
-        val body = validateFollowUp(command.context, command.clientCommandId, command.body)
+        val content = validateFollowUp(command.context, command.clientCommandId, command.content)
         val attachmentIds = validateAttachmentIds(command.attachmentIds)
         val ticket = lockCustomerRequestTicket(command.ticketNumber)
             ?.takeIf { it.id == command.ticketId }
@@ -143,7 +145,7 @@ internal class JpaCustomerTicketPortal(
         val requesterId = ticket.requesterId ?: throw CustomerTicketNotFoundException()
         lockCommand(requesterId, command.clientCommandId)
         findReplay(requesterId, command.clientCommandId)?.let { replay ->
-            if (replay.ticketNumber != command.ticketNumber || replay.requestDescriptor != followUpDescriptor(command.ticketNumber, body, attachmentIds)) {
+            if (replay.ticketNumber != command.ticketNumber || replay.requestDescriptor != followUpDescriptor(command.ticketNumber, content, attachmentIds)) {
                 throw CustomerCommandIdReusedException()
             }
             return CustomerFollowUpResult(replay.comment, replay.auditId, replay.ticketId, requesterId, replayed = true)
@@ -156,7 +158,7 @@ internal class JpaCustomerTicketPortal(
             ticket = ticket,
             requesterId = customer.id,
             authorDisplayName = customer.name,
-            body = body,
+            content = content,
             attachmentIds = attachmentIds,
             clientCommandId = command.clientCommandId,
             context = command.context,
@@ -167,11 +169,12 @@ internal class JpaCustomerTicketPortal(
         ticket: TicketEntity,
         requesterId: UUID,
         authorDisplayName: String,
-        body: String,
+        content: CanonicalCommentContent,
         attachmentIds: Set<UUID>,
         clientCommandId: String,
         context: dev.deskseed.foundation.CommandContext,
     ): CustomerFollowUpResult {
+        val body = content.body
         val now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
         val previousStatus = ticket.status
         if (ticket.status == TicketStatus.PENDING) ticket.status = TicketStatus.OPEN
@@ -188,6 +191,8 @@ internal class JpaCustomerTicketPortal(
                 visibility = CommentVisibility.PUBLIC,
                 body = body,
                 createdAt = now,
+                contentFormat = content.format,
+                contentDocument = content.document?.let(objectMapper::writeValueAsString),
             ),
         )
         val linkedAttachments = attachmentLinker.linkCleanAttachments(
@@ -205,6 +210,7 @@ internal class JpaCustomerTicketPortal(
             previousStatus = previousStatus,
             commentId = commentId,
             body = body,
+            content = content,
             linkedAttachmentIds = linkedAttachments.map { it.attachment.id },
             requesterId = requesterId,
             clientCommandId = clientCommandId,
@@ -212,7 +218,15 @@ internal class JpaCustomerTicketPortal(
             now = now,
         )
         return CustomerFollowUpResult(
-            PublicCommentView(commentId, authorDisplayName, body, now, linkedAttachments.map { it.attachment }),
+            PublicCommentView(
+                commentId,
+                authorDisplayName,
+                body,
+                now,
+                linkedAttachments.map { it.attachment },
+                content.format,
+                content.document,
+            ),
             auditId,
             ticket.id,
             requesterId,
@@ -302,6 +316,7 @@ internal class JpaCustomerTicketPortal(
         previousStatus: TicketStatus,
         commentId: UUID,
         body: String,
+        content: CanonicalCommentContent,
         linkedAttachmentIds: List<UUID>,
         requesterId: UUID,
         clientCommandId: String,
@@ -337,9 +352,10 @@ internal class JpaCustomerTicketPortal(
                         "visibility" to "PUBLIC",
                         "authorType" to "CUSTOMER",
                         "contentLength" to body.length,
-                        "contentSha256" to sha256(body),
+                        "contentSha256" to contentSha256(content),
+                        "contentFormat" to content.format.name,
                         "commandOperation" to "CUSTOMER_FOLLOW_UP",
-                        "commandRequestDescriptor" to followUpDescriptor(ticket.ticketNumber, body, linkedAttachmentIds.toSet()),
+                        "commandRequestDescriptor" to followUpDescriptor(ticket.ticketNumber, content, linkedAttachmentIds.toSet()),
                     ),
                 ),
                 occurredAt = now,
@@ -376,14 +392,14 @@ internal class JpaCustomerTicketPortal(
     private fun validateFollowUp(
         context: dev.deskseed.foundation.CommandContext,
         clientCommandId: String,
-        submittedBody: String,
-    ): String {
+        submittedContent: CanonicalCommentContent,
+    ): CanonicalCommentContent {
         require(context.source == RequestSource.CUSTOMER_PORTAL)
         require(clientCommandId.matches(Regex("[A-Za-z0-9._:-]{1,100}"))) {
             "Customer command ID is invalid"
         }
-        return submittedBody.trim().also { body ->
-            require(body.isNotEmpty() && body.length <= 20_000) { "Customer follow-up body is invalid" }
+        return submittedContent.also { content ->
+            require(content.body.isNotBlank() && content.body.length <= 20_000) { "Customer follow-up body is invalid" }
         }
     }
 
@@ -406,7 +422,8 @@ internal class JpaCustomerTicketPortal(
         val matches = jdbcTemplate.query(
             """
             select audit.id as audit_id, ticket.id as ticket_id, ticket.ticket_number,
-                   comment.id as comment_id, comment.body, comment.created_at,
+                   comment.id as comment_id, comment.body, comment.content_format,
+                   comment.content_document::text as content_document, comment.created_at,
                    coalesce(customer.name, '고객') as author_display_name,
                    first_event.metadata_json::jsonb ->> 'commandRequestDescriptor' as request_descriptor
             from ticket_audits audit
@@ -423,6 +440,8 @@ internal class JpaCustomerTicketPortal(
             order by audit.created_at, audit.id limit 2
             """.trimIndent(),
             { result, _ ->
+                val contentFormat = CommentContentFormat.valueOf(result.getString("content_format"))
+                val contentDocument = result.getString("content_document")?.let(objectMapper::readTree)
                 CustomerReplay(
                     auditId = result.getObject("audit_id", UUID::class.java),
                     ticketId = result.getObject("ticket_id", UUID::class.java),
@@ -433,6 +452,8 @@ internal class JpaCustomerTicketPortal(
                         authorDisplayName = result.getString("author_display_name"),
                         body = result.getString("body"),
                         createdAt = result.getTimestamp("created_at").toInstant(),
+                        contentFormat = contentFormat,
+                        contentDocument = contentDocument,
                     ),
                 )
             },
@@ -459,12 +480,25 @@ internal class JpaCustomerTicketPortal(
         return ids
     }
 
-    private fun followUpDescriptor(ticketNumber: Long, body: String, attachmentIds: Set<UUID>): String {
-        val base = "$ticketNumber:${sha256(body)}"
+    private fun followUpDescriptor(
+        ticketNumber: Long,
+        content: CanonicalCommentContent,
+        attachmentIds: Set<UUID>,
+    ): String {
+        val base = "$ticketNumber:${contentSha256(content)}"
         return attachmentIds.sortedBy(UUID::toString).takeIf { it.isNotEmpty() }
             ?.joinToString(prefix = "$base:", separator = ",")
             ?: base
     }
+
+    private fun contentSha256(content: CanonicalCommentContent): String = sha256(
+        when (content.format) {
+            CommentContentFormat.PLAIN_TEXT -> content.body
+            CommentContentFormat.RICH_TEXT_V1 -> objectMapper.writeValueAsString(
+                linkedMapOf("format" to content.format.name, "document" to content.document),
+            )
+        },
+    )
 
     private data class CustomerReplay(
         val auditId: UUID,

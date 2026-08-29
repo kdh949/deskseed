@@ -15,6 +15,9 @@ class StaffTicketTestDatabaseCleaner(
         jdbcTemplate.execute(
             """
             truncate table
+                staff_notifications,
+                ticket_collaboration_note_mentions,
+                ticket_collaboration_notes,
                 access_audit_events,
                 admin_security_audit_events,
                 ticket_audit_events,

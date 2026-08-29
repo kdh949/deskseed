@@ -551,6 +551,169 @@ class CustomerRequestPortalIntegrationTest {
     }
 
     @Test
+    fun `authenticated and token customer surfaces persist and project canonical rich follow-ups`() {
+        val session = customerSession("rich-follow-up@example.com")
+        val request = submitAnonymous("rich-follow-up@example.com", "리치 후속 답변 문의")
+        claimOwnershipForFixture(request.ticketNumber, session.customerId)
+        val content = mapOf(
+            "format" to "RICH_TEXT_V1",
+            "document" to mapOf(
+                "type" to "doc",
+                "content" to listOf(
+                    mapOf(
+                        "type" to "paragraph",
+                        "content" to listOf(
+                            mapOf("type" to "text", "text" to "중요한", "marks" to listOf(mapOf("type" to "bold"))),
+                            mapOf("type" to "text", "text" to " 문의입니다."),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val created = mockMvc.perform(
+            post("/api/v1/customer/requests/{ticketNumber}/comments", request.ticketNumber)
+                .cookie(session.cookie)
+                .header("X-CSRF-TOKEN", csrf(session.cookie))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        mapOf(
+                            "content" to content,
+                            "attachmentIds" to emptyList<UUID>(),
+                            "clientCommandId" to "rich-authenticated-${UUID.randomUUID()}",
+                        ),
+                    ),
+                ),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.body").value("중요한 문의입니다."))
+            .andExpect(jsonPath("$.content.format").value("RICH_TEXT_V1"))
+            .andExpect(jsonPath("$.content.document.content[0].content[0].marks[0].type").value("bold"))
+            .andReturn().response.contentAsString
+
+        val commentId = UUID.fromString(objectMapper.readTree(created).path("id").asText())
+        val stored = jdbcTemplate.queryForMap(
+            "select body, content_format, content_document::text as document from ticket_comments where id = ?",
+            commentId,
+        )
+        assertThat(stored["body"]).isEqualTo("중요한 문의입니다.")
+        assertThat(stored["content_format"]).isEqualTo("RICH_TEXT_V1")
+        assertThat(stored["document"].toString()).contains("bold").doesNotContain("<script")
+
+        val metadata = jdbcTemplate.queryForObject(
+            """
+            select event.metadata_json::text
+              from ticket_audit_events event
+              join ticket_audits audit on audit.id = event.audit_id
+             where audit.ticket_id = ? and event.event_type = 'COMMENT_CREATED'
+             order by event.occurred_at desc limit 1
+            """.trimIndent(),
+            String::class.java,
+            ticketId(request.ticketNumber),
+        )!!
+        assertThat(metadata)
+            .contains("RICH_TEXT_V1", "contentSha256", "contentLength")
+            .doesNotContain("중요한 문의입니다")
+
+        mockMvc.perform(
+            get("/api/v1/customer/requests/{ticketNumber}", request.ticketNumber).cookie(session.cookie),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.comments[1].body").value("중요한 문의입니다."))
+            .andExpect(jsonPath("$.comments[1].content.format").value("RICH_TEXT_V1"))
+            .andExpect(jsonPath("$.comments[1].content.document.content[0].content[0].marks[0].type").value("bold"))
+
+        mockMvc.perform(
+            post("/api/v1/requests/{ticketNumber}/comments", request.ticketNumber)
+                .header("X-Request-Access-Token", request.accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        mapOf(
+                            "content" to content,
+                            "attachmentIds" to emptyList<UUID>(),
+                            "clientCommandId" to "rich-capability-${UUID.randomUUID()}",
+                        ),
+                    ),
+                ),
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.body").value("중요한 문의입니다."))
+            .andExpect(jsonPath("$.content.format").value("RICH_TEXT_V1"))
+    }
+
+    @Test
+    fun `customer rich follow-up rejects unsafe links and unsubmitted attachment images`() {
+        val session = customerSession("rich-validation@example.com")
+        val request = submitAuthenticated(session, "리치 검증 문의")
+        val base = mapOf(
+            "format" to "RICH_TEXT_V1",
+            "document" to mapOf(
+                "type" to "doc",
+                "content" to listOf(
+                    mapOf(
+                        "type" to "paragraph",
+                        "content" to listOf(
+                            mapOf(
+                                "type" to "text",
+                                "text" to "위험한 링크",
+                                "marks" to listOf(mapOf("type" to "link", "attrs" to mapOf("href" to "javascript:alert(1)"))),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val csrfToken = csrf(session.cookie)
+
+        mockMvc.perform(
+            post("/api/v1/customer/requests/{ticketNumber}/comments", request.ticketNumber)
+                .cookie(session.cookie)
+                .header("X-CSRF-TOKEN", csrfToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(mapOf("content" to base, "clientCommandId" to UUID.randomUUID().toString()))),
+        ).andExpect(status().isBadRequest)
+
+        val unsubmittedAttachment = UUID.randomUUID()
+        val imageContent = mapOf(
+            "format" to "RICH_TEXT_V1",
+            "document" to mapOf(
+                "type" to "doc",
+                "content" to listOf(
+                    mapOf(
+                        "type" to "attachmentImage",
+                        "attrs" to mapOf("attachmentId" to unsubmittedAttachment.toString(), "alt" to "증빙 이미지"),
+                    ),
+                ),
+            ),
+        )
+        mockMvc.perform(
+            post("/api/v1/customer/requests/{ticketNumber}/comments", request.ticketNumber)
+                .cookie(session.cookie)
+                .header("X-CSRF-TOKEN", csrfToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        mapOf(
+                            "content" to imageContent,
+                            "attachmentIds" to emptyList<UUID>(),
+                            "clientCommandId" to UUID.randomUUID().toString(),
+                        ),
+                    ),
+                ),
+        ).andExpect(status().isBadRequest)
+
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from ticket_comments where ticket_id = ? and content_format = 'RICH_TEXT_V1'",
+                Long::class.java,
+                ticketId(request.ticketNumber),
+            ),
+        ).isZero()
+    }
+
+    @Test
     fun `authenticated and token follow-ups share one lock order and replay a command without a deadlock`() {
         val session = customerSession("follow-up-lock-order@example.com")
         val request = submitAuthenticated(session, "동일 명령 동시 후속 답변")

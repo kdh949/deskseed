@@ -3,6 +3,7 @@ package dev.deskseed.ticketing
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.integration.ExternalObjectType
 import dev.deskseed.integration.ExternalReferenceView
+import tools.jackson.databind.JsonNode
 import java.time.Instant
 import java.util.UUID
 
@@ -25,11 +26,30 @@ data class StaffTicketCommandActor(
     val isAdmin: Boolean,
 )
 
+data class RecordTicketCollaborationNoteCommand(
+    val ticketNumber: Long,
+    val noteId: UUID,
+    val contentLength: Int,
+    val contentSha256: String,
+    val mentionCount: Int,
+    val actor: StaffTicketCommandActor,
+    val context: CommandContext,
+)
+
+data class TicketCollaborationAuditResult(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ticketVersion: Long,
+    val auditId: UUID,
+)
+
 data class AgentCommentDraft(
     val visibility: CommentVisibility,
     val body: String,
     /** Handles returned only by the private attachment upload boundary. */
     val attachmentIds: Set<UUID> = emptySet(),
+    val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
+    val contentDocument: JsonNode? = null,
 )
 
 data class CreateAgentTicketCommand(
@@ -271,6 +291,8 @@ interface AgentTicketCommandService {
     fun createExternalReference(command: CreateTicketExternalReferenceCommand): TicketExternalReferenceCommandResult
 
     fun deleteExternalReference(command: DeleteTicketExternalReferenceCommand): TicketExternalReferenceCommandResult
+
+    fun recordCollaborationNote(command: RecordTicketCollaborationNoteCommand): TicketCollaborationAuditResult
 }
 
 interface TicketWriteAuthorizationPolicy {

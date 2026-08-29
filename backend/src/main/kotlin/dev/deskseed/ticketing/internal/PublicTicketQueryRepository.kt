@@ -3,16 +3,19 @@ package dev.deskseed.ticketing.internal
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.TicketAttachmentReadProjection
 import dev.deskseed.ticketing.CustomerRequestStatus
+import dev.deskseed.ticketing.CommentContentFormat
 import dev.deskseed.ticketing.PublicCommentView
 import dev.deskseed.ticketing.PublicTicketView
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import java.util.UUID
+import tools.jackson.databind.ObjectMapper
 
 @Repository
 internal class PublicTicketQueryRepository(
     private val jdbcTemplate: JdbcTemplate,
     private val attachmentReadProjection: TicketAttachmentReadProjection,
+    private val objectMapper: ObjectMapper,
 ) {
     fun find(ticketId: UUID, ticketNumber: Long): PublicTicketView? {
         val ticket = jdbcTemplate.query(
@@ -51,7 +54,7 @@ internal class PublicTicketQueryRepository(
                        when 'AGENT' then '상담팀'
                        else 'Deskseed'
                    end as author_display_name,
-                   body, created_at
+                   body, content_format, content_document, created_at
             from ticket_comments
             where ticket_id = ?
               and visibility = 'PUBLIC'
@@ -63,6 +66,8 @@ internal class PublicTicketQueryRepository(
                     authorDisplayName = result.getString("author_display_name"),
                     body = result.getString("body"),
                     createdAt = result.getTimestamp("created_at").toInstant(),
+                    contentFormat = CommentContentFormat.valueOf(result.getString("content_format")),
+                    contentDocument = result.getString("content_document")?.let(objectMapper::readTree),
                 )
             },
             ticketId,

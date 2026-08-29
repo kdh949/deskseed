@@ -19,6 +19,7 @@ import dev.deskseed.outboundmail.OutboundMailPort
 import dev.deskseed.outboundmail.RequestReceivedMail
 import dev.deskseed.settings.CustomerAccessPolicy
 import dev.deskseed.ticketing.CustomerRequestStatus
+import dev.deskseed.ticketing.CanonicalCommentContent
 import dev.deskseed.ticketing.CustomerFollowUpResult
 import dev.deskseed.ticketing.CustomerTicketNotFoundException
 import dev.deskseed.ticketing.CustomerTicketPortal
@@ -107,7 +108,7 @@ internal class PublicRequestApplicationService(
     fun addComment(
         ticketNumber: Long,
         rawAccessToken: String,
-        body: String,
+        content: CanonicalCommentContent,
         attachmentIds: List<UUID>,
         clientCommandId: String,
         context: CommandContext,
@@ -119,7 +120,7 @@ internal class PublicRequestApplicationService(
                 AnonymousCustomerFollowUpCommand(
                     ticketId = ticketId,
                     ticketNumber = ticketNumber,
-                    body = body,
+                    content = content,
                     attachmentIds = uniqueAttachmentIds(attachmentIds),
                     clientCommandId = clientCommandId,
                     context = context,

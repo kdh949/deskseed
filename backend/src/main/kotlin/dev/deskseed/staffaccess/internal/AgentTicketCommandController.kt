@@ -4,6 +4,8 @@ import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.AgentCommentDraft
+import dev.deskseed.ticketing.CanonicalCommentContentCodec
+import dev.deskseed.ticketing.InvalidCommentContentException
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateChildTicketResult
 import dev.deskseed.ticketing.TicketCommandInvalidException
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 import java.net.URI
 import java.util.UUID
 
@@ -36,6 +39,7 @@ import java.util.UUID
 @Validated
 internal class AgentTicketCommandController(
     private val applicationService: AgentTicketCommandApplicationService,
+    private val objectMapper: ObjectMapper,
 ) {
     @PostMapping
     fun create(
@@ -209,7 +213,18 @@ internal class AgentTicketCommandController(
         if (attachmentIds.size != attachmentIds.toSet().size) {
             throw TicketCommandInvalidException("attachmentIds must be unique")
         }
-        return AgentCommentDraft(visibility, body, attachmentIds.toSet())
+        val canonical = try {
+            CanonicalCommentContentCodec(objectMapper).decode(body, content, attachmentIds.toSet())
+        } catch (failure: InvalidCommentContentException) {
+            throw TicketCommandInvalidException(failure.message ?: "Comment content is invalid")
+        }
+        return AgentCommentDraft(
+            visibility = visibility,
+            body = canonical.body,
+            attachmentIds = attachmentIds.toSet(),
+            contentFormat = canonical.format,
+            contentDocument = canonical.document,
+        )
     }
 }
 
@@ -234,7 +249,8 @@ internal data class AgentRequesterRequest(
 
 internal data class CommentDraftRequest(
     val visibility: CommentVisibility,
-    @field:NotBlank @field:Size(max = 20_000) val body: String,
+    @field:Size(max = 20_000) val body: String? = null,
+    val content: JsonNode? = null,
     @field:Size(max = 5) val attachmentIds: List<UUID> = emptyList(),
 )
 

@@ -38,9 +38,19 @@ import java.net.URI
         AgentExternalReferenceController::class,
         AgentTicketConfigurationController::class,
         AgentMacroApplyController::class,
+        AgentTicketCollaborationController::class,
     ],
 )
 internal class AgentTicketCommandExceptionHandler {
+    @ExceptionHandler(AgentNotificationNotFoundException::class)
+    fun notificationNotFound(request: HttpServletRequest) = problem(
+        request,
+        HttpStatus.NOT_FOUND,
+        "/problems/agent-notification-not-found",
+        "Notification not found",
+        "The notification does not belong to the current staff actor.",
+    )
+
     @ExceptionHandler(TicketMacroVersionUnavailableException::class)
     fun macroVersionUnavailable(request: HttpServletRequest) = problem(
         request,

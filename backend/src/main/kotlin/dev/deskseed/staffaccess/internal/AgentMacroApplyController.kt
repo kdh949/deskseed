@@ -2,6 +2,10 @@ package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.ticketing.CanonicalCommentContent
+import dev.deskseed.ticketing.CanonicalCommentContentCodec
+import dev.deskseed.ticketing.InvalidCommentContentException
+import dev.deskseed.ticketing.TicketCommandInvalidException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
@@ -17,12 +21,15 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 
 @RestController
 @RequestMapping("/api/v1/agent/tickets/{ticketNumber}/macros")
 @Validated
 internal class AgentMacroApplyController(
     private val applicationService: MacroApplyApplicationService,
+    private val objectMapper: ObjectMapper,
 ) {
     @PostMapping("/{macroId}/apply")
     fun apply(
@@ -39,7 +46,7 @@ internal class AgentMacroApplyController(
             macroId = macroId,
             expectedTicketVersion = parseTicketEtag(ifMatch),
             macroVersion = body.macroVersion,
-            commentBodyOverride = body.commentBodyOverride,
+            commentOverride = body.toCommentOverride(objectMapper),
             context = CommandContexts.from(request, RequestSource.AGENT_UI).copy(commandId = body.clientCommandId.toString()),
         )
         return ResponseEntity.ok().eTag(result.version.toString()).body(
@@ -63,8 +70,22 @@ internal class AgentMacroApplyController(
 internal data class MacroApplyRequest(
     @field:Positive val macroVersion: Int,
     @field:Size(min = 1, max = 20_000) val commentBodyOverride: String? = null,
+    val commentContentOverride: JsonNode? = null,
     @field:NotNull val clientCommandId: UUID,
-)
+) {
+    fun toCommentOverride(objectMapper: ObjectMapper): CanonicalCommentContent? {
+        if (commentBodyOverride == null && commentContentOverride == null) return null
+        return try {
+            CanonicalCommentContentCodec(objectMapper).decode(
+                body = commentBodyOverride,
+                content = commentContentOverride,
+                attachmentIds = emptySet(),
+            )
+        } catch (failure: InvalidCommentContentException) {
+            throw TicketCommandInvalidException(failure.message ?: "Macro comment content is invalid")
+        }
+    }
+}
 
 internal data class MacroApplyResponse(
     val ticketNumber: Long,

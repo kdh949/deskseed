@@ -4,6 +4,7 @@ import dev.deskseed.attachments.TicketAttachment
 
 import java.time.Instant
 import java.util.UUID
+import tools.jackson.databind.JsonNode
 
 enum class StaffTicketReadScope {
     ALL_TICKETS,
@@ -119,6 +120,8 @@ data class StaffCommentView(
     val createdAt: Instant,
     val source: String,
     val attachments: List<TicketAttachment> = emptyList(),
+    val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
+    val contentDocument: JsonNode? = null,
 )
 
 data class StaffTicketCustomer(
