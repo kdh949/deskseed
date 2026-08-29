@@ -677,7 +677,7 @@ export const MacroStaleApplyConflict: Story = {
       name: '결제 승인 확인 안내 검토',
     })
     await userEvent.click(
-      within(drawer).getByRole('button', { name: '매크로 적용' }),
+      await within(drawer).findByRole('button', { name: '매크로 적용' }),
     )
     await expect(
       await canvas.findByText(/티켓 또는 매크로 버전이 바뀌었습니다/),
