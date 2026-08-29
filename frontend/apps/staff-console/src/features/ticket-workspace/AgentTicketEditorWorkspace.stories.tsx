@@ -638,9 +638,11 @@ export const MacroPreviewReview: Story = {
     const drawer = await canvas.findByRole('dialog', {
       name: '결제 승인 확인 안내 검토',
     })
-    await expect(within(drawer).getByText('HIGH')).toBeVisible()
+    await expect(await within(drawer).findByText('HIGH')).toBeVisible()
     await expect(
-      within(drawer).getByRole('textbox', { name: '매크로 답변 검토' }),
+      await within(drawer).findByRole('textbox', {
+        name: '매크로 답변 검토',
+      }),
     ).toHaveTextContent('결제 승인 기록을 확인하고 있습니다.')
   },
 }
