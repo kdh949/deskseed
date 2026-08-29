@@ -31,6 +31,7 @@ describe('ticket draft recovery selection', () => {
       ticketNumber: 7101,
       channel: 'PUBLIC_REPLY' as const,
       body: '서버 초안',
+      content: { format: 'PLAIN_TEXT' as const, text: '서버 초안' },
       attachmentIds: [],
       clientDeviceId: '33333333-3333-4333-8333-333333333333',
       baseTicketVersion: 7,

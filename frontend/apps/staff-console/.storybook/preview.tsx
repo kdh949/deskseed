@@ -2,9 +2,9 @@ import type { Preview } from '@storybook/react-vite'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { mswLoader } from 'msw-storybook-addon/csf3'
-import { DeskseedThemeProvider } from '../src/design-system'
+import { SeedThemeProvider } from '../src/design-system/canonical'
 import { mswHandlers } from './msw-handlers'
-import '../src/design-system/index.css'
+import '../src/design-system/canonical-index.css'
 
 const preview: Preview = {
   decorators: [
@@ -22,11 +22,11 @@ const preview: Preview = {
       })
 
       return (
-        <DeskseedThemeProvider>
-          <QueryClientProvider client={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <SeedThemeProvider>
             <RouterProvider router={router} />
-          </QueryClientProvider>
-        </DeskseedThemeProvider>
+          </SeedThemeProvider>
+        </QueryClientProvider>
       )
     },
   ],

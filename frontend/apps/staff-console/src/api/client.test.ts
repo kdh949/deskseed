@@ -96,6 +96,7 @@ describe('agent ticket draft API client', () => {
     ticketNumber: 7101,
     channel: 'PUBLIC_REPLY',
     body: '결제 확인 후 안내드리겠습니다.',
+    content: { format: 'PLAIN_TEXT', text: '결제 확인 후 안내드리겠습니다.' },
     attachmentIds: [],
     clientDeviceId: '11111111-1111-4111-8111-111111111111',
     baseTicketVersion: 7,
@@ -628,6 +629,7 @@ describe('customer request API client', () => {
                 id: 'comment-1',
                 authorDisplayName: '김고객',
                 body: '공개 문의',
+                content: { format: 'PLAIN_TEXT', text: '공개 문의' },
                 createdAt: '2026-08-10T00:00:00Z',
                 attachments: [],
                 staffMetadata: 'comment-private-marker',
@@ -660,6 +662,7 @@ describe('customer request API client', () => {
       'attachments',
       'authorDisplayName',
       'body',
+      'content',
       'createdAt',
       'id',
     ])
@@ -1288,6 +1291,7 @@ describe('agent ticket read API client', () => {
             },
             group: { id: 'group-id', name: '결제 지원' },
             assignee: { id: 'staff-id', displayName: '상담사' },
+            createdAt: '2026-08-09T23:40:00Z',
             updatedAt: '2026-08-10T00:00:00Z',
             version: 3,
             isChild: false,
@@ -1304,6 +1308,7 @@ describe('agent ticket read API client', () => {
                 displayName: '상담사',
               },
               body: '내부 확인 필요',
+              content: { format: 'PLAIN_TEXT', text: '내부 확인 필요' },
               createdAt: '2026-08-10T00:00:00Z',
               source: 'AGENT_UI',
               attachments: [],
@@ -1368,10 +1373,61 @@ describe('agent ticket read API client', () => {
     expect(detail.comments[0]?.visibility).toBe('INTERNAL')
     expect(detail.context.customer?.email).toBe('customer@example.com')
     expect(detail.ticket.status).toBe('ON_HOLD')
+    expect(detail.ticket.createdAt).toBe('2026-08-09T23:40:00Z')
     expect(detail.assignmentOptions.groups[0]?.members[0]?.displayName).toBe(
       '상담사',
     )
     expect(JSON.stringify(detail)).not.toContain('private-marker')
+  })
+
+  it('rejects a staff ticket detail projection without required createdAt', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ticket: {
+              ticketNumber: 1042,
+              subject: '결제 오류',
+              status: 'OPEN',
+              priority: 'NORMAL',
+              requester: {
+                id: 'customer-id',
+                type: 'CUSTOMER',
+                displayName: '김고객',
+              },
+              group: null,
+              assignee: null,
+              updatedAt: '2026-08-10T00:00:00Z',
+              version: 3,
+              isChild: false,
+              openChildCount: 0,
+              sla: null,
+            },
+            comments: [],
+            capabilities: ['READ'],
+            assignmentOptions: { groups: [] },
+            context: {
+              customer: null,
+              parent: null,
+              children: [],
+              externalReferenceCount: 0,
+            },
+            history: [],
+            warnings: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+
+    await expect(
+      getAgentTicket(
+        1042,
+        '11111111-1111-4111-8111-111111111111',
+        'NAVIGATION',
+      ),
+    ).rejects.toMatchObject({ name: 'ApiError', status: 200 })
   })
 
   it('sends one exact combined ticket command with CSRF protection', async () => {
@@ -1637,6 +1693,7 @@ describe('agent ticket read API client', () => {
                 },
                 group: null,
                 assignee: null,
+                createdAt: '2026-08-09T23:40:00Z',
                 updatedAt: '2026-08-10T00:00:00Z',
                 version: 3,
                 isChild: false,
@@ -2039,6 +2096,10 @@ describe('P1 headless contract fixture', () => {
               id: '22222222-2222-4222-8222-222222222222',
               authorDisplayName: '고객',
               body: '승인 내역을 첨부합니다.',
+              content: {
+                format: 'PLAIN_TEXT',
+                text: '승인 내역을 첨부합니다.',
+              },
               createdAt: '2026-08-16T00:05:00Z',
               attachments: [
                 {

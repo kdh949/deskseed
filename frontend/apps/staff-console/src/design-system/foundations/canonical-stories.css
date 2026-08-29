@@ -1,0 +1,95 @@
+.seed-foundations-catalog {
+  display: grid;
+  gap: var(--ds-space-400);
+  min-height: 100vh;
+  padding: var(--ds-space-500);
+  background: var(--ds-palette-canvas);
+  color: var(--ds-palette-ink);
+  font-family: var(--ds-font-sans);
+}
+
+.seed-foundations-catalog header,
+.seed-foundations-catalog section {
+  display: grid;
+  gap: var(--ds-space-150);
+}
+
+.seed-foundations-catalog h1,
+.seed-foundations-catalog h2,
+.seed-foundations-catalog p {
+  margin: 0;
+}
+
+.seed-foundations-catalog__palette {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(9rem, 1fr));
+  gap: var(--ds-space-150);
+}
+
+.seed-foundations-catalog__palette article {
+  display: grid;
+  overflow: hidden;
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-palette-paper);
+}
+
+.seed-foundations-catalog__palette article > span {
+  height: 5rem;
+}
+
+.seed-foundations-catalog__palette strong,
+.seed-foundations-catalog__palette code {
+  padding: var(--ds-space-100) var(--ds-space-150) 0;
+}
+
+.seed-foundations-catalog__palette code {
+  padding-top: 0;
+  padding-bottom: var(--ds-space-150);
+  color: var(--ds-palette-ink-muted);
+}
+
+.seed-foundations-catalog__type,
+.seed-foundations-catalog__metrics {
+  display: grid;
+  gap: var(--ds-space-150);
+  padding: var(--ds-space-300);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  border-radius: var(--ds-radius-large);
+  background: var(--ds-palette-paper);
+  box-shadow: var(--ds-shadow-card);
+}
+
+.seed-foundations-catalog__metrics {
+  grid-template-columns: repeat(6, auto) 1fr;
+  align-items: end;
+}
+
+.seed-foundations-catalog__metrics > span {
+  display: grid;
+  height: 4rem;
+  place-items: end center;
+  background: var(--ds-palette-brand-soft);
+  color: var(--ds-palette-brand-strong);
+  font-size: var(--ds-font-size-100);
+}
+
+.seed-foundations-catalog__metrics button {
+  justify-self: start;
+  min-height: var(--ds-size-target);
+  padding: 0 var(--ds-space-200);
+  border: 0;
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-palette-chrome);
+  color: var(--ds-palette-paper);
+  transition: transform var(--ds-motion-standard) ease;
+}
+
+.seed-foundations-catalog__metrics button:hover {
+  transform: translateY(-2px);
+}
+
+.seed-foundations-catalog__metrics button:focus-visible {
+  outline: none;
+  box-shadow: var(--ds-focus-outline);
+}

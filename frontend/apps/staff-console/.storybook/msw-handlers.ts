@@ -17,7 +17,7 @@ export const mswHandlers = [
     '/api/v1/agent/tickets/:ticketNumber/drafts/:channel',
     async ({ params, request }) => {
       const input = (await request.json()) as {
-        body?: string
+        content?: unknown
         attachmentIds?: string[]
         clientDeviceId?: string
         baseTicketVersion?: number
@@ -26,7 +26,8 @@ export const mswHandlers = [
       return HttpResponse.json({
         ticketNumber: Number(params.ticketNumber),
         channel: params.channel,
-        body: input.body ?? '',
+        body: '',
+        content: input.content ?? { format: 'PLAIN_TEXT', text: '' },
         attachmentIds: input.attachmentIds ?? [],
         clientDeviceId:
           input.clientDeviceId ?? '00000000-0000-4000-8000-000000000001',
@@ -40,6 +41,13 @@ export const mswHandlers = [
   http.delete(
     '/api/v1/agent/tickets/:ticketNumber/drafts/:channel',
     () => new HttpResponse(null, { status: 204 }),
+  ),
+  http.get('/api/v1/agent/macros', () => HttpResponse.json([])),
+  http.get('/api/v1/agent/tickets/:ticketNumber/collaboration-notes', () =>
+    HttpResponse.json({ items: [], nextCursor: null }),
+  ),
+  http.get('/api/v1/agent/notifications', () =>
+    HttpResponse.json({ items: [], nextCursor: null, unreadCount: 0 }),
   ),
   collaborationHandler,
 ]

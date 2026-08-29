@@ -4,11 +4,60 @@ export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 export type TicketVisibility = 'PUBLIC' | 'INTERNAL'
 export type TicketDraftChannel = 'PUBLIC_REPLY' | 'INTERNAL_NOTE'
 
+export type RichTextMarkV1 =
+  | { type: 'bold' | 'italic' | 'underline' | 'code' }
+  | { type: 'link'; attrs: { href: string } }
+
+export interface RichTextNodeV1 {
+  type:
+    | 'paragraph'
+    | 'heading'
+    | 'bulletList'
+    | 'orderedList'
+    | 'listItem'
+    | 'blockquote'
+    | 'codeBlock'
+    | 'attachmentImage'
+    | 'text'
+    | 'hardBreak'
+  attrs?: {
+    level?: 1 | 2 | 3
+    textAlign?: 'left' | 'center' | 'right'
+    attachmentId?: string
+    alt?: string
+  }
+  content?: RichTextNodeV1[]
+  text?: string
+  marks?: RichTextMarkV1[]
+}
+
+export interface RichTextDocumentV1 {
+  type: 'doc'
+  content: RichTextNodeV1[]
+}
+
+export type CommentContent =
+  | { format: 'PLAIN_TEXT'; text: string }
+  | { format: 'RICH_TEXT_V1'; document: RichTextDocumentV1 }
+
+export function plainTextDocument(text: string): RichTextDocumentV1 {
+  return {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        ...(text ? { content: [{ type: 'text', text }] } : {}),
+      },
+    ],
+  }
+}
+
 /** Owner-bound, recoverable composer state; it is not a ticket mutation or audit event. */
 export interface TicketDraft {
   ticketNumber: number
   channel: TicketDraftChannel
   body: string
+  content: CommentContent
   attachmentIds: string[]
   clientDeviceId: string
   baseTicketVersion: number
@@ -18,7 +67,8 @@ export interface TicketDraft {
 }
 
 export interface SaveTicketDraftInput {
-  body: string
+  body?: string
+  content?: CommentContent
   attachmentIds: string[]
   clientDeviceId: string
   baseTicketVersion: number
@@ -44,6 +94,7 @@ export interface PublicComment {
   id: string
   authorDisplayName: string
   body: string
+  content: CommentContent
   createdAt: string
   attachments: TicketAttachment[]
 }
@@ -645,6 +696,7 @@ export interface AgentTicketSummary {
   requester: ActorSummary
   group: GroupReference | null
   assignee: TicketReference | null
+  createdAt: string
   updatedAt: string
   version: number
   isChild: boolean
@@ -692,6 +744,7 @@ export interface AgentComment {
   visibility: TicketVisibility
   actor: ActorSummary
   body: string
+  content: CommentContent
   createdAt: string
   source: string
   attachments: TicketAttachment[]
@@ -755,11 +808,16 @@ export interface TicketAssignmentOptions {
   groups: TicketAssignmentGroupOption[]
 }
 
-export interface TicketCommentDraft {
+interface TicketCommentDraftBase {
   visibility: TicketVisibility
-  body: string
   attachmentIds?: string[]
 }
+
+export type TicketCommentDraft = TicketCommentDraftBase &
+  (
+    | { body: string; content?: never }
+    | { body?: never; content: CommentContent }
+  )
 
 export interface UpdateTicketCommand {
   expectedVersion: number
@@ -770,6 +828,77 @@ export interface UpdateTicketCommand {
   assigneeId?: string | null
   comment: TicketCommentDraft | null
   clientCommandId: string
+}
+
+export interface CollaborationStaffSummary {
+  id: string
+  displayName: string
+}
+
+export interface TicketCollaborationNote {
+  id: string
+  ticketNumber: number
+  author: ActorSummary
+  body: string
+  mentionedStaff: CollaborationStaffSummary[]
+  createdAt: string
+}
+
+export interface CollaborationNotePage {
+  items: TicketCollaborationNote[]
+  nextCursor: string | null
+}
+
+export interface CreateCollaborationNoteResult {
+  note: TicketCollaborationNote
+  auditId: string
+  replayed: boolean
+}
+
+export interface AgentNotification {
+  id: string
+  type: 'COLLABORATION_MENTION'
+  ticketNumber: number
+  noteId: string
+  actor: ActorSummary
+  createdAt: string
+  readAt: string | null
+}
+
+export interface AgentNotificationPage {
+  items: AgentNotification[]
+  unreadCount: number
+  nextCursor: string | null
+}
+
+export interface AgentMacroDefinition {
+  id: string
+  name: string
+  scope: 'PERSONAL' | 'SHARED'
+  ownerStaffId?: string | null
+  currentVersion: number
+  activeVersion: number | null
+  aggregateVersion: number
+  actions: unknown[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MacroPreview {
+  macroId: string
+  macroVersion: number
+  ticketNumber: number
+  ticketVersion: number
+  changes: Array<{ field: string; before: string | null; after: string | null }>
+  comment: {
+    visibility: TicketVisibility
+    body: string
+    content: CommentContent
+  } | null
+}
+
+export interface MacroApplyResult extends TicketCommandResult {
+  replayed: boolean
 }
 
 export interface TransferTicketCommand {

@@ -6,7 +6,11 @@ import {
   saveAgentTicketDraft,
 } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
-import type { TicketDraftChannel, TicketVisibility } from '../../api/types'
+import type {
+  CommentContent,
+  TicketDraftChannel,
+  TicketVisibility,
+} from '../../api/types'
 import {
   makeLocalTicketDraft,
   newestRecoverableDraft,
@@ -24,7 +28,7 @@ const CHANNELS: Record<TicketVisibility, TicketDraftChannel> = {
 
 type ComposerDrafts = Record<
   TicketVisibility,
-  { body: string; attachmentIds: string[] }
+  { body: string; content: CommentContent; attachmentIds: string[] }
 >
 
 export type TicketDraftSyncState =
@@ -69,6 +73,7 @@ export function useTicketDraftSync({
   const lastSynchronized = useRef<string | null>(null)
   const draftsRef = useRef(drafts)
   const baseVersionRef = useRef(baseTicketVersion)
+  const synchronizeRef = useRef<() => Promise<void>>(async () => undefined)
   draftsRef.current = drafts
   baseVersionRef.current = baseTicketVersion
 
@@ -109,6 +114,10 @@ export function useTicketDraftSync({
             if (newest && !editorAlreadyContainsDraft) {
               recovered[visibility] = {
                 body: newest.body,
+                content: newest.content ?? {
+                  format: 'PLAIN_TEXT',
+                  text: newest.body,
+                },
                 attachmentIds: [...newest.attachmentIds],
               }
               if (newest === remote) {
@@ -152,6 +161,7 @@ export function useTicketDraftSync({
 
   useEffect(() => {
     if (!hydrated.current || lastSynchronized.current === fingerprint) return
+    synchronizeRef.current = synchronize
     const timer = window.setTimeout(() => {
       void synchronize()
     }, DEBOUNCE_MS)
@@ -193,6 +203,7 @@ export function useTicketDraftSync({
               ticketNumber,
               channel,
               body: draft.body,
+              content: draft.content,
               attachmentIds: draft.attachmentIds,
               clientDeviceId: clientDeviceId.current,
               baseTicketVersion,
@@ -205,7 +216,7 @@ export function useTicketDraftSync({
             }
             try {
               const saved = await saveAgentTicketDraft(ticketNumber, channel, {
-                body: draft.body,
+                content: draft.content,
                 attachmentIds: draft.attachmentIds,
                 clientDeviceId: clientDeviceId.current,
                 baseTicketVersion,
@@ -238,5 +249,5 @@ export function useTicketDraftSync({
     }
   }, [baseTicketVersion, drafts, fingerprint, staffId, ticketNumber])
 
-  return { state }
+  return { state, flush: () => synchronizeRef.current() }
 }

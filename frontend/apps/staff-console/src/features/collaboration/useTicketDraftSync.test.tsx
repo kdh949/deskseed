@@ -8,7 +8,11 @@ import {
   saveAgentTicketDraft,
 } from '../../api/client'
 import type * as ApiClientModule from '../../api/client'
-import type { TicketDraft, TicketVisibility } from '../../api/types'
+import type {
+  CommentContent,
+  TicketDraft,
+  TicketVisibility,
+} from '../../api/types'
 import {
   readLocalTicketDraft,
   removeLocalTicketDraft,
@@ -66,6 +70,7 @@ describe('useTicketDraftSync', () => {
       ...remote,
       staffId,
       body: 'newer local draft',
+      content: { format: 'PLAIN_TEXT', text: 'newer local draft' },
       clientDeviceId: '22222222-2222-4222-8222-222222222222',
       draftVersion: 4,
       updatedAt: '2026-08-24T11:00:00Z',
@@ -107,7 +112,7 @@ describe('useTicketDraftSync', () => {
       ticketNumber,
       'PUBLIC_REPLY',
       expect.objectContaining({
-        body: 'newer local draft',
+        content: { format: 'PLAIN_TEXT', text: 'newer local draft' },
         expectedDraftVersion: 7,
       }),
     )
@@ -117,8 +122,16 @@ describe('useTicketDraftSync', () => {
 
 function DraftSyncHarness() {
   const [drafts, setDrafts] = useState<ComposerDrafts>({
-    PUBLIC: { body: '', attachmentIds: [] },
-    INTERNAL: { body: '', attachmentIds: [] },
+    PUBLIC: {
+      body: '',
+      content: { format: 'PLAIN_TEXT', text: '' },
+      attachmentIds: [],
+    },
+    INTERNAL: {
+      body: '',
+      content: { format: 'PLAIN_TEXT', text: '' },
+      attachmentIds: [],
+    },
   })
   useTicketDraftSync({
     staffId,
@@ -135,7 +148,7 @@ function DraftSyncHarness() {
 
 type ComposerDrafts = Record<
   TicketVisibility,
-  { body: string; attachmentIds: string[] }
+  { body: string; content: CommentContent; attachmentIds: string[] }
 >
 
 function ticketDraft({
@@ -151,6 +164,7 @@ function ticketDraft({
     ticketNumber,
     channel: 'PUBLIC_REPLY',
     body,
+    content: { format: 'PLAIN_TEXT', text: body },
     attachmentIds: [],
     clientDeviceId: '33333333-3333-4333-8333-333333333333',
     baseTicketVersion,

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBeforeUnload, useBlocker } from 'react-router'
 import { ApiError, updateAgentTicket } from '../../../api/client'
+import { plainTextDocument } from '../../../api/types'
 import type {
   AgentTicketDetail,
+  RichTextDocumentV1,
   TicketFieldName,
   TicketCommandWarning,
   TicketVisibility,
@@ -24,6 +26,7 @@ import {
   writeTicketDraft,
   type EditableTicketFields,
   type TicketCommentDrafts,
+  type TicketRichTextDrafts,
 } from './ticketEditorModel'
 
 export interface TicketConflictState {
@@ -58,12 +61,16 @@ export function useTicketEditor({
   const [comments, setComments] = useState<TicketCommentDrafts>(
     initial.comments,
   )
+  const [documents, setDocuments] = useState<TicketRichTextDrafts>(
+    initial.documents,
+  )
   const [serverFields, setServerFields] = useState(initial.serverFields)
   const [localFields, setLocalFields] = useState(initial.fields)
   const [baseVersion, setBaseVersion] = useState(initial.baseVersion)
   const [submitting, setSubmitting] = useState(false)
   const [conflict, setConflict] = useState<TicketConflictState | null>(null)
   const [error, setError] = useState<TicketEditorError | null>(null)
+  const [draftError, setDraftError] = useState<TicketEditorError | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [warnings, setWarnings] = useState<TicketCommandWarning[]>([])
   const [pendingCommandId, setPendingCommandId] = useState<string | null>(
@@ -80,14 +87,22 @@ export function useTicketEditor({
     () => ({
       PUBLIC: {
         body: comments.PUBLIC,
+        content: {
+          format: 'RICH_TEXT_V1' as const,
+          document: documents.PUBLIC,
+        },
         attachmentIds: attachmentStates.PUBLIC.ids,
       },
       INTERNAL: {
         body: comments.INTERNAL,
+        content: {
+          format: 'RICH_TEXT_V1' as const,
+          document: documents.INTERNAL,
+        },
         attachmentIds: attachmentStates.INTERNAL.ids,
       },
     }),
-    [attachmentStates, comments],
+    [attachmentStates, comments, documents],
   )
   const draftSync = useTicketDraftSync({
     staffId,
@@ -106,6 +121,19 @@ export function useTicketEditor({
             ? (recovered.INTERNAL?.body ?? current.INTERNAL)
             : current.INTERNAL,
       }))
+      setDocuments((current) => ({
+        PUBLIC:
+          comments.PUBLIC.trim() === '' && recovered.PUBLIC
+            ? contentDocument(recovered.PUBLIC.content, recovered.PUBLIC.body)
+            : current.PUBLIC,
+        INTERNAL:
+          comments.INTERNAL.trim() === '' && recovered.INTERNAL
+            ? contentDocument(
+                recovered.INTERNAL.content,
+                recovered.INTERNAL.body,
+              )
+            : current.INTERNAL,
+      }))
       setAttachmentStates((current) => ({
         PUBLIC:
           current.PUBLIC.ids.length === 0 && recovered.PUBLIC
@@ -117,9 +145,9 @@ export function useTicketEditor({
             : current.INTERNAL,
       }))
     },
-    onFailure: (message, requestId) => setError({ message, requestId }),
+    onFailure: (message, requestId) => setDraftError({ message, requestId }),
   })
-  const conflictRef = useRef<HTMLDivElement>(null)
+  const conflictRef = useRef<HTMLElement>(null)
   const storageKey = ticketDraftStorageKey(staffId, detail.ticket.ticketNumber)
   const dirtyFields = useMemo(
     () => new Set(changedTicketFields(serverFields, localFields)),
@@ -157,6 +185,7 @@ export function useTicketEditor({
     writeEditorState({
       mode,
       comments,
+      documents,
       fields: localFields,
       serverFields,
       baseVersion,
@@ -168,6 +197,7 @@ export function useTicketEditor({
     baseVersion,
     attachmentStates,
     comments,
+    documents,
     isUnsaved,
     localFields,
     mode,
@@ -187,6 +217,29 @@ export function useTicketEditor({
     const nextComments = { ...comments, [visibility]: value }
     invalidatePendingCommand({ comments: nextComments })
     setComments(nextComments)
+    setError(null)
+    setSuccess(null)
+  }
+
+  const updateRichDraft = (
+    visibility: TicketVisibility,
+    document: RichTextDocumentV1,
+    plainText: string,
+  ) => {
+    if (submitting) return
+    if (
+      comments[visibility] === plainText &&
+      JSON.stringify(documents[visibility]) === JSON.stringify(document)
+    )
+      return
+    const nextComments = { ...comments, [visibility]: plainText }
+    const nextDocuments = { ...documents, [visibility]: document }
+    invalidatePendingCommand({
+      comments: nextComments,
+      documents: nextDocuments,
+    })
+    setComments(nextComments)
+    setDocuments(nextDocuments)
     setError(null)
     setSuccess(null)
   }
@@ -284,6 +337,29 @@ export function useTicketEditor({
     )
   }
 
+  const resolveAllFields = (choice: 'SERVER' | 'LOCAL') => {
+    if (!conflict?.latestFields) return
+    let nextLocalFields = localFields
+    let nextDirtyFields = dirtyFields
+    let nextUnresolvedFields = conflict.fields
+    for (const field of conflict.fields) {
+      const resolved = resolveConflictField({
+        field,
+        choice,
+        localFields: nextLocalFields,
+        latestFields: conflict.latestFields,
+        dirtyFields: nextDirtyFields,
+        unresolvedFields: nextUnresolvedFields,
+      })
+      nextLocalFields = resolved.localFields
+      nextDirtyFields = resolved.dirtyFields
+      nextUnresolvedFields = resolved.unresolvedFields
+    }
+    invalidatePendingCommand({ fields: nextLocalFields })
+    setLocalFields(nextLocalFields)
+    setConflict(null)
+  }
+
   const refreshEditor = async () => {
     try {
       const latest = await refreshLatest()
@@ -336,8 +412,19 @@ export function useTicketEditor({
     }
   }
 
-  const submit = async (attachmentIds: string[] = []) => {
-    if (submitting || unresolvedConflict || !hasActiveSubmit) return false
+  const submit = async (
+    attachmentIds: string[] = [],
+    statusAfter?: AgentTicketDetail['ticket']['status'],
+  ) => {
+    const submittedFields = statusAfter
+      ? { ...localFields, status: statusAfter }
+      : localFields
+    if (
+      submitting ||
+      unresolvedConflict ||
+      (!hasActiveSubmit && submittedFields.status === serverFields.status)
+    )
+      return false
     setSubmitting(true)
     setError(null)
     setSuccess(null)
@@ -350,8 +437,15 @@ export function useTicketEditor({
       buildUpdateTicketCommand({
         expectedVersion: baseVersion,
         serverFields,
-        localFields,
-        comment: { visibility: submittedMode, body: comments[submittedMode] },
+        localFields: submittedFields,
+        comment: {
+          visibility: submittedMode,
+          body: comments[submittedMode],
+          content: {
+            format: 'RICH_TEXT_V1',
+            document: documents[submittedMode],
+          },
+        },
         attachmentIds,
         clientCommandId,
       })
@@ -361,7 +455,8 @@ export function useTicketEditor({
       writeEditorState({
         mode,
         comments,
-        fields: localFields,
+        documents,
+        fields: submittedFields,
         serverFields,
         baseVersion,
         attachmentIds: persistedAttachmentIds(attachmentStates),
@@ -375,11 +470,16 @@ export function useTicketEditor({
         command,
       )
       const confirmedComments = { ...comments, [submittedMode]: '' }
+      const confirmedDocuments = {
+        ...documents,
+        [submittedMode]: plainTextDocument(''),
+      }
       writeEditorState({
         mode,
         comments: confirmedComments,
-        fields: localFields,
-        serverFields: localFields,
+        documents: confirmedDocuments,
+        fields: submittedFields,
+        serverFields: submittedFields,
         baseVersion: result.version,
       })
       setPendingCommandId(null)
@@ -390,8 +490,9 @@ export function useTicketEditor({
       }))
       setWarnings(result.warnings)
       setComments(confirmedComments)
-      setServerFields(localFields)
-      setLocalFields(localFields)
+      setDocuments(confirmedDocuments)
+      setServerFields(submittedFields)
+      setLocalFields(submittedFields)
       setBaseVersion(result.version)
       try {
         const latest = await refreshLatest()
@@ -409,7 +510,7 @@ export function useTicketEditor({
         )
       } catch (cause) {
         const apiError = cause instanceof ApiError ? cause : null
-        setServerFields(localFields)
+        setServerFields(submittedFields)
         setBaseVersion(result.version)
         setError({
           saved: true,
@@ -452,6 +553,12 @@ export function useTicketEditor({
     }
   }
 
+  const saveDraftNow = async () => {
+    setError(null)
+    await draftSync.flush()
+    setSuccess('복구 초안을 저장했습니다.')
+  }
+
   return {
     mode,
     setMode: (nextMode: TicketVisibility) => {
@@ -460,7 +567,9 @@ export function useTicketEditor({
       setMode(nextMode)
     },
     comments,
+    documents,
     updateDraft,
+    updateRichDraft,
     serverFields,
     localFields,
     dirtyFields,
@@ -469,9 +578,11 @@ export function useTicketEditor({
     conflict,
     conflictRef,
     resolveField,
+    resolveAllFields,
     loadLatestForConflict,
     refreshEditor,
     submit,
+    saveDraftNow,
     attachmentStates,
     updateAttachmentState: (
       visibility: TicketVisibility,
@@ -485,6 +596,7 @@ export function useTicketEditor({
       setAttachmentStates(nextAttachmentStates)
     },
     error,
+    draftError,
     success,
     warnings,
     draftSyncState: draftSync.state,
@@ -497,6 +609,7 @@ export function useTicketEditor({
     next: {
       mode?: TicketVisibility
       comments?: TicketCommentDrafts
+      documents?: TicketRichTextDrafts
       fields?: EditableTicketFields
       attachmentStates?: Record<TicketVisibility, AttachmentDraftState>
     } = {},
@@ -505,6 +618,7 @@ export function useTicketEditor({
       writeEditorState({
         mode: next.mode ?? mode,
         comments: next.comments ?? comments,
+        documents: next.documents ?? documents,
         fields: next.fields ?? localFields,
         serverFields,
         baseVersion,
@@ -528,6 +642,9 @@ export function useTicketEditor({
       comments: preserveAmbiguousCommand
         ? snapshot.comments
         : { PUBLIC: '', INTERNAL: '' },
+      documents: preserveAmbiguousCommand
+        ? snapshot.documents
+        : emptyRichTextDrafts(),
       attachmentIds: preserveAmbiguousCommand
         ? snapshot.attachmentIds
         : undefined,
@@ -545,6 +662,7 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
     return {
       mode: detail.ticket.isChild ? ('INTERNAL' as const) : ('PUBLIC' as const),
       comments: { PUBLIC: '', INTERNAL: '' },
+      documents: emptyRichTextDrafts(),
       fields: freshFields,
       serverFields: freshFields,
       baseVersion: detail.ticket.version,
@@ -554,20 +672,32 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
       hasLegacyComposerDraft: false,
     }
   }
+  const storedDocuments = stored.documents ?? {
+    PUBLIC: plainTextDocument(stored.comments.PUBLIC),
+    INTERNAL: plainTextDocument(stored.comments.INTERNAL),
+  }
   if (stored.pendingCommandId) {
     return detail.ticket.isChild
       ? {
           ...stored,
+          documents: { ...storedDocuments, PUBLIC: plainTextDocument('') },
           mode: 'INTERNAL' as const,
           comments: { ...stored.comments, PUBLIC: '' },
           hasLegacyComposerDraft: hasComposerDraft(stored),
         }
-      : { ...stored, hasLegacyComposerDraft: hasComposerDraft(stored) }
+      : {
+          ...stored,
+          documents: storedDocuments,
+          hasLegacyComposerDraft: hasComposerDraft(stored),
+        }
   }
   const storedDirty = changedTicketFields(stored.serverFields, stored.fields)
   if (storedDirty.length === 0) {
     return {
       ...stored,
+      documents: detail.ticket.isChild
+        ? { ...storedDocuments, PUBLIC: plainTextDocument('') }
+        : storedDocuments,
       mode: detail.ticket.isChild ? ('INTERNAL' as const) : stored.mode,
       comments: detail.ticket.isChild
         ? { ...stored.comments, PUBLIC: '' }
@@ -581,11 +711,34 @@ function initialEditorState(detail: AgentTicketDetail, staffId: string) {
   return detail.ticket.isChild
     ? {
         ...stored,
+        documents: { ...storedDocuments, PUBLIC: plainTextDocument('') },
         mode: 'INTERNAL' as const,
         comments: { ...stored.comments, PUBLIC: '' },
         hasLegacyComposerDraft: hasComposerDraft(stored),
       }
-    : { ...stored, hasLegacyComposerDraft: hasComposerDraft(stored) }
+    : {
+        ...stored,
+        documents: storedDocuments,
+        hasLegacyComposerDraft: hasComposerDraft(stored),
+      }
+}
+
+function emptyRichTextDrafts(): TicketRichTextDrafts {
+  return {
+    PUBLIC: plainTextDocument(''),
+    INTERNAL: plainTextDocument(''),
+  }
+}
+
+function contentDocument(
+  content:
+    | { format: 'PLAIN_TEXT'; text: string }
+    | { format: 'RICH_TEXT_V1'; document: RichTextDocumentV1 },
+  fallback: string,
+) {
+  return content.format === 'RICH_TEXT_V1'
+    ? content.document
+    : plainTextDocument(content.text || fallback)
 }
 
 function hasComposerDraft(stored: {

@@ -12,6 +12,7 @@ const ticket = {
   requester: { id: null, type: 'CUSTOMER' as const, displayName: '김민수' },
   group: { id: '11111111-1111-4111-8111-111111111111', name: '결제 지원' },
   assignee: null,
+  createdAt: '2026-08-17T02:30:00Z',
   updatedAt: '2026-08-17T03:00:00Z',
   version: 7,
   isChild: false,

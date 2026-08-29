@@ -1,5 +1,5 @@
 import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
-import { ScreenState } from './design-system'
+import { SeedFeedbackState } from './design-system/canonical'
 import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
 import { AdminBusinessSchedulesPage } from './features/admin/AdminBusinessSchedulesPage'
 import { AdminCustomerAccessModePage } from './features/admin/AdminCustomerAccessModePage'
@@ -109,8 +109,8 @@ export const appRoutes: RouteObject[] = [
   {
     path: '*',
     element: (
-      <main className="workspace-error-state">
-        <ScreenState
+      <main className="seed-route-feedback">
+        <SeedFeedbackState
           action={<Link to="/agent/login">상담사 로그인으로 이동</Link>}
           description="요청한 상담사 화면은 현재 제공되지 않습니다."
           kind="not-found"

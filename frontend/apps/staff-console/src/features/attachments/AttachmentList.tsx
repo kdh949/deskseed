@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import type { AttachmentDownload, TicketAttachment } from '../../api/types'
-import { DsButton } from '../../design-system'
-import './attachments.css'
+import { SeedButton, SeedIcon } from '../../design-system/canonical'
 
 export function AttachmentList({
   attachments,
@@ -39,7 +38,7 @@ export function AttachmentList({
   }
 
   return (
-    <ul aria-label="첨부 파일" className="linked-attachment-list">
+    <ul aria-label="첨부 파일" className="seed-attachment-list">
       {attachments.map((attachment) => (
         <li key={attachment.id}>
           <span>
@@ -54,13 +53,14 @@ export function AttachmentList({
               </small>
             ) : null}
           </span>
-          <DsButton
+          <SeedButton
             disabled={downloadingId !== null}
             onClick={() => void handleDownload(attachment)}
-            tone="secondary"
+            variant="quiet"
           >
+            <SeedIcon name="paperclip" />
             {downloadingId === attachment.id ? '다운로드 중…' : '다운로드'}
-          </DsButton>
+          </SeedButton>
         </li>
       ))}
     </ul>

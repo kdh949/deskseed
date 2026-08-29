@@ -3,8 +3,6 @@ import {
   ComposerPresenceStatus,
   TicketPresenceContext,
 } from './DraftsPresenceContribution'
-import './draftsPresence.css'
-
 export const contribution: FeatureContributionModule['contribution'] = [
   {
     id: 'collaboration.presence-context',

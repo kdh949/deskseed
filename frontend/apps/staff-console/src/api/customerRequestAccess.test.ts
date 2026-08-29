@@ -12,6 +12,7 @@ describe('anonymous customer request API adapter', () => {
           id: '11111111-1111-4111-8111-111111111111',
           authorDisplayName: '고객',
           body: '추가 정보입니다.',
+          content: { format: 'PLAIN_TEXT', text: '추가 정보입니다.' },
           createdAt: '2026-08-15T00:00:00Z',
           attachments: [],
         }),

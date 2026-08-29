@@ -3,7 +3,7 @@ import { useCallback, useMemo, useRef } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
 import { ApiError, getAgentTicket } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
-import { DsButton, ScreenState } from '../../design-system'
+import { SeedButton, SeedFeedbackState } from '../../design-system/canonical'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
 
@@ -37,6 +37,7 @@ export function AgentTicketWorkspacePage() {
       return detail
     },
     enabled: ticketNumber !== null && session.staff !== null,
+    retry: false,
   })
   const refreshLatest = useCallback(async () => {
     const result = await query.refetch()
@@ -75,30 +76,37 @@ function readOriginSearchEventId(state: unknown) {
 
 function WorkspaceLoading() {
   return (
-    <main className="workspace-error-state">
-      <ScreenState compact kind="loading" title="티켓을 불러오는 중입니다." />
-    </main>
+    <section className="seed-route-feedback">
+      <SeedFeedbackState
+        compact
+        kind="loading"
+        title="티켓을 불러오는 중입니다."
+      />
+    </section>
   )
 }
 
 function MissingStaffSession() {
   return (
-    <main className="workspace-error-state">
-      <ScreenState kind="denied" title="직원 세션을 확인할 수 없습니다." />
-    </main>
+    <section className="seed-route-feedback">
+      <SeedFeedbackState
+        kind="denied"
+        title="직원 세션을 확인할 수 없습니다."
+      />
+    </section>
   )
 }
 
 function InvalidTicketRoute() {
   return (
-    <main className="workspace-error-state">
-      <ScreenState
+    <section className="seed-route-feedback">
+      <SeedFeedbackState
         action={<Link to="/agent/views/my-open">내 티켓으로 돌아가기</Link>}
         description="올바른 티켓 번호로 다시 시도해 주세요."
         kind="not-found"
         title="티켓 번호를 확인할 수 없습니다."
       />
-    </main>
+    </section>
   )
 }
 
@@ -111,26 +119,25 @@ function WorkspaceError({ error, retry }: { error: Error; retry: () => void }) {
         ? 'not-found'
         : 'error'
   return (
-    <main className="workspace-error-state">
-      <ScreenState
+    <section className="seed-route-feedback">
+      <SeedFeedbackState
         action={
-          <div className="state-action-row">
-            <DsButton onClick={retry}>다시 시도</DsButton>
+          <div className="seed-state-actions">
+            <SeedButton onClick={retry}>다시 시도</SeedButton>
             <Link to="/agent/views/my-open">내 티켓으로 돌아가기</Link>
           </div>
         }
-        description={
+        description={`${
           apiError?.status === 403
             ? '현재 계정으로 이 티켓을 볼 수 없습니다.'
             : apiError?.status === 404
               ? '티켓이 없거나 더 이상 열 수 없습니다.'
               : '잠시 후 다시 시도해 주세요.'
-        }
+        }${apiError?.requestId ? ` 요청 ID: ${apiError.requestId}` : ''}`}
         kind={kind}
-        requestId={apiError?.requestId}
         title="티켓을 열 수 없습니다."
       />
-    </main>
+    </section>
   )
 }
 

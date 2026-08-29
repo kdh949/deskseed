@@ -87,6 +87,7 @@ function ticket(ticketNumber: number, subject: string) {
       ticketNumber === 1042
         ? { id: '00000000-0000-0000-0000-000000000002', displayName: '상담사' }
         : null,
+    createdAt: '2026-08-10T09:00:00Z',
     updatedAt: '2026-08-10T10:02:00Z',
     version: 0,
     isChild: false,

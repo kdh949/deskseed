@@ -1,3 +1,9 @@
+import {
+  SeedAvatar,
+  SeedButton,
+  SeedContextCard,
+  SeedStatusBadge,
+} from '../../design-system/canonical'
 import { useTicketCollaboration } from './useTicketCollaboration'
 import type { CollaborationMember } from './collaborationRealtime'
 
@@ -9,58 +15,50 @@ export function TicketPresenceContext({
   const collaboration = useTicketCollaboration({ ticketNumber })
 
   return (
-    <aside
-      aria-label="함께 작업 중인 상담사"
-      className="ticket-collaboration-presence"
-    >
-      <div className="ticket-collaboration-presence__heading">
-        <h2>함께 작업 중</h2>
-        <ConnectionState state={collaboration.connection} />
-      </div>
-      {collaboration.connection === 'connecting' ? (
-        <p aria-live="polite">상담사 presence를 확인하는 중입니다.</p>
-      ) : null}
-      {collaboration.connection === 'unavailable' ? (
-        <p aria-live="polite">
-          실시간 presence를 연결하지 못했습니다. 티켓 저장과 초안 복구는 계속
-          사용할 수 있습니다.
-        </p>
-      ) : null}
-      {collaboration.connection === 'denied' ? (
-        <p aria-live="polite">
-          이 티켓의 실시간 presence를 볼 권한이 없습니다. 티켓 저장과 초안
-          복구는 계속 사용할 수 있습니다.
-        </p>
-      ) : null}
-      {collaboration.connection === 'connected' &&
-      collaboration.members.length === 0 ? (
-        <p>현재 이 티켓을 보는 다른 상담사가 없습니다.</p>
-      ) : null}
-      {collaboration.members.length > 0 ? (
-        <ul
-          aria-label="현재 presence"
-          className="ticket-collaboration-presence__list"
-        >
-          {collaboration.members.map((member) => (
-            <PresenceMember key={member.staffId} member={member} />
-          ))}
-        </ul>
-      ) : null}
-      {collaboration.ticketUpdate ? (
-        <section
-          aria-live="polite"
-          className="ticket-collaboration-presence__update"
-        >
-          <strong>새 티켓 버전이 저장되었습니다.</strong>
-          <p>
-            현재 작성 중인 내용은 유지됩니다. 최신 내용을 확인하려면 화면을
-            새로고침하세요.
+    <aside aria-label="함께 작업 중인 상담사" className="seed-presence">
+      <SeedContextCard
+        badge={<ConnectionState state={collaboration.connection} />}
+        title="함께 작업 중"
+      >
+        {collaboration.connection === 'connecting' ? (
+          <p aria-live="polite">상담사 presence를 확인하는 중입니다.</p>
+        ) : null}
+        {collaboration.connection === 'unavailable' ? (
+          <p aria-live="polite">
+            실시간 presence를 연결하지 못했습니다. 티켓 저장과 초안 복구는 계속
+            사용할 수 있습니다.
           </p>
-          <button onClick={() => window.location.reload()} type="button">
-            최신 버전 확인
-          </button>
-        </section>
-      ) : null}
+        ) : null}
+        {collaboration.connection === 'denied' ? (
+          <p aria-live="polite">
+            이 티켓의 실시간 presence를 볼 권한이 없습니다. 티켓 저장과 초안
+            복구는 계속 사용할 수 있습니다.
+          </p>
+        ) : null}
+        {collaboration.connection === 'connected' &&
+        collaboration.members.length === 0 ? (
+          <p>현재 이 티켓을 보는 다른 상담사가 없습니다.</p>
+        ) : null}
+        {collaboration.members.length > 0 ? (
+          <ul aria-label="현재 presence" className="seed-presence__list">
+            {collaboration.members.map((member) => (
+              <PresenceMember key={member.staffId} member={member} />
+            ))}
+          </ul>
+        ) : null}
+        {collaboration.ticketUpdate ? (
+          <section aria-live="polite" className="seed-presence__update">
+            <strong>새 티켓 버전이 저장되었습니다.</strong>
+            <p>
+              현재 작성 중인 내용은 유지됩니다. 최신 내용을 확인하려면 화면을
+              새로고침하세요.
+            </p>
+            <SeedButton onClick={() => window.location.reload()}>
+              최신 버전 확인
+            </SeedButton>
+          </section>
+        ) : null}
+      </SeedContextCard>
     </aside>
   )
 }
@@ -84,7 +82,7 @@ export function ComposerPresenceStatus({
           : '실시간 작성 presence를 사용할 수 없습니다. 초안은 계속 저장됩니다.'
 
   return (
-    <p aria-live="polite" className="ticket-collaboration-composer-status">
+    <p aria-live="polite" className="seed-presence__composer-status">
       {message}
     </p>
   )
@@ -103,21 +101,25 @@ function ConnectionState({
         : state === 'denied'
           ? '권한 없음'
           : '연결 안 됨'
-  return <span data-state={state}>{label}</span>
+  const tone =
+    state === 'connected'
+      ? 'positive'
+      : state === 'denied'
+        ? 'danger'
+        : state === 'unavailable'
+          ? 'warning'
+          : 'neutral'
+  return <SeedStatusBadge tone={tone}>{label}</SeedStatusBadge>
 }
 
 function PresenceMember({ member }: { member: CollaborationMember }) {
   return (
     <li>
-      <span
-        aria-hidden="true"
-        className="ticket-collaboration-presence__marker"
-      >
-        {member.state === 'EDITING_PUBLIC' ||
-        member.state === 'EDITING_INTERNAL'
-          ? '작성'
-          : '열람'}
-      </span>
+      <SeedAvatar
+        initials={member.displayName.slice(0, 2)}
+        label={member.displayName}
+        size="small"
+      />
       <span>
         <strong>{member.displayName}</strong>
         <small>{presenceLabel(member.state)}</small>

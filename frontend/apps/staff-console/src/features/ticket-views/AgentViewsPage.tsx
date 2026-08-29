@@ -29,27 +29,28 @@ import type {
   TicketPriority,
 } from '../../api/types'
 import {
-  DeskseedIcon,
-  DsButton,
-  DsSelect,
-  QueueTicketTable,
-  ScreenState,
-  TableSkeleton,
-  ViewNavigation,
-  type IconName,
-  type QueueTicketTableItem,
-  type QueueTicketColumn,
-  type ViewNavigationItem,
-  type ViewNavigationSection,
-} from '../../design-system'
+  SeedButton,
+  SeedFeedbackState,
+  SeedFilterBar,
+  SeedIcon,
+  SeedQueueTicketTable,
+  SeedSavedViewNavigation,
+  SeedSelectField,
+  SeedSkeletonRows,
+  SeedStatusBadge,
+  SeedTextField,
+  type SeedQueueColumn,
+  type SeedQueueTicket,
+  type SeedSavedViewItem,
+} from '../../design-system/canonical'
 import {
   ViewConfigurationDrawer,
   toCreateSavedViewInput,
   type SavedViewEditorSave,
   type ViewEditor,
 } from './ViewConfigurationDrawer'
-import { BulkTicketActionPanel } from './BulkTicketActionPanel'
 import { createOpaqueUuid } from '../../api/uuid'
+import { BulkTicketActionPanel } from './BulkTicketActionPanel'
 
 const VIEW_NAVIGATION_COPY = {
   create: '새 보기 만들기',
@@ -59,58 +60,41 @@ const VIEW_NAVIGATION_COPY = {
 const VIEW_PRESENTATION: Record<
   string,
   {
-    icon: IconName
-    iconTone?: ViewNavigationItem['iconTone']
     name: string
   }
 > = {
   'my-open': {
     name: '내 티켓',
-    icon: 'inbox',
   },
   'unassigned-my-groups': {
     name: '미배정 티켓',
-    icon: 'userGroup',
   },
   pending: {
     name: '고객 답변 대기',
-    icon: 'clock',
-    iconTone: 'warning',
   },
   urgent: {
     name: '긴급 티켓',
-    icon: 'alertWarning',
-    iconTone: 'danger',
   },
   'today-updated': {
     name: '오늘 업데이트된 티켓',
-    icon: 'history',
   },
   'recently-solved': {
     name: '최근 해결',
-    icon: 'checkCircle',
-    iconTone: 'success',
   },
   'customer-reply-pending': {
     name: '고객 응답 대기',
-    icon: 'speechBubble',
-    iconTone: 'warning',
   },
   'created-by-me': {
     name: '내가 생성한 티켓',
-    icon: 'circle',
   },
   following: {
     name: '내가 팔로우 중인 티켓',
-    icon: 'userGroup',
   },
   drafts: {
     name: '임시 보관함',
-    icon: 'inbox',
   },
   'my-child-tasks': {
     name: '내부 협업',
-    icon: 'userGroup',
   },
 }
 
@@ -208,7 +192,7 @@ export function AgentViewsPage() {
     setEditor({ mode: 'create' })
   }
   const openEditEditor = (
-    item: ViewNavigationItem,
+    item: SeedSavedViewItem,
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
     editorTriggerRef.current = event.currentTarget
@@ -254,7 +238,7 @@ export function AgentViewsPage() {
       setActionsOpen(false)
     }
   }
-  const sidebarSections: ViewNavigationSection[] = [
+  const sidebarSections = [
     {
       id: 'shared',
       label: '공유 보기',
@@ -265,16 +249,6 @@ export function AgentViewsPage() {
     {
       id: 'personal',
       label: '개인 보기',
-      footerAction: (
-        <button
-          className="ds-view-navigation-create"
-          onClick={openCreateEditor}
-          type="button"
-        >
-          <DeskseedIcon name="plus" size="sm" />
-          {VIEW_NAVIGATION_COPY.create}
-        </button>
-      ),
       items: personalItems,
     },
   ]
@@ -329,6 +303,9 @@ export function AgentViewsPage() {
   const selectedCount = visibleTickets.filter((ticket) =>
     selectedTicketNumbers.has(ticket.ticketNumber),
   ).length
+  const selectedTickets = visibleTickets.filter((ticket) =>
+    selectedTicketNumbers.has(ticket.ticketNumber),
+  )
 
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams)
@@ -486,74 +463,51 @@ export function AgentViewsPage() {
   }
 
   return (
-    <main className="agent-queue-workspace" aria-label="티켓 큐">
-      <ViewNavigation
-        footer={
-          <>
-            <strong>Tip</strong>: {VIEW_NAVIGATION_COPY.reorderTip}
-          </>
-        }
-        label="티켓 보기"
-        onEditItem={openEditEditor}
+    <main className="seed-queue" aria-label="티켓 큐">
+      <SeedSavedViewNavigation
+        activeKey={viewKey}
+        onCreate={openCreateEditor}
+        onEdit={openEditEditor}
         sections={sidebarSections}
-        title="보기"
       />
-      <section className="agent-queue" aria-labelledby="agent-view-title">
-        <header className="agent-queue-header">
+      <section
+        className="seed-queue__content"
+        aria-labelledby="agent-view-title"
+      >
+        <header className="seed-queue__header">
           <div>
-            <div className="agent-queue-title-row">
+            <span className="seed-route__eyebrow">TICKET QUEUE</span>
+            <div>
               <h1 id="agent-view-title">{title}</h1>
-              {query.data ? (
-                <span>
-                  {query.data.totalApproximate ?? query.data.items.length}개
-                </span>
-              ) : null}
+              {query.data && (
+                <b>{query.data.totalApproximate ?? query.data.items.length}</b>
+              )}
             </div>
-            {currentServerView?.description ? (
-              <p className="agent-queue-view-description">
-                {currentServerView.description}
-              </p>
-            ) : null}
-            <DsButton
+            {currentServerView?.description && (
+              <p>{currentServerView.description}</p>
+            )}
+          </div>
+          <div className="seed-queue__actions">
+            <SeedButton
               aria-expanded={filtersOpen}
               aria-label="필터 열기"
-              className="agent-queue-filter-trigger"
               onClick={() => setFiltersOpen((current) => !current)}
             >
-              <DeskseedIcon name="adjust" size="sm" />
-              필터
-            </DsButton>
-          </div>
-          <div className="agent-queue-header-actions">
-            <DsButton
-              className="agent-queue-toolbar-action"
-              onClick={() => query.refetch()}
-              tone="ghost"
-            >
-              <DeskseedIcon name="reload" size="sm" />
-              새로고침
-            </DsButton>
-            <span aria-hidden="true" className="agent-queue-toolbar-divider" />
-            <div
-              className="agent-queue-actions-menu"
-              onBlur={closeActionsWhenFocusLeaves}
-            >
-              <DsButton
+              <SeedIcon name="filter" /> 필터
+            </SeedButton>
+            <SeedButton onClick={() => query.refetch()} variant="quiet">
+              <SeedIcon name="refresh" /> 새로고침
+            </SeedButton>
+            <div className="seed-menu" onBlur={closeActionsWhenFocusLeaves}>
+              <SeedButton
                 aria-expanded={actionsOpen}
                 aria-haspopup="menu"
-                className="agent-queue-toolbar-action"
                 onClick={() => setActionsOpen((current) => !current)}
-                tone="ghost"
               >
-                작업
-                <DeskseedIcon name="chevronDown" size="sm" />
-              </DsButton>
-              {actionsOpen ? (
-                <div
-                  aria-label="보기 작업"
-                  className="agent-queue-actions-popover"
-                  role="menu"
-                >
+                작업 <SeedIcon name="chevron" />
+              </SeedButton>
+              {actionsOpen && (
+                <div aria-label="보기 작업" role="menu">
                   {actionItems.map((item) => (
                     <button
                       key={item.id}
@@ -568,196 +522,198 @@ export function AgentViewsPage() {
                     </button>
                   ))}
                 </div>
-              ) : null}
+              )}
             </div>
           </div>
         </header>
-
-        {filtersOpen ? (
-          <section aria-label={`${title} 필터`} className="agent-queue-filters">
-            <label className="agent-queue-filter agent-queue-search">
-              <span>현재 목록 검색</span>
-              <span className="agent-queue-search-control">
-                <DeskseedIcon name="search" size="sm" />
-                <input
-                  aria-label="현재 목록 검색"
-                  onChange={(event) => setCurrentPageSearch(event.target.value)}
-                  placeholder="제목, 요청자, 번호"
-                  type="search"
-                  value={currentPageSearch}
-                />
-              </span>
-            </label>
-            <FilterSelect
-              label="상태"
-              onChange={(value) => updateFilter('status', value)}
-              value={filters.status ?? ''}
-            >
-              <option value="">전체</option>
-              {STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {STATUS_LABELS[status]}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect
-              label="최초 답변 SLA"
-              onChange={(value) => updateFilter('slaState', value)}
-              value={filters.slaState ?? ''}
-            >
-              <option value="">전체</option>
-              {SLA_STATES.map((state) => (
-                <option key={state} value={state}>
-                  {state}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect
-              label="우선순위"
-              onChange={(value) => updateFilter('priority', value)}
-              value={filters.priority ?? ''}
-            >
-              <option value="">전체</option>
-              {PRIORITIES.map((priority) => (
-                <option key={priority} value={priority}>
-                  {PRIORITY_LABELS[priority]}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect
-              label="그룹"
-              onChange={(value) => updateFilter('groupId', value)}
-              value={filters.groupId ?? ''}
-            >
-              <option value="">전체</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </FilterSelect>
-            <FilterSelect
-              label="담당자"
-              onChange={(value) => updateFilter('assigneeId', value)}
-              value={filters.assigneeId ?? ''}
-            >
-              <option value="">전체</option>
-              <option value="me">나</option>
-              <option value="unassigned">미배정</option>
-              {assignees.map((assignee) => (
-                <option key={assignee.id} value={assignee.id}>
-                  {assignee.displayName}
-                </option>
-              ))}
-            </FilterSelect>
+        {filtersOpen && (
+          <section aria-label={`${title} 필터`} className="seed-queue__filters">
+            <SeedFilterBar>
+              <SeedTextField
+                aria-label="현재 목록 검색"
+                label="현재 목록 검색"
+                leadingIcon="search"
+                onChange={(event) => setCurrentPageSearch(event.target.value)}
+                placeholder="제목, 요청자, 번호"
+                type="search"
+                value={currentPageSearch}
+              />
+              <FilterSelect
+                label="상태"
+                onChange={(value) => updateFilter('status', value)}
+                value={filters.status ?? ''}
+              >
+                <option value="">전체</option>
+                {STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {STATUS_LABELS[status]}
+                  </option>
+                ))}
+              </FilterSelect>
+              <FilterSelect
+                label="최초 답변 SLA"
+                onChange={(value) => updateFilter('slaState', value)}
+                value={filters.slaState ?? ''}
+              >
+                <option value="">전체</option>
+                {SLA_STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {state}
+                  </option>
+                ))}
+              </FilterSelect>
+              <FilterSelect
+                label="우선순위"
+                onChange={(value) => updateFilter('priority', value)}
+                value={filters.priority ?? ''}
+              >
+                <option value="">전체</option>
+                {PRIORITIES.map((priority) => (
+                  <option key={priority} value={priority}>
+                    {PRIORITY_LABELS[priority]}
+                  </option>
+                ))}
+              </FilterSelect>
+              <FilterSelect
+                label="그룹"
+                onChange={(value) => updateFilter('groupId', value)}
+                value={filters.groupId ?? ''}
+              >
+                <option value="">전체</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </FilterSelect>
+              <FilterSelect
+                label="담당자"
+                onChange={(value) => updateFilter('assigneeId', value)}
+                value={filters.assigneeId ?? ''}
+              >
+                <option value="">전체</option>
+                <option value="me">나</option>
+                <option value="unassigned">미배정</option>
+                {assignees.map((assignee) => (
+                  <option key={assignee.id} value={assignee.id}>
+                    {assignee.displayName}
+                  </option>
+                ))}
+              </FilterSelect>
+            </SeedFilterBar>
           </section>
-        ) : null}
-
-        {hasActiveFilters ? (
-          <section
-            aria-label="적용된 필터"
-            className="agent-queue-filter-summary"
-          >
+        )}
+        {hasActiveFilters && (
+          <section aria-label="적용된 필터" className="seed-filter-summary">
             <div>
-              {currentPageSearch ? (
+              {currentPageSearch && (
                 <span>검색: {shortenSearch(currentPageSearch)}</span>
-              ) : null}
+              )}
               {activeFilters.map((filter) => (
                 <span key={filter.key}>{filter.label}</span>
               ))}
             </div>
-            <DsButton onClick={clearFilters} tone="ghost">
+            <SeedButton onClick={clearFilters} variant="quiet">
               모두 지우기
-            </DsButton>
+            </SeedButton>
           </section>
-        ) : null}
-
-        {query.isLoading ? (
-          <TableSkeleton label={`${title} 불러오는 중`} />
-        ) : query.isError ? (
-          <QueueError error={query.error} onRetry={() => query.refetch()} />
-        ) : !visibleTickets.length ? (
-          <ScreenState
-            action={
-              hasActiveFilters ? (
-                <DsButton onClick={clearFilters}>필터 지우기</DsButton>
-              ) : undefined
-            }
-            description={
-              hasActiveFilters
-                ? '다른 필터나 검색어를 사용해 보세요.'
-                : '새로운 티켓이 도착하면 여기에 표시됩니다.'
-            }
-            kind="empty"
-            title={
-              hasActiveFilters
-                ? '일치하는 티켓이 없습니다.'
-                : '처리할 티켓이 없습니다.'
-            }
-          />
-        ) : (
-          <>
-            {selectedCount ? (
-              <>
-                <BulkTicketActionPanel
-                  onComplete={() => void query.refetch()}
-                  options={assignmentQuery.data ?? { groups: [] }}
-                  tickets={visibleTickets.filter((ticket) =>
-                    selectedTicketNumbers.has(ticket.ticketNumber),
-                  )}
-                />
-                <DsButton
-                  onClick={() => setSelectedTicketNumbers(new Set())}
-                  tone="ghost"
-                >
-                  선택 해제
-                </DsButton>
-              </>
-            ) : null}
-            <QueueTicketTable
-              items={visibleTickets.map(toQueueTicketItem)}
-              label={title}
-              onOpenTicket={(ticketNumber) =>
-                navigate(`/agent/tickets/${ticketNumber}`)
+        )}
+        <div className="seed-queue__table">
+          {query.isLoading ? (
+            <SeedSkeletonRows label={`${title} 불러오는 중`} rows={8} />
+          ) : query.isError ? (
+            <QueueError error={query.error} onRetry={() => query.refetch()} />
+          ) : !visibleTickets.length ? (
+            <SeedFeedbackState
+              action={
+                hasActiveFilters ? (
+                  <SeedButton onClick={clearFilters}>필터 지우기</SeedButton>
+                ) : undefined
               }
-              onSelectAll={toggleSelectAll}
-              onSelectionChange={toggleTicketSelection}
-              selectedTicketNumbers={selectedTicketNumbers}
-              ticketHref={(ticketNumber) => `/agent/tickets/${ticketNumber}`}
-              visibleColumns={toQueueColumns(currentServerView?.columns)}
+              description={
+                hasActiveFilters
+                  ? '다른 필터나 검색어를 사용해 보세요.'
+                  : '새로운 티켓이 도착하면 여기에 표시됩니다.'
+              }
+              kind="empty"
+              title={
+                hasActiveFilters
+                  ? '일치하는 티켓이 없습니다.'
+                  : '처리할 티켓이 없습니다.'
+              }
             />
-            <footer className="agent-queue-pagination">
-              <p>{visibleTickets.length}개 표시</p>
-              <div>
-                <DsButton
-                  disabled={cursorIndex === 0}
-                  onClick={() => {
-                    setCursorIndex((current) => Math.max(0, current - 1))
-                    setSelectedTicketNumbers(new Set())
-                  }}
+          ) : (
+            <>
+              {selectedCount > 0 && (
+                <section
+                  aria-label="선택된 티켓"
+                  className="seed-selection-bar"
                 >
-                  이전 페이지
-                </DsButton>
-                {query.data?.nextCursor ? (
-                  <DsButton
+                  <strong>{selectedCount}개 선택됨</strong>
+                  <SeedButton
+                    onClick={() => setSelectedTicketNumbers(new Set())}
+                    variant="quiet"
+                  >
+                    선택 해제
+                  </SeedButton>
+                </section>
+              )}
+              {assignmentQuery.data && (
+                <BulkTicketActionPanel
+                  onComplete={() => {
+                    setSelectedTicketNumbers(new Set())
+                    void queryClient.invalidateQueries({
+                      queryKey: ['agent-view', viewKey],
+                    })
+                  }}
+                  options={assignmentQuery.data}
+                  tickets={selectedTickets}
+                />
+              )}
+              <SeedQueueTicketTable
+                items={visibleTickets.map(toSeedQueueTicket)}
+                label={title}
+                onOpenTicket={(ticketNumber) =>
+                  navigate(`/agent/tickets/${ticketNumber}`)
+                }
+                onSelectAll={toggleSelectAll}
+                onSelectionChange={toggleTicketSelection}
+                selectedTicketNumbers={selectedTicketNumbers}
+                visibleColumns={toSeedQueueColumns(currentServerView?.columns)}
+              />
+              <footer className="seed-pagination">
+                <span>{visibleTickets.length}개 표시</span>
+                <div>
+                  <SeedButton
+                    disabled={cursorIndex === 0}
                     onClick={() => {
-                      const nextCursor = query.data?.nextCursor
-                      if (!nextCursor) return
-                      setCursorHistory((current) => [
-                        ...current.slice(0, cursorIndex + 1),
-                        nextCursor,
-                      ])
-                      setCursorIndex((current) => current + 1)
+                      setCursorIndex((current) => Math.max(0, current - 1))
                       setSelectedTicketNumbers(new Set())
                     }}
                   >
-                    다음 페이지
-                  </DsButton>
-                ) : null}
-              </div>
-            </footer>
-          </>
-        )}
+                    이전 페이지
+                  </SeedButton>
+                  {query.data?.nextCursor && (
+                    <SeedButton
+                      onClick={() => {
+                        const nextCursor = query.data?.nextCursor
+                        if (!nextCursor) return
+                        setCursorHistory((current) => [
+                          ...current.slice(0, cursorIndex + 1),
+                          nextCursor,
+                        ])
+                        setCursorIndex((current) => current + 1)
+                        setSelectedTicketNumbers(new Set())
+                      }}
+                    >
+                      다음 페이지
+                    </SeedButton>
+                  )}
+                </div>
+              </footer>
+            </>
+          )}
+        </div>
       </section>
       <ViewConfigurationDrawer
         editor={editor}
@@ -799,9 +755,9 @@ const SAVED_VIEW_COLUMN_MAP = {
   ASSIGNEE: 'assignee',
   UPDATED_AT: 'updatedAt',
   FIRST_REPLY_SLA: 'sla',
-} as const satisfies Record<string, QueueTicketColumn>
+} as const satisfies Record<string, SeedQueueColumn>
 
-function toQueueColumns(columns: SavedAgentView['columns'] | undefined) {
+function toSeedQueueColumns(columns: SavedAgentView['columns'] | undefined) {
   return (columns ?? Object.keys(SAVED_VIEW_COLUMN_MAP)).map(
     (column) =>
       SAVED_VIEW_COLUMN_MAP[column as keyof typeof SAVED_VIEW_COLUMN_MAP],
@@ -820,16 +776,14 @@ function FilterSelect({
   value: string
 }) {
   return (
-    <label className="agent-queue-filter">
-      <span>{label}</span>
-      <DsSelect
-        aria-label={`${label} 필터`}
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      >
-        {children}
-      </DsSelect>
-    </label>
+    <SeedSelectField
+      aria-label={`${label} 필터`}
+      label={label}
+      onChange={(event) => onChange(event.target.value)}
+      value={value}
+    >
+      {children}
+    </SeedSelectField>
   )
 }
 
@@ -842,8 +796,8 @@ function QueueError({
 }) {
   const denied = error instanceof ApiError && error.status === 403
   return (
-    <ScreenState
-      action={<DsButton onClick={onRetry}>다시 시도</DsButton>}
+    <SeedFeedbackState
+      action={<SeedButton onClick={onRetry}>다시 시도</SeedButton>}
       description={
         error instanceof ApiError ? `요청 ID: ${error.requestId}` : undefined
       }
@@ -870,13 +824,11 @@ function personalViewItems(
   )
 }
 
-function toNavigationItem(view: SavedAgentView): ViewNavigationItem {
+function toNavigationItem(view: SavedAgentView): SeedSavedViewItem {
   const presentation = presentationFor(view)
   return {
     key: view.key,
     label: presentation.name,
-    icon: presentation.icon,
-    iconTone: presentation.iconTone,
     count: view.ticketCountState === 'EXACT' ? view.ticketCount : null,
     countAsOf: view.ticketCountState === 'EXACT' ? view.ticketCountAsOf : null,
     to: `/agent/views/${view.key}`,
@@ -885,14 +837,11 @@ function toNavigationItem(view: SavedAgentView): ViewNavigationItem {
 }
 
 function presentationFor(view: SavedAgentView) {
-  const base = VIEW_PRESENTATION[view.key] ?? {
-    name: view.name,
-    icon: (view.scope === 'PERSONAL' ? 'bookmark' : 'inbox') as IconName,
-  }
+  const base = VIEW_PRESENTATION[view.key] ?? { name: view.name }
   return base
 }
 
-function toQueueTicketItem(ticket: {
+function toSeedQueueTicket(ticket: {
   ticketNumber: number
   subject: string
   status: AgentTicketStatus
@@ -903,19 +852,29 @@ function toQueueTicketItem(ticket: {
   updatedAt: string
   isChild: boolean
   sla: FirstReplySlaBadge | null
-}): QueueTicketTableItem {
+}): SeedQueueTicket {
   return {
     ticketNumber: ticket.ticketNumber,
     subject: ticket.subject,
-    status: ticket.status,
-    priority: ticket.priority,
+    status: (
+      <SeedStatusBadge
+        tone={
+          ticket.status === 'PENDING' || ticket.status === 'ON_HOLD'
+            ? 'warning'
+            : ticket.status === 'SOLVED' || ticket.status === 'CLOSED'
+              ? 'positive'
+              : 'info'
+        }
+      >
+        {STATUS_LABELS[ticket.status]}
+      </SeedStatusBadge>
+    ),
+    priority: PRIORITY_LABELS[ticket.priority],
     requester: ticket.requester.displayName,
     group: ticket.group?.name ?? '미지정',
     assignee: ticket.assignee?.displayName ?? '미배정',
-    updatedAt: ticket.updatedAt,
     updatedLabel: formatUpdatedAt(ticket.updatedAt),
-    isChild: ticket.isChild,
-    sla: ticket.sla,
+    sla: ticket.sla ? ticket.sla.state : '정책 없음',
   }
 }
 

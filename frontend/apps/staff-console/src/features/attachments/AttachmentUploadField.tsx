@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent } from 'react'
 import type { AttachmentUpload } from '../../api/types'
-import { DsButton } from '../../design-system'
-import './attachments.css'
+import { SeedButton, SeedIcon } from '../../design-system/canonical'
 import { MAX_ATTACHMENTS } from './attachmentPolicy'
 
 type UploadState =
@@ -138,10 +137,14 @@ export function AttachmentUploadField({
   }
 
   return (
-    <section className="attachment-upload-field">
-      <div className="attachment-upload-heading">
-        <label htmlFor={inputId}>{label}</label>
+    <section
+      aria-label={`${label} 업로드 영역`}
+      className="seed-attachment-upload"
+    >
+      <div className="seed-attachment-upload__heading">
         <input
+          aria-label={label}
+          className="seed-visually-hidden"
           disabled={disabled || pending || activeCount >= MAX_ATTACHMENTS}
           id={inputId}
           multiple
@@ -149,9 +152,16 @@ export function AttachmentUploadField({
           ref={inputRef}
           type="file"
         />
+        <SeedButton
+          disabled={disabled || pending || activeCount >= MAX_ATTACHMENTS}
+          onClick={() => inputRef.current?.click()}
+          variant="quiet"
+        >
+          <SeedIcon name="paperclip" /> 파일 첨부
+        </SeedButton>
       </div>
       {items.length ? (
-        <ul aria-live="polite" className="attachment-upload-list">
+        <ul aria-live="polite" className="seed-attachment-upload__list">
           {items.map((item) => {
             const itemExpired =
               item.status === 'CLEAN' &&
@@ -168,7 +178,7 @@ export function AttachmentUploadField({
                   ) : null}
                 </span>
                 {item.status !== 'UPLOADING' ? (
-                  <DsButton
+                  <SeedButton
                     disabled={disabled}
                     onClick={() =>
                       setItems((current) =>
@@ -177,25 +187,25 @@ export function AttachmentUploadField({
                         ),
                       )
                     }
-                    tone="secondary"
+                    variant="quiet"
                   >
                     초안에서 제거
-                  </DsButton>
+                  </SeedButton>
                 ) : null}
               </li>
             )
           })}
         </ul>
       ) : (
-        <p className="attachment-upload-empty">선택된 파일이 없습니다.</p>
+        <p className="seed-visually-hidden">선택된 파일이 없습니다.</p>
       )}
       {blocked ? (
-        <p className="attachment-upload-blocker" role="status">
+        <p className="seed-attachment-upload__blocker" role="status">
           모든 파일이 CLEAN 상태여야 제출할 수 있습니다.
         </p>
       ) : null}
       {limitError ? (
-        <p className="attachment-upload-blocker" role="alert">
+        <p className="seed-attachment-upload__blocker" role="alert">
           첨부 파일은 최대 {MAX_ATTACHMENTS}개까지 선택할 수 있습니다.
         </p>
       ) : null}

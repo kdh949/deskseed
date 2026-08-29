@@ -1,6 +1,6 @@
 import { Link, Navigate, Outlet, useLocation } from 'react-router'
 import type { ReactNode } from 'react'
-import { DsButton, ScreenState } from '../../design-system'
+import { SeedButton, SeedFeedbackState } from '../../design-system/canonical'
 import { StaffSessionProvider, useStaffSession } from './StaffSessionContext'
 
 export function StaffSessionLayout() {
@@ -18,7 +18,7 @@ export function StaffRoute() {
   if (session.status === 'loading') {
     return (
       <StaffGate title="직원 세션을 확인하고 있습니다.">
-        <ScreenState
+        <SeedFeedbackState
           kind="loading"
           compact
           title="직원 세션을 확인하고 있습니다."
@@ -29,13 +29,13 @@ export function StaffRoute() {
   if (session.status === 'error') {
     return (
       <StaffGate title="세션을 확인할 수 없습니다.">
-        <ScreenState
+        <SeedFeedbackState
           kind="error"
           title="세션을 확인할 수 없습니다."
           action={
-            <DsButton onClick={session.retry} tone="primary">
+            <SeedButton onClick={session.retry} variant="primary">
               다시 시도
-            </DsButton>
+            </SeedButton>
           }
         />
       </StaffGate>
@@ -57,7 +57,7 @@ export function AgentRoute() {
   if (!allowed) {
     return (
       <StaffGate title="상담사 작업 공간 권한이 필요합니다.">
-        <ScreenState
+        <SeedFeedbackState
           kind="denied"
           title="상담사 작업 공간 권한이 필요합니다."
           description="이 계정은 티켓 큐와 작업 공간을 열 수 없습니다."
@@ -75,7 +75,7 @@ export function AuditRoute() {
   if (!allowed) {
     return (
       <StaffGate title="감사 권한이 필요합니다.">
-        <ScreenState
+        <SeedFeedbackState
           kind="denied"
           title="감사 권한이 필요합니다."
           description="이 계정은 감사 탐색기와 내보내기 작업을 열 수 없습니다."
@@ -95,7 +95,7 @@ export function AdminRoute() {
   if (!allowed) {
     return (
       <StaffGate title="관리자 운영 권한이 필요합니다.">
-        <ScreenState
+        <SeedFeedbackState
           kind="denied"
           title="관리자 운영 권한이 필요합니다."
           description="이 계정은 운영 설정과 관리자 작업을 열 수 없습니다."
@@ -115,8 +115,8 @@ function StaffGate({
   title: string
 }) {
   return (
-    <main className="staff-gate">
-      <h1 className="sr-only">{title}</h1>
+    <main className="seed-route-feedback">
+      <h1 className="seed-visually-hidden">{title}</h1>
       {children}
     </main>
   )
