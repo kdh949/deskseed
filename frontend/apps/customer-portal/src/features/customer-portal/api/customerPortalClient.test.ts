@@ -61,6 +61,7 @@ describe('customer portal API adapter', () => {
             id: 'comment-1',
             authorDisplayName: 'Customer',
             body: '추가 답변',
+            content: { format: 'PLAIN_TEXT', text: '추가 답변' },
             createdAt: '2026-08-13T00:00:00Z',
             attachments: [],
           }),
@@ -116,6 +117,7 @@ describe('customer portal API adapter', () => {
                 id: 'comment-1',
                 authorDisplayName: 'Customer',
                 body: '승인 내역입니다.',
+                content: { format: 'PLAIN_TEXT', text: '승인 내역입니다.' },
                 createdAt: '2026-08-13T00:00:00Z',
                 visibility: 'PUBLIC',
                 attachments: [

@@ -22,6 +22,25 @@ const detail = {
       id: 'comment-public-1',
       authorDisplayName: '김민아',
       body: '결제 승인 내역을 확인해 주세요.',
+      content: {
+        format: 'RICH_TEXT_V1' as const,
+        document: {
+          type: 'doc' as const,
+          content: [
+            {
+              type: 'paragraph' as const,
+              content: [
+                {
+                  type: 'text' as const,
+                  text: '결제 승인 내역을 ',
+                  marks: [{ type: 'bold' as const }],
+                },
+                { type: 'text' as const, text: '확인해 주세요.' },
+              ],
+            },
+          ],
+        },
+      },
       createdAt: '2026-08-15T00:00:00Z',
       attachments: [
         {
@@ -204,6 +223,7 @@ describe('CustomerRequestDetailPage', () => {
               id: 'comment-public-2',
               authorDisplayName: '김민아',
               body: '추가 정보입니다.',
+              content: { format: 'PLAIN_TEXT', text: '추가 정보입니다.' },
               createdAt: '2026-08-15T02:00:00Z',
               attachments: [
                 {

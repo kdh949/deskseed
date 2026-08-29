@@ -2,14 +2,20 @@ import type {
   AttachmentDownload,
   AttachmentUpload,
   TicketAttachment,
+  CommentContent,
 } from '../../api/types'
-import { DsStatusIndicator, ScreenState } from '../../design-system'
+import {
+  CustomerCommentContent,
+  DsStatusIndicator,
+  ScreenState,
+} from '../../design-system'
 import { AttachmentList } from '../attachments/AttachmentList'
 import { CustomerFollowUpForm } from './CustomerFollowUpForm'
 
 export interface CustomerVisibleComment {
   authorDisplayName: string
   body: string
+  content?: CommentContent
   createdAt: string
   id: string
   attachments?: TicketAttachment[]
@@ -83,7 +89,12 @@ export function CustomerRequestConversation({
                       {formatTimestamp(comment.createdAt)}
                     </time>
                   </header>
-                  <p>{comment.body}</p>
+                  <CustomerCommentContent
+                    attachments={comment.attachments ?? []}
+                    body={comment.body}
+                    content={comment.content}
+                    downloadAttachment={downloadAttachment}
+                  />
                   {downloadAttachment ? (
                     <AttachmentList
                       attachments={comment.attachments ?? []}
