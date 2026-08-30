@@ -29,20 +29,54 @@ data class CustomerFollowUpCommand(
     val ticketNumber: Long,
     val requesterId: UUID,
     val requesterEmail: String,
-    val body: String,
+    val content: CanonicalCommentContent,
     val attachmentIds: Set<UUID> = emptySet(),
     val clientCommandId: String,
     val context: CommandContext,
-)
+) {
+    constructor(
+        ticketNumber: Long,
+        requesterId: UUID,
+        requesterEmail: String,
+        body: String,
+        attachmentIds: Set<UUID> = emptySet(),
+        clientCommandId: String,
+        context: CommandContext,
+    ) : this(
+        ticketNumber,
+        requesterId,
+        requesterEmail,
+        CanonicalCommentContent(CommentContentFormat.PLAIN_TEXT, body),
+        attachmentIds,
+        clientCommandId,
+        context,
+    )
+}
 
 data class AnonymousCustomerFollowUpCommand(
     val ticketId: UUID,
     val ticketNumber: Long,
-    val body: String,
+    val content: CanonicalCommentContent,
     val attachmentIds: Set<UUID> = emptySet(),
     val clientCommandId: String,
     val context: CommandContext,
-)
+) {
+    constructor(
+        ticketId: UUID,
+        ticketNumber: Long,
+        body: String,
+        attachmentIds: Set<UUID> = emptySet(),
+        clientCommandId: String,
+        context: CommandContext,
+    ) : this(
+        ticketId,
+        ticketNumber,
+        CanonicalCommentContent(CommentContentFormat.PLAIN_TEXT, body),
+        attachmentIds,
+        clientCommandId,
+        context,
+    )
+}
 
 data class CustomerFollowUpResult(
     val comment: PublicCommentView,

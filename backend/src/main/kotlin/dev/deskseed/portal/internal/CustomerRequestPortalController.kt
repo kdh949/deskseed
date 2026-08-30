@@ -8,9 +8,12 @@ import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.settings.CustomerAccessMode
 import dev.deskseed.ticketing.CustomerRequestStatus
+import dev.deskseed.ticketing.CanonicalCommentContentCodec
 import dev.deskseed.ticketing.CustomerTicketSummary
+import dev.deskseed.ticketing.CommentContentView
 import dev.deskseed.ticketing.PublicCommentView
 import dev.deskseed.ticketing.PublicTicketView
+import dev.deskseed.ticketing.commentContentView
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
@@ -40,11 +43,14 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.UUID
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 
 @RestController
 @Validated
 internal class CustomerRequestPortalController(
     private val applicationService: CustomerRequestPortalApplicationService,
+    private val objectMapper: ObjectMapper,
 ) {
     @GetMapping("/api/v1/customer/access-mode")
     fun accessMode(): ResponseEntity<CustomerAccessModeResponse> = ResponseEntity.ok()
@@ -82,7 +88,11 @@ internal class CustomerRequestPortalController(
         val result = applicationService.addFollowUp(
             principal,
             ticketNumber,
-            body.body,
+            CanonicalCommentContentCodec(objectMapper).decode(
+                body = body.body,
+                content = body.content,
+                attachmentIds = body.attachmentIds.toSet(),
+            ),
             body.attachmentIds,
             body.clientCommandId,
             CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
@@ -231,22 +241,25 @@ internal data class CustomerPublicCommentResponse(
     val id: UUID,
     val authorDisplayName: String,
     val body: String,
+    val content: CommentContentView,
     val createdAt: Instant,
     val attachments: List<dev.deskseed.attachments.TicketAttachment> = emptyList(),
 ) {
     companion object {
         fun from(value: PublicCommentView) = CustomerPublicCommentResponse(
-            value.id,
-            value.authorDisplayName,
-            value.body,
-            value.createdAt,
-            value.attachments,
+            id = value.id,
+            authorDisplayName = value.authorDisplayName,
+            body = value.body,
+            content = commentContentView(value.contentFormat, value.body, value.contentDocument),
+            createdAt = value.createdAt,
+            attachments = value.attachments,
         )
     }
 }
 
 internal data class CustomerFollowUpRequest(
-    @field:NotBlank @field:Size(max = 20_000) val body: String,
+    @field:Size(max = 20_000) val body: String? = null,
+    val content: JsonNode? = null,
     @field:Size(max = 5) val attachmentIds: List<UUID> = emptyList(),
     @field:NotBlank @field:Size(max = 100) val clientCommandId: String,
 )

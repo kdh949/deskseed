@@ -3,9 +3,11 @@ import type {
   AgentTicketSummary,
   TicketFieldName,
   TicketPriority,
+  RichTextDocumentV1,
   TicketVisibility,
   UpdateTicketCommand,
 } from '../../../api/types'
+import { MAX_RICH_TEXT_NODES } from '../../../api/types'
 
 export interface EditableTicketFields {
   status: AgentTicketStatus
@@ -19,9 +21,15 @@ export interface TicketCommentDrafts {
   INTERNAL: string
 }
 
+export interface TicketRichTextDrafts {
+  PUBLIC: RichTextDocumentV1
+  INTERNAL: RichTextDocumentV1
+}
+
 export interface TicketDraftSnapshot {
   mode: TicketVisibility
   comments: TicketCommentDrafts
+  documents?: TicketRichTextDrafts
   fields: EditableTicketFields
   serverFields: EditableTicketFields
   baseVersion: number
@@ -94,7 +102,11 @@ export function buildUpdateTicketCommand({
   expectedVersion: number
   serverFields: EditableTicketFields
   localFields: EditableTicketFields
-  comment: { visibility: TicketVisibility; body: string }
+  comment: {
+    visibility: TicketVisibility
+    body: string
+    content?: { format: 'RICH_TEXT_V1'; document: RichTextDocumentV1 }
+  }
   attachmentIds?: string[]
   clientCommandId: string
 }): UpdateTicketCommand {
@@ -106,7 +118,9 @@ export function buildUpdateTicketCommand({
     comment: trimmedComment
       ? {
           visibility: comment.visibility,
-          body: trimmedComment,
+          ...(comment.content
+            ? { content: comment.content }
+            : { body: trimmedComment }),
           ...(attachmentIds.length ? { attachmentIds } : {}),
         }
       : null,
@@ -271,6 +285,7 @@ export function readTicketDraft(
       value.formatVersion !== 1 ||
       (value.mode !== 'PUBLIC' && value.mode !== 'INTERNAL') ||
       !isCommentDrafts(value.comments) ||
+      (value.documents !== undefined && !isRichTextDrafts(value.documents)) ||
       !isEditableFields(value.fields) ||
       !isEditableFields(value.serverFields) ||
       typeof value.baseVersion !== 'number' ||
@@ -395,7 +410,11 @@ function isUpdateTicketCommand(value: unknown): value is UpdateTicketCommand {
     ) &&
     (command.comment === null ||
       (typeof command.comment === 'object' &&
-        typeof command.comment.body === 'string' &&
+        (typeof command.comment.body === 'string' ||
+          (typeof command.comment.content === 'object' &&
+            command.comment.content !== null &&
+            command.comment.content.format === 'RICH_TEXT_V1' &&
+            isRichTextDocument(command.comment.content.document))) &&
         (command.comment.visibility === 'PUBLIC' ||
           command.comment.visibility === 'INTERNAL') &&
         (command.comment.attachmentIds === undefined ||
@@ -409,6 +428,45 @@ function isCommentDrafts(value: unknown): value is TicketCommentDrafts {
   return (
     typeof comments.PUBLIC === 'string' && typeof comments.INTERNAL === 'string'
   )
+}
+
+function isRichTextDrafts(value: unknown): value is TicketRichTextDrafts {
+  if (!value || typeof value !== 'object') return false
+  const drafts = value as Record<string, unknown>
+  return (
+    isRichTextDocument(drafts.PUBLIC) && isRichTextDocument(drafts.INTERNAL)
+  )
+}
+
+function isRichTextDocument(value: unknown): value is RichTextDocumentV1 {
+  if (!value || typeof value !== 'object') return false
+  const document = value as { type?: unknown; content?: unknown }
+  if (document.type !== 'doc' || !Array.isArray(document.content)) return false
+  let count = 0
+  const visit = (node: unknown, depth: number): boolean => {
+    count += 1
+    if (
+      !node ||
+      typeof node !== 'object' ||
+      depth > 12 ||
+      count > MAX_RICH_TEXT_NODES
+    )
+      return false
+    const candidate = node as {
+      type?: unknown
+      content?: unknown
+      text?: unknown
+    }
+    if (typeof candidate.type !== 'string') return false
+    if (candidate.text !== undefined && typeof candidate.text !== 'string')
+      return false
+    return (
+      candidate.content === undefined ||
+      (Array.isArray(candidate.content) &&
+        candidate.content.every((child) => visit(child, depth + 1)))
+    )
+  }
+  return document.content.every((node) => visit(node, 1))
 }
 
 function removeInvalidTicketDraft(storage: StorageAdapter, key: string) {

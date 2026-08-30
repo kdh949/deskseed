@@ -1,5 +1,7 @@
 package dev.deskseed.collaboration
 
+import dev.deskseed.ticketing.CommentContentFormat
+import tools.jackson.databind.JsonNode
 import java.time.Instant
 import java.util.UUID
 
@@ -23,6 +25,8 @@ data class TicketDraft(
     val createdAt: Instant,
     val updatedAt: Instant,
     val expiresAt: Instant,
+    val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
+    val contentDocument: JsonNode? = null,
 )
 
 data class NewTicketDraft(
@@ -34,6 +38,8 @@ data class NewTicketDraft(
     val attachmentIds: List<UUID>,
     val clientDeviceId: UUID,
     val baseTicketVersion: Long,
+    val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
+    val contentDocument: JsonNode? = null,
 )
 
 data class UpdatedTicketDraft(
@@ -42,6 +48,8 @@ data class UpdatedTicketDraft(
     val clientDeviceId: UUID,
     val baseTicketVersion: Long,
     val expectedDraftVersion: Long,
+    val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
+    val contentDocument: JsonNode? = null,
 )
 
 interface TicketDraftStore {

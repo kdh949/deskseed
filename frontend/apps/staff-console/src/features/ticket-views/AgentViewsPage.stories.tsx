@@ -46,6 +46,7 @@ const tickets = {
       },
       group: { id: 'group-payments', name: '결제 지원' },
       assignee: { id: 'agent-1042', displayName: '상담사' },
+      createdAt: '2026-08-10T09:00:00Z',
       updatedAt: '2026-08-10T10:02:00Z',
       version: 3,
       isChild: false,

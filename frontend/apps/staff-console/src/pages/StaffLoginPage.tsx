@@ -2,18 +2,75 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useStaffSession } from '../features/staff-auth/StaffSessionContext'
-import { DsButton, Notification, ScreenState } from '../design-system'
+import {
+  SeedAvatar,
+  SeedButton,
+  SeedFeedbackState,
+  SeedIcon,
+  SeedLoginShell,
+  SeedNotice,
+  SeedStatusBadge,
+  SeedTextField,
+} from '../design-system/canonical'
 
 function safeDestination(value: unknown): string {
   if (
     typeof value === 'string' &&
     value.startsWith('/') &&
     !value.startsWith('//') &&
-    (value.startsWith('/agent/views/') || value.startsWith('/agent/tickets/'))
+    (value.startsWith('/agent/views/') ||
+      value.startsWith('/agent/tickets/') ||
+      value === '/agent/search')
   ) {
     return value
   }
   return '/agent/views/my-open'
+}
+
+function LoginWorkspacePreview() {
+  return (
+    <div className="seed-login-demo">
+      <aside>
+        <SeedIcon name="leaf" size="large" />
+        <SeedIcon name="home" />
+        <SeedIcon name="ticket" />
+        <SeedIcon name="users" />
+        <SeedIcon name="settings" />
+      </aside>
+      <header>
+        <strong>DS-48219</strong>
+        <span>비밀번호 재설정 후 로그인할 수 없습니다</span>
+      </header>
+      <section>
+        <label>
+          상태 <SeedStatusBadge tone="positive">처리 중</SeedStatusBadge>
+        </label>
+        <label>
+          담당자{' '}
+          <span>
+            <SeedAvatar initials="AR" label="상담사" size="small" /> Alex Rivera
+          </span>
+        </label>
+        <label>
+          우선순위 <strong>높음</strong>
+        </label>
+      </section>
+      <div className="seed-login-demo__conversation">
+        <span>
+          <SeedAvatar initials="JW" label="고객" size="small" />
+          <i />
+        </span>
+        <span>
+          <SeedAvatar initials="AR" label="상담사" size="small" />
+          <i />
+        </span>
+        <span>
+          <SeedAvatar initials="JW" label="고객" size="small" />
+          <i />
+        </span>
+      </div>
+    </div>
+  )
 }
 
 export function StaffLoginPage() {
@@ -32,10 +89,10 @@ export function StaffLoginPage() {
 
   if (session.status === 'loading') {
     return (
-      <main className="staff-login-page">
-        <ScreenState
-          kind="loading"
+      <main className="seed-login-loading">
+        <SeedFeedbackState
           compact
+          kind="loading"
           title="직원 세션을 확인하고 있습니다."
         />
       </main>
@@ -67,49 +124,53 @@ export function StaffLoginPage() {
   }
 
   return (
-    <main className="staff-login-page">
-      <section className="staff-login-card" aria-labelledby="staff-login-title">
-        <p className="staff-login-eyebrow">DESKSEED STAFF</p>
-        <h1 id="staff-login-title">직원 로그인</h1>
-        <p className="staff-login-description">
-          상담사 및 관리자 계정으로 작업 공간에 접속합니다.
-        </p>
-        {error ? (
-          <Notification
-            tone="danger"
-            title={error}
-            tabIndex={-1}
-            ref={alertRef}
-          />
-        ) : null}
-        <form className="staff-login-form" onSubmit={submit}>
-          <label>
-            이메일
-            <input
-              type="email"
-              autoComplete="username"
-              required
-              maxLength={254}
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </label>
-          <label>
-            비밀번호
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              maxLength={128}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-          <DsButton tone="primary" type="submit" disabled={submitting}>
-            {submitting ? '로그인 중…' : '로그인'}
-          </DsButton>
-        </form>
-      </section>
-    </main>
+    <SeedLoginShell
+      description="티켓을 확인하고 팀과 협업하며 고객에게 정확한 답변을 전달하세요."
+      footer="Deskseed 직원 계정은 조직 관리자가 발급합니다."
+      preview={<LoginWorkspacePreview />}
+      title="좋은 지원은 여기서 시작됩니다"
+    >
+      <h2 id="staff-login-title">Deskseed 로그인</h2>
+      <p>직원 계정으로 계속하세요.</p>
+      {error && (
+        <div ref={alertRef} tabIndex={-1}>
+          <SeedNotice title="로그인 실패" tone="danger">
+            {error}
+          </SeedNotice>
+        </div>
+      )}
+      <form
+        className="seed-login-form"
+        onSubmit={submit}
+        aria-labelledby="staff-login-title"
+      >
+        <SeedTextField
+          autoComplete="username"
+          label="이메일"
+          leadingIcon="mail"
+          maxLength={254}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+          type="email"
+          value={email}
+        />
+        <SeedTextField
+          autoComplete="current-password"
+          label="비밀번호"
+          leadingIcon="lock"
+          maxLength={128}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+          type="password"
+          value={password}
+        />
+        <SeedButton disabled={submitting} type="submit" variant="primary">
+          {submitting ? '로그인 중…' : '로그인'}
+        </SeedButton>
+      </form>
+      <p className="seed-login-account-copy">
+        처음 이용하시나요? 조직 관리자에게 계정을 요청하세요.
+      </p>
+    </SeedLoginShell>
   )
 }

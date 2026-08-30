@@ -15,6 +15,109 @@ import ts from 'typescript'
 const root = resolve(import.meta.dirname, '..')
 const customerRoot = join(root, 'apps', 'customer-portal', 'src')
 const staffRoot = join(root, 'apps', 'staff-console', 'src')
+const canonicalStaffSurfaceFiles = [
+  join(root, 'apps', 'staff-console', '.storybook', 'preview.tsx'),
+  join(staffRoot, 'design-system', 'canonical.ts'),
+  join(staffRoot, 'design-system', 'canonical-index.css'),
+  join(staffRoot, 'design-system', 'foundations', 'canonical.css'),
+  join(staffRoot, 'design-system', 'foundations', 'canonical-stories.css'),
+  join(staffRoot, 'design-system', 'foundations', 'seed-story-helpers.css'),
+  join(
+    staffRoot,
+    'design-system',
+    'foundations',
+    'CanonicalFoundations.stories.tsx',
+  ),
+  join(staffRoot, 'design-system', 'primitives', 'SeedCore.tsx'),
+  join(staffRoot, 'design-system', 'primitives', 'SeedCore.stories.tsx'),
+  join(staffRoot, 'design-system', 'primitives', 'seed-core.css'),
+  join(staffRoot, 'design-system', 'components', 'SeedSurfaces.tsx'),
+  join(staffRoot, 'design-system', 'components', 'SeedSurfaces.stories.tsx'),
+  join(staffRoot, 'design-system', 'components', 'seed-surfaces.css'),
+  join(staffRoot, 'design-system', 'patterns', 'SeedWorkspace.tsx'),
+  join(staffRoot, 'design-system', 'patterns', 'SeedWorkspace.stories.tsx'),
+  join(staffRoot, 'design-system', 'patterns', 'seed-workspace.css'),
+  join(staffRoot, 'App.tsx'),
+  join(staffRoot, 'main.tsx'),
+  join(staffRoot, 'pages', 'StaffLoginPage.tsx'),
+  join(staffRoot, 'pages', 'StaffLoginPage.stories.tsx'),
+  join(staffRoot, 'features', 'agent-shell', 'AgentShellLayout.tsx'),
+  join(staffRoot, 'features', 'staff-auth', 'StaffRoute.tsx'),
+  join(staffRoot, 'features', 'ticket-search', 'AgentSearchPage.tsx'),
+  join(staffRoot, 'features', 'ticket-search', 'AgentSearchPage.stories.tsx'),
+  join(staffRoot, 'features', 'ticket-create', 'CreateAgentTicketPage.tsx'),
+  join(staffRoot, 'features', 'ticket-create', 'CreateAgentTicketForm.tsx'),
+  join(
+    staffRoot,
+    'features',
+    'ticket-create',
+    'CreateAgentTicketForm.stories.tsx',
+  ),
+  join(staffRoot, 'features', 'ticket-create', 'RequesterSearchField.tsx'),
+  join(staffRoot, 'features', 'ticket-views', 'AgentViewsPage.tsx'),
+  join(staffRoot, 'features', 'ticket-views', 'AgentViewsPage.stories.tsx'),
+  join(staffRoot, 'features', 'ticket-views', 'BulkTicketActionPanel.tsx'),
+  join(staffRoot, 'features', 'ticket-views', 'ViewConfigurationDrawer.tsx'),
+  join(
+    staffRoot,
+    'features',
+    'ticket-workspace',
+    'AgentTicketEditorWorkspace.tsx',
+  ),
+  join(
+    staffRoot,
+    'features',
+    'ticket-workspace',
+    'AgentTicketEditorWorkspace.stories.tsx',
+  ),
+  join(
+    staffRoot,
+    'features',
+    'ticket-workspace',
+    'AgentTicketWorkspacePage.tsx',
+  ),
+  join(
+    staffRoot,
+    'features',
+    'ticket-workspace',
+    'AgentTicketWorkspacePage.stories.tsx',
+  ),
+  join(staffRoot, 'features', 'attachments', 'AttachmentList.tsx'),
+  join(staffRoot, 'features', 'attachments', 'AttachmentUploadField.tsx'),
+  join(
+    staffRoot,
+    'extensions',
+    'drafts-presence',
+    'DraftsPresenceContribution.tsx',
+  ),
+  join(staffRoot, 'extensions', 'drafts-presence', 'feature-contribution.tsx'),
+]
+const legacyStaffPresentationReferences = [
+  [
+    'legacy design-system entrypoint',
+    /from\s+['"][^'"]*design-system(?:\/index)?['"]/,
+  ],
+  [
+    'legacy presentation symbol',
+    /\b(?:DsButton|DsSelect|ScreenState|Notification|DeskseedThemeProvider)\b/,
+  ],
+  [
+    'retired staff presentation symbol',
+    /\b(?:QueueTicketTable|ViewNavigation|AgentShell|WorkspaceNavigationRail|TicketWorkspace|TicketContextPanel|TicketPropertiesPanel|ReplyComposer|ConversationTimeline|FrontendSystemFixturePage)\b/,
+  ],
+  [
+    'legacy presentation class',
+    /className\s*=\s*['"`][^'"`]*(?:\bds-|\bagent-|\bstaff-gate|\bticket-collaboration-|\bbulk-ticket-panel)/,
+  ],
+  [
+    'legacy presentation stylesheet',
+    /import\s+['"][^'"]*(?:designSystem|tokens|primitives|application|ticket-queue|ticket-workspace|ticket-create|draftsPresence)\.css['"]/,
+  ],
+  [
+    'reference screenshot import',
+    /(?:image-[1-5]\.png|fdd3fbd0-70dd-45ff-a285-785ee9d011a2)/,
+  ],
+]
 const forbiddenRoots = [
   join(customerRoot, 'shared'),
   join(staffRoot, 'shared', 'ui'),
@@ -136,6 +239,19 @@ export function runBoundaryCheck() {
       failures.push(
         `customer app import in staff app: ${relative(root, path)} (${specifier})`,
       )
+    }
+  }
+
+  for (const path of canonicalStaffSurfaceFiles) {
+    if (!existsSync(path)) {
+      failures.push(`canonical staff surface missing: ${relative(root, path)}`)
+      continue
+    }
+    const source = readFileSync(path, 'utf8')
+    for (const [label, pattern] of legacyStaffPresentationReferences) {
+      if (pattern.test(source)) {
+        failures.push(`${label}: ${relative(root, path)}`)
+      }
     }
   }
 

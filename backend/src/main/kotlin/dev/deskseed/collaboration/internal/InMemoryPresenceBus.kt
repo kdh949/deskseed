@@ -222,6 +222,13 @@ internal class InMemoryCollaborationRealtimeGateway(
         senders.forEach { sender -> runCatching { sender(message) } }
     }
 
+    override fun sendToStaff(staffId: UUID, message: CollaborationRealtimeMessage) {
+        val senders = synchronized(this) {
+            connections.values.filter { it.connection.staffId == staffId }.map { it.sender }
+        }
+        senders.forEach { sender -> runCatching { sender(message) } }
+    }
+
     override fun closeStaffConnections(staffId: UUID) {
         val toClose = synchronized(this) {
             connections.values.filter { it.connection.staffId == staffId }

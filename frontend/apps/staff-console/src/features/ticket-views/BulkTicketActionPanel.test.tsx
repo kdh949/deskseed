@@ -16,6 +16,7 @@ const ticket = {
   requester: { id: null, type: 'CUSTOMER' as const, displayName: '김민수' },
   group: null,
   assignee: null,
+  createdAt: '2026-08-17T02:30:00Z',
   updatedAt: '2026-08-17T03:00:00Z',
   version: 7,
   isChild: false,

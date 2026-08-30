@@ -26,6 +26,7 @@ const detail = {
     requester: { id: 'customer-1', type: 'CUSTOMER', displayName: '김민수' },
     group: { id: 'group-payments', name: '결제 지원' },
     assignee: { id: 'agent-2', displayName: '다른 그룹 상담사' },
+    createdAt: '2026-08-10T09:00:00Z',
     updatedAt: '2026-08-10T10:02:00Z',
     version: 3,
     isChild: false,
@@ -38,6 +39,7 @@ const detail = {
       visibility: 'PUBLIC',
       actor: { id: 'customer-1', type: 'CUSTOMER', displayName: '김민수' },
       body: '결제가 계속 실패합니다.',
+      content: { format: 'PLAIN_TEXT', text: '결제가 계속 실패합니다.' },
       createdAt: '2026-08-10T09:00:00Z',
       source: 'WEB',
       attachments: [],
@@ -47,6 +49,7 @@ const detail = {
       visibility: 'INTERNAL',
       actor: { id: 'agent-2', type: 'STAFF', displayName: '다른 그룹 상담사' },
       body: 'PG사 확인이 필요합니다.',
+      content: { format: 'PLAIN_TEXT', text: 'PG사 확인이 필요합니다.' },
       createdAt: '2026-08-10T09:30:00Z',
       source: 'STAFF_WEB',
       attachments: [],
@@ -81,6 +84,34 @@ const detail = {
     },
   ],
   warnings: [],
+}
+
+const externalReferenceContext = {
+  ticketVersion: 3,
+  canManage: true,
+  availableSystems: [],
+  items: [],
+}
+
+function ticketFetchMock() {
+  return vi.fn().mockImplementation((input: RequestInfo | URL) => {
+    const url = String(input)
+    const body = url.endsWith('/external-references')
+      ? externalReferenceContext
+      : detail
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+  })
+}
+
+function detailCalls(fetchMock: ReturnType<typeof ticketFetchMock>) {
+  return fetchMock.mock.calls.filter(([input]) =>
+    /^\/api\/v1\/agent\/tickets\/\d+$/.test(String(input)),
+  )
 }
 
 function RouteNavigationControls() {
@@ -123,14 +154,7 @@ afterEach(() => {
 
 describe('AgentTicketWorkspacePage', () => {
   it('renders the read-only server projection with public and internal conversation', async () => {
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify(detail), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    )
+    const fetchMock = ticketFetchMock()
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
@@ -138,7 +162,9 @@ describe('AgentTicketWorkspacePage', () => {
     expect(
       await screen.findByRole('heading', { name: '결제 승인 오류' }),
     ).toBeVisible()
-    expect(screen.getByText('티켓 #1042')).toBeVisible()
+    expect(
+      screen.getByRole('region', { name: '티켓 #1042 작업 공간' }),
+    ).toBeVisible()
     expect(
       screen.getByRole('complementary', { name: '티켓 속성' }),
     ).toBeVisible()
@@ -147,7 +173,7 @@ describe('AgentTicketWorkspacePage', () => {
     ).toBeVisible()
     expect(screen.getByText('결제가 계속 실패합니다.')).toBeVisible()
     expect(screen.getByText('PG사 확인이 필요합니다.')).toBeVisible()
-    expect(screen.getByText('INTERNAL · 직원 전용')).toBeVisible()
+    expect(screen.getAllByText('INTERNAL')).toHaveLength(2)
     expect(
       screen.queryByRole('textbox', { name: '내부 메모 내용' }),
     ).not.toBeInTheDocument()
@@ -155,7 +181,7 @@ describe('AgentTicketWorkspacePage', () => {
       screen.getByText('현재 권한으로는 티켓을 수정할 수 없습니다.'),
     ).toBeVisible()
 
-    const request = fetchMock.mock.calls[0]!
+    const request = detailCalls(fetchMock)[0]!
     const requestOptions = request[1] as { headers: Record<string, string> }
     expect(request[0]).toBe('/api/v1/agent/tickets/1042')
     expect(requestOptions.headers['X-Deskseed-Read-Intent']).toBe('NAVIGATION')
@@ -164,25 +190,18 @@ describe('AgentTicketWorkspacePage', () => {
 
   it('reuses the navigation interaction for a refresh and changes it per navigation', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify(detail), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    )
+    const fetchMock = ticketFetchMock()
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
     await screen.findByRole('heading', { name: '결제 승인 오류' })
     await user.click(screen.getByRole('button', { name: '최신 정보 새로고침' }))
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    const firstOptions = fetchMock.mock.calls[0]![1] as {
+    await waitFor(() => expect(detailCalls(fetchMock)).toHaveLength(2))
+    const firstOptions = detailCalls(fetchMock)[0]![1] as {
       headers: Record<string, string>
     }
-    const secondOptions = fetchMock.mock.calls[1]![1] as {
+    const secondOptions = detailCalls(fetchMock)[1]![1] as {
       headers: Record<string, string>
     }
     expect(secondOptions.headers['X-Interaction-Id']).toBe(
@@ -191,14 +210,14 @@ describe('AgentTicketWorkspacePage', () => {
     expect(secondOptions.headers['X-Deskseed-Read-Intent']).toBe('BACKGROUND')
 
     await user.click(screen.getByRole('button', { name: '티켓 1043 열기' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(detailCalls(fetchMock)).toHaveLength(3))
     await user.click(screen.getByRole('button', { name: '티켓 1042 열기' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(detailCalls(fetchMock)).toHaveLength(4))
 
-    const thirdOptions = fetchMock.mock.calls[2]![1] as {
+    const thirdOptions = detailCalls(fetchMock)[2]![1] as {
       headers: Record<string, string>
     }
-    const fourthOptions = fetchMock.mock.calls[3]![1] as {
+    const fourthOptions = detailCalls(fetchMock)[3]![1] as {
       headers: Record<string, string>
     }
     expect(thirdOptions.headers['X-Interaction-Id']).not.toBe(

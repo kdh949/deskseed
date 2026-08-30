@@ -5,6 +5,7 @@ import dev.deskseed.foundation.CommandContext
 import dev.deskseed.attachments.TicketAttachment
 import java.time.Instant
 import java.util.UUID
+import tools.jackson.databind.JsonNode
 
 enum class TicketKind {
     CUSTOMER_REQUEST,
@@ -79,6 +80,8 @@ data class PublicCommentView(
     val body: String,
     val createdAt: Instant,
     val attachments: List<TicketAttachment> = emptyList(),
+    val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
+    val contentDocument: JsonNode? = null,
 )
 
 data class PublicTicketView(

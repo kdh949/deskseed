@@ -4446,14 +4446,20 @@ components:
       type: object
       additionalProperties: false
       required:
-      - body
       - clientCommandId
+      oneOf:
+      - required: [body]
+        not: {required: [content]}
+      - required: [content]
+        not: {required: [body]}
       properties:
         body:
           type: string
           minLength: 1
           maxLength: 20000
           description: 고객이 문의 대화에 추가하는 PUBLIC 댓글 본문입니다. INTERNAL 메모는 지정할 수 없습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5
@@ -4479,14 +4485,20 @@ components:
       type: object
       additionalProperties: false
       required:
-      - body
       - clientCommandId
+      oneOf:
+      - required: [body]
+        not: {required: [content]}
+      - required: [content]
+        not: {required: [body]}
       properties:
         body:
           type: string
           minLength: 1
           maxLength: 20000
           description: 인증 고객이 자신의 문의 대화에 추가하는 PUBLIC 댓글 본문입니다. INTERNAL 메모는 지정할 수 없습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         clientCommandId:
           type: string
           minLength: 1
@@ -4515,6 +4527,7 @@ components:
       - id
       - authorDisplayName
       - body
+      - content
       - createdAt
       properties:
         id:
@@ -4524,6 +4537,9 @@ components:
           type: string
         body:
           type: string
+          description: content에서 서버가 파생한 고객 호환용 plain text입니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         createdAt:
           type: string
           format: date-time
@@ -5615,6 +5631,7 @@ components:
       - visibility
       - actor
       - body
+      - content
       - createdAt
       - source
       properties:
@@ -5627,6 +5644,9 @@ components:
           $ref: '#/components/schemas/ActorSummary'
         body:
           type: string
+          description: content에서 서버가 파생한 호환용 plain text이며 canonical rich document를 대체하지 않습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         createdAt:
           type: string
           format: date-time
@@ -5776,12 +5796,212 @@ components:
         occurredAt:
           type: string
           format: date-time
+    CommentContent:
+      oneOf:
+      - $ref: '#/components/schemas/PlainTextCommentContent'
+      - $ref: '#/components/schemas/RichTextCommentContentV1'
+      discriminator:
+        propertyName: format
+      description: 저장 형식을 명시하는 댓글 내용입니다. 서버는 RICH_TEXT_V1을 정규화하고 호환용 plain text body를 파생합니다.
+    PlainTextCommentContent:
+      type: object
+      additionalProperties: false
+      required: [format, text]
+      properties:
+        format:
+          type: string
+          const: PLAIN_TEXT
+        text:
+          type: string
+          minLength: 1
+          maxLength: 20000
+      description: 기존 댓글과 구버전 client를 표현하는 plain-text 내용입니다.
+    RichTextCommentContentV1:
+      type: object
+      additionalProperties: false
+      required: [format, document]
+      properties:
+        format:
+          type: string
+          const: RICH_TEXT_V1
+        document:
+          $ref: '#/components/schemas/RichTextDocumentV1'
+      description: arbitrary HTML이나 CSS 없이 allowlisted node와 mark만 저장하는 version 1 구조화 문서입니다.
+    RichTextDocumentV1:
+      type: object
+      additionalProperties: false
+      required: [type, content]
+      properties:
+        type:
+          type: string
+          const: doc
+        content:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/RichTextBlockNodeV1'
+      description: 최대 500개 최상위 block을 갖는 canonical RICH_TEXT_V1 root입니다.
+    RichTextBlockNodeV1:
+      oneOf:
+      - $ref: '#/components/schemas/RichTextParagraphNodeV1'
+      - $ref: '#/components/schemas/RichTextHeadingNodeV1'
+      - $ref: '#/components/schemas/RichTextListNodeV1'
+      - $ref: '#/components/schemas/RichTextBlockquoteNodeV1'
+      - $ref: '#/components/schemas/RichTextCodeBlockNodeV1'
+      - $ref: '#/components/schemas/RichTextAttachmentImageNodeV1'
+      discriminator:
+        propertyName: type
+    RichTextParagraphNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: {type: string, const: paragraph}
+        attrs:
+          $ref: '#/components/schemas/RichTextAlignmentAttrsV1'
+        content:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/RichTextInlineNodeV1'
+    RichTextHeadingNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type, attrs]
+      properties:
+        type: {type: string, const: heading}
+        attrs:
+          type: object
+          additionalProperties: false
+          required: [level]
+          properties:
+            level: {type: integer, enum: [1, 2, 3]}
+            textAlign: {type: string, enum: [left, center, right]}
+        content:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/RichTextInlineNodeV1'
+    RichTextListNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type, content]
+      properties:
+        type: {type: string, enum: [bulletList, orderedList]}
+        content:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RichTextListItemNodeV1'
+    RichTextListItemNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type, content]
+      properties:
+        type: {type: string, const: listItem}
+        content:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RichTextParagraphNodeV1'
+    RichTextBlockquoteNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type, content]
+      properties:
+        type: {type: string, const: blockquote}
+        content:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RichTextParagraphNodeV1'
+    RichTextCodeBlockNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: {type: string, const: codeBlock}
+        content:
+          type: array
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/RichTextTextNodeV1'
+    RichTextAttachmentImageNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type, attrs]
+      properties:
+        type: {type: string, const: attachmentImage}
+        attrs:
+          type: object
+          additionalProperties: false
+          required: [attachmentId, alt]
+          properties:
+            attachmentId: {type: string, format: uuid}
+            alt: {type: string, minLength: 1, maxLength: 500}
+      description: 같은 티켓에 연결 가능한 CLEAN attachment만 참조하며 remote URL은 받지 않습니다.
+    RichTextAlignmentAttrsV1:
+      type: object
+      additionalProperties: false
+      properties:
+        textAlign: {type: string, enum: [left, center, right]}
+    RichTextInlineNodeV1:
+      oneOf:
+      - $ref: '#/components/schemas/RichTextTextNodeV1'
+      - $ref: '#/components/schemas/RichTextHardBreakNodeV1'
+      discriminator:
+        propertyName: type
+    RichTextTextNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: {type: string, const: text}
+        text: {type: string, minLength: 1, maxLength: 20000}
+        marks:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/RichTextMarkV1'
+    RichTextHardBreakNodeV1:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: {type: string, const: hardBreak}
+    RichTextMarkV1:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [type]
+        properties:
+          type: {type: string, enum: [bold, italic, underline, code]}
+      - type: object
+        additionalProperties: false
+        required: [type, attrs]
+        properties:
+          type: {type: string, const: link}
+          attrs:
+            type: object
+            additionalProperties: false
+            required: [href]
+            properties:
+              href: {type: string, minLength: 1, maxLength: 2048, pattern: '^(https?://|mailto:).+'}
     CommentDraft:
       type: object
       additionalProperties: false
       required:
       - visibility
-      - body
+      oneOf:
+      - required: [body]
+        not: {required: [content]}
+      - required: [content]
+        not: {required: [body]}
       properties:
         visibility:
           $ref: '#/components/schemas/TicketVisibility'
@@ -5789,6 +6009,8 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5

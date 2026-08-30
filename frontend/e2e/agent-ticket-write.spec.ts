@@ -24,6 +24,7 @@ function createDetail() {
       },
       group: { id: 'group-payments', name: '결제 지원' },
       assignee: { id: 'staff-3001', displayName: '상담사 A' },
+      createdAt: '2026-08-15T09:00:00Z',
       updatedAt: '2026-08-15T10:02:00Z',
       version: 3,
       isChild: false,
@@ -40,6 +41,10 @@ function createDetail() {
           displayName: '고객 A',
         },
         body: '결제가 완료됐는지 확인하고 싶습니다.',
+        content: {
+          format: 'PLAIN_TEXT',
+          text: '결제가 완료됐는지 확인하고 싶습니다.',
+        },
         createdAt: '2026-08-15T09:00:00Z',
         source: 'WEB',
         attachments: [],
@@ -129,8 +134,16 @@ async function mockWritableTicket(
 async function openWorkspace(page: Page) {
   await page.goto('/agent/tickets/3001')
   await expect(
-    page.getByRole('main', { name: '티켓 #3001 작업 공간' }),
+    page.getByRole('region', { name: '티켓 #3001 작업 공간' }),
   ).toBeVisible()
+}
+
+async function selectChoice(page: Page, label: string, option: string) {
+  await page.getByRole('combobox', { name: label }).click()
+  await page
+    .getByRole('listbox', { name: `${label} 선택지` })
+    .getByText(option, { exact: true })
+    .click()
 }
 
 function expectMutationHeaders(headers: Record<string, string>) {
@@ -161,6 +174,10 @@ test('agent PUBLIC reply sends one expected-version command and refreshes the ti
               displayName: staff.displayName,
             },
             body: '결제 승인 상태를 확인해 보겠습니다.',
+            content: {
+              format: 'PLAIN_TEXT',
+              text: '결제 승인 상태를 확인해 보겠습니다.',
+            },
             createdAt: '2026-08-15T10:03:00Z',
             source: 'STAFF_WEB',
             attachments: [],
@@ -175,11 +192,11 @@ test('agent PUBLIC reply sends one expected-version command and refreshes the ti
   )
   await openWorkspace(page)
 
-  await page.getByLabel('우선순위').selectOption('URGENT')
+  await selectChoice(page, '우선순위', '긴급')
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('결제 승인 상태를 확인해 보겠습니다.')
-  await page.getByRole('button', { name: '공개 답변 저장' }).click()
+  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
 
   await expect(
     page.getByText('공개 답변과 변경사항을 저장했습니다.'),
@@ -191,7 +208,23 @@ test('agent PUBLIC reply sends one expected-version command and refreshes the ti
       priority: 'URGENT',
       comment: {
         visibility: 'PUBLIC',
-        body: '결제 승인 상태를 확인해 보겠습니다.',
+        content: {
+          format: 'RICH_TEXT_V1',
+          document: {
+            type: 'doc',
+            content: [
+              {
+                type: 'paragraph',
+                content: [
+                  {
+                    type: 'text',
+                    text: '결제 승인 상태를 확인해 보겠습니다.',
+                  },
+                ],
+              },
+            ],
+          },
+        },
       },
     }),
   ])
@@ -218,7 +251,9 @@ test('agent INTERNAL note sends an internal command without a public fallback', 
   await page
     .getByRole('textbox', { name: '내부 메모 내용' })
     .fill('카드사 응답 코드를 확인해야 합니다.')
-  await page.getByRole('button', { name: '내부 메모 저장' }).click()
+  await page
+    .getByRole('button', { name: '내부 메모 저장', exact: true })
+    .click()
 
   await expect(
     page.getByText('내부 메모와 변경사항을 저장했습니다.'),
@@ -229,7 +264,23 @@ test('agent INTERNAL note sends an internal command without a public fallback', 
       changedFields: [],
       comment: {
         visibility: 'INTERNAL',
-        body: '카드사 응답 코드를 확인해야 합니다.',
+        content: {
+          format: 'RICH_TEXT_V1',
+          document: {
+            type: 'doc',
+            content: [
+              {
+                type: 'paragraph',
+                content: [
+                  {
+                    type: 'text',
+                    text: '카드사 응답 코드를 확인해야 합니다.',
+                  },
+                ],
+              },
+            ],
+          },
+        },
       },
     }),
   ])
@@ -248,14 +299,16 @@ test('agent field update uses only the assignment options returned by the ticket
   })
   await openWorkspace(page)
 
-  await page.getByLabel('상태').selectOption('CLOSED')
-  await page.getByLabel('그룹').selectOption('group-shipping')
-  await expect(page.getByLabel('담당자')).toHaveValue('')
-  await page.getByLabel('담당자').selectOption('staff-3002')
+  await selectChoice(page, '상태', '종료')
+  await selectChoice(page, '그룹', '배송 지원')
+  await expect(page.getByRole('combobox', { name: '담당자' })).toHaveText(
+    '미배정',
+  )
+  await selectChoice(page, '담당자', '상담사 B')
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('담당 그룹을 변경했습니다.')
-  await page.getByRole('button', { name: '공개 답변 저장' }).click()
+  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
   await expect(
     page.getByText('공개 답변과 변경사항을 저장했습니다.'),
   ).toBeVisible()
@@ -291,9 +344,9 @@ test('an ambiguous retry reuses one clientCommandId and does not create a duplic
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('동일 명령으로 다시 저장합니다.')
-  await page.getByRole('button', { name: '공개 답변 저장' }).click()
+  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
   await expect(page.getByText(/저장 결과를 확인할 수 없습니다/)).toBeVisible()
-  await page.getByRole('button', { name: '공개 답변 저장' }).click()
+  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
 
   await expect(
     page.getByText('공개 답변과 변경사항을 저장했습니다.'),
@@ -317,15 +370,18 @@ test('a local draft blocks in-app navigation until the agent explicitly keeps ed
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('이 초안은 이동 전에도 남아 있어야 합니다.')
-  await page.getByRole('link', { name: 'Back to Views' }).click()
+  await page.getByRole('button', { name: '검색', exact: true }).click()
 
   const guard = page.getByRole('dialog', { name: '저장하지 않은 변경사항' })
   await expect(guard).toBeVisible()
   await guard.getByRole('button', { name: '계속 작성' }).click()
   await expect(guard).toHaveCount(0)
   await expect(
+    page.getByRole('button', { name: '검색', exact: true }),
+  ).toBeFocused()
+  await expect(
     page.getByRole('textbox', { name: '공개 답변 내용' }),
-  ).toHaveValue('이 초안은 이동 전에도 남아 있어야 합니다.')
+  ).toHaveText('이 초안은 이동 전에도 남아 있어야 합니다.')
 })
 
 test('a 409 conflict preserves the draft and requires a field-by-field decision', async ({
@@ -352,21 +408,19 @@ test('a 409 conflict preserves the draft and requires a field-by-field decision'
   })
   await openWorkspace(page)
 
-  await page.getByLabel('상태').selectOption('SOLVED')
+  await selectChoice(page, '상태', '해결됨')
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('초안을 보존해야 합니다.')
-  await page.getByRole('button', { name: '공개 답변 저장' }).click()
+  await page.getByRole('button', { name: '답변 보내기', exact: true }).click()
 
-  await expect(
-    page.getByRole('region', { name: '티켓 저장 충돌' }),
-  ).toBeVisible()
+  await expect(page.getByRole('alert', { name: '저장 충돌' })).toBeVisible()
   await expect(
     page.getByRole('textbox', { name: '공개 답변 내용' }),
-  ).toHaveValue('초안을 보존해야 합니다.')
-  await page.getByRole('button', { name: '상태에서 내 초안 유지' }).click()
-  await expect(
-    page.getByRole('region', { name: '티켓 저장 충돌' }),
-  ).toHaveCount(0)
-  await expect(page.getByLabel('상태')).toHaveValue('SOLVED')
+  ).toHaveText('초안을 보존해야 합니다.')
+  await page.getByRole('button', { name: '내 초안 유지' }).click()
+  await expect(page.getByRole('alert', { name: '저장 충돌' })).toHaveCount(0)
+  await expect(page.getByRole('combobox', { name: '상태' })).toHaveText(
+    '해결됨',
+  )
 })

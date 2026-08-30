@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
+import { SeedThemeProvider } from './design-system/canonical'
 import { appRoutes } from './App'
-import { DeskseedThemeProvider } from './design-system'
-import './design-system/index.css'
+import './design-system/canonical-index.css'
 
 function startApplication() {
   const queryClient = new QueryClient({
@@ -25,11 +25,11 @@ function startApplication() {
 
   createRoot(root).render(
     <StrictMode>
-      <DeskseedThemeProvider>
-        <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <SeedThemeProvider>
           <RouterProvider router={router} />
-        </QueryClientProvider>
-      </DeskseedThemeProvider>
+        </SeedThemeProvider>
+      </QueryClientProvider>
     </StrictMode>,
   )
 }

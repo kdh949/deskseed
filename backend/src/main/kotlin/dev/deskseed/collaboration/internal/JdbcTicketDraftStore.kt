@@ -6,6 +6,7 @@ import dev.deskseed.collaboration.TicketDraftChannel
 import dev.deskseed.collaboration.TicketDraftMaintenance
 import dev.deskseed.collaboration.TicketDraftStore
 import dev.deskseed.collaboration.UpdatedTicketDraft
+import dev.deskseed.ticketing.CommentContentFormat
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -15,11 +16,13 @@ import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+import tools.jackson.databind.ObjectMapper
 
 @Service
 internal class JdbcTicketDraftStore(
     private val jdbc: JdbcTemplate,
     private val clock: Clock,
+    private val objectMapper: ObjectMapper,
 ) : TicketDraftStore, TicketDraftMaintenance {
     @Transactional(readOnly = true)
     override fun find(ownerStaffId: UUID, ticketId: UUID, channel: TicketDraftChannel): TicketDraft? =
@@ -45,10 +48,10 @@ internal class JdbcTicketDraftStore(
         return jdbc.query(
             """
             insert into ticket_drafts (
-                owner_staff_id, ticket_id, composer_channel, body, attachment_ids,
+                owner_staff_id, ticket_id, composer_channel, body, content_format, content_document, attachment_ids,
                 client_device_id, base_ticket_version, draft_version,
                 created_at, updated_at, expires_at
-            ) values (?, ?, ?, ?, cast(? as uuid[]), ?, ?, 1, ?, ?, ?)
+            ) values (?, ?, ?, ?, ?, cast(? as jsonb), cast(? as uuid[]), ?, ?, 1, ?, ?, ?)
             on conflict (owner_staff_id, ticket_id, composer_channel) do nothing
             returning *, (select ticket_number from tickets where id = ticket_id) as ticket_number
             """.trimIndent(),
@@ -57,6 +60,8 @@ internal class JdbcTicketDraftStore(
             draft.ticketId,
             draft.channel.name,
             draft.body,
+            draft.contentFormat.name,
+            draft.contentDocument?.let(objectMapper::writeValueAsString),
             attachmentIdArray(draft.attachmentIds),
             draft.clientDeviceId,
             draft.baseTicketVersion,
@@ -79,7 +84,8 @@ internal class JdbcTicketDraftStore(
         return jdbc.query(
             """
             update ticket_drafts
-               set body = ?, attachment_ids = cast(? as uuid[]), client_device_id = ?, base_ticket_version = ?,
+               set body = ?, content_format = ?, content_document = cast(? as jsonb),
+                   attachment_ids = cast(? as uuid[]), client_device_id = ?, base_ticket_version = ?,
                    draft_version = draft_version + 1, updated_at = ?, expires_at = ?
              where owner_staff_id = ? and ticket_id = ? and composer_channel = ?
                and draft_version = ?
@@ -87,6 +93,8 @@ internal class JdbcTicketDraftStore(
             """.trimIndent(),
             ::mapDraft,
             draft.body,
+            draft.contentFormat.name,
+            draft.contentDocument?.let(objectMapper::writeValueAsString),
             attachmentIdArray(draft.attachmentIds),
             draft.clientDeviceId,
             draft.baseTicketVersion,
@@ -189,6 +197,8 @@ internal class JdbcTicketDraftStore(
         createdAt = result.getTimestamp("created_at").toInstant(),
         updatedAt = result.getTimestamp("updated_at").toInstant(),
         expiresAt = result.getTimestamp("expires_at").toInstant(),
+        contentFormat = CommentContentFormat.valueOf(result.getString("content_format")),
+        contentDocument = result.getString("content_document")?.let(objectMapper::readTree),
     )
 
     private fun validate(body: String, attachmentIds: List<UUID>, baseTicketVersion: Long) {

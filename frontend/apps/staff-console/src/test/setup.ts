@@ -43,3 +43,21 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
   value: localStorageMock,
 })
+
+// ProseMirror asks the browser for selection geometry while applying keyboard
+// input. JSDOM does not implement Range geometry, so keep editor unit tests on
+// the same event path without coupling them to a layout engine.
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () => new DOMRect()
+}
+if (!Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () =>
+    ({
+      item: () => null,
+      length: 0,
+      [Symbol.iterator]: function* () {},
+    }) as DOMRectList
+}
+if (!document.elementFromPoint) {
+  document.elementFromPoint = () => document.body
+}

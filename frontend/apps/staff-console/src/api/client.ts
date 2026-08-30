@@ -1,6 +1,9 @@
 import type {
   ActorSummary,
   AgentComment,
+  AgentMacroDefinition,
+  AgentNotification,
+  AgentNotificationPage,
   AgentReadIntent,
   AgentTicketBatchCommand,
   AgentTicketBatchItemResult,
@@ -31,6 +34,8 @@ import type {
   BusinessSchedulePreview,
   BusinessSchedulePreviewInput,
   BusinessWeekday,
+  CollaborationNotePage,
+  CommentContent,
   CreateAuditExportInput,
   CreateSavedViewInput,
   CreateAgentTicketCommand,
@@ -57,6 +62,8 @@ import type {
   GrantableAuditAuthority,
   GroupReference,
   GroupMembership,
+  MacroApplyResult,
+  MacroPreview,
   IntegrationClient,
   IntegrationClientStatus,
   IntegrationCredential,
@@ -82,6 +89,7 @@ import type {
   ProblemDetails,
   PublicComment,
   PublicRequest,
+  RichTextDocumentV1,
   StaffAccount,
   StaffRole,
   SubmitRequestInput,
@@ -115,8 +123,10 @@ import type {
   AttachmentDownload,
   TicketDraft,
   TicketDraftChannel,
+  TicketCollaborationNote,
   SaveTicketDraftInput,
 } from './types'
+import { MAX_RICH_TEXT_NODES } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 export const STAFF_SESSION_INVALID_EVENT = 'deskseed:staff-session-invalid'
@@ -506,14 +516,125 @@ function decodeAttachmentUpload(value: unknown): AttachmentUpload | undefined {
   }
 }
 
+function decodeCommentContent(value: unknown): CommentContent | undefined {
+  if (!isRecord(value) || typeof value.format !== 'string') return undefined
+  if (value.format === 'PLAIN_TEXT') {
+    return typeof value.text === 'string' && value.text.length <= 20_000
+      ? { format: 'PLAIN_TEXT', text: value.text }
+      : undefined
+  }
+  if (value.format !== 'RICH_TEXT_V1' || !isRecord(value.document)) {
+    return undefined
+  }
+  if (value.document.type !== 'doc' || !Array.isArray(value.document.content)) {
+    return undefined
+  }
+  let nodeCount = 0
+  const decodeNode = (node: unknown, depth: number): boolean => {
+    nodeCount += 1
+    if (depth > 12 || nodeCount > MAX_RICH_TEXT_NODES || !isRecord(node))
+      return false
+    const allowedTypes = new Set([
+      'paragraph',
+      'heading',
+      'bulletList',
+      'orderedList',
+      'listItem',
+      'blockquote',
+      'codeBlock',
+      'attachmentImage',
+      'text',
+      'hardBreak',
+    ])
+    if (typeof node.type !== 'string' || !allowedTypes.has(node.type))
+      return false
+    if (node.type === 'text') {
+      if (typeof node.text !== 'string' || node.text.length > 20_000)
+        return false
+      if (node.marks !== undefined) {
+        if (!Array.isArray(node.marks) || node.marks.length > 16) return false
+        for (const mark of node.marks) {
+          if (!isRecord(mark) || typeof mark.type !== 'string') return false
+          if (['bold', 'italic', 'underline', 'code'].includes(mark.type))
+            continue
+          if (
+            mark.type !== 'link' ||
+            !isRecord(mark.attrs) ||
+            !isSafeRichTextLink(mark.attrs.href)
+          ) {
+            return false
+          }
+        }
+      }
+    } else if (node.text !== undefined) {
+      return false
+    }
+    if (node.attrs !== undefined) {
+      if (!isRecord(node.attrs)) return false
+      if (
+        node.attrs.level !== undefined &&
+        ![1, 2, 3].includes(node.attrs.level as number)
+      ) {
+        return false
+      }
+      if (
+        node.attrs.textAlign !== undefined &&
+        !['left', 'center', 'right'].includes(node.attrs.textAlign as string)
+      ) {
+        return false
+      }
+      if (
+        node.attrs.attachmentId !== undefined &&
+        !isUuid(node.attrs.attachmentId)
+      ) {
+        return false
+      }
+      if (
+        node.attrs.alt !== undefined &&
+        (typeof node.attrs.alt !== 'string' ||
+          node.attrs.alt.trim().length === 0 ||
+          node.attrs.alt.length > 500)
+      ) {
+        return false
+      }
+    }
+    return (
+      node.content === undefined ||
+      (Array.isArray(node.content) &&
+        node.content.every((child) => decodeNode(child, depth + 1)))
+    )
+  }
+  if (!value.document.content.every((node) => decodeNode(node, 1))) {
+    return undefined
+  }
+  return {
+    format: 'RICH_TEXT_V1',
+    document: value.document as unknown as RichTextDocumentV1,
+  }
+}
+
+function isSafeRichTextLink(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 2_048) return false
+  try {
+    const protocol = new URL(value, 'https://deskseed.invalid').protocol
+    return (
+      protocol === 'https:' || protocol === 'http:' || protocol === 'mailto:'
+    )
+  } catch {
+    return false
+  }
+}
+
 function decodeTicketDraft(value: unknown): TicketDraft | undefined {
   if (!isRecord(value) || !Array.isArray(value.attachmentIds)) return undefined
+  const content = decodeCommentContent(value.content)
   if (
     !isTicketNumber(value.ticketNumber) ||
     typeof value.channel !== 'string' ||
     !TICKET_DRAFT_CHANNELS.has(value.channel as TicketDraftChannel) ||
     typeof value.body !== 'string' ||
     value.body.length > 20_000 ||
+    !content ||
     !value.attachmentIds.every(isUuid) ||
     value.attachmentIds.length > 5 ||
     new Set(value.attachmentIds).size !== value.attachmentIds.length ||
@@ -529,6 +650,7 @@ function decodeTicketDraft(value: unknown): TicketDraft | undefined {
     ticketNumber: value.ticketNumber,
     channel: value.channel as TicketDraftChannel,
     body: value.body,
+    content,
     attachmentIds: value.attachmentIds,
     clientDeviceId: value.clientDeviceId,
     baseTicketVersion: value.baseTicketVersion,
@@ -541,10 +663,12 @@ function decodeTicketDraft(value: unknown): TicketDraft | undefined {
 function decodePublicComment(value: unknown): PublicComment | undefined {
   if (!isRecord(value) || !Array.isArray(value.attachments)) return undefined
   const attachments = value.attachments.map(decodeTicketAttachment)
+  const content = decodeCommentContent(value.content)
   if (
     !isNonBlankString(value.id) ||
     !isNonBlankString(value.authorDisplayName) ||
     !isNonBlankString(value.body) ||
+    !content ||
     !isTimestamp(value.createdAt) ||
     attachments.some((attachment) => !attachment)
   ) {
@@ -554,6 +678,7 @@ function decodePublicComment(value: unknown): PublicComment | undefined {
     id: value.id,
     authorDisplayName: value.authorDisplayName,
     body: value.body,
+    content,
     createdAt: value.createdAt,
     attachments: attachments as TicketAttachment[],
   }
@@ -2558,6 +2683,7 @@ function decodeAgentTicketSummary(
     !requester ||
     group === undefined ||
     assignee === undefined ||
+    !isTimestamp(value.createdAt) ||
     !isTimestamp(value.updatedAt) ||
     typeof value.version !== 'number' ||
     !Number.isSafeInteger(value.version) ||
@@ -2576,6 +2702,7 @@ function decodeAgentTicketSummary(
     requester,
     group,
     assignee,
+    createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     version: value.version,
     isChild: value.isChild,
@@ -2799,11 +2926,13 @@ function decodeAgentComment(value: unknown): AgentComment | undefined {
   if (!isRecord(value) || !Array.isArray(value.attachments)) return undefined
   const actor = decodeActorSummary(value.actor)
   const attachments = value.attachments.map(decodeTicketAttachment)
+  const content = decodeCommentContent(value.content)
   if (
     !isNonBlankString(value.id) ||
     !isTicketVisibility(value.visibility) ||
     !actor ||
     !isNonBlankString(value.body) ||
+    !content ||
     !isTimestamp(value.createdAt) ||
     !isNonBlankString(value.source) ||
     attachments.some((attachment) => !attachment)
@@ -2815,9 +2944,202 @@ function decodeAgentComment(value: unknown): AgentComment | undefined {
     visibility: value.visibility,
     actor,
     body: value.body,
+    content,
     createdAt: value.createdAt,
     source: value.source,
     attachments: attachments as TicketAttachment[],
+  }
+}
+
+function decodeTicketCollaborationNote(
+  value: unknown,
+): TicketCollaborationNote | undefined {
+  if (!isRecord(value) || !Array.isArray(value.mentionedStaff)) return undefined
+  const author = decodeActorSummary(value.author)
+  const mentionedStaff = value.mentionedStaff.flatMap((staff) =>
+    isRecord(staff) && isUuid(staff.id) && isNonBlankString(staff.displayName)
+      ? [{ id: staff.id, displayName: staff.displayName }]
+      : [],
+  )
+  if (
+    !isUuid(value.id) ||
+    !isTicketNumber(value.ticketNumber) ||
+    !author ||
+    !isNonBlankString(value.body) ||
+    value.body.length > 4_000 ||
+    mentionedStaff.length !== value.mentionedStaff.length ||
+    !isTimestamp(value.createdAt)
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    ticketNumber: value.ticketNumber,
+    author,
+    body: value.body,
+    mentionedStaff,
+    createdAt: value.createdAt,
+  }
+}
+
+function decodeCollaborationNotePage(
+  value: unknown,
+): CollaborationNotePage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(decodeTicketCollaborationNote)
+  if (
+    items.some((item) => !item) ||
+    (value.nextCursor !== null &&
+      value.nextCursor !== undefined &&
+      !isNonBlankString(value.nextCursor))
+  ) {
+    return undefined
+  }
+  return {
+    items: items as TicketCollaborationNote[],
+    nextCursor: (value.nextCursor as string | null | undefined) ?? null,
+  }
+}
+
+function decodeAgentNotification(
+  value: unknown,
+): AgentNotification | undefined {
+  if (!isRecord(value)) return undefined
+  const actor = decodeActorSummary(value.actor)
+  if (
+    !isUuid(value.id) ||
+    value.type !== 'COLLABORATION_MENTION' ||
+    !isTicketNumber(value.ticketNumber) ||
+    !isUuid(value.noteId) ||
+    !actor ||
+    !isTimestamp(value.createdAt) ||
+    (value.readAt !== null && !isTimestamp(value.readAt))
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    type: 'COLLABORATION_MENTION',
+    ticketNumber: value.ticketNumber,
+    noteId: value.noteId,
+    actor,
+    createdAt: value.createdAt,
+    readAt: value.readAt,
+  }
+}
+
+function decodeAgentNotificationPage(
+  value: unknown,
+): AgentNotificationPage | undefined {
+  if (!isRecord(value) || !Array.isArray(value.items)) return undefined
+  const items = value.items.map(decodeAgentNotification)
+  if (
+    items.some((item) => !item) ||
+    !isNonNegativeSafeInteger(value.unreadCount) ||
+    (value.nextCursor !== null &&
+      value.nextCursor !== undefined &&
+      !isNonBlankString(value.nextCursor))
+  ) {
+    return undefined
+  }
+  return {
+    items: items as AgentNotification[],
+    unreadCount: value.unreadCount,
+    nextCursor: (value.nextCursor as string | null | undefined) ?? null,
+  }
+}
+
+function decodeAgentMacroDefinition(
+  value: unknown,
+): AgentMacroDefinition | undefined {
+  if (
+    !isRecord(value) ||
+    !isUuid(value.id) ||
+    !isNonBlankString(value.name) ||
+    (value.scope !== 'PERSONAL' && value.scope !== 'SHARED') ||
+    !isPositiveSafeInteger(value.currentVersion) ||
+    (value.activeVersion !== null &&
+      !isPositiveSafeInteger(value.activeVersion)) ||
+    !isPositiveSafeInteger(value.aggregateVersion) ||
+    !Array.isArray(value.actions) ||
+    value.actions.length === 0 ||
+    value.actions.some(
+      (action) => !isRecord(action) || !isNonBlankString(action.type),
+    ) ||
+    !isTimestamp(value.createdAt) ||
+    !isTimestamp(value.updatedAt) ||
+    (value.ownerStaffId !== undefined &&
+      value.ownerStaffId !== null &&
+      !isUuid(value.ownerStaffId))
+  ) {
+    return undefined
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    scope: value.scope,
+    ...(value.ownerStaffId !== undefined
+      ? { ownerStaffId: value.ownerStaffId as string | null }
+      : {}),
+    currentVersion: value.currentVersion,
+    activeVersion: value.activeVersion,
+    aggregateVersion: value.aggregateVersion,
+    actions: value.actions,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  }
+}
+
+function decodeMacroPreview(value: unknown): MacroPreview | undefined {
+  if (!isRecord(value) || !Array.isArray(value.changes)) return undefined
+  const comment =
+    value.comment === null
+      ? null
+      : isRecord(value.comment)
+        ? (() => {
+            const content = decodeCommentContent(value.comment.content)
+            return isTicketVisibility(value.comment.visibility) &&
+              isNonBlankString(value.comment.body) &&
+              content
+              ? {
+                  visibility: value.comment.visibility,
+                  body: value.comment.body,
+                  content,
+                }
+              : undefined
+          })()
+        : undefined
+  const changes = value.changes.flatMap((change) =>
+    isRecord(change) &&
+    isNonBlankString(change.field) &&
+    (change.before === null || typeof change.before === 'string') &&
+    (change.after === null || typeof change.after === 'string')
+      ? [
+          {
+            field: change.field,
+            before: change.before as string | null,
+            after: change.after as string | null,
+          },
+        ]
+      : [],
+  )
+  if (
+    !isUuid(value.macroId) ||
+    !isPositiveSafeInteger(value.macroVersion) ||
+    !isTicketNumber(value.ticketNumber) ||
+    !isNonNegativeSafeInteger(value.ticketVersion) ||
+    changes.length !== value.changes.length ||
+    comment === undefined
+  ) {
+    return undefined
+  }
+  return {
+    macroId: value.macroId,
+    macroVersion: value.macroVersion,
+    ticketNumber: value.ticketNumber,
+    ticketVersion: value.ticketVersion,
+    changes,
+    comment,
   }
 }
 
@@ -3339,6 +3661,124 @@ export async function clearAgentTicketDraft(
       'DELETE',
     ),
   )
+}
+
+export async function listAgentTicketCollaborationNotes(
+  ticketNumber: number,
+  interactionId: string,
+  before?: string | null,
+  limit = 20,
+): Promise<CollaborationNotePage> {
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (before) query.set('before', before)
+  const response = await staffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/collaboration-notes?${query}`,
+    { headers: { 'X-Interaction-Id': interactionId } },
+  )
+  const decoded = decodeCollaborationNotePage(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function createAgentTicketCollaborationNote(
+  ticketNumber: number,
+  input: {
+    body: string
+    mentionedStaffIds: string[]
+    clientCommandId: string
+  },
+): Promise<{
+  note: TicketCollaborationNote
+  auditId: string
+  replayed: boolean
+}> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/collaboration-notes`,
+    'POST',
+    input,
+  )
+  const value = await checkedBody(response)
+  if (!isRecord(value)) throw malformedSuccess(response)
+  const note = decodeTicketCollaborationNote(value.note)
+  if (!note || !isUuid(value.auditId) || typeof value.replayed !== 'boolean') {
+    throw malformedSuccess(response)
+  }
+  return { note, auditId: value.auditId, replayed: value.replayed }
+}
+
+export async function listAgentNotifications(
+  before?: string | null,
+  limit = 20,
+): Promise<AgentNotificationPage> {
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (before) query.set('before', before)
+  const response = await staffFetch(`/api/v1/agent/notifications?${query}`)
+  const decoded = decodeAgentNotificationPage(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function markAgentNotificationRead(
+  notificationId: string,
+): Promise<void> {
+  await checkedEmpty(
+    await unsafeStaffFetch(
+      `/api/v1/agent/notifications/${encodeURIComponent(notificationId)}/read`,
+      'PUT',
+    ),
+  )
+}
+
+export async function listAccessibleAgentMacros(): Promise<
+  AgentMacroDefinition[]
+> {
+  const response = await staffFetch('/api/v1/agent/macros')
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const macros = body.map(decodeAgentMacroDefinition)
+  if (macros.some((macro) => !macro)) throw malformedSuccess(response)
+  return macros as AgentMacroDefinition[]
+}
+
+export async function previewAgentTicketMacro(
+  ticketNumber: number,
+  macroId: string,
+  interactionId: string,
+): Promise<MacroPreview> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/macros/${encodeURIComponent(macroId)}/preview`,
+    'POST',
+    undefined,
+    { 'X-Interaction-Id': interactionId },
+  )
+  const decoded = decodeMacroPreview(await checkedBody(response))
+  if (!decoded) throw malformedSuccess(response)
+  return decoded
+}
+
+export async function applyAgentTicketMacro(
+  ticketNumber: number,
+  macroId: string,
+  preview: MacroPreview,
+  content: CommentContent | null,
+  clientCommandId: string,
+): Promise<MacroApplyResult> {
+  const response = await unsafeStaffFetch(
+    `/api/v1/agent/tickets/${ticketNumber}/macros/${encodeURIComponent(macroId)}/apply`,
+    'POST',
+    {
+      macroVersion: preview.macroVersion,
+      commentContentOverride: content,
+      clientCommandId,
+    },
+    { 'If-Match': `"${preview.ticketVersion}"` },
+  )
+  const value = await checkedBody(response)
+  const result = decodeTicketCommandResult(value)
+  if (!result || !isRecord(value) || typeof value.replayed !== 'boolean') {
+    throw malformedSuccess(response)
+  }
+  return { ...result, replayed: value.replayed }
 }
 
 export async function transferAgentTicket(

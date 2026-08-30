@@ -3,6 +3,7 @@ package dev.deskseed.ticketing.internal
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.TicketAttachmentReadProjection
 import dev.deskseed.ticketing.CommentVisibility
+import dev.deskseed.ticketing.CommentContentFormat
 import dev.deskseed.ticketing.DefaultStaffView
 import dev.deskseed.ticketing.StaffActorSummary
 import dev.deskseed.ticketing.StaffCommentView
@@ -40,12 +41,14 @@ import java.time.Instant
 import java.sql.Timestamp
 import java.sql.ResultSet
 import java.util.UUID
+import tools.jackson.databind.ObjectMapper
 
 @Repository
 internal class StaffTicketQueryRepository(
     private val jdbcTemplate: NamedParameterJdbcTemplate,
     private val attachmentReadProjection: TicketAttachmentReadProjection,
     private val clock: Clock,
+    private val objectMapper: ObjectMapper,
 ) : StaffTicketReadStore {
     override fun list(
         view: DefaultStaffView,
@@ -477,7 +480,8 @@ internal class StaffTicketQueryRepository(
         val ticketParameters = MapSqlParameterSource("ticketId", ticketRow.summary.id)
         val comments = jdbcTemplate.query(
             """
-            select tc.id, tc.visibility, tc.author_type, tc.author_id, tc.body, tc.created_at,
+            select tc.id, tc.visibility, tc.author_type, tc.author_id, tc.body,
+                   tc.content_format, tc.content_document, tc.created_at,
                    coalesce(c.name, s.display_name,
                        case tc.author_type
                            when 'SYSTEM' then 'Deskseed'
@@ -509,6 +513,8 @@ internal class StaffTicketQueryRepository(
                     "INTEGRATION_CLIENT" -> "PLATFORM_API"
                     else -> authorType
                 },
+                contentFormat = CommentContentFormat.valueOf(result.getString("content_format")),
+                contentDocument = result.getString("content_document")?.let(objectMapper::readTree),
             )
         }
         val attachmentsByComment = attachmentReadProjection.listForComments(

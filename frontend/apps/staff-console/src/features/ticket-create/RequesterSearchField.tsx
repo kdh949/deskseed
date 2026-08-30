@@ -1,6 +1,12 @@
-import { useId } from 'react'
 import type { CustomerSummary } from '../../api/types'
-import { DsButton, DsTabs } from '../../design-system'
+import {
+  SeedAvatar,
+  SeedButton,
+  SeedNotice,
+  SeedStatusBadge,
+  SeedTabs,
+  SeedTextField,
+} from '../../design-system/canonical'
 import type { RequesterTab } from './model/useRequesterSearch'
 
 export type RequesterSearchFieldProps = {
@@ -34,14 +40,10 @@ export function RequesterSearchField({
   selectedCustomer,
   tab,
 }: RequesterSearchFieldProps) {
-  const queryId = useId()
-  const nameId = useId()
-  const emailId = useId()
-
   return (
-    <div className="requester-search-field">
-      <DsTabs
-        activeId={tab}
+    <div className="seed-requester">
+      <SeedTabs
+        active={tab}
         ariaLabel="요청자 지정 방식"
         items={[
           { id: 'search', label: '기존 고객 검색' },
@@ -53,89 +55,104 @@ export function RequesterSearchField({
         selectedCustomer ? (
           <div
             aria-label="선택된 요청자"
-            className="requester-selected-customer"
+            className="seed-requester__selected"
             role="group"
           >
-            <div className="requester-selected-customer-info">
+            <SeedAvatar
+              initials={initials(selectedCustomer.name)}
+              label={selectedCustomer.name}
+            />
+            <span>
               <strong>{selectedCustomer.name}</strong>
-              <span>{selectedCustomer.email}</span>
-              {selectedCustomer.verified ? (
-                <span className="requester-verified-badge">인증된 고객</span>
-              ) : null}
-            </div>
-            <DsButton onClick={() => onSelectCustomer(null)} type="button">
+              <small>{selectedCustomer.email}</small>
+            </span>
+            {selectedCustomer.verified && (
+              <SeedStatusBadge tone="positive">인증된 고객</SeedStatusBadge>
+            )}
+            <SeedButton onClick={() => onSelectCustomer(null)}>
               다시 검색
-            </DsButton>
+            </SeedButton>
           </div>
         ) : (
-          <div className="requester-search-combobox">
-            <label htmlFor={queryId}>
-              <span>이름 또는 이메일로 검색</span>
-              <input
-                autoComplete="off"
-                id={queryId}
-                maxLength={200}
-                onChange={(event) => onQueryChange(event.target.value)}
-                value={query}
-              />
-            </label>
-            {searching ? <p role="status">검색 중…</p> : null}
-            {searchError ? <small role="alert">{searchError}</small> : null}
-            {!searching && results.length > 0 ? (
-              <ul aria-label="검색 결과" className="requester-search-results">
+          <div className="seed-requester__search">
+            <SeedTextField
+              autoComplete="off"
+              label="이름 또는 이메일로 검색"
+              leadingIcon="search"
+              maxLength={200}
+              onChange={(event) => onQueryChange(event.target.value)}
+              value={query}
+            />
+            {searching && <p role="status">검색 중…</p>}
+            {searchError && (
+              <SeedNotice title="고객 검색 실패" tone="danger">
+                {searchError}
+              </SeedNotice>
+            )}
+            {!searching && results.length > 0 && (
+              <ul aria-label="검색 결과" className="seed-requester__results">
                 {results.map((customer) => (
                   <li key={customer.id}>
                     <button
-                      className="requester-search-result"
                       onClick={() => onSelectCustomer(customer)}
                       type="button"
                     >
-                      <strong>{customer.name}</strong>
-                      <span>{customer.email}</span>
-                      {customer.verified ? (
-                        <span className="requester-verified-badge">
-                          인증된 고객
-                        </span>
-                      ) : null}
+                      <SeedAvatar
+                        initials={initials(customer.name)}
+                        label={customer.name}
+                        size="small"
+                      />
+                      <span>
+                        <strong>{customer.name}</strong>
+                        <small>{customer.email}</small>
+                      </span>
+                      {customer.verified && (
+                        <SeedStatusBadge tone="positive">인증</SeedStatusBadge>
+                      )}
                     </button>
                   </li>
                 ))}
               </ul>
-            ) : null}
+            )}
             {!searching &&
-            !searchError &&
-            query.trim().length > 0 &&
-            results.length === 0 ? (
-              <p className="requester-search-empty">
-                일치하는 고객이 없습니다. &ldquo;새 고객 등록&rdquo; 탭에서 새로
-                만들 수 있습니다.
-              </p>
-            ) : null}
+              !searchError &&
+              query.trim() &&
+              results.length === 0 && (
+                <p className="seed-requester__empty">
+                  일치하는 고객이 없습니다. 새 고객 등록 탭을 이용해 주세요.
+                </p>
+              )}
           </div>
         )
       ) : (
-        <div className="requester-new-customer">
-          <label htmlFor={nameId}>
-            <span>이름</span>
-            <input
-              id={nameId}
-              maxLength={100}
-              onChange={(event) => onNewNameChange(event.target.value)}
-              value={newName}
-            />
-          </label>
-          <label htmlFor={emailId}>
-            <span>이메일</span>
-            <input
-              id={emailId}
-              maxLength={254}
-              onChange={(event) => onNewEmailChange(event.target.value)}
-              type="text"
-              value={newEmail}
-            />
-          </label>
+        <div className="seed-requester__new">
+          <SeedTextField
+            label="이름"
+            maxLength={100}
+            onChange={(event) => onNewNameChange(event.target.value)}
+            value={newName}
+          />
+          <SeedTextField
+            label="이메일"
+            maxLength={254}
+            onChange={(event) => onNewEmailChange(event.target.value)}
+            type="email"
+            value={newEmail}
+          />
         </div>
       )}
     </div>
+  )
+}
+
+function initials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase() || 'DS'
   )
 }

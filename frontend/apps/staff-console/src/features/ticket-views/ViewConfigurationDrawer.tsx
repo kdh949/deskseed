@@ -11,7 +11,15 @@ import type {
   SavedViewPreview,
   SavedViewScope,
 } from '../../api/types'
-import { DsButton, DsDrawer, DsSelect, Notification } from '../../design-system'
+import {
+  SeedButton,
+  SeedCheckbox,
+  SeedDrawer,
+  SeedNotice,
+  SeedSelect,
+  SeedTextAreaField,
+  SeedTextField,
+} from '../../design-system/canonical'
 
 export type ViewEditor =
   | { mode: 'create' }
@@ -68,7 +76,7 @@ type ViewConfigurationDrawerProps = {
   onReload?: () => Promise<void>
   onSave: (values: SavedViewEditorSave) => Promise<void>
   position?: { index: number; total: number }
-  returnFocusRef?: RefObject<HTMLElement | null>
+  returnFocusRef?: RefObject<HTMLElement>
 }
 
 export function ViewConfigurationDrawer({
@@ -173,7 +181,7 @@ export function ViewConfigurationDrawer({
   }
 
   return (
-    <DsDrawer
+    <SeedDrawer
       description="서버에 저장되는 versioned 보기 정의입니다."
       onClose={onClose}
       open={editor !== null}
@@ -181,7 +189,7 @@ export function ViewConfigurationDrawer({
       title={editingView ? `${editingView.name} 편집` : '새 보기 만들기'}
     >
       <form
-        className="view-configuration-form"
+        className="seed-view-editor"
         onSubmit={(event) => {
           event.preventDefault()
           if (validationError) return
@@ -198,7 +206,7 @@ export function ViewConfigurationDrawer({
       >
         {error ? (
           <div ref={errorRef} tabIndex={-1}>
-            <Notification
+            <SeedNotice
               title={
                 editor?.mode === 'edit' && editor.pendingOrderOnly
                   ? '보기 정의 저장 완료 · 순서 저장 실패'
@@ -206,11 +214,11 @@ export function ViewConfigurationDrawer({
                     ? '보기 버전 충돌'
                     : '보기 요청 실패'
               }
-              tone={error.conflict ? 'conflict' : 'danger'}
+              tone="danger"
             >
               <p>{error.message}</p>
               {error.conflict && onReload ? (
-                <DsButton
+                <SeedButton
                   disabled={Boolean(busy)}
                   onClick={() => void run('reload', onReload)}
                   type="button"
@@ -218,39 +226,33 @@ export function ViewConfigurationDrawer({
                   {busy === 'reload'
                     ? '불러오는 중…'
                     : '최신 버전 다시 불러오기'}
-                </DsButton>
+                </SeedButton>
               ) : null}
-            </Notification>
+            </SeedNotice>
           </div>
         ) : null}
 
-        <label className="view-configuration-field" htmlFor={nameId}>
-          <span>보기 이름</span>
-          <input
-            autoFocus
-            id={nameId}
-            maxLength={120}
-            onChange={(event) => setName(event.target.value)}
-            value={name}
-          />
-        </label>
-        <label className="view-configuration-field" htmlFor={descriptionId}>
-          <span>설명</span>
-          <textarea
-            aria-label="설명"
-            id={descriptionId}
-            maxLength={500}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={4}
-            value={description}
-          />
-          <small className="view-configuration-field-hint">
-            {description.length.toLocaleString('ko-KR')} / 500자
-          </small>
-        </label>
-        <label className="view-configuration-field">
+        <SeedTextField
+          autoFocus
+          id={nameId}
+          label="보기 이름"
+          maxLength={120}
+          onChange={(event) => setName(event.target.value)}
+          value={name}
+        />
+        <SeedTextAreaField
+          aria-label="설명"
+          hint={`${description.length.toLocaleString('ko-KR')} / 500자`}
+          id={descriptionId}
+          label="설명"
+          maxLength={500}
+          onChange={(event) => setDescription(event.target.value)}
+          rows={4}
+          value={description}
+        />
+        <label className="seed-view-editor__field">
           <span>공유 범위</span>
-          <DsSelect
+          <SeedSelect
             aria-label="보기 공유 범위"
             disabled={Boolean(editingView)}
             onChange={(event) =>
@@ -260,7 +262,7 @@ export function ViewConfigurationDrawer({
           >
             <option value="PERSONAL">PERSONAL · 나만</option>
             <option value="SHARED">SHARED · 권한 있는 상담사</option>
-          </DsSelect>
+          </SeedSelect>
         </label>
         <ConditionGroup
           conditions={all}
@@ -273,28 +275,26 @@ export function ViewConfigurationDrawer({
           onChange={setAny}
         />
 
-        <fieldset className="view-configuration-columns">
+        <fieldset className="seed-view-editor__columns">
           <legend>표시 컬럼</legend>
           {COLUMNS.map((column) => (
-            <label key={column}>
-              <input
-                checked={columns.includes(column)}
-                onChange={(event) =>
-                  setColumns((current) =>
-                    event.target.checked
-                      ? [...current, column]
-                      : current.filter((item) => item !== column),
-                  )
-                }
-                type="checkbox"
-              />
-              {column}
-            </label>
+            <SeedCheckbox
+              key={column}
+              label={column}
+              checked={columns.includes(column)}
+              onChange={(event) =>
+                setColumns((current) =>
+                  event.target.checked
+                    ? [...current, column]
+                    : current.filter((item) => item !== column),
+                )
+              }
+            />
           ))}
         </fieldset>
-        <label className="view-configuration-field">
+        <label className="seed-view-editor__field">
           <span>정렬</span>
-          <DsSelect
+          <SeedSelect
             aria-label="보기 정렬"
             value="updatedAt:desc,ticketNumber:desc"
             disabled
@@ -302,25 +302,25 @@ export function ViewConfigurationDrawer({
             <option value="updatedAt:desc,ticketNumber:desc">
               최근 업데이트 내림차순
             </option>
-          </DsSelect>
+          </SeedSelect>
         </label>
 
         {validationError ? <p role="alert">{validationError}</p> : null}
         {preview ? (
-          <Notification
+          <SeedNotice
             title={`Preview: 정확히 ${preview.ticketCount.toLocaleString('ko-KR')}개`}
-            tone="success"
+            tone="positive"
           >
             샘플 {preview.items.length}개 ·{' '}
             <time dateTime={preview.ticketCountAsOf}>
               {formatCountBasis(preview.ticketCountAsOf)} 기준
             </time>{' '}
             · 서버 권한 predicate와 같은 조건 compiler를 사용했습니다.
-          </Notification>
+          </SeedNotice>
         ) : null}
 
         {editingView && position && onMove ? (
-          <section aria-label="보기 순서" className="view-configuration-order">
+          <section aria-label="보기 순서" className="seed-view-editor__order">
             <div>
               <strong>사이드바 순서</strong>
               <p>
@@ -328,14 +328,14 @@ export function ViewConfigurationDrawer({
               </p>
             </div>
             <div>
-              <DsButton
+              <SeedButton
                 disabled={position.index === 0 || Boolean(busy)}
                 onClick={() => void onMove('up')}
                 type="button"
               >
                 위로
-              </DsButton>
-              <DsButton
+              </SeedButton>
+              <SeedButton
                 disabled={
                   position.index === position.total - 1 || Boolean(busy)
                 }
@@ -343,22 +343,22 @@ export function ViewConfigurationDrawer({
                 type="button"
               >
                 아래로
-              </DsButton>
+              </SeedButton>
             </div>
           </section>
         ) : null}
 
-        <footer className="view-configuration-actions">
+        <footer className="seed-view-editor__actions">
           {editingView && onDelete ? (
-            <DsButton
+            <SeedButton
               disabled={Boolean(busy)}
               onClick={() => void run('delete', () => onDelete(editingView))}
               type="button"
             >
               삭제
-            </DsButton>
+            </SeedButton>
           ) : null}
-          <DsButton
+          <SeedButton
             disabled={Boolean(busy) || Boolean(validationError)}
             onClick={() =>
               void run('preview', async () =>
@@ -368,13 +368,13 @@ export function ViewConfigurationDrawer({
             type="button"
           >
             {busy === 'preview' ? 'Preview 중…' : 'Preview'}
-          </DsButton>
-          <DsButton onClick={onClose} type="button">
+          </SeedButton>
+          <SeedButton onClick={onClose} type="button">
             취소
-          </DsButton>
-          <DsButton
+          </SeedButton>
+          <SeedButton
             disabled={Boolean(busy) || Boolean(validationError)}
-            tone="primary"
+            variant="primary"
             type="submit"
           >
             {busy === 'save'
@@ -382,10 +382,10 @@ export function ViewConfigurationDrawer({
               : editingView
                 ? '변경 저장'
                 : '보기 만들기'}
-          </DsButton>
+          </SeedButton>
         </footer>
       </form>
-    </DsDrawer>
+    </SeedDrawer>
   )
 }
 
@@ -405,14 +405,14 @@ function ConditionGroup({
       ),
     )
   return (
-    <fieldset className="view-configuration-conditions">
+    <fieldset className="seed-view-editor__conditions">
       <legend>{label}</legend>
       {conditions.map((condition, index) => (
         <div
-          className="view-configuration-condition"
+          className="seed-view-editor__condition"
           key={`${index}:${condition.field}`}
         >
-          <DsSelect
+          <SeedSelect
             aria-label={`${label} ${index + 1} 필드`}
             onChange={(event) =>
               update(index, {
@@ -427,8 +427,8 @@ function ConditionGroup({
                 {field}
               </option>
             ))}
-          </DsSelect>
-          <DsSelect
+          </SeedSelect>
+          <SeedSelect
             aria-label={`${label} ${index + 1} 연산자`}
             onChange={(event) => {
               const operator = event.target.value as SavedViewConditionOperator
@@ -445,7 +445,7 @@ function ConditionGroup({
                 {operator}
               </option>
             ))}
-          </DsSelect>
+          </SeedSelect>
           <input
             aria-label={`${label} ${index + 1} 값`}
             disabled={operatorNeedsNoValues(condition.operator)}
@@ -461,7 +461,7 @@ function ConditionGroup({
             placeholder="쉼표로 여러 값 구분"
             value={condition.values.join(', ')}
           />
-          <DsButton
+          <SeedButton
             aria-label={`${label} ${index + 1} 삭제`}
             onClick={() =>
               onChange(conditions.filter((_, current) => current !== index))
@@ -469,15 +469,15 @@ function ConditionGroup({
             type="button"
           >
             삭제
-          </DsButton>
+          </SeedButton>
         </div>
       ))}
-      <DsButton
+      <SeedButton
         onClick={() => onChange([...conditions, { ...EMPTY_CONDITION }])}
         type="button"
       >
         조건 추가
-      </DsButton>
+      </SeedButton>
     </fieldset>
   )
 }

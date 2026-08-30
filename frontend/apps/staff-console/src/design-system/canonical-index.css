@@ -1,0 +1,35 @@
+@import './foundations/canonical.css';
+@import './primitives/seed-core.css';
+@import './components/seed-surfaces.css';
+@import './patterns/seed-workspace.css';
+
+:root {
+  font-family: var(--ds-font-sans);
+  color: var(--ds-palette-ink);
+  background: var(--ds-palette-canvas);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--ds-palette-canvas);
+  color: var(--ds-palette-ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}

@@ -10,6 +10,9 @@ import dev.deskseed.attachments.AttachmentContent
 import dev.deskseed.attachments.AttachmentUploadResult
 import dev.deskseed.customerauth.CustomerPrincipal
 import dev.deskseed.ticketing.CustomerRequestStatus
+import dev.deskseed.ticketing.CanonicalCommentContentCodec
+import dev.deskseed.ticketing.CommentContentView
+import dev.deskseed.ticketing.commentContentView
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
@@ -39,6 +42,8 @@ import java.nio.charset.StandardCharsets
 import java.net.URI
 import java.time.Instant
 import java.util.UUID
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 
 @RestController
 @RequestMapping("/api/v1/requests")
@@ -46,6 +51,7 @@ import java.util.UUID
 internal class PublicRequestController(
     private val applicationService: PublicRequestApplicationService,
     private val clientAddressResolver: PublicRequestClientAddressResolver,
+    private val objectMapper: ObjectMapper,
 ) {
     @PostMapping(consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun submit(
@@ -152,6 +158,7 @@ internal class PublicRequestController(
                             id = it.id,
                             authorDisplayName = it.authorDisplayName,
                             body = it.body,
+                            content = commentContentView(it.contentFormat, it.body, it.contentDocument),
                             createdAt = it.createdAt,
                             attachments = it.attachments,
                         )
@@ -170,7 +177,11 @@ internal class PublicRequestController(
         val result = applicationService.addComment(
             ticketNumber = ticketNumber,
             rawAccessToken = accessToken,
-            body = body.body,
+            content = CanonicalCommentContentCodec(objectMapper).decode(
+                body = body.body,
+                content = body.content,
+                attachmentIds = body.attachmentIds.toSet(),
+            ),
             attachmentIds = body.attachmentIds,
             clientCommandId = body.clientCommandId,
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
@@ -182,6 +193,11 @@ internal class PublicRequestController(
                 id = result.comment.id,
                 authorDisplayName = result.comment.authorDisplayName,
                 body = result.comment.body,
+                content = commentContentView(
+                    result.comment.contentFormat,
+                    result.comment.body,
+                    result.comment.contentDocument,
+                ),
                 createdAt = result.comment.createdAt,
                 attachments = result.comment.attachments,
             ),
@@ -306,6 +322,7 @@ internal data class PublicCommentResponse(
     val id: UUID,
     val authorDisplayName: String,
     val body: String,
+    val content: CommentContentView,
     val createdAt: Instant,
     val attachments: List<dev.deskseed.attachments.TicketAttachment> = emptyList(),
 )
@@ -333,9 +350,10 @@ internal data class PublicAttachmentUploadResponse(
 @Schema(description = "접근 토큰으로 고객 문의에 추가할 PUBLIC 댓글")
 internal data class AnonymousCustomerFollowUpRequest(
     @field:Schema(description = "고객이 추가로 남기는 PUBLIC 댓글 본문", example = "결제 카드 승인 내역을 추가로 확인해 주세요.")
-    @field:NotBlank
     @field:Size(max = 20_000)
-    val body: String,
+    val body: String? = null,
+
+    val content: JsonNode? = null,
 
     @field:Size(max = 5)
     val attachmentIds: List<UUID> = emptyList(),

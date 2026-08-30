@@ -32,6 +32,7 @@ async function mockReadOnlyTicket(page: Page) {
             },
             group: null,
             assignee: null,
+            createdAt: '2026-08-15T09:00:00Z',
             updatedAt: '2026-08-15T10:02:00Z',
             version: 8,
             isChild: false,
@@ -48,6 +49,10 @@ async function mockReadOnlyTicket(page: Page) {
                 displayName: '고객 A',
               },
               body: '이 본문은 API에서 왔습니다.',
+              content: {
+                format: 'PLAIN_TEXT',
+                text: '이 본문은 API에서 왔습니다.',
+              },
               createdAt: '2026-08-15T09:00:00Z',
               source: 'WEB',
               attachments: [],
@@ -96,9 +101,7 @@ test('production agent UI renders only the ticket API projection and its capabil
   await expect(
     page.getByRole('heading', { name: '실제 API 응답만 표시하는 티켓' }),
   ).toBeVisible()
-  await expect(
-    page.getByLabel('티켓 대화 및 답변').getByText('종료', { exact: true }),
-  ).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '상태: 종료' })).toBeVisible()
   await expect(page.getByText('이 본문은 API에서 왔습니다.')).toBeVisible()
   await expect(
     page.getByText('현재 권한으로는 티켓을 수정할 수 없습니다.'),

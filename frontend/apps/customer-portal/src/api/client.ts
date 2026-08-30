@@ -9,6 +9,7 @@ import type {
   TicketAttachment,
   TicketStatus,
 } from './types'
+import { decodeCommentContent } from './commentContent'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const TICKET_STATUSES = new Set<TicketStatus>([
@@ -282,17 +283,23 @@ function decodeAttachmentUpload(value: unknown): AttachmentUpload | undefined {
 function decodePublicComment(value: unknown): PublicComment | undefined {
   if (!isRecord(value) || !Array.isArray(value.attachments)) return undefined
   const attachments = value.attachments.map(decodeTicketAttachment)
+  const attachmentIds = new Set(
+    attachments.flatMap((item) => (item ? [item.id] : [])),
+  )
+  const content = decodeCommentContent(value.content, attachmentIds)
   if (
     !isNonBlankString(value.id) ||
     !isNonBlankString(value.authorDisplayName) ||
     !isNonBlankString(value.body) ||
     !isTimestamp(value.createdAt) ||
-    attachments.some((item) => !item)
+    attachments.some((item) => !item) ||
+    !content
   )
     return undefined
   return {
     ...(value as unknown as PublicComment),
     attachments: attachments as TicketAttachment[],
+    content,
   }
 }
 

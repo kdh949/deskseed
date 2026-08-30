@@ -13,6 +13,8 @@ import dev.deskseed.foundation.ActorRef
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.ticketing.TicketStatus
+import dev.deskseed.ticketing.CommentContentFormat
+import tools.jackson.databind.JsonNode
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -64,6 +66,8 @@ internal class AgentTicketDraftApplicationService(
                     attachmentIds = request.attachmentIds,
                     clientDeviceId = request.clientDeviceId,
                     baseTicketVersion = request.baseTicketVersion,
+                    contentFormat = request.contentFormat,
+                    contentDocument = request.contentDocument,
                 ),
             )
         } else {
@@ -77,6 +81,8 @@ internal class AgentTicketDraftApplicationService(
                     clientDeviceId = request.clientDeviceId,
                     baseTicketVersion = request.baseTicketVersion,
                     expectedDraftVersion = request.expectedDraftVersion,
+                    contentFormat = request.contentFormat,
+                    contentDocument = request.contentDocument,
                 ),
             )
         }
@@ -126,6 +132,8 @@ internal data class SaveAgentTicketDraft(
     val clientDeviceId: UUID,
     val baseTicketVersion: Long,
     val expectedDraftVersion: Long,
+    val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
+    val contentDocument: JsonNode? = null,
 )
 
 internal class AgentTicketDraftNotFoundException : RuntimeException()

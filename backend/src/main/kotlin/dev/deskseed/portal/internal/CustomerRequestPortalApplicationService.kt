@@ -24,6 +24,7 @@ import dev.deskseed.outboundmail.RequestReceivedMail
 import dev.deskseed.settings.CustomerAccessMode
 import dev.deskseed.settings.CustomerAccessPolicy
 import dev.deskseed.ticketing.ClaimCustomerTicketCommand
+import dev.deskseed.ticketing.CanonicalCommentContent
 import dev.deskseed.ticketing.CustomerFollowUpCommand
 import dev.deskseed.ticketing.CustomerFollowUpResult
 import dev.deskseed.ticketing.CustomerRequestStatus
@@ -163,7 +164,7 @@ internal class CustomerRequestPortalApplicationService(
     fun addFollowUp(
         principal: CustomerPrincipal,
         ticketNumber: Long,
-        body: String,
+        content: CanonicalCommentContent,
         attachmentIds: List<java.util.UUID>,
         clientCommandId: String,
         context: CommandContext,
@@ -173,7 +174,7 @@ internal class CustomerRequestPortalApplicationService(
                 ticketNumber = ticketNumber,
                 requesterId = principal.customerId,
                 requesterEmail = principal.email,
-                body = body,
+                content = content,
                 attachmentIds = uniqueAttachmentIds(attachmentIds),
                 clientCommandId = clientCommandId,
                 context = context,

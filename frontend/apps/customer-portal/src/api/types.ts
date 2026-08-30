@@ -36,10 +36,45 @@ export interface AttachmentDownload {
   fileName: string | null
 }
 
+export type CommentTextMark =
+  | { type: 'bold' | 'italic' | 'underline' | 'code' }
+  | { type: 'link'; attrs: { href: string } }
+
+export type CommentInlineNode =
+  | { type: 'text'; text: string; marks?: CommentTextMark[] }
+  | { type: 'hardBreak' }
+
+export type CommentBlockNode =
+  | {
+      type: 'paragraph'
+      attrs?: { textAlign?: 'left' | 'center' | 'right' }
+      content?: CommentInlineNode[]
+    }
+  | {
+      type: 'heading'
+      attrs: { level: 1 | 2 | 3; textAlign?: 'left' | 'center' | 'right' }
+      content?: CommentInlineNode[]
+    }
+  | {
+      type: 'bulletList' | 'orderedList'
+      content: Array<{ type: 'listItem'; content: CommentBlockNode[] }>
+    }
+  | { type: 'blockquote'; content: CommentBlockNode[] }
+  | { type: 'codeBlock'; content?: Array<{ type: 'text'; text: string }> }
+  | { type: 'attachmentImage'; attrs: { attachmentId: string; alt: string } }
+
+export type CommentContent =
+  | { format: 'PLAIN_TEXT'; text: string }
+  | {
+      format: 'RICH_TEXT_V1'
+      document: { type: 'doc'; content: CommentBlockNode[] }
+    }
+
 export interface PublicComment {
   id: string
   authorDisplayName: string
   body: string
+  content: CommentContent
   createdAt: string
   attachments: TicketAttachment[]
 }

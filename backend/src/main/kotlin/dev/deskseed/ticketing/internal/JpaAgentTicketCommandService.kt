@@ -19,7 +19,9 @@ import dev.deskseed.ticketing.ApplyAutomationTicketCommand
 import dev.deskseed.ticketing.ApplyTriggerTicketCommand
 import dev.deskseed.ticketing.AutomationTicketCommandService
 import dev.deskseed.ticketing.AutomationTicketStateChangedException
+import dev.deskseed.ticketing.CanonicalCommentContentCodec
 import dev.deskseed.ticketing.CommentAuthorType
+import dev.deskseed.ticketing.CommentContentFormat
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CreateAgentTicketCommand
 import dev.deskseed.ticketing.CreateChildTicketCommand
@@ -42,6 +44,8 @@ import dev.deskseed.ticketing.TicketKind
 import dev.deskseed.ticketing.TicketMacroActivationGuard
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.PublicAgentReplyRecorded
+import dev.deskseed.ticketing.RecordTicketCollaborationNoteCommand
+import dev.deskseed.ticketing.TicketCollaborationAuditResult
 import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketCollaborationUpdated
 import dev.deskseed.ticketing.TicketStatus
@@ -98,6 +102,12 @@ internal class JpaAgentTicketCommandService(
 
     override fun closeSolvedTicket(command: ApplyAutomationTicketCommand): TicketCommandResult = executeRetriable {
         transaction.closeSolvedTicket(command)
+    }
+
+    override fun recordCollaborationNote(
+        command: RecordTicketCollaborationNoteCommand,
+    ): TicketCollaborationAuditResult = executeRetriable {
+        transaction.recordCollaborationNote(command)
     }
 
     override fun transfer(command: TransferTicketCommand): TicketCommandResult = executeRetriable {
@@ -175,6 +185,44 @@ internal class AgentTicketCommandTransaction(
     private val clock: Clock,
 ) {
     @Transactional
+    fun recordCollaborationNote(command: RecordTicketCollaborationNoteCommand): TicketCollaborationAuditResult {
+        validateStaffContext(command.actor.id, command.context.source)
+        if (command.contentLength !in 1..4_000 || !command.contentSha256.matches(Regex("[0-9a-f]{64}"))) {
+            throw TicketCommandInvalidException("Collaboration note content metadata is invalid")
+        }
+        if (command.mentionCount !in 0..20) throw TicketCommandInvalidException("Mention count is invalid")
+        val ticket = ticketRepository.lockByTicketNumber(command.ticketNumber) ?: throw AgentTicketNotFoundException()
+        if (!authorizationPolicy.canUpdate(command.actor, ticket.groupId, ticket.assigneeId)) {
+            throw TicketWriteForbiddenException()
+        }
+        if (ticket.status == TicketStatus.CLOSED) {
+            throw TicketTransitionInvalidException("Closed tickets are immutable")
+        }
+        val now = Instant.now(clock)
+        val auditId = appendAudit(
+            ticket = ticket,
+            expectedVersion = ticket.version,
+            resultVersion = ticket.version,
+            actorId = command.actor.id,
+            context = command.context.toAuditContext(),
+            now = now,
+            events = listOf(
+                NewAuditEvent(
+                    type = "COLLABORATION_NOTE_CREATED",
+                    after = objectMapper.writeValueAsString(mapOf("id" to command.noteId.toString())),
+                    metadata = mapOf(
+                        "contentLength" to command.contentLength,
+                        "contentSha256" to command.contentSha256,
+                        "mentionCount" to command.mentionCount,
+                    ),
+                    occurredAt = now,
+                ),
+            ),
+        )
+        return TicketCollaborationAuditResult(ticket.id, ticket.ticketNumber, ticket.version, auditId)
+    }
+
+    @Transactional
     fun create(command: CreateAgentTicketCommand): TicketCommandResult {
         validateStaffContext(command.actor.id, command.context.source)
         validateText(command.subject, "subject", 200)
@@ -224,6 +272,8 @@ internal class AgentTicketCommandTransaction(
                 visibility = ticket.firstComment.visibility,
                 body = ticket.firstComment.body,
                 createdAt = ticket.firstComment.createdAt,
+                contentFormat = command.firstComment.contentFormat,
+                contentDocument = command.firstComment.contentDocument?.let(objectMapper::writeValueAsString),
             ),
         )
         val firstCommentAttachmentEvents = linkAttachments(
@@ -379,6 +429,8 @@ internal class AgentTicketCommandTransaction(
                     visibility = draft.visibility,
                     body = draft.body.trim(),
                     createdAt = now,
+                    contentFormat = draft.contentFormat,
+                    contentDocument = draft.contentDocument?.let(objectMapper::writeValueAsString),
                 ),
             )
             events += commentAuditEvent(commentId, draft, now)
@@ -752,6 +804,8 @@ internal class AgentTicketCommandTransaction(
                     visibility = draft.visibility,
                     body = draft.body.trim(),
                     createdAt = now,
+                    contentFormat = draft.contentFormat,
+                    contentDocument = draft.contentDocument?.let(objectMapper::writeValueAsString),
                 ),
             )
             commentEvents += commentAuditEvent(commentId, draft, now)
@@ -1600,6 +1654,22 @@ internal class AgentTicketCommandTransaction(
 
     private fun validateComment(comment: AgentCommentDraft) {
         validateText(comment.body, "comment.body", 20_000)
+        val canonical = CanonicalCommentContentCodec(objectMapper).decode(
+            body = if (comment.contentFormat == CommentContentFormat.PLAIN_TEXT) comment.body else null,
+            content = if (comment.contentFormat == CommentContentFormat.RICH_TEXT_V1) {
+                objectMapper.readTree(
+                    objectMapper.writeValueAsString(
+                        linkedMapOf("format" to comment.contentFormat.name, "document" to comment.contentDocument),
+                    ),
+                )
+            } else {
+                null
+            },
+            attachmentIds = comment.attachmentIds,
+        )
+        if (canonical.body != comment.body || canonical.document != comment.contentDocument) {
+            throw TicketCommandInvalidException("comment content must be canonical")
+        }
         if (comment.attachmentIds.size > MAX_ATTACHMENTS) {
             throw TicketCommandInvalidException("A comment can link at most five attachments")
         }
@@ -1702,8 +1772,15 @@ internal class AgentTicketCommandTransaction(
             metadata = mapOf(
                 "visibility" to draft.visibility.name,
                 "authorType" to "STAFF",
+                "contentFormat" to draft.contentFormat.name,
                 "contentLength" to draft.body.trim().length,
-                "contentSha256" to sha256(draft.body.trim()),
+                "contentSha256" to sha256(
+                    if (draft.contentFormat == CommentContentFormat.RICH_TEXT_V1) {
+                        objectMapper.writeValueAsString(checkNotNull(draft.contentDocument))
+                    } else {
+                        draft.body.trim()
+                    },
+                ),
             ),
             occurredAt = now,
         )

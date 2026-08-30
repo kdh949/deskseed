@@ -99,6 +99,13 @@ data class CollaborationTicketUpdatedMessage(
     override val ticketNumber: Long = update.ticketNumber
 }
 
+data class CollaborationNotificationCreatedMessage(
+    val notificationId: UUID,
+    val occurredAt: Instant,
+) : CollaborationRealtimeMessage {
+    override val ticketNumber: Long? = null
+}
+
 data class CollaborationRealtimeErrorMessage(
     val code: CollaborationRealtimeErrorCode,
     val retryable: Boolean,
@@ -153,6 +160,8 @@ interface CollaborationRealtimeGateway {
     fun send(connectionId: String, message: CollaborationRealtimeMessage)
 
     fun broadcast(ticketNumber: Long, message: CollaborationRealtimeMessage)
+
+    fun sendToStaff(staffId: UUID, message: CollaborationRealtimeMessage)
 }
 
 /** Lets staff-session revocation close only the affected in-memory realtime connections. */

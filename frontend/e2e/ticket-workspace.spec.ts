@@ -22,6 +22,7 @@ const detail = {
     },
     group: { id: 'group-payments', name: '결제 지원' },
     assignee: { id: 'staff-3001', displayName: '상담사 A' },
+    createdAt: '2026-08-15T09:00:00Z',
     updatedAt: '2026-08-15T10:02:00Z',
     version: 3,
     isChild: false,
@@ -38,6 +39,10 @@ const detail = {
         displayName: '고객 A',
       },
       body: '결제가 완료됐는지 확인하고 싶습니다.',
+      content: {
+        format: 'PLAIN_TEXT',
+        text: '결제가 완료됐는지 확인하고 싶습니다.',
+      },
       createdAt: '2026-08-15T09:00:00Z',
       source: 'WEB',
       attachments: [],
@@ -77,6 +82,27 @@ async function mockWritableTicket(page: Page) {
     if (url.pathname === '/api/v1/agent/tickets/3001') {
       return route.fulfill({ status: 200, json: detail })
     }
+    if (url.pathname === '/api/v1/agent/tickets/3001/external-references') {
+      return route.fulfill({
+        status: 200,
+        json: { items: [], nextCursor: null },
+      })
+    }
+    if (url.pathname === '/api/v1/agent/drafts/3001') {
+      if (request.method() === 'PUT') {
+        return route.fulfill({
+          status: 200,
+          json: {
+            ticketNumber: 3001,
+            version: 3,
+            publicBody: request.postDataJSON()?.publicBody ?? '',
+            internalBody: request.postDataJSON()?.internalBody ?? '',
+            updatedAt: '2026-08-15T10:03:00Z',
+          },
+        })
+      }
+      return route.fulfill({ status: 204, body: '' })
+    }
     return route.abort()
   })
 }
@@ -89,11 +115,9 @@ test('production workspace preserves separate PUBLIC and INTERNAL drafts from a 
   await page.goto('/agent/tickets/3001')
 
   await expect(
-    page.getByRole('main', { name: '티켓 #3001 작업 공간' }),
+    page.getByRole('region', { name: '티켓 #3001 작업 공간' }),
   ).toBeVisible()
-  await expect(
-    page.getByLabel('티켓 대화 및 답변').getByText('보류', { exact: true }),
-  ).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '상태' })).toHaveText('보류')
   await expect(page.getByText('Pending', { exact: true })).toHaveCount(0)
 
   await page.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }).click()
@@ -107,10 +131,10 @@ test('production workspace preserves separate PUBLIC and INTERNAL drafts from a 
   await page.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }).click()
   await expect(
     page.getByRole('textbox', { name: '공개 답변 내용' }),
-  ).toHaveValue('고객 안내 초안')
+  ).toHaveText('고객 안내 초안')
   await page.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }).click()
   await expect(
     page.getByRole('textbox', { name: '내부 메모 내용' }),
-  ).toHaveValue('팀 확인 메모')
+  ).toHaveText('팀 확인 메모')
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })

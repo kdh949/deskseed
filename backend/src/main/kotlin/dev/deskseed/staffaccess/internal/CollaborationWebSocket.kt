@@ -291,6 +291,12 @@ internal class StaffCollaborationWebSocketHandler(
             update.actorStaffId?.let { put("actorStaffId", it.toString()) }
             put("occurredAt", update.occurredAt.toString())
         }
+        is dev.deskseed.collaboration.CollaborationNotificationCreatedMessage -> mapOf(
+            "version" to 1,
+            "type" to "notification.created",
+            "notificationId" to notificationId.toString(),
+            "occurredAt" to occurredAt.toString(),
+        )
         is CollaborationRealtimeErrorMessage -> buildMap {
             put("version", 1)
             put("type", "error")

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { RichTextDocumentV1 } from '../../../api/types'
 import {
   STAFF_DRAFT_SESSION_OWNER_KEY,
   buildUpdateTicketCommand,
@@ -185,6 +186,37 @@ describe('ticket editor model', () => {
     expect(readTicketDraft(adapter, secondKey)?.comments.PUBLIC).toBe(
       '다른 티켓',
     )
+  })
+
+  it('restores a server-valid rich draft with more than 500 total nodes', () => {
+    const storage = new Map<string, string>()
+    const adapter = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    }
+    storage.set(STAFF_DRAFT_SESSION_OWNER_KEY, 'staff-1')
+    const key = ticketDraftStorageKey('staff-1', 1042)
+    const document: RichTextDocumentV1 = {
+      type: 'doc',
+      content: Array.from({ length: 251 }, (_, index) => ({
+        type: 'paragraph',
+        content: [{ type: 'text', text: `line ${index}` }],
+      })),
+    }
+
+    writeTicketDraft(adapter, key, {
+      mode: 'PUBLIC',
+      comments: { PUBLIC: 'large valid draft', INTERNAL: '' },
+      documents: {
+        PUBLIC: document,
+        INTERNAL: { type: 'doc', content: [{ type: 'paragraph' }] },
+      },
+      fields: serverFields,
+      baseVersion: 7,
+    })
+
+    expect(readTicketDraft(adapter, key)?.documents?.PUBLIC).toEqual(document)
   })
 
   it('persists the complete ambiguous command including attachment IDs', () => {

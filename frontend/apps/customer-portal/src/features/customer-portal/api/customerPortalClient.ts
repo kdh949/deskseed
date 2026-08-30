@@ -2,7 +2,9 @@ import type {
   AttachmentDownload,
   AttachmentUpload,
   TicketAttachment,
+  CommentContent,
 } from '../../../api/types'
+import { decodeCommentContent } from '../../../api/commentContent'
 
 export type CustomerRequestStatus = 'NEW' | 'OPEN' | 'PENDING' | 'SOLVED'
 
@@ -18,6 +20,7 @@ export interface CustomerPublicComment {
   id: string
   authorDisplayName: string
   body: string
+  content: CommentContent
   createdAt: string
   attachments: TicketAttachment[]
 }
@@ -247,18 +250,24 @@ function decodeSummary(value: unknown): CustomerRequestSummary | undefined {
 function decodeComment(value: unknown): CustomerPublicComment | undefined {
   if (!isRecord(value) || !Array.isArray(value.attachments)) return undefined
   const attachments = value.attachments.map(decodeTicketAttachment)
+  const attachmentIds = new Set(
+    attachments.flatMap((attachment) => (attachment ? [attachment.id] : [])),
+  )
+  const content = decodeCommentContent(value.content, attachmentIds)
   if (
     !isNonBlankString(value.id) ||
     !isNonBlankString(value.authorDisplayName) ||
     !isNonBlankString(value.body) ||
     !isTimestamp(value.createdAt) ||
-    attachments.some((attachment) => !attachment)
+    attachments.some((attachment) => !attachment) ||
+    !content
   )
     return undefined
   return {
     id: value.id,
     authorDisplayName: value.authorDisplayName,
     body: value.body,
+    content,
     createdAt: value.createdAt,
     attachments: attachments as TicketAttachment[],
   }

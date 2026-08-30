@@ -22,6 +22,9 @@ import dev.deskseed.ticketconfiguration.TicketConfigurationRuntimeQuery
 import dev.deskseed.ticketconfiguration.TicketConfigurationRuntimeValue
 import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.CommentVisibility
+import dev.deskseed.ticketing.CommentContentView
+import dev.deskseed.ticketing.CommentContentFormat
+import dev.deskseed.ticketing.RichTextCommentContentView
 import dev.deskseed.ticketing.TicketAssignmentPolicy
 import dev.deskseed.ticketing.TicketConfigurationFieldValue
 import dev.deskseed.ticketing.TicketConfigurationMutationHandler
@@ -36,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+import tools.jackson.databind.ObjectMapper
 
 internal data class MacroPreviewChange(
     val field: String,
@@ -46,6 +50,7 @@ internal data class MacroPreviewChange(
 internal data class MacroPreviewComment(
     val visibility: CommentVisibility,
     val body: String,
+    val content: CommentContentView,
 )
 
 internal data class MacroPreviewResult(
@@ -68,6 +73,7 @@ internal class MacroPreviewApplicationService(
     private val accessAuditWriter: AccessAuditWriter,
     private val sessionFingerprint: AccessAuditSessionFingerprint,
     private val clock: Clock,
+    private val objectMapper: ObjectMapper,
 ) {
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     fun preview(
@@ -162,9 +168,7 @@ internal class MacroPreviewApplicationService(
             }
         }
         val comment = macro.actions.filterIsInstance<MacroCommentAction>().singleOrNull()?.let { action ->
-            MacroPreviewComment(
-                action.visibility,
-                renderTemplate(
+            val rendered = renderTemplate(
                     action.template,
                     mapOf(
                         "ticket.number" to ticket.ticketNumber.toString(),
@@ -174,7 +178,24 @@ internal class MacroPreviewApplicationService(
                         "requester.name" to detail.ticket.requester.displayName,
                         "agent.name" to principal.displayName,
                     ),
+                )
+            val document = objectMapper.readTree(
+                objectMapper.writeValueAsString(
+                    linkedMapOf(
+                        "type" to "doc",
+                        "content" to listOf(
+                            linkedMapOf(
+                                "type" to "paragraph",
+                                "content" to listOf(linkedMapOf("type" to "text", "text" to rendered)),
+                            ),
+                        ),
+                    ),
                 ),
+            )
+            MacroPreviewComment(
+                visibility = action.visibility,
+                body = rendered,
+                content = RichTextCommentContentView(document, CommentContentFormat.RICH_TEXT_V1),
             )
         }
         try {

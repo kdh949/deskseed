@@ -75,6 +75,10 @@ tags:
   description: ADMIN이 signed outbound webhook endpoint와 delivery log를 운영하는 contract surface입니다. Platform API와 분리됩니다.
 - name: 협업 초안
   description: 소유자 연결 초안 복구와 보조 협업 API입니다.
+- name: 티켓 내부 협업
+  description: 고객에게 노출되지 않는 append-only staff 협업 메모와 mention API입니다.
+- name: 상담사 알림
+  description: 현재 authenticated staff만 조회하고 읽음 처리할 수 있는 body-free 알림 API입니다.
 - name: Agent Macros
   description: 상담사가 소유한 PERSONAL macro와 현재 활성화된 PERSONAL/SHARED macro를 관리·조회하는 API입니다.
 - name: Admin Shared Macros
@@ -6765,6 +6769,198 @@ paths:
           $ref: '#/components/responses/InvalidExpectedStaffActor'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/agent/tickets/{ticketNumber}/collaboration-notes:
+    get:
+      tags:
+      - 티켓 내부 협업
+      summary: 티켓의 내부 협업 메모 조회
+      description: 티켓 읽기 권한이 있는 직원에게만 append-only 협업 메모와 구조화된 mention 대상을 최근 순으로 반환합니다. 고객·Platform·검색·메일 projection에는 포함하지
+        않으며 응답은 항상 no-store입니다.
+      operationId: listAgentTicketCollaborationNotes
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements:
+      - REQ-COL-003
+      - REQ-FND-004
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/TicketNumber'
+      - $ref: '#/components/parameters/AgentInteractionHeader'
+      - name: before
+        in: query
+        required: false
+        description: 이전 응답의 nextCursor입니다. opaque cursor를 수정하지 않고 다시 전달합니다.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 512
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: 현재 직원에게 보이는 내부 협업 메모 page입니다.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollaborationNotePage'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '404':
+          description: 티켓이 없거나 현재 직원이 읽을 수 없습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+    post:
+      tags:
+      - 티켓 내부 협업
+      summary: 티켓에 append-only 내부 협업 메모 작성
+      description: 티켓 write policy를 통과한 직원이 plain-text 협업 메모를 작성합니다. mention 대상은 활성 직원이면서 해당 티켓을 읽을 수 있어야 하며 note, mentions,
+        수신자 notification과 하나의 COLLABORATION_NOTE_CREATED TicketAudit를 같은 transaction에서 저장합니다.
+      operationId: createAgentTicketCollaborationNote
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements:
+      - REQ-COL-003
+      - REQ-FND-004
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketNumber'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCollaborationNoteRequest'
+      responses:
+        '201':
+          description: 새 메모가 생성됐거나 exact clientCommandId 재시도 결과를 반환합니다.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCollaborationNoteResult'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '404':
+          description: 티켓이 없거나 현재 직원이 읽을 수 없습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '422':
+          description: 티켓 write policy 또는 mention 대상의 활성·읽기 권한 검증에 실패했습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/agent/notifications:
+    get:
+      tags:
+      - 상담사 알림
+      summary: 현재 상담사의 내부 멘션 알림 조회
+      description: 인증된 직원에게 발행된 body-free 알림을 최근 순으로 반환합니다. 알림은 note body나 고객 PII를 포함하지 않고 안전한 ticket deep link 정보만 제공합니다.
+      operationId: listAgentNotifications
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements:
+      - REQ-COL-003
+      - REQ-FND-004
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: before
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 512
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: 현재 상담사의 알림 page와 unread count입니다.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentNotificationPage'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/agent/notifications/{notificationId}/read:
+    put:
+      tags:
+      - 상담사 알림
+      summary: 현재 상담사의 알림 읽음 처리
+      description: 현재 authenticated staff가 소유한 알림만 idempotent하게 읽음 처리합니다. 다른 직원의 알림 존재 여부는 노출하지 않습니다.
+      operationId: markAgentNotificationRead
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: Wave 1 D3
+      x-deskseed-requirements:
+      - REQ-COL-003
+      - REQ-FND-004
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - name: notificationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: 알림을 읽음 처리했거나 이미 읽은 상태입니다.
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActor'
+        '404':
+          description: 현재 직원이 소유한 알림이 아닙니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/macros:
     get:
       summary: 적용 가능한 macro 목록 조회
@@ -9132,14 +9328,26 @@ components:
       type: object
       additionalProperties: false
       required:
-      - body
       - clientCommandId
+      oneOf:
+      - required:
+        - body
+        not:
+          required:
+          - content
+      - required:
+        - content
+        not:
+          required:
+          - body
       properties:
         body:
           type: string
           minLength: 1
           maxLength: 20000
           description: 고객이 문의 대화에 추가하는 PUBLIC 댓글 본문입니다. INTERNAL 메모는 지정할 수 없습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5
@@ -9166,14 +9374,26 @@ components:
       type: object
       additionalProperties: false
       required:
-      - body
       - clientCommandId
+      oneOf:
+      - required:
+        - body
+        not:
+          required:
+          - content
+      - required:
+        - content
+        not:
+          required:
+          - body
       properties:
         body:
           type: string
           minLength: 1
           maxLength: 20000
           description: 인증 고객이 자신의 문의 대화에 추가하는 PUBLIC 댓글 본문입니다. INTERNAL 메모는 지정할 수 없습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         clientCommandId:
           type: string
           minLength: 1
@@ -9203,6 +9423,7 @@ components:
       - id
       - authorDisplayName
       - body
+      - content
       - createdAt
       properties:
         id:
@@ -9212,6 +9433,9 @@ components:
           type: string
         body:
           type: string
+          description: content에서 서버가 파생한 고객 호환용 plain text입니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         createdAt:
           type: string
           format: date-time
@@ -10315,6 +10539,7 @@ components:
       - visibility
       - actor
       - body
+      - content
       - createdAt
       - source
       properties:
@@ -10327,6 +10552,9 @@ components:
           $ref: '#/components/schemas/ActorSummary'
         body:
           type: string
+          description: content에서 서버가 파생한 호환용 plain text이며 canonical rich document를 대체하지 않습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         createdAt:
           type: string
           format: date-time
@@ -10477,12 +10705,301 @@ components:
         occurredAt:
           type: string
           format: date-time
+    CommentContent:
+      oneOf:
+      - $ref: '#/components/schemas/PlainTextCommentContent'
+      - $ref: '#/components/schemas/RichTextCommentContentV1'
+      discriminator:
+        propertyName: format
+      description: 저장 형식을 명시하는 댓글 내용입니다. 서버는 RICH_TEXT_V1을 정규화하고 호환용 plain text body를 파생합니다.
+    PlainTextCommentContent:
+      type: object
+      additionalProperties: false
+      required:
+      - format
+      - text
+      properties:
+        format:
+          type: string
+          const: PLAIN_TEXT
+        text:
+          type: string
+          minLength: 1
+          maxLength: 20000
+      description: 기존 댓글과 구버전 client를 표현하는 plain-text 내용입니다.
+    RichTextCommentContentV1:
+      type: object
+      additionalProperties: false
+      required:
+      - format
+      - document
+      properties:
+        format:
+          type: string
+          const: RICH_TEXT_V1
+        document:
+          $ref: '#/components/schemas/RichTextDocumentV1'
+      description: arbitrary HTML이나 CSS 없이 allowlisted node와 mark만 저장하는 version 1 구조화 문서입니다.
+    RichTextDocumentV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - content
+      properties:
+        type:
+          type: string
+          const: doc
+        content:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/RichTextBlockNodeV1'
+      description: 최대 500개 최상위 block을 갖는 canonical RICH_TEXT_V1 root입니다.
+    RichTextBlockNodeV1:
+      oneOf:
+      - $ref: '#/components/schemas/RichTextParagraphNodeV1'
+      - $ref: '#/components/schemas/RichTextHeadingNodeV1'
+      - $ref: '#/components/schemas/RichTextListNodeV1'
+      - $ref: '#/components/schemas/RichTextBlockquoteNodeV1'
+      - $ref: '#/components/schemas/RichTextCodeBlockNodeV1'
+      - $ref: '#/components/schemas/RichTextAttachmentImageNodeV1'
+      discriminator:
+        propertyName: type
+    RichTextParagraphNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      properties:
+        type:
+          type: string
+          const: paragraph
+        attrs:
+          $ref: '#/components/schemas/RichTextAlignmentAttrsV1'
+        content:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/RichTextInlineNodeV1'
+    RichTextHeadingNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - attrs
+      properties:
+        type:
+          type: string
+          const: heading
+        attrs:
+          type: object
+          additionalProperties: false
+          required:
+          - level
+          properties:
+            level:
+              type: integer
+              enum:
+              - 1
+              - 2
+              - 3
+            textAlign:
+              type: string
+              enum:
+              - left
+              - center
+              - right
+        content:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/RichTextInlineNodeV1'
+    RichTextListNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - content
+      properties:
+        type:
+          type: string
+          enum:
+          - bulletList
+          - orderedList
+        content:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RichTextListItemNodeV1'
+    RichTextListItemNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - content
+      properties:
+        type:
+          type: string
+          const: listItem
+        content:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RichTextParagraphNodeV1'
+    RichTextBlockquoteNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - content
+      properties:
+        type:
+          type: string
+          const: blockquote
+        content:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RichTextParagraphNodeV1'
+    RichTextCodeBlockNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      properties:
+        type:
+          type: string
+          const: codeBlock
+        content:
+          type: array
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/RichTextTextNodeV1'
+    RichTextAttachmentImageNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - attrs
+      properties:
+        type:
+          type: string
+          const: attachmentImage
+        attrs:
+          type: object
+          additionalProperties: false
+          required:
+          - attachmentId
+          - alt
+          properties:
+            attachmentId:
+              type: string
+              format: uuid
+            alt:
+              type: string
+              minLength: 1
+              maxLength: 500
+      description: 같은 티켓에 연결 가능한 CLEAN attachment만 참조하며 remote URL은 받지 않습니다.
+    RichTextAlignmentAttrsV1:
+      type: object
+      additionalProperties: false
+      properties:
+        textAlign:
+          type: string
+          enum:
+          - left
+          - center
+          - right
+    RichTextInlineNodeV1:
+      oneOf:
+      - $ref: '#/components/schemas/RichTextTextNodeV1'
+      - $ref: '#/components/schemas/RichTextHardBreakNodeV1'
+      discriminator:
+        propertyName: type
+    RichTextTextNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - text
+      properties:
+        type:
+          type: string
+          const: text
+        text:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        marks:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/RichTextMarkV1'
+    RichTextHardBreakNodeV1:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      properties:
+        type:
+          type: string
+          const: hardBreak
+    RichTextMarkV1:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required:
+        - type
+        properties:
+          type:
+            type: string
+            enum:
+            - bold
+            - italic
+            - underline
+            - code
+      - type: object
+        additionalProperties: false
+        required:
+        - type
+        - attrs
+        properties:
+          type:
+            type: string
+            const: link
+          attrs:
+            type: object
+            additionalProperties: false
+            required:
+            - href
+            properties:
+              href:
+                type: string
+                minLength: 1
+                maxLength: 2048
+                pattern: ^(https?://|mailto:).+
     CommentDraft:
       type: object
       additionalProperties: false
       required:
       - visibility
-      - body
+      oneOf:
+      - required:
+        - body
+        not:
+          required:
+          - content
+      - required:
+        - content
+        not:
+          required:
+          - body
       properties:
         visibility:
           $ref: '#/components/schemas/TicketVisibility'
@@ -10490,6 +11007,8 @@ components:
           type: string
           minLength: 1
           maxLength: 20000
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5
@@ -16122,6 +16641,7 @@ components:
       - $ref: '#/components/schemas/TicketPresenceSnapshotMessage'
       - $ref: '#/components/schemas/TicketPresenceDeltaMessage'
       - $ref: '#/components/schemas/TicketCommittedUpdateMessage'
+      - $ref: '#/components/schemas/AgentNotificationHintMessage'
       - $ref: '#/components/schemas/CollaborationRealtimeErrorMessage'
       discriminator:
         propertyName: type
@@ -16246,6 +16766,28 @@ components:
           format: date-time
       description: ticket command commit 뒤 발행되는 safe stale 알림입니다. changedFields는 허용된 field 이름만 포함하며 comment body나 고객 데이터는
         전달하지 않습니다.
+    AgentNotificationHintMessage:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - type
+      - notificationId
+      - occurredAt
+      properties:
+        version:
+          type: integer
+          const: 1
+        type:
+          type: string
+          const: notification.created
+        notificationId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+      description: transaction commit 뒤 수신자에게 보내는 body-free invalidation hint입니다. 클라이언트는 REST 알림 목록을 다시 읽어 내용을 확인합니다.
     CollaborationRealtimeErrorMessage:
       type: object
       additionalProperties: false
@@ -16289,6 +16831,7 @@ components:
       - ticketNumber
       - channel
       - body
+      - content
       - attachmentIds
       - clientDeviceId
       - baseTicketVersion
@@ -16304,6 +16847,9 @@ components:
         body:
           type: string
           maxLength: 20000
+          description: content에서 서버가 파생한 호환용 plain text입니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5
@@ -16331,11 +16877,21 @@ components:
     SaveTicketDraftRequest:
       type: object
       required:
-      - body
       - attachmentIds
       - clientDeviceId
       - baseTicketVersion
       - expectedDraftVersion
+      oneOf:
+      - required:
+        - body
+        not:
+          required:
+          - content
+      - required:
+        - content
+        not:
+          required:
+          - body
       description: 한 직원이 한 티켓의 한 PUBLIC 또는 INTERNAL channel에서 복구할 작성 내용을 저장할 때 사용합니다. 이 요청은 티켓이나 댓글을 변경하지 않습니다.
       x-deskseed-documentation-review: MANUAL
       example:
@@ -16349,6 +16905,8 @@ components:
           type: string
           maxLength: 20000
           description: 제출 전 작성 본문입니다. 소유자 연결 초안 저장소에만 보관하며 TicketAudit 값으로 만들지 않습니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
         attachmentIds:
           type: array
           maxItems: 5
@@ -16385,6 +16943,172 @@ components:
           updatedAt:
             type: string
             format: date-time
+    CollaborationMentionedStaff:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - displayName
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+    CollaborationNote:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - ticketNumber
+      - author
+      - body
+      - mentionedStaff
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticketNumber:
+          type: integer
+          format: int64
+          minimum: 1
+        author:
+          $ref: '#/components/schemas/ActorSummary'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        mentionedStaff:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/CollaborationMentionedStaff'
+        createdAt:
+          type: string
+          format: date-time
+      description: staff-only append-only collaboration note입니다. customer와 external projection에 포함하지 않습니다.
+    CollaborationNotePage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CollaborationNote'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          maxLength: 512
+    CreateCollaborationNoteRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - body
+      - mentionedStaffIds
+      - clientCommandId
+      description: 티켓 write 권한이 있는 상담사가 고객에게 공개되지 않는 append-only 내부 협업 메모와 읽기 권한이 검증될 mention 대상을 함께 제출하는 요청입니다.
+      x-deskseed-documentation-review: MANUAL
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: staff-only append-only note 본문이며 ordinary log, TicketAudit metadata, notification payload에는 저장하지 않습니다.
+        mentionedStaffIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+          description: active staff이면서 이 ticket을 읽을 수 있는 대상만 transaction 안에서 허용합니다.
+        clientCommandId:
+          type: string
+          format: uuid
+          description: 같은 actor, ticket, body hash와 mention 집합의 exact retry에만 재사용합니다.
+      example:
+        body: 최근 인증 이슈와 연관된 건인지 확인 부탁드립니다.
+        mentionedStaffIds:
+        - 22222222-2222-4222-8222-222222222222
+        clientCommandId: 88888888-8888-4888-8888-888888888888
+    CreateCollaborationNoteResult:
+      type: object
+      additionalProperties: false
+      required:
+      - note
+      - auditId
+      - replayed
+      properties:
+        note:
+          $ref: '#/components/schemas/CollaborationNote'
+        auditId:
+          type: string
+          format: uuid
+        replayed:
+          type: boolean
+    AgentNotification:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - type
+      - ticketNumber
+      - noteId
+      - actor
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: COLLABORATION_MENTION
+        ticketNumber:
+          type: integer
+          format: int64
+          minimum: 1
+        noteId:
+          type: string
+          format: uuid
+        actor:
+          $ref: '#/components/schemas/ActorSummary'
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      description: note body와 customer PII 없이 안전한 ticket deep link에 필요한 식별자만 보유합니다.
+    AgentNotificationPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - unreadCount
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AgentNotification'
+        unreadCount:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          maxLength: 512
     MacroDefinitionRequest:
       type: object
       description: 소유 범위 안의 불변 macro version에 저장할 이름과 순서 보존 typed action 정의입니다.
@@ -16530,7 +17254,7 @@ components:
           oneOf:
           - $ref: '#/components/schemas/MacroPreviewComment'
           - type: 'null'
-          description: COMMENT action이 없으면 null인 렌더링된 plain-text draft입니다.
+          description: COMMENT action이 없으면 null인 렌더링된 draft입니다. 기존 macro body는 RICH_TEXT_V1 paragraph document로 변환합니다.
     MacroPreviewChange:
       type: object
       additionalProperties: false
@@ -16559,6 +17283,7 @@ components:
       required:
       - visibility
       - body
+      - content
       properties:
         visibility:
           type: string
@@ -16570,7 +17295,9 @@ components:
           type: string
           minLength: 1
           maxLength: 10000
-          description: allowlisted ticket/requester/agent placeholder를 현재 projection으로 치환한 plain text입니다.
+          description: content에서 서버가 파생한 호환용 plain text입니다.
+        content:
+          $ref: '#/components/schemas/CommentContent'
     MacroApplyRequest:
       type: object
       description: preview에서 검토한 활성 macro version과 댓글 draft를 idempotent ticket command로 제출하는 요청입니다.
@@ -16579,6 +17306,10 @@ components:
       required:
       - macroVersion
       - clientCommandId
+      not:
+        required:
+        - commentBodyOverride
+        - commentContentOverride
       properties:
         macroVersion:
           type: integer
@@ -16590,7 +17321,12 @@ components:
           - 'null'
           minLength: 1
           maxLength: 20000
-          description: COMMENT action이 있으면 preview에서 검토·수정한 plain-text draft 전체를 반드시 전달하며 저장된 visibility는 바꾸지 않습니다.
+          description: COMMENT action이 있으면 preview에서 검토·수정한 plain-text draft 전체를 전달하며 저장된 visibility는 바꾸지 않습니다.
+        commentContentOverride:
+          oneOf:
+          - $ref: '#/components/schemas/CommentContent'
+          - type: 'null'
+          description: COMMENT action이 있으면 preview에서 검토·수정한 structured draft 전체를 전달합니다. commentBodyOverride와 동시에 보낼 수 없습니다.
         clientCommandId:
           type: string
           format: uuid

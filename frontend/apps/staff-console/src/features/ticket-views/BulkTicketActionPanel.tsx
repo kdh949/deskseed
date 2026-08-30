@@ -11,7 +11,11 @@ import type {
   TicketPriority,
 } from '../../api/types'
 import { createOpaqueUuid } from '../../api/uuid'
-import { DsButton, DsSelect, Notification } from '../../design-system'
+import {
+  SeedButton,
+  SeedNotice,
+  SeedSelect,
+} from '../../design-system/canonical'
 
 type BulkOperation = 'STATUS' | 'PRIORITY' | 'ASSIGNEE' | 'TRANSFER'
 
@@ -86,36 +90,36 @@ export function BulkTicketActionPanel({
   if (!tickets.length) return null
 
   return (
-    <section aria-label="선택된 티켓" className="bulk-ticket-panel">
-      <div className="bulk-ticket-panel__summary">
+    <section aria-label="선택된 티켓 일괄 작업" className="seed-bulk-actions">
+      <div className="seed-bulk-actions__summary">
         <div>
-          <strong>{tickets.length}개 선택됨</strong>
+          <strong>일괄 작업 대상 {tickets.length}개</strong>
           <p>
             현재 페이지에서 선택한 티켓만 처리합니다. 전체 검색 결과 선택은
             지원하지 않습니다.
           </p>
         </div>
-        <DsButton
+        <SeedButton
           aria-expanded={open}
           disabled={tickets.length > 100}
           onClick={() => setOpen((current) => !current)}
         >
           일괄 작업
-        </DsButton>
+        </SeedButton>
       </div>
 
       {tickets.length > 100 ? (
-        <Notification
+        <SeedNotice
           title="최대 100개까지만 처리할 수 있습니다."
           tone="danger"
         />
       ) : null}
 
       {open ? (
-        <div className="bulk-ticket-panel__form">
+        <div className="seed-bulk-actions__form">
           <label>
             <span>작업</span>
-            <DsSelect
+            <SeedSelect
               aria-label="일괄 작업 종류"
               disabled={mutation.isPending}
               onChange={(event) => {
@@ -137,7 +141,7 @@ export function BulkTicketActionPanel({
               <option value="PRIORITY">우선순위 변경</option>
               <option value="ASSIGNEE">담당자 변경</option>
               <option value="TRANSFER">그룹 이관</option>
-            </DsSelect>
+            </SeedSelect>
           </label>
           <BulkValueField
             assigneeId={assigneeId}
@@ -150,7 +154,7 @@ export function BulkTicketActionPanel({
             value={value}
           />
           {operation === 'TRANSFER' ? (
-            <label className="bulk-ticket-panel__reason">
+            <label className="seed-bulk-actions__reason">
               <span>이관 사유</span>
               <textarea
                 aria-label="이관 사유"
@@ -164,25 +168,25 @@ export function BulkTicketActionPanel({
           ) : null}
 
           {confirming ? (
-            <Notification
+            <SeedNotice
               title={`${tickets.length}개 티켓에 적용할까요?`}
               tone="warning"
             >
               item별 독립 트랜잭션으로 실행되며 일부만 성공할 수 있습니다.
-            </Notification>
+            </SeedNotice>
           ) : null}
           {validationError ? <p role="alert">{validationError}</p> : null}
           {mutation.isError ? (
-            <Notification
+            <SeedNotice
               title="일괄 작업 요청을 완료하지 못했습니다."
               tone="danger"
             >
               선택과 입력은 유지됩니다. 네트워크 상태를 확인한 뒤 다시
               실행하세요.
-            </Notification>
+            </SeedNotice>
           ) : null}
-          <div className="bulk-ticket-panel__actions">
-            <DsButton
+          <div className="seed-bulk-actions__actions">
+            <SeedButton
               disabled={Boolean(validationError) || mutation.isPending}
               onClick={() => {
                 if (!confirming) {
@@ -200,14 +204,14 @@ export function BulkTicketActionPanel({
                     ),
                 )
               }}
-              tone="primary"
+              variant="primary"
             >
               {mutation.isPending
                 ? '처리 중…'
                 : confirming
                   ? '확인하고 실행'
                   : '실행 전 확인'}
-            </DsButton>
+            </SeedButton>
           </div>
         </div>
       ) : null}
@@ -215,7 +219,7 @@ export function BulkTicketActionPanel({
       {results.length ? (
         <div
           aria-label="일괄 작업 item별 결과"
-          className="bulk-ticket-panel__results"
+          className="seed-bulk-actions__results"
           ref={resultRef}
           tabIndex={-1}
         >
@@ -230,7 +234,7 @@ export function BulkTicketActionPanel({
             ))}
           </ul>
           {failedTicketNumbers.size ? (
-            <DsButton
+            <SeedButton
               disabled={mutation.isPending}
               onClick={() =>
                 resultAttempt &&
@@ -242,7 +246,7 @@ export function BulkTicketActionPanel({
               }
             >
               실패한 {failedTicketNumbers.size}개 다시 시도
-            </DsButton>
+            </SeedButton>
           ) : null}
         </div>
       ) : null}
@@ -383,14 +387,14 @@ function SelectField({
   return (
     <label>
       <span>{label}</span>
-      <DsSelect
+      <SeedSelect
         aria-label={label}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
         {children}
-      </DsSelect>
+      </SeedSelect>
     </label>
   )
 }

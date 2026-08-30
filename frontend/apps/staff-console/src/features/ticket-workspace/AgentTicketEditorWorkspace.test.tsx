@@ -1,12 +1,47 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentTicketDetail } from '../../api/types'
+import { SeedThemeProvider } from '../../design-system/canonical'
 import { STAFF_DRAFT_SESSION_OWNER_KEY } from './model/ticketEditorModel'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
 
 const staffId = '11111111-1111-4111-8111-111111111111'
+
+function backgroundFixture(url: string): Response | null {
+  if (
+    /\/api\/v1\/agent\/tickets\/1042\/drafts\/(PUBLIC_REPLY|INTERNAL_NOTE)$/.test(
+      url,
+    )
+  ) {
+    return new Response(
+      JSON.stringify({
+        type: '/problems/ticket-draft-not-found',
+        title: 'Ticket draft not found',
+        status: 404,
+        detail: 'No draft exists for this channel.',
+      }),
+      {
+        status: 404,
+        headers: { 'Content-Type': 'application/problem+json' },
+      },
+    )
+  }
+  if (url.endsWith('/api/v1/agent/macros')) {
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  if (url.includes('/api/v1/agent/tickets/1042/collaboration-notes?')) {
+    return new Response(JSON.stringify({ items: [], nextCursor: null }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  return null
+}
 
 function createDetail(
   overrides: Partial<AgentTicketDetail> = {},
@@ -24,6 +59,7 @@ function createDetail(
       },
       group: { id: 'group-payments', name: '결제 지원' },
       assignee: { id: 'staff-2', displayName: '이민아' },
+      createdAt: '2026-08-15T09:00:00Z',
       updatedAt: '2026-08-15T10:02:00Z',
       version: 3,
       isChild: false,
@@ -40,6 +76,7 @@ function createDetail(
           displayName: '김민수',
         },
         body: '결제가 계속 실패합니다.',
+        content: { format: 'PLAIN_TEXT', text: '결제가 계속 실패합니다.' },
         createdAt: '2026-08-15T09:00:00Z',
         source: 'WEB',
         attachments: [],
@@ -101,8 +138,34 @@ function renderWorkspace({
   )
   return {
     refreshLatest,
-    ...render(<RouterProvider router={router} />),
+    ...render(
+      <SeedThemeProvider>
+        <RouterProvider router={router} />
+      </SeedThemeProvider>,
+    ),
   }
+}
+
+async function selectChoice(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  option: string,
+) {
+  await user.click(screen.getByRole('combobox', { name: label }))
+  await user.click(await screen.findByRole('option', { name: option }))
+}
+
+async function typePublicReply(
+  user: ReturnType<typeof userEvent.setup>,
+  text: string,
+) {
+  const editor = await screen.findByRole('textbox', { name: '공개 답변 내용' })
+  await user.click(editor)
+  await user.paste(text)
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '답변 보내기' })).toBeEnabled(),
+  )
+  return editor
 }
 
 function installMutationFetch(
@@ -113,6 +176,19 @@ function installMutationFetch(
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const fixture = backgroundFixture(url)
+      if (fixture) return fixture
+      if (url.endsWith('/api/v1/agent/tickets/1042/external-references')) {
+        return new Response(
+          JSON.stringify({
+            ticketVersion: 3,
+            canManage: true,
+            availableSystems: [],
+            items: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
       if (url.endsWith('/api/v1/agent/csrf')) {
         return new Response(
           JSON.stringify({ token: 'a'.repeat(32), headerName: 'X-CSRF-TOKEN' }),
@@ -149,6 +225,29 @@ function installMutationFetch(
   vi.stubGlobal('fetch', fetchMock)
   return { commands, fetchMock }
 }
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const fixture = backgroundFixture(url)
+      if (fixture) return fixture
+      if (url.endsWith('/api/v1/agent/tickets/1042/external-references')) {
+        return new Response(
+          JSON.stringify({
+            ticketVersion: 3,
+            canManage: true,
+            availableSystems: [],
+            items: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    }),
+  )
+})
 
 function deferredResponse() {
   let resolve: ((response: Response) => void) | undefined
@@ -189,15 +288,9 @@ describe('AgentTicketEditorWorkspace', () => {
     const refreshLatest = vi.fn().mockResolvedValue(refreshed)
     renderWorkspace({ refreshLatest })
 
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: '우선순위' }),
-      'HIGH',
-    )
-    await user.type(
-      screen.getByRole('textbox', { name: '공개 답변 내용' }),
-      '결제 시도 시간을 확인해 보겠습니다.',
-    )
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await typePublicReply(user, '결제 시도 시간을 확인해 보겠습니다.')
+    await selectChoice(user, '우선순위', '높음')
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
 
     await waitFor(() => expect(commands).toHaveLength(1))
     expect(commands[0]).toEqual(
@@ -207,7 +300,23 @@ describe('AgentTicketEditorWorkspace', () => {
         priority: 'HIGH',
         comment: {
           visibility: 'PUBLIC',
-          body: '결제 시도 시간을 확인해 보겠습니다.',
+          content: {
+            format: 'RICH_TEXT_V1',
+            document: {
+              type: 'doc',
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [
+                    {
+                      type: 'text',
+                      text: '결제 시도 시간을 확인해 보겠습니다.',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
         },
       }),
     )
@@ -236,16 +345,13 @@ describe('AgentTicketEditorWorkspace', () => {
     ])
     renderWorkspace()
 
-    await user.type(
-      screen.getByRole('textbox', { name: '공개 답변 내용' }),
-      '동일 명령으로 다시 저장합니다.',
-    )
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await typePublicReply(user, '동일 명령으로 다시 저장합니다.')
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     expect(
       await screen.findByText(/저장 결과를 확인할 수 없습니다/),
     ).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await waitFor(() => expect(commands).toHaveLength(2))
     expect(commands[1]?.clientCommandId).toBe(commands[0]?.clientCommandId)
     expect(commands[1]?.comment).toEqual(commands[0]?.comment)
@@ -266,16 +372,13 @@ describe('AgentTicketEditorWorkspace', () => {
       ),
     ])
     renderWorkspace()
-    await user.type(
-      screen.getByRole('textbox', { name: '공개 답변 내용' }),
-      '첨부를 확인합니다.',
-    )
+    await typePublicReply(user, '첨부를 확인합니다.')
     await user.upload(
       screen.getByLabelText('PUBLIC 첨부 파일'),
       new File(['a'], 'a.png', { type: 'image/png' }),
     )
     await screen.findByText(/^CLEAN/)
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await screen.findByText(/저장 결과를 확인할 수 없습니다/)
     await user.click(screen.getByRole('button', { name: '초안에서 제거' }))
     await user.upload(
@@ -283,7 +386,7 @@ describe('AgentTicketEditorWorkspace', () => {
       new File(['b'], 'b.png', { type: 'image/png' }),
     )
     await screen.findByText(/^CLEAN/)
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await waitFor(() => expect(commands).toHaveLength(2))
 
     expect(commands[1]?.clientCommandId).not.toBe(commands[0]?.clientCommandId)
@@ -310,22 +413,19 @@ describe('AgentTicketEditorWorkspace', () => {
       ),
     ])
     const first = renderWorkspace()
-    await user.type(
-      screen.getByRole('textbox', { name: '공개 답변 내용' }),
-      '새로고침 뒤 재시도합니다.',
-    )
+    await typePublicReply(user, '새로고침 뒤 재시도합니다.')
     await user.upload(
       screen.getByLabelText('PUBLIC 첨부 파일'),
       new File(['a'], 'a.png', { type: 'image/png' }),
     )
     await screen.findByText(/^CLEAN/)
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await screen.findByText(/저장 결과를 확인할 수 없습니다/)
     first.unmount()
 
     renderWorkspace()
     expect(await screen.findByText(/이전 저장 시도에서 복원됨/)).toBeVisible()
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await waitFor(() => expect(commands).toHaveLength(2))
     expect(commands[1]).toEqual(commands[0])
   })
@@ -344,16 +444,13 @@ describe('AgentTicketEditorWorkspace', () => {
       ),
     ])
     renderWorkspace()
-    await user.type(
-      screen.getByRole('textbox', { name: '공개 답변 내용' }),
-      '첨부 초안을 복원합니다.',
-    )
+    await typePublicReply(user, '첨부 초안을 복원합니다.')
     await user.upload(
       screen.getByLabelText('PUBLIC 첨부 파일'),
       new File(['a'], 'a.png', { type: 'image/png' }),
     )
     await screen.findByText(/^CLEAN/)
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await waitFor(() => expect(commands).toHaveLength(1))
     expect(
       (commands[0]?.comment as { attachmentIds: string[] }).attachmentIds,
@@ -366,20 +463,28 @@ describe('AgentTicketEditorWorkspace', () => {
     const { commands } = installMutationFetch([pending.promise])
     renderWorkspace()
 
-    const reply = screen.getByRole('textbox', { name: '공개 답변 내용' })
-    await user.type(reply, '저장 중인 답변입니다.')
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: '우선순위' }),
-      'HIGH',
-    )
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    const reply = await typePublicReply(user, '저장 중인 답변입니다.')
+    await selectChoice(user, '우선순위', '높음')
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
 
     await waitFor(() => expect(commands).toHaveLength(1))
-    expect(reply).toBeDisabled()
-    expect(screen.getByRole('combobox', { name: '상태' })).toBeDisabled()
-    expect(screen.getByRole('combobox', { name: '우선순위' })).toBeDisabled()
-    expect(screen.getByRole('combobox', { name: '그룹' })).toBeDisabled()
-    expect(screen.getByRole('combobox', { name: '담당자' })).toBeDisabled()
+    expect(reply).toHaveAttribute('contenteditable', 'false')
+    expect(screen.getByRole('combobox', { name: '상태' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(screen.getByRole('combobox', { name: '우선순위' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(screen.getByRole('combobox', { name: '그룹' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(screen.getByRole('combobox', { name: '담당자' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
 
     pending.resolve(
       new Response(
@@ -396,9 +501,9 @@ describe('AgentTicketEditorWorkspace', () => {
     expect(
       await screen.findByText('공개 답변과 변경사항을 저장했습니다.'),
     ).toBeVisible()
-    expect(reply).toBeEnabled()
+    expect(reply).toHaveAttribute('contenteditable', 'true')
     await user.type(reply, '저장 완료 뒤의 새 답변입니다.')
-    expect(reply).toHaveValue('저장 완료 뒤의 새 답변입니다.')
+    expect(reply).toHaveTextContent('저장 완료 뒤의 새 답변입니다.')
   })
 
   it('keeps the submitted command ID when a pending save loses its response', async () => {
@@ -418,21 +523,23 @@ describe('AgentTicketEditorWorkspace', () => {
     ])
     renderWorkspace()
 
-    const reply = screen.getByRole('textbox', { name: '공개 답변 내용' })
-    await user.type(reply, '응답 유실에도 같은 명령을 사용합니다.')
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    const reply = await typePublicReply(
+      user,
+      '응답 유실에도 같은 명령을 사용합니다.',
+    )
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
 
     await waitFor(() => expect(commands).toHaveLength(1))
-    expect(reply).toBeDisabled()
+    expect(reply).toHaveAttribute('contenteditable', 'false')
     pending.reject(new Error('response lost after commit'))
 
     expect(
       await screen.findByText(/저장 결과를 확인할 수 없습니다/),
     ).toBeVisible()
-    expect(reply).toBeEnabled()
-    expect(reply).toHaveValue('응답 유실에도 같은 명령을 사용합니다.')
+    expect(reply).toHaveAttribute('contenteditable', 'true')
+    expect(reply).toHaveTextContent('응답 유실에도 같은 명령을 사용합니다.')
 
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await waitFor(() => expect(commands).toHaveLength(2))
     expect(commands[1]?.clientCommandId).toBe(commands[0]?.clientCommandId)
     expect(commands[1]?.comment).toEqual(commands[0]?.comment)
@@ -462,29 +569,29 @@ describe('AgentTicketEditorWorkspace', () => {
     })
     renderWorkspace({ refreshLatest: vi.fn().mockResolvedValue(latest) })
 
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: '상태' }),
-      'SOLVED',
-    )
-    await user.type(
-      screen.getByRole('textbox', { name: '공개 답변 내용' }),
-      '초안을 보존해야 합니다.',
-    )
-    await user.click(screen.getByRole('button', { name: '공개 답변 저장' }))
+    await typePublicReply(user, '초안을 보존해야 합니다.')
+    await selectChoice(user, '상태', '해결됨')
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
 
     expect(
-      await screen.findByRole('region', { name: '티켓 저장 충돌' }),
+      await screen.findByRole('alert', { name: '저장 충돌' }),
     ).toBeVisible()
-    expect(screen.getByRole('textbox', { name: '공개 답변 내용' })).toHaveValue(
-      '초안을 보존해야 합니다.',
-    )
+    expect(
+      screen.getByRole('textbox', { name: '공개 답변 내용' }),
+    ).toHaveTextContent('초안을 보존해야 합니다.')
+    await user.click(screen.getByRole('button', { name: '비교' }))
+    expect(
+      await screen.findByRole('dialog', { name: '티켓 저장 충돌 비교' }),
+    ).toBeVisible()
     await user.click(
       screen.getByRole('button', { name: '상태에서 내 초안 유지' }),
     )
     expect(
-      screen.queryByRole('region', { name: '티켓 저장 충돌' }),
+      screen.queryByRole('alert', { name: '저장 충돌' }),
     ).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: '상태' })).toHaveValue('SOLVED')
+    expect(screen.getByRole('combobox', { name: '상태' })).toHaveTextContent(
+      '해결됨',
+    )
   })
 
   it('keeps a read-only ticket visible when an explicit refresh fails', async () => {
@@ -508,7 +615,7 @@ describe('AgentTicketEditorWorkspace', () => {
     expect(screen.getByText('결제 승인 오류')).toBeVisible()
   })
 
-  it('limits a child ticket composer to INTERNAL content and hides unsupported actions', () => {
+  it('limits a child ticket composer to INTERNAL content and hides unsupported actions', async () => {
     renderWorkspace({
       detail: createDetail({
         ticket: { ...createDetail().ticket, isChild: true },
@@ -516,7 +623,7 @@ describe('AgentTicketEditorWorkspace', () => {
     })
 
     expect(
-      screen.getByRole('textbox', { name: '내부 메모 내용' }),
+      await screen.findByRole('textbox', { name: '내부 메모 내용' }),
     ).toBeVisible()
     expect(
       screen.queryByRole('textbox', { name: '공개 답변 내용' }),

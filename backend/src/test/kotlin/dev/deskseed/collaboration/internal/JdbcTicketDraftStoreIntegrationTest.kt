@@ -20,6 +20,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
+import tools.jackson.databind.ObjectMapper
 
 @Testcontainers
 @dev.deskseed.testsupport.category.IntegrationTest
@@ -87,7 +88,7 @@ class JdbcTicketDraftStoreIntegrationTest {
             Timestamp.from(now),
         )
         transactions = TransactionTemplate(DataSourceTransactionManager(dataSource))
-        store = JdbcTicketDraftStore(jdbc, Clock.fixed(now, ZoneOffset.UTC))
+        store = JdbcTicketDraftStore(jdbc, Clock.fixed(now, ZoneOffset.UTC), ObjectMapper())
     }
 
     @Test

@@ -1,4 +1,8 @@
-import type { TicketDraft, TicketDraftChannel } from '../../api/types'
+import type {
+  CommentContent,
+  TicketDraft,
+  TicketDraftChannel,
+} from '../../api/types'
 
 export const LOCAL_DRAFT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -7,6 +11,7 @@ export type LocalTicketDraft = {
   ticketNumber: number
   channel: TicketDraftChannel
   body: string
+  content?: CommentContent
   attachmentIds: string[]
   clientDeviceId: string
   baseTicketVersion: number

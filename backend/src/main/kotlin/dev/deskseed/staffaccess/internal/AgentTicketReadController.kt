@@ -9,6 +9,8 @@ import dev.deskseed.ticketing.SavedViewDefinition
 import dev.deskseed.ticketing.SavedViewScope
 import dev.deskseed.ticketing.StaffActorSummary
 import dev.deskseed.ticketing.StaffCommentView
+import dev.deskseed.ticketing.CommentContentView
+import dev.deskseed.ticketing.commentContentView
 import dev.deskseed.ticketing.StaffTicketHistoryItem
 import dev.deskseed.ticketing.StaffTicketListFilter
 import dev.deskseed.ticketing.StaffTicketSummary
@@ -359,6 +361,7 @@ internal class AgentTicketReadController(
         visibility = comment.visibility.name,
         actor = actorResponse(comment.actor),
         body = comment.body,
+        content = commentContentView(comment.contentFormat, comment.body, comment.contentDocument),
         createdAt = comment.createdAt.toString(),
         source = comment.source,
         attachments = comment.attachments,
@@ -598,6 +601,7 @@ internal data class AgentCommentResponse(
     val visibility: String,
     val actor: ActorSummaryResponse,
     val body: String,
+    val content: CommentContentView,
     val createdAt: String,
     val source: String,
     val attachments: List<TicketAttachment>,
