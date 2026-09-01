@@ -69,6 +69,13 @@
 - k6 script inspection, one-VU smoke, and four-signal ingest check
 - AUTH-006 and CHN-012 remain `Not run` until the supported deployment runs are recorded
 
+## Implementation status — 2026-09-02
+
+- Repository foundation: `PASS` through the six vertical slices recorded in `docs/evidence/load/2026-09-02-observability-foundation.md`.
+- Static configuration, full fast tests, full contract tests, and the focused collaboration WebSocket slow integration test: `PASS`.
+- Private monitoring-server application, live four-signal ingestion, one-VU execution, and non-smoke capacity evidence: `NOT RUN` and must follow the operator runbook.
+- REQ-OPS-001 and REQ-PERF-002 remain `IMPLEMENTATION_READY`; no live capacity, SLA, AUTH-006, CHN-012, or PERF-004 pass is claimed.
+
 ## Compatibility and rollback
 
 - OpenAPI: no change.
@@ -81,4 +88,3 @@
 - Pull metrics preserve Prometheus target health; push is limited to logs, traces, profiles, and k6 run results that naturally originate outside scrape semantics.
 - The existing monitoring server is reused without making the Deskseed repository an authority that mutates it remotely.
 - Measurement identifies a bottleneck before any cache, broker, pool, index, or architecture change is proposed.
-
