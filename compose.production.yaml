@@ -1,9 +1,61 @@
 # Requires Docker Compose 2.24.4+ for !override/!reset merge tags.
-# This overlay defines the production ingress/network boundary. Runtime
-# credentials and provider wiring are supplied by later stack slices.
+# This overlay defines the production ingress/network and runtime credential
+# boundary. Attachment provider wiring is supplied by the next stack slice.
 services:
   db:
+    environment: !override
+      POSTGRES_DB: ${POSTGRES_DB:?set the production database name}
+      POSTGRES_USER: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
+      POSTGRES_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
+      DESKSEED_RUNTIME_ROLE: ${DATABASE_RUNTIME_USERNAME:?set the runtime role}
+      DESKSEED_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set the runtime password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes: !override
+      - deskseed-postgres:/var/lib/postgresql/data
+      - ./scripts/operations/postgres-init-runtime-role.sh:/docker-entrypoint-initdb.d/20-deskseed-runtime-role.sh:ro
+      - ./scripts/operations:/opt/deskseed/operations:ro
     networks: !override
+      - database
+
+  db-migrate:
+    image: flyway/flyway:12.4.0
+    command: ["migrate"]
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?set the production database name}
+      FLYWAY_USER: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
+      FLYWAY_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_CONNECT_RETRIES: "60"
+      REDGATE_DISABLE_TELEMETRY: "true"
+    volumes:
+      - ./backend/src/main/resources/db/migration:/flyway/sql:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - database
+
+  db-permissions:
+    image: postgres:17-alpine
+    user: postgres
+    entrypoint: ["/opt/deskseed/production/configure-runtime-role.sh"]
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:?set the production database name}
+      DATABASE_MIGRATION_USERNAME: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
+      DATABASE_MIGRATION_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
+      DATABASE_RUNTIME_USERNAME: ${DATABASE_RUNTIME_USERNAME:?set the runtime role}
+    volumes:
+      - ./scripts/production:/opt/deskseed/production:ro
+      - ./scripts/postgres:/opt/deskseed/postgres:ro
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    networks:
       - database
 
   mailpit:
@@ -11,19 +63,82 @@ services:
     ports: !reset []
 
   redis:
+    command: !override
+      - redis-server
+      - --aclfile
+      - /run/secrets/deskseed-redis-acl
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - noeviction
+    secrets: !override
+      - deskseed-redis-acl
+    healthcheck:
+      test: ["CMD", "redis-cli", "-u", "redis://health:@127.0.0.1:6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     networks: !override
       - customer-auth-limiter
 
   backend:
-    environment:
+    environment: !override
+      SPRING_PROFILES_ACTIVE: production
+      SPRING_FLYWAY_ENABLED: "false"
+      DATABASE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?set the production database name}
+      DATABASE_RUNTIME_USERNAME: ${DATABASE_RUNTIME_USERNAME:?set the runtime role}
+      DATABASE_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set the runtime password}
+      DESKSEED_CUSTOMER_AUTH_REDIS_HOST: redis
+      DESKSEED_CUSTOMER_AUTH_REDIS_PORT: "6379"
+      DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME: deskseed
+      DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD: ${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD:?set the Redis ACL password}
+      DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED: "false"
+      DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK: ${DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK:?acknowledge the documented Redis plaintext risk}
+      DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS:?set Platform API client CIDRs}
+      DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS:?set trusted reverse proxy CIDRs}
+      DESKSEED_WEBHOOK_SECRET_ACTIVE_KEY_VERSION: v1
+      DESKSEED_WEBHOOK_SECRET_KEY_V1: ${DESKSEED_WEBHOOK_SECRET_KEY_V1:?set the webhook secret key}
       DESKSEED_MAIL_DELIVERY_ENABLED: "false"
+      DESKSEED_MAIL_SCHEDULING_ENABLED: "false"
       DESKSEED_MAIL_TRANSPORT: disabled
-    depends_on:
+      DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION: v1
+      DESKSEED_MAIL_PROTECTED_KEY_V1: ${DESKSEED_MAIL_PROTECTED_KEY_V1:?set the protected mail key}
+      DESKSEED_MAIL_OPERATIONS_CURSOR_ACTIVE_KEY_ID: v1
+      DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY: ${DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY:?set the mail cursor key}
+      DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY:?set the customer fingerprint key}
+      DESKSEED_CUSTOMER_AUTH_CSRF_KEY: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY:?set the customer CSRF key}
+      DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS: ${DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS:?set customer auth trusted proxy CIDRs}
+      DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL:?set the public magic-link URL}
+      DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL: ${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL:?set the public registration URL}
+      DESKSEED_CUSTOMER_PASSWORD_RESET_URL: ${DESKSEED_CUSTOMER_PASSWORD_RESET_URL:?set the public password-reset URL}
+      DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY:?set the public limiter fingerprint key}
+      DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_TRUSTED_PROXY_CIDRS: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_TRUSTED_PROXY_CIDRS:?set public limiter trusted proxy CIDRs}
+      DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY: ${DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY:?set the customer claim signing key}
+      DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY: ${DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY:?set the customer claim fingerprint key}
+      DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY: ${DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY:?set the customer request cursor key}
+      DESKSEED_ACCESS_AUDIT_ENABLED: "true"
+      DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION: v1
+      DESKSEED_ACCESS_AUDIT_SESSION_FINGERPRINT_KEY: ${DESKSEED_ACCESS_AUDIT_SESSION_FINGERPRINT_KEY:?set the audit session fingerprint key}
+      DESKSEED_ACCESS_AUDIT_KEY_V1: ${DESKSEED_ACCESS_AUDIT_KEY_V1:?set the access audit key}
+      DESKSEED_AUDIT_CURSOR_ACTIVE_KEY_ID: v1
+      DESKSEED_AUDIT_CURSOR_SIGNING_KEY: ${DESKSEED_AUDIT_CURSOR_SIGNING_KEY:?set the audit cursor key}
+      DESKSEED_CORS_ALLOWED_ORIGINS: ${DESKSEED_CORS_ALLOWED_ORIGINS:?set the public HTTPS origin}
+      DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID: v1
+      DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY: ${DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY:?set the agent ticket cursor key}
+      DESKSEED_API_DOCS_ENABLED: "false"
+      DESKSEED_BOOTSTRAP_ADMIN_ENABLED: ${DESKSEED_BOOTSTRAP_ADMIN_ENABLED:-false}
+      DESKSEED_BOOTSTRAP_ADMIN_EMAIL: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:-}
+      DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:-}
+      DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/deskseed-first-admin-password
+    depends_on: !override
       db:
         condition: service_healthy
-      mailpit:
-        condition: service_started
-        required: false
+      db-permissions:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     ports: !reset []
@@ -33,6 +148,9 @@ services:
       - customer-auth-limiter
 
   frontend:
+    depends_on: !override
+      backend:
+        condition: service_started
     ports: !override
       - "${DESKSEED_FRONTEND_BIND_ADDRESS:?set the DMZ origin address}:${DESKSEED_FRONTEND_ORIGIN_PORT:?set the WAF origin port}:80"
     networks: !override
@@ -44,3 +162,7 @@ networks:
     internal: true
   customer-auth-limiter:
     internal: true
+
+secrets:
+  deskseed-redis-acl:
+    file: ${DESKSEED_REDIS_ACL_FILE:?set the generated Redis ACL file path}

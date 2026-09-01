@@ -79,7 +79,7 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 
 ### 3.1 Production ingress topology contract
 
-`compose.production.yaml`은 Docker Compose 2.24.4 이상의 `!reset`/`!override` merge tag를 사용한다. 다음 정적 gate는 frontend가 운영자 지정 DMZ 주소/port 하나만 publish하고 backend·DB·Redis가 host port를 갖지 않으며 Mailpit이 active service에서 제외되는지 검사한다.
+`compose.production.yaml`은 Docker Compose 2.24.4 이상의 `!reset`/`!override` merge tag를 사용한다. 다음 정적 gate는 frontend가 운영자 지정 DMZ 주소/port 하나만 publish하고 backend·DB·Redis가 host port를 갖지 않으며 Mailpit이 active service에서 제외되는지 검사한다. 또한 Flyway/권한 적용 one-shot job, runtime datasource, Redis ACL/TLS acknowledgement 계약을 검사한다.
 
 ```bash
 bash scripts/test-production-compose-contract.sh
@@ -87,7 +87,7 @@ bash scripts/test-production-compose-contract.sh
 
 의도한 경로는 `Internet -> Sophos WAF :443 -> DMZ frontend origin -> backend internal`이다. `DESKSEED_FRONTEND_BIND_ADDRESS`에는 wildcard가 아니라 서버의 DMZ 주소를 넣고, Sophos/host firewall에서 WAF만 origin port에 접근하도록 제한한다. 이 repository test는 실제 source IP firewall rule을 검증하지 않는다.
 
-기본 `compose.yaml`의 DB password와 audit/cursor key는 공개된 **로컬 개발 기본값**이다. 인터넷에 노출하거나 production에 재사용하면 안 된다. 아래 항목은 production 배포자가 별도 manifest와 secret 관리 체계를 만들 때 필요한 요구사항이지, 이 저장소가 제공하는 실행 가능한 production profile이 아니다.
+기본 `compose.yaml`의 DB password와 audit/cursor key는 공개된 **로컬 개발 기본값**이다. 인터넷에 노출하거나 production에 재사용하면 안 된다. Production overlay는 backend environment를 `!override`하여 다음 production 값을 전부 요구한다.
 
 - DB migration/runtime credential
 - first-admin password file
@@ -100,15 +100,39 @@ bash scripts/test-production-compose-contract.sh
 - delivery를 활성화하는 경우 bare sender mailbox, HTTPS public base URL, active 32-byte base64 protected-mail key와 key version
 - 허용된 CORS origin
 - TLS reverse proxy 설정
-- 고객 인증 Redis host/port/username/password, TLS, private network placement, `noeviction` 또는 동등한 reserved-capacity policy, health/metrics/alerting, failover 시 counter-loss tolerance
+- 고객 인증 Redis username/password, private network placement, `noeviction` reserved-capacity policy와 plaintext acknowledgement
 
-기본 Compose Redis는 backend와의 internal network에만 expose되고 인증/TLS/persistence가 없으며 64 MiB `noeviction`으로 실행된다. 짧은 TTL limiter state는 로컬 Redis 재시작 때 사라지는 것을 허용한다. Production은 이 구성을 복사하지 말고 TLS/auth/private network, 용량 예약, health/metrics, failover data-loss tolerance와 coarse ingress limit을 별도 manifest에서 증명해야 한다. Redis 장애나 OOM은 customer-auth 요청을 generic `503`으로 fail closed하며 PostgreSQL customer/account/session/token/audit state를 대신하지 않는다.
+Production Redis는 host port 없이 전용 internal network에만 연결되고 external ACL file에서 unauthenticated default user를 끈다. `deskseed` user는 limiter key pattern과 `GET/PTTL/INCR/PEXPIRE/EVAL/EVALSHA/SCRIPT LOAD/PING/CLIENT SETINFO`만 허용한다. 짧은 TTL limiter state는 Redis 재시작 때 사라지는 것을 허용하며 장애나 OOM은 customer-auth 요청을 generic `503`으로 fail closed한다. PostgreSQL customer/account/session/token/audit state를 대신하지 않는다.
 
-현재 Compose는 TLS reverse proxy, coarse ingress rate limit, CAPTCHA/email ownership verification, centralized secret rotation을 제공하지 않는다. `DATABASE_MIGRATION_*`/`DATABASE_RUNTIME_*`도 base Compose에 연결하거나 별도 role을 생성하지 않는다. 따라서 base Compose를 공용 인터넷에 노출하는 형태와 production self-hosting은 모두 unsupported다.
+이 배포는 Redis TLS를 의도적으로 사용하지 않는다. 따라서 같은 Docker host의 root/Docker-daemon 권한자, container escape, 잘못 연결된 network의 process는 credential과 limiter traffic을 관찰할 수 있다. `DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK=true` 없이는 Compose가 render되지 않고, production application도 TLS가 false일 때 host가 정확히 `redis`이며 acknowledgement가 true인지 검증한다. 이 예외는 external/remote Redis에 적용할 수 없다.
+
+현재 Compose는 WAF 자체 TLS/source rule, coarse ingress rate limit, centralized secret rotation, Redis replication/failover/metrics를 제공하지 않는다. `.env.production.example`은 값이 비어 있는 목록일 뿐 secret 저장소가 아니다. 실제 env/ACL file은 repository 밖에서 mode `0600`으로 관리하고 Docker host/daemon 관리자에게 노출되는 경계를 수락해야 한다.
+
+### 3.2 Production runtime 시작
+
+새 빈 volume 기준의 최소 순서다. 예시는 `/etc/deskseed`를 사용하며 실제 secret 값은 출력하거나 Git에 저장하지 않는다.
+
+```bash
+sudo install -d -m 0700 /etc/deskseed
+sudo install -m 0600 .env.production.example /etc/deskseed/production.env
+sudoedit /etc/deskseed/production.env
+
+set -a
+. /etc/deskseed/production.env
+set +a
+scripts/production/render-redis-acl.sh /etc/deskseed/redis.acl
+
+docker compose --env-file /etc/deskseed/production.env \
+  -f compose.yaml -f compose.production.yaml config --quiet
+docker compose --env-file /etc/deskseed/production.env \
+  -f compose.yaml -f compose.production.yaml up --build --detach
+```
+
+`DESKSEED_REDIS_ACL_FILE=/etc/deskseed/redis.acl`로 맞춘다. `render-redis-acl.sh`은 기존 파일을 덮어쓰지 않으며 Redis password의 SHA-256 hash만 ACL에 기록한다. `db-migrate`가 실패하거나 `db-permissions` 검증이 실패하면 backend dependency가 충족되지 않는다. `docker compose ps --all`에서 두 job이 exit `0`, backend/frontend/db/redis가 running인지 확인한다. 기존 PostgreSQL volume에는 init script가 다시 실행되지 않으므로 이 절차를 그대로 적용하지 말고 role 존재/소유권/privilege를 먼저 점검한다.
 
 ## 4. DB ownership과 least privilege
 
-이번 릴리스에서 실행 가능한 split-role 증명은 `run-operations-rehearsal.sh`이 base Compose, `compose.e2e.yaml`, private `scripts/operations/compose.rehearsal.yaml` overlay를 함께 사용하는 경로뿐이다. 이 overlay는 실행마다 migration/runtime role과 임시 password를 만들고 backend data source와 Flyway credential을 분리한다. base Compose와 `.env` 예시는 `DATABASE_MIGRATION_*`/`DATABASE_RUNTIME_*`를 생성·전달하지 않으므로 같은 경계를 재현하지 않는다. 이를 production profile로 복사하거나 production 지원으로 해석하면 안 된다.
+Production overlay는 PostgreSQL image init에서 migration/runtime role을 만들고 migration role의 default privilege를 설정한다. `db-migrate`는 repository의 forward-only SQL을 migration role로 적용하고, `db-permissions`는 runtime privilege를 적용·검증한다. 그 이후 backend는 embedded Flyway를 끄고 runtime datasource credential만 사용한다. 같은 SQL 경계의 실제 restore/upgrade 증명은 `run-operations-rehearsal.sh`이 담당한다.
 
 `configure-runtime-role.sql`은 rehearsal의 migration credential로 실행된다. 일반 application table의 DML을 허용한 다음 다음 권한을 명시적으로 회수한다.
 
@@ -118,7 +142,7 @@ bash scripts/test-production-compose-contract.sh
 
 Protected search ciphertext는 구현된 retention delete를 위해 `DELETE`만 유지하고 `UPDATE`를 회수한다. DB trigger는 소유자 또는 잘못 과다 부여된 role에 대한 두 번째 방어선이다. `verify-runtime-role.sql`은 effective privilege를 검사하며, rehearsal은 source와 restored DB 모두에서 실제 runtime credential의 Flyway history `UPDATE`가 `permission denied`로 실패하는 것까지 확인한다.
 
-`configure-default-runtime-privileges.sql`의 새 table `SELECT`/`INSERT` default privilege는 V11 target으로 current application을 부팅하기 위한 rehearsal 전용 bootstrap이다. 각 migration 후에는 `configure-runtime-role.sql`을 다시 실행해 ordinary mutable table 권한을 완성하고 Flyway/canonical ledger 권한을 다시 회수한다. Production에서 같은 모델을 사용하려면 운영자가 TLS, secret lifecycle, role creation/rotation, migration sequencing을 포함한 별도 manifest를 만들고 검증해야 하며, 그 manifest는 이번 릴리스에 포함되지 않는다.
+`configure-default-runtime-privileges.sql`은 migration이 만드는 새 table/sequence에 runtime startup용 `SELECT`/`INSERT`를 부여한다. 각 migration 후 `configure-runtime-role.sql`이 ordinary mutable table 권한을 완성하고 Flyway/canonical ledger 권한을 다시 회수한다. `verify-runtime-role.sql` 실패는 startup 차단 조건이다. 자동 role/password rotation은 포함하지 않는다.
 
 ## 5. First boot와 bootstrap admin
 
@@ -140,7 +164,7 @@ First-admin bootstrap은 다음 조건에서만 한 번 실행된다.
 
 ## 6. Upgrade 절차
 
-아래는 production 배포 manifest가 마련된 뒤 적용할 운영 요구사항이다. 이번 저장소만으로 실행 가능한 production upgrade 절차는 아니다.
+아래 순서는 production overlay가 구현한 migration/permission job을 사용한다. 실제 previous release image 호환성과 production-size restore는 별도 검증이 필요하다.
 
 1. release note와 `backend/src/main/resources/db/migration/`의 새 migration을 확인한다.
 2. 현재 DB의 logical backup을 별도 매체에 보관하고 checksum과 시작 시각을 기록한다.
@@ -265,7 +289,7 @@ Audit persistence failure 시 민감 read/write가 fail closed하는지 확인�
 |---|---|---|---|
 | OPS-001 Fresh install/upgrade | LIMITED | empty volume, current image V11→V15, health, data preservation | 실제 previous tagged image 경로 |
 | OPS-002 Backup/restore | PASS (local synthetic scope) | login, ticket, canonical audit/projection, checksum, duration, RPO window | attachment/reference는 feature 미구현이라 검증 불가; production-size drill |
-| OPS-003 Secrets/bootstrap | LIMITED | rehearsal-generated secrets, 0600 file, anonymous Docker client, one-time audited admin, private-overlay split DB roles | production manifest, 전체 secret rotation procedure와 public deployment controls |
+| OPS-003 Secrets/bootstrap | LIMITED | production overlay의 required env, ACL hash file, one-time audited admin, split DB roles와 startup ordering | secret manager/전체 rotation procedure와 실제 public deployment controls |
 | OPS-004 Health/observability | NOT MET | aggregate health와 request context | 분리 readiness, alert/dashboard, structured central logs |
 | OPS-005 Retention/maintenance | LIMITED | protected search ciphertext bounded retention 구현 | 전체 retention dry-run/legal hold, pending migration/backup age operator view |
 

@@ -17,7 +17,7 @@ spring:
       username: ${DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME}
       password: ${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD}
       ssl:
-        enabled: true
+        enabled: ${DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED}
   mail:
     host: ${DESKSEED_MAIL_SMTP_HOST:}
     port: ${DESKSEED_MAIL_SMTP_PORT:}
@@ -73,6 +73,8 @@ deskseed:
         signing-keys:
           v1: ${DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY}
   customer-auth:
+    redis-security:
+      plaintext-internal-network-ack: ${DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK:false}
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
     trusted-proxy-cidrs: ${DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS}

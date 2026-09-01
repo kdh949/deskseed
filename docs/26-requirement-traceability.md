@@ -17,7 +17,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 구현 단계 | 기준 문서 | 완료 증거 |
 |---|---|---:|---|---|---|
-| REQ-PROD-001 | 한 설치 인스턴스가 한 조직을 위한 self-hosted 서비스여야 한다 | IMPLEMENTATION_READY | M0 | 00, 03, 36 | 기본 로컬 Compose와 별도 `compose.production.yaml`의 frontend-only DMZ publish/backend·DB·Redis 내부 network 계약, `test-production-compose-contract.sh`; 실제 운영 부팅·복구 증거는 OPS-001~004 |
+| REQ-PROD-001 | 한 설치 인스턴스가 한 조직을 위한 self-hosted 서비스여야 한다 | IMPLEMENTATION_READY | M0 | 00, 03, 36 | Production Compose의 frontend-only DMZ publish, migration/runtime DB role 순서, authenticated internal Redis 계약과 `test-production-compose-contract.sh`; 실제 Sophos rule·운영 부팅·복구 증거는 OPS-001~004 |
 | REQ-PROD-002 | Zendesk와 유사한 고객지원 행동 모델을 갖는다 | IMPLEMENTATION_READY | 전 단계 | 00, 01, 02, 30 | E2E 업무 시나리오 |
 | REQ-TECH-001 | Kotlin/Spring/PostgreSQL 기반으로 시작한다 | IMPLEMENTATION_READY | M0 | 03, 22, 27 | 빌드·테스트 통과 |
 | REQ-TECH-002 | 모듈러 모놀리스로 시작하고 필요 시 이벤트·Kafka로 진화한다 | IMPLEMENTATION_READY | M0→P9 | 03, 34, 38 | Modulith 검증, 도입 ADR |

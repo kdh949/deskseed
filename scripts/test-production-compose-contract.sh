@@ -24,6 +24,36 @@ cleanup() {
 }
 trap cleanup EXIT
 
+export POSTGRES_DB=deskseed
+export DATABASE_MIGRATION_USERNAME=deskseed_migration
+export DATABASE_MIGRATION_PASSWORD=contract-migration-password
+export DATABASE_RUNTIME_USERNAME=deskseed_runtime
+export DATABASE_RUNTIME_PASSWORD=contract-runtime-password
+export DESKSEED_REDIS_ACL_FILE="$repository_root/config/production/redis.acl.example"
+export DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD=contract-redis-password
+export DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK=true
+export DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS=192.0.2.0/24
+export DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS=172.30.10.0/24
+export DESKSEED_WEBHOOK_SECRET_KEY_V1=contract-webhook-secret
+export DESKSEED_MAIL_PROTECTED_KEY_V1=contract-mail-protected-key
+export DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY=contract-mail-cursor-key
+export DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY=contract-customer-fingerprint-key
+export DESKSEED_CUSTOMER_AUTH_CSRF_KEY=contract-customer-csrf-key
+export DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS=172.30.10.0/24
+export DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL=https://support.example.test/customer/sign-in/consume
+export DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL=https://support.example.test/customer/register/verify
+export DESKSEED_CUSTOMER_PASSWORD_RESET_URL=https://support.example.test/customer/password/reset
+export DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY=contract-public-rate-limit-key
+export DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_TRUSTED_PROXY_CIDRS=172.30.10.0/24
+export DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY=contract-customer-claim-key
+export DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY=contract-customer-claim-fingerprint-key
+export DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY=contract-customer-request-cursor-key
+export DESKSEED_ACCESS_AUDIT_SESSION_FINGERPRINT_KEY=contract-access-audit-fingerprint-key
+export DESKSEED_ACCESS_AUDIT_KEY_V1=contract-access-audit-key
+export DESKSEED_AUDIT_CURSOR_SIGNING_KEY=contract-audit-cursor-key
+export DESKSEED_CORS_ALLOWED_ORIGINS=https://support.example.test
+export DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY=contract-agent-ticket-cursor-key
+
 DESKSEED_FRONTEND_BIND_ADDRESS=192.0.2.10 \
 DESKSEED_FRONTEND_ORIGIN_PORT=18080 \
   docker compose \
@@ -40,7 +70,7 @@ with open(sys.argv[1], encoding="utf-8") as source:
     model = json.load(source)
 
 services = model["services"]
-assert set(services) == {"backend", "db", "frontend", "redis"}, services.keys()
+assert set(services) == {"backend", "db", "db-migrate", "db-permissions", "frontend", "redis"}, services.keys()
 
 frontend_ports = services["frontend"].get("ports", [])
 assert len(frontend_ports) == 1, frontend_ports
@@ -48,17 +78,40 @@ assert frontend_ports[0]["host_ip"] == "192.0.2.10", frontend_ports
 assert int(frontend_ports[0]["published"]) == 18080, frontend_ports
 assert int(frontend_ports[0]["target"]) == 80, frontend_ports
 
-for service in ("backend", "db", "redis"):
+for service in ("backend", "db", "db-migrate", "db-permissions", "redis"):
     assert not services[service].get("ports"), (service, services[service].get("ports"))
 
 assert set(services["frontend"]["networks"]) == {"application"}
 assert set(services["backend"]["networks"]) == {"application", "database", "customer-auth-limiter"}
 assert set(services["db"]["networks"]) == {"database"}
+assert set(services["db-migrate"]["networks"]) == {"database"}
+assert set(services["db-permissions"]["networks"]) == {"database"}
 assert set(services["redis"]["networks"]) == {"customer-auth-limiter"}
 
 backend_environment = services["backend"]["environment"]
+assert backend_environment["SPRING_PROFILES_ACTIVE"] == "production"
+assert backend_environment["SPRING_FLYWAY_ENABLED"] == "false"
+assert backend_environment["DATABASE_RUNTIME_USERNAME"] == "deskseed_runtime"
+assert "DATABASE_MIGRATION_USERNAME" not in backend_environment
+assert "DATABASE_MIGRATION_PASSWORD" not in backend_environment
+assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_HOST"] == "redis"
+assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME"] == "deskseed"
+assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED"] == "false"
+assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK"] == "true"
 assert backend_environment["DESKSEED_MAIL_DELIVERY_ENABLED"] == "false"
 assert backend_environment["DESKSEED_MAIL_TRANSPORT"] == "disabled"
+assert "DESKSEED_ACCESS_AUDIT_KEY_LOCAL_V1" not in backend_environment
+assert "DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1" not in backend_environment
+
+redis_command = services["redis"]["command"]
+assert "/run/secrets/deskseed-redis-acl" in redis_command, redis_command
+redis_secret = services["redis"]["secrets"][0]
+assert redis_secret["source"] == "deskseed-redis-acl", redis_secret
+assert redis_secret["target"].endswith("/deskseed-redis-acl"), redis_secret
+
+assert services["db-migrate"]["environment"]["FLYWAY_USER"] == "deskseed_migration"
+assert services["db-permissions"]["environment"]["DATABASE_RUNTIME_USERNAME"] == "deskseed_runtime"
+assert services["backend"]["depends_on"]["db-permissions"]["condition"] == "service_completed_successfully"
 PY
 
 if docker compose \

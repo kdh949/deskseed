@@ -30,3 +30,10 @@ where not exists (
 \gexec
 SQL
 
+psql \
+  --username "$POSTGRES_USER" \
+  --dbname "$POSTGRES_DB" \
+  --set=ON_ERROR_STOP=1 \
+  --set="migration_role=$POSTGRES_USER" \
+  --set="runtime_role=$DESKSEED_RUNTIME_ROLE" \
+  --file=/opt/deskseed/operations/configure-default-runtime-privileges.sql
