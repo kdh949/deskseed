@@ -36,3 +36,12 @@ docker run --rm \
   nginx:1.31-alpine nginx -t
 
 jq empty "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-overview.json"
+
+for scenario in agent-read public-request customer-auth-limiter collaboration-websocket; do
+  docker run --rm \
+    -v "$repository_root/tests/load:/scripts:ro" \
+    grafana/k6:2.0.0 inspect \
+    -e TARGET_URL=http://deskseed.invalid \
+    -e CONFIRM_DESTRUCTIVE_WRITES=true \
+    "/scripts/scenarios/$scenario.js" >/dev/null
+done
