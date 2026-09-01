@@ -487,6 +487,10 @@ Measure sensitive read with and without access audit on defined environment. Rec
 
 Concurrent same-key benchmark proves one mutation and records lock/wait behavior.
 
+Every HTTP or WebSocket performance run records the exact commit, environment, container limits,
+fixture size, load model, k6 summary, telemetry mode, and database evidence. A component query harness,
+successful smoke, or uncorrelated dashboard snapshot is not service capacity or SLA evidence.
+
 ## 13. Portfolio release checklist
 
 The first strong portfolio release requires:
@@ -882,6 +886,9 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - liveness/readiness distinguish process, DB, migration and required dependency states.
 - logs carry request/correlation IDs but no protected content.
 - metrics/alerts cover error rate, audit-write failure, outbox backlog, job lag and disk/storage risk.
+- metric labels and Loki labels are bounded; request/trace/actor/ticket/email/query/error text remain fields or are omitted.
+- the Prometheus endpoint and host/store exporters are private management surfaces and are not proxied by the public frontend.
+- a synthetic request is correlated across logs and traces, and the same test window exposes a CPU profile without treating telemetry as canonical audit evidence.
 
 ### OPS-005 — Retention and maintenance
 

@@ -69,6 +69,7 @@ This is a concise checklist for the owner and Codex. Accepted ADRs contain the r
 | D-061 | Customer Portal and Staff Console use independent frontend applications, builds, design systems, token namespaces, Storybooks, and machine-enforced import/style boundaries while sharing only the production origin and immutable Deskseed brand sources | accepted | operational evidence favors separate deployments, or a reviewed shared non-visual runtime contract is required |
 | D-062 | Comment rich text uses a closed versioned JSON document, server-derived plain text, attachment-backed images, and no trusted browser HTML | accepted | editor capability, redaction, or canonical rendering requirements change |
 | D-063 | Ticket collaboration notes are append-only staff-only resources with structured mentions, atomic TicketAudit, and body-free in-app notification hints | accepted | edit/delete, external delivery, or restrictive read-scope requirements change |
+| D-064 | Load observability uses private Prometheus pull, Alloy-pushed logs/traces, load-only JVM profiles, and separate-host k6 remote write while Pushgateway and production rollout remain excluded | accepted | production topology, collector security boundary, or measured load evidence changes |
 
 D-049는 새 receipt row/table이나 comment raw/full-payload hash를 추가하지 않고 canonical ticket-audit retention을 그대로 따른다.
 IDEM-002의 409/no-mutation 하위 조건은 구현하지만 rejected reuse attempt 자체의 requestId/security-event durable linkage는 아직 없다.
