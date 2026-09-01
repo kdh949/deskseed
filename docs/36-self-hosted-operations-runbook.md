@@ -1,6 +1,6 @@
 # Self-hosted Operations Runbook
 
-이 문서는 현재 저장소로 재현 가능한 로컬 운영 리허설과 아직 구현되지 않은 production 운영 능력을 구분한다. 현재 제공되는 `compose.yaml`은 단일 조직용 모듈러 모놀리스의 **로컬 데모 구성**이며 production 배포 manifest/profile이 아니다. TLS, production secret wiring, split-role production Compose는 제공하지 않는다. Redis는 고객 인증 limiter의 로컬 필수 의존성으로만 제공하며 Kubernetes, Kafka, Elasticsearch/OpenSearch는 지원 범위가 아니다.
+이 문서는 현재 저장소로 재현 가능한 로컬 운영 리허설과 아직 구현되지 않은 production 운영 능력을 구분한다. 현재 제공되는 `compose.yaml`은 단일 조직용 모듈러 모놀리스의 **로컬 데모 구성**이다. `compose.production.yaml`은 Sophos WAF가 접근할 frontend origin만 publish하고 backend·PostgreSQL·Redis를 내부 network로 분리하며 Mailpit을 비활성화하는 topology 계약만 제공한다. 이 파일만으로는 production secret wiring, split-role credential, provider 구성이 완성되지 않는다. Redis는 고객 인증 limiter의 로컬 필수 의존성으로만 제공하며 Kubernetes, Kafka, Elasticsearch/OpenSearch는 지원 범위가 아니다.
 
 ## 1. 현재 지원 표면
 
@@ -76,6 +76,16 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 ```
 
 `DESKSEED_RUNTIME_USER`는 Linux에서 file-backed Compose secret의 host `0600` 소유자와 backend의 non-root 실행 uid/gid를 맞춘다. 이 bootstrap 명령을 root 계정으로 실행하지 않는다.
+
+### 3.1 Production ingress topology contract
+
+`compose.production.yaml`은 Docker Compose 2.24.4 이상의 `!reset`/`!override` merge tag를 사용한다. 다음 정적 gate는 frontend가 운영자 지정 DMZ 주소/port 하나만 publish하고 backend·DB·Redis가 host port를 갖지 않으며 Mailpit이 active service에서 제외되는지 검사한다.
+
+```bash
+bash scripts/test-production-compose-contract.sh
+```
+
+의도한 경로는 `Internet -> Sophos WAF :443 -> DMZ frontend origin -> backend internal`이다. `DESKSEED_FRONTEND_BIND_ADDRESS`에는 wildcard가 아니라 서버의 DMZ 주소를 넣고, Sophos/host firewall에서 WAF만 origin port에 접근하도록 제한한다. 이 repository test는 실제 source IP firewall rule을 검증하지 않는다.
 
 기본 `compose.yaml`의 DB password와 audit/cursor key는 공개된 **로컬 개발 기본값**이다. 인터넷에 노출하거나 production에 재사용하면 안 된다. 아래 항목은 production 배포자가 별도 manifest와 secret 관리 체계를 만들 때 필요한 요구사항이지, 이 저장소가 제공하는 실행 가능한 production profile이 아니다.
 

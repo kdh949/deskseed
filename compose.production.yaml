@@ -1,0 +1,46 @@
+# Requires Docker Compose 2.24.4+ for !override/!reset merge tags.
+# This overlay defines the production ingress/network boundary. Runtime
+# credentials and provider wiring are supplied by later stack slices.
+services:
+  db:
+    networks: !override
+      - database
+
+  mailpit:
+    profiles: ["development"]
+    ports: !reset []
+
+  redis:
+    networks: !override
+      - customer-auth-limiter
+
+  backend:
+    environment:
+      DESKSEED_MAIL_DELIVERY_ENABLED: "false"
+      DESKSEED_MAIL_TRANSPORT: disabled
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+        required: false
+      redis:
+        condition: service_healthy
+    ports: !reset []
+    networks: !override
+      - application
+      - database
+      - customer-auth-limiter
+
+  frontend:
+    ports: !override
+      - "${DESKSEED_FRONTEND_BIND_ADDRESS:?set the DMZ origin address}:${DESKSEED_FRONTEND_ORIGIN_PORT:?set the WAF origin port}:80"
+    networks: !override
+      - application
+
+networks:
+  application: {}
+  database:
+    internal: true
+  customer-auth-limiter:
+    internal: true

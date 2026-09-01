@@ -15,6 +15,7 @@ bundle-core-openapi:
 
 docs-check: bundle-core-openapi
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_documentation_quality.py
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_validate_documentation.py
 	python3 scripts/validate_documentation.py
 
 compose-smoke:

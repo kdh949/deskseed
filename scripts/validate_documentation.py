@@ -82,6 +82,27 @@ APPROVED_DESKSEED_ASSET_DIRECTORIES = (
 )
 
 
+class ComposeYamlLoader(yaml.SafeLoader):
+    """Safe YAML loader for Docker Compose's collection override tags."""
+
+
+def _construct_compose_override(loader: ComposeYamlLoader, node: yaml.Node) -> Any:
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node)
+    if isinstance(node, yaml.MappingNode):
+        return loader.construct_mapping(node)
+    return loader.construct_scalar(node)
+
+
+for compose_tag in ("!override", "!reset"):
+    ComposeYamlLoader.add_constructor(compose_tag, _construct_compose_override)
+
+
+def load_yaml_document(path: Path) -> Any:
+    loader = ComposeYamlLoader if path.name.startswith("compose") else yaml.SafeLoader
+    return yaml.load(path.read_text(encoding="utf-8"), Loader=loader)
+
+
 def rel(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
@@ -338,7 +359,7 @@ def validate() -> list[str]:
     all_operation_ids: list[tuple[str, str]] = []
     for path in yaml_files:
         try:
-            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            document = load_yaml_document(path)
         except Exception as exc:
             errors.append(f"Invalid YAML {rel(path)}: {exc}")
             continue
