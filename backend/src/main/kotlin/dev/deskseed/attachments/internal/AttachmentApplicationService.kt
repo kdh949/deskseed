@@ -20,6 +20,7 @@ import dev.deskseed.attachments.AttachmentUploadService
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.LinkedTicketAttachment
 import dev.deskseed.attachments.MalwareScanResult
+import dev.deskseed.attachments.MalwareScanSource
 import dev.deskseed.attachments.MalwareScanner
 import dev.deskseed.attachments.TicketAttachment
 import dev.deskseed.attachments.TicketAttachmentLinkCommand
@@ -96,8 +97,14 @@ internal class AttachmentApplicationService(
         }
         val effectiveContentType = detectedContentType
         val scan = try {
-            objectStore.openPrivate(pending.storageKey).use { stream ->
-                malwareScanner.scan(stream, pending.fileName, effectiveContentType)
+            if (malwareScanner.requiresContent) {
+                objectStore.openPrivate(pending.storageKey).use { stream ->
+                    malwareScanner.scan(stream, pending.fileName, effectiveContentType)
+                }
+            } else {
+                InputStream.nullInputStream().use { stream ->
+                    malwareScanner.scan(stream, pending.fileName, effectiveContentType)
+                }
             }
         } catch (exception: RuntimeException) {
             transitions.markTerminal(pending, AttachmentScanStatus.FAILED, "SCANNER_UNAVAILABLE", command)
@@ -109,7 +116,7 @@ internal class AttachmentApplicationService(
         }
 
         val attachment = TicketAttachment(id, pending.fileName, stored.sizeBytes, effectiveContentType)
-        transitions.markClean(pending, attachment, stored.sha256, command)
+        transitions.markClean(pending, attachment, stored.sha256, malwareScanner.source, command)
         return AttachmentUploadResult(attachment, AttachmentScanStatus.CLEAN, expiresAt)
     }
 
@@ -533,7 +540,13 @@ internal class AttachmentStateTransitions(
     }
 
     @Transactional
-    fun markClean(pending: PendingAttachment, attachment: TicketAttachment, sha256: String, command: AttachmentUploadCommand) {
+    fun markClean(
+        pending: PendingAttachment,
+        attachment: TicketAttachment,
+        sha256: String,
+        scanSource: MalwareScanSource,
+        command: AttachmentUploadCommand,
+    ) {
         val now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
         metadata.markClean(pending.id, attachment, sha256, now)
         appendSecurity(
@@ -541,7 +554,12 @@ internal class AttachmentStateTransitions(
             pending,
             command,
             now,
-            mapOf("status" to "CLEAN", "sizeBytes" to attachment.sizeBytes.toString(), "sha256Prefix" to sha256.take(12)),
+            mapOf(
+                "status" to "CLEAN",
+                "sizeBytes" to attachment.sizeBytes.toString(),
+                "sha256Prefix" to sha256.take(12),
+                "scanSource" to scanSource.name,
+            ),
         )
     }
 

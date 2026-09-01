@@ -4,6 +4,7 @@ import dev.deskseed.attachments.AttachmentObjectStore
 import dev.deskseed.attachments.AttachmentTooLargeException
 import dev.deskseed.attachments.AttachmentUnavailableException
 import dev.deskseed.attachments.MalwareScanResult
+import dev.deskseed.attachments.MalwareScanSource
 import dev.deskseed.attachments.MalwareScanner
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -24,6 +25,8 @@ internal data class AttachmentStorageProperties(
     var unlinkedTtlHours: Long = 24,
     var linkedTtlDays: Long = 30,
     var cleanupBatchSize: Int = 100,
+    var scanMode: MalwareScanSource = MalwareScanSource.APPLICATION,
+    var upstreamWafAcknowledged: Boolean = false,
 ) {
     fun validate() {
         require(maxUploadBytes in 1..(100L * 1024 * 1024)) { "Attachment upload limit must be between 1 byte and 100 MiB" }

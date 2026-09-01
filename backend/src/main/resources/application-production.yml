@@ -81,6 +81,18 @@ deskseed:
     consume-url: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL}
     registration-verification-url: ${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL}
     password-reset-url: ${DESKSEED_CUSTOMER_PASSWORD_RESET_URL}
+  attachments:
+    scan-mode: ${DESKSEED_ATTACHMENT_SCAN_MODE}
+    upstream-waf-acknowledged: ${DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED:false}
+    s3:
+      endpoint: ${DESKSEED_ATTACHMENT_S3_ENDPOINT}
+      region: ${DESKSEED_ATTACHMENT_S3_REGION}
+      bucket: ${DESKSEED_ATTACHMENT_S3_BUCKET}
+      access-key: ${DESKSEED_ATTACHMENT_S3_ACCESS_KEY}
+      secret-key: ${DESKSEED_ATTACHMENT_S3_SECRET_KEY}
+      path-style-access-enabled: ${DESKSEED_ATTACHMENT_S3_PATH_STYLE_ENABLED:true}
+      create-bucket-if-missing: ${DESKSEED_ATTACHMENT_S3_CREATE_BUCKET:false}
+      plaintext-internal-network-acknowledged: ${DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK:false}
   portal:
     public-request-rate-limit:
       fingerprint-key: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY}

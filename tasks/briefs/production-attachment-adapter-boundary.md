@@ -2,6 +2,8 @@
 
 Status: **IMPLEMENTATION_READY**
 
+Follow-up: `production-versitygw-upstream-waf-attachments.md`가 이 fail-closed 경계를 유지한 production provider를 구현한다.
+
 ## Goal
 
 운영 프로필은 로컬 임시 파일 저장소나 결정론적 테스트 스캐너를 private attachment production adapter로 사용하지 않는다.

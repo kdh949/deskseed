@@ -54,6 +54,7 @@ repositories {
 
 extra["springModulithVersion"] = "2.1.0"
 extra["testcontainersVersion"] = "2.0.5"
+extra["awsSdkVersion"] = "2.54.2"
 
 dependencyManagement {
     imports {
@@ -76,6 +77,9 @@ dependencies {
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-api:3.1.0")
     implementation("com.scalar.maven:scalar-webmvc:0.6.63")
+    implementation(platform("software.amazon.awssdk:bom:${property("awsSdkVersion")}"))
+    implementation("software.amazon.awssdk:s3")
+    implementation("software.amazon.awssdk:url-connection-client")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 

@@ -1,6 +1,6 @@
 # Self-hosted Operations Runbook
 
-이 문서는 현재 저장소로 재현 가능한 로컬 운영 리허설과 아직 구현되지 않은 production 운영 능력을 구분한다. 현재 제공되는 `compose.yaml`은 단일 조직용 모듈러 모놀리스의 **로컬 데모 구성**이다. `compose.production.yaml`은 Sophos WAF가 접근할 frontend origin만 publish하고 backend·PostgreSQL·Redis를 내부 network로 분리하며 Mailpit을 비활성화하는 topology 계약만 제공한다. 이 파일만으로는 production secret wiring, split-role credential, provider 구성이 완성되지 않는다. Redis는 고객 인증 limiter의 로컬 필수 의존성으로만 제공하며 Kubernetes, Kafka, Elasticsearch/OpenSearch는 지원 범위가 아니다.
+이 문서는 현재 저장소로 재현 가능한 로컬 운영 리허설과 아직 검증되지 않은 production 운영 능력을 구분한다. 현재 제공되는 `compose.yaml`은 단일 조직용 모듈러 모놀리스의 **로컬 데모 구성**이다. `compose.production.yaml`은 Sophos WAF가 접근할 frontend origin만 publish하고 backend·PostgreSQL·Redis·VersityGW를 역할별 내부 network로 분리하며 Mailpit을 비활성화한다. DB split role, authenticated Redis, private VersityGW와 production profile wiring은 구현되어 있지만 실제 Sophos rule, secret rotation, production-size backup/restore와 alerting은 이 저장소가 자동 검증하지 않는다. Kubernetes, Kafka, Elasticsearch/OpenSearch는 지원 범위가 아니다.
 
 ## 1. 현재 지원 표면
 
@@ -10,7 +10,7 @@
 | Redis | `redis:8.2.9-alpine` | customer-auth purpose/global/destination/network limiter counters only |
 | Backend | Java 21, Spring Boot 4.1 | Flyway migration, HTTP API, authorization, audit |
 | Frontend | Node 26 build, Nginx 1.31 runtime | customer portal, staff/admin workspace, Audit Explorer |
-| Object storage | 미구현 | attachment 자체가 릴리스 범위 밖이므로 backup 대상도 없음 |
+| Object storage | `ghcr.io/versity/versitygw:v1.4.1` | private attachment bytes, POSIX/versioning/IAM named volumes |
 
 지원 버전의 하한 범위를 아직 호환성 매트릭스로 검증하지 않았다. 저장소에 고정된 이미지와 toolchain이 검증 기준이며, 실제 실행 환경 버전은 증거 파일에 남긴다.
 
@@ -79,7 +79,7 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 
 ### 3.1 Production ingress topology contract
 
-`compose.production.yaml`은 Docker Compose 2.24.4 이상의 `!reset`/`!override` merge tag를 사용한다. 다음 정적 gate는 frontend가 운영자 지정 DMZ 주소/port 하나만 publish하고 backend·DB·Redis가 host port를 갖지 않으며 Mailpit이 active service에서 제외되는지 검사한다. 또한 Flyway/권한 적용 one-shot job, runtime datasource, Redis ACL/TLS acknowledgement 계약을 검사한다.
+`compose.production.yaml`은 Docker Compose 2.24.4 이상의 `!reset`/`!override` merge tag를 사용한다. 다음 정적 gate는 frontend가 운영자 지정 DMZ 주소/port 하나만 publish하고 backend·DB·Redis·VersityGW가 host port를 갖지 않으며 Mailpit이 active service에서 제외되는지 검사한다. 또한 Flyway/권한 적용 one-shot job, runtime datasource, Redis ACL, private object-storage network와 acknowledgement 계약을 검사한다.
 
 ```bash
 bash scripts/test-production-compose-contract.sh
@@ -101,12 +101,14 @@ bash scripts/test-production-compose-contract.sh
 - 허용된 CORS origin
 - TLS reverse proxy 설정
 - 고객 인증 Redis username/password, private network placement, `noeviction` reserved-capacity policy와 plaintext acknowledgement
+- VersityGW access/secret key, bucket/region, internal S3 plaintext acknowledgement
+- Sophos WAF upstream scan acknowledgement와 WAF request body limit보다 작은 attachment upload limit
 
 Production Redis는 host port 없이 전용 internal network에만 연결되고 external ACL file에서 unauthenticated default user를 끈다. `deskseed` user는 limiter key pattern과 `GET/PTTL/INCR/PEXPIRE/EVAL/EVALSHA/SCRIPT LOAD/PING/INFO/CLIENT SETINFO`만 허용한다. `INFO`는 Spring aggregate health가 실제 Redis dependency를 확인하는 데 필요하다. 짧은 TTL limiter state는 Redis 재시작 때 사라지는 것을 허용하며 장애나 OOM은 customer-auth 요청을 generic `503`으로 fail closed한다. PostgreSQL customer/account/session/token/audit state를 대신하지 않는다.
 
 이 배포는 Redis TLS를 의도적으로 사용하지 않는다. 따라서 같은 Docker host의 root/Docker-daemon 권한자, container escape, 잘못 연결된 network의 process는 credential과 limiter traffic을 관찰할 수 있다. `DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK=true` 없이는 Compose가 render되지 않고, production application도 TLS가 false일 때 host가 정확히 `redis`이며 acknowledgement가 true인지 검증한다. 이 예외는 external/remote Redis에 적용할 수 없다.
 
-현재 Compose는 WAF 자체 TLS/source rule, coarse ingress rate limit, centralized secret rotation, Redis replication/failover/metrics를 제공하지 않는다. `.env.production.example`은 값이 비어 있는 목록일 뿐 secret 저장소가 아니다. 실제 env/ACL file은 repository 밖에서 mode `0600`으로 관리하고 Docker host/daemon 관리자에게 노출되는 경계를 수락해야 한다.
+현재 Compose는 WAF 자체 TLS/source rule, coarse ingress rate limit, centralized secret rotation, Redis/VersityGW replication·metrics를 제공하지 않는다. `.env.production.example`은 값이 비어 있는 목록일 뿐 secret 저장소가 아니다. 실제 env/ACL file은 repository 밖에서 mode `0600`으로 관리하고 Docker host/daemon 관리자에게 노출되는 경계를 수락해야 한다.
 
 ### 3.2 Production runtime 시작
 
@@ -128,7 +130,29 @@ docker compose --env-file /etc/deskseed/production.env \
   -f compose.yaml -f compose.production.yaml up --build --detach
 ```
 
-`deskseed-deploy`는 예시 전용 deployment 계정이므로 실제 전용 non-root 계정으로 바꾼다. `DESKSEED_REDIS_ACL_FILE=/etc/deskseed/redis.acl`로 맞춘다. `render-redis-acl.sh`은 기존 파일을 덮어쓰지 않으며 Redis password의 SHA-256 hash만 ACL에 기록한다. Linux의 file-backed Compose secret은 host 소유권을 바꾸지 않으므로 Redis entrypoint가 root로 이 파일을 읽고 container-private tmpfs에 Redis uid/gid, mode `0400`으로 복사한 뒤 권한을 내린다. `db-migrate`가 실패하거나 `db-permissions` 검증이 실패하면 backend dependency가 충족되지 않는다. `docker compose ps --all`에서 두 job이 exit `0`, backend/frontend/db/redis가 running인지 확인한다. 기존 PostgreSQL volume에는 init script가 다시 실행되지 않으므로 이 절차를 그대로 적용하지 말고 role 존재/소유권/privilege를 먼저 점검한다.
+`deskseed-deploy`는 예시 전용 deployment 계정이므로 실제 전용 non-root 계정으로 바꾼다. `/etc/deskseed`는 이 계정만 소유하고 다른 계정에는 열지 않는다. `DESKSEED_REDIS_ACL_FILE=/etc/deskseed/redis.acl`로 맞춘다. `render-redis-acl.sh`은 기존 파일을 덮어쓰지 않으며 Redis password의 SHA-256 hash만 ACL에 기록한다. Linux의 file-backed Compose secret은 host 소유권을 바꾸지 않으므로 Redis entrypoint가 root로 이 파일을 읽고 container-private tmpfs에 Redis uid/gid, mode `0400`으로 복사한 뒤 권한을 내린다. `db-migrate`가 실패하거나 `db-permissions` 검증이 실패하면 backend dependency가 충족되지 않는다. `docker compose ps --all`에서 두 job이 exit `0`, backend/frontend/db/redis/versitygw가 running인지 확인한다. 기존 PostgreSQL volume에는 init script가 다시 실행되지 않으므로 이 절차를 그대로 적용하지 말고 role 존재/소유권/privilege를 먼저 점검한다.
+
+### 3.3 VersityGW와 Sophos upload scan 경계
+
+VersityGW는 `object-storage` internal network에서 Backend와만 연결되고 7070/Admin/WebUI를 host에 publish하지 않는다. attachment는 8 MiB S3 multipart part로 private bucket에 저장되며 exact bytes, SHA-256, MIME-family, size, owner/visibility와 CLEAN-only link 정책을 유지한다. POSIX bytes, versioning, IAM은 각각 named volume에 남는다. Backend가 bucket을 확인/생성하지 못하면 startup이 실패한다.
+
+VersityGW와 Backend 사이의 HTTP는 같은 host Docker network에서 plaintext다. `DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK=true`가 필요하며 external endpoint에는 이 예외를 사용할 수 없다. host root/Docker-daemon 권한자와 container escape를 방어하지 못한다.
+
+Application은 `UPSTREAM_WAF` mode에서 파일을 다시 바이러스 검사하지 않는다. 다음 조건을 **모두** Sophos Firewall에서 확인한 뒤에만 `DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED=true`를 설정한다.
+
+1. 모든 `multipart/form-data` create/upload route에 web server protection의 upload antivirus가 적용된다.
+2. infected와 unscannable upload를 차단하고 예외/bypass route를 두지 않는다.
+3. Sophos scan/request body limit이 `DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES`와 multipart overhead를 합친 최대 요청보다 크다.
+4. frontend origin port는 Sophos WAF source만 허용하고 WAN, 다른 VLAN, 임의 reverse proxy에서 직접 접근할 수 없다.
+5. WAF를 통과하지 않는 내부 batch/API upload 경로를 만들지 않는다.
+
+이 조건은 repository test로 장비에 적용됐는지 확인할 수 없다. 하나라도 불확실하면 acknowledgement를 false로 두면 production scanner bean이 구성되지 않아 부팅이 실패한다. CLEAN transition의 security audit metadata에는 `scanSource=UPSTREAM_WAF`가 기록된다. Sophos가 검사한 byte와 origin이 받은 byte가 같아야 하며 WAF에서 request body 변환/재작성 기능을 사용하지 않는다.
+
+공식 설정 근거:
+
+- [VersityGW Docker](https://github.com/versity/versitygw/wiki/Docker), [Health endpoint](https://github.com/versity/versitygw/wiki/HealthCheck)
+- [AWS SDK endpoint override](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/endpoint-config.html), [unknown-length upload memory 주의](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/best-practices-s3-uploads.html)
+- [Sophos web server protection policy](https://docs.sophos.com/nsg/sophos-firewall/22.0/Help/en-us/webhelp/onlinehelp/index.html?contextId=web-server-protection-policies-add)
 
 ## 4. DB ownership과 least privilege
 
@@ -288,7 +312,7 @@ Audit persistence failure 시 민감 read/write가 fail closed하는지 확인�
 | Gate | 상태 | 이 rehearsal의 근거 | 남은 조건 |
 |---|---|---|---|
 | OPS-001 Fresh install/upgrade | LIMITED | empty volume, current image V11→V15, health, data preservation | 실제 previous tagged image 경로 |
-| OPS-002 Backup/restore | PASS (local synthetic scope) | login, ticket, canonical audit/projection, checksum, duration, RPO window | attachment/reference는 feature 미구현이라 검증 불가; production-size drill |
+| OPS-002 Backup/restore | PASS (local synthetic DB scope) | login, ticket, canonical audit/projection, checksum, duration, RPO window | VersityGW 세 volume과 DB attachment reference의 일관 restore는 Not run; production-size drill |
 | OPS-003 Secrets/bootstrap | LIMITED | production overlay의 required env, ACL hash file, one-time audited admin, split DB roles와 startup ordering | secret manager/전체 rotation procedure와 실제 public deployment controls |
 | OPS-004 Health/observability | NOT MET | aggregate health와 request context | 분리 readiness, alert/dashboard, structured central logs |
 | OPS-005 Retention/maintenance | LIMITED | protected search ciphertext bounded retention 구현 | 전체 retention dry-run/legal hold, pending migration/backup age operator view |

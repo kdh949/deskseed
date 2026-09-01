@@ -754,6 +754,7 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 ### FILE-004 — Unsafe-file quarantine
 
 - unscanned, scan-failed, infected or policy-blocked objects cannot inline or download.
+- an upstream WAF scan counts only when upload AV, block-unscannable, body-size coverage and direct-origin denial are explicit deployment gates; the application records that scan source and has no generic bypass mode.
 - quarantine and scan states are visible to authorized staff.
 - scan retries and object cleanup are idempotent.
 - content type/disposition prevent active-content execution.

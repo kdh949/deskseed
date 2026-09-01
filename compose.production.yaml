@@ -1,6 +1,6 @@
 # Requires Docker Compose 2.24.4+ for !override/!reset merge tags.
-# This overlay defines the production ingress/network and runtime credential
-# boundary. Attachment provider wiring is supplied by the next stack slice.
+# This overlay defines the production ingress/network, runtime credential, and
+# private attachment-storage boundaries.
 services:
   db:
     environment: !override
@@ -93,6 +93,32 @@ services:
     networks: !override
       - customer-auth-limiter
 
+  versitygw:
+    image: ghcr.io/versity/versitygw:v1.4.1
+    restart: unless-stopped
+    environment:
+      ROOT_ACCESS_KEY: ${DESKSEED_VERSITY_ACCESS_KEY:?set the VersityGW access key}
+      ROOT_SECRET_KEY: ${DESKSEED_VERSITY_SECRET_KEY:?set the VersityGW secret key}
+      VGW_PORT: ":7070"
+      VGW_HEALTH: /health
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARGS: /data/s3
+      VGW_IAM_DIR: /data/iam
+      VGW_VERSIONING_DIR: /data/versioning
+    expose:
+      - "7070"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=/dev/null http://127.0.0.1:7070/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - deskseed-versity-s3:/data/s3
+      - deskseed-versity-versioning:/data/versioning
+      - deskseed-versity-iam:/data/iam
+    networks:
+      - object-storage
+
   backend:
     environment: !override
       SPRING_PROFILES_ACTIVE: production
@@ -106,6 +132,17 @@ services:
       DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD: ${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD:?set the Redis ACL password}
       DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED: "false"
       DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK: ${DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK:?acknowledge the documented Redis plaintext risk}
+      DESKSEED_ATTACHMENT_SCAN_MODE: UPSTREAM_WAF
+      DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED: ${DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED:?acknowledge the documented Sophos WAF scan boundary}
+      DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES: ${DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES:-20971520}
+      DESKSEED_ATTACHMENT_S3_ENDPOINT: http://versitygw:7070
+      DESKSEED_ATTACHMENT_S3_REGION: ${DESKSEED_ATTACHMENT_S3_REGION:-us-east-1}
+      DESKSEED_ATTACHMENT_S3_BUCKET: ${DESKSEED_ATTACHMENT_S3_BUCKET:-deskseed-attachments}
+      DESKSEED_ATTACHMENT_S3_ACCESS_KEY: ${DESKSEED_VERSITY_ACCESS_KEY:?set the VersityGW access key}
+      DESKSEED_ATTACHMENT_S3_SECRET_KEY: ${DESKSEED_VERSITY_SECRET_KEY:?set the VersityGW secret key}
+      DESKSEED_ATTACHMENT_S3_PATH_STYLE_ENABLED: "true"
+      DESKSEED_ATTACHMENT_S3_CREATE_BUCKET: "true"
+      DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK: ${DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK:?acknowledge the documented internal S3 plaintext risk}
       DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS:?set Platform API client CIDRs}
       DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS:?set trusted reverse proxy CIDRs}
       DESKSEED_WEBHOOK_SECRET_ACTIVE_KEY_VERSION: v1
@@ -113,6 +150,7 @@ services:
       DESKSEED_MAIL_DELIVERY_ENABLED: "false"
       DESKSEED_MAIL_SCHEDULING_ENABLED: "false"
       DESKSEED_MAIL_TRANSPORT: disabled
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
       DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION: v1
       DESKSEED_MAIL_PROTECTED_KEY_V1: ${DESKSEED_MAIL_PROTECTED_KEY_V1:?set the protected mail key}
       DESKSEED_MAIL_OPERATIONS_CURSOR_ACTIVE_KEY_ID: v1
@@ -149,11 +187,14 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      versitygw:
+        condition: service_healthy
     ports: !reset []
     networks: !override
       - application
       - database
       - customer-auth-limiter
+      - object-storage
 
   frontend:
     depends_on: !override
@@ -170,7 +211,14 @@ networks:
     internal: true
   customer-auth-limiter:
     internal: true
+  object-storage:
+    internal: true
 
 secrets:
   deskseed-redis-acl:
     file: ${DESKSEED_REDIS_ACL_FILE:?set the generated Redis ACL file path}
+
+volumes:
+  deskseed-versity-s3:
+  deskseed-versity-versioning:
+  deskseed-versity-iam:

@@ -34,6 +34,10 @@ export DATABASE_RUNTIME_PASSWORD=contract-runtime-password
 export DESKSEED_REDIS_ACL_FILE="$repository_root/config/production/redis.acl.example"
 export DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD=contract-redis-password
 export DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK=true
+export DESKSEED_VERSITY_ACCESS_KEY=contract-versity-access
+export DESKSEED_VERSITY_SECRET_KEY=contract-versity-secret-key
+export DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED=true
+export DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK=true
 export DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS=192.0.2.0/24
 export DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS=172.30.10.0/24
 export DESKSEED_WEBHOOK_SECRET_KEY_V1=contract-webhook-secret
@@ -72,7 +76,9 @@ with open(sys.argv[1], encoding="utf-8") as source:
     model = json.load(source)
 
 services = model["services"]
-assert set(services) == {"backend", "db", "db-migrate", "db-permissions", "frontend", "redis"}, services.keys()
+assert set(services) == {
+    "backend", "db", "db-migrate", "db-permissions", "frontend", "redis", "versitygw"
+}, services.keys()
 
 frontend_ports = services["frontend"].get("ports", [])
 assert len(frontend_ports) == 1, frontend_ports
@@ -80,15 +86,18 @@ assert frontend_ports[0]["host_ip"] == "192.0.2.10", frontend_ports
 assert int(frontend_ports[0]["published"]) == 18080, frontend_ports
 assert int(frontend_ports[0]["target"]) == 80, frontend_ports
 
-for service in ("backend", "db", "db-migrate", "db-permissions", "redis"):
+for service in ("backend", "db", "db-migrate", "db-permissions", "redis", "versitygw"):
     assert not services[service].get("ports"), (service, services[service].get("ports"))
 
 assert set(services["frontend"]["networks"]) == {"application"}
-assert set(services["backend"]["networks"]) == {"application", "database", "customer-auth-limiter"}
+assert set(services["backend"]["networks"]) == {
+    "application", "database", "customer-auth-limiter", "object-storage"
+}
 assert set(services["db"]["networks"]) == {"database"}
 assert set(services["db-migrate"]["networks"]) == {"database"}
 assert set(services["db-permissions"]["networks"]) == {"database"}
 assert set(services["redis"]["networks"]) == {"customer-auth-limiter"}
+assert set(services["versitygw"]["networks"]) == {"object-storage"}
 
 backend_environment = services["backend"]["environment"]
 assert backend_environment["SPRING_PROFILES_ACTIVE"] == "production"
@@ -100,8 +109,15 @@ assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_HOST"] == "redis"
 assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME"] == "deskseed"
 assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED"] == "false"
 assert backend_environment["DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK"] == "true"
+assert backend_environment["DESKSEED_ATTACHMENT_SCAN_MODE"] == "UPSTREAM_WAF"
+assert backend_environment["DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED"] == "true"
+assert backend_environment["DESKSEED_ATTACHMENT_S3_ENDPOINT"] == "http://versitygw:7070"
+assert backend_environment["DESKSEED_ATTACHMENT_S3_ACCESS_KEY"] == "contract-versity-access"
+assert backend_environment["DESKSEED_ATTACHMENT_S3_CREATE_BUCKET"] == "true"
+assert backend_environment["DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK"] == "true"
 assert backend_environment["DESKSEED_MAIL_DELIVERY_ENABLED"] == "false"
 assert backend_environment["DESKSEED_MAIL_TRANSPORT"] == "disabled"
+assert backend_environment["MANAGEMENT_HEALTH_MAIL_ENABLED"] == "false"
 assert "DESKSEED_ACCESS_AUDIT_KEY_LOCAL_V1" not in backend_environment
 assert "DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1" not in backend_environment
 
@@ -119,6 +135,8 @@ assert services["db"]["environment"]["DESKSEED_MIGRATION_ROLE"] == "deskseed_mig
 assert services["db"]["environment"]["DESKSEED_RUNTIME_ROLE"] == "deskseed_runtime"
 assert services["db-permissions"]["environment"]["DATABASE_RUNTIME_USERNAME"] == "deskseed_runtime"
 assert services["backend"]["depends_on"]["db-permissions"]["condition"] == "service_completed_successfully"
+assert services["backend"]["depends_on"]["versitygw"]["condition"] == "service_healthy"
+assert services["versitygw"]["environment"]["VGW_HEALTH"] == "/health"
 PY
 
 if docker compose \
