@@ -16,7 +16,18 @@ enum class MalwareScanResult {
     INFECTED,
 }
 
+enum class MalwareScanSource {
+    APPLICATION,
+    UPSTREAM_WAF,
+}
+
 /** Scanner adapters must fail by throwing; callers never convert a scanner failure to CLEAN. */
 interface MalwareScanner {
+    val source: MalwareScanSource
+        get() = MalwareScanSource.APPLICATION
+
+    val requiresContent: Boolean
+        get() = true
+
     fun scan(content: InputStream, fileName: String, contentType: String): MalwareScanResult
 }

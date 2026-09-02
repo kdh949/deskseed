@@ -1,0 +1,226 @@
+# Requires Docker Compose 2.24.4+ for !override/!reset merge tags.
+# This overlay defines the production ingress/network, runtime credential, and
+# private attachment-storage boundaries.
+services:
+  db:
+    environment: !override
+      POSTGRES_DB: ${POSTGRES_DB:?set the production database name}
+      POSTGRES_USER: ${DATABASE_BOOTSTRAP_USERNAME:?set the bootstrap role}
+      POSTGRES_PASSWORD: ${DATABASE_BOOTSTRAP_PASSWORD:?set the bootstrap password}
+      DESKSEED_MIGRATION_ROLE: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
+      DESKSEED_MIGRATION_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
+      DESKSEED_RUNTIME_ROLE: ${DATABASE_RUNTIME_USERNAME:?set the runtime role}
+      DESKSEED_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set the runtime password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes: !override
+      - deskseed-postgres:/var/lib/postgresql/data
+      - ./scripts/operations/postgres-init-runtime-role.sh:/docker-entrypoint-initdb.d/20-deskseed-runtime-role.sh:ro
+      - ./scripts/operations:/opt/deskseed/operations:ro
+    networks: !override
+      - database
+
+  db-migrate:
+    image: flyway/flyway:12.4.0
+    command: ["migrate"]
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?set the production database name}
+      FLYWAY_USER: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
+      FLYWAY_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_CONNECT_RETRIES: "60"
+      REDGATE_DISABLE_TELEMETRY: "true"
+    volumes:
+      - ./backend/src/main/resources/db/migration:/flyway/sql:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - database
+
+  db-permissions:
+    image: postgres:17-alpine
+    user: postgres
+    entrypoint: ["/opt/deskseed/production/configure-runtime-role.sh"]
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:?set the production database name}
+      DATABASE_MIGRATION_USERNAME: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
+      DATABASE_MIGRATION_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
+      DATABASE_RUNTIME_USERNAME: ${DATABASE_RUNTIME_USERNAME:?set the runtime role}
+    volumes:
+      - ./scripts/production:/opt/deskseed/production:ro
+      - ./scripts/postgres:/opt/deskseed/postgres:ro
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    networks:
+      - database
+
+  mailpit:
+    profiles: ["development"]
+    ports: !reset []
+
+  redis:
+    entrypoint: !override
+      - /opt/deskseed/production/prepare-redis-acl.sh
+    command: !override
+      - redis-server
+      - --aclfile
+      - /run/deskseed-redis/users.acl
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - noeviction
+    secrets: !override
+      - deskseed-redis-acl
+    volumes: !override
+      - ./scripts/production/prepare-redis-acl.sh:/opt/deskseed/production/prepare-redis-acl.sh:ro
+    tmpfs:
+      - /run/deskseed-redis:mode=0755
+    healthcheck:
+      test: ["CMD", "redis-cli", "-u", "redis://health:@127.0.0.1:6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: !override
+      - customer-auth-limiter
+
+  versitygw:
+    image: ghcr.io/versity/versitygw:v1.4.1
+    restart: unless-stopped
+    environment:
+      ROOT_ACCESS_KEY: ${DESKSEED_VERSITY_ACCESS_KEY:?set the VersityGW access key}
+      ROOT_SECRET_KEY: ${DESKSEED_VERSITY_SECRET_KEY:?set the VersityGW secret key}
+      VGW_PORT: ":7070"
+      VGW_HEALTH: /health
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARGS: /data/s3
+      VGW_IAM_DIR: /data/iam
+      VGW_VERSIONING_DIR: /data/versioning
+    expose:
+      - "7070"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=/dev/null http://127.0.0.1:7070/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - deskseed-versity-s3:/data/s3
+      - deskseed-versity-versioning:/data/versioning
+      - deskseed-versity-iam:/data/iam
+    networks:
+      - object-storage
+
+  backend:
+    environment: !override
+      SPRING_PROFILES_ACTIVE: production
+      SPRING_FLYWAY_ENABLED: "false"
+      DATABASE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?set the production database name}
+      DATABASE_RUNTIME_USERNAME: ${DATABASE_RUNTIME_USERNAME:?set the runtime role}
+      DATABASE_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set the runtime password}
+      DESKSEED_CUSTOMER_AUTH_REDIS_HOST: redis
+      DESKSEED_CUSTOMER_AUTH_REDIS_PORT: "6379"
+      DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME: deskseed
+      DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD: ${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD:?set the Redis ACL password}
+      DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED: "false"
+      DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK: ${DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK:?acknowledge the documented Redis plaintext risk}
+      DESKSEED_ATTACHMENT_SCAN_MODE: UPSTREAM_WAF
+      DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED: ${DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED:?acknowledge the documented Sophos WAF scan boundary}
+      DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES: ${DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES:-20971520}
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: ${DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES:-20971520}B
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: ${DESKSEED_ATTACHMENT_MAX_REQUEST_BYTES:-110100480}B
+      DESKSEED_ATTACHMENT_S3_ENDPOINT: http://versitygw:7070
+      DESKSEED_ATTACHMENT_S3_REGION: ${DESKSEED_ATTACHMENT_S3_REGION:-us-east-1}
+      DESKSEED_ATTACHMENT_S3_BUCKET: ${DESKSEED_ATTACHMENT_S3_BUCKET:-deskseed-attachments}
+      DESKSEED_ATTACHMENT_S3_ACCESS_KEY: ${DESKSEED_VERSITY_ACCESS_KEY:?set the VersityGW access key}
+      DESKSEED_ATTACHMENT_S3_SECRET_KEY: ${DESKSEED_VERSITY_SECRET_KEY:?set the VersityGW secret key}
+      DESKSEED_ATTACHMENT_S3_PATH_STYLE_ENABLED: "true"
+      DESKSEED_ATTACHMENT_S3_CREATE_BUCKET: "true"
+      DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK: ${DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK:?acknowledge the documented internal S3 plaintext risk}
+      DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS: ${DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS:?set Platform API client CIDRs}
+      DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS: ${DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS:?set trusted reverse proxy CIDRs}
+      DESKSEED_WEBHOOK_SECRET_ACTIVE_KEY_VERSION: v1
+      DESKSEED_WEBHOOK_SECRET_KEY_V1: ${DESKSEED_WEBHOOK_SECRET_KEY_V1:?set the webhook secret key}
+      DESKSEED_MAIL_DELIVERY_ENABLED: "false"
+      DESKSEED_MAIL_SCHEDULING_ENABLED: "false"
+      DESKSEED_MAIL_TRANSPORT: disabled
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
+      DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION: v1
+      DESKSEED_MAIL_PROTECTED_KEY_V1: ${DESKSEED_MAIL_PROTECTED_KEY_V1:?set the protected mail key}
+      DESKSEED_MAIL_OPERATIONS_CURSOR_ACTIVE_KEY_ID: v1
+      DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY: ${DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY:?set the mail cursor key}
+      DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY:?set the customer fingerprint key}
+      DESKSEED_CUSTOMER_AUTH_CSRF_KEY: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY:?set the customer CSRF key}
+      DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS: ${DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS:?set customer auth trusted proxy CIDRs}
+      DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL: ${DESKSEED_CUSTOMER_MAGIC_LINK_CONSUME_URL:?set the public magic-link URL}
+      DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL: ${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL:?set the public registration URL}
+      DESKSEED_CUSTOMER_PASSWORD_RESET_URL: ${DESKSEED_CUSTOMER_PASSWORD_RESET_URL:?set the public password-reset URL}
+      DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY:?set the public limiter fingerprint key}
+      DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_TRUSTED_PROXY_CIDRS: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_TRUSTED_PROXY_CIDRS:?set public limiter trusted proxy CIDRs}
+      DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY: ${DESKSEED_CUSTOMER_CLAIM_SIGNING_KEY:?set the customer claim signing key}
+      DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY: ${DESKSEED_CUSTOMER_CLAIM_FINGERPRINT_KEY:?set the customer claim fingerprint key}
+      DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY: ${DESKSEED_CUSTOMER_REQUEST_CURSOR_SIGNING_KEY:?set the customer request cursor key}
+      DESKSEED_ACCESS_AUDIT_ENABLED: "true"
+      DESKSEED_ACCESS_AUDIT_ACTIVE_KEY_VERSION: v1
+      DESKSEED_ACCESS_AUDIT_SESSION_FINGERPRINT_KEY: ${DESKSEED_ACCESS_AUDIT_SESSION_FINGERPRINT_KEY:?set the audit session fingerprint key}
+      DESKSEED_ACCESS_AUDIT_KEY_V1: ${DESKSEED_ACCESS_AUDIT_KEY_V1:?set the access audit key}
+      DESKSEED_AUDIT_CURSOR_ACTIVE_KEY_ID: v1
+      DESKSEED_AUDIT_CURSOR_SIGNING_KEY: ${DESKSEED_AUDIT_CURSOR_SIGNING_KEY:?set the audit cursor key}
+      DESKSEED_CORS_ALLOWED_ORIGINS: ${DESKSEED_CORS_ALLOWED_ORIGINS:?set the public HTTPS origin}
+      DESKSEED_AGENT_TICKET_CURSOR_ACTIVE_KEY_ID: v1
+      DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY: ${DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY:?set the agent ticket cursor key}
+      DESKSEED_API_DOCS_ENABLED: "false"
+      DESKSEED_BOOTSTRAP_ADMIN_ENABLED: ${DESKSEED_BOOTSTRAP_ADMIN_ENABLED:-false}
+      DESKSEED_BOOTSTRAP_ADMIN_EMAIL: ${DESKSEED_BOOTSTRAP_ADMIN_EMAIL:-}
+      DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME: ${DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME:-}
+      DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE: /run/secrets/deskseed-first-admin-password
+    depends_on: !override
+      db:
+        condition: service_healthy
+      db-permissions:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      versitygw:
+        condition: service_healthy
+    ports: !reset []
+    networks: !override
+      - application
+      - database
+      - customer-auth-limiter
+      - object-storage
+
+  frontend:
+    depends_on: !override
+      backend:
+        condition: service_started
+    ports: !override
+      - "${DESKSEED_FRONTEND_BIND_ADDRESS:?set the DMZ origin address}:${DESKSEED_FRONTEND_ORIGIN_PORT:?set the WAF origin port}:80"
+    networks: !override
+      - application
+
+networks:
+  application: {}
+  database:
+    internal: true
+  customer-auth-limiter:
+    internal: true
+  object-storage:
+    internal: true
+
+secrets:
+  deskseed-redis-acl:
+    file: ${DESKSEED_REDIS_ACL_FILE:?set the generated Redis ACL file path}
+
+volumes:
+  deskseed-versity-s3:
+  deskseed-versity-versioning:
+  deskseed-versity-iam:

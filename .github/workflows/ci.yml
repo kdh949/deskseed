@@ -210,6 +210,8 @@ jobs:
         run: bash scripts/test-e2e-compose-ownership.sh
       - name: Start stack and check backend health
         run: bash scripts/compose-smoke.sh
+      - name: Verify production Redis ACL, database roles, and aggregate health
+        run: bash scripts/test-production-runtime-live.sh
 
   ci-gate:
     name: CI gate
