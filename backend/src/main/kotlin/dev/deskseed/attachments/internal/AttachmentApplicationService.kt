@@ -20,6 +20,7 @@ import dev.deskseed.attachments.AttachmentUploadService
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.LinkedTicketAttachment
 import dev.deskseed.attachments.MalwareScanResult
+import dev.deskseed.attachments.MalwareScanSource
 import dev.deskseed.attachments.MalwareScanner
 import dev.deskseed.attachments.TicketAttachment
 import dev.deskseed.attachments.TicketAttachmentLinkCommand
@@ -37,6 +38,7 @@ import dev.deskseed.foundation.ActorType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.io.BufferedInputStream
 import java.io.InputStream
@@ -55,6 +57,7 @@ internal class AttachmentApplicationService(
     private val transitions: AttachmentStateTransitions,
     private val objectStore: AttachmentObjectStore,
     private val malwareScanner: MalwareScanner,
+    private val cleanupTransactions: AttachmentCleanupTransactions,
     private val properties: AttachmentStorageProperties,
     private val clock: Clock,
 ) : AttachmentUploadService, TicketAttachmentLinker, TicketAttachmentReadProjection, TicketDraftAttachmentReferenceValidator, AttachmentDownloadService, AttachmentCleanupService {
@@ -96,8 +99,14 @@ internal class AttachmentApplicationService(
         }
         val effectiveContentType = detectedContentType
         val scan = try {
-            objectStore.openPrivate(pending.storageKey).use { stream ->
-                malwareScanner.scan(stream, pending.fileName, effectiveContentType)
+            if (malwareScanner.requiresContent) {
+                objectStore.openPrivate(pending.storageKey).use { stream ->
+                    malwareScanner.scan(stream, pending.fileName, effectiveContentType)
+                }
+            } else {
+                InputStream.nullInputStream().use { stream ->
+                    malwareScanner.scan(stream, pending.fileName, effectiveContentType)
+                }
             }
         } catch (exception: RuntimeException) {
             transitions.markTerminal(pending, AttachmentScanStatus.FAILED, "SCANNER_UNAVAILABLE", command)
@@ -109,7 +118,7 @@ internal class AttachmentApplicationService(
         }
 
         val attachment = TicketAttachment(id, pending.fileName, stored.sizeBytes, effectiveContentType)
-        transitions.markClean(pending, attachment, stored.sha256, command)
+        transitions.markClean(pending, attachment, stored.sha256, malwareScanner.source, command)
         return AttachmentUploadResult(attachment, AttachmentScanStatus.CLEAN, expiresAt)
     }
 
@@ -203,19 +212,25 @@ internal class AttachmentApplicationService(
         )
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     override fun purgeExpired(now: Instant): Int {
-        val rows = metadata.lockExpired(now, properties.cleanupBatchSize)
-        rows.forEach { row ->
+        val claims = cleanupTransactions.claimExpired(
+            now = now,
+            limit = properties.cleanupBatchSize,
+            leaseExpiresAt = now.plusSeconds(properties.cleanupLeaseSeconds),
+        )
+        var completed = 0
+        claims.forEach { claim ->
             try {
-                objectStore.delete(row.storageKey)
+                objectStore.delete(claim.attachment.storageKey)
             } catch (exception: RuntimeException) {
+                runCatching { cleanupTransactions.releaseClaim(claim) }
                 throw AttachmentUnavailableException(exception)
             }
-            metadata.markExpired(row.id, now)
-            transitions.recordCleanup(row, now)
+            cleanupTransactions.completeClaim(claim, now)
+            completed += 1
         }
-        return rows.size
+        return completed
     }
 
     private fun validateUpload(command: AttachmentUploadCommand) {
@@ -482,26 +497,51 @@ internal class AttachmentMetadataStore(
                file_name, size_bytes, content_type, scan_status, linked_at, expires_at
         from attachment_objects
         where scan_status in ('QUARANTINED', 'CLEAN', 'INFECTED', 'FAILED') and expires_at <= ?
+          and (cleanup_lease_expires_at is null or cleanup_lease_expires_at <= ?)
         order by expires_at, id
         limit ?
         for update skip locked
         """.trimIndent(),
         ::storedAttachment,
         Timestamp.from(now),
+        Timestamp.from(now),
         limit,
     )
 
-    fun markExpired(id: UUID, now: Instant) {
+    fun claimCleanup(id: UUID, claimId: UUID, claimedAt: Instant, leaseExpiresAt: Instant): Boolean = jdbcTemplate.update(
+        """
+        update attachment_objects
+        set cleanup_claim_id = ?, cleanup_lease_expires_at = ?, cleanup_attempt_count = cleanup_attempt_count + 1
+        where id = ? and (cleanup_lease_expires_at is null or cleanup_lease_expires_at <= ?)
+        """.trimIndent(),
+        claimId,
+        Timestamp.from(leaseExpiresAt),
+        id,
+        Timestamp.from(claimedAt),
+    ) == 1
+
+    fun releaseCleanupClaim(id: UUID, claimId: UUID) {
         jdbcTemplate.update(
             """
             update attachment_objects
-            set scan_status = 'EXPIRED', deleted_at = ?
-            where id = ? and scan_status <> 'EXPIRED'
+            set cleanup_claim_id = null, cleanup_lease_expires_at = null
+            where id = ? and cleanup_claim_id = ?
             """.trimIndent(),
-            Timestamp.from(now),
             id,
+            claimId,
         )
     }
+
+    fun markExpired(id: UUID, claimId: UUID, now: Instant): Boolean = jdbcTemplate.update(
+        """
+        update attachment_objects
+        set scan_status = 'EXPIRED', deleted_at = ?, cleanup_claim_id = null, cleanup_lease_expires_at = null
+        where id = ? and cleanup_claim_id = ? and scan_status <> 'EXPIRED'
+        """.trimIndent(),
+        Timestamp.from(now),
+        id,
+        claimId,
+    ) == 1
 
     private fun storedAttachment(result: java.sql.ResultSet, row: Int): StoredAttachment = StoredAttachment(
         id = result.getObject("id", UUID::class.java),
@@ -519,6 +559,40 @@ internal class AttachmentMetadataStore(
     )
 }
 
+internal data class AttachmentCleanupClaim(
+    val attachment: StoredAttachment,
+    val claimId: UUID,
+)
+
+@Service
+internal class AttachmentCleanupTransactions(
+    private val metadata: AttachmentMetadataStore,
+    private val transitions: AttachmentStateTransitions,
+) {
+    @Transactional
+    fun claimExpired(now: Instant, limit: Int, leaseExpiresAt: Instant): List<AttachmentCleanupClaim> =
+        metadata.lockExpired(now, limit).map { attachment ->
+            val claim = AttachmentCleanupClaim(attachment, UUID.randomUUID())
+            check(metadata.claimCleanup(attachment.id, claim.claimId, now, leaseExpiresAt)) {
+                "Attachment cleanup claim changed while locked"
+            }
+            claim
+        }
+
+    @Transactional
+    fun releaseClaim(claim: AttachmentCleanupClaim) {
+        metadata.releaseCleanupClaim(claim.attachment.id, claim.claimId)
+    }
+
+    @Transactional
+    fun completeClaim(claim: AttachmentCleanupClaim, now: Instant) {
+        check(metadata.markExpired(claim.attachment.id, claim.claimId, now)) {
+            "Attachment cleanup claim changed before completion"
+        }
+        transitions.recordCleanup(claim.attachment, now)
+    }
+}
+
 @Service
 internal class AttachmentStateTransitions(
     private val metadata: AttachmentMetadataStore,
@@ -533,7 +607,13 @@ internal class AttachmentStateTransitions(
     }
 
     @Transactional
-    fun markClean(pending: PendingAttachment, attachment: TicketAttachment, sha256: String, command: AttachmentUploadCommand) {
+    fun markClean(
+        pending: PendingAttachment,
+        attachment: TicketAttachment,
+        sha256: String,
+        scanSource: MalwareScanSource,
+        command: AttachmentUploadCommand,
+    ) {
         val now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS)
         metadata.markClean(pending.id, attachment, sha256, now)
         appendSecurity(
@@ -541,7 +621,12 @@ internal class AttachmentStateTransitions(
             pending,
             command,
             now,
-            mapOf("status" to "CLEAN", "sizeBytes" to attachment.sizeBytes.toString(), "sha256Prefix" to sha256.take(12)),
+            mapOf(
+                "status" to "CLEAN",
+                "sizeBytes" to attachment.sizeBytes.toString(),
+                "sha256Prefix" to sha256.take(12),
+                "scanSource" to scanSource.name,
+            ),
         )
     }
 

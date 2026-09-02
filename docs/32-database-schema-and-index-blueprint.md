@@ -531,6 +531,12 @@ setting_change_audits (canonical audit ledger와 연결)
 - each row contains only bucket category, keyed fingerprint, count, timestamps, and expiry; it cannot be used to recover the submitted email or client IP without the independently provisioned HMAC key.
 - expiry cleanup deletes at most the configured batch size while holding row locks with `SKIP LOCKED`; concurrent application instances can run it safely.
 
+### 8.3 Attachment object cleanup (V32, V86)
+
+- `attachment_objects` stores private object keys and metadata; bytes stay outside PostgreSQL.
+- `cleanup_claim_id`, `cleanup_lease_expires_at`, and `cleanup_attempt_count` form a retryable cleanup intent. Claim selection uses bounded `FOR UPDATE SKIP LOCKED`, but the S3 delete runs only after that transaction commits.
+- `attachment_objects_cleanup_lease_idx (expires_at, cleanup_lease_expires_at, id)` limits eligible claim scans. Successful object deletion is completed with `EXPIRED` state and required audit in a separate transaction.
+
 ## 9. Migration 순서
 
 1. foundation IDs/settings.

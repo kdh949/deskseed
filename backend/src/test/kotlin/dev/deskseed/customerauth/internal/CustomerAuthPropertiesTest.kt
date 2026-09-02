@@ -154,7 +154,33 @@ class CustomerAuthPropertiesTest {
     }
 
     @Test
-    fun `production profile requires authenticated TLS redis configuration`() {
+    fun `production redis boundary allows only TLS or acknowledged compose internal plaintext`() {
+        assertThatCode {
+            ProductionRedisSecurityBoundary(
+                host = "managed-redis.example.test",
+                tlsEnabled = true,
+                plaintextInternalNetworkAcknowledged = false,
+            ).validate()
+        }.doesNotThrowAnyException()
+        assertThatCode {
+            ProductionRedisSecurityBoundary(
+                host = "redis",
+                tlsEnabled = false,
+                plaintextInternalNetworkAcknowledged = true,
+            ).validate()
+        }.doesNotThrowAnyException()
+
+        listOf(
+            ProductionRedisSecurityBoundary("redis", false, false),
+            ProductionRedisSecurityBoundary("external-redis.example.test", false, true),
+        ).forEach { boundary ->
+            assertThatThrownBy { boundary.validate() }
+                .isInstanceOf(IllegalArgumentException::class.java)
+        }
+    }
+
+    @Test
+    fun `production profile requires authenticated explicitly acknowledged redis configuration`() {
         val production = YamlPropertiesFactoryBean().apply {
             setResources(ClassPathResource("application-production.yml"))
         }.getObject()
@@ -167,7 +193,10 @@ class CustomerAuthPropertiesTest {
             .isEqualTo("\${DESKSEED_CUSTOMER_AUTH_REDIS_USERNAME}")
         assertThat(production?.getProperty("spring.data.redis.password"))
             .isEqualTo("\${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD}")
-        assertThat(production?.getProperty("spring.data.redis.ssl.enabled")).isEqualTo("true")
+        assertThat(production?.getProperty("spring.data.redis.ssl.enabled"))
+            .isEqualTo("\${DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED}")
+        assertThat(production?.getProperty("deskseed.customer-auth.redis-security.plaintext-internal-network-ack"))
+            .isEqualTo("\${DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK:false}")
         assertThat(production?.getProperty("deskseed.customer-auth.registration-verification-url"))
             .isEqualTo("\${DESKSEED_CUSTOMER_REGISTRATION_VERIFICATION_URL}")
         assertThat(production?.getProperty("deskseed.customer-auth.password-reset-url"))
