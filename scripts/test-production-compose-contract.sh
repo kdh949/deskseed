@@ -117,6 +117,11 @@ assert backend_environment["DESKSEED_ATTACHMENT_S3_CREATE_BUCKET"] == "true"
 assert backend_environment["DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK"] == "true"
 assert backend_environment["DESKSEED_MAIL_DELIVERY_ENABLED"] == "false"
 assert backend_environment["DESKSEED_MAIL_TRANSPORT"] == "disabled"
+assert backend_environment["SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE"] == "20971520B"
+assert backend_environment["SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE"] == "110100480B"
+file_limit = int(backend_environment["SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE"].removesuffix("B"))
+request_limit = int(backend_environment["SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE"].removesuffix("B"))
+assert request_limit >= (5 * file_limit) + (1024 * 1024)
 assert backend_environment["MANAGEMENT_HEALTH_MAIL_ENABLED"] == "false"
 assert "DESKSEED_ACCESS_AUDIT_KEY_LOCAL_V1" not in backend_environment
 assert "DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1" not in backend_environment
@@ -138,6 +143,8 @@ assert services["backend"]["depends_on"]["db-permissions"]["condition"] == "serv
 assert services["backend"]["depends_on"]["versitygw"]["condition"] == "service_healthy"
 assert services["versitygw"]["environment"]["VGW_HEALTH"] == "/health"
 PY
+
+grep -Fx '    client_max_body_size 105m;' "$repository_root/frontend/nginx.conf" >/dev/null
 
 if docker compose \
   --project-name deskseed-production-contract \

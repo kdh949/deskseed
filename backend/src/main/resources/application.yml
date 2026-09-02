@@ -181,6 +181,7 @@ deskseed:
     unlinked-ttl-hours: ${DESKSEED_ATTACHMENT_UNLINKED_TTL_HOURS:24}
     linked-ttl-days: ${DESKSEED_ATTACHMENT_LINKED_TTL_DAYS:30}
     cleanup-batch-size: ${DESKSEED_ATTACHMENT_CLEANUP_BATCH_SIZE:100}
+    cleanup-lease-seconds: ${DESKSEED_ATTACHMENT_CLEANUP_LEASE_SECONDS:300}
     cleanup-interval: ${DESKSEED_ATTACHMENT_CLEANUP_INTERVAL:1h}
     cleanup-initial-delay: ${DESKSEED_ATTACHMENT_CLEANUP_INITIAL_DELAY:10m}
   cors:

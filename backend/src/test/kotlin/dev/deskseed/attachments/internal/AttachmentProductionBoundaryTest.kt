@@ -107,6 +107,7 @@ class AttachmentProductionBoundaryTest {
             transitions = transitions,
             objectStore = objectStore,
             malwareScanner = scanner,
+            cleanupTransactions = mock(AttachmentCleanupTransactions::class.java),
             properties = AttachmentStorageProperties(),
             clock = Clock.fixed(now, ZoneOffset.UTC),
         )
@@ -152,6 +153,10 @@ class AttachmentProductionBoundaryTest {
             .isEqualTo("\${DESKSEED_ATTACHMENT_S3_SECRET_KEY}")
         assertThat(production?.getProperty("deskseed.attachments.s3.plaintext-internal-network-acknowledged"))
             .isEqualTo("\${DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK:false}")
+        assertThat(production?.getProperty("spring.servlet.multipart.max-file-size"))
+            .isEqualTo("\${DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES:20MB}")
+        assertThat(production?.getProperty("spring.servlet.multipart.max-request-size"))
+            .isEqualTo("\${DESKSEED_ATTACHMENT_MAX_REQUEST_BYTES:105MB}")
     }
 
     @Test

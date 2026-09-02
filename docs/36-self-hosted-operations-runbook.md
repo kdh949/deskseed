@@ -142,7 +142,7 @@ Application은 `UPSTREAM_WAF` mode에서 파일을 다시 바이러스 검사하
 
 1. 모든 `multipart/form-data` create/upload route에 web server protection의 upload antivirus가 적용된다.
 2. infected와 unscannable upload를 차단하고 예외/bypass route를 두지 않는다.
-3. Sophos scan/request body limit이 `DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES`와 multipart overhead를 합친 최대 요청보다 크다.
+3. Nginx `client_max_body_size`, Spring multipart file/request, Sophos scan/request body limit을 각각 20 MiB/file, 105 MiB/request 이상으로 맞춘다. 105 MiB는 최대 5개 attachment(100 MiB)와 form/header overhead 5 MiB를 포함한다.
 4. frontend origin port는 Sophos WAF source만 허용하고 WAN, 다른 VLAN, 임의 reverse proxy에서 직접 접근할 수 없다.
 5. WAF를 통과하지 않는 내부 batch/API upload 경로를 만들지 않는다.
 
@@ -191,8 +191,8 @@ First-admin bootstrap은 다음 조건에서만 한 번 실행된다.
 아래 순서는 production overlay가 구현한 migration/permission job을 사용한다. 실제 previous release image 호환성과 production-size restore는 별도 검증이 필요하다.
 
 1. release note와 `backend/src/main/resources/db/migration/`의 새 migration을 확인한다.
-2. 현재 DB의 logical backup을 별도 매체에 보관하고 checksum과 시작 시각을 기록한다.
-3. backup을 별도 staging DB에 restore한다.
+2. traffic/write를 정지한 뒤 DB와 `deskseed-versity-s3`, `deskseed-versity-versioning`, `deskseed-versity-iam` 세 volume을 하나의 일관된 backup set으로 보관하고 각 checksum과 시작 시각을 기록한다.
+3. 같은 backup set의 DB와 세 object-storage volume을 별도 staging 환경에 함께 restore한다.
 4. migration role로 Flyway를 실행한다.
 5. runtime role privilege script를 재실행하고 verification SQL을 통과시킨다.
 6. Hibernate `ddl-auto=validate`, backend/frontend health, login, ticket, audit smoke를 실행한다.
@@ -205,7 +205,7 @@ First-admin bootstrap은 다음 조건에서만 한 번 실행된다.
 
 ## 7. Backup
 
-아래 예시는 logical custom-format backup이다. 실행 전 destination directory 권한, 여유 공간, encryption-at-rest를 운영자가 확인한다.
+아래 예시는 object storage가 없는 base Compose/rehearsal용 logical custom-format DB backup이다. Production attachment 배포의 단독 backup 명령으로 사용하면 안 된다. 실행 전 destination directory 권한, 여유 공간, encryption-at-rest를 운영자가 확인한다.
 
 ```bash
 umask 077
@@ -221,11 +221,13 @@ python3 -c \
   "$backup_path"
 ```
 
-실제 운영 backup은 DB container와 같은 호스트의 `/tmp`에 장기 보관하지 않는다. 접근 통제·암호화된 외부 저장소로 옮기고 backup 시작 시각, 완료 시각, byte size, checksum, schema version, 보존 만료를 inventory에 기록한다. 현재 release에는 object storage data가 없으므로 DB만 대상이다.
+Production에서 DB-only backup은 금지한다. Attachment metadata는 PostgreSQL에, bytes/versioning/IAM은 `deskseed-versity-s3`, `deskseed-versity-versioning`, `deskseed-versity-iam` volume에 나뉘므로 write를 정지한 동일 시점의 DB dump와 세 volume snapshot을 하나의 backup-set ID로 묶어야 한다. 접근 통제·암호화된 외부 저장소로 옮기고 시작/완료 시각, 각 byte size/checksum, schema version, 보존 만료를 inventory에 기록한다.
+
+현재 repository에는 이 네 자원을 원자적으로 snapshot/restore하는 production 도구와 검증된 drill이 없다. 운영자가 일관 snapshot 절차와 별도 restore rehearsal을 마련하기 전에는 production backup/restore capability를 충족했다고 간주하지 않는다.
 
 ## 8. Fresh restore
 
-아래 명령은 base Compose로 확인할 수 있는 로컬 fresh-restore 패턴이다. Production에서는 기존 DB를 제자리에서 덮어쓰지 말고 operator-owned deployment manifest의 새 database/volume에 적용해야 하며, 그 manifest는 이 저장소에 포함되지 않는다.
+아래 명령은 object storage가 없는 base Compose로 확인할 수 있는 로컬 fresh-restore 패턴이다. Production에서는 기존 DB를 제자리에서 덮어쓰지 말고, 같은 backup-set ID의 DB와 VersityGW 세 volume을 operator-owned deployment manifest의 새 database/volume에 함께 적용해야 한다. 그 manifest와 일관 restore 도구는 이 저장소에 포함되지 않는다.
 
 ```bash
 deskseed_restore_project="deskseed-restore-$(python3 -c \

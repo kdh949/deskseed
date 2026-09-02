@@ -84,6 +84,7 @@ class AttachmentDownloadAuditOrderTest {
             transitions = transitions,
             objectStore = objectStore,
             malwareScanner = CleanScanner,
+            cleanupTransactions = mock(AttachmentCleanupTransactions::class.java),
             properties = AttachmentStorageProperties(),
             clock = Clock.fixed(now, ZoneOffset.UTC),
         )

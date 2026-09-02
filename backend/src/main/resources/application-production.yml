@@ -18,6 +18,10 @@ spring:
       password: ${DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD}
       ssl:
         enabled: ${DESKSEED_CUSTOMER_AUTH_REDIS_TLS_ENABLED}
+  servlet:
+    multipart:
+      max-file-size: ${DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES:20MB}
+      max-request-size: ${DESKSEED_ATTACHMENT_MAX_REQUEST_BYTES:105MB}
   mail:
     host: ${DESKSEED_MAIL_SMTP_HOST:}
     port: ${DESKSEED_MAIL_SMTP_PORT:}

@@ -25,6 +25,7 @@ internal data class AttachmentStorageProperties(
     var unlinkedTtlHours: Long = 24,
     var linkedTtlDays: Long = 30,
     var cleanupBatchSize: Int = 100,
+    var cleanupLeaseSeconds: Long = 300,
     var scanMode: MalwareScanSource = MalwareScanSource.APPLICATION,
     var upstreamWafAcknowledged: Boolean = false,
 ) {
@@ -33,6 +34,7 @@ internal data class AttachmentStorageProperties(
         require(unlinkedTtlHours in 1..(24L * 30)) { "Attachment unlinked TTL must be bounded" }
         require(linkedTtlDays in 1..3650) { "Attachment linked TTL must be bounded" }
         require(cleanupBatchSize in 1..1_000) { "Attachment cleanup batch size must be bounded" }
+        require(cleanupLeaseSeconds in 30..3_600) { "Attachment cleanup lease must be bounded" }
     }
 }
 

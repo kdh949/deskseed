@@ -28,6 +28,8 @@ Production attachment bytes를 private VersityGW S3-compatible storage에 bounde
 - production-only `UPSTREAM_WAF` scanner source와 acknowledgement
 - app scanner가 object bytes를 다시 읽지 않는 경로
 - Sophos upload AV, unscannable block, size, origin bypass 운영 계약
+- 20 MiB/file, 105 MiB/request Nginx/Spring/Sophos size 계약
+- lease claim transaction, post-commit S3 delete, completion/audit transaction 경계
 
 ## Out of scope
 
@@ -45,6 +47,7 @@ Production attachment bytes를 private VersityGW S3-compatible storage에 bounde
 - `UPSTREAM_WAF` mode와 acknowledgement가 없으면 trusted scanner bean이 생기지 않는다.
 - WAF upload AV, block-unscannable, request-size coverage, origin source restriction 중 하나라도 충족하지 않으면 acknowledgement를 true로 설정하면 안 된다.
 - MIME-family/size/owner/visibility/CLEAN-only link 정책은 유지한다.
+- retention S3 delete는 DB transaction/row lock 밖에서 실행하고 실패한 claim은 release 또는 lease expiry 후 재시도한다.
 
 ## Data and privacy
 
@@ -66,6 +69,8 @@ Production attachment bytes를 private VersityGW S3-compatible storage에 bounde
 2. Given production Compose, When model을 검사하면, Then VersityGW는 host port 없이 Backend와 전용 internal network만 공유한다.
 3. Given `UPSTREAM_WAF` mode without acknowledgement, When context를 시작하면, Then scanner composition이 실패한다.
 4. Given acknowledged upstream mode, When upload를 처리하면, Then object를 다시 application scanner로 읽지 않고 CLEAN transition에 `UPSTREAM_WAF` source를 기록한다.
+5. Given HTTP multipart, When Servlet 기본 request limit보다 큰 11 MiB 파일을 upload하면, Then Nginx/Spring production 계약 안에서 controller까지 전달된다.
+6. Given retention delete/audit failure, When cleanup을 실행하면, Then remote I/O는 DB transaction 밖에서 실행되고 claim은 안전하게 release 또는 lease-expiry retry 상태로 남는다.
 
 ## Validation
 
@@ -78,7 +83,7 @@ git diff --check
 
 ## Compatibility and migration
 
-- OpenAPI/database migration: 없음
+- OpenAPI 변경 없음. V86은 attachment cleanup claim/lease/attempt column과 bounded cleanup index를 additive하게 추가한다.
 - 기존 local/test filesystem와 deterministic scanner: 유지
 - production: VersityGW/S3와 upstream WAF acknowledgement가 새 필수 구성
 - rollback: 이전 image/Compose로 전환해도 S3 objects/volumes는 자동 삭제하지 않는다.
