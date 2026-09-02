@@ -22,7 +22,7 @@ Production Compose에서 Flyway migration과 application runtime DB role을 분�
 
 ## In scope
 
-- 빈 DB에서 migration/runtime role 생성과 default privilege 설정
+- 빈 DB에서 init 전용 bootstrap과 제한된 migration/runtime role 생성 및 default privilege 설정
 - Flyway one-shot service와 migration 후 runtime privilege 적용·검증 service
 - Backend의 runtime credential 사용 및 embedded Flyway 비활성화
 - Redis external ACL file, named authenticated application user, unauthenticated default user 차단
@@ -40,9 +40,10 @@ Production Compose에서 Flyway migration과 application runtime DB role을 분�
 ## Invariants and failure semantics
 
 - Flyway는 migration role만 사용하고 Backend datasource는 runtime role만 사용한다.
+- bootstrap credential은 DB init에만 전달되고 migration role은 `NOSUPERUSER/NOCREATEDB/NOCREATEROLE`여야 한다.
 - migration 또는 privilege 검증 job이 실패하면 Backend가 시작하지 않는다.
 - runtime role은 schema CREATE와 Flyway history 접근 권한이 없고 canonical audit table은 SELECT/INSERT만 갖는다.
-- Redis default user는 비활성화하고 application user는 limiter key와 필요한 command만 사용한다.
+- Redis default user는 비활성화하고 application user는 limiter key와 health `INFO`를 포함한 필요한 command만 사용한다.
 - Redis TLS가 false이면 host가 Compose service name `redis`이고 plaintext risk acknowledgement가 true여야 한다.
 
 ## Data and privacy

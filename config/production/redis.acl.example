@@ -1,3 +1,3 @@
 user default off resetkeys resetchannels -@all
 user health on nopass resetkeys resetchannels -@all +ping
-user deskseed on #0000000000000000000000000000000000000000000000000000000000000000 ~deskseed:customer-auth:limiter:v1:* resetchannels -@all +ping +get +pttl +incr +pexpire +eval +evalsha +script|load +client|setinfo
+user deskseed on #0000000000000000000000000000000000000000000000000000000000000000 ~deskseed:customer-auth:limiter:v1:* resetchannels -@all +ping +info +get +pttl +incr +pexpire +eval +evalsha +script|load +client|setinfo

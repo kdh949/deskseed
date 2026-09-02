@@ -25,6 +25,8 @@ cleanup() {
 trap cleanup EXIT
 
 export POSTGRES_DB=deskseed
+export DATABASE_BOOTSTRAP_USERNAME=deskseed_bootstrap
+export DATABASE_BOOTSTRAP_PASSWORD=contract-bootstrap-password
 export DATABASE_MIGRATION_USERNAME=deskseed_migration
 export DATABASE_MIGRATION_PASSWORD=contract-migration-password
 export DATABASE_RUNTIME_USERNAME=deskseed_runtime
@@ -104,12 +106,17 @@ assert "DESKSEED_ACCESS_AUDIT_KEY_LOCAL_V1" not in backend_environment
 assert "DESKSEED_MAIL_PROTECTED_KEY_LOCAL_V1" not in backend_environment
 
 redis_command = services["redis"]["command"]
-assert "/run/secrets/deskseed-redis-acl" in redis_command, redis_command
+assert "/run/deskseed-redis/users.acl" in redis_command, redis_command
+assert services["redis"]["entrypoint"] == ["/opt/deskseed/production/prepare-redis-acl.sh"]
+assert any(str(mount).startswith("/run/deskseed-redis") for mount in services["redis"]["tmpfs"])
 redis_secret = services["redis"]["secrets"][0]
 assert redis_secret["source"] == "deskseed-redis-acl", redis_secret
 assert redis_secret["target"].endswith("/deskseed-redis-acl"), redis_secret
 
 assert services["db-migrate"]["environment"]["FLYWAY_USER"] == "deskseed_migration"
+assert services["db"]["environment"]["POSTGRES_USER"] == "deskseed_bootstrap"
+assert services["db"]["environment"]["DESKSEED_MIGRATION_ROLE"] == "deskseed_migration"
+assert services["db"]["environment"]["DESKSEED_RUNTIME_ROLE"] == "deskseed_runtime"
 assert services["db-permissions"]["environment"]["DATABASE_RUNTIME_USERNAME"] == "deskseed_runtime"
 assert services["backend"]["depends_on"]["db-permissions"]["condition"] == "service_completed_successfully"
 PY

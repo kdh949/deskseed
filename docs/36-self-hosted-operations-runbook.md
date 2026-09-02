@@ -89,7 +89,7 @@ bash scripts/test-production-compose-contract.sh
 
 기본 `compose.yaml`의 DB password와 audit/cursor key는 공개된 **로컬 개발 기본값**이다. 인터넷에 노출하거나 production에 재사용하면 안 된다. Production overlay는 backend environment를 `!override`하여 다음 production 값을 전부 요구한다.
 
-- DB migration/runtime credential
+- DB bootstrap/migration/runtime credential. Bootstrap credential는 PostgreSQL container init에만 전달하고 Flyway/backend에는 전달하지 않는다.
 - first-admin password file
 - 32-byte base64 access-audit key와 key version
 - 별도 32-byte base64 access-audit session-fingerprint key
@@ -102,7 +102,7 @@ bash scripts/test-production-compose-contract.sh
 - TLS reverse proxy 설정
 - 고객 인증 Redis username/password, private network placement, `noeviction` reserved-capacity policy와 plaintext acknowledgement
 
-Production Redis는 host port 없이 전용 internal network에만 연결되고 external ACL file에서 unauthenticated default user를 끈다. `deskseed` user는 limiter key pattern과 `GET/PTTL/INCR/PEXPIRE/EVAL/EVALSHA/SCRIPT LOAD/PING/CLIENT SETINFO`만 허용한다. 짧은 TTL limiter state는 Redis 재시작 때 사라지는 것을 허용하며 장애나 OOM은 customer-auth 요청을 generic `503`으로 fail closed한다. PostgreSQL customer/account/session/token/audit state를 대신하지 않는다.
+Production Redis는 host port 없이 전용 internal network에만 연결되고 external ACL file에서 unauthenticated default user를 끈다. `deskseed` user는 limiter key pattern과 `GET/PTTL/INCR/PEXPIRE/EVAL/EVALSHA/SCRIPT LOAD/PING/INFO/CLIENT SETINFO`만 허용한다. `INFO`는 Spring aggregate health가 실제 Redis dependency를 확인하는 데 필요하다. 짧은 TTL limiter state는 Redis 재시작 때 사라지는 것을 허용하며 장애나 OOM은 customer-auth 요청을 generic `503`으로 fail closed한다. PostgreSQL customer/account/session/token/audit state를 대신하지 않는다.
 
 이 배포는 Redis TLS를 의도적으로 사용하지 않는다. 따라서 같은 Docker host의 root/Docker-daemon 권한자, container escape, 잘못 연결된 network의 process는 credential과 limiter traffic을 관찰할 수 있다. `DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK=true` 없이는 Compose가 render되지 않고, production application도 TLS가 false일 때 host가 정확히 `redis`이며 acknowledgement가 true인지 검증한다. 이 예외는 external/remote Redis에 적용할 수 없다.
 
@@ -113,8 +113,8 @@ Production Redis는 host port 없이 전용 internal network에만 연결되고 
 새 빈 volume 기준의 최소 순서다. 예시는 `/etc/deskseed`를 사용하며 실제 secret 값은 출력하거나 Git에 저장하지 않는다.
 
 ```bash
-sudo install -d -m 0700 /etc/deskseed
-sudo install -m 0600 .env.production.example /etc/deskseed/production.env
+sudo install -d -m 0700 -o deskseed-deploy -g deskseed-deploy /etc/deskseed
+sudo install -m 0600 -o deskseed-deploy -g deskseed-deploy .env.production.example /etc/deskseed/production.env
 sudoedit /etc/deskseed/production.env
 
 set -a
@@ -128,11 +128,11 @@ docker compose --env-file /etc/deskseed/production.env \
   -f compose.yaml -f compose.production.yaml up --build --detach
 ```
 
-`DESKSEED_REDIS_ACL_FILE=/etc/deskseed/redis.acl`로 맞춘다. `render-redis-acl.sh`은 기존 파일을 덮어쓰지 않으며 Redis password의 SHA-256 hash만 ACL에 기록한다. `db-migrate`가 실패하거나 `db-permissions` 검증이 실패하면 backend dependency가 충족되지 않는다. `docker compose ps --all`에서 두 job이 exit `0`, backend/frontend/db/redis가 running인지 확인한다. 기존 PostgreSQL volume에는 init script가 다시 실행되지 않으므로 이 절차를 그대로 적용하지 말고 role 존재/소유권/privilege를 먼저 점검한다.
+`deskseed-deploy`는 예시 전용 deployment 계정이므로 실제 전용 non-root 계정으로 바꾼다. `DESKSEED_REDIS_ACL_FILE=/etc/deskseed/redis.acl`로 맞춘다. `render-redis-acl.sh`은 기존 파일을 덮어쓰지 않으며 Redis password의 SHA-256 hash만 ACL에 기록한다. Linux의 file-backed Compose secret은 host 소유권을 바꾸지 않으므로 Redis entrypoint가 root로 이 파일을 읽고 container-private tmpfs에 Redis uid/gid, mode `0400`으로 복사한 뒤 권한을 내린다. `db-migrate`가 실패하거나 `db-permissions` 검증이 실패하면 backend dependency가 충족되지 않는다. `docker compose ps --all`에서 두 job이 exit `0`, backend/frontend/db/redis가 running인지 확인한다. 기존 PostgreSQL volume에는 init script가 다시 실행되지 않으므로 이 절차를 그대로 적용하지 말고 role 존재/소유권/privilege를 먼저 점검한다.
 
 ## 4. DB ownership과 least privilege
 
-Production overlay는 PostgreSQL image init에서 migration/runtime role을 만들고 migration role의 default privilege를 설정한다. `db-migrate`는 repository의 forward-only SQL을 migration role로 적용하고, `db-permissions`는 runtime privilege를 적용·검증한다. 그 이후 backend는 embedded Flyway를 끄고 runtime datasource credential만 사용한다. 같은 SQL 경계의 실제 restore/upgrade 증명은 `run-operations-rehearsal.sh`이 담당한다.
+Production overlay는 PostgreSQL image init 전용 bootstrap superuser와 `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE` migration/runtime role을 분리한다. Bootstrap credential은 DB service에만 있고, migration role은 application database의 `CREATE/TEMPORARY`와 public schema DDL만 소유한다. 이 database `CREATE`는 migration에 포함된 `pg_trgm` extension 설치에 필요하지만 새 database/role 생성이나 cluster 관리 권한은 주지 않는다. `db-migrate`는 repository의 forward-only SQL을 migration role로 적용하고, `db-permissions`는 runtime privilege를 적용·검증한다. 그 이후 backend는 embedded Flyway를 끄고 runtime datasource credential만 사용한다. 같은 SQL 경계와 migration role flags의 source/restore 검증은 `run-operations-rehearsal.sh`이 담당한다.
 
 `configure-runtime-role.sql`은 rehearsal의 migration credential로 실행된다. 일반 application table의 DML을 허용한 다음 다음 권한을 명시적으로 회수한다.
 

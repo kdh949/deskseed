@@ -5,8 +5,10 @@ services:
   db:
     environment: !override
       POSTGRES_DB: ${POSTGRES_DB:?set the production database name}
-      POSTGRES_USER: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
-      POSTGRES_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
+      POSTGRES_USER: ${DATABASE_BOOTSTRAP_USERNAME:?set the bootstrap role}
+      POSTGRES_PASSWORD: ${DATABASE_BOOTSTRAP_PASSWORD:?set the bootstrap password}
+      DESKSEED_MIGRATION_ROLE: ${DATABASE_MIGRATION_USERNAME:?set the migration role}
+      DESKSEED_MIGRATION_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
       DESKSEED_RUNTIME_ROLE: ${DATABASE_RUNTIME_USERNAME:?set the runtime role}
       DESKSEED_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?set the runtime password}
     healthcheck:
@@ -63,10 +65,12 @@ services:
     ports: !reset []
 
   redis:
+    entrypoint: !override
+      - /opt/deskseed/production/prepare-redis-acl.sh
     command: !override
       - redis-server
       - --aclfile
-      - /run/secrets/deskseed-redis-acl
+      - /run/deskseed-redis/users.acl
       - --save
       - ""
       - --appendonly
@@ -77,6 +81,10 @@ services:
       - noeviction
     secrets: !override
       - deskseed-redis-acl
+    volumes: !override
+      - ./scripts/production/prepare-redis-acl.sh:/opt/deskseed/production/prepare-redis-acl.sh:ro
+    tmpfs:
+      - /run/deskseed-redis:mode=0755
     healthcheck:
       test: ["CMD", "redis-cli", "-u", "redis://health:@127.0.0.1:6379", "ping"]
       interval: 5s

@@ -27,7 +27,7 @@ umask 077
 printf '%s\n' \
   'user default off resetkeys resetchannels -@all' \
   'user health on nopass resetkeys resetchannels -@all +ping' \
-  "user deskseed on #$password_hash ~deskseed:customer-auth:limiter:v1:* resetchannels -@all +ping +get +pttl +incr +pexpire +eval +evalsha +script|load +client|setinfo" \
+  "user deskseed on #$password_hash ~deskseed:customer-auth:limiter:v1:* resetchannels -@all +ping +info +get +pttl +incr +pexpire +eval +evalsha +script|load +client|setinfo" \
   >"$target"
 
 printf 'Redis ACL written with mode 0600: %s\n' "$target"

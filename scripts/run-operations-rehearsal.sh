@@ -81,8 +81,10 @@ restore_backend_port="${DESKSEED_OPERATIONS_RESTORE_BACKEND_PORT:-28081}"
 restore_frontend_port="${DESKSEED_OPERATIONS_RESTORE_FRONTEND_PORT:-25174}"
 database_name="deskseed_rehearsal"
 postgres_base_image="postgres:17-alpine"
+bootstrap_role="deskseed_bootstrap"
 migration_role="deskseed_migration"
 runtime_role="deskseed_runtime"
+bootstrap_password=""
 migration_password=""
 runtime_password=""
 admin_password=""
@@ -1661,6 +1663,26 @@ restore_scalar() {
   restore_admin_psql --tuples-only --no-align --quiet --command "$1" | tr -d '[:space:]'
 }
 
+assert_source_migration_role_restricted() {
+  local flags
+  flags="$(source_scalar \
+    "select concat(rolsuper, ':', rolcreatedb, ':', rolcreaterole) from pg_roles where rolname = '$migration_role'")"
+  [[ "$flags" == "f:f:f" ]] || {
+    echo "Migration role unexpectedly has cluster administration flags: $flags" >&2
+    return 1
+  }
+}
+
+assert_restore_migration_role_restricted() {
+  local flags
+  flags="$(restore_scalar \
+    "select concat(rolsuper, ':', rolcreatedb, ':', rolcreaterole) from pg_roles where rolname = '$migration_role'")"
+  [[ "$flags" == "f:f:f" ]] || {
+    echo "Restored migration role unexpectedly has cluster administration flags: $flags" >&2
+    return 1
+  }
+}
+
 create_logical_backup() {
   source_compose exec -T -e "PGPASSWORD=$migration_password" db \
     pg_dump --username "$migration_role" --dbname "$database_name" \
@@ -2711,6 +2733,8 @@ done
 
 capture_checked_output "generate migration-role password" migration_password \
   python3 -c 'import secrets; print(secrets.token_urlsafe(36))'
+capture_checked_output "generate database-bootstrap password" bootstrap_password \
+  python3 -c 'import secrets; print(secrets.token_urlsafe(36))'
 capture_checked_output "generate runtime-role password" runtime_password \
   python3 -c 'import secrets; print(secrets.token_urlsafe(36))'
 capture_checked_output "generate bootstrap-admin password component" admin_password \
@@ -2722,7 +2746,7 @@ capture_checked_output "generate agent cursor key" agent_cursor_key \
 capture_checked_output "generate audit cursor key" audit_cursor_key \
   python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 for generated_secret in \
-  "$migration_password" "$runtime_password" "$admin_password" "$audit_key" \
+  "$bootstrap_password" "$migration_password" "$runtime_password" "$admin_password" "$audit_key" \
   "$agent_cursor_key" "$audit_cursor_key"; do
   register_redaction_value "$generated_secret"
 done
@@ -2730,8 +2754,10 @@ printf '%s' "$admin_password" >"$admin_password_file"
 chmod 600 "$admin_password_file"
 
 export POSTGRES_DB="$database_name"
-export POSTGRES_USER="$migration_role"
-export POSTGRES_PASSWORD="$migration_password"
+export POSTGRES_USER="$bootstrap_role"
+export POSTGRES_PASSWORD="$bootstrap_password"
+export DATABASE_BOOTSTRAP_USERNAME="$bootstrap_role"
+export DATABASE_BOOTSTRAP_PASSWORD="$bootstrap_password"
 export DATABASE_MIGRATION_USERNAME="$migration_role"
 export DATABASE_MIGRATION_PASSWORD="$migration_password"
 export DATABASE_RUNTIME_USERNAME="$runtime_role"
@@ -2850,6 +2876,7 @@ export DESKSEED_REHEARSAL_DDL_AUTO=validate
 export DESKSEED_BOOTSTRAP_ADMIN_ENABLED=false
 run_resource_creating_checked "start fresh source database container" source_compose up --detach db
 run_checked "wait for fresh source database readiness" wait_for_database source_compose
+run_checked "verify source migration role flags" assert_source_migration_role_restricted
 capture_checked_output "inspect source PostgreSQL container image" source_postgres_image_id \
   compose_service_image_id source_compose db
 if [[ "$source_postgres_image_id" != "$postgres_image_id" ]]; then
@@ -2993,6 +3020,7 @@ fi
 record "pg_restore data parity" PASS "fresh restore volume matched counts (tickets=$source_ticket_count, ticket-audits=$source_ticket_audit_count, access-audits=$source_access_audit_count, admin-audits=$source_admin_audit_count, projection=$source_projection_count) in ${restore_duration_millis}ms"
 
 current_stage="post-restore role and application verification"
+run_checked "verify restored migration role flags" assert_restore_migration_role_restricted
 run_checked "configure and verify restored runtime role" configure_restore_runtime_role
 assert_restore_runtime_statement_denied \
   "update flyway_schema_history set success = true where installed_rank = -1" \
