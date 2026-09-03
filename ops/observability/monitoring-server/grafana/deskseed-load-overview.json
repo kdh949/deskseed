@@ -1,124 +1,242 @@
 {
-  "annotations": {"list": []},
+  "annotations": { "list": [] },
   "editable": true,
   "graphTooltip": 1,
+  "links": [
+    { "asDropdown": false, "includeVars": true, "keepTime": true, "tags": [], "targetBlank": false, "title": "Open Load Diagnostics", "type": "link", "url": "/d/deskseed-load-diagnostics/deskseed-load-diagnostics" }
+  ],
   "panels": [
     {
-      "type": "timeseries",
-      "title": "k6 request rate",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum by (scenario) (rate(k6_http_reqs_total{environment=\"load\"}[1m]))", "legendFormat": "{{scenario}}"}],
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0}
-    },
-    {
-      "type": "timeseries",
-      "title": "k6 latency p95 / p99",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "선택한 test_run_id에 실제로 도착해 완료된 HTTP request와 iteration rate입니다. 목표 RPS가 아니라 generated load 결과입니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
       "targets": [
-        {"expr": "max by (scenario) (k6_http_req_duration_p95{environment=\"load\"})", "legendFormat": "{{scenario}} p95"},
-        {"expr": "max by (scenario) (k6_http_req_duration_p99{environment=\"load\"})", "legendFormat": "{{scenario}} p99"}
+        { "expr": "sum by (scenario) (rate(k6_http_reqs_total{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"}[$__rate_interval]))", "legendFormat": "{{scenario}} requests/s", "refId": "A" },
+        { "expr": "sum by (scenario) (rate(k6_iterations_total{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"}[$__rate_interval]))", "legendFormat": "{{scenario}} iterations/s", "refId": "B" }
       ],
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}
+      "title": "Arrived request and iteration rate",
+      "type": "timeseries"
     },
     {
-      "type": "timeseries",
-      "title": "HTTP 5xx and expected throttling",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "선택한 실행의 client-observed end-to-end latency입니다. server latency와 함께 비교해야 합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
       "targets": [
-        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"load\",status=~\"5..\"}[1m]))", "legendFormat": "server 5xx"},
-        {"expr": "sum(rate(k6_http_reqs_total{environment=\"load\",expected_response=\"false\"}[1m]))", "legendFormat": "k6 unexpected"}
+        { "expr": "max by (scenario) (k6_http_req_duration_p95{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"})", "legendFormat": "{{scenario}} p95", "refId": "A" },
+        { "expr": "max by (scenario) (k6_http_req_duration_p99{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"})", "legendFormat": "{{scenario}} p99", "refId": "B" }
       ],
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}
+      "title": "Client latency p95 / p99",
+      "type": "timeseries"
     },
     {
-      "type": "timeseries",
-      "title": "Backend p95 / p99 by route",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "예상된 인증 429, k6의 unexpected response rate, backend 5xx를 분리합니다. 서로 합산해 성공률로 해석하지 마세요.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.001 }] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
       "targets": [
-        {"expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"load\"}[5m])))", "legendFormat": "{{uri}} p95"},
-        {"expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"load\"}[5m])))", "legendFormat": "{{uri}} p99"}
+        { "expr": "sum(rate(k6_expected_throttles_total{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"}[$__rate_interval]))", "legendFormat": "expected 429/s", "refId": "A" },
+        { "expr": "max(k6_unexpected_status_rate{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"})", "legendFormat": "unexpected ratio", "refId": "B" },
+        { "expr": "sum(rate(http_server_requests_seconds_count{environment=~\"$environment\",status=~\"5..\"}[$__rate_interval]))", "legendFormat": "server 5xx/s", "refId": "C" }
       ],
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8}
+      "title": "Expected throttling, unexpected responses, and server 5xx",
+      "type": "timeseries"
     },
     {
-      "type": "timeseries",
-      "title": "JVM CPU and heap",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "arrival-rate executor가 시작하지 못한 iteration과 중단된 iteration입니다. 0보다 크면 capacity 판정 전에 load generator부터 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 8 },
+      "id": 4,
       "targets": [
-        {"expr": "process_cpu_usage{environment=\"load\"}", "legendFormat": "process CPU"},
-        {"expr": "sum(jvm_memory_used_bytes{environment=\"load\",area=\"heap\"}) / sum(jvm_memory_max_bytes{environment=\"load\",area=\"heap\"})", "legendFormat": "heap ratio"}
+        { "expr": "sum(increase(k6_dropped_iterations_total{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"}[$__range]))", "legendFormat": "dropped", "refId": "A" },
+        { "expr": "sum(increase(k6_interrupted_iterations_total{environment=~\"$environment\",test_run_id=~\"$test_run_id\",scenario=~\"$scenario\",profile=~\"$profile\"}[$__range]))", "legendFormat": "interrupted", "refId": "B" }
       ],
-      "gridPos": {"h": 9, "w": 6, "x": 12, "y": 8}
+      "title": "Dropped / interrupted iterations",
+      "type": "stat"
     },
     {
-      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "2xx/3xx server response만 포함한 route별 latency입니다. 오류 응답의 빠른 실패가 성공 latency를 낮춰 보이지 않게 분리합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 12, "x": 6, "y": 8 },
+      "id": 5,
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=~\"$environment\",status!~\"4..|5..\"}[$__rate_interval])))", "legendFormat": "{{uri}} p95", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=~\"$environment\",status!~\"4..|5..\"}[$__rate_interval])))", "legendFormat": "{{uri}} p99", "refId": "B" }
+      ],
+      "title": "Backend successful response p95 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "route와 status별 backend 처리율입니다. traffic mix가 바뀌었는지 먼저 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 8 },
+      "id": 6,
+      "targets": [
+        { "expr": "sum by (uri, status) (rate(http_server_requests_seconds_count{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "{{uri}} {{status}}", "refId": "A" }
+      ],
+      "title": "Backend request rate by route / status",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Nginx가 받은 요청률과 현재 active connection입니다. backend rate와 차이가 커지면 proxy/client 경계를 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "id": 7,
+      "targets": [
+        { "expr": "rate(nginx_http_requests_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "requests/s", "refId": "A" },
+        { "expr": "nginx_connections_active{environment=~\"$environment\"}", "legendFormat": "active connections", "refId": "B" }
+      ],
+      "title": "Nginx requests / active connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "backend process CPU와 heap limit 대비 사용률입니다. 링크는 같은 시간 범위의 Diagnostics CPU flame graph로 이동합니다.",
+      "fieldConfig": { "defaults": { "links": [{ "title": "Open time-aligned CPU profile", "url": "/d/deskseed-load-diagnostics/deskseed-load-diagnostics?${__url_time_range}&var-environment=$environment&viewPanel=319" }], "max": 1, "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "id": 8,
+      "targets": [
+        { "expr": "process_cpu_usage{environment=~\"$environment\"}", "legendFormat": "process CPU", "refId": "A" },
+        { "expr": "sum(jvm_memory_used_bytes{environment=~\"$environment\",area=\"heap\"}) / clamp_min(sum(jvm_memory_max_bytes{environment=~\"$environment\",area=\"heap\"}), 1)", "legendFormat": "heap", "refId": "B" }
+      ],
+      "title": "JVM CPU and heap utilization",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "active/idle/pending connection으로 application-side DB saturation을 봅니다. pending이 지속되면 query와 DB 여유를 함께 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "id": 9,
+      "targets": [
+        { "expr": "hikaricp_connections_active{environment=~\"$environment\"}", "legendFormat": "active", "refId": "A" },
+        { "expr": "hikaricp_connections_idle{environment=~\"$environment\"}", "legendFormat": "idle", "refId": "B" },
+        { "expr": "hikaricp_connections_pending{environment=~\"$environment\"}", "legendFormat": "pending", "refId": "C" }
+      ],
       "title": "Hikari saturation",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [
-        {"expr": "hikaricp_connections_active{environment=\"load\"}", "legendFormat": "active"},
-        {"expr": "hikaricp_connections_idle{environment=\"load\"}", "legendFormat": "idle"},
-        {"expr": "hikaricp_connections_pending{environment=\"load\"}", "legendFormat": "pending"}
-      ],
-      "gridPos": {"h": 9, "w": 6, "x": 18, "y": 8}
+      "type": "timeseries"
     },
     {
-      "type": "timeseries",
-      "title": "PostgreSQL connections and transactions",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "PostgreSQL connection 수와 commit/rollback 처리율입니다. statement diagnostics는 상세 dashboard에서 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 23 },
+      "id": 10,
       "targets": [
-        {"expr": "sum(pg_stat_database_numbackends{environment=\"load\"})", "legendFormat": "connections"},
-        {"expr": "sum(rate(pg_stat_database_xact_commit{environment=\"load\"}[1m]))", "legendFormat": "commits/s"},
-        {"expr": "sum(rate(pg_stat_database_xact_rollback{environment=\"load\"}[1m]))", "legendFormat": "rollbacks/s"}
+        { "expr": "sum(pg_stat_database_numbackends{environment=~\"$environment\"})", "legendFormat": "connections", "refId": "A" },
+        { "expr": "sum(rate(pg_stat_database_xact_commit{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "commits/s", "refId": "B" },
+        { "expr": "sum(rate(pg_stat_database_xact_rollback{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "rollbacks/s", "refId": "C" }
       ],
-      "gridPos": {"h": 9, "w": 8, "x": 0, "y": 17}
+      "title": "PostgreSQL connections / transactions",
+      "type": "timeseries"
     },
     {
-      "type": "timeseries",
-      "title": "Redis memory and evictions",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Redis memory와 eviction/rejected connection입니다. AUTH-006 실행 중 eviction이 발생하면 결과를 무효로 처리합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 23 },
+      "id": 11,
       "targets": [
-        {"expr": "redis_memory_used_bytes{environment=\"load\"}", "legendFormat": "memory"},
-        {"expr": "rate(redis_evicted_keys_total{environment=\"load\"}[1m])", "legendFormat": "evictions/s"}
+        { "expr": "redis_memory_used_bytes{environment=~\"$environment\"}", "legendFormat": "memory bytes", "refId": "A" },
+        { "expr": "rate(redis_evicted_keys_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "evictions/s", "refId": "B" },
+        { "expr": "rate(redis_rejected_connections_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "rejected/s", "refId": "C" }
       ],
-      "gridPos": {"h": 9, "w": 8, "x": 8, "y": 17}
+      "title": "Redis memory / failures",
+      "type": "timeseries"
     },
     {
-      "type": "timeseries",
-      "title": "Audit, delivery, and WebSocket",
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "host CPU와 Deskseed container memory를 비교해 load generator가 아닌 application host saturation을 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 23 },
+      "id": 12,
       "targets": [
-        {"expr": "increase(deskseed_audit_persistence_failures_total{environment=\"load\"}[5m])", "legendFormat": "audit failures"},
-        {"expr": "deskseed_mail_outbox_backlog{environment=\"load\"}", "legendFormat": "mail backlog"},
-        {"expr": "deskseed_webhook_delivery_backlog{environment=\"load\"}", "legendFormat": "webhook backlog"},
-        {"expr": "deskseed_collaboration_websocket_connections{environment=\"load\"}", "legendFormat": "WebSocket connections"}
+        { "expr": "1 - avg(rate(node_cpu_seconds_total{environment=~\"$environment\",mode=\"idle\"}[$__rate_interval]))", "legendFormat": "host CPU", "refId": "A" },
+        { "expr": "sum(container_memory_working_set_bytes{environment=~\"$environment\",name=~\".*deskseed.*\"}) / clamp_min(sum(container_spec_memory_limit_bytes{environment=~\"$environment\",name=~\".*deskseed.*\"} > 0), 1)", "legendFormat": "container memory", "refId": "B" }
       ],
-      "gridPos": {"h": 9, "w": 8, "x": 16, "y": 17}
+      "title": "Host / container utilization",
+      "type": "timeseries"
     },
     {
-      "type": "logs",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "mail/webhook 대기 개수와 가장 오래된 작업 나이입니다. backlog가 작아도 age가 증가하면 worker stall입니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 31 },
+      "id": 13,
+      "targets": [
+        { "expr": "deskseed_mail_outbox_backlog{environment=~\"$environment\"}", "legendFormat": "mail count", "refId": "A" },
+        { "expr": "deskseed_mail_outbox_oldest_age_seconds{environment=~\"$environment\"}", "legendFormat": "mail oldest age", "refId": "B" },
+        { "expr": "deskseed_webhook_delivery_backlog{environment=~\"$environment\"}", "legendFormat": "webhook count", "refId": "C" },
+        { "expr": "deskseed_webhook_delivery_backlog_oldest_age_seconds{environment=~\"$environment\"}", "legendFormat": "webhook oldest age", "refId": "D" }
+      ],
+      "title": "Delivery backlog count / oldest age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "required audit persistence failure와 collaboration connection/rejection을 함께 봅니다. audit failure는 즉시 부하 실행을 중지합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 31 },
+      "id": 14,
+      "targets": [
+        { "expr": "increase(deskseed_audit_persistence_failures_total{environment=~\"$environment\"}[$__range])", "legendFormat": "audit failures", "refId": "A" },
+        { "expr": "deskseed_collaboration_websocket_connections{environment=~\"$environment\"}", "legendFormat": "WebSocket connections", "refId": "B" },
+        { "expr": "rate(deskseed_collaboration_websocket_rejections_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "WebSocket rejection/s", "refId": "C" }
+      ],
+      "title": "Audit and collaboration health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Alloy receiver accepted/refused와 Tempo exporter queue utilization입니다. trace가 없을 때 application sampling과 collector loss를 구분합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 31 },
+      "id": 15,
+      "targets": [
+        { "expr": "sum(rate(otelcol_receiver_accepted_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "accepted spans/s", "refId": "A" },
+        { "expr": "sum(rate(otelcol_receiver_refused_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "refused spans/s", "refId": "B" },
+        { "expr": "sum(otelcol_exporter_queue_size{environment=~\"$environment\"}) / clamp_min(sum(otelcol_exporter_queue_capacity{environment=~\"$environment\"}), 1)", "legendFormat": "queue utilization", "refId": "C" }
+      ],
+      "title": "Trace pipeline acceptance / queue",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "입력한 correlation ID로 Deskseed structured log를 찾습니다. query는 raw body/email/token을 요구하지 않습니다.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 39 },
+      "id": 16,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [
+        { "expr": "{stack=\"deskseed\",environment=~\"$environment\"} | json | correlationId =~ `$correlation_id`", "queryType": "range", "refId": "A" }
+      ],
       "title": "Correlated Deskseed logs",
-      "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [{"expr": "{stack=\"deskseed\",environment=\"load\"} | json | correlationId =~ `$correlation_id`"}],
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 26}
+      "type": "logs"
     }
   ],
   "refresh": "10s",
   "schemaVersion": 41,
-  "tags": ["deskseed", "load", "observability"],
+  "tags": ["deskseed", "load", "overview"],
   "templating": {
     "list": [
-      {
-        "name": "correlation_id",
-        "type": "textbox",
-        "label": "Correlation ID regex",
-        "query": ".*",
-        "current": {"text": ".*", "value": ".*"}
-      }
+      { "current": { "text": "load", "value": "load" }, "hide": 0, "includeAll": false, "label": "Environment", "multi": false, "name": "environment", "options": [{ "selected": true, "text": "load", "value": "load" }], "query": "load", "type": "custom" },
+      { "allValue": ".*", "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, test_run_id)", "includeAll": true, "label": "Run", "multi": true, "name": "test_run_id", "query": { "query": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, test_run_id)", "refId": "VariableQueryEditor-Run" }, "refresh": 1, "type": "query" },
+      { "allValue": ".*", "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, scenario)", "includeAll": true, "label": "Scenario", "multi": true, "name": "scenario", "query": { "query": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, scenario)", "refId": "VariableQueryEditor-Scenario" }, "refresh": 1, "type": "query" },
+      { "allValue": ".*", "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, profile)", "includeAll": true, "label": "Profile", "multi": true, "name": "profile", "query": { "query": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, profile)", "refId": "VariableQueryEditor-Profile" }, "refresh": 1, "type": "query" },
+      { "current": { "text": ".*", "value": ".*" }, "label": "Correlation ID regex", "name": "correlation_id", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": ".*", "type": "textbox" },
+      { "current": { "text": ".*", "value": ".*" }, "label": "Route regex", "name": "route", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": ".*", "type": "textbox" }
     ]
   },
-  "time": {"from": "now-30m", "to": "now"},
+  "time": { "from": "now-30m", "to": "now" },
   "timezone": "browser",
   "title": "Deskseed Load Overview",
   "uid": "deskseed-load-overview",
-  "version": 1
+  "version": 2
 }

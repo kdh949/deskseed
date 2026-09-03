@@ -1,0 +1,299 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    { "asDropdown": false, "includeVars": true, "keepTime": true, "tags": [], "targetBlank": false, "title": "Back to Load Overview", "type": "link", "url": "/d/deskseed-load-overview/deskseed-load-overview" }
+  ],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "성공 응답의 p50/p95/p99를 route별로 비교합니다. client p95와 차이가 크면 proxy/network 경계를 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 301,
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=~\"$environment\",status!~\"4..|5..\",uri=~\"$route\"}[$__rate_interval])))", "legendFormat": "{{uri}} p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=~\"$environment\",status!~\"4..|5..\",uri=~\"$route\"}[$__rate_interval])))", "legendFormat": "{{uri}} p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=~\"$environment\",status!~\"4..|5..\",uri=~\"$route\"}[$__rate_interval])))", "legendFormat": "{{uri}} p99", "refId": "C" }
+      ],
+      "title": "Backend successful latency percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "route/status별 backend response rate입니다. expected 429와 5xx를 분리해 사용자 영향을 해석합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 302,
+      "targets": [{ "expr": "sum by (uri, status) (rate(http_server_requests_seconds_count{environment=~\"$environment\",uri=~\"$route\"}[$__rate_interval]))", "legendFormat": "{{uri}} {{status}}", "refId": "A" }],
+      "title": "Backend status rate by route",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "safe Nginx JSON log에서 normalized route별 request/upstream duration과 response bytes p95를 계산합니다. 원문 URL과 IP는 수집하지 않습니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 8 },
+      "id": 303,
+      "targets": [
+        { "expr": "quantile_over_time(0.95, {stack=\"deskseed\",environment=~\"$environment\",service=\"frontend\"} | json | route=~\"$route\" | unwrap requestDurationSeconds | __error__=\"\" [$__auto]) by (route)", "legendFormat": "{{route}} request p95", "queryType": "range", "refId": "A" },
+        { "expr": "quantile_over_time(0.95, {stack=\"deskseed\",environment=~\"$environment\",service=\"frontend\"} | json | route=~\"$route\" | unwrap upstreamDurationSeconds | __error__=\"\" [$__auto]) by (route)", "legendFormat": "{{route}} upstream p95", "queryType": "range", "refId": "B" },
+        { "expr": "quantile_over_time(0.95, {stack=\"deskseed\",environment=~\"$environment\",service=\"frontend\"} | json | route=~\"$route\" | unwrap responseBytes | __error__=\"\" [$__auto]) by (route)", "legendFormat": "{{route}} bytes p95", "queryType": "range", "refId": "C" }
+      ],
+      "title": "Nginx request, upstream, and response bytes p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Nginx exporter availability와 request rate입니다. backend rate와 차이가 생기면 proxy-side failure를 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 8 },
+      "id": 304,
+      "targets": [
+        { "expr": "nginx_up{environment=~\"$environment\"}", "legendFormat": "nginx up", "refId": "A" },
+        { "expr": "rate(nginx_http_requests_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "requests/s", "refId": "B" }
+      ],
+      "title": "Nginx exporter health / request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "JVM CPU, heap, live thread를 비교합니다. 같은 시간의 CPU profile 링크를 사용해 hot path를 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short", "links": [{ "title": "Open CPU flame graph", "url": "/d/deskseed-load-diagnostics/deskseed-load-diagnostics?${__url_time_range}&var-environment=$environment&viewPanel=319" }] }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+      "id": 305,
+      "targets": [
+        { "expr": "process_cpu_usage{environment=~\"$environment\"}", "legendFormat": "CPU ratio", "refId": "A" },
+        { "expr": "sum(jvm_memory_used_bytes{environment=~\"$environment\",area=\"heap\"}) / clamp_min(sum(jvm_memory_max_bytes{environment=~\"$environment\",area=\"heap\"}), 1)", "legendFormat": "heap ratio", "refId": "B" },
+        { "expr": "jvm_threads_live_threads{environment=~\"$environment\"}", "legendFormat": "live threads", "refId": "C" }
+      ],
+      "title": "JVM CPU / heap / threads",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "GC pause histogram과 allocation rate입니다. latency 상승과 stop-the-world pause가 같은 시점인지 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
+      "id": 306,
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum by (le, action, cause) (rate(jvm_gc_pause_seconds_bucket{environment=~\"$environment\"}[$__rate_interval])))", "legendFormat": "{{action}} {{cause}} p99", "refId": "A" },
+        { "expr": "sum(rate(jvm_gc_memory_allocated_bytes_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "allocated bytes/s", "refId": "B" }
+      ],
+      "title": "JVM GC pause / allocation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Hikari active/max ratio, pending, acquire p95입니다. pool을 늘리기 전에 DB connection headroom과 statement time을 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+      "id": 307,
+      "targets": [
+        { "expr": "hikaricp_connections_active{environment=~\"$environment\"} / clamp_min(hikaricp_connections_max{environment=~\"$environment\"}, 1)", "legendFormat": "utilization", "refId": "A" },
+        { "expr": "hikaricp_connections_pending{environment=~\"$environment\"}", "legendFormat": "pending", "refId": "B" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{environment=~\"$environment\"}[$__rate_interval])))", "legendFormat": "acquire p95", "refId": "C" }
+      ],
+      "title": "Hikari utilization / wait",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "PostgreSQL max_connections 대비 사용률, commit, deadlock을 비교합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 25 },
+      "id": 308,
+      "targets": [
+        { "expr": "sum(pg_stat_database_numbackends{environment=~\"$environment\"}) / clamp_min(max(pg_settings_max_connections{environment=~\"$environment\"}), 1)", "legendFormat": "connection utilization", "refId": "A" },
+        { "expr": "sum(rate(pg_stat_database_xact_commit{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "commits/s", "refId": "B" },
+        { "expr": "sum(rate(pg_stat_database_deadlocks{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "deadlocks/s", "refId": "C" }
+      ],
+      "title": "PostgreSQL connection / transaction pressure",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "query text 없이 queryid별 calls/s, execution seconds/s, mean seconds/call을 표시합니다. top queryid를 EXPLAIN snapshot과 연결해 해석합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 25 },
+      "id": 309,
+      "targets": [
+        { "expr": "topk(10, sum by (queryid) (rate(pg_stat_statements_calls_total{environment=~\"$environment\"}[$__rate_interval])))", "legendFormat": "{{queryid}} calls/s", "refId": "A" },
+        { "expr": "topk(10, sum by (queryid) (rate(pg_stat_statements_seconds_total{environment=~\"$environment\"}[$__rate_interval])))", "legendFormat": "{{queryid}} total seconds/s", "refId": "B" },
+        { "expr": "topk(10, sum by (queryid) (rate(pg_stat_statements_seconds_total{environment=~\"$environment\"}[$__rate_interval])) / clamp_min(sum by (queryid) (rate(pg_stat_statements_calls_total{environment=~\"$environment\"}[$__rate_interval])), 0.001))", "legendFormat": "{{queryid}} mean seconds/call", "refId": "C" }
+      ],
+      "title": "PostgreSQL statement calls, total, and mean execution",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "lock mode와 activity state로 query latency가 lock/wait인지 확인합니다. raw SQL text는 수집하지 않습니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 34 },
+      "id": 310,
+      "targets": [
+        { "expr": "sum by (mode) (pg_locks_count{environment=~\"$environment\"})", "legendFormat": "locks {{mode}}", "refId": "A" },
+        { "expr": "sum by (state) (pg_stat_activity_count{environment=~\"$environment\"})", "legendFormat": "activity {{state}}", "refId": "B" }
+      ],
+      "title": "PostgreSQL locks / activity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Redis memory, ops rate, eviction, rejected connection을 비교합니다. limiter hot-key 검증은 별도 AUTH-006 실행으로 판정합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 34 },
+      "id": 311,
+      "targets": [
+        { "expr": "redis_memory_used_bytes{environment=~\"$environment\"}", "legendFormat": "memory", "refId": "A" },
+        { "expr": "rate(redis_commands_processed_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "commands/s", "refId": "B" },
+        { "expr": "rate(redis_evicted_keys_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "evictions/s", "refId": "C" },
+        { "expr": "rate(redis_rejected_connections_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "rejected/s", "refId": "D" }
+      ],
+      "title": "Redis throughput / saturation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "mail/webhook oldest backlog age와 성공 처리율입니다. 실패율은 다음 panel에서 분리합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 34 },
+      "id": 312,
+      "targets": [
+        { "expr": "deskseed_mail_outbox_oldest_age_seconds{environment=~\"$environment\"}", "legendFormat": "mail oldest seconds", "refId": "A" },
+        { "expr": "deskseed_webhook_delivery_backlog_oldest_age_seconds{environment=~\"$environment\"}", "legendFormat": "webhook oldest seconds", "refId": "B" },
+        { "expr": "rate(deskseed_mail_delivery_succeeded_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "mail success/s", "refId": "C" },
+        { "expr": "rate(deskseed_webhook_delivery_succeeded_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "webhook success/s", "refId": "D" }
+      ],
+      "title": "Mail and webhook backlog age / processing rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "delivery 실패율과 backlog count를 함께 봅니다. delivery 실패는 committed ticket mutation을 rollback하지 않습니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 42 },
+      "id": 313,
+      "targets": [
+        { "expr": "rate(deskseed_mail_delivery_failed_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "mail failed/s", "refId": "A" },
+        { "expr": "rate(deskseed_webhook_delivery_failed_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "webhook failed/s", "refId": "B" },
+        { "expr": "deskseed_mail_outbox_backlog{environment=~\"$environment\"}", "legendFormat": "mail backlog", "refId": "C" },
+        { "expr": "deskseed_webhook_delivery_backlog{environment=~\"$environment\"}", "legendFormat": "webhook backlog", "refId": "D" }
+      ],
+      "title": "Delivery failures / backlog",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "WebSocket connection, message, rejection rate입니다. CHN-012는 load run에서 connection/message/worker limit을 함께 기록해야 통과합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 42 },
+      "id": 314,
+      "targets": [
+        { "expr": "deskseed_collaboration_websocket_connections{environment=~\"$environment\"}", "legendFormat": "connections", "refId": "A" },
+        { "expr": "rate(deskseed_collaboration_websocket_messages_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "messages/s", "refId": "B" },
+        { "expr": "rate(deskseed_collaboration_websocket_rejections_total{environment=~\"$environment\"}[$__rate_interval])", "legendFormat": "rejections/s", "refId": "C" }
+      ],
+      "title": "Collaboration WebSocket load",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "OTLP receiver와 memory limiter가 accepted/refused한 span rate입니다. refused가 있으면 trace 표본이 완전하지 않습니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 42 },
+      "id": 315,
+      "targets": [
+        { "expr": "sum(rate(otelcol_receiver_accepted_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "receiver accepted/s", "refId": "A" },
+        { "expr": "sum(rate(otelcol_receiver_refused_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "receiver refused/s", "refId": "B" },
+        { "expr": "sum(rate(otelcol_processor_memory_limiter_accepted_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "limiter accepted/s", "refId": "C" },
+        { "expr": "sum(rate(otelcol_processor_memory_limiter_refused_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "limiter refused/s", "refId": "D" }
+      ],
+      "title": "Alloy accepted / refused spans",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Tempo exporter가 성공/실패한 span rate입니다. receiver accepted와 sent 차이는 queue panel과 함께 봅니다.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 50 },
+      "id": 316,
+      "targets": [
+        { "expr": "sum(rate(otelcol_exporter_sent_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "sent/s", "refId": "A" },
+        { "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{environment=~\"$environment\"}[$__rate_interval]))", "legendFormat": "failed/s", "refId": "B" }
+      ],
+      "title": "Alloy exporter sent / failed spans",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "bounded sending queue의 사용률과 절대 size/capacity입니다. 사용률이 1에 가까워지면 Tempo 연결/수용 상태를 확인합니다.",
+      "fieldConfig": { "defaults": { "min": 0, "max": 1, "unit": "percentunit", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.7 }, { "color": "red", "value": 0.9 }] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 50 },
+      "id": 317,
+      "targets": [
+        { "expr": "sum(otelcol_exporter_queue_size{environment=~\"$environment\"}) / clamp_min(sum(otelcol_exporter_queue_capacity{environment=~\"$environment\"}), 1)", "legendFormat": "utilization", "refId": "A" },
+        { "expr": "sum(otelcol_exporter_queue_size{environment=~\"$environment\"})", "legendFormat": "size", "refId": "B" },
+        { "expr": "sum(otelcol_exporter_queue_capacity{environment=~\"$environment\"})", "legendFormat": "capacity", "refId": "C" }
+      ],
+      "title": "Alloy exporter queue utilization",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "correlation ID 기반 상세 log입니다. Loki derived field가 traceId를 Tempo로 연결합니다.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 50 },
+      "id": 318,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{stack=\"deskseed\",environment=~\"$environment\"} | json | correlationId =~ `$correlation_id`", "queryType": "range", "refId": "A" }],
+      "title": "Correlated logs with Tempo link",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "description": "저장된 sampled trace 중 500ms보다 느린 최신 20개입니다. trace를 열어 span의 Loki link로 이동합니다.",
+      "gridPos": { "h": 11, "w": 12, "x": 0, "y": 58 },
+      "id": 320,
+      "targets": [{ "limit": 20, "query": "{ resource.service.name = \"deskseed-backend\" && resource.deployment.environment.name =~ \"$environment\" && trace:duration > 500ms } with (most_recent=true)", "queryType": "traceql", "refId": "A", "spanLimit": 3, "tableType": "traces" }],
+      "title": "Slow traces",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "description": "error status span을 포함한 sampled trace 최신 20개입니다. sampling 때문에 전체 실패 수는 Prometheus로 판정합니다.",
+      "gridPos": { "h": 11, "w": 12, "x": 12, "y": 58 },
+      "id": 321,
+      "targets": [{ "limit": 20, "query": "{ resource.service.name = \"deskseed-backend\" && resource.deployment.environment.name =~ \"$environment\" && span:status = error } with (most_recent=true)", "queryType": "traceql", "refId": "A", "spanLimit": 3, "tableType": "traces" }],
+      "title": "Error traces",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" },
+      "description": "선택한 dashboard 시간 범위와 load environment의 backend CPU profile입니다. 직접 span-profile이 아니라 service/environment/time correlation입니다.",
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 69 },
+      "id": 319,
+      "targets": [{ "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" }, "groupBy": [], "labelSelector": "{service_name=\"deskseed-backend\",environment=~\"$environment\"}", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "queryType": "profile", "refId": "A" }],
+      "title": "Time-aligned backend CPU profile",
+      "type": "flamegraph"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["deskseed", "load", "diagnostics"],
+  "templating": {
+    "list": [
+      { "current": { "text": "load", "value": "load" }, "hide": 0, "includeAll": false, "label": "Environment", "multi": false, "name": "environment", "options": [{ "selected": true, "text": "load", "value": "load" }], "query": "load", "type": "custom" },
+      { "allValue": ".*", "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, test_run_id)", "includeAll": true, "label": "Run", "multi": true, "name": "test_run_id", "query": { "query": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, test_run_id)", "refId": "VariableQueryEditor-Run" }, "refresh": 1, "type": "query" },
+      { "allValue": ".*", "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, scenario)", "includeAll": true, "label": "Scenario", "multi": true, "name": "scenario", "query": { "query": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, scenario)", "refId": "VariableQueryEditor-Scenario" }, "refresh": 1, "type": "query" },
+      { "allValue": ".*", "current": { "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "prometheus" }, "definition": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, profile)", "includeAll": true, "label": "Profile", "multi": true, "name": "profile", "query": { "query": "label_values(k6_http_reqs_total{environment=~\"$environment\"}, profile)", "refId": "VariableQueryEditor-Profile" }, "refresh": 1, "type": "query" },
+      { "current": { "text": ".*", "value": ".*" }, "label": "Correlation ID regex", "name": "correlation_id", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": ".*", "type": "textbox" },
+      { "current": { "text": ".*", "value": ".*" }, "label": "Route regex", "name": "route", "options": [{ "selected": true, "text": ".*", "value": ".*" }], "query": ".*", "type": "textbox" }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "timezone": "browser",
+  "title": "Deskseed Load Diagnostics",
+  "uid": "deskseed-load-diagnostics",
+  "version": 1
+}

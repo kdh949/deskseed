@@ -56,8 +56,11 @@ The Alloy Docker socket mount can expose Docker control if the collector is comp
 2. Merge the seven scrape jobs from `prometheus.yml.example` into the existing Prometheus configuration and replace `deskseed-load.internal` with the load host VPN name/address.
 3. Start Prometheus with `--web.enable-remote-write-receiver`, reachable only from the k6 host VPN address.
 4. Ensure Tempo OTLP HTTP listens on the private interface rather than its loopback default.
-5. Import `grafana/deskseed-load-overview.json`; replace the `prometheus`, `loki`, `tempo`, and `pyroscope` datasource UIDs if the server uses different UIDs.
-6. Reload Prometheus and verify every `up{environment="load",stack="deskseed"}` series is `1`, including `deskseed-nginx`.
+5. Import `grafana/deskseed-load-overview.json` and `grafana/deskseed-load-diagnostics.json`; replace the `prometheus`, `loki`, `tempo`, and `pyroscope` datasource UIDs if the server uses different UIDs.
+6. Merge the correlation fields from `grafana/datasource-correlations.yml.example` into the existing datasource provisioning. Preserve unrelated datasource settings. Tempo links to Loki by trace ID, Loki links back to Tempo from the safe `trace_id` field, and the diagnostics dashboard links the same service/environment/time range to Pyroscope.
+7. Reload Prometheus and verify every `up{environment="load",stack="deskseed"}` series is `1`, including `deskseed-nginx`.
+
+The Pyroscope link is time-window correlation, not direct span-to-profile correlation. Direct span-profile linking remains deferred until the runtime emits the required profile correlation identifier.
 
 No notification contact point is attached in this slice. Rules remain visible in Grafana/Prometheus and must be test-fired before production notification routing is considered.
 
@@ -118,4 +121,4 @@ docker compose \
   down
 ```
 
-Remove the Deskseed scrape jobs, rules, dashboard, and firewall allowances manually. Do not drop or erase a non-disposable volume. Removing the overlay does not change the product schema or OpenAPI contract.
+Remove the Deskseed scrape jobs, rules, dashboards, datasource correlation fields, and firewall allowances manually. Do not drop or erase a non-disposable volume. Removing the overlay does not change the product schema or OpenAPI contract.

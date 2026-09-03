@@ -4,6 +4,7 @@ set -eu
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 node --test "$repository_root/ops/observability/tests/collection-config.test.mjs"
+node --test "$repository_root/ops/observability/tests/dashboard.test.mjs"
 
 export DESKSEED_APP_BIND_ADDRESS=127.0.0.1
 export DESKSEED_OBSERVABILITY_BIND_ADDRESS=127.0.0.1
@@ -38,7 +39,9 @@ docker run --rm \
   -v "$repository_root/ops/observability/nginx/status.conf:/etc/nginx/conf.d/status.conf:ro" \
   nginx:1.31-alpine nginx -t
 
-jq empty "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-overview.json"
+jq empty \
+  "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-overview.json" \
+  "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-diagnostics.json"
 
 for scenario in agent-read public-request customer-auth-limiter collaboration-websocket; do
   docker run --rm \
