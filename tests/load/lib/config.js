@@ -15,11 +15,7 @@ export function requireConfirmedTarget({ writes = false } = {}) {
 }
 
 export function standardOptions(scenarioName) {
-  const thresholds = {
-    checks: ['rate==1'],
-    unexpected_status: ['rate==0'],
-    dropped_iterations: ['count==0'],
-  };
+  const thresholds = httpThresholds('http_req_duration{expected_response:true}');
   if (loadProfile === 'smoke') {
     return {
       scenarios: {
@@ -58,11 +54,7 @@ export function standardOptions(scenarioName) {
 }
 
 export function authOptions() {
-  const thresholds = {
-    checks: ['rate==1'],
-    unexpected_status: ['rate==0'],
-    dropped_iterations: ['count==0'],
-  };
+  const thresholds = httpThresholds('http_req_duration{name:customer_password_session}');
   const profile = loadProfile;
   if (profile === 'smoke') return standardOptions('customer-auth-limiter');
 
@@ -91,10 +83,13 @@ export function authOptions() {
 }
 
 export function websocketOptions() {
-  const thresholds = {
-    checks: ['rate==1'],
-    unexpected_status: ['rate==0'],
-  };
+  const thresholds = validityThresholds();
+  if (loadProfile !== 'smoke') {
+    const p95 = requiredPositiveNumber('MAX_WEBSOCKET_CONNECT_P95_MS', 600000);
+    const p99 = requiredPositiveNumber('MAX_WEBSOCKET_CONNECT_P99_MS', 600000);
+    requireOrderedLatencyBudgets(p95, p99, 'WebSocket connection');
+    thresholds['ws_connecting{name:collaboration_websocket}'] = [`p(95)<${p95}`, `p(99)<${p99}`];
+  }
   if (loadProfile === 'smoke') {
     return {
       scenarios: {
@@ -144,6 +139,29 @@ function commonTags(scenarioName) {
   return { environment: 'load', service: 'deskseed', profile: loadProfile, scenario: scenarioName, test_run_id: runId };
 }
 
+function validityThresholds() {
+  return {
+    checks: ['rate==1'],
+    unexpected_status: ['rate==0'],
+    dropped_iterations: ['count==0'],
+  };
+}
+
+function httpThresholds(metric) {
+  const thresholds = validityThresholds();
+  if (loadProfile === 'smoke') return thresholds;
+
+  const p95 = requiredPositiveNumber('MAX_HTTP_P95_MS', 600000);
+  const p99 = requiredPositiveNumber('MAX_HTTP_P99_MS', 600000);
+  requireOrderedLatencyBudgets(p95, p99, 'HTTP');
+  thresholds[metric] = [`p(95)<${p95}`, `p(99)<${p99}`];
+  return thresholds;
+}
+
+function requireOrderedLatencyBudgets(p95, p99, label) {
+  if (p99 < p95) fail(`${label} p99 budget must be greater than or equal to p95 budget`);
+}
+
 function requiredUrl(name) {
   const value = __ENV[name];
   if (!value || !/^https?:\/\/[^/]+/.test(value)) fail(`${name} must be an absolute HTTP(S) URL`);
@@ -153,6 +171,13 @@ function requiredUrl(name) {
 function requiredPositiveInteger(name, maximum) {
   if (!__ENV[name]) fail(`${name} is required for LOAD_PROFILE=${loadProfile}`);
   return positiveInteger(name, Number(__ENV[name]), maximum);
+}
+
+function requiredPositiveNumber(name, maximum) {
+  if (!__ENV[name]) fail(`${name} is required for LOAD_PROFILE=${loadProfile}`);
+  const value = Number(__ENV[name]);
+  if (!Number.isFinite(value) || value <= 0 || value > maximum) fail(`${name} must be greater than 0 and at most ${maximum}`);
+  return value;
 }
 
 function positiveInteger(name, fallback, maximum) {

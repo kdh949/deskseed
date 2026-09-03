@@ -21,4 +21,20 @@ Run one-VU smoke first:
 
 Any non-smoke run requires `CONFIRM_DESKSEED_LOAD_TARGET` equal to the exact `TARGET_URL` host. General arrival-rate profiles require `TARGET_RPS`; the customer auth script instead accepts `auth-sustained`, `auth-burst`, or `auth-safety`. The safety profile additionally requires `CONFIRM_AUTH_SAFETY=true`.
 
-`checks=100%`, `unexpected_status=0`, and `dropped_iterations=0` are execution-validity gates, not a capacity claim. Record the environment, fixture size, commit SHA, telemetry mode, JSON summary, Prometheus window, and `pg_stat_statements` snapshot before interpreting p95/p99 or bottlenecks.
+HTTP profiles must declare the environment-specific successful-response latency budgets. The authentication scenario applies these budgets to every expected `200`, `401`, or `429` outcome instead of treating the latter two as unexpected failures:
+
+```text
+MAX_HTTP_P95_MS=<measured acceptance budget>
+MAX_HTTP_P99_MS=<measured acceptance budget, at least p95>
+```
+
+Non-smoke WebSocket profiles use separate connection budgets:
+
+```text
+MAX_WEBSOCKET_CONNECT_P95_MS=<measured acceptance budget>
+MAX_WEBSOCKET_CONNECT_P99_MS=<measured acceptance budget, at least p95>
+```
+
+No repository-wide millisecond default is provided because the accepted budget belongs to the declared load environment. Missing or inverted budgets stop a non-smoke run during configuration.
+
+`checks=100%`, `unexpected_status=0`, and `dropped_iterations=0` remain execution-validity gates. The declared p95/p99 thresholds are performance-acceptance gates, but they are not by themselves a capacity claim. Record the environment, fixture size, commit SHA, telemetry mode, JSON summary, Prometheus window, and `pg_stat_statements` snapshot before interpreting p95/p99 or bottlenecks.
