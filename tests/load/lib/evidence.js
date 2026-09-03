@@ -31,8 +31,9 @@ export function evidenceFileStem(runId, scenarioName) {
   return `${safeToken(runId)}-${safeToken(scenarioName)}`;
 }
 
-export function buildEvidenceManifest({ scenarioName, runId, loadProfile, startedAt, completedAt, env, data }) {
+export function buildEvidenceManifest({ scenarioName, correlationScenarios = [scenarioName], runId, loadProfile, startedAt, completedAt, env, data }) {
   const thresholds = thresholdResults(data?.metrics);
+  const safeScenarios = correlationScenarios.map(safeToken);
   return {
     schemaVersion: 1,
     identity: {
@@ -62,6 +63,20 @@ export function buildEvidenceManifest({ scenarioName, runId, loadProfile, starte
       maxHttpP99Ms: optionalNumber(env.MAX_HTTP_P99_MS),
       maxWebSocketConnectP95Ms: optionalNumber(env.MAX_WEBSOCKET_CONNECT_P95_MS),
       maxWebSocketConnectP99Ms: optionalNumber(env.MAX_WEBSOCKET_CONNECT_P99_MS),
+      mix: {
+        agentRps: optionalNumber(env.MIXED_AGENT_RPS),
+        publicRequestIterationsPerSecond: optionalNumber(env.MIXED_PUBLIC_RPS),
+        authRps: optionalNumber(env.MIXED_AUTH_RPS),
+        websocketConnections: optionalNumber(env.MIXED_WEBSOCKET_CONNECTIONS),
+        agentP95Ms: optionalNumber(env.MIXED_AGENT_MAX_HTTP_P95_MS),
+        agentP99Ms: optionalNumber(env.MIXED_AGENT_MAX_HTTP_P99_MS),
+        publicP95Ms: optionalNumber(env.MIXED_PUBLIC_MAX_HTTP_P95_MS),
+        publicP99Ms: optionalNumber(env.MIXED_PUBLIC_MAX_HTTP_P99_MS),
+        authP95Ms: optionalNumber(env.MIXED_AUTH_MAX_HTTP_P95_MS),
+        authP99Ms: optionalNumber(env.MIXED_AUTH_MAX_HTTP_P99_MS),
+        websocketConnectP95Ms: optionalNumber(env.MIXED_WEBSOCKET_MAX_CONNECT_P95_MS),
+        websocketConnectP99Ms: optionalNumber(env.MIXED_WEBSOCKET_MAX_CONNECT_P99_MS),
+      },
     },
     result: {
       status: thresholds.failed.length === 0 ? 'PASSED' : 'FAILED',
@@ -75,19 +90,21 @@ export function buildEvidenceManifest({ scenarioName, runId, loadProfile, starte
       droppedIterations: metricValue(data?.metrics, 'dropped_iterations', 'count'),
     },
     correlation: {
-      prometheusSelector: `test_run_id="${safeToken(runId)}",scenario="${safeToken(scenarioName)}",profile="${safeToken(loadProfile)}"`,
+      prometheusSelector: `test_run_id="${safeToken(runId)}",scenario=~"${safeScenarios.join('|')}",profile="${safeToken(loadProfile)}"`,
+      scenarios: safeScenarios,
       dashboardUids: ['deskseed-load-overview', 'deskseed-load-diagnostics'],
       manualEvidenceStillRequired: ['Prometheus time-window export', 'pg_stat_statements snapshot', 'Grafana screenshots or links'],
     },
   };
 }
 
-export function createSummaryHandler({ scenarioName, runId, loadProfile, env }) {
+export function createSummaryHandler({ scenarioName, correlationScenarios = [scenarioName], runId, loadProfile, env }) {
   const startedAt = new Date().toISOString();
   const fileStem = evidenceFileStem(runId, scenarioName);
   return (data) => {
     const manifest = buildEvidenceManifest({
       scenarioName,
+      correlationScenarios,
       runId,
       loadProfile,
       startedAt,

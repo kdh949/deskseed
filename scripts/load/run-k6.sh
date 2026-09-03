@@ -2,7 +2,7 @@
 set -eu
 
 if [ "$#" -ne 3 ]; then
-  echo "usage: $0 <agent-read|public-request|customer-auth-limiter|collaboration-websocket> <absolute-env-file> <absolute-results-directory>" >&2
+  echo "usage: $0 <agent-read|public-request|customer-auth-limiter|collaboration-websocket|mixed-workload> <absolute-env-file> <absolute-results-directory>" >&2
   exit 2
 fi
 
@@ -10,7 +10,7 @@ scenario=$1
 environment_file=$2
 results_directory=$3
 case "$scenario" in
-  agent-read|public-request|customer-auth-limiter|collaboration-websocket) ;;
+  agent-read|public-request|customer-auth-limiter|collaboration-websocket|mixed-workload) ;;
   *) echo "unsupported scenario: $scenario" >&2; exit 2 ;;
 esac
 case "$environment_file:$results_directory" in

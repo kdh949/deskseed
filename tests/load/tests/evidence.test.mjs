@@ -48,7 +48,7 @@ test("manifest records reproducibility metadata and failed thresholds without co
 });
 
 test("every scenario exports a per-run summary handler", async () => {
-  for (const scenario of ["agent-read", "public-request", "customer-auth-limiter", "collaboration-websocket"]) {
+  for (const scenario of ["agent-read", "public-request", "customer-auth-limiter", "collaboration-websocket", "mixed-workload"]) {
     const source = await readFile(new URL(`tests/load/scenarios/${scenario}.js`, repositoryRoot), "utf8");
     assert.match(source, /export const handleSummary = handleSummaryFor\(/, scenario);
   }

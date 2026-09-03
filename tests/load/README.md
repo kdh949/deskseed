@@ -52,4 +52,28 @@ MAX_WEBSOCKET_CONNECT_P99_MS=<measured acceptance budget, at least p95>
 
 No repository-wide millisecond default is provided because the accepted budget belongs to the declared load environment. Missing or inverted budgets stop a non-smoke run during configuration.
 
+For a simultaneous product mix, use `mixed-workload`. `MIXED_*_RPS` is business-flow iterations per second, not raw HTTP requests; one agent-read or public-request iteration performs several HTTP calls. Declare every rate, connection count, and per-flow latency budget explicitly:
+
+```text
+LOAD_PROFILE=mixed
+MIXED_AGENT_RPS=<agent-read iterations/second>
+MIXED_PUBLIC_RPS=<public-request iterations/second>
+MIXED_AUTH_RPS=<authentication attempts/second>
+MIXED_WEBSOCKET_CONNECTIONS=<concurrent collaboration sockets>
+MIXED_AGENT_MAX_HTTP_P95_MS=<budget>
+MIXED_AGENT_MAX_HTTP_P99_MS=<budget>
+MIXED_PUBLIC_MAX_HTTP_P95_MS=<budget>
+MIXED_PUBLIC_MAX_HTTP_P99_MS=<budget>
+MIXED_AUTH_MAX_HTTP_P95_MS=<budget>
+MIXED_AUTH_MAX_HTTP_P99_MS=<budget>
+MIXED_WEBSOCKET_MAX_CONNECT_P95_MS=<budget>
+MIXED_WEBSOCKET_MAX_CONNECT_P99_MS=<budget>
+```
+
+The mixed workload creates synthetic public requests, so it also requires `CONFIRM_DESTRUCTIVE_WRITES=true`. All four flows share `TEST_RUN_ID` but retain separate `scenario` tags and threshold selectors.
+
+```bash
+./scripts/load/run-k6.sh mixed-workload /absolute/path/to/load.env /absolute/path/to/results
+```
+
 `checks=100%`, `unexpected_status=0`, and `dropped_iterations=0` remain execution-validity gates. The declared p95/p99 thresholds are performance-acceptance gates, but they are not by themselves a capacity claim. Record the environment, fixture size, commit SHA, telemetry mode, JSON summary, Prometheus window, and `pg_stat_statements` snapshot before interpreting p95/p99 or bottlenecks.

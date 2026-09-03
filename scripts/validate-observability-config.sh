@@ -7,6 +7,7 @@ node --test "$repository_root/ops/observability/tests/collection-config.test.mjs
 node --test "$repository_root/ops/observability/tests/dashboard.test.mjs"
 node --test "$repository_root/tests/load/tests/thresholds.test.mjs"
 node --test "$repository_root/tests/load/tests/evidence.test.mjs"
+node --test "$repository_root/tests/load/tests/mixed-workload.test.mjs"
 
 export DESKSEED_APP_BIND_ADDRESS=127.0.0.1
 export DESKSEED_OBSERVABILITY_BIND_ADDRESS=127.0.0.1
@@ -45,7 +46,7 @@ jq empty \
   "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-overview.json" \
   "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-diagnostics.json"
 
-for scenario in agent-read public-request customer-auth-limiter collaboration-websocket; do
+for scenario in agent-read public-request customer-auth-limiter collaboration-websocket mixed-workload; do
   docker run --rm \
     -v "$repository_root/tests/load:/scripts:ro" \
     grafana/k6:2.0.0 inspect \

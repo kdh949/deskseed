@@ -15,8 +15,8 @@ export function requireConfirmedTarget({ writes = false } = {}) {
   }
 }
 
-export function handleSummaryFor(scenarioName) {
-  return createSummaryHandler({ scenarioName, runId, loadProfile, env: __ENV });
+export function handleSummaryFor(scenarioName, correlationScenarios = [scenarioName]) {
+  return createSummaryHandler({ scenarioName, correlationScenarios, runId, loadProfile, env: __ENV });
 }
 
 export function standardOptions(scenarioName) {
@@ -124,6 +124,54 @@ export function websocketOptions() {
   };
 }
 
+export function mixedOptions() {
+  const flowNames = ['agent-read', 'public-request', 'customer-auth-limiter', 'collaboration-websocket'];
+  const thresholds = validityThresholds();
+  if (loadProfile === 'smoke') {
+    return {
+      scenarios: Object.fromEntries(flowNames.map((name) => [name, {
+        executor: 'shared-iterations',
+        exec: mixedExecName(name),
+        vus: 1,
+        iterations: 1,
+        maxDuration: '45s',
+        tags: commonTags(name),
+      }])),
+      thresholds,
+      summaryTrendStats: ['min', 'med', 'p(95)', 'p(99)', 'max'],
+    };
+  }
+
+  const duration = __ENV.LOAD_DURATION || (loadProfile === 'soak' ? '30m' : '5m');
+  const agentRate = requiredPositiveInteger('MIXED_AGENT_RPS', 1000);
+  const publicRate = requiredPositiveInteger('MIXED_PUBLIC_RPS', 1000);
+  const authRate = requiredPositiveInteger('MIXED_AUTH_RPS', 1000);
+  const websocketConnections = requiredPositiveInteger('MIXED_WEBSOCKET_CONNECTIONS', 2000);
+
+  addLatencyBudget(thresholds, 'http_req_duration{scenario:agent-read,expected_response:true}', 'MIXED_AGENT_MAX_HTTP_P95_MS', 'MIXED_AGENT_MAX_HTTP_P99_MS');
+  addLatencyBudget(thresholds, 'http_req_duration{scenario:public-request,expected_response:true}', 'MIXED_PUBLIC_MAX_HTTP_P95_MS', 'MIXED_PUBLIC_MAX_HTTP_P99_MS');
+  addLatencyBudget(thresholds, 'http_req_duration{scenario:customer-auth-limiter,name:customer_password_session}', 'MIXED_AUTH_MAX_HTTP_P95_MS', 'MIXED_AUTH_MAX_HTTP_P99_MS');
+  addLatencyBudget(thresholds, 'ws_connecting{scenario:collaboration-websocket,name:collaboration_websocket}', 'MIXED_WEBSOCKET_MAX_CONNECT_P95_MS', 'MIXED_WEBSOCKET_MAX_CONNECT_P99_MS');
+  requireEvidenceMetadata();
+
+  return {
+    scenarios: {
+      'agent-read': mixedArrivalScenario('agentRead', 'agent-read', agentRate, duration, 'MIXED_AGENT'),
+      'public-request': mixedArrivalScenario('publicRequest', 'public-request', publicRate, duration, 'MIXED_PUBLIC'),
+      'customer-auth-limiter': mixedArrivalScenario('customerAuthLimiter', 'customer-auth-limiter', authRate, duration, 'MIXED_AUTH'),
+      'collaboration-websocket': {
+        executor: 'constant-vus',
+        exec: 'collaborationWebSocket',
+        vus: websocketConnections,
+        duration,
+        tags: commonTags('collaboration-websocket'),
+      },
+    },
+    thresholds,
+    summaryTrendStats: ['min', 'med', 'p(95)', 'p(99)', 'max'],
+  };
+}
+
 export function requestHeaders(extra = {}) {
   const suffix = `${__VU}-${__ITER}`;
   return {
@@ -141,8 +189,32 @@ export function randomUuid() {
   });
 }
 
-function commonTags(scenarioName) {
+export function commonTags(scenarioName) {
   return { environment: 'load', service: 'deskseed', profile: loadProfile, scenario: scenarioName, test_run_id: runId };
+}
+
+function mixedExecName(scenarioName) {
+  return {
+    'agent-read': 'agentRead',
+    'public-request': 'publicRequest',
+    'customer-auth-limiter': 'customerAuthLimiter',
+    'collaboration-websocket': 'collaborationWebSocket',
+  }[scenarioName];
+}
+
+function mixedArrivalScenario(exec, scenarioName, rate, duration, prefix) {
+  const preAllocatedVUs = positiveInteger(`${prefix}_PREALLOCATED_VUS`, Math.max(10, rate), 2000);
+  const maxVUs = positiveInteger(`${prefix}_MAX_VUS`, Math.max(preAllocatedVUs, rate * 2), 4000);
+  return {
+    executor: 'constant-arrival-rate',
+    exec,
+    rate,
+    timeUnit: '1s',
+    duration,
+    preAllocatedVUs,
+    maxVUs,
+    tags: commonTags(scenarioName),
+  };
 }
 
 function validityThresholds() {
@@ -167,6 +239,13 @@ function httpThresholds(metric) {
 
 function requireOrderedLatencyBudgets(p95, p99, label) {
   if (p99 < p95) fail(`${label} p99 budget must be greater than or equal to p95 budget`);
+}
+
+function addLatencyBudget(thresholds, metric, p95Name, p99Name) {
+  const p95 = requiredPositiveNumber(p95Name, 600000);
+  const p99 = requiredPositiveNumber(p99Name, 600000);
+  requireOrderedLatencyBudgets(p95, p99, metric);
+  thresholds[metric] = [`p(95)<${p95}`, `p(99)<${p99}`];
 }
 
 function requireEvidenceMetadata() {
