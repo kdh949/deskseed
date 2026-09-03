@@ -55,6 +55,16 @@ otelcol.receiver.otlp "deskseed" {
   }
 
   output {
+    traces = [otelcol.processor.memory_limiter.deskseed.input]
+  }
+}
+
+otelcol.processor.memory_limiter "deskseed" {
+  check_interval = "1s"
+  limit          = "256MiB"
+  spike_limit    = "64MiB"
+
+  output {
     traces = [otelcol.processor.batch.deskseed.input]
   }
 }
@@ -68,5 +78,18 @@ otelcol.processor.batch "deskseed" {
 otelcol.exporter.otlphttp "tempo" {
   client {
     endpoint = sys.env("DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT")
+  }
+
+  retry_on_failure {
+    enabled          = true
+    initial_interval = "1s"
+    max_interval     = "10s"
+    max_elapsed_time = "60s"
+  }
+
+  sending_queue {
+    enabled       = true
+    queue_size    = 1024
+    num_consumers = 2
   }
 }

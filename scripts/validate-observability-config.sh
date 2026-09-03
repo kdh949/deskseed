@@ -3,6 +3,8 @@ set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
+node --test "$repository_root/ops/observability/tests/collection-config.test.mjs"
+
 export DESKSEED_APP_BIND_ADDRESS=127.0.0.1
 export DESKSEED_OBSERVABILITY_BIND_ADDRESS=127.0.0.1
 export DESKSEED_LOKI_PUSH_URL=http://monitoring.internal:3100/loki/api/v1/push
@@ -33,6 +35,7 @@ docker run --rm \
 docker run --rm \
   --add-host backend:127.0.0.1 \
   -v "$repository_root/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  -v "$repository_root/ops/observability/nginx/status.conf:/etc/nginx/conf.d/status.conf:ro" \
   nginx:1.31-alpine nginx -t
 
 jq empty "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-overview.json"

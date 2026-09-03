@@ -38,6 +38,18 @@ scrape_configs:
           environment: load
           service: deskseed-postgresql
           stack: deskseed
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "pg_stat_statements_(rows_total|block_read_seconds_total|block_write_seconds_total)"
+        action: drop
+
+  - job_name: deskseed-nginx
+    static_configs:
+      - targets: ["deskseed-load.internal:9113"]
+        labels:
+          environment: load
+          service: deskseed-nginx
+          stack: deskseed
 
   - job_name: deskseed-redis
     static_configs:

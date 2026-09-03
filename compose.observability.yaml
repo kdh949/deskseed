@@ -24,6 +24,10 @@ services:
     ports:
       - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9090:9090"
 
+  frontend:
+    volumes:
+      - ./ops/observability/nginx/status.conf:/etc/nginx/conf.d/status.conf:ro
+
   alloy:
     image: grafana/alloy:v1.18.0
     profiles: ["observability"]
@@ -84,6 +88,8 @@ services:
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.17.1
     profiles: ["observability"]
+    command:
+      - --collector.stat_statements
     environment:
       DATA_SOURCE_URI: db:5432/${POSTGRES_DB:-deskseed}?sslmode=disable
       DATA_SOURCE_USER: ${DESKSEED_POSTGRES_EXPORTER_USER:-deskseed_monitor}
@@ -95,6 +101,21 @@ services:
         condition: service_healthy
     ports:
       - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9187:9187"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    profiles: ["observability"]
+    command:
+      - --nginx.scrape-uri=http://frontend:8080/stub_status
+    depends_on:
+      frontend:
+        condition: service_started
+    ports:
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9113:9113"
     read_only: true
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]

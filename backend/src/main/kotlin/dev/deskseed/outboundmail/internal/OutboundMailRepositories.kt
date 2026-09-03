@@ -32,6 +32,9 @@ internal interface OutboundMailIntentRepository : JpaRepository<OutboundMailInte
     fun lockById(@Param("id") id: UUID): OutboundMailIntentEntity?
 
     fun countByStatusIn(statuses: Collection<MailIntentStatus>): Long
+
+    @Query("select min(intent.queuedAt) from OutboundMailIntentEntity intent where intent.status in :statuses")
+    fun findOldestQueuedAtByStatusIn(@Param("statuses") statuses: Collection<MailIntentStatus>): Instant?
 }
 
 internal interface OutboundMailAttemptRepository : JpaRepository<OutboundMailAttemptEntity, UUID> {

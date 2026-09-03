@@ -500,10 +500,26 @@ internal class WebhookDeliveryScheduler(private val worker: WebhookDeliveryWorke
 internal class WebhookDeliveryMetrics(jdbc: JdbcTemplate, meterRegistry: MeterRegistry) {
     init {
         Gauge.builder("deskseed.webhook.delivery.backlog") {
-            jdbc.queryForObject("select count(*) from webhook_deliveries where status in ('PENDING', 'RETRY_SCHEDULED', 'IN_FLIGHT')", Long::class.java) ?: 0L
+            jdbc.queryForObject(WEBHOOK_BACKLOG_COUNT_SQL, Long::class.java) ?: 0L
         }.register(meterRegistry)
+        Gauge.builder("deskseed.webhook.delivery.backlog.oldest.age") {
+            jdbc.queryForObject(WEBHOOK_BACKLOG_OLDEST_AGE_SQL, Double::class.java) ?: 0.0
+        }.baseUnit("seconds").register(meterRegistry)
     }
 }
+
+internal val WEBHOOK_BACKLOG_COUNT_SQL =
+    "select count(*) from webhook_deliveries where status in ('PENDING', 'RETRY_SCHEDULED', 'IN_FLIGHT')"
+
+internal val WEBHOOK_BACKLOG_OLDEST_AGE_SQL =
+    """
+    select coalesce(
+        greatest(extract(epoch from current_timestamp - min(created_at)), 0),
+        0
+    )::double precision
+    from webhook_deliveries
+    where status in ('PENDING', 'RETRY_SCHEDULED', 'IN_FLIGHT')
+    """.trimIndent()
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(WebhookDeliveryProperties::class)

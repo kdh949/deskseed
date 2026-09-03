@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -377,13 +378,20 @@ internal class MailDeliveryScheduler(private val worker: MailDeliveryWorker) {
 @Component
 internal class OutboundMailBacklogMetrics(
     intentRepository: OutboundMailIntentRepository,
+    clock: Clock,
     meterRegistry: MeterRegistry,
 ) {
     init {
+        val backlogStatuses = listOf(MailIntentStatus.QUEUED, MailIntentStatus.RETRY_WAIT, MailIntentStatus.SENDING)
         Gauge.builder("deskseed.mail.outbox.backlog") {
-            intentRepository.countByStatusIn(
-                listOf(MailIntentStatus.QUEUED, MailIntentStatus.RETRY_WAIT, MailIntentStatus.SENDING),
-            )
+            intentRepository.countByStatusIn(backlogStatuses)
         }.register(meterRegistry)
+        Gauge.builder("deskseed.mail.outbox.oldest.age") {
+            intentRepository.findOldestQueuedAtByStatusIn(backlogStatuses)
+                ?.let { oldest ->
+                    Duration.between(oldest, Instant.now(clock)).toMillis().coerceAtLeast(0) / 1_000.0
+                }
+                ?: 0.0
+        }.baseUnit("seconds").register(meterRegistry)
     }
 }
