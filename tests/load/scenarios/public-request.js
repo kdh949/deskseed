@@ -1,11 +1,12 @@
 import http from 'k6/http';
 import { check, fail } from 'k6';
 import { Rate } from 'k6/metrics';
-import { randomUuid, requestHeaders, requireConfirmedTarget, runId, standardOptions, targetUrl } from '../lib/config.js';
+import { handleSummaryFor, randomUuid, requestHeaders, requireConfirmedTarget, runId, standardOptions, targetUrl } from '../lib/config.js';
 
 const unexpectedStatus = new Rate('unexpected_status');
 requireConfirmedTarget({ writes: true });
 export const options = standardOptions('public-request');
+export const handleSummary = handleSummaryFor('public-request');
 
 export default function () {
   const policiesResponse = http.get(`${targetUrl}/api/v1/customer/consent-policies?context=REQUEST_SUBMISSION`, {

@@ -11,6 +11,19 @@ LOAD_PROFILE=smoke
 K6_PROMETHEUS_RW_SERVER_URL=http://monitoring.internal:9090/api/v1/write
 ```
 
+Every non-smoke env file must also declare reproducibility metadata. Use bounded identifiers/descriptions only; do not put credentials, URLs containing credentials, customer data, or tokens in these fields:
+
+```text
+LOAD_ENVIRONMENT_ID=load-host-shape-v1
+LOAD_GENERATOR_ID=generator-host-shape-v1
+APP_RESOURCE_LIMITS=backend=4cpu/8GiB,db=4cpu/8GiB
+FIXTURE_DATASET_ID=synthetic-fixture-v1
+FIXTURE_SIZE=tickets=100000,comments=500000
+TELEMETRY_MODE=prometheus+loki+tempo+pyroscope
+```
+
+The runner records the checked-out commit SHA and whether the checkout is dirty. It never copies the full environment into an artifact.
+
 Agent and WebSocket scenarios also require `STAFF_EMAIL`, `STAFF_PASSWORD`, and an optional `STAFF_VIEW_KEY` that has at least one fixture ticket. Public request additionally requires `CONFIRM_DESTRUCTIVE_WRITES=true`. Customer authentication requires a synthetic `CUSTOMER_EMAIL` and `CUSTOMER_PASSWORD`.
 
 Run one-VU smoke first:
@@ -18,6 +31,8 @@ Run one-VU smoke first:
 ```bash
 ./scripts/load/run-k6.sh agent-read /absolute/path/to/load.env /absolute/path/to/results
 ```
+
+Each run writes `<test-run-id>-<scenario>-summary.json` and `<test-run-id>-<scenario>-manifest.json` to the results directory. The manifest reports threshold pass/fail, the load/environment declaration, the safe dashboard selector, and the manual monitoring evidence that still needs to be preserved.
 
 Any non-smoke run requires `CONFIRM_DESKSEED_LOAD_TARGET` equal to the exact `TARGET_URL` host. General arrival-rate profiles require `TARGET_RPS`; the customer auth script instead accepts `auth-sustained`, `auth-burst`, or `auth-safety`. The safety profile additionally requires `CONFIRM_AUTH_SAFETY=true`.
 

@@ -1,12 +1,13 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { Rate } from 'k6/metrics';
-import { randomUuid, requireConfirmedTarget, standardOptions, targetUrl } from '../lib/config.js';
+import { handleSummaryFor, randomUuid, requireConfirmedTarget, standardOptions, targetUrl } from '../lib/config.js';
 import { staffHeaders, staffSession } from '../lib/staff.js';
 
 const unexpectedStatus = new Rate('unexpected_status');
 requireConfirmedTarget();
 export const options = standardOptions('agent-read');
+export const handleSummary = handleSummaryFor('agent-read');
 
 export default function () {
   staffSession();

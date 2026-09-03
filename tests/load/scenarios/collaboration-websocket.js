@@ -2,12 +2,13 @@ import http from 'k6/http';
 import ws from 'k6/ws';
 import { check } from 'k6';
 import { Rate } from 'k6/metrics';
-import { randomUuid, requireConfirmedTarget, targetUrl, websocketOptions } from '../lib/config.js';
+import { handleSummaryFor, randomUuid, requireConfirmedTarget, targetUrl, websocketOptions } from '../lib/config.js';
 import { staffHeaders, staffSession } from '../lib/staff.js';
 
 const unexpectedStatus = new Rate('unexpected_status');
 requireConfirmedTarget();
 export const options = websocketOptions();
+export const handleSummary = handleSummaryFor('collaboration-websocket');
 
 export default function () {
   staffSession();

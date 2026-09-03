@@ -6,6 +6,7 @@ repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 node --test "$repository_root/ops/observability/tests/collection-config.test.mjs"
 node --test "$repository_root/ops/observability/tests/dashboard.test.mjs"
 node --test "$repository_root/tests/load/tests/thresholds.test.mjs"
+node --test "$repository_root/tests/load/tests/evidence.test.mjs"
 
 export DESKSEED_APP_BIND_ADDRESS=127.0.0.1
 export DESKSEED_OBSERVABILITY_BIND_ADDRESS=127.0.0.1

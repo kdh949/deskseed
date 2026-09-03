@@ -1,12 +1,13 @@
 import http from 'k6/http';
 import { check, fail } from 'k6';
 import { Counter, Rate } from 'k6/metrics';
-import { authOptions, requestHeaders, requireConfirmedTarget, targetUrl } from '../lib/config.js';
+import { authOptions, handleSummaryFor, requestHeaders, requireConfirmedTarget, targetUrl } from '../lib/config.js';
 
 const unexpectedStatus = new Rate('unexpected_status');
 const expectedThrottles = new Counter('expected_throttles');
 requireConfirmedTarget();
 export const options = authOptions();
+export const handleSummary = handleSummaryFor('customer-auth-limiter');
 
 export default function () {
   const email = __ENV.CUSTOMER_EMAIL;

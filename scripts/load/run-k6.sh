@@ -21,13 +21,20 @@ test -f "$environment_file"
 mkdir -p "$results_directory"
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+source_commit=$(git -C "$repository_root" rev-parse HEAD)
+source_dirty=false
+if [ -n "$(git -C "$repository_root" status --porcelain --untracked-files=normal)" ]; then
+  source_dirty=true
+fi
+
 docker run --rm \
   --env-file "$environment_file" \
+  -e DESKSEED_GIT_SHA="$source_commit" \
+  -e DESKSEED_GIT_DIRTY="$source_dirty" \
   -e 'K6_PROMETHEUS_RW_TREND_STATS=p(50),p(95),p(99),max' \
   -e K6_PROMETHEUS_RW_STALE_MARKERS=true \
   -v "$repository_root/tests/load:/scripts:ro" \
   -v "$results_directory:/results" \
   grafana/k6:2.0.0 run \
   --out experimental-prometheus-rw \
-  --summary-export "/results/${scenario}-summary.json" \
   "/scripts/scenarios/${scenario}.js"

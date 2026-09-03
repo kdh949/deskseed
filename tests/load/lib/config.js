@@ -1,4 +1,5 @@
 import { fail } from 'k6';
+import { createSummaryHandler } from './evidence.js';
 
 export const targetUrl = requiredUrl('TARGET_URL');
 export const runId = (__ENV.TEST_RUN_ID || 'smoke-local').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 80);
@@ -12,6 +13,10 @@ export function requireConfirmedTarget({ writes = false } = {}) {
   if (writes && __ENV.CONFIRM_DESTRUCTIVE_WRITES !== 'true') {
     fail('CONFIRM_DESTRUCTIVE_WRITES=true is required for a write scenario');
   }
+}
+
+export function handleSummaryFor(scenarioName) {
+  return createSummaryHandler({ scenarioName, runId, loadProfile, env: __ENV });
 }
 
 export function standardOptions(scenarioName) {
@@ -88,6 +93,7 @@ export function websocketOptions() {
     const p95 = requiredPositiveNumber('MAX_WEBSOCKET_CONNECT_P95_MS', 600000);
     const p99 = requiredPositiveNumber('MAX_WEBSOCKET_CONNECT_P99_MS', 600000);
     requireOrderedLatencyBudgets(p95, p99, 'WebSocket connection');
+    requireEvidenceMetadata();
     thresholds['ws_connecting{name:collaboration_websocket}'] = [`p(95)<${p95}`, `p(99)<${p99}`];
   }
   if (loadProfile === 'smoke') {
@@ -154,12 +160,34 @@ function httpThresholds(metric) {
   const p95 = requiredPositiveNumber('MAX_HTTP_P95_MS', 600000);
   const p99 = requiredPositiveNumber('MAX_HTTP_P99_MS', 600000);
   requireOrderedLatencyBudgets(p95, p99, 'HTTP');
+  requireEvidenceMetadata();
   thresholds[metric] = [`p(95)<${p95}`, `p(99)<${p99}`];
   return thresholds;
 }
 
 function requireOrderedLatencyBudgets(p95, p99, label) {
   if (p99 < p95) fail(`${label} p99 budget must be greater than or equal to p95 budget`);
+}
+
+function requireEvidenceMetadata() {
+  for (const name of [
+    'LOAD_ENVIRONMENT_ID',
+    'FIXTURE_DATASET_ID',
+    'FIXTURE_SIZE',
+    'TELEMETRY_MODE',
+    'LOAD_GENERATOR_ID',
+    'APP_RESOURCE_LIMITS',
+    'DESKSEED_GIT_SHA',
+    'DESKSEED_GIT_DIRTY',
+  ]) {
+    requiredBoundedText(name, 500);
+  }
+  if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(__ENV.DESKSEED_GIT_SHA)) {
+    fail('DESKSEED_GIT_SHA must be a 40 or 64 character lowercase hexadecimal commit ID');
+  }
+  if (!['true', 'false'].includes(__ENV.DESKSEED_GIT_DIRTY)) {
+    fail('DESKSEED_GIT_DIRTY must be true or false');
+  }
 }
 
 function requiredUrl(name) {
@@ -177,6 +205,13 @@ function requiredPositiveNumber(name, maximum) {
   if (!__ENV[name]) fail(`${name} is required for LOAD_PROFILE=${loadProfile}`);
   const value = Number(__ENV[name]);
   if (!Number.isFinite(value) || value <= 0 || value > maximum) fail(`${name} must be greater than 0 and at most ${maximum}`);
+  return value;
+}
+
+function requiredBoundedText(name, maximum) {
+  const value = __ENV[name];
+  if (!value) fail(`${name} is required for LOAD_PROFILE=${loadProfile}`);
+  if (value.length > maximum || /[\u0000-\u001f\u007f]/.test(value)) fail(`${name} must be at most ${maximum} characters without control characters`);
   return value;
 }
 
