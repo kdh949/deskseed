@@ -210,6 +210,8 @@ jobs:
         run: bash scripts/test-e2e-compose-ownership.sh
       - name: Start stack and check backend health
         run: bash scripts/compose-smoke.sh
+      - name: Verify personal staging image deployment contracts
+        run: bash scripts/test-personal-staging-deploy.sh
       - name: Verify production Redis ACL, database roles, and aggregate health
         run: bash scripts/test-production-runtime-live.sh
 
@@ -270,3 +272,12 @@ jobs:
           check_job "Frontend browser E2E" "$E2E_EXPECTED" "$E2E_RESULT"
           check_job "Compose health smoke" "$COMPOSE_EXPECTED" "$COMPOSE_RESULT"
           exit "$failed"
+
+  publish-personal-staging-images:
+    name: Publish personal staging images
+    needs: ci-gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-personal-staging-images.yml

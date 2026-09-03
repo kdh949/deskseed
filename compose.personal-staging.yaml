@@ -1,0 +1,11 @@
+# Requires Docker Compose 2.24.4+ for !reset merge tags.
+# Application images are published by GitHub Actions from the same commit SHA
+# as the deployment checkout. Runtime secrets remain operator-owned.
+services:
+  backend:
+    image: ghcr.io/kdh949/deskseed-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    build: !reset null
+
+  frontend:
+    image: ghcr.io/kdh949/deskseed-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    build: !reset null

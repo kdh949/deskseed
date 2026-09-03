@@ -132,7 +132,41 @@ docker compose --env-file /etc/deskseed/production.env \
 
 `deskseed-deploy`는 예시 전용 deployment 계정이므로 실제 전용 non-root 계정으로 바꾼다. `/etc/deskseed`는 이 계정만 소유하고 다른 계정에는 열지 않는다. `DESKSEED_REDIS_ACL_FILE=/etc/deskseed/redis.acl`로 맞춘다. `render-redis-acl.sh`은 기존 파일을 덮어쓰지 않으며 Redis password의 SHA-256 hash만 ACL에 기록한다. Linux의 file-backed Compose secret은 host 소유권을 바꾸지 않으므로 Redis entrypoint가 root로 이 파일을 읽고 container-private tmpfs에 Redis uid/gid, mode `0400`으로 복사한 뒤 권한을 내린다. `db-migrate`가 실패하거나 `db-permissions` 검증이 실패하면 backend dependency가 충족되지 않는다. `docker compose ps --all`에서 두 job이 exit `0`, backend/frontend/db/redis/versitygw가 running인지 확인한다. 기존 PostgreSQL volume에는 init script가 다시 실행되지 않으므로 이 절차를 그대로 적용하지 말고 role 존재/소유권/privilege를 먼저 점검한다.
 
-### 3.3 VersityGW와 Sophos upload scan 경계
+### 3.3 GitHub Actions 사전 빌드와 개인 서버 배포
+
+작은 개인 서버는 application image를 직접 빌드하지 않아도 된다. `.github/workflows/build-personal-staging-images.yml`은 GitHub-hosted runner에서 backend/frontend를 `linux/amd64`로 빌드하고 두 image를 같은 commit SHA tag로 GHCR에 게시한다. `main` push는 기존 `CI gate`가 성공한 뒤 reusable workflow를 호출한다. `workflow_dispatch`는 선택한 ref를 명시적으로 개인 staging용으로 빌드할 때만 사용한다. 이 workflow는 개인 서버에 SSH하지 않으며 production runtime secret을 받지 않는다.
+
+```text
+ghcr.io/kdh949/deskseed-backend:<40-character-commit-sha>
+ghcr.io/kdh949/deskseed-frontend:<40-character-commit-sha>
+```
+
+개인 서버에는 repository checkout이 계속 필요하다. `db-migrate`와 `db-permissions`가 같은 checkout의 Flyway SQL과 권한 script를 read-only bind mount하기 때문이다. 배포 전에 `/etc/deskseed/production.env`와 Redis ACL을 3.2대로 준비하고, upgrade라면 6~10절의 일관 backup/restore와 forward-only migration 경계를 먼저 따른다.
+
+```bash
+cd /opt/deskseed
+git fetch origin
+git checkout --detach <40-character-commit-sha>
+
+./scripts/deploy-personal-server.sh <40-character-commit-sha>
+```
+
+private GHCR package이면 실행 환경의 secret manager에서 `GHCR_TOKEN`과 선택적 `GHCR_USERNAME`을 process environment로 전달한다. token에는 image pull에 필요한 최소 read 권한만 부여한다. Script는 임시 Docker config로 로그인하고 종료 시 제거한다. token이 없으면 public package 또는 deployment account가 미리 인증한 Docker config를 사용한다.
+
+Script는 다음 순서로 fail closed한다.
+
+1. 요청 SHA가 40자리 소문자 hex이고 server `HEAD`와 같은지, untracked file을 포함한 checkout이 clean인지 확인한다.
+2. server가 `linux/amd64`이고 `/etc/deskseed/production.env`가 symlink가 아닌 mode `0600` regular file인지 확인한다.
+3. base/production/personal-staging Compose를 merge해 두 application image가 같은 SHA인지 확인한다.
+4. 모든 image를 pull하고 exact backend/frontend tag와 `org.opencontainers.image.revision` label이 요청 SHA와 일치하는지 확인한 뒤에만 service 변경을 시작한다.
+5. `db-migrate`, `db-permissions`, backend, frontend를 강제 재생성해 one-shot job이 release마다 실행되도록 한다.
+6. 서버에서는 `--no-build --pull never`로 시작하고 job exit `0`, long-running service 상태, frontend와 aggregate backend health를 확인한다.
+
+동시 실행은 기본 `/tmp/deskseed-personal-staging-deploy.lock`으로 거부한다. 기본 Compose project name은 `deskseed`다. 기존 설치가 다른 project name으로 volume을 만들었다면 `DESKSEED_PROJECT_NAME`을 기존 값으로 명시해야 한다. `DESKSEED_PRODUCTION_ENV_FILE`, `DESKSEED_APP_DIR`, registry retry 횟수는 운영 환경에서 override할 수 있지만 secret 값은 command line이나 log에 쓰지 않는다.
+
+이 경로는 image publication과 deterministic pull/start를 자동화할 뿐 DB+VersityGW backup set, Sophos rule, firewall, production-size restore 또는 이전 binary/schema 호환성을 증명하지 않는다. Image push 성공도 실제 개인 서버 배포 성공으로 간주하지 않는다.
+
+### 3.4 VersityGW와 Sophos upload scan 경계
 
 VersityGW는 `object-storage` internal network에서 Backend와만 연결되고 7070/Admin/WebUI를 host에 publish하지 않는다. attachment는 8 MiB S3 multipart part로 private bucket에 저장되며 exact bytes, SHA-256, MIME-family, size, owner/visibility와 CLEAN-only link 정책을 유지한다. POSIX bytes, versioning, IAM은 각각 named volume에 남는다. Backend가 bucket을 확인/생성하지 못하면 startup이 실패한다.
 
