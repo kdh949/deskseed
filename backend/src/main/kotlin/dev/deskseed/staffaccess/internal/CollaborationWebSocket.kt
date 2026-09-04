@@ -94,6 +94,7 @@ internal class StaffCollaborationWebSocketHandler(
     private val gateway: CollaborationRealtimeGateway,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
+    private val metrics: StaffCollaborationWebSocketMetrics,
     @Value("\${deskseed.collaboration.websocket.max-message-bytes:4096}") private val maxMessageBytes: Int,
     @Value("\${deskseed.collaboration.websocket.max-messages-per-minute:120}") private val maxMessagesPerMinute: Int,
 ) : TextWebSocketHandler() {
@@ -107,13 +108,16 @@ internal class StaffCollaborationWebSocketHandler(
     override fun afterConnectionEstablished(session: WebSocketSession) {
         val principal = (session.principal as? Authentication)?.principal as? StaffPrincipal
         if (principal == null || !authorizer.isActive(principal)) {
+            metrics.connectionRejected()
             session.close(CloseStatus.POLICY_VIOLATION)
             return
         }
         session.textMessageSizeLimit = maxMessageBytes
         val decorated = ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, maxMessageBytes)
         val connection = SocketConnection(principal, decorated)
-        connections[session.id] = connection
+        if (connections.put(session.id, connection) == null) {
+            metrics.connectionAccepted()
+        }
         gateway.register(
             connection = PresenceConnection(session.id, principal.id, principal.displayName),
             sender = { message -> send(decorated, message) },
@@ -136,6 +140,7 @@ internal class StaffCollaborationWebSocketHandler(
             reject(session.id, CollaborationRealtimeErrorCode.INVALID_MESSAGE, false)
             return
         }
+        metrics.message(command.metricType())
         if (!authorizer.isActive(connection.principal)) {
             reject(session.id, CollaborationRealtimeErrorCode.UNAUTHORIZED, false, close = true)
             return
@@ -149,7 +154,9 @@ internal class StaffCollaborationWebSocketHandler(
     }
 
     override fun afterConnectionClosed(session: WebSocketSession, status: CloseStatus) {
-        connections.remove(session.id)
+        if (connections.remove(session.id) != null) {
+            metrics.connectionClosed()
+        }
         presenceBus.disconnect(session.id).forEach { change ->
             gateway.broadcast(change.ticketNumber, CollaborationPresenceDeltaMessage(change))
         }
@@ -157,6 +164,7 @@ internal class StaffCollaborationWebSocketHandler(
     }
 
     override fun handleTransportError(session: WebSocketSession, exception: Throwable) {
+        metrics.transportError()
         closeQuietly(session, CloseStatus.SERVER_ERROR)
     }
 
@@ -259,6 +267,7 @@ internal class StaffCollaborationWebSocketHandler(
         retryAfterMillis: Long? = null,
         close: Boolean = false,
     ) {
+        metrics.rejected(code)
         gateway.send(connectionId, CollaborationRealtimeErrorMessage(code, retryable, retryAfterMillis))
         if (close) connections[connectionId]?.let { closeQuietly(it.session, CloseStatus.POLICY_VIOLATION) }
     }
@@ -337,6 +346,13 @@ internal class StaffCollaborationWebSocketHandler(
         data class Unsubscribe(val ticketNumber: Long) : CollaborationClientCommand
         data object Heartbeat : CollaborationClientCommand
         data class PresenceState(val ticketNumber: Long, val state: TicketPresenceState) : CollaborationClientCommand
+    }
+
+    private fun CollaborationClientCommand.metricType(): StaffCollaborationWebSocketMetrics.ClientMessageType = when (this) {
+        is CollaborationClientCommand.Subscribe -> StaffCollaborationWebSocketMetrics.ClientMessageType.SUBSCRIBE
+        is CollaborationClientCommand.Unsubscribe -> StaffCollaborationWebSocketMetrics.ClientMessageType.UNSUBSCRIBE
+        CollaborationClientCommand.Heartbeat -> StaffCollaborationWebSocketMetrics.ClientMessageType.HEARTBEAT
+        is CollaborationClientCommand.PresenceState -> StaffCollaborationWebSocketMetrics.ClientMessageType.PRESENCE_STATE
     }
 
     private companion object {

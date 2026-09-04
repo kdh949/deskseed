@@ -1,5 +1,6 @@
 package dev.deskseed.staffaccess.internal
 
+import io.micrometer.core.instrument.MeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -35,6 +36,7 @@ import java.util.concurrent.TimeUnit
 @dev.deskseed.testsupport.category.SlowTest
 class StaffCollaborationWebSocketIntegrationTest {
     @Autowired private lateinit var jdbc: JdbcTemplate
+    @Autowired private lateinit var meterRegistry: MeterRegistry
     @Autowired private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
     @LocalServerPort private var port = 0
     private val http = HttpClient.newHttpClient()
@@ -53,6 +55,7 @@ class StaffCollaborationWebSocketIntegrationTest {
         val session = connect(browser.sessionCookie, handler)
 
         try {
+            assertThat(awaitActiveConnection()).isTrue()
             session.sendMessage(TextMessage("""{"version":1,"type":"subscribe","ticketNumber":9101}"""))
 
             val snapshot = handler.messages.poll(5, TimeUnit.SECONDS)
@@ -121,6 +124,12 @@ class StaffCollaborationWebSocketIntegrationTest {
             assertThat(error).contains("\"retryable\":true")
             assertThat(error).contains("\"retryAfterMs\":60000")
             assertThat(handler.closed.await(5, TimeUnit.SECONDS)).isTrue()
+            assertThat(
+                meterRegistry.get("deskseed.collaboration.websocket.rejections")
+                    .tag("code", "RATE_LIMITED")
+                    .counter()
+                    .count(),
+            ).isGreaterThanOrEqualTo(1.0)
         } finally {
             if (session.isOpen) session.close(CloseStatus.NORMAL)
         }
@@ -134,6 +143,15 @@ class StaffCollaborationWebSocketIntegrationTest {
         return StandardWebSocketClient()
             .execute(handler, headers, URI("ws://localhost:$port/ws/agent/collaboration"))
             .get(10, TimeUnit.SECONDS)
+    }
+
+    private fun awaitActiveConnection(): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (System.nanoTime() < deadline) {
+            if (meterRegistry.get("deskseed.collaboration.websocket.connections").gauge().value() >= 1.0) return true
+            Thread.sleep(10)
+        }
+        return false
     }
 
     private fun login(email: String): BrowserSession {

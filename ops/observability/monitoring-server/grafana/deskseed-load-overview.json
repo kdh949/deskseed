@@ -1,0 +1,124 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "k6 request rate",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (scenario) (rate(k6_http_reqs_total{environment=\"load\"}[1m]))", "legendFormat": "{{scenario}}"}],
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "k6 latency p95 / p99",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "max by (scenario) (k6_http_req_duration_p95{environment=\"load\"})", "legendFormat": "{{scenario}} p95"},
+        {"expr": "max by (scenario) (k6_http_req_duration_p99{environment=\"load\"})", "legendFormat": "{{scenario}} p99"}
+      ],
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP 5xx and expected throttling",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"load\",status=~\"5..\"}[1m]))", "legendFormat": "server 5xx"},
+        {"expr": "sum(rate(k6_http_reqs_total{environment=\"load\",expected_response=\"false\"}[1m]))", "legendFormat": "k6 unexpected"}
+      ],
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Backend p95 / p99 by route",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"load\"}[5m])))", "legendFormat": "{{uri}} p95"},
+        {"expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"load\"}[5m])))", "legendFormat": "{{uri}} p99"}
+      ],
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM CPU and heap",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "process_cpu_usage{environment=\"load\"}", "legendFormat": "process CPU"},
+        {"expr": "sum(jvm_memory_used_bytes{environment=\"load\",area=\"heap\"}) / sum(jvm_memory_max_bytes{environment=\"load\",area=\"heap\"})", "legendFormat": "heap ratio"}
+      ],
+      "gridPos": {"h": 9, "w": 6, "x": 12, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Hikari saturation",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "hikaricp_connections_active{environment=\"load\"}", "legendFormat": "active"},
+        {"expr": "hikaricp_connections_idle{environment=\"load\"}", "legendFormat": "idle"},
+        {"expr": "hikaricp_connections_pending{environment=\"load\"}", "legendFormat": "pending"}
+      ],
+      "gridPos": {"h": 9, "w": 6, "x": 18, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "PostgreSQL connections and transactions",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(pg_stat_database_numbackends{environment=\"load\"})", "legendFormat": "connections"},
+        {"expr": "sum(rate(pg_stat_database_xact_commit{environment=\"load\"}[1m]))", "legendFormat": "commits/s"},
+        {"expr": "sum(rate(pg_stat_database_xact_rollback{environment=\"load\"}[1m]))", "legendFormat": "rollbacks/s"}
+      ],
+      "gridPos": {"h": 9, "w": 8, "x": 0, "y": 17}
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis memory and evictions",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "redis_memory_used_bytes{environment=\"load\"}", "legendFormat": "memory"},
+        {"expr": "rate(redis_evicted_keys_total{environment=\"load\"}[1m])", "legendFormat": "evictions/s"}
+      ],
+      "gridPos": {"h": 9, "w": 8, "x": 8, "y": 17}
+    },
+    {
+      "type": "timeseries",
+      "title": "Audit, delivery, and WebSocket",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "increase(deskseed_audit_persistence_failures_total{environment=\"load\"}[5m])", "legendFormat": "audit failures"},
+        {"expr": "deskseed_mail_outbox_backlog{environment=\"load\"}", "legendFormat": "mail backlog"},
+        {"expr": "deskseed_webhook_delivery_backlog{environment=\"load\"}", "legendFormat": "webhook backlog"},
+        {"expr": "deskseed_collaboration_websocket_connections{environment=\"load\"}", "legendFormat": "WebSocket connections"}
+      ],
+      "gridPos": {"h": 9, "w": 8, "x": 16, "y": 17}
+    },
+    {
+      "type": "logs",
+      "title": "Correlated Deskseed logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"expr": "{stack=\"deskseed\",environment=\"load\"} | json | correlationId =~ `$correlation_id`"}],
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 26}
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["deskseed", "load", "observability"],
+  "templating": {
+    "list": [
+      {
+        "name": "correlation_id",
+        "type": "textbox",
+        "label": "Correlation ID regex",
+        "query": ".*",
+        "current": {"text": ".*", "value": ".*"}
+      }
+    ]
+  },
+  "time": {"from": "now-30m", "to": "now"},
+  "timezone": "browser",
+  "title": "Deskseed Load Overview",
+  "uid": "deskseed-load-overview",
+  "version": 1
+}

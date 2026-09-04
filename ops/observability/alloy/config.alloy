@@ -1,0 +1,72 @@
+logging {
+  level  = "info"
+  format = "json"
+}
+
+discovery.docker "deskseed" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "deskseed_logs" {
+  targets = discovery.docker.deskseed.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = sys.env("DESKSEED_COMPOSE_PROJECT_REGEX")
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "deskseed" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.deskseed_logs.output
+  forward_to = [loki.process.deskseed.receiver]
+}
+
+loki.process "deskseed" {
+  stage.static_labels {
+    values = {
+      environment = "load",
+      stack       = "deskseed",
+    }
+  }
+
+  forward_to = [loki.write.central.receiver]
+}
+
+loki.write "central" {
+  endpoint {
+    url = sys.env("DESKSEED_LOKI_PUSH_URL")
+  }
+}
+
+otelcol.receiver.otlp "deskseed" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.batch.deskseed.input]
+  }
+}
+
+otelcol.processor.batch "deskseed" {
+  output {
+    traces = [otelcol.exporter.otlphttp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlphttp "tempo" {
+  client {
+    endpoint = sys.env("DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT")
+  }
+}

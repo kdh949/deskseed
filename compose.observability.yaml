@@ -1,0 +1,126 @@
+services:
+  db:
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - track_io_timing=on
+    volumes:
+      - ./ops/observability/postgres/10-pg-stat-statements.sql:/docker-entrypoint-initdb.d/10-pg-stat-statements.sql:ro
+
+  backend:
+    environment:
+      SPRING_PROFILES_ACTIVE: load
+      DESKSEED_OTLP_TRACES_ENDPOINT: http://alloy:4318/v1/traces
+      DESKSEED_TRACE_SAMPLING_PROBABILITY: ${DESKSEED_TRACE_SAMPLING_PROBABILITY:-0.05}
+      JAVA_TOOL_OPTIONS: -javaagent:/opt/pyroscope/pyroscope.jar
+      PYROSCOPE_APPLICATION_NAME: deskseed-backend
+      PYROSCOPE_SERVER_ADDRESS: ${DESKSEED_PYROSCOPE_SERVER_URL:?set the private Pyroscope server URL}
+      PYROSCOPE_LABELS: environment=load,service=deskseed-backend
+      PYROSCOPE_PROFILER_EVENT: itimer
+      PYROSCOPE_PROFILER_ALLOC: 0
+      PYROSCOPE_PROFILER_LOCK: 0
+    ports:
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9090:9090"
+
+  alloy:
+    image: grafana/alloy:v1.18.0
+    profiles: ["observability"]
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy
+      - /etc/alloy/config.alloy
+    environment:
+      DESKSEED_COMPOSE_PROJECT_REGEX: ${DESKSEED_COMPOSE_PROJECT_REGEX:-deskseed-load}
+      DESKSEED_LOKI_PUSH_URL: ${DESKSEED_LOKI_PUSH_URL:?set the private Loki push URL}
+      DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT: ${DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT:?set the private Tempo OTLP HTTP endpoint}
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./ops/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - deskseed-alloy-data:/var/lib/alloy
+    expose:
+      - "4317"
+      - "4318"
+    ports:
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:12345:12345"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    profiles: ["observability"]
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9100
+    volumes:
+      - /:/host:ro,rslave
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    profiles: ["observability"]
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    ports:
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:8081:8080"
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    profiles: ["observability"]
+    environment:
+      DATA_SOURCE_URI: db:5432/${POSTGRES_DB:-deskseed}?sslmode=disable
+      DATA_SOURCE_USER: ${DESKSEED_POSTGRES_EXPORTER_USER:-deskseed_monitor}
+      PGPASSFILE: /run/secrets/deskseed-postgres-exporter-pgpass
+    secrets:
+      - deskseed-postgres-exporter-pgpass
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9187:9187"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.75.0
+    profiles: ["observability"]
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - default
+      - customer-auth-limiter
+    ports:
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9121:9121"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  deskseed-alloy-data:
+
+secrets:
+  deskseed-postgres-exporter-pgpass:
+    file: ${DESKSEED_POSTGRES_EXPORTER_PGPASS_FILE:?set the postgres exporter pgpass file}

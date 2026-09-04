@@ -14,7 +14,9 @@ cleanup() {
   local exit_code=$?
   trap - EXIT
   if [[ "$test_root" == "${TMPDIR:-/tmp}"/deskseed-production-compose.?????? ]]; then
-    [[ ! -e "$test_root/merged.json" ]] || unlink "$test_root/merged.json"
+    for artifact in "$test_root/merged.json" "$test_root/personal-staging.json"; do
+      [[ ! -e "$artifact" ]] || unlink "$artifact"
+    done
     rmdir "$test_root" || exit_code=1
   else
     printf 'Refusing unexpected test directory cleanup: %s\n' "$test_root" >&2
@@ -142,6 +144,40 @@ assert services["db-permissions"]["environment"]["DATABASE_RUNTIME_USERNAME"] ==
 assert services["backend"]["depends_on"]["db-permissions"]["condition"] == "service_completed_successfully"
 assert services["backend"]["depends_on"]["versitygw"]["condition"] == "service_healthy"
 assert services["versitygw"]["environment"]["VGW_HEALTH"] == "/health"
+PY
+
+export IMAGE_TAG=125727bbd2194bcf0937a7eca452231ffc7a4bb1
+DESKSEED_FRONTEND_BIND_ADDRESS=192.0.2.10 \
+DESKSEED_FRONTEND_ORIGIN_PORT=18080 \
+  docker compose \
+    --project-name deskseed-personal-staging-contract \
+    --file "$repository_root/compose.yaml" \
+    --file "$repository_root/compose.production.yaml" \
+    --file "$repository_root/compose.personal-staging.yaml" \
+    config --format json >"$test_root/personal-staging.json"
+
+python3 - "$test_root/personal-staging.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    model = json.load(source)
+
+services = model["services"]
+assert services["backend"]["image"] == (
+    "ghcr.io/kdh949/deskseed-backend:125727bbd2194bcf0937a7eca452231ffc7a4bb1"
+)
+assert services["frontend"]["image"] == (
+    "ghcr.io/kdh949/deskseed-frontend:125727bbd2194bcf0937a7eca452231ffc7a4bb1"
+)
+assert "build" not in services["backend"], services["backend"].get("build")
+assert "build" not in services["frontend"], services["frontend"].get("build")
+assert services["db-migrate"]["volumes"][0]["source"].endswith(
+    "/backend/src/main/resources/db/migration"
+)
+assert services["db-permissions"]["volumes"][0]["source"].endswith(
+    "/scripts/production"
+)
 PY
 
 grep -Fx '    client_max_body_size 105m;' "$repository_root/frontend/nginx.conf" >/dev/null

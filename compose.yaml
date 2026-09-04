@@ -18,7 +18,7 @@ services:
     image: axllent/mailpit:v1.27.4
     restart: unless-stopped
     ports:
-      - "${DESKSEED_MAILPIT_PORT:-8025}:8025"
+      - "${DESKSEED_APP_BIND_ADDRESS:-0.0.0.0}:${DESKSEED_MAILPIT_PORT:-8025}:8025"
     expose:
       - "1025"
 
@@ -92,7 +92,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "${DESKSEED_BACKEND_PORT:-8080}:8080"
+      - "${DESKSEED_APP_BIND_ADDRESS:-0.0.0.0}:${DESKSEED_BACKEND_PORT:-8080}:8080"
     networks:
       - default
       - customer-auth-limiter
@@ -103,7 +103,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "${DESKSEED_FRONTEND_PORT:-5173}:80"
+      - "${DESKSEED_APP_BIND_ADDRESS:-0.0.0.0}:${DESKSEED_FRONTEND_PORT:-5173}:80"
 
 volumes:
   deskseed-postgres:

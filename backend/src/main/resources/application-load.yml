@@ -1,0 +1,41 @@
+management:
+  server:
+    port: 9090
+    address: 0.0.0.0
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      service: deskseed-backend
+      environment: load
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      minimum-expected-value:
+        http.server.requests: 5ms
+      maximum-expected-value:
+        http.server.requests: 30s
+      slo:
+        http.server.requests: 5ms,10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s,30s
+  tracing:
+    sampling:
+      probability: ${DESKSEED_TRACE_SAMPLING_PROBABILITY:0.05}
+  opentelemetry:
+    resource-attributes:
+      service.name: deskseed-backend
+      deployment.environment.name: load
+    tracing:
+      export:
+        otlp:
+          endpoint: ${DESKSEED_OTLP_TRACES_ENDPOINT:http://alloy:4318/v1/traces}
+
+logging:
+  structured:
+    format:
+      console: logstash

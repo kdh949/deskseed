@@ -1,0 +1,85 @@
+groups:
+  - name: deskseed-load-observability
+    interval: 15s
+    rules:
+      - alert: DeskseedLoadTargetDown
+        expr: up{environment="load",stack="deskseed"} == 0
+        for: 2m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed load telemetry target is down
+          runbook: docs/runbooks/deskseed-load-observability.md#target-down
+
+      - alert: DeskseedLoadAuditPersistenceFailure
+        expr: increase(deskseed_audit_persistence_failures_total{environment="load"}[5m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: A required Deskseed audit write failed
+          runbook: docs/runbooks/deskseed-load-observability.md#audit-write-failure
+
+      - alert: DeskseedLoadHttpServerErrors
+        expr: |
+          sum(rate(http_server_requests_seconds_count{environment="load",status=~"5.."}[2m]))
+          /
+          clamp_min(sum(rate(http_server_requests_seconds_count{environment="load"}[2m])), 0.001)
+          > 0.01
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: Deskseed load HTTP 5xx ratio is above 1 percent
+          runbook: docs/runbooks/deskseed-load-observability.md#http-errors
+
+      - alert: DeskseedLoadHikariSaturated
+        expr: hikaricp_connections_pending{environment="load"} > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed database connection acquisition is waiting
+          runbook: docs/runbooks/deskseed-load-observability.md#database-saturation
+
+      - alert: DeskseedLoadRedisEviction
+        expr: increase(redis_evicted_keys_total{environment="load"}[5m]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed load Redis evicted keys
+          runbook: docs/runbooks/deskseed-load-observability.md#redis-eviction
+
+      - alert: DeskseedLoadDiskLow
+        expr: |
+          node_filesystem_avail_bytes{environment="load",fstype!~"tmpfs|overlay"}
+          /
+          node_filesystem_size_bytes{environment="load",fstype!~"tmpfs|overlay"}
+          < 0.15
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed load host disk has less than 15 percent free
+          runbook: docs/runbooks/deskseed-load-observability.md#disk-low
+
+      - alert: DeskseedLoadWorkerBacklogStalled
+        expr: |
+          max_over_time(deskseed_mail_outbox_backlog{environment="load"}[5m]) > 0
+          and delta(deskseed_mail_outbox_backlog{environment="load"}[5m]) >= 0
+          or
+          max_over_time(deskseed_webhook_delivery_backlog{environment="load"}[5m]) > 0
+          and delta(deskseed_webhook_delivery_backlog{environment="load"}[5m]) >= 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed delivery backlog is not draining
+          runbook: docs/runbooks/deskseed-load-observability.md#worker-backlog
+
+      - alert: DeskseedLoadDroppedIterations
+        expr: increase(k6_dropped_iterations_total{environment="load"}[1m]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: k6 could not start scheduled Deskseed iterations
+          runbook: docs/runbooks/deskseed-load-observability.md#dropped-iterations
