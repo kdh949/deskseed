@@ -22,6 +22,14 @@ assert_contains() {
     fail "Expected $file to contain: $expected"
 }
 
+assert_not_contains() {
+  local file="$1"
+  local unexpected="$2"
+  if grep -F -- "$unexpected" "$file" >/dev/null; then
+    fail "Expected $file not to contain: $unexpected"
+  fi
+}
+
 for required_file in "$workflow" "$staging_compose" "$deploy_script"; do
   [[ -f "$required_file" ]] || fail "Required deployment artifact is missing: $required_file"
 done
@@ -113,6 +121,7 @@ write_executable "$fake_bin/curl" \
 write_executable "$fake_bin/docker" \
   '#!/usr/bin/env bash' \
   'set -Eeuo pipefail' \
+  'printf "docker-env disable=%s files=%s\n" "${COMPOSE_DISABLE_ENV_FILE:-unset}" "${COMPOSE_ENV_FILES+set}" >>"$COMMAND_LOG"' \
   'printf "%s\n" "$*" >>"$COMMAND_LOG"' \
   'if [[ "${1:-}" == "compose" && "$*" == *" config --images" ]]; then' \
   '  printf "%s\n" \' \
@@ -157,7 +166,18 @@ write_executable "$fake_bin/docker" \
   'exit 0'
 
 run_deploy() {
+  local secret_source="${2:-env-file}"
+  local doppler_env_file_conflict="${3:-false}"
+  local -a env_options=()
+
+  if [[ "$secret_source" == "doppler" && "$doppler_env_file_conflict" != "true" ]]; then
+    env_options=(-u DESKSEED_PRODUCTION_ENV_FILE)
+  else
+    env_options=("DESKSEED_PRODUCTION_ENV_FILE=$env_file")
+  fi
+
   env \
+    "${env_options[@]}" \
     PATH="$fake_bin:/usr/bin:/bin" \
     COMMAND_LOG="$command_log" \
     FAKE_REPOSITORY_ROOT="$repository_root" \
@@ -168,7 +188,7 @@ run_deploy() {
     MISSING_IMAGE="${MISSING_IMAGE:-}" \
     MISMATCH_REVISION_IMAGE="${MISMATCH_REVISION_IMAGE:-}" \
     DESKSEED_APP_DIR="$repository_root" \
-    DESKSEED_PRODUCTION_ENV_FILE="$env_file" \
+    DESKSEED_SECRET_SOURCE="$secret_source" \
     DESKSEED_DEPLOY_LOCK_FILE="$test_root/deploy.lock" \
     REGISTRY_PULL_ATTEMPTS=1 \
     REGISTRY_PULL_INTERVAL_SECONDS=0 \
@@ -181,6 +201,22 @@ if run_deploy invalid-sha >"$test_root/invalid.out" 2>&1; then
 fi
 grep -F "Deployment SHA must be exactly 40 lowercase hexadecimal characters." "$test_root/invalid.out" >/dev/null
 [[ ! -s "$command_log" ]] || fail "Invalid SHA reached Docker."
+
+: >"$command_log"
+if run_deploy "$expected_sha" unsupported >"$test_root/unsupported-source.out" 2>&1; then
+  fail "Unsupported deployment secret source was accepted."
+fi
+grep -F "DESKSEED_SECRET_SOURCE must be env-file or doppler." \
+  "$test_root/unsupported-source.out" >/dev/null
+[[ ! -s "$command_log" ]] || fail "Unsupported secret source reached Docker."
+
+: >"$command_log"
+if run_deploy "$expected_sha" doppler true >"$test_root/dual-source.out" 2>&1; then
+  fail "Doppler deployment accepted DESKSEED_PRODUCTION_ENV_FILE."
+fi
+grep -F "DESKSEED_PRODUCTION_ENV_FILE must be unset when DESKSEED_SECRET_SOURCE=doppler." \
+  "$test_root/dual-source.out" >/dev/null
+[[ ! -s "$command_log" ]] || fail "Ambiguous Doppler secret sources reached Docker."
 
 : >"$command_log"
 FAKE_HEAD_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -236,11 +272,28 @@ run_deploy "$expected_sha" >"$test_root/success.out" 2>&1 || {
 assert_contains "$command_log" "pull"
 assert_contains "$command_log" "$backend_image"
 assert_contains "$command_log" "$frontend_image"
+assert_contains "$command_log" "--env-file $env_file"
 assert_contains "$command_log" "up --detach --no-build --pull never db redis versitygw"
 assert_contains "$command_log" "up --detach --no-build --pull never --force-recreate db-migrate db-permissions backend frontend"
 if grep -Eq '(^| )build( |$)|:latest' "$command_log"; then
   fail "Deployment attempted an on-box build or mutable latest tag."
 fi
 assert_contains "$test_root/success.out" "Personal staging deployment passed for $expected_sha."
+
+: >"$command_log"
+export COMPOSE_ENV_FILES="$test_root/ambiguous.env"
+export GHCR_TOKEN='doppler-ghcr-secret-sentinel'
+run_deploy "$expected_sha" doppler >"$test_root/doppler-success.out" 2>&1 || {
+  sed -n '1,240p' "$test_root/doppler-success.out" >&2
+  fail "Valid Doppler-backed personal staging deployment simulation failed."
+}
+unset COMPOSE_ENV_FILES GHCR_TOKEN
+
+assert_contains "$command_log" "docker-env disable=1 files="
+assert_not_contains "$command_log" "--env-file"
+assert_not_contains "$command_log" "doppler-ghcr-secret-sentinel"
+assert_not_contains "$test_root/doppler-success.out" "doppler-ghcr-secret-sentinel"
+assert_contains "$test_root/doppler-success.out" \
+  "Personal staging deployment passed for $expected_sha."
 
 printf 'Personal staging deployment contract passed.\n'

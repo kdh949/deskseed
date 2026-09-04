@@ -141,7 +141,7 @@ ghcr.io/kdh949/deskseed-backend:<40-character-commit-sha>
 ghcr.io/kdh949/deskseed-frontend:<40-character-commit-sha>
 ```
 
-개인 서버에는 repository checkout이 계속 필요하다. `db-migrate`와 `db-permissions`가 같은 checkout의 Flyway SQL과 권한 script를 read-only bind mount하기 때문이다. 배포 전에 `/etc/deskseed/production.env`와 Redis ACL을 3.2대로 준비하고, upgrade라면 6~10절의 일관 backup/restore와 forward-only migration 경계를 먼저 따른다.
+개인 서버에는 repository checkout이 계속 필요하다. `db-migrate`와 `db-permissions`가 같은 checkout의 Flyway SQL과 권한 script를 read-only bind mount하기 때문이다. Secret source는 기본 env-file 또는 명시적 Doppler mode 중 하나만 선택한다. env-file이면 `/etc/deskseed/production.env`와 Redis ACL을 3.2대로 준비한다. Doppler이면 아래 절차로 production 값을 process environment에 주입하고 Redis ACL만 별도로 생성한다. Upgrade라면 두 mode 모두 6~10절의 일관 backup/restore와 forward-only migration 경계를 먼저 따른다.
 
 ```bash
 cd /opt/deskseed
@@ -151,18 +151,46 @@ git checkout --detach <40-character-commit-sha>
 ./scripts/deploy-personal-server.sh <40-character-commit-sha>
 ```
 
+#### Doppler secret source
+
+Production에서는 개인/CLI token이 아니라 한 project의 한 config만 읽을 수 있는 read-only Service Token을 사용한다. VM에서는 deployment account로 token을 application directory에 scope해 저장하는 방식이 권장된다. 다음 입력은 token을 shell history와 stdout에 남기지 않는다.
+
+```bash
+read -rsp 'Doppler service token: ' DESKSEED_DOPPLER_SERVICE_TOKEN
+printf '\n'
+printf '%s\n' "$DESKSEED_DOPPLER_SERVICE_TOKEN" |
+  doppler configure set token --scope /opt/deskseed
+unset DESKSEED_DOPPLER_SERVICE_TOKEN
+```
+
+Doppler config에는 `.env.production.example`의 production 변수 이름과 값을 등록하되 `DESKSEED_PRODUCTION_ENV_FILE`은 등록하지 않는다. Private GHCR이면 `GHCR_TOKEN`과 선택적 `GHCR_USERNAME`도 같은 config에 둔다. 최초 Redis ACL은 Doppler가 주입한 Redis password로 생성한다. Script는 기존 파일을 덮어쓰지 않으므로 rotation 시에는 별도 점검·교체 절차가 필요하다.
+
+```bash
+cd /opt/deskseed
+doppler run --no-fallback -- \
+  ./scripts/production/render-redis-acl.sh /etc/deskseed/redis.acl
+
+doppler run --no-fallback -- \
+  env -u DESKSEED_PRODUCTION_ENV_FILE DESKSEED_SECRET_SOURCE=doppler \
+  ./scripts/deploy-personal-server.sh <40-character-commit-sha>
+```
+
+`--no-fallback`은 deployment 때 오래된 encrypted fallback을 사용하거나 새 fallback을 local disk에 쓰지 않고 Doppler 조회 실패를 그대로 실패로 만든다. `env -u DESKSEED_PRODUCTION_ENV_FILE DESKSEED_SECRET_SOURCE=doppler`를 `doppler run --` 뒤에 둬 ambient/Doppler env-file 설정은 제거하고 동명 mode 값보다 Doppler 선택을 우선한다. 이 mode를 직접 호출하면서 `DESKSEED_PRODUCTION_ENV_FILE`을 설정하면 Docker 실행 전에 거부한다. 또한 `COMPOSE_ENV_FILES`를 지우고 `COMPOSE_DISABLE_ENV_FILE=1`로 repository `.env` 자동 로딩을 막는다. 따라서 Compose interpolation은 Doppler가 주입한 process environment만 사용한다.
+
+Doppler가 production env file을 대체해도 Redis ACL hash file은 계속 필요하다. `DESKSEED_BOOTSTRAP_ADMIN_ENABLED=true`이면 first-admin password도 기존 file-backed Compose secret으로 공급해야 한다. Docker daemon/root 관리자가 container environment를 볼 수 있는 host trust boundary도 바뀌지 않는다. Service Token 생성·VM scope 근거는 [Doppler Service Tokens](https://docs.doppler.com/docs/service-tokens), process environment 주입 근거는 [Doppler CLI Guide](https://docs.doppler.com/docs/cli)를 따른다.
+
 private GHCR package이면 실행 환경의 secret manager에서 `GHCR_TOKEN`과 선택적 `GHCR_USERNAME`을 process environment로 전달한다. token에는 image pull에 필요한 최소 read 권한만 부여한다. Script는 임시 Docker config로 로그인하고 종료 시 제거한다. token이 없으면 public package 또는 deployment account가 미리 인증한 Docker config를 사용한다.
 
 Script는 다음 순서로 fail closed한다.
 
 1. 요청 SHA가 40자리 소문자 hex이고 server `HEAD`와 같은지, untracked file을 포함한 checkout이 clean인지 확인한다.
-2. server가 `linux/amd64`이고 `/etc/deskseed/production.env`가 symlink가 아닌 mode `0600` regular file인지 확인한다.
+2. server가 `linux/amd64`인지 확인하고, env-file mode이면 `/etc/deskseed/production.env`가 symlink가 아닌 mode `0600` regular file인지, Doppler mode이면 env-file 변수가 없고 Compose의 암묵적 env file loading이 차단됐는지 확인한다.
 3. base/production/personal-staging Compose를 merge해 두 application image가 같은 SHA인지 확인한다.
 4. 모든 image를 pull하고 exact backend/frontend tag와 `org.opencontainers.image.revision` label이 요청 SHA와 일치하는지 확인한 뒤에만 service 변경을 시작한다.
 5. `db-migrate`, `db-permissions`, backend, frontend를 강제 재생성해 one-shot job이 release마다 실행되도록 한다.
 6. 서버에서는 `--no-build --pull never`로 시작하고 job exit `0`, long-running service 상태, frontend와 aggregate backend health를 확인한다.
 
-동시 실행은 기본 `/tmp/deskseed-personal-staging-deploy.lock`으로 거부한다. 기본 Compose project name은 `deskseed`다. 기존 설치가 다른 project name으로 volume을 만들었다면 `DESKSEED_PROJECT_NAME`을 기존 값으로 명시해야 한다. `DESKSEED_PRODUCTION_ENV_FILE`, `DESKSEED_APP_DIR`, registry retry 횟수는 운영 환경에서 override할 수 있지만 secret 값은 command line이나 log에 쓰지 않는다.
+동시 실행은 기본 `/tmp/deskseed-personal-staging-deploy.lock`으로 거부한다. 기본 Compose project name은 `deskseed`다. 기존 설치가 다른 project name으로 volume을 만들었다면 `DESKSEED_PROJECT_NAME`을 기존 값으로 명시해야 한다. `DESKSEED_SECRET_SOURCE` 기본값은 `env-file`이다. Env-file mode에서는 `DESKSEED_PRODUCTION_ENV_FILE`, 모든 mode에서는 `DESKSEED_APP_DIR`과 registry retry 횟수를 운영 환경에서 override할 수 있지만 secret 값은 command line이나 log에 쓰지 않는다.
 
 이 경로는 image publication과 deterministic pull/start를 자동화할 뿐 DB+VersityGW backup set, Sophos rule, firewall, production-size restore 또는 이전 binary/schema 호환성을 증명하지 않는다. Image push 성공도 실제 개인 서버 배포 성공으로 간주하지 않는다.
 

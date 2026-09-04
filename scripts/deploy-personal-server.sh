@@ -5,6 +5,7 @@ umask 077
 script_repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 app_dir="${DESKSEED_APP_DIR:-$script_repository_root}"
 env_file="${DESKSEED_PRODUCTION_ENV_FILE:-/etc/deskseed/production.env}"
+secret_source="${DESKSEED_SECRET_SOURCE:-env-file}"
 lock_file="${DESKSEED_DEPLOY_LOCK_FILE:-/tmp/deskseed-personal-staging-deploy.lock}"
 project_name="${DESKSEED_PROJECT_NAME:-deskseed}"
 expected_sha="${1:-}"
@@ -18,6 +19,14 @@ if [[ ! "$project_name" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
   printf 'DESKSEED_PROJECT_NAME must contain only lowercase letters, digits, underscores, and hyphens.\n' >&2
   exit 2
 fi
+
+case "$secret_source" in
+  env-file | doppler) ;;
+  *)
+    printf 'DESKSEED_SECRET_SOURCE must be env-file or doppler.\n' >&2
+    exit 2
+    ;;
+esac
 
 for command_name in curl docker flock git stat uname; do
   command -v "$command_name" >/dev/null 2>&1 || {
@@ -70,15 +79,27 @@ case "$(uname -m)" in
     ;;
 esac
 
-if [[ ! -f "$env_file" || -L "$env_file" ]]; then
-  printf 'Production env must be a regular non-symlink file: %s\n' "$env_file" >&2
-  exit 2
-fi
-env_mode="$(stat -c '%a' "$env_file" 2>/dev/null || stat -f '%Lp' "$env_file")"
-if [[ "$env_mode" != "600" ]]; then
-  printf 'Production env must have mode 0600: %s\n' "$env_file" >&2
-  exit 2
-fi
+case "$secret_source" in
+  env-file)
+    if [[ ! -f "$env_file" || -L "$env_file" ]]; then
+      printf 'Production env must be a regular non-symlink file: %s\n' "$env_file" >&2
+      exit 2
+    fi
+    env_mode="$(stat -c '%a' "$env_file" 2>/dev/null || stat -f '%Lp' "$env_file")"
+    if [[ "$env_mode" != "600" ]]; then
+      printf 'Production env must have mode 0600: %s\n' "$env_file" >&2
+      exit 2
+    fi
+    ;;
+  doppler)
+    if [[ -n "${DESKSEED_PRODUCTION_ENV_FILE+x}" ]]; then
+      printf 'DESKSEED_PRODUCTION_ENV_FILE must be unset when DESKSEED_SECRET_SOURCE=doppler.\n' >&2
+      exit 2
+    fi
+    unset COMPOSE_ENV_FILES
+    export COMPOSE_DISABLE_ENV_FILE=1
+    ;;
+esac
 
 export IMAGE_TAG="$expected_sha"
 ghcr_token="${GHCR_TOKEN:-}"
@@ -86,7 +107,11 @@ unset GHCR_TOKEN
 compose=(
   docker compose
   --project-name "$project_name"
-  --env-file "$env_file"
+)
+if [[ "$secret_source" == "env-file" ]]; then
+  compose+=(--env-file "$env_file")
+fi
+compose+=(
   --file "$repository_root/compose.yaml"
   --file "$repository_root/compose.production.yaml"
   --file "$repository_root/compose.personal-staging.yaml"
