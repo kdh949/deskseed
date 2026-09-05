@@ -8,8 +8,8 @@ Production attachment bytes를 private VersityGW S3-compatible storage에 bounde
 
 ## Decision and source references
 
-- Decision IDs: D-018, D-037, D-039
-- Accepted ADRs: ADR-0018, ADR-0026, ADR-0028
+- Decision IDs: D-018, D-037, D-039, D-065
+- Accepted ADRs: ADR-0018, ADR-0026, ADR-0028, ADR-0048
 - Requirements: REQ-FILE-001, REQ-PROD-001
 - API operations: 기존 multipart create/upload와 authorized download operation 변경 없음
 - Verification gates: ARCH-001, ARCH-004, FILE-001, FILE-003, FILE-004, FILE-006, OPS-003
@@ -41,6 +41,7 @@ Production attachment bytes를 private VersityGW S3-compatible storage에 bounde
 ## Invariants and failure semantics
 
 - S3 bucket과 credential validation이 실패하면 production Backend startup이 실패한다.
+- plaintext S3 endpoint는 exact `http://versitygw:7070`만 허용하고 external S3는 HTTPS를 사용한다.
 - unknown-length upload는 전체 byte array로 변환하지 않고 최대 8 MiB part 단위로 전송한다.
 - multipart 실패/size limit은 upload를 abort하고 attachment를 CLEAN으로 만들지 않는다.
 - stored bytes는 digest/MIME 확인을 위해 읽히지만 변환되지 않는다.
@@ -61,12 +62,12 @@ Production attachment bytes를 private VersityGW S3-compatible storage에 bounde
 - Data loss: container-local temp filesystem 대신 named persistent VersityGW volumes를 사용한다.
 - Denial of service: multipart buffer를 8 MiB로 제한하고 기존 server-side upload bound를 유지한다.
 - Malware bypass: WAF가 보호하는 upload route와 origin source 제한을 acknowledgement 조건으로 만든다.
-- Security misconfiguration: external HTTP S3 endpoint와 acknowledgement 없는 Versity/WAF mode를 fail closed한다.
+- Security misconfiguration: external 또는 다른 port의 HTTP S3 endpoint와 acknowledgement 없는 WAF mode를 fail closed한다.
 
 ## Acceptance scenarios
 
 1. Given VersityGW, When 8 MiB 초과 object를 upload/read/delete하면, Then exact bytes와 lifecycle이 보존된다.
-2. Given production Compose, When model을 검사하면, Then VersityGW는 host port 없이 Backend와 전용 internal network만 공유한다.
+2. Given production Compose, When model과 application validation을 검사하면, Then VersityGW는 exact `http://versitygw:7070` endpoint를 사용하고 host port 없이 Backend와 전용 internal network만 공유한다.
 3. Given `UPSTREAM_WAF` mode without acknowledgement, When context를 시작하면, Then scanner composition이 실패한다.
 4. Given acknowledged upstream mode, When upload를 처리하면, Then object를 다시 application scanner로 읽지 않고 CLEAN transition에 `UPSTREAM_WAF` source를 기록한다.
 5. Given HTTP multipart, When Servlet 기본 request limit보다 큰 11 MiB 파일을 upload하면, Then Nginx/Spring production 계약 안에서 controller까지 전달된다.
@@ -85,7 +86,7 @@ git diff --check
 
 - OpenAPI 변경 없음. V86은 attachment cleanup claim/lease/attempt column과 bounded cleanup index를 additive하게 추가한다.
 - 기존 local/test filesystem와 deterministic scanner: 유지
-- production: VersityGW/S3와 upstream WAF acknowledgement가 새 필수 구성
+- production: VersityGW/S3 exact endpoint 계약과 upstream WAF acknowledgement가 필수 구성
 - rollback: 이전 image/Compose로 전환해도 S3 objects/volumes는 자동 삭제하지 않는다.
 
 ## Human explanation

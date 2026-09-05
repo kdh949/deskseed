@@ -69,7 +69,6 @@ export DATABASE_RUNTIME_USERNAME=deskseed_runtime
 export DATABASE_RUNTIME_PASSWORD=runtime-test-application-password
 export DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD=runtime-test-redis-password
 export DESKSEED_REDIS_ACL_FILE="$acl_file"
-export DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK=true
 export DESKSEED_RUNTIME_USER="$(id -u):$(id -g)"
 export DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE="$admin_password_file"
 export DESKSEED_FRONTEND_BIND_ADDRESS=127.0.0.1
@@ -102,7 +101,6 @@ export DESKSEED_AGENT_TICKET_CURSOR_SIGNING_KEY=runtime-test-agent-cursor-signin
 export DESKSEED_VERSITY_ACCESS_KEY=runtime-test-versity-access
 export DESKSEED_VERSITY_SECRET_KEY=runtime-test-versity-secret-change-me
 export DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED=true
-export DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK=true
 
 DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD="$DESKSEED_CUSTOMER_AUTH_REDIS_PASSWORD" \
   "$repository_root/scripts/production/render-redis-acl.sh" "$acl_file"

@@ -4,12 +4,12 @@ Status: **IMPLEMENTATION_READY**
 
 ## Goal
 
-Production Compose에서 Flyway migration과 application runtime DB role을 분리하고, Redis를 host에 publish하지 않은 채 ACL 인증으로 보호한다. Redis TLS를 일시적으로 생략하는 선택은 명시적 acknowledgement와 전용 internal network에 한정한다.
+Production Compose에서 Flyway migration과 application runtime DB role을 분리하고, Redis를 host에 publish하지 않은 채 ACL 인증으로 보호한다. Redis TLS를 일시적으로 생략하는 선택은 exact `redis:6379` endpoint와 전용 internal network에 한정한다.
 
 ## Decision and source references
 
-- Decision IDs: D-018, D-039
-- Accepted ADRs: ADR-0018, ADR-0028
+- Decision IDs: D-018, D-039, D-065
+- Accepted ADRs: ADR-0018, ADR-0028, ADR-0048
 - Requirements: REQ-PROD-001, REQ-AUD-007
 - API operations: 변경 없음
 - Verification gates: ARCH-001, ARCH-004, OPS-001, OPS-003
@@ -26,7 +26,7 @@ Production Compose에서 Flyway migration과 application runtime DB role을 분�
 - Flyway one-shot service와 migration 후 runtime privilege 적용·검증 service
 - Backend의 runtime credential 사용 및 embedded Flyway 비활성화
 - Redis external ACL file, named authenticated application user, unauthenticated default user 차단
-- Redis TLS 미사용 production fail-fast acknowledgement
+- Redis TLS 미사용 production exact endpoint fail-fast 검증
 - production env 예시와 self-hosted runbook
 
 ## Out of scope
@@ -44,7 +44,7 @@ Production Compose에서 Flyway migration과 application runtime DB role을 분�
 - migration 또는 privilege 검증 job이 실패하면 Backend가 시작하지 않는다.
 - runtime role은 schema CREATE와 Flyway history 접근 권한이 없고 canonical audit table은 SELECT/INSERT만 갖는다.
 - Redis default user는 비활성화하고 application user는 limiter key와 health `INFO`를 포함한 필요한 command만 사용한다.
-- Redis TLS가 false이면 host가 Compose service name `redis`이고 plaintext risk acknowledgement가 true여야 한다.
+- Redis TLS가 false이면 endpoint가 Compose service `redis:6379`와 정확히 일치해야 한다.
 
 ## Data and privacy
 
@@ -63,7 +63,7 @@ Production Compose에서 Flyway migration과 application runtime DB role을 분�
 1. Given production Compose, When service graph를 검사하면, Then migration과 privilege 검증이 성공해야 Backend가 시작한다.
 2. Given runtime role, When privilege SQL을 실행하면, Then DDL/Flyway/canonical-ledger mutation이 거부된다.
 3. Given Redis ACL, When unauthenticated command를 보내면, Then default user가 off라서 거부된다.
-4. Given production profile with Redis TLS false, When acknowledgement가 없거나 host가 `redis`가 아니면, Then application context가 실패한다.
+4. Given production profile with Redis TLS false, When host/port가 `redis:6379`와 다르면, Then application context가 실패한다.
 
 ## Validation
 
@@ -83,4 +83,4 @@ git diff --check
 
 ## Human explanation
 
-Migration credential은 schema 변경 작업에만 쓰고, 실제 요청 처리 Backend에는 제한된 runtime credential만 준다. Redis TLS 생략은 안전하다는 뜻이 아니라 한 host의 internal Docker network로 위험을 제한하고 운영자가 이를 명시적으로 수락한 임시 경계다.
+Migration credential은 schema 변경 작업에만 쓰고, 실제 요청 처리 Backend에는 제한된 runtime credential만 준다. Redis TLS 생략은 안전하다는 뜻이 아니며, 지원 topology는 exact service endpoint와 한 host의 internal Docker network로 위험을 제한한다.

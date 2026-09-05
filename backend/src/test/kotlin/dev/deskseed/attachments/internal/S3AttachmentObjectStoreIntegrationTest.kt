@@ -31,7 +31,6 @@ class S3AttachmentObjectStoreIntegrationTest {
             secretKey = SECRET_KEY,
             pathStyleAccessEnabled = true,
             createBucketIfMissing = true,
-            plaintextInternalNetworkAcknowledged = true,
         )
         val client = S3Client.builder()
             .endpointOverride(URI.create("http://${versity.host}:${versity.getMappedPort(7070)}"))
@@ -58,22 +57,20 @@ class S3AttachmentObjectStoreIntegrationTest {
     }
 
     @Test
-    fun `plaintext S3 endpoint is restricted to acknowledged Compose Versity service`() {
+    fun `plaintext S3 endpoint is restricted to the exact Compose Versity service`() {
         assertThatThrownBy {
             S3AttachmentStorageProperties(
                 endpoint = URI.create("http://external-storage.example.test:7070"),
                 accessKey = ACCESS_KEY,
                 secretKey = SECRET_KEY,
-                plaintextInternalNetworkAcknowledged = true,
             ).validate()
         }.isInstanceOf(IllegalArgumentException::class.java)
 
         assertThatThrownBy {
             S3AttachmentStorageProperties(
-                endpoint = URI.create("http://versitygw:7070"),
+                endpoint = URI.create("http://versitygw:7071"),
                 accessKey = ACCESS_KEY,
                 secretKey = SECRET_KEY,
-                plaintextInternalNetworkAcknowledged = false,
             ).validate()
         }.isInstanceOf(IllegalArgumentException::class.java)
     }

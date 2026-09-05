@@ -79,7 +79,7 @@ curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
 
 ### 3.1 Production ingress topology contract
 
-`compose.production.yaml`은 Docker Compose 2.24.4 이상의 `!reset`/`!override` merge tag를 사용한다. 다음 정적 gate는 frontend가 운영자 지정 DMZ 주소/port 하나만 publish하고 backend·DB·Redis·VersityGW가 host port를 갖지 않으며 Mailpit이 active service에서 제외되는지 검사한다. 또한 Flyway/권한 적용 one-shot job, runtime datasource, Redis ACL, private object-storage network와 acknowledgement 계약을 검사한다.
+`compose.production.yaml`은 Docker Compose 2.24.4 이상의 `!reset`/`!override` merge tag를 사용한다. 다음 정적 gate는 frontend가 운영자 지정 DMZ 주소/port 하나만 publish하고 backend·DB·Redis·VersityGW가 host port를 갖지 않으며 Mailpit이 active service에서 제외되는지 검사한다. 또한 Flyway/권한 적용 one-shot job, runtime datasource, Redis ACL, exact internal service endpoint, private object-storage network와 WAF acknowledgement 계약을 검사한다.
 
 ```bash
 bash scripts/test-production-compose-contract.sh
@@ -100,13 +100,13 @@ bash scripts/test-production-compose-contract.sh
 - delivery를 활성화하는 경우 bare sender mailbox, HTTPS public base URL, active 32-byte base64 protected-mail key와 key version
 - 허용된 CORS origin
 - TLS reverse proxy 설정
-- 고객 인증 Redis username/password, private network placement, `noeviction` reserved-capacity policy와 plaintext acknowledgement
-- VersityGW access/secret key, bucket/region, internal S3 plaintext acknowledgement
+- 고객 인증 Redis username/password, exact `redis:6379` endpoint, private network placement와 `noeviction` reserved-capacity policy
+- VersityGW access/secret key, bucket/region와 exact `http://versitygw:7070` endpoint
 - Sophos WAF upstream scan acknowledgement와 WAF request body limit보다 작은 attachment upload limit
 
 Production Redis는 host port 없이 전용 internal network에만 연결되고 external ACL file에서 unauthenticated default user를 끈다. `deskseed` user는 limiter key pattern과 `GET/PTTL/INCR/PEXPIRE/EVAL/EVALSHA/SCRIPT LOAD/PING/INFO/CLIENT SETINFO`만 허용한다. `INFO`는 Spring aggregate health가 실제 Redis dependency를 확인하는 데 필요하다. 짧은 TTL limiter state는 Redis 재시작 때 사라지는 것을 허용하며 장애나 OOM은 customer-auth 요청을 generic `503`으로 fail closed한다. PostgreSQL customer/account/session/token/audit state를 대신하지 않는다.
 
-이 배포는 Redis TLS를 의도적으로 사용하지 않는다. 따라서 같은 Docker host의 root/Docker-daemon 권한자, container escape, 잘못 연결된 network의 process는 credential과 limiter traffic을 관찰할 수 있다. `DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK=true` 없이는 Compose가 render되지 않고, production application도 TLS가 false일 때 host가 정확히 `redis`이며 acknowledgement가 true인지 검증한다. 이 예외는 external/remote Redis에 적용할 수 없다.
+이 배포는 Redis TLS를 의도적으로 사용하지 않는다. 따라서 같은 Docker host의 root/Docker-daemon 권한자, container escape, 잘못 연결된 network의 process는 credential과 limiter traffic을 관찰할 수 있다. Production application은 TLS가 false일 때 endpoint가 정확히 `redis:6379`인지 검증하고, Compose contract는 전용 internal network와 host port 미노출을 검증한다. 이 예외는 external/remote Redis에 적용할 수 없으며 별도 acknowledgement 환경 변수는 사용하지 않는다.
 
 현재 Compose는 WAF 자체 TLS/source rule, coarse ingress rate limit, centralized secret rotation, Redis/VersityGW replication·metrics를 제공하지 않는다. `.env.production.example`은 값이 비어 있는 목록일 뿐 secret 저장소가 아니다. 실제 env/ACL file은 repository 밖에서 mode `0600`으로 관리하고 Docker host/daemon 관리자에게 노출되는 경계를 수락해야 한다.
 
@@ -198,7 +198,7 @@ Script는 다음 순서로 fail closed한다.
 
 VersityGW는 `object-storage` internal network에서 Backend와만 연결되고 7070/Admin/WebUI를 host에 publish하지 않는다. attachment는 8 MiB S3 multipart part로 private bucket에 저장되며 exact bytes, SHA-256, MIME-family, size, owner/visibility와 CLEAN-only link 정책을 유지한다. POSIX bytes, versioning, IAM은 각각 named volume에 남는다. Backend가 bucket을 확인/생성하지 못하면 startup이 실패한다.
 
-VersityGW와 Backend 사이의 HTTP는 같은 host Docker network에서 plaintext다. `DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK=true`가 필요하며 external endpoint에는 이 예외를 사용할 수 없다. host root/Docker-daemon 권한자와 container escape를 방어하지 못한다.
+VersityGW와 Backend 사이의 HTTP는 같은 host Docker network에서 plaintext다. Application은 exact `http://versitygw:7070`만 허용하고 Compose contract는 전용 internal network와 host port 미노출을 검증한다. External endpoint에는 이 예외를 사용할 수 없으며 별도 acknowledgement 환경 변수는 사용하지 않는다. host root/Docker-daemon 권한자와 container escape를 방어하지 못한다.
 
 Application은 `UPSTREAM_WAF` mode에서 파일을 다시 바이러스 검사하지 않는다. 다음 조건을 **모두** Sophos Firewall에서 확인한 뒤에만 `DESKSEED_ATTACHMENT_UPSTREAM_WAF_ACKNOWLEDGED=true`를 설정한다.
 

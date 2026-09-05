@@ -1,7 +1,7 @@
 # ADR 0026 — Object-storage attachment pipeline
 
 ## Status
-Accepted for post-MVP
+Accepted for post-MVP. The internal S3 plaintext acknowledgement clause is superseded by ADR 0048; the upstream WAF acknowledgement remains required.
 
 ## Context
 Attachments are large, untrusted, and have different retention and delivery requirements from ticket rows.

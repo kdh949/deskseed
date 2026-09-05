@@ -77,8 +77,6 @@ deskseed:
         signing-keys:
           v1: ${DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY}
   customer-auth:
-    redis-security:
-      plaintext-internal-network-ack: ${DESKSEED_CUSTOMER_AUTH_REDIS_PLAINTEXT_INTERNAL_NETWORK_ACK:false}
     fingerprint-key: ${DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY}
     csrf-key: ${DESKSEED_CUSTOMER_AUTH_CSRF_KEY}
     trusted-proxy-cidrs: ${DESKSEED_CUSTOMER_AUTH_TRUSTED_PROXY_CIDRS}
@@ -96,7 +94,6 @@ deskseed:
       secret-key: ${DESKSEED_ATTACHMENT_S3_SECRET_KEY}
       path-style-access-enabled: ${DESKSEED_ATTACHMENT_S3_PATH_STYLE_ENABLED:true}
       create-bucket-if-missing: ${DESKSEED_ATTACHMENT_S3_CREATE_BUCKET:false}
-      plaintext-internal-network-acknowledged: ${DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK:false}
   portal:
     public-request-rate-limit:
       fingerprint-key: ${DESKSEED_PUBLIC_REQUEST_RATE_LIMIT_FINGERPRINT_KEY}

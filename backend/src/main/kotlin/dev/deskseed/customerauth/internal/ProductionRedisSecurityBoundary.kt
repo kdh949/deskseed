@@ -7,15 +7,15 @@ import org.springframework.context.annotation.Profile
 
 internal data class ProductionRedisSecurityBoundary(
     val host: String,
+    val port: Int,
     val tlsEnabled: Boolean,
-    val plaintextInternalNetworkAcknowledged: Boolean,
 ) {
     fun validate() {
         require(
             tlsEnabled ||
-                (host == "redis" && plaintextInternalNetworkAcknowledged),
+                (host == "redis" && port == 6379),
         ) {
-            "production Redis must use TLS or the acknowledged Compose-internal redis service"
+            "production Redis must use TLS or the Compose-internal redis:6379 service"
         }
     }
 }
@@ -26,12 +26,11 @@ internal class ProductionRedisSecurityConfiguration {
     @Bean
     fun productionRedisSecurityBoundary(
         @Value("\${spring.data.redis.host}") host: String,
+        @Value("\${spring.data.redis.port}") port: Int,
         @Value("\${spring.data.redis.ssl.enabled}") tlsEnabled: Boolean,
-        @Value("\${deskseed.customer-auth.redis-security.plaintext-internal-network-ack:false}")
-        plaintextInternalNetworkAcknowledged: Boolean,
     ): ProductionRedisSecurityBoundary = ProductionRedisSecurityBoundary(
         host = host,
+        port = port,
         tlsEnabled = tlsEnabled,
-        plaintextInternalNetworkAcknowledged = plaintextInternalNetworkAcknowledged,
     ).also(ProductionRedisSecurityBoundary::validate)
 }

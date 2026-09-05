@@ -12,6 +12,8 @@ import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.RequestSource
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean
@@ -20,6 +22,7 @@ import org.springframework.core.io.ClassPathResource
 import org.mockito.Mockito.mock
 import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.net.URI
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
@@ -71,6 +74,30 @@ class AttachmentProductionBoundaryTest {
             .withInitializer { context -> context.environment.setActiveProfiles("production") }
             .withPropertyValues("deskseed.attachments.scan-mode=UPSTREAM_WAF")
             .run { context -> assertThat(context).hasFailed() }
+    }
+
+    @Test
+    fun `plaintext S3 allows only the exact Compose internal Versity endpoint without acknowledgement`() {
+        assertThatCode {
+            S3AttachmentStorageProperties(
+                endpoint = URI.create("http://versitygw:7070"),
+                accessKey = "deskseed-test-access",
+                secretKey = "deskseed-test-secret-key",
+            ).validate()
+        }.doesNotThrowAnyException()
+
+        listOf(
+            "http://external-storage.example.test:7070",
+            "http://versitygw:7071",
+        ).forEach { endpoint ->
+            assertThatThrownBy {
+                S3AttachmentStorageProperties(
+                    endpoint = URI.create(endpoint),
+                    accessKey = "deskseed-test-access",
+                    secretKey = "deskseed-test-secret-key",
+                ).validate()
+            }.isInstanceOf(IllegalArgumentException::class.java)
+        }
     }
 
     @Test
@@ -152,7 +179,7 @@ class AttachmentProductionBoundaryTest {
         assertThat(production?.getProperty("deskseed.attachments.s3.secret-key"))
             .isEqualTo("\${DESKSEED_ATTACHMENT_S3_SECRET_KEY}")
         assertThat(production?.getProperty("deskseed.attachments.s3.plaintext-internal-network-acknowledged"))
-            .isEqualTo("\${DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK:false}")
+            .isNull()
         assertThat(production?.getProperty("spring.servlet.multipart.max-file-size"))
             .isEqualTo("\${DESKSEED_ATTACHMENT_MAX_UPLOAD_BYTES:20MB}")
         assertThat(production?.getProperty("spring.servlet.multipart.max-request-size"))

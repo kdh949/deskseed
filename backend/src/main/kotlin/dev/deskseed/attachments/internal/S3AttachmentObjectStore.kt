@@ -41,7 +41,6 @@ internal data class S3AttachmentStorageProperties(
     var secretKey: String = "",
     var pathStyleAccessEnabled: Boolean = true,
     var createBucketIfMissing: Boolean = false,
-    var plaintextInternalNetworkAcknowledged: Boolean = false,
 ) {
     fun validate() {
         require(endpoint.scheme in setOf("http", "https") && endpoint.host != null) {
@@ -55,9 +54,9 @@ internal data class S3AttachmentStorageProperties(
         }
         if (endpoint.scheme == "http") {
             require(
-                endpoint.host == "versitygw" && endpoint.port == 7070 && plaintextInternalNetworkAcknowledged,
+                endpoint.host == "versitygw" && endpoint.port == 7070,
             ) {
-                "plaintext attachment S3 is restricted to acknowledged Compose-internal VersityGW"
+                "plaintext attachment S3 is restricted to Compose-internal versitygw:7070"
             }
         }
         require(region.matches(Regex("^[a-z0-9-]{3,32}$"))) { "attachment S3 region is invalid" }
