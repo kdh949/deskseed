@@ -3,11 +3,7 @@ set -eu
 
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
-node --test "$repository_root/ops/observability/tests/collection-config.test.mjs"
-node --test "$repository_root/ops/observability/tests/dashboard.test.mjs"
-node --test "$repository_root/tests/load/tests/thresholds.test.mjs"
-node --test "$repository_root/tests/load/tests/evidence.test.mjs"
-node --test "$repository_root/tests/load/tests/mixed-workload.test.mjs"
+node --test "$repository_root"/ops/observability/tests/*.test.mjs "$repository_root"/tests/load/tests/*.test.mjs
 
 export DESKSEED_APP_BIND_ADDRESS=127.0.0.1
 export DESKSEED_OBSERVABILITY_BIND_ADDRESS=127.0.0.1
@@ -35,6 +31,8 @@ docker run --rm \
   -v "$repository_root/ops/observability/monitoring-server:/etc/prometheus:ro" \
   prom/prometheus:v3.14.0 \
   check config /etc/prometheus/prometheus.yml.example
+
+node "$repository_root/scripts/load/check-dashboard-promql.mjs" --docker
 
 docker run --rm \
   --add-host backend:127.0.0.1 \

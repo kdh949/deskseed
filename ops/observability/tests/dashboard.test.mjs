@@ -53,11 +53,11 @@ test("overview separates arrived work, expected throttling, unexpected responses
 
   assert.match(arrived, /k6_http_reqs_total/);
   assert.match(arrived, /k6_iterations_total/);
-  assert.match(arrived, /test_run_id=~"\$test_run_id"/);
+  assert.match(arrived, /test_run_id="\$test_run_id"/);
   assert.match(outcome, /k6_expected_throttles_total/);
   assert.match(outcome, /k6_unexpected_status_rate/);
   assert.match(outcome, /status=~"5\.\."/);
-  assert.match(latency, /status!~"4\.\.|5\.\."/);
+  assert.match(latency, /status=~"2\.\.|3\.\."/);
   assert.match(resourceLinks, /\$\{__url_time_range\}/);
   assert.match(resourceLinks, /viewPanel=319/);
 });

@@ -24,7 +24,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TECH-003 | React/TypeScript/Vite 프론트엔드를 사용한다 | IMPLEMENTATION_READY | M0 | 22, 28, 29 | 프론트 빌드·E2E |
 | REQ-TECH-004 | 커밋된 OpenAPI 계약을 사람이 검토한 한국어 도메인 설명·합성 예시와 함께 탐색 가능한 API Reference로 제공한다 | IMPLEMENTATION_READY | M0 | 21, 22, 39, D-054 | `ApiDocumentationIntegrationTest`, `DOC-001`, `make docs-check` |
 | REQ-PORT-001 | 먼저 작동하는 포트폴리오를 만들고 이후 성능·Kafka까지 깊게 확장한다 | IMPLEMENTATION_READY | 전체 | 05, 11, 27, 41 | 릴리스별 증거 문서 |
-| REQ-OPS-001 | 격리된 load 환경은 기존 private monitoring server에 bounded metrics, safe structured logs, sampled traces, CPU profiles를 제공하고 public product surface와 감사 원장을 분리한다 | IMPLEMENTATION_READY | Operations/load | 03, 21, 23, 25, 36, ADR 0047 | overlay/config/label boundary tests passed; private management/exporter reachability, four-signal ingest smoke and OPS-004 live evidence remain required |
+| REQ-OPS-001 | 격리된 load 환경은 기존 private monitoring server에 bounded metrics, safe structured logs, sampled traces, CPU profiles를 제공하고 public product surface와 감사 원장을 분리한다 | IMPLEMENTATION_READY | Operations/load | 03, 21, 23, 25, 36, ADR 0047 | overlay/config/label boundary tests, actual GC/Hikari registry buckets and pinned PromQL checks passed (`docs/evidence/load/2026-09-05-measurement-foundation.md`); private management/exporter reachability, four-signal ingest smoke and OPS-004 live evidence remain required |
 
 ## 2.0 Wave 1 knowledge base
 
@@ -132,7 +132,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-SRCH-001 | PostgreSQL 검색으로 시작하고 측정 후 Elasticsearch로 확장한다 | IMPLEMENTATION_READY | P6/P9 | 03, 11, 32, 47 | frozen POST search contract, SQL authorization, exact count, score/ticketNumber stable cursor, query protection/audit, V35 versioned staff-only PUBLIC/INTERNAL-separated trigram projection and transactional refresh/rebuild lock, literal wildcard and Korean/English/internal/exact-rank corpus, fixed query-count/index-plan tests, real-stack E2E, 1M EXPLAIN and p50/p95 budget evidence; `/agent/search` raw-query URL exclusion, server filters, opaque cursor history and origin search-event detail handoff unit/Storybook |
 | REQ-SRCH-002 | 상담사가 신규 티켓 생성 화면에서 기존 고객을 이름·이메일로 검색해 요청자로 선택할 수 있다 | IMPLEMENTATION_READY | M3 | 30, 33, 39, 55 | `AgentCustomerSearchIntegrationTest`(검색·빈 결과·검증·fail-closed·감사 불변성), `RequesterSearchField.stories.tsx`, `CreateAgentTicketPage.test.tsx` |
 | REQ-PERF-001 | 대규모 fixture와 EXPLAIN ANALYZE로 성능 근거를 남긴다 | IMPLEMENTATION_READY | R3/P9 | 11, 21, 35, 39 | release fixture/query-plan evidence와 `AdminOrganizationIntegrationTest`의 100-row max page, staff/group/member row 증가 전후 동일 SQL statement count(각 10 이하) |
-| REQ-PERF-002 | 별도 k6 호스트가 인증된 HTTP/WebSocket 시나리오를 arrival-rate 기반으로 실행하고 환경·fixture·commit·telemetry를 함께 보존하며 측정 전 용량 주장을 금지한다 | IMPLEMENTATION_READY | Operations/load | 21, 25, 35, 36, ADR 0043/0047 | guarded agent/public/auth/WebSocket scripts inspect cleanly; one-VU smoke, telemetry overhead A/B, PERF-004, AUTH-006 and CHN-012 remain required |
+| REQ-PERF-002 | 별도 k6 호스트가 인증된 HTTP/WebSocket 시나리오를 arrival-rate 기반으로 실행하고 환경·fixture·commit·telemetry를 함께 보존하며 측정 전 용량 주장을 금지한다 | IMPLEMENTATION_READY | Operations/load | 21, 25, 35, 36, ADR 0043/0047 | pinned k6 inspection, WebSocket snapshot/cookie regression and runner exit/manifest evidence checks passed (`docs/evidence/load/2026-09-05-measurement-foundation.md`); authenticated one-VU smoke, telemetry overhead A/B, PERF-004, AUTH-006 and CHN-012 remain required |
 
 
 ## 8. 티켓 구성·파일·채널·확장 기능

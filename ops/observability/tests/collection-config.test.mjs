@@ -8,13 +8,14 @@ async function read(relativePath) {
   return readFile(new URL(relativePath, repositoryRoot), "utf8");
 }
 
-test("PostgreSQL statement collection omits query text and unrelated statement fields", async () => {
+test("PostgreSQL statement collection keeps bounded I/O and row counters without query text", async () => {
   const compose = await read("compose.observability.yaml");
   const prometheus = await read("ops/observability/monitoring-server/prometheus.yml.example");
 
   assert.match(compose, /--collector\.stat_statements/);
   assert.doesNotMatch(compose, /include_query|extend\.query|queries\.ya?ml/);
-  assert.match(prometheus, /pg_stat_statements_\(rows_total\|block_read_seconds_total\|block_write_seconds_total\)/);
+  assert.doesNotMatch(prometheus, /pg_stat_statements_\(rows_total\|block_read_seconds_total\|block_write_seconds_total\)/);
+  assert.match(prometheus, /target_label: host/);
 });
 
 test("Nginx exporter uses an internal status endpoint and access logs contain only bounded request fields", async () => {

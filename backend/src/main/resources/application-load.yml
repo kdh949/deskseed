@@ -17,10 +17,19 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        jvm.gc.pause: true
+        hikaricp.connections.acquire: true
+        hikaricp.connections.usage: true
       minimum-expected-value:
         http.server.requests: 5ms
+        jvm.gc.pause: 1ms
+        hikaricp.connections.acquire: 1us
+        hikaricp.connections.usage: 1ms
       maximum-expected-value:
         http.server.requests: 30s
+        jvm.gc.pause: 10s
+        hikaricp.connections.acquire: 30s
+        hikaricp.connections.usage: 2m
       slo:
         http.server.requests: 5ms,10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s,30s
   tracing:
@@ -34,6 +43,11 @@ management:
       export:
         otlp:
           endpoint: ${DESKSEED_OTLP_TRACES_ENDPOINT:http://alloy:4318/v1/traces}
+
+server:
+  tomcat:
+    mbeanregistry:
+      enabled: true
 
 logging:
   structured:

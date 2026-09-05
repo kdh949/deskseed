@@ -1,0 +1,120 @@
+{
+  "status": "PASSED",
+  "scope": "loopback synthetic export; no Deskseed app load",
+  "k6Version": "2.0.0",
+  "prometheusVersion": "3.14.0",
+  "series": {
+    "k6_http_req_duration_p95": [
+      {
+        "labels": {
+          "__name__": "k6_http_req_duration_p95",
+          "environment": "load",
+          "expected_response": "true",
+          "method": "GET",
+          "name": "fast",
+          "profile": "smoke",
+          "proto": "HTTP/1.0",
+          "scenario": "agent-read",
+          "service": "deskseed",
+          "status": "200",
+          "test_run_id": "local-export-contract",
+          "url": "fast"
+        },
+        "lastValue": "0.025893"
+      },
+      {
+        "labels": {
+          "__name__": "k6_http_req_duration_p95",
+          "environment": "load",
+          "expected_response": "true",
+          "method": "GET",
+          "name": "slow",
+          "profile": "smoke",
+          "proto": "HTTP/1.0",
+          "scenario": "agent-read",
+          "service": "deskseed",
+          "status": "200",
+          "test_run_id": "local-export-contract",
+          "url": "slow"
+        },
+        "lastValue": "0.1255658"
+      }
+    ],
+    "k6_vus": [
+      {
+        "labels": {
+          "__name__": "k6_vus",
+          "environment": "load",
+          "profile": "smoke",
+          "scenario": "agent-read",
+          "service": "deskseed",
+          "test_run_id": "local-export-contract"
+        },
+        "lastValue": "1"
+      }
+    ],
+    "k6_checks_rate": [
+      {
+        "labels": {
+          "__name__": "k6_checks_rate",
+          "check": "synthetic response ok",
+          "environment": "load",
+          "profile": "smoke",
+          "scenario": "agent-read",
+          "service": "deskseed",
+          "test_run_id": "local-export-contract"
+        },
+        "lastValue": "1"
+      }
+    ],
+    "k6_http_reqs_total": [
+      {
+        "labels": {
+          "__name__": "k6_http_reqs_total",
+          "environment": "load",
+          "expected_response": "true",
+          "method": "GET",
+          "name": "fast",
+          "profile": "smoke",
+          "proto": "HTTP/1.0",
+          "scenario": "agent-read",
+          "service": "deskseed",
+          "status": "200",
+          "test_run_id": "local-export-contract",
+          "url": "fast"
+        },
+        "lastValue": "5"
+      },
+      {
+        "labels": {
+          "__name__": "k6_http_reqs_total",
+          "environment": "load",
+          "expected_response": "true",
+          "method": "GET",
+          "name": "slow",
+          "profile": "smoke",
+          "proto": "HTTP/1.0",
+          "scenario": "agent-read",
+          "service": "deskseed",
+          "status": "200",
+          "test_run_id": "local-export-contract",
+          "url": "slow"
+        },
+        "lastValue": "5"
+      }
+    ],
+    "k6_synthetic_time_unit_probe_p95": [
+      {
+        "labels": {
+          "__name__": "k6_synthetic_time_unit_probe_p95",
+          "environment": "load",
+          "profile": "smoke",
+          "scenario": "agent-read",
+          "service": "deskseed",
+          "test_run_id": "local-export-contract"
+        },
+        "lastValue": "0.25"
+      }
+    ]
+  }
+}
