@@ -13,16 +13,18 @@ export function collaborationWebSocketFlow() {
   });
   if (!check(queue, { 'WebSocket source queue has a ticket': (response) => response.status === 200 && response.json('items').length > 0 })) return;
   const ticketNumber = queue.json('items.0.ticketNumber');
-  const sessionCookie = http.cookieJar().cookiesForURL(targetUrl).JSESSIONID?.[0];
+  const cookieName = __ENV.STAFF_SESSION_COOKIE_NAME || 'DESKSEED_SESSION';
+  const sessionCookie = http.cookieJar().cookiesForURL(targetUrl)[cookieName]?.[0];
   if (!check(sessionCookie, { 'staff session cookie exists': (value) => Boolean(value) })) return;
 
   const socketUrl = targetUrl.replace(/^http/, 'ws') + '/ws/agent/collaboration';
+  let receivedSnapshot = false;
   const response = ws.connect(
     socketUrl,
     {
       headers: {
         Origin: __ENV.WEBSOCKET_ORIGIN || targetUrl,
-        Cookie: `JSESSIONID=${sessionCookie}`,
+        Cookie: `${cookieName}=${sessionCookie}`,
         'X-Request-Id': `load-ws-${randomUuid()}`.slice(0, 100),
       },
       tags: { name: 'collaboration_websocket' },
@@ -34,15 +36,24 @@ export function collaborationWebSocketFlow() {
         socket.setTimeout(() => socket.close(), Number(__ENV.WEBSOCKET_HOLD_MS || 5000));
       });
       socket.on('message', (payload) => {
-        const message = JSON.parse(payload);
+        let message;
+        try {
+          message = JSON.parse(payload);
+          if (!message || typeof message.type !== 'string') throw new Error('invalid message');
+        } catch (_) {
+          unexpectedStatus.add(true);
+          return;
+        }
         if (message.type === 'error') unexpectedStatus.add(true);
         if (message.type === 'presence.snapshot') {
-          check(message, { 'presence snapshot matches ticket': (value) => value.ticketNumber === ticketNumber });
+          const matches = check(message, { 'presence snapshot matches ticket': (value) => value.ticketNumber === ticketNumber });
+          if (matches) receivedSnapshot = true;
         }
       });
       socket.on('error', () => unexpectedStatus.add(true));
     },
   );
+  check(receivedSnapshot, { 'presence snapshot received before connection closes': (received) => received });
   unexpectedStatus.add(response?.status !== 101);
   check(response, { 'collaboration WebSocket upgrades': (result) => result && result.status === 101 });
 }

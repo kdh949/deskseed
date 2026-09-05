@@ -68,6 +68,21 @@ test("summary handler writes run-scoped JSON summary and manifest paths", () => 
   assert.equal(JSON.parse(outputs["/results/run-001-agent-read-manifest.json"]).identity.testRunId, "run-001");
 });
 
+test("manifest does not declare success without results and links the exact test window", () => {
+  const manifest = buildEvidenceManifest({
+    scenarioName: "agent-read", runId: "run-002", loadProfile: "load", env: {},
+    startedAt: "2026-09-05T00:00:00.000Z", completedAt: "2026-09-05T00:05:00.000Z",
+    data: { metrics: {} },
+  });
+  assert.equal(manifest.result.status, "INCOMPLETE");
+  for (const link of manifest.correlation.dashboardLinks) {
+    const url = new URL(link, "http://grafana.invalid");
+    assert.equal(url.searchParams.get("from"), String(Date.parse(manifest.identity.startedAt)));
+    assert.equal(url.searchParams.get("to"), String(Date.parse(manifest.identity.completedAt)));
+    assert.equal(url.searchParams.get("var-test_run_id"), "run-002");
+  }
+});
+
 test("non-smoke configuration requires evidence metadata and runner records source state", async () => {
   const config = await readFile(new URL("tests/load/lib/config.js", repositoryRoot), "utf8");
   const runner = await readFile(new URL("scripts/load/run-k6.sh", repositoryRoot), "utf8");

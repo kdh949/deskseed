@@ -22,9 +22,9 @@ FIXTURE_SIZE=tickets=100000,comments=500000
 TELEMETRY_MODE=prometheus+loki+tempo+pyroscope
 ```
 
-The runner records the checked-out commit SHA and whether the checkout is dirty. It never copies the full environment into an artifact.
+The runner records the checked-out commit SHA and whether the checkout is dirty. This is the load-generator checkout, not proof of the deployed application revision; preserve the deployed image/revision separately. It never copies the full environment into an artifact. `TEST_RUN_ID` is required by the runner and must be unique for the scenario. Use up to 80 ASCII letters, digits, dots, underscores, or hyphens. Other characters are normalized before passing the ID to k6, and an existing result prefix is never overwritten.
 
-Agent and WebSocket scenarios also require `STAFF_EMAIL`, `STAFF_PASSWORD`, and an optional `STAFF_VIEW_KEY` that has at least one fixture ticket. Public request additionally requires `CONFIRM_DESTRUCTIVE_WRITES=true`. Customer authentication requires a synthetic `CUSTOMER_EMAIL` and `CUSTOMER_PASSWORD`.
+Agent and WebSocket scenarios also require `STAFF_EMAIL`, `STAFF_PASSWORD`, and an optional `STAFF_VIEW_KEY` that has at least one fixture ticket. WebSocket authentication uses `DESKSEED_SESSION` by default; set `STAFF_SESSION_COOKIE_NAME` only when the deployment overrides that name. A successful upgrade alone does not pass the flow: the requested ticket's initial snapshot must arrive, and malformed/null messages fail the checks. Public request additionally requires `CONFIRM_DESTRUCTIVE_WRITES=true`. Customer authentication requires a synthetic `CUSTOMER_EMAIL` and `CUSTOMER_PASSWORD`.
 
 Run one-VU smoke first:
 
@@ -32,7 +32,11 @@ Run one-VU smoke first:
 ./scripts/load/run-k6.sh agent-read /absolute/path/to/load.env /absolute/path/to/results
 ```
 
-Each run writes `<test-run-id>-<scenario>-summary.json` and `<test-run-id>-<scenario>-manifest.json` to the results directory. The manifest reports threshold pass/fail, the load/environment declaration, the safe dashboard selector, and the manual monitoring evidence that still needs to be preserved.
+Each normally completed run writes `<test-run-id>-<scenario>-summary.json` and `<test-run-id>-<scenario>-manifest.json`. The runner separately records `<test-run-id>-<scenario>-runner.json` with start/end timestamps and the Docker/k6 exit code, including failed runs. Abrupt host failure or `SIGKILL` may leave that file empty and prevent summary/manifest creation; treat these as incomplete evidence.
+
+Manifest schema version 2 reports threshold `PASSED`/`FAILED`, or `INCOMPLETE` when no thresholds were recorded. It includes the load/environment declaration, safe selector, and `correlation.dashboardLinks` with absolute `from`/`to` times and run/profile/scenario variables. Open those relative links on the Grafana origin and select the application host explicitly. The manifest window is recorded from script initialization through summary creation; the runner window also includes process/container startup and shutdown. Neither covers the subsequent recovery interval automatically. Extend the window deliberately when recording recovery.
+
+Accept a run only after reviewing all three artifacts: runner exit code `0`, complete expected workload, passing thresholds, and the required monitoring evidence. A passing partial summary is not sufficient. A missing dropped-iteration series is unknown until checked against the final summary and executor outcome. The summary's exact counters take precedence over Prometheus `rate()`/`increase()` estimates. The runner explicitly selects Trend-as-Gauges for these dashboards. Those gauges retain cumulative per-operation percentiles in seconds; they cannot be aggregated into a scenario p95. k6 summary values and `*_MS` threshold inputs remain milliseconds.
 
 Any non-smoke run requires `CONFIRM_DESKSEED_LOAD_TARGET` equal to the exact `TARGET_URL` host. General arrival-rate profiles require `TARGET_RPS`; the customer auth script instead accepts `auth-sustained`, `auth-burst`, or `auth-safety`. The safety profile additionally requires `CONFIRM_AUTH_SAFETY=true`.
 

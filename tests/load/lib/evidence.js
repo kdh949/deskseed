@@ -34,8 +34,15 @@ export function evidenceFileStem(runId, scenarioName) {
 export function buildEvidenceManifest({ scenarioName, correlationScenarios = [scenarioName], runId, loadProfile, startedAt, completedAt, env, data }) {
   const thresholds = thresholdResults(data?.metrics);
   const safeScenarios = correlationScenarios.map(safeToken);
+  const dashboardUids = ['deskseed-load-overview', 'deskseed-load-diagnostics'];
+  const dashboardParameters = [
+    ['from', Date.parse(startedAt)], ['to', Date.parse(completedAt)],
+    ['var-environment', 'load'], ['var-test_run_id', safeToken(runId)],
+    ['var-profile', safeToken(loadProfile)],
+    ...safeScenarios.map(scenario => ['var-scenario', scenario]),
+  ].map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     identity: {
       testRunId: safeToken(runId),
       scenario: safeToken(scenarioName),
@@ -79,7 +86,7 @@ export function buildEvidenceManifest({ scenarioName, correlationScenarios = [sc
       },
     },
     result: {
-      status: thresholds.failed.length === 0 ? 'PASSED' : 'FAILED',
+      status: thresholds.defined.length === 0 ? 'INCOMPLETE' : thresholds.failed.length === 0 ? 'PASSED' : 'FAILED',
       failedThresholds: thresholds.failed,
       thresholds: thresholds.defined,
     },
@@ -92,7 +99,8 @@ export function buildEvidenceManifest({ scenarioName, correlationScenarios = [sc
     correlation: {
       prometheusSelector: `test_run_id="${safeToken(runId)}",scenario=~"${safeScenarios.join('|')}",profile="${safeToken(loadProfile)}"`,
       scenarios: safeScenarios,
-      dashboardUids: ['deskseed-load-overview', 'deskseed-load-diagnostics'],
+      dashboardUids,
+      dashboardLinks: dashboardUids.map(uid => `/d/${uid}?${dashboardParameters}`),
       manualEvidenceStillRequired: ['Prometheus time-window export', 'pg_stat_statements snapshot', 'Grafana screenshots or links'],
     },
   };

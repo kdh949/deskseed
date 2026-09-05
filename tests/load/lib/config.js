@@ -23,6 +23,7 @@ export function standardOptions(scenarioName) {
   const thresholds = httpThresholds('http_req_duration{expected_response:true}');
   if (loadProfile === 'smoke') {
     return {
+      tags: commonTags(scenarioName),
       scenarios: {
         [scenarioName]: {
           executor: 'shared-iterations',
@@ -42,6 +43,7 @@ export function standardOptions(scenarioName) {
   const preAllocatedVUs = positiveInteger('PREALLOCATED_VUS', Math.max(10, rate), 2000);
   const maxVUs = positiveInteger('MAX_VUS', Math.max(preAllocatedVUs, rate * 2), 4000);
   return {
+    tags: commonTags(scenarioName),
     scenarios: {
       [scenarioName]: {
         executor: 'constant-arrival-rate',
@@ -74,6 +76,7 @@ export function authOptions() {
     fail('CONFIRM_AUTH_SAFETY=true is required for the 2x safety run');
   }
   return {
+    tags: commonTags('customer-auth-limiter'),
     scenarios: {
       'customer-auth-limiter': {
         executor: 'constant-arrival-rate',
@@ -98,6 +101,7 @@ export function websocketOptions() {
   }
   if (loadProfile === 'smoke') {
     return {
+      tags: commonTags('collaboration-websocket'),
       scenarios: {
         collaboration_websocket: {
           executor: 'shared-iterations',
@@ -112,6 +116,7 @@ export function websocketOptions() {
   }
   const vus = requiredPositiveInteger('TARGET_CONNECTIONS', 2000);
   return {
+    tags: commonTags('collaboration-websocket'),
     scenarios: {
       collaboration_websocket: {
         executor: 'constant-vus',
@@ -129,6 +134,7 @@ export function mixedOptions() {
   const thresholds = validityThresholds();
   if (loadProfile === 'smoke') {
     return {
+      tags: commonTags('mixed-workload'),
       scenarios: Object.fromEntries(flowNames.map((name) => [name, {
         executor: 'shared-iterations',
         exec: mixedExecName(name),
@@ -155,6 +161,7 @@ export function mixedOptions() {
   requireEvidenceMetadata();
 
   return {
+    tags: commonTags('mixed-workload'),
     scenarios: {
       'agent-read': mixedArrivalScenario('agentRead', 'agent-read', agentRate, duration, 'MIXED_AGENT'),
       'public-request': mixedArrivalScenario('publicRequest', 'public-request', publicRate, duration, 'MIXED_PUBLIC'),
