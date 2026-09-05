@@ -85,7 +85,12 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/agent/me").authenticated()
                 it.requestMatchers("/ws/agent/collaboration").hasAnyRole("ADMIN", "AGENT")
-                it.requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                it.requestMatchers(
+                    HttpMethod.GET,
+                    "/actuator/health",
+                    "/actuator/health/**",
+                    "/actuator/prometheus",
+                ).permitAll()
                 it.requestMatchers("/api/v1/admin/integration-clients/**")
                     .hasAuthority(INTEGRATION_CLIENT_MANAGE_AUTHORITY)
                 it.requestMatchers("/api/v1/admin/integrations/webhooks/**")
