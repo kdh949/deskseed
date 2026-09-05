@@ -51,7 +51,6 @@ import {
   SeedRichTextEditor,
   SeedSelectField,
   SeedSplitButton,
-  SeedSlaMeter,
   SeedStatusBadge,
   SeedTextField,
   SeedTicketWorkspaceShell,
@@ -242,7 +241,8 @@ function WorkspaceFrame({
   const [contextOpen, setContextOpen] = useState(false)
   const location = useLocation()
   const [copiedMessage, setCopiedMessage] = useState('')
-  const contextButtonRef = useRef<HTMLButtonElement>(null)
+  const openContext = useCallback(() => setContextOpen(true), [])
+  const closeContext = useCallback(() => setContextOpen(false), [])
   const externalReferences = useExternalReferences(detail, refreshLatest)
   useEffect(() => {
     if (location.hash === '#collaboration') setContextOpen(true)
@@ -271,41 +271,17 @@ function WorkspaceFrame({
     >
       <SeedTicketWorkspaceShell
         contextOpen={contextOpen}
-        contextReturnFocusRef={contextButtonRef}
+        onContextOpen={openContext}
         header={
           <SeedWorkspaceHeader
-            assignee={
-              detail.ticket.assignee
-                ? {
-                    initials: initials(detail.ticket.assignee.displayName),
-                    label: detail.ticket.assignee.displayName,
-                  }
-                : undefined
-            }
-            contextButtonRef={contextButtonRef}
+            requester={{
+              label: detail.ticket.requester.displayName,
+              email: detail.context.customer?.email,
+            }}
             copiedMessage={copiedMessage}
             onCopyTicketLabel={() => void copyTicketLabel()}
-            onOpenContext={() => setContextOpen(true)}
+            onOpenContext={openContext}
             onRefresh={onRefresh}
-            priority={{
-              label: PRIORITY_LABELS[detail.ticket.priority],
-              tone:
-                detail.ticket.priority === 'URGENT'
-                  ? 'danger'
-                  : detail.ticket.priority === 'HIGH'
-                    ? 'warning'
-                    : 'neutral',
-            }}
-            sla={
-              detail.ticket.sla ? (
-                <SeedSlaMeter
-                  detail={slaSummary(detail.ticket.sla)}
-                  label="SLA"
-                  percent={slaPercent(detail.ticket.sla.state)}
-                  tone={slaTone(detail.ticket.sla.state)}
-                />
-              ) : undefined
-            }
             status={
               <SeedStatusBadge tone={statusTone(detail.ticket.status)}>
                 {STATUS_LABELS[detail.ticket.status]}
@@ -320,7 +296,7 @@ function WorkspaceFrame({
           <section aria-label="티켓 대화 및 답변">{conversation}</section>
         }
         context={context}
-        onContextClose={() => setContextOpen(false)}
+        onContextClose={closeContext}
       />
     </section>
   )
@@ -398,7 +374,32 @@ function EditableProperties({
     })
   }
   return (
-    <SeedPropertyStack title="티켓 속성">
+    <SeedPropertyStack
+      title="티켓 속성"
+      details={{
+        summary: '요청 정보',
+        content: (
+          <>
+            <SeedReadOnlyField
+              label="요청자"
+              value={detail.ticket.requester.displayName}
+            />
+            {detail.context.customer?.email && (
+              <SeedReadOnlyField
+                label="이메일"
+                leadingIcon="mail"
+                value={detail.context.customer.email}
+              />
+            )}
+            <SeedReadOnlyField
+              label="생성"
+              leadingIcon="calendar"
+              value={formatDate(detail.ticket.createdAt)}
+            />
+          </>
+        ),
+      }}
+    >
       <SeedChoiceField
         disabled={editor.submitting}
         label="상태"
@@ -433,22 +434,6 @@ function EditableProperties({
         placeholder="미배정"
         value={editor.localFields.assigneeId}
       />
-      <SeedReadOnlyField
-        label="요청자"
-        value={detail.ticket.requester.displayName}
-      />
-      {detail.context.customer?.email && (
-        <SeedReadOnlyField
-          label="이메일"
-          leadingIcon="mail"
-          value={detail.context.customer.email}
-        />
-      )}
-      <SeedReadOnlyField
-        label="생성"
-        leadingIcon="calendar"
-        value={formatDate(detail.ticket.createdAt)}
-      />
       {detail.ticket.sla && (
         <SeedReadOnlyField
           label="최초 답변 SLA"
@@ -462,7 +447,32 @@ function EditableProperties({
 
 function ReadOnlyProperties({ detail }: { detail: AgentTicketDetail }) {
   return (
-    <SeedPropertyStack title="티켓 속성">
+    <SeedPropertyStack
+      title="티켓 속성"
+      details={{
+        summary: '요청 정보',
+        content: (
+          <>
+            <SeedReadOnlyField
+              label="요청자"
+              value={detail.ticket.requester.displayName}
+            />
+            {detail.context.customer?.email && (
+              <SeedReadOnlyField
+                label="이메일"
+                leadingIcon="mail"
+                value={detail.context.customer.email}
+              />
+            )}
+            <SeedReadOnlyField
+              label="생성"
+              leadingIcon="calendar"
+              value={formatDate(detail.ticket.createdAt)}
+            />
+          </>
+        ),
+      }}
+    >
       <SeedReadOnlyField
         label="상태"
         value={STATUS_LABELS[detail.ticket.status]}
@@ -480,22 +490,6 @@ function ReadOnlyProperties({ detail }: { detail: AgentTicketDetail }) {
         label="담당자"
         leadingIcon="user"
         value={detail.ticket.assignee?.displayName ?? '미배정'}
-      />
-      <SeedReadOnlyField
-        label="요청자"
-        value={detail.ticket.requester.displayName}
-      />
-      {detail.context.customer?.email && (
-        <SeedReadOnlyField
-          label="이메일"
-          leadingIcon="mail"
-          value={detail.context.customer.email}
-        />
-      )}
-      <SeedReadOnlyField
-        label="생성"
-        leadingIcon="calendar"
-        value={formatDate(detail.ticket.createdAt)}
       />
       {detail.ticket.sla && (
         <SeedReadOnlyField
@@ -1648,30 +1642,6 @@ function statusTone(
   if (status === 'PENDING' || status === 'ON_HOLD') return 'warning'
   if (status === 'NEW') return 'info'
   return 'neutral'
-}
-
-function slaPercent(
-  state: NonNullable<AgentTicketDetail['ticket']['sla']>['state'],
-) {
-  return {
-    ACTIVE: 48,
-    AT_RISK: 72,
-    PAUSED: 52,
-    ACHIEVED: 100,
-    BREACHED: 100,
-    CANCELLED: 0,
-    NO_POLICY: 0,
-  }[state]
-}
-
-function slaTone(
-  state: NonNullable<AgentTicketDetail['ticket']['sla']>['state'],
-): 'positive' | 'warning' | 'danger' | 'neutral' {
-  if (state === 'BREACHED') return 'danger'
-  if (state === 'AT_RISK') return 'warning'
-  if (state === 'CANCELLED' || state === 'NO_POLICY' || state === 'PAUSED')
-    return 'neutral'
-  return 'positive'
 }
 
 function initials(name: string) {
