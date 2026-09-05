@@ -127,7 +127,6 @@ export function AgentSearchPage() {
     <section className="seed-route" aria-labelledby="agent-search-title">
       <header className="seed-route__header">
         <div>
-          <span className="seed-route__eyebrow">WORKSPACE SEARCH</span>
           <h1 id="agent-search-title">티켓 검색</h1>
           <p>권한 범위 안의 서버 전체 티켓을 검색합니다.</p>
         </div>

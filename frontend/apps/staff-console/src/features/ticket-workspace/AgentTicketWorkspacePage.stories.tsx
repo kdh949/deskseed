@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http, HttpResponse } from 'msw'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import { Route, Routes, useNavigate } from 'react-router'
 import { mswHandlers } from '../../../.storybook/msw-handlers'
 import { AgentShellLayout } from '../agent-shell/AgentShellLayout'
 import { StaffSessionProvider } from '../staff-auth/StaffSessionContext'
 import { AgentTicketWorkspacePage } from './AgentTicketWorkspacePage'
+import { ticketDraftStorageKey } from './model/ticketEditorModel'
+import { removeLocalTicketDraft } from '../collaboration/draftRecovery'
 
 const detail = {
   ticket: {
@@ -357,6 +359,99 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
+
+export const ConversationFocus: Story = {
+  beforeEach: async () => {
+    localStorage.removeItem(ticketDraftStorageKey('agent-1', 1042))
+    await Promise.all([
+      removeLocalTicketDraft('agent-1', 1042, 'PUBLIC_REPLY'),
+      removeLocalTicketDraft('agent-1', 1042, 'INTERNAL_NOTE'),
+    ])
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          '선택된 3번 시안의 실제 상담 화면. 고정 합성 데이터로 접힌 컨텍스트, 키보드 포커스 복귀와 공개/내부 초안 분리를 검증합니다.',
+      },
+    },
+    msw: {
+      handlers: [
+        http.get('/api/v1/agent/tickets/1042', () =>
+          HttpResponse.json({
+            ...detail,
+            comments: detail.comments.map((comment, index) => {
+              const text =
+                [
+                  '결제가 계속 실패합니다. 승인 요청을 다시 보내도 같은 오류가 표시됩니다.\n오늘 안에 결제를 완료해야 합니다.',
+                  '안녕하세요, 김민수님. 결제 승인 상태를 확인하고 있습니다.\n브라우저를 새로고침한 뒤 결제 수단을 다시 선택해 주세요.',
+                  'PG사 응답 코드와 중복 승인 여부를 확인합니다.\n결제팀에 확인을 요청했습니다.',
+                  '네, 확인 감사합니다. 추가 정보가 필요하면 알려 주세요.',
+                ][index] ?? comment.body
+              return {
+                ...comment,
+                body: text,
+                content: {
+                  format: 'RICH_TEXT_V1',
+                  document: {
+                    type: 'doc',
+                    content: text.split('\n').map((paragraph) => ({
+                      type: 'paragraph',
+                      content: [{ type: 'text', text: paragraph }],
+                    })),
+                  },
+                },
+              }
+            }),
+          }),
+        ),
+        ...meta.parameters.msw.handlers,
+      ],
+    },
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await expect(
+      await canvas.findByRole('heading', { name: '결제 승인 오류' }),
+    ).toBeVisible()
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(
+      body.queryByRole('dialog', { name: '티켓 컨텍스트' }),
+    ).not.toBeInTheDocument()
+    const contextButton = canvas.getByRole('button', {
+      name: '고객 및 관련 정보 열기',
+    })
+    await userEvent.click(contextButton)
+    await expect(
+      await body.findByRole('dialog', { name: '티켓 컨텍스트' }),
+    ).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+    await expect(contextButton).toHaveFocus()
+    const publicEditor = await canvas.findByRole('textbox', {
+      name: '공개 답변 내용',
+    })
+    await expect(
+      await canvas.findByText('저장됨', { exact: true }),
+    ).toBeVisible()
+    await userEvent.click(publicEditor)
+    await userEvent.paste('김민수님, 확인 후 다시 안내드리겠습니다.')
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+    const internalEditor = await canvas.findByRole('textbox', {
+      name: '내부 메모 내용',
+    })
+    await expect(internalEditor).not.toHaveTextContent('김민수님')
+    await userEvent.click(internalEditor)
+    await userEvent.paste('결제팀 확인 대기')
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }),
+    )
+    await expect(
+      await canvas.findByRole('textbox', { name: '공개 답변 내용' }),
+    ).toHaveTextContent('김민수님, 확인 후 다시 안내드리겠습니다.')
+    ;(canvasElement.ownerDocument.activeElement as HTMLElement | null)?.blur()
+  },
+}
 
 export const Workspace: Story = {
   play: async ({ canvas, canvasElement }) => {

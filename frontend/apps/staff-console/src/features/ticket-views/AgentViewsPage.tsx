@@ -476,7 +476,6 @@ export function AgentViewsPage() {
       >
         <header className="seed-queue__header">
           <div>
-            <span className="seed-route__eyebrow">TICKET QUEUE</span>
             <div>
               <h1 id="agent-view-title">{title}</h1>
               {query.data && (

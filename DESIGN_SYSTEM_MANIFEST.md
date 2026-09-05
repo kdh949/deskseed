@@ -56,6 +56,6 @@ Direct Garden imports are restricted to each app's design-system root. `npm run 
 
 ## Visual contract
 
-Agent Queue, Ticket Workspace, staff login, Admin, Audit, and their common states retain the Staff Console Deskseed grammar: compact neutral workspaces, dark-teal operational chrome, semantic `--ds-*` tokens, and existing focus/hover/disabled behavior.
+Agent Queue, Ticket Workspace, staff ticket creation, staff login, Admin, Audit, and their common states retain the Staff Console Deskseed grammar: compact neutral workspaces, dark-teal operational chrome, semantic `--ds-*` tokens, and existing focus/hover/disabled behavior. Staff content regions begin with their semantic Korean heading and do not use ornamental eyebrow, kicker, overline, or CSS-forced uppercase micro-heading copy. Staff ticket creation is a single operational workspace with properties beside the subject and first-comment composer, not a numbered wizard or card-by-card onboarding flow.
 
 Customer Portal uses an independent responsive Help Center grammar: navy typography, Deskseed-blue actions, white surfaces, light blue-gray borders, and bounded pastel semantic accents expressed only through `--customer-*` tokens. Customer content regions begin with their semantic heading and never use ornamental small eyebrow, kicker, overline, or CSS-forced uppercase micro-heading copy. Customer feature code owns route/session/proof orchestration; reusable customer presentation remains inside the customer design-system root.

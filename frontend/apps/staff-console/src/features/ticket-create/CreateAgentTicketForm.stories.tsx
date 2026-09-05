@@ -81,9 +81,11 @@ const baseArgs = {
 export const Empty: Story = {
   args: { ...baseArgs, requesterSearch: makeRequesterSearch() },
   play: async ({ canvas }) => {
-    await expect(
-      canvas.getByRole('heading', { name: '새 티켓 생성' }),
-    ).toBeVisible()
+    await expect(canvas.getByRole('heading', { name: '새 티켓' })).toBeVisible()
+    await expect(canvas.getByLabelText('새 티켓 속성')).toBeVisible()
+    await expect(canvas.getByLabelText('티켓 내용')).toBeVisible()
+    await expect(canvas.queryByText('NEW REQUEST')).not.toBeInTheDocument()
+    await expect(canvas.queryByText('티켓 생성 순서')).not.toBeInTheDocument()
     await expect(
       canvas.getByRole('tab', { name: '내부 메모' }),
     ).toHaveAttribute('aria-selected', 'true')
@@ -109,6 +111,34 @@ export const RequesterSelectedWithGroup: Story = {
     await expect(
       canvas.getByRole('option', { name: '이서연' }),
     ).toBeInTheDocument()
+    await expect(
+      canvas.queryByRole('option', { name: '최지우' }),
+    ).not.toBeInTheDocument()
+  },
+}
+
+export const NewCustomer: Story = {
+  args: {
+    ...baseArgs,
+    requesterSearch: makeRequesterSearch({
+      tab: 'new',
+      newName: '박서준',
+      newEmail: 'seojun@example.test',
+      selection: {
+        mode: 'new',
+        name: '박서준',
+        email: 'seojun@example.test',
+      },
+    }),
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole('tab', { name: '새 고객 등록' }),
+    ).toHaveAttribute('aria-selected', 'true')
+    await expect(canvas.getByLabelText('이름')).toHaveValue('박서준')
+    await expect(canvas.getByLabelText('이메일')).toHaveValue(
+      'seojun@example.test',
+    )
   },
 }
 

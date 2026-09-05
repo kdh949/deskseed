@@ -120,7 +120,7 @@ describe('CreateAgentTicketPage', () => {
 
     renderPage()
 
-    await screen.findByRole('heading', { name: '새 티켓 생성' })
+    await screen.findByRole('heading', { name: '새 티켓' })
 
     await user.type(screen.getByLabelText('이름 또는 이메일로 검색'), '김민아')
     const resultButton = await screen.findByRole('button', {
@@ -145,13 +145,14 @@ describe('CreateAgentTicketPage', () => {
     )
     expect(createCall).toBeDefined()
     const body = JSON.parse(String(createCall?.[1]?.body))
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       requester: { customerId: '55555555-5555-4555-8555-555555555555' },
       subject: '검색으로 찾은 고객 문의',
       firstComment: { visibility: 'INTERNAL', body: '내부 조사 시작' },
       priority: 'NORMAL',
       groupId: '11111111-1111-4111-8111-111111111111',
       assigneeId: '22222222-2222-4222-8222-222222222222',
+      clientCommandId: expect.any(String),
     })
   })
 
@@ -161,7 +162,7 @@ describe('CreateAgentTicketPage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
-    await screen.findByRole('heading', { name: '새 티켓 생성' })
+    await screen.findByRole('heading', { name: '새 티켓' })
 
     await user.click(screen.getByRole('tab', { name: '새 고객 등록' }))
     await user.type(screen.getByLabelText('이름'), '박서준')
@@ -194,7 +195,7 @@ describe('CreateAgentTicketPage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
-    await screen.findByRole('heading', { name: '새 티켓 생성' })
+    await screen.findByRole('heading', { name: '새 티켓' })
 
     await user.type(screen.getByLabelText('제목'), '제목만 입력')
     await user.click(screen.getByRole('button', { name: '티켓 생성' }))
@@ -227,7 +228,7 @@ describe('CreateAgentTicketPage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage()
-    await screen.findByRole('heading', { name: '새 티켓 생성' })
+    await screen.findByRole('heading', { name: '새 티켓' })
 
     await user.click(screen.getByRole('tab', { name: '새 고객 등록' }))
     await user.type(screen.getByLabelText('이름'), '박서준')

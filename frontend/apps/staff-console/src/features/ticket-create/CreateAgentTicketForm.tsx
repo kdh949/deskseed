@@ -123,58 +123,21 @@ export function CreateAgentTicketForm({
   }
 
   return (
-    <section
-      className="seed-route seed-create"
-      aria-labelledby="create-ticket-title"
-    >
-      <header className="seed-route__header">
-        <div>
-          <span className="seed-route__eyebrow">NEW REQUEST</span>
-          <h1 id="create-ticket-title">새 티켓 생성</h1>
-          <p>상담사가 고객을 지정하고 첫 코멘트로 티켓을 시작합니다.</p>
-        </div>
+    <section className="seed-create" aria-labelledby="create-ticket-title">
+      <header className="seed-create__header">
+        <h1 id="create-ticket-title">새 티켓</h1>
       </header>
-      <div className="seed-create__body">
-        <aside className="seed-create__guide">
-          <strong>티켓 생성 순서</strong>
-          <ol>
-            <li>요청자 지정</li>
-            <li>문의 내용 작성</li>
-            <li>배정 정보 확인</li>
-          </ol>
-          <p>
-            첫 코멘트 공개 범위는 생성 이후에도 감사 가능한 변경으로 관리됩니다.
-          </p>
-        </aside>
-        <form className="seed-create__form" noValidate onSubmit={handleSubmit}>
-          {(error || validationError) && (
-            <div ref={errorRef} tabIndex={-1}>
-              <SeedNotice
-                title={error ? '티켓 생성 실패' : '입력을 확인해 주세요'}
-                tone={error ? 'danger' : 'warning'}
-              >
-                {error
-                  ? `${error.message}${error.requestId ? ` (요청 ID: ${error.requestId})` : ''}`
-                  : validationError}
-              </SeedNotice>
-            </div>
-          )}
-          {warnings.map((warning) => (
-            <SeedNotice key={warning.code} title="생성 전 확인" tone="warning">
-              {warning.message}
-            </SeedNotice>
-          ))}
+      <form
+        className="seed-create__workspace"
+        noValidate
+        onSubmit={handleSubmit}
+      >
+        <aside aria-label="새 티켓 속성" className="seed-create__properties">
           <section
-            className="seed-form-section"
+            className="seed-create__property-section"
             aria-labelledby="create-ticket-requester-heading"
           >
-            <header>
-              <span>1</span>
-              <div>
-                <h2 id="create-ticket-requester-heading">요청자</h2>
-                <p>기존 고객을 검색하거나 새 고객 정보를 입력합니다.</p>
-              </div>
-            </header>
+            <h2 id="create-ticket-requester-heading">요청자</h2>
             <RequesterSearchField
               newEmail={requesterSearch.newEmail}
               newName={requesterSearch.newName}
@@ -191,53 +154,12 @@ export function CreateAgentTicketForm({
               tab={requesterSearch.tab}
             />
           </section>
-          <section className="seed-form-section">
-            <header>
-              <span>2</span>
-              <div>
-                <h2>문의 내용</h2>
-                <p>제목과 첫 코멘트를 입력합니다.</p>
-              </div>
-            </header>
-            <SeedTextField
-              aria-label="제목"
-              label="제목"
-              maxLength={200}
-              onChange={(event) => setSubject(event.target.value)}
-              required
-              value={subject}
-            />
-            <div className="seed-field">
-              <span className="seed-field__label">첫 코멘트 공개 범위</span>
-              <SeedTabs
-                active={visibility}
-                ariaLabel="첫 코멘트 공개 범위"
-                items={[
-                  { id: 'INTERNAL', label: '내부 메모' },
-                  { id: 'PUBLIC', label: '공개 답변' },
-                ]}
-                onChange={setVisibility}
-              />
-            </div>
-            <SeedTextAreaField
-              aria-label="첫 코멘트 내용"
-              label="첫 코멘트 내용"
-              maxLength={20000}
-              onChange={(event) => setBody(event.target.value)}
-              required
-              rows={7}
-              value={body}
-            />
-          </section>
-          <section className="seed-form-section">
-            <header>
-              <span>3</span>
-              <div>
-                <h2>배정</h2>
-                <p>우선순위와 담당 팀을 지정합니다.</p>
-              </div>
-            </header>
-            <div className="seed-form-grid">
+          <section
+            aria-labelledby="create-ticket-properties-heading"
+            className="seed-create__property-section"
+          >
+            <h2 id="create-ticket-properties-heading">티켓 속성</h2>
+            <div className="seed-create__property-fields">
               <SeedSelectField
                 aria-label="우선순위"
                 label="우선순위"
@@ -284,14 +206,70 @@ export function CreateAgentTicketForm({
               </SeedSelectField>
             </div>
           </section>
+        </aside>
+        <section aria-label="티켓 내용" className="seed-create__editor">
+          <div className="seed-create__editor-body">
+            {(error || validationError) && (
+              <div ref={errorRef} tabIndex={-1}>
+                <SeedNotice
+                  title={error ? '티켓 생성 실패' : '입력을 확인해 주세요'}
+                  tone={error ? 'danger' : 'warning'}
+                >
+                  {error
+                    ? `${error.message}${error.requestId ? ` (요청 ID: ${error.requestId})` : ''}`
+                    : validationError}
+                </SeedNotice>
+              </div>
+            )}
+            {warnings.map((warning) => (
+              <SeedNotice
+                key={warning.code}
+                title="생성 전 확인"
+                tone="warning"
+              >
+                {warning.message}
+              </SeedNotice>
+            ))}
+            <SeedTextField
+              aria-label="제목"
+              label="제목"
+              maxLength={200}
+              onChange={(event) => setSubject(event.target.value)}
+              required
+              value={subject}
+            />
+            <div className="seed-create__comment-composer">
+              <div className="seed-field">
+                <span className="seed-field__label">첫 코멘트 공개 범위</span>
+                <SeedTabs
+                  active={visibility}
+                  ariaLabel="첫 코멘트 공개 범위"
+                  items={[
+                    { id: 'INTERNAL', label: '내부 메모' },
+                    { id: 'PUBLIC', label: '공개 답변' },
+                  ]}
+                  onChange={setVisibility}
+                />
+              </div>
+              <SeedTextAreaField
+                aria-label="첫 코멘트 내용"
+                label="첫 코멘트 내용"
+                maxLength={20000}
+                onChange={(event) => setBody(event.target.value)}
+                required
+                rows={14}
+                value={body}
+              />
+            </div>
+          </div>
           <footer className="seed-create__actions">
             <Link to="/agent/views/my-open">취소</Link>
             <SeedButton disabled={submitting} type="submit" variant="primary">
               {submitting ? '생성 중…' : '티켓 생성'}
             </SeedButton>
           </footer>
-        </form>
-      </div>
+        </section>
+      </form>
     </section>
   )
 }

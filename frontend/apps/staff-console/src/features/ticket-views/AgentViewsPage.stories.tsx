@@ -92,6 +92,8 @@ export const Queue: Story = {
     await expect(
       await canvas.findByRole('heading', { name: '내 티켓' }),
     ).toBeVisible()
+    await expect(canvas.queryByText('TICKET QUEUE')).not.toBeInTheDocument()
+    await expect(canvas.queryByText('WORKSPACE')).not.toBeInTheDocument()
     await userEvent.click(await canvas.findByLabelText('티켓 #1042 선택'))
     await expect(canvas.getByText('1개 선택됨')).toBeVisible()
   },

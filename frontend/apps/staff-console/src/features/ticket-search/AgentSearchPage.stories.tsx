@@ -71,6 +71,7 @@ type Story = StoryObj<typeof meta>
 
 export const SearchResults: Story = {
   play: async ({ canvas, userEvent }) => {
+    await expect(canvas.queryByText('WORKSPACE SEARCH')).not.toBeInTheDocument()
     await userEvent.type(
       canvas.getByLabelText('서버 전체 티켓 검색어'),
       '중복 결제',

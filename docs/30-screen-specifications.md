@@ -179,9 +179,15 @@ child/SLA indicator
 Global nav | Views | Properties | Conversation/Composer | Context rail/panel
 ```
 
+### Default conversation-focused layout
+
+2026-09-05 선택된 3번 시안에 따라 Deskseed 전역 탐색은 64px 아이콘 rail, 티켓 속성은 320px, 우측은 접힌 context rail로 시작한다. 모든 데스크톱 폭에서 고객/관련 정보는 header 또는 우측 접근 버튼으로 기존 drawer를 연다. 닫으면 실제로 사용한 접근 버튼으로 focus가 돌아온다. 대화와 하단 composer는 카드 바깥 여백 없이 연속된 작업 영역을 사용한다.
+
+상태·우선순위·그룹·담당자는 좌측에 계속 표시한다. 중복 header 배정/SLA는 제거하고 요청자 이름·이메일을 제목 아래에 둔다. 요청자 상세와 생성 시각은 `요청 정보` disclosure에서 확인한다. 현재 context 종류는 하나의 기존 패널에서 제공하며 별도 tab 기능을 암시하는 작동하지 않는 icon은 추가하지 않는다.
+
 ### Header
 
-- `#number · subject`
+- `subject · #number`
 - requester/channel/created time
 - warning badges
 - more actions
@@ -228,9 +234,12 @@ Global nav | Views | Properties | Conversation/Composer | Context rail/panel
 
 ## AGT-005 — Create staff ticket
 
+- single operational workspace: requester and assignment properties on the left, subject and first-comment composer in the main area
+- no numbered wizard, progress guide, or card-by-card onboarding treatment
 - requester can be searched/created
 - origin `STAFF_CREATED`
 - first comment visibility defaults `INTERNAL` unless agent explicitly chooses public and requester channel supports it
+- validation and command failures preserve entered values; success opens the created ticket workspace
 - audit records actor and creation source
 
 ## AGT-006 — Create child ticket dialog
