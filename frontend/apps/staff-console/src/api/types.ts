@@ -600,6 +600,10 @@ export type SavedViewConditionField =
   | 'FIRST_REPLY_SLA_STATE'
   | 'TICKET_KIND'
   | 'UPDATED_AT'
+  | 'TAG'
+  | 'FORM'
+  | 'CUSTOM_STATUS'
+  | 'CUSTOM_FIELD'
 export type SavedViewConditionOperator =
   | 'EQUALS'
   | 'NOT_EQUALS'
@@ -622,6 +626,7 @@ export type SavedViewColumn =
 export type SavedViewSort = 'updatedAt:desc,ticketNumber:desc'
 
 export interface SavedViewCondition {
+  fieldKey?: string
   field: SavedViewConditionField
   operator: SavedViewConditionOperator
   values: string[]

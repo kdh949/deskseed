@@ -66,6 +66,9 @@ const meta = {
     layout: 'fullscreen',
     msw: {
       handlers: [
+        http.get('/api/v1/agent/ticket-configuration/filter-catalog', () =>
+          HttpResponse.json({ fields: [], tags: [], forms: [], statuses: [] }),
+        ),
         http.get('/api/v1/agent/views', () => HttpResponse.json(views)),
         http.get('/api/v1/agent/assignment-options', () =>
           HttpResponse.json({ groups: [] }),

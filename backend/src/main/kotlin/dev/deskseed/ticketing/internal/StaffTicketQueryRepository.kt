@@ -49,6 +49,7 @@ internal class StaffTicketQueryRepository(
     private val attachmentReadProjection: TicketAttachmentReadProjection,
     private val clock: Clock,
     private val objectMapper: ObjectMapper,
+    private val configurationPredicates: SavedViewConfigurationPredicates,
 ) : StaffTicketReadStore {
     override fun list(
         view: DefaultStaffView,
@@ -330,6 +331,7 @@ internal class StaffTicketQueryRepository(
         val now = clock.instant()
         val riskAt = now.plusSeconds(30 * 60)
         val parameters = MapSqlParameterSource().addValue("actorId", actorId)
+        val configurationFields = mutableMapOf<String, SavedViewConfigurationPredicates.Field?>()
         val branches = countable.mapIndexed { index, view ->
             val prefix = "count$index"
             parameters.addValue("${prefix}ViewId", view.id)
@@ -344,6 +346,7 @@ internal class StaffTicketQueryRepository(
                 riskAt,
                 nowParameter = "${prefix}Now",
                 riskParameter = "${prefix}RiskAt",
+                configurationFields = configurationFields,
             )
             """
             select cast(:${prefix}ViewId as uuid) as view_id, count(*) as ticket_count
@@ -712,13 +715,14 @@ internal class StaffTicketQueryRepository(
         riskAt: Instant,
         nowParameter: String = "now",
         riskParameter: String = "riskAt",
+        configurationFields: MutableMap<String, SavedViewConfigurationPredicates.Field?> = mutableMapOf(),
     ): List<String> {
         SavedViewDefinitionRules.validateConditions(conditions)
         val all = conditions.all.mapIndexed { index, condition ->
-            compileSavedCondition(condition, parameters, "${prefix}All$index", now, riskAt, nowParameter, riskParameter)
+            compileSavedCondition(condition, parameters, "${prefix}All$index", now, riskAt, nowParameter, riskParameter, configurationFields)
         }
         val any = conditions.any.mapIndexed { index, condition ->
-            compileSavedCondition(condition, parameters, "${prefix}Any$index", now, riskAt, nowParameter, riskParameter)
+            compileSavedCondition(condition, parameters, "${prefix}Any$index", now, riskAt, nowParameter, riskParameter, configurationFields)
         }
         return buildList {
             if (all.isNotEmpty()) add(all.joinToString(" and "))
@@ -734,7 +738,9 @@ internal class StaffTicketQueryRepository(
         riskAt: Instant,
         nowParameter: String,
         riskParameter: String,
+        configurationFields: MutableMap<String, SavedViewConfigurationPredicates.Field?>,
     ): String = when (condition.field) {
+        SavedViewConditionField.TAG, SavedViewConditionField.FORM, SavedViewConditionField.CUSTOM_STATUS, SavedViewConditionField.CUSTOM_FIELD -> configurationPredicates.compile(condition, parameters, parameterPrefix, configurationFields)
         SavedViewConditionField.STATUS -> when (condition.operator) {
             SavedViewConditionOperator.LESS_THAN_SOLVED -> "t.status not in ('SOLVED', 'CLOSED')"
             else -> enumComparison("t.status", condition, parameters, parameterPrefix)

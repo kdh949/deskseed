@@ -53,6 +53,7 @@ internal data class SavedViewPreview(
 @Service
 internal class SavedViewApplicationService(
     private val savedViewStore: SavedViewStore,
+    private val configurationValidation: dev.deskseed.ticketing.SavedViewConfigurationValidation,
     private val ticketStore: StaffTicketReadStore,
     private val cursorCodec: AgentTicketCursorCodec,
     private val accessAuditWriter: AccessAuditWriter,
@@ -96,6 +97,7 @@ internal class SavedViewApplicationService(
         requireActive(principal)
         require(scope != SavedViewScope.SYSTEM) { "SYSTEM saved views cannot be created" }
         SavedViewDefinitionRules.validate(definition)
+        configurationValidation.validate(definition.conditions)
         if (scope == SavedViewScope.SHARED) requireSharedManager(principal)
         val now = Instant.now(clock)
         val view = savedViewStore.create(
@@ -119,6 +121,7 @@ internal class SavedViewApplicationService(
     ): SavedTicketView {
         requireActive(principal)
         SavedViewDefinitionRules.validate(definition)
+        configurationValidation.validate(definition.conditions)
         val current = writableView(principal, viewKey)
         val now = Instant.now(clock)
         val updated = savedViewStore.update(current.id, expectedVersion, definition, now)
@@ -172,6 +175,7 @@ internal class SavedViewApplicationService(
     ): SavedViewPreview {
         requireActive(principal)
         SavedViewDefinitionRules.validate(definition)
+        configurationValidation.validate(definition.conditions)
         val now = Instant.now(clock)
         val previewId = UUID.nameUUIDFromBytes(
             "saved-view-preview:${SavedViewDefinitionRules.fingerprint(definition)}".toByteArray(StandardCharsets.UTF_8),
