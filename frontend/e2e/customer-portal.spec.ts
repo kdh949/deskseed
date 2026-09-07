@@ -74,10 +74,22 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
     if (url.pathname === '/api/v1/customer/access-mode') {
       return route.fulfill({ status: 200, json: { mode: 'ANONYMOUS_ALLOWED' } })
     }
+    if (url.pathname === '/api/v1/customer/ticket-forms')
+      return route.fulfill({
+        status: 404,
+        json: { type: '/problems/customer-ticket-form-unavailable' },
+      })
+    if (url.pathname === '/api/v1/customer/consent-policies')
+      return route.fulfill({
+        status: 200,
+        json: { context: 'REQUEST_SUBMISSION', policies: [] },
+      })
     if (url.pathname === '/api/v1/requests' && request.method() === 'POST') {
       expect(request.postDataJSON()).toEqual({
-        name: '김민아',
-        email: 'mina@example.test',
+        clientCommandId: expect.any(String),
+        requester: { name: '김민아', email: 'mina@example.test' },
+        fieldValues: {},
+        acceptedPolicies: [],
         subject: '결제 확인 요청',
         message: '결제 승인 내역을 확인해 주세요.',
       })
@@ -85,6 +97,7 @@ test('anonymous submit → fragment detail → PUBLIC follow-up uses the product
         status: 201,
         json: {
           ticketNumber: 1042,
+          replayed: false,
           status: 'NEW',
           accessToken: requestAccessToken,
           createdAt: '2026-08-15T00:00:00Z',
@@ -625,9 +638,11 @@ async function createRealCustomerRequest(
 ) {
   const response = await context.request.post('/api/v1/requests', {
     data: {
-      email,
+      clientCommandId: crypto.randomUUID(),
+      requester: { email, name: 'Attachment customer' },
+      fieldValues: {},
+      acceptedPolicies: [],
       message: 'Real-stack authenticated attachment fixture',
-      name: 'Attachment customer',
       subject,
     },
   })

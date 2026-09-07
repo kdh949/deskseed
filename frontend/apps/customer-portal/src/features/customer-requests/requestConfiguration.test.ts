@@ -79,20 +79,18 @@ describe('customer request configuration boundary', () => {
     await expect(loadRequestConfiguration()).rejects.toThrow()
   })
   it('sends one JSON multipart request part with the same form and command identity as JSON intake', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            ticketNumber: 1042,
-            status: 'NEW',
-            accessToken: 'a'.repeat(43),
-            createdAt: '2026-09-08T00:00:00Z',
-            replayed: false,
-          }),
-          { status: 201 },
-        ),
-      )
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          status: 'NEW',
+          accessToken: 'a'.repeat(43),
+          createdAt: '2026-09-08T00:00:00Z',
+          replayed: false,
+        }),
+        { status: 201 },
+      ),
+    )
     vi.stubGlobal('fetch', fetchMock)
     const input = {
       clientCommandId: '33333333-3333-4333-8333-333333333333',
