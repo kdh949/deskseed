@@ -13,29 +13,6 @@ import {
   SeedStatusBadge,
 } from './SeedSurfaces'
 
-function DrawerCatalog() {
-  const [open, setOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  return (
-    <div className="seed-story-stack">
-      <SeedButton onClick={() => setOpen(true)} ref={triggerRef}>
-        컨텍스트 열기
-      </SeedButton>
-      <SeedDrawer
-        description="고객, 관련 티켓과 외부 참조를 확인합니다."
-        onClose={() => setOpen(false)}
-        open={open}
-        returnFocusRef={triggerRef}
-        title="티켓 컨텍스트"
-      >
-        <SeedContextCard title="고객">
-          <strong>Jennifer Ward</strong>
-        </SeedContextCard>
-      </SeedDrawer>
-    </div>
-  )
-}
-
 function SurfaceCatalog() {
   return (
     <div className="seed-story-stack">
@@ -74,7 +51,35 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const StatusSlaNoticeContext: Story = {}
+export const StatusSlaNoticeContext: Story = {
+  render: function SurfaceCatalog() {
+    return (
+      <div className="seed-story-stack">
+        <div className="seed-story-row">
+          <SeedStatusBadge tone="positive">처리 중</SeedStatusBadge>
+          <SeedStatusBadge tone="warning">고객 답변 대기</SeedStatusBadge>
+          <SeedStatusBadge tone="danger">SLA 위반</SeedStatusBadge>
+        </div>
+        <SeedSlaMeter
+          detail="2시간 14분 남음"
+          label="최초 답변 SLA"
+          percent={48}
+        />
+        <SeedNotice
+          title="저장 충돌"
+          tone="warning"
+          action={<SeedButton>최신 내용 비교</SeedButton>}
+        >
+          다른 탭에서 같은 필드가 변경되었습니다.
+        </SeedNotice>
+        <SeedContextCard title="고객">
+          <strong>Jennifer Ward</strong>
+          <p>jennifer.ward@example.com</p>
+        </SeedContextCard>
+      </div>
+    )
+  },
+}
 export const Loading: Story = { render: () => <SeedSkeletonRows /> }
 export const Empty: Story = {
   render: () => (
@@ -109,7 +114,28 @@ export const Conflict: Story = {
   ),
 }
 export const Drawer: Story = {
-  render: () => <DrawerCatalog />,
+  render: function DrawerCatalog() {
+    const [open, setOpen] = useState(false)
+    const triggerRef = useRef<HTMLButtonElement>(null)
+    return (
+      <div className="seed-story-stack">
+        <SeedButton onClick={() => setOpen(true)} ref={triggerRef}>
+          컨텍스트 열기
+        </SeedButton>
+        <SeedDrawer
+          description="고객, 관련 티켓과 외부 참조를 확인합니다."
+          onClose={() => setOpen(false)}
+          open={open}
+          returnFocusRef={triggerRef}
+          title="티켓 컨텍스트"
+        >
+          <SeedContextCard title="고객">
+            <strong>Jennifer Ward</strong>
+          </SeedContextCard>
+        </SeedDrawer>
+      </div>
+    )
+  },
   play: async ({ canvas }) => {
     const trigger = canvas.getByRole('button', { name: '컨텍스트 열기' })
     await userEvent.click(trigger)

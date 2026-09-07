@@ -1428,6 +1428,31 @@ async function checkedBody(response: Response): Promise<unknown> {
   return successfulResponseBody(response)
 }
 
+/** Feature clients share the same session, CSRF and actor-snapshot boundary. */
+export async function requestStaffResource<T>(
+  path: `/api/v1/${'admin' | 'agent'}/${string}`,
+  decode: (body: unknown) => T | undefined,
+  command?: {
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+    body?: unknown
+    version?: number
+  },
+): Promise<T> {
+  const response = command
+    ? await unsafeStaffFetch(
+        path,
+        command.method,
+        command.body,
+        command.version === undefined
+          ? {}
+          : { 'If-Match': `"${command.version}"` },
+      )
+    : await staffFetch(path)
+  const decoded = decode(await checkedBody(response))
+  if (decoded === undefined) throw malformedSuccess(response)
+  return decoded
+}
+
 async function checkedEmpty(response: Response): Promise<void> {
   if (response.ok) return
   throw failure(response, decodeProblem(await readJson(response)))

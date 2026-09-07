@@ -2,6 +2,7 @@ import type { StorybookConfig } from '@storybook/react-vite'
 
 const config: StorybookConfig = {
   stories: [
+    '../src/extensions/ticket-configuration/**/*.stories.tsx',
     '../src/design-system/foundations/CanonicalFoundations.stories.tsx',
     '../src/design-system/primitives/SeedCore.stories.tsx',
     '../src/design-system/components/SeedSurfaces.stories.tsx',
