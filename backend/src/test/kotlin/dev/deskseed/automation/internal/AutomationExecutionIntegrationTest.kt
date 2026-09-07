@@ -13,6 +13,7 @@ import java.util.UUID
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 @dev.deskseed.testsupport.category.IntegrationTest
 class AutomationExecutionIntegrationTest {
+    @Autowired private lateinit var administration: dev.deskseed.automation.AutomationDefinitionAdministration
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var scanner: AutomationCandidateScanner
     @Autowired private lateinit var store: AutomationCandidateStore
@@ -74,6 +75,15 @@ class AutomationExecutionIntegrationTest {
                 "from automation_candidates candidate join automation_executions execution on execution.candidate_id = candidate.id",
         )).containsEntry("status", "SUCCEEDED").containsEntry("attempt_count", 1)
             .containsEntry("outcome", "CLOSED").containsEntry("ticket_audit_id", audit["id"])
+        val history = administration.history(policy, dev.deskseed.automation.AutomationDefinitionActor(
+            UUID.randomUUID(), "관리자", true, setOf(dev.deskseed.organization.StaffAuthorityCatalog.AUTOMATION_MANAGE),
+            dev.deskseed.foundation.RequestSource.ADMIN_UI, "history-test", "history-test",
+        ))
+        assertThat(history.executions.single().ticketNumber).isEqualTo(60_001)
+        assertThat(history.executions.single().outcome).isEqualTo("CLOSED")
+        assertThat(history.executions.single().auditId).isEqualTo(audit["id"])
+        assertThat(history.candidates.single().status).isEqualTo("SUCCEEDED")
+        assertThat(history.candidates.single().eligibleAt).isEqualTo(solvedAt.plusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.MICROS))
         assertThat(worker.runOnce("automation-test-worker")).isFalse()
         assertThat(jdbc.queryForObject(
             "select count(*) from ticket_audits where ticket_id = ? and actor_type = 'AUTOMATION'",

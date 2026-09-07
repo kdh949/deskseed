@@ -7959,6 +7959,67 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503':
           $ref: '#/components/responses/Problem'
+  /api/v1/admin/automations/{automationId}/versions/{version}:
+    get:
+      summary: 시간 자동화의 저장된 정책 버전 조회
+      description: 선택한 불변 버전의 이름과 해결 경과 분을 현재 aggregateVersion 및 활성 버전과 함께 반환합니다. 과거 정책을 검토하고 다시 활성화할 때 사용합니다.
+      operationId: getAutomationVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-002
+      tags:
+      - Admin Automations
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AutomationId'
+      - $ref: '#/components/parameters/AutomationVersion'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 요청 버전의 정책과 현재 정의 메타데이터를 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/automations/{automationId}/history:
+    get:
+      summary: 시간 자동화의 버전·활성화·실행·후보 이력 조회
+      description: 최근 버전 20개와 활성화·실행·후보 각각 최대 50개를 반환합니다. 후보에서 재시도와 실패를 확인하며 티켓 본문과 고객 정보는 포함하지 않습니다.
+      operationId: getAutomationHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-002
+      tags:
+      - Admin Automations
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AutomationId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 권한을 확인한 관리자의 정책 운영 이력입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/admin/automations/{automationId}/versions:
     post:
       summary: 자동 종료 정책 버전 추가
@@ -18098,6 +18159,157 @@ components:
           description: status와 solvedAt만 읽어 eligibility를 계산할 샘플 티켓 번호입니다.
       example:
         ticketNumber: 1042
+    AutomationHistory:
+      type: object
+      additionalProperties: false
+      required:
+      - versions
+      - activations
+      - executions
+      - candidates
+      properties:
+        versions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/AutomationVersionSummary'
+          description: 최근 작성한 정책 버전 순서입니다.
+        activations:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AutomationActivationSummary'
+          description: 새 후보 발견에 적용할 버전의 활성 상태 변경 이력입니다.
+        executions:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AutomationExecutionSummary'
+          description: 원자적으로 commit된 후보 처리 결과입니다.
+        candidates:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AutomationCandidateSummary'
+          description: 최근 발견된 후보의 현재 재시도·종료 상태입니다.
+    AutomationVersionSummary:
+      type: object
+      required:
+      - version
+      - name
+      - solvedAgeMinutes
+      - createdByDisplay
+      - createdAt
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        solvedAgeMinutes:
+          type: integer
+          minimum: 1
+          maximum: 525600
+        createdByDisplay:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AutomationActivationSummary:
+      type: object
+      required:
+      - version
+      - state
+      - actorDisplay
+      - occurredAt
+      properties:
+        version:
+          type: integer
+        state:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+        actorDisplay:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    AutomationExecutionSummary:
+      type: object
+      required:
+      - id
+      - version
+      - ticketNumber
+      - outcome
+      - completedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        ticketNumber:
+          type: integer
+          format: int64
+        outcome:
+          type: string
+          enum:
+          - CLOSED
+          - SKIPPED_STATE_CHANGED
+          - FAILED
+        auditId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        errorCode:
+          type:
+          - string
+          - 'null'
+        completedAt:
+          type: string
+          format: date-time
+    AutomationCandidateSummary:
+      type: object
+      required:
+      - id
+      - version
+      - ticketNumber
+      - status
+      - attemptCount
+      - eligibleAt
+      - discoveredAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        ticketNumber:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+          - PENDING
+          - LEASED
+          - SUCCEEDED
+          - SKIPPED
+          - RETRY_SCHEDULED
+          - DEAD_LETTERED
+        attemptCount:
+          type: integer
+        lastErrorCode:
+          type:
+          - string
+          - 'null'
+        eligibleAt:
+          type: string
+          format: date-time
+        discoveredAt:
+          type: string
+          format: date-time
     AutomationDefinition:
       type: object
       additionalProperties: false
