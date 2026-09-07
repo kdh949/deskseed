@@ -105,6 +105,7 @@ paths:
         파일 격리·검사를 끝낸 뒤 최종 transaction에서 같은 UUID의 Customer와 Ticket을 함께 생성합니다. 이메일·신뢰된 실제 client 주소·전체 요청 수에는 PostgreSQL 고정
         창 제한을 적용하고 제한 버킷에는 원문 이메일/IP를 저장하지 않습니다.
       operationId: createCustomerRequest
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
       security:
@@ -125,7 +126,8 @@ paths:
       x-deskseed-ticket-audit-events:
       - TICKET_CREATED
       - COMMENT_CREATED
-      - ATTACHMENT_ADDED
+      - ATTACHMENT_LINKED
+      - TICKET_CONFIGURATION_UPDATED
       x-deskseed-security-audit-events:
       - CUSTOMER_CONSENT_ACCEPTED
       x-deskseed-idempotency:
@@ -5109,6 +5111,7 @@ paths:
         반환합니다. staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가
         모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
       operationId: getCustomerTicketFormProjection
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-CFG-011
       - REQ-CFG-014
@@ -5165,6 +5168,7 @@ paths:
         definition은 존재를 누출하지 않는 validation 또는 unavailable problem으로 처리합니다. 이 preview is not an authorization token이며 문의 생성
         transaction은 current form/version, visibility, editability, requiredness, type과 option을 다시 검증합니다.
       operationId: projectCustomerTicketForm
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-CFG-014
       x-deskseed-side-effects: NONE

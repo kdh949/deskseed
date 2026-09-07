@@ -80,6 +80,7 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/registration-verifications").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/access-mode").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/ticket-forms").permitAll()
+                it.requestMatchers(HttpMethod.POST, "/api/v1/customer/ticket-form-projections").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/consent-policies").permitAll()
                 it.requestMatchers("/api/v1/customer/**").hasRole("CUSTOMER")
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()

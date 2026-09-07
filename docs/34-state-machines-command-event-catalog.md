@@ -214,6 +214,7 @@ Policy mutation and `CUSTOMER_CONSENT_POLICY_*` audit commit or roll back togeth
 contains policy ID/key/context/version/checksum and excludes the canonical document body.
 `CUSTOMER_CONSENT_ACCEPTED` records policy/version/context, actor/source, request/correlation, and
 account/ticket linkage only; acceptance time is server-owned and the policy body is not duplicated.
+Initial request consent targets `TICKET` with CUSTOMER actor and commits with the acceptance, customer, ticket and command receipt. Exact replay appends neither a second acceptance nor a second consent event. A form binding appends one bounded `TICKET_CONFIGURATION_UPDATED` event to the initial ticket audit, with field keys but no raw values.
 
 `GrantStaffAuditAuthority`와 `RevokeStaffAuditAuthority`는 ADMIN actor만 실행하며,
 `AUDIT_SEARCH_QUERY_REVEAL`, `AUDIT_EXPORT`, `AUDIT_PROJECTION_REBUILD`만 허용한다.

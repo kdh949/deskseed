@@ -571,3 +571,10 @@ setting_change_audits (canonical audit ledger와 연결)
 - customer deletion은 legal/business policy에 따라 pseudonymization과 ticket retention을 분리한다.
 - attachment object storage lifecycle와 DB metadata를 일치시킨다.
 - backup에서 삭제가 언제 반영되는지 운영 문서에 적는다.
+
+### Customer request form runtime (V87)
+
+- `ticket_form_versions.customer_field_snapshot_json` holds published customer field/option identity, type, validation and order. Labels/descriptions are read from current catalog copy. Pre-existing versions are backfilled from the migration-time catalog under the immutable-version guard; this does not reconstruct historical semantics.
+- `ticket_customer_form_bindings` links one initial ticket to a specific immutable form version, including forms with no custom values. Typed values remain in `ticket_custom_field_values`.
+- `customer_request_command_receipts` uses purpose-separated HMAC command/payload digests and a ticket reference; it excludes raw command ID, body and access token. `(expires_at)` supports bounded expiry cleanup. Seven-day logical replay is scoped to customer identity or anonymous destination and compares ordered server attachment manifests. Keep the configured fingerprint key stable for the replay horizon.
+- Form withdrawal/publication and final request binding serialize through one PostgreSQL advisory catalog lock. No external network I/O is performed under this lock or the final ticket transaction.

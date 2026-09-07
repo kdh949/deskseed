@@ -74,6 +74,14 @@ export function CustomerRequestCreatePage() {
 
   return (
     <CustomerRequestForm
+      customer={
+        session.status === 'authenticated' && session.customer
+          ? {
+              name: session.customer.displayName ?? '고객',
+              email: session.customer.email,
+            }
+          : undefined
+      }
       onSubmitted={(submitted) => {
         storeRequestAccessToken(
           window.sessionStorage,

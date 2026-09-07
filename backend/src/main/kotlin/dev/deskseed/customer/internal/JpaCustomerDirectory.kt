@@ -19,7 +19,7 @@ internal class JpaCustomerDirectory(
     private val clock: Clock,
 ) : CustomerDirectory {
     @Transactional
-    override fun createUnverified(name: String, email: String): CustomerRef {
+    override fun createUnverified(name: String, email: String, plannedId: UUID): CustomerRef {
         val cleanName = name.trim()
         val displayEmail = email.trim()
         val normalizedEmail = displayEmail.lowercase(Locale.ROOT)
@@ -27,7 +27,7 @@ internal class JpaCustomerDirectory(
 
         val customer = repository.saveAndFlush(
             CustomerEntity(
-                id = UUID.randomUUID(),
+                id = plannedId,
                 name = cleanName,
                 emailNormalized = normalizedEmail,
                 emailDisplay = displayEmail,

@@ -63,6 +63,7 @@ data class SubmitPublicRequestCommand(
     val subject: String,
     val message: String,
     val attachmentIds: Set<UUID> = emptySet(),
+    val formValues: CustomerRequestFormValues = CustomerRequestFormValues(),
     val actor: ActorRef,
     val context: CommandContext,
 )

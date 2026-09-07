@@ -20,7 +20,7 @@
 | 4 knowledge | 문서 계층·초안·검토·발행 관리 → 상담 중 권한 필터 검색·문서 참조 삽입 | REQ-KB-001/002/004; ACC-006/007, FILE-002, UI-002/004 | immutable revision, audience, 권한 거부, 공개 링크 적합성, 실패 시 안전한 상태 |
 | 5 automation | 생성/변경 trigger와 조건·액션 확장 → 관리자 dry-run·활성화 → 시간 자동화 설정 | REQ-AUT-001/002; AUT-001~009, ARCH-002/003 | 정상 ticket command, mutation+audit 원자성, outbox, 순서·루프·재시도, dry-run 무변경 |
 
-각 행은 기능군이다. 설정은 관리자 편집과 고객/상담사 runtime 연결로 나누어 PR을 구성한다. 현재 stack은 관리자 설정 → 협업 → 매크로 → 지식 → 고객/상담사 설정 → 자동화 순서로 쌓는다. 행 안에서도 사용자 흐름별로 커밋하며, 계약·구현·회귀 테스트·추적 문서는 해당 커밋에 포함한다. 계획 승인을 다시 기다리지 않고 모호한 구현 선택은 기존 Accepted 계약과 최소 변경 원칙으로 결정한다.
+각 행은 기능군이다. 설정은 관리자 편집과 고객/상담사 runtime 연결로 나누어 PR을 구성한다. 현재 stack은 관리자 설정 → 협업 → 매크로 → 지식 → 고객 문의 접수 → 상담사 설정/태그·상태/View → 자동화 순서로 쌓는다. 행 안에서도 사용자 흐름별로 커밋하며, 계약·구현·회귀 테스트·추적 문서는 해당 커밋에 포함한다. 계획 승인을 다시 기다리지 않고 모호한 구현 선택은 기존 Accepted 계약과 최소 변경 원칙으로 결정한다.
 
 ## Actor, data, and failure boundaries
 
@@ -93,3 +93,7 @@
 관리자 분류/초안/검토/발행과 상담 지식 검색·읽기·링크 삽입을 연결했다. 기존 문서 형식과 PostgreSQL 검색·required audit를 사용한다. 섹션 목록과 검토/공개 중지 문서의 초안 복귀만 API에 추가했다. 상담 링크 삽입은 현재 초안을 보존하고 문서 audience를 서버에서 재확인한다.
 
 Passed: 관리자 knowledge 통합 5, API 계약 5, architecture 1, staff unit 214, Storybook MCP 전체 99/99 및 a11y, typecheck/build/lint/boundaries/docs. 1280/390/320px 가로 넘침 없음 및 모바일 육안 확인. 실제 백엔드 browser E2E, 운영 부하, 배포는 Not run.
+
+### Slice 5: 조건부 폼을 통한 고객 접수
+
+고객 폼 후보값 판정부터 최종 typed 값·동의·첨부 저장과 안전한 재시도를 구현했다. 고객 UI는 서버의 표시/필수/읽기 전용 판정과 발행 버전을 사용한다. 상세 경계와 검증은 `2026-09-08-ticket-form-runtime.md`에 기록했다. 상담사 설정·태그·상태·View는 다음 PR로 분리한다.

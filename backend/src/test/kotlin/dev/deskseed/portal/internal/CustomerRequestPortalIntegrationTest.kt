@@ -115,7 +115,7 @@ class CustomerRequestPortalIntegrationTest {
                 .cookie(session.cookie)
                 .header("X-CSRF-TOKEN", csrf(session.cookie))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(requestJson("spoofed@example.com", "인증 고객 문의")),
+                .content(requestJson(null, "인증 고객 문의")),
         )
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.ticketNumber").isNumber)
@@ -970,8 +970,8 @@ class CustomerRequestPortalIntegrationTest {
                 .content(
                     objectMapper.writeValueAsString(
                         mapOf(
-                            "name" to "익명 고객",
-                            "email" to email,
+                            "clientCommandId" to UUID.randomUUID(), "fieldValues" to emptyMap<String, Any>(), "acceptedPolicies" to emptyList<Any>(),
+                            "requester" to mapOf("name" to "익명 고객", "email" to email),
                             "subject" to subject,
                             "message" to "최초 공개 문의입니다.",
                         ),
@@ -988,19 +988,19 @@ class CustomerRequestPortalIntegrationTest {
                 .cookie(session.cookie)
                 .header("X-CSRF-TOKEN", csrf(session.cookie))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(requestJson("spoofed@example.com", subject)),
+                .content(requestJson(null, subject)),
         ).andExpect(status().isCreated).andReturn().response.contentAsString
         val json = objectMapper.readTree(response)
         return AnonymousRequestFixture(json.get("ticketNumber").asLong(), json.get("accessToken").asText())
     }
 
-    private fun requestJson(email: String, subject: String): String = objectMapper.writeValueAsString(
+    private fun requestJson(email: String?, subject: String): String = objectMapper.writeValueAsString(
         mapOf(
-            "name" to "익명 고객",
-            "email" to email,
+            "clientCommandId" to UUID.randomUUID(), "fieldValues" to emptyMap<String, Any>(), "acceptedPolicies" to emptyList<Any>(),
+            "requester" to email?.let { mapOf("name" to "익명 고객", "email" to it) },
             "subject" to subject,
             "message" to "최초 공개 문의입니다.",
-        ),
+        ).filterValues { it != null },
     )
 
     private fun claimOwnershipForFixture(ticketNumber: Long, customerId: UUID) {

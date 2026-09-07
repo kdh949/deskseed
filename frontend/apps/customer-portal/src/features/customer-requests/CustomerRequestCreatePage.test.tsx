@@ -85,6 +85,22 @@ describe('CustomerRequestCreatePage', () => {
     const accessToken = 'a'.repeat(43)
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      if (url.includes('/api/v1/customer/ticket-forms'))
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              type: '/problems/customer-ticket-form-unavailable',
+            }),
+            { status: 404 },
+          ),
+        )
+      if (url.includes('/api/v1/customer/consent-policies'))
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ context: 'REQUEST_SUBMISSION', policies: [] }),
+            { status: 200 },
+          ),
+        )
       if (url.endsWith('/api/v1/customer/access-mode')) {
         return Promise.resolve(
           new Response(JSON.stringify({ mode: 'ANONYMOUS_ALLOWED' }), {
@@ -98,6 +114,7 @@ describe('CustomerRequestCreatePage', () => {
           new Response(
             JSON.stringify({
               ticketNumber: 1042,
+              replayed: false,
               status: 'NEW',
               accessToken,
               createdAt: '2026-08-15T00:00:00Z',
@@ -134,12 +151,14 @@ describe('CustomerRequestCreatePage', () => {
     expect(createCall?.[1]).toMatchObject({
       credentials: 'include',
       referrerPolicy: 'no-referrer',
-      body: JSON.stringify({
-        name: '김민아',
-        email: 'mina@example.test',
-        subject: '결제 확인 요청',
-        message: '결제 승인 내역을 확인해 주세요.',
-      }),
+    })
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+      clientCommandId: expect.any(String),
+      requester: { name: '김민아', email: 'mina@example.test' },
+      subject: '결제 확인 요청',
+      message: '결제 승인 내역을 확인해 주세요.',
+      fieldValues: {},
+      acceptedPolicies: [],
     })
     expect(String(createCall?.[0])).not.toContain(accessToken)
   })

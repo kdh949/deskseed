@@ -78,6 +78,7 @@ paths:
         파일 격리·검사를 끝낸 뒤 최종 transaction에서 같은 UUID의 Customer와 Ticket을 함께 생성합니다. 이메일·신뢰된 실제 client 주소·전체
         요청 수에는 PostgreSQL 고정 창 제한을 적용하고 제한 버킷에는 원문 이메일/IP를 저장하지 않습니다.'
       operationId: createCustomerRequest
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
       security:
@@ -95,7 +96,7 @@ paths:
       - REQ-CFG-014
       x-deskseed-audit-failure: FAIL_CLOSED
       x-deskseed-ticket-audit: ONE_TICKET_AUDIT_WITH_ORDERED_EVENTS
-      x-deskseed-ticket-audit-events: [TICKET_CREATED, COMMENT_CREATED, ATTACHMENT_ADDED]
+      x-deskseed-ticket-audit-events: [TICKET_CREATED, COMMENT_CREATED, ATTACHMENT_LINKED, TICKET_CONFIGURATION_UPDATED]
       x-deskseed-security-audit-events: [CUSTOMER_CONSENT_ACCEPTED]
       x-deskseed-idempotency:
         identity: CLIENT_COMMAND_ID
