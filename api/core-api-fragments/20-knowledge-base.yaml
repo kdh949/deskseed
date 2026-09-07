@@ -183,6 +183,21 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeCategoryPatch' } } } }
       responses: { '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KnowledgeCategory' } } } }, '400': { $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest' }, '403': { $ref: '#/components/responses/ProblemResponse' }, '404': { $ref: '#/components/responses/ProblemResponse' }, '409': { $ref: '#/components/responses/StaffSessionActorMismatchOrConflict' }, '412': { $ref: '#/components/responses/ProblemResponse' }, '503': { $ref: '#/components/responses/ProblemResponse' } }
   /api/v1/admin/knowledge/sections:
+    get:
+      operationId: listKnowledgeSections
+      summary: 관리자 지식 섹션 목록
+      description: 관리자 권한과 조회 감사를 확인하고 비활성 섹션을 포함한 분류별 표시 순서 목록을 반환합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-KB-001]
+      tags: [Knowledge Base]
+      security: [{ staffSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/ExpectedStaffActorHeader' }]
+      responses:
+        '200': {description: 관리자 섹션 목록입니다., content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/KnowledgeSection'}}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/ProblemResponse'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '503': {$ref: '#/components/responses/ProblemResponse'}
     post:
       operationId: createKnowledgeSection
       summary: 관리자 knowledge section 생성
@@ -275,7 +290,7 @@ paths:
     post:
       operationId: transitionKnowledgeArticleLifecycle
       summary: 관리자 knowledge article lifecycle action
-      description: action은 submit-review, publish, unpublish, archive 중 하나입니다. If-Match이 맞을 때 revision pointer, lifecycle, search document와 admin audit을 하나의 transaction에서 전환합니다.
+      description: action은 submit-review, publish, unpublish, archive, return-to-draft 중 하나입니다. return-to-draft는 검토 중 또는 공개 중지 문서를 초안으로 되돌리며 발행 중인 문서는 먼저 공개 중지해야 합니다. If-Match이 맞을 때 revision pointer, lifecycle, search document와 admin audit을 하나의 transaction에서 전환합니다.
       x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-KB-001, REQ-KB-003, REQ-KB-004]
       tags: [Knowledge Base]
@@ -330,7 +345,7 @@ components:
     KnowledgeArticleAudienceFilter: { name: audience, in: query, required: false, description: 관리자 목록에서 반환할 article audience type만 선택합니다., schema: { type: string, enum: [PUBLIC, SIGNED_IN_CUSTOMER, STAFF, SELECTED_STAFF_GROUPS] } }
     IfMatch: { name: If-Match, in: header, required: true, description: resource version에 대한 HTTP precondition입니다., schema: { type: string, minLength: 3, maxLength: 160 } }
     IfNoneMatch: { name: If-None-Match, in: header, required: false, description: previously received article ETag입니다., schema: { type: string, minLength: 3, maxLength: 160 } }
-    KnowledgeLifecycleAction: { name: action, in: path, required: true, description: explicit article lifecycle transition입니다., schema: { type: string, enum: [submit-review, publish, unpublish, archive] } }
+    KnowledgeLifecycleAction: { name: action, in: path, required: true, description: explicit article lifecycle transition입니다., schema: { type: string, enum: [submit-review, publish, unpublish, archive, return-to-draft] } }
   responses:
     ProblemResponse: { description: RFC 9457 problem response 형식입니다., content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
     KnowledgeCacheableResponse:

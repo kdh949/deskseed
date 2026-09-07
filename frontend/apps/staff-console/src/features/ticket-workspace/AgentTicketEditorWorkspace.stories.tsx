@@ -4,6 +4,10 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { mswHandlers } from '../../../.storybook/msw-handlers'
 import type { AgentTicketDetail } from '../../api/types'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
+import {
+  article as knowledgeArticle,
+  revision as knowledgeRevision,
+} from '../../extensions/knowledge-workflow/fixtures'
 
 const staffId = '11111111-1111-4111-8111-111111111111'
 
@@ -828,5 +832,65 @@ export const ExternalReferencesError: Story = {
     await expect(await within(drawer).findByRole('alert')).toHaveTextContent(
       /외부 참조를 불러오지 못했습니다/,
     )
+  },
+}
+
+export const InsertKnowledgeLinkPreservesReply: Story = {
+  parameters: {
+    msw: {
+      handlers: workspaceHandlers(
+        http.post('/api/v1/agent/knowledge/search', () =>
+          HttpResponse.json({
+            items: [
+              {
+                articleSlug: 'refund-guide',
+                title: '환불 처리 안내',
+                excerpt: '환불 절차',
+                audience: 'PUBLIC',
+                categoryTitle: '결제',
+                sectionTitle: '환불',
+              },
+            ],
+            nextCursor: null,
+          }),
+        ),
+        http.get('/api/v1/agent/knowledge/articles/refund-guide', () =>
+          HttpResponse.json({
+            ...knowledgeArticle,
+            lifecycle: 'PUBLISHED',
+            currentPublishedRevision: knowledgeRevision,
+          }),
+        ),
+      ),
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    const reply = await canvas.findByRole('textbox', { name: '공개 답변 내용' })
+    await userEvent.type(reply, '기존 답변을 이어서 작성합니다.')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
+    )
+    const context = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    await userEvent.click(
+      within(context).getByRole('button', { name: '문서 검색 열기' }),
+    )
+    const panel = within(
+      await canvas.findByRole('dialog', { name: '지식 문서 검색' }),
+    )
+    await userEvent.type(panel.getByLabelText(/지식 검색어/), '환불')
+    await userEvent.click(panel.getByRole('button', { name: '지식 검색' }))
+    await userEvent.click(
+      await panel.findByRole('button', { name: '읽기: 환불 처리 안내' }),
+    )
+    await userEvent.click(
+      await panel.findByRole('button', { name: '현재 답변에 링크 삽입' }),
+    )
+    await panel.findByText('공개 답변 초안에 문서 링크를 넣었습니다.')
+    await userEvent.keyboard('{Escape}')
+    await userEvent.keyboard('{Escape}')
+    await expect(reply).toHaveTextContent('기존 답변을 이어서 작성합니다.')
+    await expect(
+      within(reply).getByRole('link', { name: '환불 처리 안내' }),
+    ).toHaveAttribute('href', `${window.location.origin}/articles/refund-guide`)
   },
 }

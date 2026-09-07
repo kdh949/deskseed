@@ -28,6 +28,7 @@ import {
   uploadAgentAttachment,
 } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
+import { TicketKnowledge } from '../../extensions/knowledge-workflow/AgentKnowledgePanel'
 import {
   SeedAvatar,
   SeedButton,
@@ -131,6 +132,37 @@ function WritableWorkspace({
         extensionAccess={extensionAccess}
         onRefresh={() => void editor.refreshEditor()}
         properties={<EditableProperties detail={detail} editor={editor} />}
+        knowledge={
+          <TicketKnowledge
+            ticketNumber={detail.ticket.ticketNumber}
+            mode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
+            disabled={editor.submitting}
+            onInsert={(title, url) => {
+              const mode = detail.ticket.isChild ? 'INTERNAL' : editor.mode
+              editor.updateRichDraft(
+                mode,
+                {
+                  type: 'doc',
+                  content: [
+                    ...editor.documents[mode].content,
+                    {
+                      type: 'paragraph',
+                      content: [
+                        {
+                          type: 'text',
+                          text: title,
+                          marks: [{ type: 'link', attrs: { href: url } }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                [editor.comments[mode], title].filter(Boolean).join('\n'),
+              )
+            }}
+          />
+        }
+
         refreshLatest={refreshLatest}
         conversation={
           <div className="seed-workspace-column">
@@ -231,7 +263,9 @@ function WorkspaceFrame({
   properties,
   conversation,
   refreshLatest,
+  knowledge,
 }: {
+  knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
   onRefresh: () => void
@@ -262,6 +296,11 @@ function WorkspaceFrame({
       detail={detail}
       extensionAccess={extensionAccess}
       externalReferences={externalReferences}
+      knowledge={
+        knowledge ?? (
+          <TicketKnowledge ticketNumber={detail.ticket.ticketNumber} />
+        )
+      }
     />
   )
   return (
@@ -1104,7 +1143,9 @@ function TicketContext({
   detail,
   extensionAccess,
   externalReferences,
+  knowledge,
 }: {
+  knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
   externalReferences: ReturnType<typeof useExternalReferences>
@@ -1127,6 +1168,7 @@ function TicketContext({
     }))
   return (
     <div className="seed-context-stack">
+      {knowledge}
       <SeedContextCard title="고객">
         {detail.context.customer ? (
           <div className="seed-context-person">

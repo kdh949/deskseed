@@ -107,6 +107,12 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.categoryId").value(categoryId.toString()))
             .andReturn().response.contentAsString.uuidField("id")
 
+        mockMvc.perform(get("/api/v1/admin/knowledge/sections").session(browser.session)
+            .header("X-Deskseed-Expected-Staff-Id", adminId.toString()))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(sectionId.toString()))
+            .andExpect(jsonPath("$[0].categoryId").value(categoryId.toString()))
+
         val articleId = postJson(
             browser,
             adminId,
@@ -184,6 +190,19 @@ class AdminKnowledgeIntegrationTest {
             assertThat(event).containsEntry("visibility", "INTERNAL")
                 .doesNotContainValue("카드 결제가 거절될 때")
         }
+        fun lifecycle(action: String, version: Int) = mockMvc.perform(
+            post("/api/v1/admin/knowledge/articles/{articleId}/{action}", articleId, action)
+                .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId.toString())
+                .header("X-CSRF-TOKEN", browser.csrfToken).header("If-Match", "\"$version\""),
+        )
+        lifecycle("return-to-draft", 3).andExpect(status().isBadRequest)
+        lifecycle("unpublish", 3).andExpect(status().isOk)
+        lifecycle("return-to-draft", 3).andExpect(status().isPreconditionFailed)
+        lifecycle("return-to-draft", 4).andExpect(status().isOk)
+            .andExpect(jsonPath("$.lifecycle").value("DRAFT"))
+        lifecycle("submit-review", 5).andExpect(status().isOk)
+        lifecycle("return-to-draft", 6).andExpect(status().isOk)
+            .andExpect(jsonPath("$.currentPublishedRevision").doesNotExist())
     }
 
     @Test
