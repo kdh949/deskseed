@@ -263,9 +263,11 @@ export const ConflictPreservesDraft: Story = {
     await userEvent.click(
       canvas.getByRole('button', { name: '최신 상태 확인 (입력 유지)' }),
     )
-    await expect(await canvas.findByRole('status')).toHaveTextContent(
-      '최신 상태를 확인했습니다.',
-    )
+    await expect(
+      await canvas.findByText(
+        '최신 상태를 확인했습니다. 현재 입력과 버전을 비교하세요.',
+      ),
+    ).toBeVisible()
     await expect(canvas.getByLabelText(/트리거 이름/)).toHaveValue(
       '수정 중인 재답변 규칙',
     )
