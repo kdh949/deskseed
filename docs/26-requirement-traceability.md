@@ -70,7 +70,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TKT-009 | 상담사가 고객 문의 없이 직접 티켓을 생성할 수 있다(`/agent/tickets/new`). 검색으로 찾은 기존 고객을 `customerId`로 재사용하거나, 생성 시점에 활성 그룹/구성원(`GET /api/v1/agent/assignment-options`)을 지정할 수 있다 | IMPLEMENTATION_READY | M3 | 04, 30, 39, 55 | `AgentTicketCommandIntegrationTest`(customerId 재사용/미존재/혼합 요청 포함), `AgentTicketReadIntegrationTest`(assignment-options), `CreateAgentTicketPage.test.tsx` |
 | REQ-TKT-010 | 상태·우선순위·그룹·담당자를 관리한다 | IMPLEMENTATION_READY | M3/M4 | 01, 31, 34, 55 | transition/permission integration tests, `ticketEditorModel.test.ts`, capability-gated `AgentTicketEditorWorkspace` field command/E2E |
 | REQ-TKT-011 | 담당 상담사는 지정된 그룹의 활성 멤버여야 한다 | IMPLEMENTATION_READY | M4 | 02, 33, 34, ADR 0038 | `TransferChildTicketIntegrationTest`의 active group/member 거부·원자적 rollback 및 `OrganizationConcurrencyIntegrationTest`의 ticket assignment/group disable 공유 잠금; editor는 detail `assignmentOptions`만 선택지로 사용 |
-| REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34, 55 | `TransferChildTicketIntegrationTest`; UI는 `DEFERRED_UI`/후속 재조합 |
+| REQ-TKT-012 | 상담사 간·그룹 간 이관이 가능하다 | IMPLEMENTATION_READY | M4 | 02, 30, 34, 55 | `TransferChildTicketIntegrationTest`; `TicketCollaborationActions.stories.tsx` 단일 이관·If-Match·BACKGROUND read·version conflict 입력 보존; UI-002/004 |
 | REQ-TKT-013 | 한 번의 저장에 코멘트와 필드 변경을 함께 반영한다 | IMPLEMENTATION_READY | M3 | 04, 31, 34 | one command/one audit, `AgentTicketCommandIntegrationTest`의 exact/misuse/concurrent replay와 `AgentTicketEditorWorkspace`의 persisted command-ID retry·exact `changedFields`·comment 통합 요청/E2E |
 | REQ-TKT-014 | 서로 다른 필드는 병합하고 같은 필드 충돌은 경고한다 | IMPLEMENTATION_READY | M3 | 01, 04, 31, 34, 55 | `AgentTicketCommandIntegrationTest`, `ticketEditorModel.test.ts`, production editor conflict Storybook/E2E의 draft 보존 및 필드별 resolution |
 | REQ-TKT-015 | 충돌 시 좌측 필드 패널 상단에 빨간 배너를 보여준다 | IMPLEMENTATION_READY | M3 | 30, 31, 55 | production editor conflict region, Storybook과 headless/browser draft 보존 테스트 |
@@ -80,7 +80,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
-| REQ-CHILD-001 | 부모 티켓에서 내부 자식 티켓을 생성한다 | IMPLEMENTATION_READY | M5 | 01, 02, 30, 34 | `TransferChildTicketIntegrationTest`, V8 relation migration, component/browser/full-stack child E2E |
+| REQ-CHILD-001 | 부모 티켓에서 내부 자식 티켓을 생성한다 | IMPLEMENTATION_READY | M5 | 01, 02, 30, 34 | `TransferChildTicketIntegrationTest`, V8 relation migration, component/browser/full-stack child E2E; context extension의 내부 협업 요청과 동일 command/payload 재시도 Storybook 검증 |
 | REQ-CHILD-002 | 자식 티켓은 고객에게 완전히 숨겨진다 | IMPLEMENTATION_READY | M5 | 01, 33, 37 | child PUBLIC command 원자적 거부, INTERNAL-only production editor/Storybook, 고객 API shape·DOM·parent token child-number 404 통합/full-stack E2E |
 | REQ-CHILD-003 | 부모 소유권은 최초 상담사·그룹에 유지된다 | IMPLEMENTATION_READY | M5 | 02, 34 | transfer-vs-child ownership 비교 통합 테스트와 full-stack selected-group 회귀 |
 | REQ-CHILD-004 | 자식 담당자는 부모 대화 전체를 읽을 수 있다 | IMPLEMENTATION_READY | M5 | 30, 33 | `AgentTicketReadAuthorizationPolicyTest`의 relation grant seam; launch `ALL_TICKETS` 중복 grant 및 parent write 비승격 통합 테스트 |

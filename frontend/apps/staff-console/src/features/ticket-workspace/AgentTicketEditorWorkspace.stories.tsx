@@ -559,6 +559,42 @@ export const ChildTicket: Story = {
   },
 }
 
+export const AllCollaborationRequests: Story = {
+  args: {
+    detail: {
+      ...detail,
+      ticket: { ...detail.ticket, openChildCount: 5 },
+      context: {
+        ...detail.context,
+        children: Array.from({ length: 5 }, (_, index) => ({
+          ...detail.ticket,
+          ticketNumber: 4001 + index,
+          subject: `결제 검토 ${index + 1}`,
+          isChild: true,
+        })),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
+    )
+    const context = within(
+      await canvas.findByRole('dialog', { name: '티켓 컨텍스트' }),
+    )
+    await expect(
+      await context.findByText('진행 중인 내부 협업 요청 5건'),
+    ).toBeVisible()
+    await expect(
+      context.queryByRole('link', { name: '#4005' }),
+    ).not.toBeInTheDocument()
+    await userEvent.click(
+      context.getByRole('button', { name: /관련 티켓 .*건 모두 보기/ }),
+    )
+    await expect(context.getByRole('link', { name: '#4005' })).toBeVisible()
+  },
+}
+
 export const ReadOnlyRefreshFailure: Story = {
   args: {
     detail: { ...detail, capabilities: ['READ'] },
