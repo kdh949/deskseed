@@ -520,15 +520,28 @@ export const InternalDraft: Story = {
       ),
     },
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       canvas.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
     )
     const editor = await canvas.findByRole('textbox', {
       name: '내부 메모 내용',
     })
-    await userEvent.type(editor, '직원 전용 확인 사항입니다.')
+    await userEvent.click(editor)
+    await userEvent.paste('직원 전용 확인 사항입니다.')
     await expect(editor).toHaveTextContent('직원 전용 확인 사항입니다.')
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }),
+    )
+    await expect(
+      await canvas.findByRole('textbox', { name: '공개 답변 내용' }),
+    ).not.toHaveTextContent('직원 전용 확인 사항입니다.')
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+    await expect(
+      await canvas.findByRole('textbox', { name: '내부 메모 내용' }),
+    ).toHaveTextContent('직원 전용 확인 사항입니다.')
   },
 }
 
