@@ -167,7 +167,13 @@ data class MacroDefinitionView(
     val updatedAt: Instant,
 )
 
+data class MacroVersionSummary(val version: Int, val name: String, val createdByDisplay: String, val createdAt: Instant)
+data class MacroActivationSummary(val version: Int, val state: String, val actorDisplay: String, val occurredAt: Instant)
+data class MacroHistory(val versions: List<MacroVersionSummary>, val activations: List<MacroActivationSummary>)
+
 interface MacroDefinitionAdministration {
+    fun history(scope: MacroScope, macroId: UUID, actor: MacroDefinitionActor): MacroHistory
+
     fun listAccessible(actor: MacroDefinitionActor): List<MacroDefinitionView>
 
     fun getActive(macroId: UUID, actor: MacroDefinitionActor): MacroDefinitionView

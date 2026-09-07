@@ -81,3 +81,9 @@
 - No API, migration, server authorization, audit, retention or external I/O changes. Customer projection continues to exclude child tickets. Deployment, browser-to-live-backend end-to-end and performance measurement were not run for this slice.
 
 - Final collaboration validation: full staff Storybook MCP 81/81 PASS; six PostgreSQL transfer/child integration tests PASS; documentation/design-system boundary checks PASS.
+
+### Slice 3: 매크로 관리
+
+- 개인/공유 매크로 목록, 문구/공개 범위/상태/우선순위 편집, 저장 미리보기, 명시적 활성/비활성, 버전/활성 이력 조회를 연결했다.
+- 기존 고급 typed action은 순서와 내용을 보존하며 기존 티켓 preview/apply를 재사용한다.
+- 이력 GET만 additive하게 추가하고 DB/migration/infrastructure 변경 없이 기존 immutable rows를 소비한다.

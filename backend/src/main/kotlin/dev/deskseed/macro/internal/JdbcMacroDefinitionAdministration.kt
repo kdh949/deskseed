@@ -5,6 +5,9 @@ import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.macro.MacroActionDefinition
+import dev.deskseed.macro.MacroHistory
+import dev.deskseed.macro.MacroVersionSummary
+import dev.deskseed.macro.MacroActivationSummary
 import dev.deskseed.macro.MacroActionType
 import dev.deskseed.macro.MacroAddTagAction
 import dev.deskseed.macro.MacroAssigneeAction
@@ -50,6 +53,26 @@ internal class JdbcMacroDefinitionAdministration(
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
 ) : MacroDefinitionAdministration {
+    @Transactional(readOnly = true)
+    override fun history(scope: MacroScope, macroId: UUID, actor: MacroDefinitionActor): MacroHistory {
+        requireScopeAccess(scope, actor)
+        val current = stateById(macroId)
+        if (current.scope != scope) throw MacroNotFoundException()
+        requireManaged(current, actor)
+        return MacroHistory(
+            versions = jdbc.query(
+                "select version, name, created_by_display, created_at from macro_versions where macro_id = ? order by version desc limit 100",
+                { rs, _ -> MacroVersionSummary(rs.getInt("version"), rs.getString("name"), rs.getString("created_by_display"), rs.getTimestamp("created_at").toInstant()) },
+                macroId,
+            ),
+            activations = jdbc.query(
+                "select macro_version, activation_state, actor_display, occurred_at from macro_activations where macro_id = ? order by occurred_at desc, id desc limit 100",
+                { rs, _ -> MacroActivationSummary(rs.getInt("macro_version"), rs.getString("activation_state"), rs.getString("actor_display"), rs.getTimestamp("occurred_at").toInstant()) },
+                macroId,
+            ),
+        )
+    }
+
     @Transactional(readOnly = true)
     override fun listAccessible(actor: MacroDefinitionActor): List<MacroDefinitionView> = jdbc.query(
         """

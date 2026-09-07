@@ -6961,6 +6961,66 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/agent/personal-macros/{macroId}/history:
+    get:
+      summary: 매크로 버전 및 활성화 이력 조회
+      description: 해당 관리 범위의 소유권 또는 공유 매크로 관리 권한을 검사하고 최근 버전 및 활성 변경을 각각 최대 100건 반환합니다. 요청 식별자와 감사 내부 메타데이터는 포함하지 않습니다.
+      operationId: getPersonalMacroHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-003
+      tags:
+      - Agent Macros
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/MacroId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 최근 버전 및 활성화 이력입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MacroHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/shared-macros/{macroId}/history:
+    get:
+      summary: 매크로 버전 및 활성화 이력 조회
+      description: 해당 관리 범위의 소유권 또는 공유 매크로 관리 권한을 검사하고 최근 버전 및 활성 변경을 각각 최대 100건 반환합니다. 요청 식별자와 감사 내부 메타데이터는 포함하지 않습니다.
+      operationId: getSharedMacroHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-003
+      tags:
+      - Admin Shared Macros
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/MacroId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 최근 버전 및 활성화 이력입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MacroHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/macros:
     get:
       summary: 적용 가능한 macro 목록 조회
@@ -17109,6 +17169,68 @@ components:
           - string
           - 'null'
           maxLength: 512
+    MacroHistory:
+      type: object
+      additionalProperties: false
+      required:
+      - versions
+      - activations
+      properties:
+        versions:
+          type: array
+          maxItems: 100
+          description: 최근 버전부터 정렬된 저장 이력입니다.
+          items:
+            type: object
+            required:
+            - version
+            - name
+            - createdByDisplay
+            - createdAt
+            properties:
+              version:
+                type: integer
+                minimum: 1
+                description: 저장된 불변 버전 번호입니다.
+              name:
+                type: string
+                description: 해당 버전에 저장된 매크로 이름입니다.
+              createdByDisplay:
+                type: string
+                description: 버전을 저장한 직원의 당시 표시 이름입니다.
+              createdAt:
+                type: string
+                format: date-time
+                description: 버전 저장 시각입니다.
+        activations:
+          type: array
+          maxItems: 100
+          description: 최근 변경부터 정렬된 활성화 및 비활성화 이력입니다.
+          items:
+            type: object
+            required:
+            - version
+            - state
+            - actorDisplay
+            - occurredAt
+            properties:
+              version:
+                type: integer
+                minimum: 1
+                description: 활성 변경 대상인 불변 버전입니다.
+              state:
+                type: string
+                enum:
+                - ACTIVE
+                - INACTIVE
+                description: 변경 후 활성 상태입니다.
+              actorDisplay:
+                type: string
+                description: 활성 상태를 변경한 직원의 당시 표시 이름입니다.
+              occurredAt:
+                type: string
+                format: date-time
+                description: 활성 상태 변경 시각입니다.
     MacroDefinitionRequest:
       type: object
       description: 소유 범위 안의 불변 macro version에 저장할 이름과 순서 보존 typed action 정의입니다.
