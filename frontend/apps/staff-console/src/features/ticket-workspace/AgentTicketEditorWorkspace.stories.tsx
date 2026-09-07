@@ -866,7 +866,9 @@ export const InsertKnowledgeLinkPreservesReply: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     const reply = await canvas.findByRole('textbox', { name: '공개 답변 내용' })
-    await userEvent.type(reply, '기존 답변을 이어서 작성합니다.')
+    await userEvent.click(reply)
+    await userEvent.paste('기존 답변을 이어서 작성합니다.')
+    await expect(reply).toHaveTextContent('기존 답변을 이어서 작성합니다.')
     await userEvent.click(
       canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
     )

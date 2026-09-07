@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
-import { expect, fn, userEvent } from 'storybook/test'
+import { expect, fn, userEvent, waitFor } from 'storybook/test'
 import { AgentKnowledgePanel } from './AgentKnowledgePanel'
 import { article, revision } from './fixtures'
 const published = {
@@ -45,9 +45,11 @@ export const SearchReadInsert: Story = {
     await userEvent.click(
       await canvas.findByRole('button', { name: '현재 답변에 링크 삽입' }),
     )
-    await expect(args.onInsert).toHaveBeenCalledWith(
-      '환불 처리 안내',
-      `${window.location.origin}/articles/refund-guide`,
+    await waitFor(() =>
+      expect(args.onInsert).toHaveBeenCalledWith(
+        '환불 처리 안내',
+        `${window.location.origin}/articles/refund-guide`,
+      ),
     )
     await expect(
       await canvas.findByText('공개 답변 초안에 문서 링크를 넣었습니다.'),
@@ -148,8 +150,10 @@ export const AccessChangesBeforeInsertion: Story = {
     await userEvent.click(
       await canvas.findByRole('button', { name: '현재 답변에 링크 삽입' }),
     )
-    await expect(await canvas.findByRole('status')).toHaveTextContent(
-      '직원 전용 문서는 내부 메모에만 삽입할 수 있습니다.',
+    await waitFor(() =>
+      expect(canvas.getByRole('status')).toHaveTextContent(
+        '직원 전용 문서는 내부 메모에만 삽입할 수 있습니다.',
+      ),
     )
     await expect(args.onInsert).not.toHaveBeenCalled()
   },
