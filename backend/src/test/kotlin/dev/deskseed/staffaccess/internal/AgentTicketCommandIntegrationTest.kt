@@ -275,6 +275,9 @@ class AgentTicketCommandIntegrationTest {
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.fieldValues['payment.reference'].shortTextValue").value("customer-payment-reference-secret"))
             .andExpect(jsonPath("$.customStatus.id").value(statusId.toString()))
+            .andExpect(jsonPath("$.writable").value(true))
+            .andExpect(jsonPath("$.form.fields[0].machineKey").value("payment.reference"))
+            .andExpect(jsonPath("$.availableTags[0].id").value(tagId.toString()))
         assertThat(jdbcTemplate.queryForList(
             "select action from access_audit_events where resource_id = ? order by occurred_at, id",
             String::class.java,
@@ -357,7 +360,7 @@ class AgentTicketCommandIntegrationTest {
         val openStatusId = UUID.randomUUID()
         val pendingStatusId = UUID.randomUUID()
         val definitionJson =
-            """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"statusCategory","equals":"PENDING"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]},{"id":"${UUID.randomUUID()}","priority":20,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"customStatusId","equals":"$pendingStatusId"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]}],"allowedCustomStatusIds":["$openStatusId","$pendingStatusId"]}"""
+            """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":true}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"statusCategory","equals":"PENDING"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]},{"id":"${UUID.randomUUID()}","priority":20,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"customStatusId","equals":"$pendingStatusId"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]}],"allowedCustomStatusIds":["$openStatusId","$pendingStatusId"]}"""
 
         jdbcTemplate.update(
             """
@@ -418,6 +421,27 @@ class AgentTicketCommandIntegrationTest {
             openStatusId,
             created.ticketId,
         )
+        mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "missing-required-field", "\"0\"",
+            """{"formId":"$formId","formVersion":1,"fieldValues":{},"clientCommandId":"${UUID.randomUUID()}"}"""))
+            .andExpect(status().isBadRequest)
+        mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "wrong-form-identity", "\"0\"",
+            """{"formId":"${UUID.randomUUID()}","formVersion":1,"fieldValues":{"refund.reason":{"shortTextValue":"환불 확인"}},"clientCommandId":"${UUID.randomUUID()}"}"""))
+            .andExpect(status().isBadRequest)
+        val auditCountBeforeProjection = jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, created.ticketId)
+        mockMvc.perform(post("/api/v1/agent/tickets/{ticketNumber}/configuration/projection", created.ticketNumber)
+            .session(browser.session).header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"fieldValues":{},"customStatusId":"$pendingStatusId"}"""))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.form.formId").value(formId.toString()))
+            .andExpect(jsonPath("$.form.fields[0].visible").value(false))
+            .andExpect(jsonPath("$.form.fields[0].editable").value(false))
+            .andExpect(header().string("Cache-Control", "no-store"))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, created.ticketId)).isEqualTo(auditCountBeforeProjection)
+        assertThat(jdbcTemplate.queryForMap("select status, version from tickets where id = ?", created.ticketId)).containsEntry("status", "OPEN").containsEntry("version", 0L)
+        mockMvc.perform(post("/api/v1/agent/tickets/{ticketNumber}/configuration/projection", created.ticketNumber)
+            .session(browser.session).header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"fieldValues":{"unknown.staff.key":{"shortTextValue":"secret"}}}"""))
+            .andExpect(status().isBadRequest)
         mockMvc.perform(
             configurationCommandRequest(
                 browser,

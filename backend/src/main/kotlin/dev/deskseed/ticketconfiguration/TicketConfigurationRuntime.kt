@@ -6,6 +6,7 @@ import java.math.BigDecimal
 import java.util.UUID
 
 /** Server-authorized projection boundary for agent reads; it exposes no JDBC entities. */
+@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 data class TicketConfigurationRuntimeValue(
     val booleanValue: Boolean? = null,
     val numberValue: BigDecimal? = null,
@@ -21,6 +22,10 @@ data class TicketConfigurationRuntimeValues(
     val tags: List<TicketTagDefinitionView>,
     val statusCategory: TicketStatus,
     val customStatus: CustomTicketStatusView?,
+    val form: AgentTicketFormProjection? = null,
+    val availableTags: List<AgentConfigurationChoice> = emptyList(),
+    val availableStatuses: List<AgentConfigurationChoice> = emptyList(),
+    val writable: Boolean = false,
 )
 
 data class TicketConfigurationDescriptorView(
@@ -30,6 +35,15 @@ data class TicketConfigurationDescriptorView(
     val sensitive: Boolean,
 )
 
+data class AgentConfigurationChoice(val id: UUID, val label: String)
+data class AgentTicketFormField(
+    val id: UUID, val machineKey: String, val type: TicketCustomFieldType,
+    val label: String, val description: String?, val validation: TicketFieldValidation,
+    val visible: Boolean, val editable: Boolean, val required: Boolean,
+    val options: List<AgentConfigurationChoice>,
+)
+data class AgentTicketFormProjection(val formId: UUID, val formVersion: Int, val fields: List<AgentTicketFormField>)
+
 interface TicketConfigurationRuntimeQuery {
     fun listAgentDescriptors(): List<TicketConfigurationDescriptorView>
 
@@ -38,6 +52,8 @@ interface TicketConfigurationRuntimeQuery {
         ticketNumber: Long,
         version: Long,
         status: TicketStatus,
+        candidates: Map<String, dev.deskseed.ticketing.TicketConfigurationFieldValue> = emptyMap(),
+        customStatusId: UUID? = null,
     ): TicketConfigurationRuntimeValues
 }
 

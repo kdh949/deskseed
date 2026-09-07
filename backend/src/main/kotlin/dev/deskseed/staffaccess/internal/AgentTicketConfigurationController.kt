@@ -20,6 +20,7 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
@@ -48,6 +49,19 @@ internal class AgentTicketConfigurationController(
         @AuthenticationPrincipal principal: StaffPrincipal,
         @PathVariable @Positive ticketNumber: Long,
         request: HttpServletRequest,
+    ): ResponseEntity<TicketConfigurationRuntimeValues> = configuration(principal, ticketNumber, request)
+
+    @PostMapping("/tickets/{ticketNumber}/configuration/projection")
+    fun project(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @PathVariable @Positive ticketNumber: Long,
+        @Valid @RequestBody body: ProjectAgentTicketConfigurationRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<TicketConfigurationRuntimeValues> = configuration(principal, ticketNumber, request,
+        body.fieldValues.mapValues { it.value.toCommandValue() }, body.customStatusId)
+
+    private fun configuration(principal: StaffPrincipal, ticketNumber: Long, request: HttpServletRequest,
+        candidates: Map<String, TicketConfigurationFieldValue> = emptyMap(), customStatusId: UUID? = null,
     ): ResponseEntity<TicketConfigurationRuntimeValues> {
         val workspace = ticketReadApplicationService.readTicket(
             principal = principal,
@@ -68,7 +82,7 @@ internal class AgentTicketConfigurationController(
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())
             .eTag(ticket.version.toString())
-            .body(runtimeQuery.readAgentConfiguration(ticket.id, ticket.ticketNumber, ticket.version, ticket.status))
+            .body(runtimeQuery.readAgentConfiguration(ticket.id, ticket.ticketNumber, ticket.version, ticket.status, candidates, customStatusId).copy(writable = "UPDATE" in workspace.capabilities && ticket.status != dev.deskseed.ticketing.TicketStatus.CLOSED))
     }
 
     @PutMapping("/tickets/{ticketNumber}/configuration")
@@ -79,6 +93,7 @@ internal class AgentTicketConfigurationController(
         @Valid @RequestBody body: UpdateTicketConfigurationRequest,
         request: HttpServletRequest,
     ): ResponseEntity<TicketConfigurationCommandResponse> {
+        if (body.formId != null && body.formVersion == null) throw TicketCommandInvalidException("formId requires formVersion")
         val expectedVersion = expectedVersion(ifMatch)
         if (body.addTagIds.size != body.addTagIds.toSet().size || body.removeTagIds.size != body.removeTagIds.toSet().size) {
             throw TicketCommandInvalidException("Tag ID collections must be unique")
@@ -92,6 +107,7 @@ internal class AgentTicketConfigurationController(
             input = UpdateTicketConfigurationInput(
                 expectedVersion = expectedVersion,
                 formVersion = body.formVersion,
+                formId = body.formId,
                 fieldValues = body.fieldValues.mapValues { (_, value) -> value.toCommandValue() },
                 addTagIds = body.addTagIds.toSet(),
                 removeTagIds = body.removeTagIds.toSet(),
@@ -109,6 +125,7 @@ internal class AgentTicketConfigurationController(
 }
 
 internal data class UpdateTicketConfigurationRequest(
+    val formId: UUID? = null,
     @field:Positive val formVersion: Int? = null,
     @field:Size(max = 100) @field:Valid val fieldValues: Map<String, TicketConfigurationFieldValueRequest> = emptyMap(),
     @field:Size(max = 50) val addTagIds: List<UUID> = emptyList(),
@@ -142,4 +159,9 @@ internal data class TicketConfigurationCommandResponse(
     val version: Long,
     val auditId: UUID,
     val replayed: Boolean,
+)
+
+internal data class ProjectAgentTicketConfigurationRequest(
+    @field:Size(max = 100) @field:Valid val fieldValues: Map<String, TicketConfigurationFieldValueRequest> = emptyMap(),
+    val customStatusId: UUID? = null,
 )

@@ -97,3 +97,7 @@ Passed: 관리자 knowledge 통합 5, API 계약 5, architecture 1, staff unit 2
 ### Slice 5: 조건부 폼을 통한 고객 접수
 
 고객 폼 후보값 판정부터 최종 typed 값·동의·첨부 저장과 안전한 재시도를 구현했다. 고객 UI는 서버의 표시/필수/읽기 전용 판정과 발행 버전을 사용한다. 상세 경계와 검증은 `2026-09-08-ticket-form-runtime.md`에 기록했다. 상담사 설정·태그·상태·View는 다음 PR로 분리한다.
+
+### Slice 6: 상담사 필드·태그·상태 운영
+
+서버 후보 판정과 상담사 configuration drawer, 관리자 태그/상태 CRUD를 연결했다. 폼 ID/버전 확인과 원래 command identity 유지로 입력 충돌·재시도를 처리한다. `2026-09-08-agent-ticket-configuration.md`에 검증 경계 기록. View 조건과 자동화는 아직 후속이다.

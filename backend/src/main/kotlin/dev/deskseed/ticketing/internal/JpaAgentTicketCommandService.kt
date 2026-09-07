@@ -618,6 +618,7 @@ internal class AgentTicketCommandTransaction(
                 ticketKind = ticket.kind,
                 currentStatus = oldStatus,
                 formVersion = command.formVersion,
+                formId = command.formId,
                 fieldValues = command.fieldValues,
                 addTagIds = command.addTagIds,
                 removeTagIds = command.removeTagIds,
@@ -1585,7 +1586,7 @@ internal class AgentTicketCommandTransaction(
             "addTagIds" to command.addTagIds.map(UUID::toString).sorted(),
             "removeTagIds" to command.removeTagIds.map(UUID::toString).sorted(),
             "customStatusId" to command.customStatusId?.toString(),
-        ),
+        ).apply { command.formId?.let { put("formId", it.toString()) } },
     )
 
     private fun macroRequestDescriptor(command: ApplyMacroTicketCommand): String = objectMapper.writeValueAsString(
