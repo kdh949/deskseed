@@ -124,7 +124,7 @@ class TriggerDefinitionIntegrationTest {
     }
 
     @Test
-    fun `trigger definitions and dry runs reject the unimplemented ticket updated event`() {
+    fun `trigger definitions accept updated events and dry run preserves distinct created boundary`() {
         val admin = browser("ADMIN")
         val groupId = activeGroup("지원하지 않는 이벤트 그룹")
         val updatedEventDefinition = triggerJson("업데이트 이벤트 규칙", 20, groupId)
@@ -134,11 +134,11 @@ class TriggerDefinitionIntegrationTest {
             post("/api/v1/admin/triggers")
                 .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
                 .content(updatedEventDefinition),
-        ).andExpect(status().isBadRequest)
+        ).andExpect(status().isCreated)
         assertThat(jdbc.queryForObject(
             "select count(*) from trigger_definitions where normalized_name = '업데이트 이벤트 규칙'",
             Long::class.java,
-        )).isZero()
+        )).isEqualTo(1L)
 
         val ticketJson = createUrgentTicket(admin, "unsupported-trigger-event@example.com", "지원하지 않는 이벤트", status().isCreated)
         val ticketNumber = longField(ticketJson, "ticketNumber")
@@ -153,7 +153,7 @@ class TriggerDefinitionIntegrationTest {
             post("/api/v1/admin/triggers/{triggerId}/versions/{version}/dry-run", triggerId, 1)
                 .session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
                 .content("""{"ticketNumber":$ticketNumber,"eventType":"TICKET_UPDATED"}"""),
-        ).andExpect(status().isBadRequest)
+        ).andExpect(status().isOk).andExpect(jsonPath("$.matched").value(false))
     }
 
     @Test

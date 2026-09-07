@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
@@ -27,6 +28,7 @@ class TriggerExecutionIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbc: JdbcTemplate
     @Autowired private lateinit var worker: TriggerEvaluationWorker
+    @Autowired private lateinit var customerPortal: dev.deskseed.ticketing.CustomerTicketPortal
     @Autowired private lateinit var webhookOutboxWorker: WebhookEventOutboxWorker
 
     @BeforeEach
@@ -159,7 +161,7 @@ class TriggerExecutionIntegrationTest {
         repeat(5) { attempt ->
             if (attempt > 0) {
                 jdbc.update(
-                    "update trigger_evaluation_jobs set available_at = now() where ticket_number = ? and status = 'RETRY_SCHEDULED'",
+                    "update trigger_evaluation_jobs set available_at = now() - interval '1 second' where ticket_number = ? and status = 'RETRY_SCHEDULED'",
                     ticketNumber,
                 )
             }
@@ -217,6 +219,88 @@ class TriggerExecutionIntegrationTest {
             "select count(*) from ticket_audits where actor_type = 'TRIGGER'",
             Long::class.java,
         )).isZero()
+    }
+
+    @Test
+    fun `updated trigger combines tag form and final assignment atomically without recursive root or replay`() {
+        val admin = browser()
+        val ticketNumber = createUrgentTicket(admin, "updated-rules@example.com", "태그와 폼 규칙")
+        val ticketId = jdbc.queryForObject("select id from tickets where ticket_number = ?", UUID::class.java, ticketNumber)!!
+        val group = activeGroup("재답변 전담 그룹")
+        val assignee = jdbc.queryForObject("select id from staff_accounts limit 1", UUID::class.java)!!
+        jdbc.update("insert into group_memberships (id,group_id,staff_id,status,created_at,updated_at) values (?,?,?,'ACTIVE',now(),now())", UUID.randomUUID(), group, assignee)
+        val tag = UUID.randomUUID()
+        jdbc.update("insert into ticket_tag_definitions (id,normalized_value,label,created_at,updated_at) values (?,?,'환불',now(),now())", tag, "refund-$tag")
+        jdbc.update("insert into ticket_tag_assignments values (?,?,now())", ticketId, tag)
+        val form = UUID.randomUUID()
+        jdbc.update("insert into ticket_forms (id,name,lifecycle,draft_definition_json,created_at,updated_at) values (?,'환불 접수','DRAFT','{}',now(),now())", form)
+        jdbc.update("insert into ticket_form_versions (form_id,version,definition_json,published_by_staff_id,published_by_display,published_at) values (?,1,'{}',?,'관리자',now())", form, assignee)
+        jdbc.update("insert into ticket_customer_form_bindings values (?,?,1,now())", ticketId, form)
+        val rule = createAndActivate(admin, """{"name":"환불 재분류","position":1,"conditions":[{"group":"ALL","field":"EVENT","operator":"IS","value":"TICKET_UPDATED"},{"group":"ALL","field":"TAG","operator":"IS","value":"$tag"},{"group":"ALL","field":"FORM","operator":"IS","value":"$form"},{"group":"ALL","field":"ASSIGNEE","operator":"NOT_PRESENT"}],"actions":[{"type":"SET_ASSIGNEE","assigneeId":"$assignee"},{"type":"SET_PRIORITY","priority":"HIGH"},{"type":"SET_GROUP","groupId":"$group"}]}""")
+        mockMvc.perform(post("/api/v1/admin/triggers/$rule/versions/1/dry-run").session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON).content("""{"ticketNumber":$ticketNumber,"eventType":"TICKET_UPDATED"}""")).andExpect(status().isOk).andExpect(jsonPath("$.matched").value(true)).andExpect(jsonPath("$.invariantFailures.length()").value(0))
+        val command = """{"expectedVersion":0,"clientCommandId":"${UUID.randomUUID()}","changedFields":["priority"],"priority":"NORMAL"}"""
+        fun update() = mockMvc.perform(post("/api/v1/agent/tickets/$ticketNumber/commands").session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON).content(command))
+        val original = update().andExpect(status().isOk).andReturn().response.contentAsString
+        assertThat(worker.runOnce("updated-test")).isTrue()
+        assertThat(jdbc.queryForMap("select group_id,assignee_id,priority,version from tickets where id = ?", ticketId)).containsEntry("group_id", group).containsEntry("assignee_id", assignee).containsEntry("priority", "HIGH").containsEntry("version", 2L)
+        update().andExpect(status().isOk).andExpect(jsonPath("$.auditId").value(stringField(original, "auditId")))
+        assertThat(jdbc.queryForObject("select count(*) from trigger_evaluation_jobs where ticket_id = ?", Long::class.java, ticketId)).isEqualTo(1L)
+        assertThat(worker.runOnce("updated-test")).isFalse()
+        mockMvc.perform(get("/api/v1/admin/triggers/$rule/history").session(admin.session)).andExpect(status().isOk).andExpect(jsonPath("$.versions[0].version").value(1)).andExpect(jsonPath("$.executions[0].outcome").value("MATCHED")).andExpect(jsonPath("$.jobs[0].status").value("SUCCEEDED"))
+        mockMvc.perform(get("/api/v1/admin/triggers/$rule/versions/1").session(admin.session)).andExpect(status().isOk).andExpect(jsonPath("$.actions[0].type").value("SET_ASSIGNEE"))
+        mockMvc.perform(get("/api/v1/admin/triggers/$rule/history")).andExpect(status().isUnauthorized)
+        assertThat(jdbc.queryForList("select event.event_type from ticket_audit_events event join ticket_audits audit on audit.id = event.audit_id where audit.ticket_id = ? and audit.actor_type = 'TRIGGER' order by event.event_order", String::class.java, ticketId)).containsExactly("TRIGGER_APPLIED", "GROUP_CHANGED", "ASSIGNEE_CHANGED", "PRIORITY_CHANGED")
+    }
+
+    @Test
+    fun `customer reply emits one durable root and group alert reaches only active members with trigger actor`() {
+        val admin = browser()
+        val ticketNumber = createUrgentTicket(admin, "reply-alert@example.com", "재답변 알림")
+        val ticketId = jdbc.queryForObject("select id from tickets where ticket_number = ?", UUID::class.java, ticketNumber)!!
+        val requesterId = jdbc.queryForObject("select requester_id from tickets where id = ?", UUID::class.java, ticketId)!!
+        jdbc.update("update tickets set kind = 'CUSTOMER_REQUEST' where id = ?", ticketId)
+        jdbc.update("update customers set verified_at = now() where id = ?", requesterId)
+        val group = activeGroup("미배정 알림 그룹")
+        val recipient = jdbc.queryForObject("select id from staff_accounts limit 1", UUID::class.java)!!
+        jdbc.update("insert into group_memberships (id,group_id,staff_id,status,created_at,updated_at) values (?,?,?,'ACTIVE',now(),now())", UUID.randomUUID(), group, recipient)
+        val outsider = browser()
+        val inactiveMember = browser()
+        val auditor = browser()
+        jdbc.update("update staff_accounts set status = 'DISABLED' where id = ?", inactiveMember.staffId)
+        jdbc.update("update staff_accounts set role = 'SECURITY_AUDITOR' where id = ?", auditor.staffId)
+        for (staff in listOf(inactiveMember.staffId, auditor.staffId)) jdbc.update("insert into group_memberships (id,group_id,staff_id,status,created_at,updated_at) values (?,?,?,'ACTIVE',now(),now())", UUID.randomUUID(), group, staff)
+        createAndActivate(admin, """{"name":"미배정 재답변 알림","position":1,"conditions":[{"group":"ALL","field":"EVENT","operator":"IS","value":"CUSTOMER_REPLIED"},{"group":"ALL","field":"ASSIGNEE","operator":"NOT_PRESENT"}],"actions":[{"type":"SET_GROUP","groupId":"$group"},{"type":"NOTIFY_UNASSIGNED_GROUP"}]}""")
+        val id = UUID.randomUUID().toString()
+        val command = dev.deskseed.ticketing.CustomerFollowUpCommand(ticketNumber, requesterId, "reply-alert@example.com", "추가 문의 내용", clientCommandId = id, context = dev.deskseed.foundation.CommandContext(dev.deskseed.foundation.RequestSource.CUSTOMER_PORTAL, "reply-alert", "reply-alert", id))
+        customerPortal.addFollowUp(command)
+        assertThat(customerPortal.addFollowUp(command).replayed).isTrue()
+        assertThat(jdbc.queryForList("select event_type from trigger_evaluation_jobs where ticket_id = ?", String::class.java, ticketId)).containsExactly("CUSTOMER_REPLIED")
+        assertThat(worker.runOnce("reply-alert-test")).isTrue()
+        assertThat(jdbc.queryForObject("select count(*) from staff_notifications", Long::class.java)).isEqualTo(1L)
+        mockMvc.perform(get("/api/v1/agent/notifications").session(admin.session)).andExpect(status().isOk).andExpect(jsonPath("$.items[0].type").value("UNASSIGNED_TICKET_ALERT")).andExpect(jsonPath("$.items[0].actor.type").value("TRIGGER")).andExpect(jsonPath("$.items[0].noteId").isEmpty)
+        mockMvc.perform(get("/api/v1/agent/notifications").session(outsider.session)).andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(0))
+        jdbc.update("update trigger_evaluation_jobs set status = 'PENDING', available_at = now(), completed_at = null where ticket_id = ?", ticketId)
+        worker.runOnce("reply-alert-test")
+        assertThat(jdbc.queryForObject("select count(*) from staff_notifications", Long::class.java)).isEqualTo(1L)
+    }
+
+    @Test
+    fun `update durable intent failure rolls ticket audit and mutation back`() {
+        val admin = browser()
+        val number = createUrgentTicket(admin, "failed-update-intent@example.com", "원자적 변경")
+        val group = activeGroup("업데이트 그룹")
+        createAndActivate(admin, urgentUnassignedTrigger("변경 규칙", 1, group, false).replace("TICKET_CREATED", "TICKET_UPDATED"))
+        val before = jdbc.queryForObject("select count(*) from ticket_audits", Long::class.java)
+        jdbc.execute("create or replace function reject_rule_update_job() returns trigger language plpgsql as 'begin raise exception ''injected job failure''; end;'")
+        jdbc.execute("create trigger reject_rule_update_job before insert on trigger_evaluation_jobs for each row execute function reject_rule_update_job()")
+        try {
+            mockMvc.perform(post("/api/v1/agent/tickets/$number/commands").session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON).content("""{"expectedVersion":0,"clientCommandId":"${UUID.randomUUID()}","changedFields":["priority"],"priority":"NORMAL"}""")).andExpect(status().is5xxServerError)
+            assertThat(jdbc.queryForObject("select priority from tickets where ticket_number = ?", String::class.java, number)).isEqualTo("URGENT")
+            assertThat(jdbc.queryForObject("select count(*) from ticket_audits", Long::class.java)).isEqualTo(before)
+        } finally {
+            jdbc.execute("drop trigger if exists reject_rule_update_job on trigger_evaluation_jobs")
+            jdbc.execute("drop function if exists reject_rule_update_job()")
+        }
     }
 
     private fun createAndActivate(browser: Browser, definition: String): UUID {
@@ -325,10 +409,10 @@ class TriggerExecutionIntegrationTest {
             post("/api/v1/agent/session").session(session).header("X-CSRF-TOKEN", token)
                 .contentType(MediaType.APPLICATION_JSON).content("""{"email":"$email","password":"$password"}"""),
         ).andExpect(status().isNoContent).andReturn()
-        return Browser(login.request.session as MockHttpSession, token)
+        return Browser(login.request.session as MockHttpSession, token, staffId)
     }
 
     private fun MockHttpServletRequestBuilder.csrf(browser: Browser) = header("X-CSRF-TOKEN", browser.csrfToken)
     private fun stringField(json: String, field: String): String = Regex("\\\"$field\\\":\\\"([^\\\"]+)\\\"").find(json)!!.groupValues[1]
-    private data class Browser(val session: MockHttpSession, val csrfToken: String)
+    private data class Browser(val session: MockHttpSession, val csrfToken: String, val staffId: UUID)
 }

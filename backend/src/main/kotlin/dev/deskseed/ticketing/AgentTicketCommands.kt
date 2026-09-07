@@ -138,6 +138,9 @@ data class ApplyTriggerTicketCommand(
     val rootTicketAuditId: UUID,
     val groupId: UUID?,
     val context: CommandContext,
+    val priority: TicketPriority? = null,
+    val setAssignee: Boolean = false,
+    val assigneeId: UUID? = null,
 )
 
 interface TriggerTicketCommandService {

@@ -7812,7 +7812,7 @@ paths:
               $ref: '#/components/schemas/TriggerDryRunRequest'
       responses:
         '200':
-          description: condition별 일치 결과와 실행 전 invariant failure를 포함하되 어떤 영속 상태도 바꾸지 않습니다.
+          description: condition별 일치 결과와 실행 전 invariant failure를 포함하되 티켓·알림·작업을 변경하지 않습니다.
           content:
             application/json:
               schema:
@@ -7825,6 +7825,72 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/triggers/{triggerId}/versions/{version}:
+    get:
+      summary: 트리거 과거 버전 조회
+      description: 선택한 불변 버전의 이름·조건·액션을 현재 활성 및 aggregate 버전과 함께 반환합니다. 과거 활성 상태를 재구성하지 않습니다.
+      operationId: getTriggerVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-001
+      tags:
+      - Admin Triggers
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/TriggerId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      responses:
+        '200':
+          description: 관리자에게 허용된 규칙 메타데이터입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/triggers/{triggerId}/history:
+    get:
+      summary: 트리거 버전·활성화·실행 이력 조회
+      description: 최근 버전 20개와 활성화·실행·작업 각각 최대 50개를 반환합니다. 실패한 실행 트랜잭션은 작업의 재시도 상태로 확인하며 본문은 포함하지 않습니다.
+      operationId: getTriggerHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-001
+      tags:
+      - Admin Triggers
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/TriggerId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 관리자에게 허용된 규칙 메타데이터입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/admin/automations:
     get:
       summary: 시간 기반 자동화 정의 목록 조회
@@ -17412,14 +17478,19 @@ components:
           format: uuid
         type:
           type: string
-          const: COLLABORATION_MENTION
+          enum:
+          - COLLABORATION_MENTION
+          - UNASSIGNED_TICKET_ALERT
         ticketNumber:
           type: integer
           format: int64
           minimum: 1
         noteId:
-          type: string
+          type:
+          - string
+          - 'null'
           format: uuid
+          description: 멘션의 내부 메모 식별자이며 미배정 자동 알림에서는 null입니다.
         actor:
           $ref: '#/components/schemas/ActorSummary'
         createdAt:
@@ -17430,7 +17501,7 @@ components:
           - string
           - 'null'
           format: date-time
-      description: note body와 customer PII 없이 안전한 ticket deep link에 필요한 식별자만 보유합니다.
+      description: 본문과 고객 PII 없이 티켓 링크를 제공합니다. 멘션 actor는 STAFF, 미배정 알림 actor는 TRIGGER와 해당 규칙 버전 이름입니다.
     AgentNotificationPage:
       type: object
       additionalProperties: false
@@ -18156,7 +18227,7 @@ components:
           type: array
           minItems: 1
           maxItems: 50
-          description: 저장 순서대로 실행하되 외부 HTTP 대신 durable public event intent만 추가하는 typed 액션입니다.
+          description: 필드 액션의 최종 상태를 한 명령으로 검증한 다음 알림과 durable public event intent를 추가합니다. 동일 액션 종류는 한 번만 허용합니다.
           items:
             $ref: '#/components/schemas/TriggerAction'
       example:
@@ -18264,12 +18335,14 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: 현재 priority와 group projection만 평가에 사용하는 샘플 티켓 번호입니다.
+          description: 현재 비민감 조건 값과 최종 배정 제약을 평가하는 샘플 티켓 번호입니다.
         eventType:
           type: string
           enum:
           - TICKET_CREATED
-          description: 현재 구현된 TICKET_CREATED 경계에서 trigger 조건을 평가합니다.
+          - TICKET_UPDATED
+          - CUSTOMER_REPLIED
+          description: 생성·변경·고객 재답변 경계에서 평가합니다. TICKET_UPDATED 조건은 CUSTOMER_REPLIED도 포함하며 자동화 자체 변경은 새 root를 만들지 않습니다.
       example:
         ticketNumber: 1042
         eventType: TICKET_CREATED
@@ -18294,7 +18367,10 @@ components:
           - EVENT
           - PRIORITY
           - GROUP
-          description: 초기 vertical slice가 읽을 수 있는 비민감 ticket/event 속성만 허용합니다.
+          - ASSIGNEE
+          - TAG
+          - FORM
+          description: 비민감 이벤트·우선순위·그룹·담당자·태그·최초 고객 접수 폼을 비교합니다.
         operator:
           type: string
           enum:
@@ -18308,7 +18384,8 @@ components:
           - string
           - 'null'
           maxLength: 120
-          description: IS 계열에는 enum 이름을 전달하고 presence 계열에서는 반드시 생략합니다.
+          description: EVENT/PRIORITY 비교에는 enum 이름
+          GROUP/ASSIGNEE/TAG/FORM 비교에는 UUID를 전달합니다. presence는 GROUP/ASSIGNEE에서만 허용하며 값은 생략합니다.: null
     TriggerAction:
       type: object
       additionalProperties: false
@@ -18319,14 +18396,34 @@ components:
           type: string
           enum:
           - SET_GROUP
+          - SET_PRIORITY
+          - SET_ASSIGNEE
+          - NOTIFY_UNASSIGNED_GROUP
           - ENQUEUE_WEBHOOK
-          description: 초기 vertical slice가 normal command 또는 outbox로 번역할 수 있는 액션만 허용합니다.
+          description: 최종 그룹·담당자·우선순위를 한 티켓 명령으로 적용하고 미배정 그룹 알림 또는 durable webhook intent를 추가합니다.
         groupId:
           type:
           - string
           - 'null'
           format: uuid
           description: SET_GROUP 활성화와 실행 시점에 모두 active group인지 재검사합니다.
+        priority:
+          type:
+          - string
+          - 'null'
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
+          - null
+          description: SET_PRIORITY 액션의 최종 우선순위입니다.
+        assigneeId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: SET_ASSIGNEE 액션의 최종 담당자이며 null은 배정 해제입니다. 최종 그룹의 활성 구성원만 배정합니다.
         eventType:
           type:
           - string
@@ -18335,6 +18432,141 @@ components:
           - ticket.trigger.executed
           - null
           description: webhook 구독자에게 전달 가능한 고정 public event type이며 임의 payload template은 받지 않습니다.
+    TriggerHistory:
+      type: object
+      required:
+      - versions
+      - activations
+      - executions
+      - jobs
+      properties:
+        versions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/TriggerVersionSummary'
+        activations:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TriggerActivationSummary'
+        executions:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TriggerExecutionSummary'
+        jobs:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TriggerJobSummary'
+    TriggerVersionSummary:
+      type: object
+      required:
+      - version
+      - name
+      - createdByDisplay
+      - createdAt
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+        createdByDisplay:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    TriggerActivationSummary:
+      type: object
+      required:
+      - version
+      - state
+      - actorDisplay
+      - occurredAt
+      properties:
+        version:
+          type: integer
+        state:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+        actorDisplay:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    TriggerExecutionSummary:
+      type: object
+      required:
+      - id
+      - version
+      - ticketNumber
+      - outcome
+      - completedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        ticketNumber:
+          type: integer
+          format: int64
+        outcome:
+          type: string
+        auditId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        errorCode:
+          type:
+          - string
+          - 'null'
+        completedAt:
+          type: string
+          format: date-time
+    TriggerJobSummary:
+      type: object
+      required:
+      - id
+      - ticketNumber
+      - eventType
+      - status
+      - attemptCount
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticketNumber:
+          type: integer
+          format: int64
+        eventType:
+          type: string
+          enum:
+          - TICKET_CREATED
+          - TICKET_UPDATED
+          - CUSTOMER_REPLIED
+        status:
+          type: string
+          enum:
+          - PENDING
+          - LEASED
+          - SUCCEEDED
+          - RETRY_SCHEDULED
+          - DEAD_LETTERED
+        attemptCount:
+          type: integer
+        lastErrorCode:
+          type:
+          - string
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
     TriggerDefinition:
       type: object
       additionalProperties: false
@@ -18430,6 +18662,9 @@ components:
             type: string
             enum:
             - SET_GROUP
+            - SET_PRIORITY
+            - SET_ASSIGNEE
+            - NOTIFY_UNASSIGNED_GROUP
             - ENQUEUE_WEBHOOK
           description: matched일 때 worker가 순서대로 시도할 typed action 종류입니다.
         invariantFailures:

@@ -877,9 +877,9 @@ export interface CreateCollaborationNoteResult {
 
 export interface AgentNotification {
   id: string
-  type: 'COLLABORATION_MENTION'
+  type: 'COLLABORATION_MENTION' | 'UNASSIGNED_TICKET_ALERT'
   ticketNumber: number
-  noteId: string
+  noteId: string | null
   actor: ActorSummary
   createdAt: string
   readAt: string | null

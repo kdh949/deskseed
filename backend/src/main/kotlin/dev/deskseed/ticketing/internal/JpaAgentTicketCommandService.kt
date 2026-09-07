@@ -985,64 +985,42 @@ internal class AgentTicketCommandTransaction(
     @Transactional
     fun applyTrigger(command: ApplyTriggerTicketCommand): TicketCommandResult {
         require(command.context.source == RequestSource.TRIGGER) { "Trigger command source is invalid" }
-        require(command.triggerVersion > 0) { "Trigger version must be positive" }
-        require(command.expectedVersion >= 0) { "expectedVersion must be non-negative" }
+        require(command.triggerVersion > 0 && command.expectedVersion >= 0)
+        require(command.setAssignee || command.assigneeId == null)
         organizationConsistencyGuard.acquire()
-        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber)
-            ?: throw AgentTicketNotFoundException()
+        val ticket = ticketRepository.findByTicketNumber(command.ticketNumber) ?: throw AgentTicketNotFoundException()
         if (ticket.version != command.expectedVersion) throw TicketVersionPreconditionFailedException(ticket.version)
         if (ticket.status == TicketStatus.CLOSED) throw TicketTransitionInvalidException("Closed tickets are immutable")
-
-        val oldGroupId = ticket.groupId
-        val targetGroupId = command.groupId ?: oldGroupId
-        if (command.groupId != null && !assignmentPolicy.isActiveGroup(command.groupId)) {
-            throw TicketAssignmentInvalidException("The trigger target group is not active")
-        }
-        if (targetGroupId != oldGroupId && ticket.assigneeId != null &&
-            (targetGroupId == null || !assignmentPolicy.isActiveMember(targetGroupId, ticket.assigneeId!!))
-        ) {
-            throw TicketAssignmentInvalidException("Trigger group change cannot retain an incompatible assignee")
-        }
-
+        val oldGroup = ticket.groupId
+        val oldAssignee = ticket.assigneeId
+        val oldPriority = ticket.priority
+        val group = command.groupId ?: oldGroup
+        val assignee = if (command.setAssignee) command.assigneeId else oldAssignee
+        val priority = command.priority ?: oldPriority
+        if (group != null && !assignmentPolicy.isActiveGroup(group)) throw TicketAssignmentInvalidException("The trigger target group is not active")
+        if (assignee != null && (group == null || !assignmentPolicy.isActiveMember(group, assignee))) throw TicketAssignmentInvalidException("The trigger assignee must be an active member of the final group")
         val now = Instant.now(clock)
-        val actionEvents = mutableListOf<NewAuditEvent>()
-        if (targetGroupId != oldGroupId) {
-            ticket.groupId = targetGroupId
-            ticket.updatedAt = now
-            ticketRepository.saveAndFlush(ticket)
-            actionEvents += referenceAuditEvent("GROUP_CHANGED", TicketField.GROUP_ID, oldGroupId, targetGroupId)
+        val events = mutableListOf<NewAuditEvent>()
+        val changedFields = mutableSetOf<String>()
+        if (group != oldGroup) {
+            ticket.groupId = group
+            events += referenceAuditEvent("GROUP_CHANGED", TicketField.GROUP_ID, oldGroup, group)
+            changedFields += TicketField.GROUP_ID.externalName
         }
-        val auditId = appendAudit(
-            ticket = ticket,
-            expectedVersion = command.expectedVersion,
-            resultVersion = ticket.version,
-            actorId = command.triggerId,
-            actorType = ActorType.TRIGGER,
-            context = command.context.toAuditContext(),
-            now = now,
-            events = listOf(NewAuditEvent(
-                type = "TRIGGER_APPLIED",
-                metadata = mapOf(
-                    "triggerId" to command.triggerId.toString(),
-                    "triggerVersion" to command.triggerVersion,
-                    "executionId" to command.executionId.toString(),
-                    "rootTicketAuditId" to command.rootTicketAuditId.toString(),
-                    "noOp" to (targetGroupId == oldGroupId),
-                ),
-                occurredAt = now,
-            )) + actionEvents,
-        )
-        if (targetGroupId != oldGroupId) {
-            ticketIntegrationEvents.ticketUpdated(
-                ticket.id,
-                ticket.ticketNumber,
-                ticket.kind,
-                setOf(TicketField.GROUP_ID.externalName),
-                ActorRef(ActorType.TRIGGER, command.triggerId),
-                command.context,
-                now,
-            )
+        if (assignee != oldAssignee) {
+            ticket.assigneeId = assignee
+            events += referenceAuditEvent("ASSIGNEE_CHANGED", TicketField.ASSIGNEE_ID, oldAssignee, assignee)
+            changedFields += TicketField.ASSIGNEE_ID.externalName
         }
+        if (priority != oldPriority) {
+            ticket.priority = priority
+            events += fieldAuditEvent("PRIORITY_CHANGED", TicketField.PRIORITY, oldPriority.name, priority.name)
+            changedFields += TicketField.PRIORITY.externalName
+        }
+        if (events.isNotEmpty()) { ticket.updatedAt = now; ticketRepository.saveAndFlush(ticket) }
+        val auditId = appendAudit(ticket, command.expectedVersion, ticket.version, command.triggerId, ActorType.TRIGGER, command.context.toAuditContext(), now,
+            listOf(NewAuditEvent(type = "TRIGGER_APPLIED", metadata = mapOf("triggerId" to command.triggerId.toString(), "triggerVersion" to command.triggerVersion, "executionId" to command.executionId.toString(), "rootTicketAuditId" to command.rootTicketAuditId.toString(), "noOp" to events.isEmpty()), occurredAt = now)) + events)
+        if (changedFields.isNotEmpty()) ticketIntegrationEvents.ticketUpdated(ticket.id, ticket.ticketNumber, ticket.kind, changedFields, ActorRef(ActorType.TRIGGER, command.triggerId), command.context, now)
         return TicketCommandResult(ticket.ticketNumber, ticket.version, auditId)
     }
 
@@ -1762,6 +1740,9 @@ internal class AgentTicketCommandTransaction(
                     )
                 },
             )
+        }
+        if (actorType == ActorType.STAFF && resultVersion > expectedVersion && events.none { it.type == "TICKET_CREATED" }) {
+            eventPublisher.publishEvent(dev.deskseed.ticketing.TicketMutationRecorded(ticket.id, ticket.ticketNumber, auditId, context.correlationId, now))
         }
         return auditId
     }
