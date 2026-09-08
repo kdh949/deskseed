@@ -40,6 +40,21 @@ internal class AdminAutomationDefinitionController(
     fun list(@AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
         administration.list(request.automationActor(principal))
 
+    @GetMapping("/{automationId}/versions/{version}")
+    fun getVersion(
+        @PathVariable automationId: UUID,
+        @PathVariable @Min(1) version: Int,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ) = administration.version(automationId, version, request.automationActor(principal))
+
+    @GetMapping("/{automationId}/history")
+    fun history(
+        @PathVariable automationId: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ) = administration.history(automationId, request.automationActor(principal))
+
     @PostMapping
     fun create(
         @Valid @RequestBody body: CreateAutomationRequest,

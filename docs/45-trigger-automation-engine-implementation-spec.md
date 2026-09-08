@@ -252,3 +252,9 @@ A single typed evaluator reads current group/assignee/priority/tag IDs and the f
 NOTIFY_UNASSIGNED_GROUP appends body-free UNASSIGNED_TICKET_ALERT notifications to active AGENT/ADMIN members of the current active group inside the same execution transaction. Identity is `(recipient, triggerExecutionId)`; actor is TRIGGER with the immutable version name. No customer API, email, or new transport is involved. The existing notification REST/read/realtime channel remains authoritative.
 
 Admin UI provides saved-version dry-run, activation, deactivation, ordered position changes, version review and recent execution/job history. History bounds are 20 versions and 50 activation/execution/job rows each; older versions can be read by explicit version number. No new query index or large-history performance claim is introduced.
+
+## 20. 시간 자동화 운영 화면
+
+`/admin/automations`는 기존 solved-age/CLOSE_TICKET 정책 생성, 새 버전 저장, 미리보기 후 활성화와 비활성화를 제공한다. `getAutomationVersion`은 선택한 정책 값과 현재 aggregate 메타데이터를 함께 반환하고 `getAutomationHistory`는 버전 20개와 활성화·실행·후보 각각 최근 50개를 제공한다. ADMIN + AUTOMATION_MANAGE + ADMIN_UI 서버 권한을 유지하며 body/customer/audit 원문은 반환하지 않는다.
+
+미리보기는 티켓 현재 상태·해결 시각·eligibleAt과 조건 일치 여부만 보여 준다. 비활성화는 새 후보 발견만 중단하며 이미 발견된 후보의 저장된 버전 처리는 기존대로 유지된다. UI는 이 동작을 표시하고 입력 변경 후 이전 미리보기로 활성화하지 않는다. 불명확한 생성 응답은 목록 확인 후 편집기를 다시 선택하도록 하며 자동 재전송하지 않는다. 신규 시간 DSL·스케줄러·migration은 없다.

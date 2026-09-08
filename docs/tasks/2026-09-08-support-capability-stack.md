@@ -59,8 +59,8 @@
 - [x] collaboration
 - [x] macros
 - [x] knowledge
-- [ ] automation
-- [ ] 전체 검증 및 Stacked PR 게시
+- [x] automation
+- [x] 로컬 전체 검증 및 Stacked PR 게시
 
 ## Slice 1a — administrator field and form operations
 
@@ -105,3 +105,27 @@ Passed: 관리자 knowledge 통합 5, API 계약 5, architecture 1, staff unit 2
 ## Slice 1d — configuration Saved Views
 
 TAG/FORM/CUSTOM_STATUS/CUSTOM_FIELD equality filters now connect customer intake and agent configuration to saved queue preview/list/counts. Details and validation: `2026-09-08-configuration-view-filters.md`.
+
+## Slice 5a/5b — event triggers and time automation
+
+티켓 변경/고객 재답변 root event와 TAG/FORM/ASSIGNEE 조건, 우선순위·담당자·미배정 그룹 알림 액션을 기존 엔진에 연결했다. 관리자 트리거 설정·버전·판정 이유·활성화·실행 이력과 시간 자동화의 solved-age 종료 정책 운영을 제공한다. 트리거와 시간 자동화는 각각 별도 PR이다. 상세 검증·호환 경계는 `2026-09-08-trigger-workflow.md`, `2026-09-08-automation-management.md`에 기록했다.
+
+마지막 로컬 검증은 staff unit 221, 전체 staff Storybook MCP 142/142와 accessibility, typecheck/build/lint/format/boundaries, docs-check PASS. 원격 CI의 최신 결과는 각 PR Checks에서 확인한다. 로컬 검증과 원격 CI, merge/deploy는 별도 상태다. 실제 백엔드 browser E2E와 운영 성능/배포 검증은 수행하지 않았다.
+
+## Published PR stack
+
+검토 순서는 #159 → #160 → #161 → #162 → #163 → #164 → #165 → #167 → #168이다. 각 PR은 직전 feature branch를 base로 삼고 첫 PR만 main을 대상으로 한다. 모든 인접 head의 Git ancestry를 확인했다.
+
+| PR | 기능 슬라이스 |
+|---|---|
+| [#159](https://github.com/kdh949/deskseed/pull/159) | 관리자 필드·조건부 폼 |
+| [#160](https://github.com/kdh949/deskseed/pull/160) | 단일 이관·내부 협업 요청 |
+| [#161](https://github.com/kdh949/deskseed/pull/161) | 개인·공유 매크로 운영 |
+| [#162](https://github.com/kdh949/deskseed/pull/162) | 지식 검토·발행·상담 링크 |
+| [#163](https://github.com/kdh949/deskseed/pull/163) | 조건부 고객 문의 접수 |
+| [#164](https://github.com/kdh949/deskseed/pull/164) | 상담사 필드·태그·상태 |
+| [#165](https://github.com/kdh949/deskseed/pull/165) | 설정 기반 Saved View 필터 |
+| [#167](https://github.com/kdh949/deskseed/pull/167) | 트리거 운영·미배정 알림 |
+| [#168](https://github.com/kdh949/deskseed/pull/168) | 시간 자동화 운영 |
+
+원래 작업 디렉터리의 두 untracked task 문서와 기존 PR #158은 변경하지 않았다. V87 고객 발행 폼 snapshot/접수 재시도 receipt와 V88 트리거/시스템 알림 확장의 호환 경계를 해당 PR에 기록했다. 범용 폼/규칙 엔진, 신규 인프라, 통계 제품, 번역 기능은 추가하지 않았다. 공유 매크로 통계, 지식 검토 기한·검색 무결과 대시보드·다국어는 위 Scope decisions의 후속 범위를 유지한다.

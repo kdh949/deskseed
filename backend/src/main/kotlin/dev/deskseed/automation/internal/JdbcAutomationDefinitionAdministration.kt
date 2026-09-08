@@ -3,6 +3,11 @@ package dev.deskseed.automation.internal
 import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
+import dev.deskseed.automation.AutomationHistory
+import dev.deskseed.automation.AutomationVersionSummary
+import dev.deskseed.automation.AutomationActivationSummary
+import dev.deskseed.automation.AutomationExecutionSummary
+import dev.deskseed.automation.AutomationCandidateSummary
 import dev.deskseed.automation.AutomationActionType
 import dev.deskseed.automation.AutomationAuditUnavailableException
 import dev.deskseed.automation.AutomationConflictException
@@ -39,6 +44,39 @@ internal class JdbcAutomationDefinitionAdministration(
         requireAccess(actor)
         return jdbc.query("$SELECT order by definition.position, definition.id limit 200", ::state)
             .map { view(it, it.currentVersion) }
+    }
+
+    @Transactional(readOnly = true)
+    override fun version(id: UUID, version: Int, actor: AutomationDefinitionActor): AutomationDefinitionView {
+        requireAccess(actor)
+        require(version > 0)
+        return view(stateById(id), version)
+    }
+
+    @Transactional(readOnly = true)
+    override fun history(id: UUID, actor: AutomationDefinitionActor): AutomationHistory {
+        requireAccess(actor)
+        stateById(id)
+        val versions = jdbc.query(
+            "select version, name, solved_age_minutes, created_by_display, created_at from automation_versions where automation_id = ? order by version desc limit 20",
+            { rs, _ -> AutomationVersionSummary(rs.getInt(1), rs.getString(2), rs.getInt(3), rs.getString(4), rs.getTimestamp(5).toInstant()) }, id,
+        )
+        val activations = jdbc.query(
+            "select automation_version, activation_state, actor_display, occurred_at from automation_activations where automation_id = ? order by occurred_at desc, id desc limit 50",
+            { rs, _ -> AutomationActivationSummary(rs.getInt(1), rs.getString(2), rs.getString(3), rs.getTimestamp(4).toInstant()) }, id,
+        )
+        val executions = jdbc.query(
+            """select execution.id, execution.automation_version, candidate.ticket_number, execution.outcome, execution.ticket_audit_id, execution.error_code, execution.completed_at
+                from automation_executions execution join automation_candidates candidate on candidate.id = execution.candidate_id
+                where execution.automation_id = ? order by execution.completed_at desc, execution.id desc limit 50""",
+            { rs, _ -> AutomationExecutionSummary(rs.getObject(1, UUID::class.java), rs.getInt(2), rs.getLong(3), rs.getString(4), rs.getObject(5, UUID::class.java), rs.getString(6), rs.getTimestamp(7).toInstant()) }, id,
+        )
+        val candidates = jdbc.query(
+            """select id, automation_version, ticket_number, status, attempt_count, last_error_code, eligible_at, discovered_at
+                from automation_candidates where automation_id = ? order by discovered_at desc, id desc limit 50""",
+            { rs, _ -> AutomationCandidateSummary(rs.getObject(1, UUID::class.java), rs.getInt(2), rs.getLong(3), rs.getString(4), rs.getInt(5), rs.getString(6), rs.getTimestamp(7).toInstant(), rs.getTimestamp(8).toInstant()) }, id,
+        )
+        return AutomationHistory(versions, activations, executions, candidates)
     }
 
     @Transactional
