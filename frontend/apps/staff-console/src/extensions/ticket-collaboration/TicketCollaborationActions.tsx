@@ -64,6 +64,11 @@ export function TicketCollaborationActions({
     retry: false,
     staleTime: 0,
   })
+  const needsOutcomeReview =
+    attempt?.mode === 'child' &&
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.problem?.type === '/problems/client-command-id-reused'
   const draft = mode === 'transfer' ? transfer : child
   const groups = details.data?.assignmentOptions.groups ?? []
   const selectedGroup = groups.find((g) => g.id === draft.groupId)
@@ -83,7 +88,15 @@ export function TicketCollaborationActions({
   }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (submitting || mustRefresh || !mode || !details.data || !writable) return
+    if (
+      submitting ||
+      mustRefresh ||
+      needsOutcomeReview ||
+      !mode ||
+      !details.data ||
+      !writable
+    )
+      return
     if (
       !attempt &&
       (!selectedGroup ||
@@ -141,12 +154,14 @@ export function TicketCollaborationActions({
       ])
     } catch (cause) {
       setError(cause)
-      // Only definite rejections permit a new command identity or changed payload.
+      // A later rejection cannot establish whether an earlier ambiguous attempt committed.
       if (
         cause instanceof ApiError &&
         cause.status >= 400 &&
         cause.status < 500 &&
-        cause.status !== 408
+        cause.status !== 408 &&
+        !attempt &&
+        cause.problem?.type !== '/problems/client-command-id-reused'
       ) {
         setAttempt(null)
         if (cause.status === 409 || cause.status === 412) setMustRefresh(true)
@@ -249,19 +264,58 @@ export function TicketCollaborationActions({
               <SeedNotice
                 tone="warning"
                 title={
-                  mustRefresh
-                    ? '최신 티켓을 확인해 주세요.'
-                    : attempt
-                      ? '저장 결과가 확인되지 않았습니다.'
-                      : '요청을 완료하지 못했습니다.'
+                  needsOutcomeReview
+                    ? '기존 협업 요청을 확인해 주세요.'
+                    : mustRefresh
+                      ? '최신 티켓을 확인해 주세요.'
+                      : attempt
+                        ? '저장 결과가 확인되지 않았습니다.'
+                        : '요청을 완료하지 못했습니다.'
                 }
               >
-                {attempt
-                  ? '입력한 요청을 그대로 다시 보내 결과를 확인합니다. 중복 티켓을 만들지 않도록 현재 입력을 유지합니다.'
-                  : error instanceof ApiError
-                    ? error.message
-                    : '입력은 유지됩니다.'}
+                {needsOutcomeReview
+                  ? '이미 처리된 요청일 수 있습니다. 관련 협업 티켓에서 요청 내용이 접수됐는지 확인한 뒤 마무리해 주세요.'
+                  : attempt
+                    ? '입력한 요청을 그대로 다시 보내 결과를 확인합니다. 중복 티켓을 만들지 않도록 현재 입력을 유지합니다.'
+                    : error instanceof ApiError
+                      ? error.message
+                      : '입력은 유지됩니다.'}
               </SeedNotice>
+            )}
+            {needsOutcomeReview && (
+              <div>
+                <SeedButton
+                  disabled={details.isFetching}
+                  onClick={() => void refresh()}
+                >
+                  관련 협업 티켓 새로고침
+                </SeedButton>
+                <ul>
+                  {details.data.context.children.map((ticket) => (
+                    <li key={ticket.ticketNumber}>
+                      <Link
+                        to={`/agent/tickets/${ticket.ticketNumber}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        #{ticket.ticketNumber} {ticket.subject}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                {details.data.context.children.length > 0 && (
+                  <SeedButton
+                    onClick={() => {
+                      setAttempt(null)
+                      setChild(EMPTY_CHILD)
+                      setError(null)
+                      setMode(null)
+                    }}
+                  >
+                    기존 협업 요청을 확인했습니다
+                  </SeedButton>
+                )}
+              </div>
             )}
             {mustRefresh && (
               <SeedButton onClick={() => void refresh()}>
@@ -361,6 +415,7 @@ export function TicketCollaborationActions({
               disabled={
                 submitting ||
                 mustRefresh ||
+                needsOutcomeReview ||
                 (!attempt &&
                   (!selectedGroup ||
                     (mode === 'transfer' && !transfer.reason.trim()) ||

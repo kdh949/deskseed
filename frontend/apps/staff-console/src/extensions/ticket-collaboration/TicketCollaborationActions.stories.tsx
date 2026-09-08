@@ -53,13 +53,6 @@ const handlers = [
     HttpResponse.json({ token: 'storybook-csrf', headerName: 'X-CSRF-TOKEN' }),
   ),
 ]
-const childResult = {
-  parentTicketNumber: 3001,
-  parentVersion: 4,
-  childTicketNumber: 3002,
-  parentAuditId: 'parent-audit',
-  childAuditId: 'child-audit',
-}
 const meta = {
   title: '07 Screens/Ticket Collaboration Actions',
   component: TicketCollaborationActions,
@@ -122,6 +115,27 @@ export const RetryChildWithoutDuplicate: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get('/api/v1/agent/tickets/3001', () =>
+          HttpResponse.json(
+            attempts.length
+              ? {
+                  ...detail,
+                  ticket: { ...detail.ticket, version: 4 },
+                  context: {
+                    ...detail.context,
+                    children: [
+                      {
+                        ...detail.ticket,
+                        ticketNumber: 3002,
+                        subject: '승인 취소 확인',
+                        isChild: true,
+                      },
+                    ],
+                  },
+                }
+              : detail,
+          ),
+        ),
         ...handlers,
         http.post(
           '/api/v1/agent/tickets/3001/children',
@@ -139,7 +153,10 @@ export const RetryChildWithoutDuplicate: Story = {
               body: '이중 승인 내역을 확인해 주세요.',
               priority: 'NORMAL',
             })
-            return HttpResponse.json(childResult)
+            return HttpResponse.json(
+              { status: 409, type: '/problems/client-command-id-reused' },
+              { status: 409 },
+            )
           },
         ),
       ],
@@ -172,8 +189,27 @@ export const RetryChildWithoutDuplicate: Story = {
       canvas.getByRole('button', { name: '같은 요청 다시 확인' }),
     )
     await expect(
-      await canvas.findByRole('link', { name: '협업 티켓 #3002 열기' }),
+      await canvas.findByText('기존 협업 요청을 확인해 주세요.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '같은 요청 다시 확인' }),
+    ).toBeDisabled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '관련 협업 티켓 새로고침' }),
+    )
+    await expect(
+      await canvas.findByRole('link', { name: '#3002 승인 취소 확인' }),
     ).toHaveAttribute('href', '/agent/tickets/3002')
+    await expect(canvas.getByLabelText(/협업 요청 제목/)).toBeDisabled()
+    await expect(attempts).toHaveLength(2)
+    await expect(attempts[1]).toEqual(attempts[0])
+    await userEvent.click(
+      canvas.getByRole('button', { name: '기존 협업 요청을 확인했습니다' }),
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: '내부 협업 요청' }),
+    )
+    await expect(await canvas.findByLabelText(/협업 요청 제목/)).toHaveValue('')
   },
 }
 export const VersionConflict: Story = {
