@@ -51,6 +51,7 @@ export function TicketCollaborationActions({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [mustRefresh, setMustRefresh] = useState(false)
+  const [outcomeReviewRefreshed, setOutcomeReviewRefreshed] = useState(false)
   const [success, setSuccess] = useState<{
     mode: Mode
     childNumber?: number
@@ -84,7 +85,10 @@ export function TicketCollaborationActions({
   }
   const refresh = async () => {
     const result = await details.refetch()
-    if (!result.error) setMustRefresh(false)
+    if (!result.error) {
+      setMustRefresh(false)
+      if (needsOutcomeReview) setOutcomeReviewRefreshed(true)
+    }
   }
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -129,6 +133,7 @@ export function TicketCollaborationActions({
               clientCommandId: createOpaqueUuid(),
             },
           })
+    setOutcomeReviewRefreshed(false)
     setAttempt(pending)
     setSubmitting(true)
     setError(null)
@@ -143,6 +148,7 @@ export function TicketCollaborationActions({
         setSuccess({ mode: 'child', childNumber: result.childTicketNumber })
       }
       setAttempt(null)
+      setOutcomeReviewRefreshed(false)
       setMode(null)
       await Promise.all([
         client.invalidateQueries({ queryKey: ['agent-ticket', ticketNumber] }),
@@ -305,8 +311,10 @@ export function TicketCollaborationActions({
                 </ul>
                 {details.data.context.children.length > 0 && (
                   <SeedButton
+                    disabled={details.isFetching || !outcomeReviewRefreshed}
                     onClick={() => {
                       setAttempt(null)
+                      setOutcomeReviewRefreshed(false)
                       setChild(EMPTY_CHILD)
                       setError(null)
                       setMode(null)

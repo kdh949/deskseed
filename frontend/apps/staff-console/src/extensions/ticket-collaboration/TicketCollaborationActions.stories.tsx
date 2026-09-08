@@ -116,25 +116,33 @@ export const RetryChildWithoutDuplicate: Story = {
     msw: {
       handlers: [
         http.get('/api/v1/agent/tickets/3001', () =>
-          HttpResponse.json(
-            attempts.length
-              ? {
-                  ...detail,
-                  ticket: { ...detail.ticket, version: 4 },
-                  context: {
-                    ...detail.context,
-                    children: [
+          HttpResponse.json({
+            ...detail,
+            ticket: attempts.length
+              ? { ...detail.ticket, version: 4 }
+              : detail.ticket,
+            context: {
+              ...detail.context,
+              children: [
+                {
+                  ...detail.ticket,
+                  ticketNumber: 2999,
+                  subject: '기존 세금 검토',
+                  isChild: true,
+                },
+                ...(attempts.length
+                  ? [
                       {
                         ...detail.ticket,
                         ticketNumber: 3002,
                         subject: '승인 취소 확인',
                         isChild: true,
                       },
-                    ],
-                  },
-                }
-              : detail,
-          ),
+                    ]
+                  : []),
+              ],
+            },
+          }),
         ),
         ...handlers,
         http.post(
@@ -194,6 +202,11 @@ export const RetryChildWithoutDuplicate: Story = {
     await expect(
       canvas.getByRole('button', { name: '같은 요청 다시 확인' }),
     ).toBeDisabled()
+    await expect(
+      canvas.getByRole('button', {
+        name: '기존 협업 요청을 확인했습니다',
+      }),
+    ).toBeDisabled()
     await userEvent.click(
       canvas.getByRole('button', { name: '관련 협업 티켓 새로고침' }),
     )
@@ -201,6 +214,11 @@ export const RetryChildWithoutDuplicate: Story = {
       await canvas.findByRole('link', { name: '#3002 승인 취소 확인' }),
     ).toHaveAttribute('href', '/agent/tickets/3002')
     await expect(canvas.getByLabelText(/협업 요청 제목/)).toBeDisabled()
+    await expect(
+      canvas.getByRole('button', {
+        name: '기존 협업 요청을 확인했습니다',
+      }),
+    ).toBeEnabled()
     await expect(attempts).toHaveLength(2)
     await expect(attempts[1]).toEqual(attempts[0])
     await userEvent.click(

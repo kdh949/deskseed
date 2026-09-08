@@ -231,9 +231,7 @@ export const DeleteThenAddPreservesFormData: Story = {
       canvas.getByLabelText('조건 충족 시 동작'),
       'OPTIONAL',
     )
-    await userEvent.click(
-      canvas.getByRole('button', { name: '조건 추가' }),
-    )
+    await userEvent.click(canvas.getByRole('button', { name: '조건 추가' }))
     await userEvent.type(canvas.getByLabelText(/폼 이름/), ' 변경')
     await userEvent.click(canvas.getByRole('button', { name: '폼 초안 저장' }))
     await waitFor(() => expect(savedForm).toHaveBeenCalledOnce())
