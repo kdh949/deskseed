@@ -260,3 +260,9 @@ Record:
 - accidental public/internal risk.
 
 A screenshot that looks similar but produces a worse or unsafe workflow fails acceptance.
+
+## 2026-09-05 대화 중심 기본 배치
+
+사용자가 선택한 3번 Deskseed 합성 시안을 현재 상담 화면의 비교 기준으로 사용한다. 전역 rail 64px, 속성 320px, 모든 데스크톱 폭에서 기본 접힌 context drawer와 고정 composer를 사용한다. 현재 제공되는 menu, 대화 필터, 초안 저장, 공개/내부 구분 및 실제 SLA 상태는 유지한다. 다중 티켓 탭과 독립 context tab은 이번 시각 개편에서 새로 구현하지 않는다. 선택 시안과 비교할 때 이 기능 차이는 의도된 제품 경계로 기록한다.
+
+구현/검증 기록: `docs/tasks/2026-09-05-agent-conversation-focused-redesign.md`, `design-qa.md`. 기존 Darwin/Linux 픽셀 기준선은 이번 작업에서 자동 갱신하지 않으며 최종 화면 검토 후 별도로 반영한다.
