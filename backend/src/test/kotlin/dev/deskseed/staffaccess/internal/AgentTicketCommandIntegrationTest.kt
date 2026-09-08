@@ -1390,9 +1390,8 @@ class AgentTicketCommandIntegrationTest {
                 .content(
                     """
                     {
-                      "name": "고객 projection",
-                      "email": "projection-command@example.com",
-                      "subject": "projection command",
+                      "clientCommandId":"${UUID.randomUUID()}", "fieldValues":{}, "acceptedPolicies":[], "requester":{"name": "고객 projection",
+                      "email": "projection-command@example.com"}, "subject": "projection command",
                       "message": "최초 고객 문의"
                     }
                     """.trimIndent(),

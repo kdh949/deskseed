@@ -488,6 +488,7 @@ paths:
       summary: 고객 제출 context의 form projection 조회
       description: 공개 surface는 ticket kind 입력을 받지 않고 항상 CUSTOMER_REQUEST context의 current published customer form 초기 projection만 반환합니다. staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
       operationId: getCustomerTicketFormProjection
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-011, REQ-CFG-014]
       tags: [Ticket Configuration Runtime]
       security: [{}]
@@ -527,6 +528,7 @@ paths:
       summary: 고객 후보 field 값으로 form projection 재계산
       description: allowlisted typed field machine key와 값만 평가해 current published customer form의 고객 공개 projection을 반환합니다. staff-only/unknown definition은 존재를 누출하지 않는 validation 또는 unavailable problem으로 처리합니다. 이 preview is not an authorization token이며 문의 생성 transaction은 current form/version, visibility, editability, requiredness, type과 option을 다시 검증합니다.
       operationId: projectCustomerTicketForm
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-014]
       x-deskseed-side-effects: NONE
       x-deskseed-semantic-ticket-view: NONE

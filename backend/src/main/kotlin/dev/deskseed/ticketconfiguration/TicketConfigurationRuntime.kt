@@ -47,12 +47,14 @@ data class CustomerTicketFieldDefinition(
     val type: TicketCustomFieldType,
     val label: String,
     val description: String?,
+    val validation: TicketFieldValidation = TicketFieldValidation(),
 )
 
 data class CustomerTicketFieldOption(
     val id: UUID,
     val machineKey: String,
     val label: String,
+    val order: Int = 0,
 )
 
 data class CustomerProjectedTicketField(
@@ -71,4 +73,5 @@ data class CustomerTicketFormProjection(
 
 interface CustomerTicketFormProjectionQuery {
     fun project(formId: UUID?, ticketKind: TicketKind): CustomerTicketFormProjection
+    fun projectCandidate(input: dev.deskseed.ticketing.CustomerRequestFormValues): CustomerTicketFormProjection
 }

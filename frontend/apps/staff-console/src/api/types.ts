@@ -78,14 +78,27 @@ export interface SaveTicketDraftInput {
 }
 
 export interface SubmitRequestInput {
-  name: string
-  email: string
+  clientCommandId: string
+  requester?: { name: string; email: string }
   subject: string
   message: string
-  privacyConsent?: boolean
+  formId?: string
+  formVersion?: number
+  fieldValues: Record<
+    string,
+    {
+      booleanValue?: boolean
+      numberValue?: number
+      optionId?: string
+      shortTextValue?: string
+      longTextValue?: string
+    }
+  >
+  acceptedPolicies: Array<{ policyKey: string; version: number }>
 }
 
 export interface SubmittedRequest {
+  replayed: boolean
   ticketNumber: number
   status: TicketStatus
   accessToken: string

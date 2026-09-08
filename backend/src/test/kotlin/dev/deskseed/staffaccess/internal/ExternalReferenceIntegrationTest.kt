@@ -486,9 +486,8 @@ class ExternalReferenceIntegrationTest {
                 .content(
                     """
                     {
-                      "name":"External Customer",
-                      "email":"external-customer@example.com",
-                      "subject":"Order refund question",
+                      "clientCommandId":"${UUID.randomUUID()}", "fieldValues":{}, "acceptedPolicies":[], "requester":{"name":"External Customer",
+                      "email":"external-customer@example.com"}, "subject":"Order refund question",
                       "message":"Please check my refund"
                     }
                     """.trimIndent(),

@@ -467,11 +467,13 @@ function decodeSubmittedRequest(value: unknown): SubmittedRequest | undefined {
     !isNonBlankString(value.accessToken) ||
     value.accessToken.length < ACCESS_TOKEN_MIN_LENGTH ||
     value.accessToken.length > ACCESS_TOKEN_MAX_LENGTH ||
-    !isTimestamp(value.createdAt)
+    !isTimestamp(value.createdAt) ||
+    typeof value.replayed !== 'boolean'
   ) {
     return undefined
   }
   return {
+    replayed: value.replayed,
     ticketNumber: value.ticketNumber,
     status: value.status,
     accessToken: value.accessToken,
@@ -810,13 +812,10 @@ export async function submitRequestWithAttachments(
     csrfToken = csrfBody.token
   }
   const form = new FormData()
-  form.set('name', input.name)
-  form.set('email', input.email)
-  form.set('subject', input.subject)
-  form.set('message', input.message)
-  if (input.privacyConsent !== undefined) {
-    form.set('privacyConsent', String(input.privacyConsent))
-  }
+  form.set(
+    'request',
+    new Blob([JSON.stringify(input)], { type: 'application/json' }),
+  )
   files.forEach((file) => form.append('attachments', file, file.name))
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',

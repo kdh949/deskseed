@@ -31,6 +31,8 @@ internal class JpaTicketingFacade(
     private val ticketIntegrationEvents: TicketIntegrationEventPublisher,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
+    private val customerFormBinding: dev.deskseed.ticketing.CustomerRequestFormBinding,
+    private val objectMapper: tools.jackson.databind.ObjectMapper,
 ) : TicketingFacade {
     @Transactional
     override fun submitPublicRequest(command: SubmitPublicRequestCommand): SubmittedTicket {
@@ -94,6 +96,7 @@ internal class JpaTicketingFacade(
             ),
         )
 
+        val formChanges = customerFormBinding.bind(ticket.id, command.formValues, now)
         val auditId = UUID.randomUUID()
         auditRepository.saveAndFlush(
             TicketAuditEntity(
@@ -148,6 +151,12 @@ internal class JpaTicketingFacade(
                             occurredAt = now,
                         ),
                     )
+                }
+                formChanges.forEach { change ->
+                    add(TicketAuditEventEntity(
+                        id = UUID.randomUUID(), auditId = auditId, eventOrder = size + 1,
+                        eventType = change.type, metadataJson = objectMapper.writeValueAsString(change.metadata), occurredAt = now,
+                    ))
                 }
             },
         )
