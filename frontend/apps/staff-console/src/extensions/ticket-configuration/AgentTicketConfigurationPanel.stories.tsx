@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse, delay } from 'msw'
 import { expect, userEvent, waitFor, type within } from 'storybook/test'
 import { AgentTicketConfigurationPanel } from './AgentTicketConfigurationPanel'
-import type { AgentConfiguration } from './runtime-api'
+import type { AgentConfiguration, FieldValue } from './runtime-api'
 const order = '11111111-1111-4111-8111-111111111111'
 const tag = '22222222-2222-4222-8222-222222222222'
 const status = '33333333-3333-4333-8333-333333333333'
@@ -35,6 +35,29 @@ const config: AgentConfiguration = {
   availableTags: [{ id: tag, label: '환불 요청' }],
   availableStatuses: [{ id: status, label: '고객 확인 대기' }],
 }
+const numericConfig: AgentConfiguration = {
+  ...config,
+  form: {
+    ...config.form!,
+    fields: [
+      ...config.form!.fields,
+      ...['수량', '측정값'].map((label, index) => ({
+        ...config.form!.fields[0]!,
+        id: `44444444-4444-4444-8444-44444444444${index}`,
+        machineKey: index === 0 ? 'amount' : 'measurement',
+        type: 'NUMBER' as const,
+        label,
+      })),
+    ],
+  },
+  fieldValues: {
+    ...config.fieldValues,
+    amount: { numberValue: '9007199254740993' },
+    measurement: { numberValue: '123456789012345678.123456789012' },
+  },
+}
+let numericCurrent = structuredClone(numericConfig)
+let projections: { fieldValues: Record<string, FieldValue> }[] = []
 let writes: { body: unknown; version: string | null }[] = []
 const baseHandlers = [
   http.get('/api/v1/agent/csrf', () =>
@@ -73,6 +96,36 @@ const baseHandlers = [
     return HttpResponse.json({ version: 4, replayed: false })
   }),
 ]
+const numericHandlers = [
+  http.get('/api/v1/agent/tickets/1042/configuration', () =>
+    HttpResponse.json(numericCurrent),
+  ),
+  http.post(
+    '/api/v1/agent/tickets/1042/configuration/projection',
+    async ({ request }) => {
+      projections.push(
+        (await request.json()) as { fieldValues: Record<string, FieldValue> },
+      )
+      return HttpResponse.json(numericCurrent)
+    },
+  ),
+  http.put('/api/v1/agent/tickets/1042/configuration', async ({ request }) => {
+    const body = (await request.json()) as {
+      fieldValues: Record<string, FieldValue>
+    }
+    writes.push({ body, version: request.headers.get('If-Match') })
+    numericCurrent = {
+      ...numericCurrent,
+      version: numericCurrent.version + 1,
+      fieldValues: { ...numericCurrent.fieldValues, ...body.fieldValues },
+    }
+    return HttpResponse.json({
+      version: numericCurrent.version,
+      replayed: false,
+    })
+  }),
+  ...baseHandlers,
+]
 const open = async (canvas: ReturnType<typeof within>) => {
   await userEvent.click(
     canvas.getByRole('button', { name: '필드·태그·상태 편집' }),
@@ -90,6 +143,8 @@ const meta = {
   args: { ticketNumber: 1042 },
   beforeEach: () => {
     writes = []
+    projections = []
+    numericCurrent = structuredClone(numericConfig)
   },
   parameters: { msw: { handlers: baseHandlers } },
 } satisfies Meta<typeof AgentTicketConfigurationPanel>
@@ -321,5 +376,138 @@ export const ProjectionUnavailable: Story = {
     await expect(
       body.getByRole('button', { name: '추가 정보 저장' }),
     ).toBeDisabled()
+  },
+}
+
+export const TagOnlyPreservesNumericPrecision: Story = {
+  parameters: { msw: { handlers: numericHandlers } },
+  play: async ({ canvas }) => {
+    const body = await open(canvas)
+    await expect(body.getByLabelText(/수량 \(필수\)/)).toHaveValue(
+      '9007199254740993',
+    )
+    await expect(body.getByLabelText(/측정값 \(필수\)/)).toHaveValue(
+      '123456789012345678.123456789012',
+    )
+    await userEvent.click(body.getByLabelText('환불 요청'))
+    await userEvent.click(body.getByRole('button', { name: '추가 정보 저장' }))
+    await canvas.findByText('추가 정보를 저장했습니다.')
+    expect(writes[0]?.body).toMatchObject({ fieldValues: {}, addTagIds: [tag] })
+    expect(projections.length).toBeGreaterThan(0)
+    expect(
+      projections.every(
+        ({ fieldValues }) => Object.keys(fieldValues).length === 0,
+      ),
+    ).toBe(true)
+    await open(canvas)
+    await expect(canvas.getByLabelText(/수량 \(필수\)/)).toHaveValue(
+      '9007199254740993',
+    )
+  },
+}
+export const EditExactNumbers: Story = {
+  parameters: { msw: { handlers: numericHandlers } },
+  play: async ({ canvas }) => {
+    const body = await open(canvas)
+    await userEvent.clear(body.getByLabelText(/수량 \(필수\)/))
+    await userEvent.type(
+      body.getByLabelText(/수량 \(필수\)/),
+      '123456789012345678.123456789012',
+    )
+    await userEvent.clear(body.getByLabelText(/측정값 \(필수\)/))
+    await userEvent.type(
+      body.getByLabelText(/측정값 \(필수\)/),
+      '-0.000000000001',
+    )
+    await waitFor(() =>
+      expect(
+        body.getByRole('button', { name: '추가 정보 저장' }),
+      ).toBeEnabled(),
+    )
+    const fieldValues = {
+      amount: { numberValue: '123456789012345678.123456789012' },
+      measurement: { numberValue: '-0.000000000001' },
+    }
+    expect(projections.at(-1)?.fieldValues).toEqual(fieldValues)
+    await userEvent.click(body.getByRole('button', { name: '추가 정보 저장' }))
+    await canvas.findByText('추가 정보를 저장했습니다.')
+    expect(writes[0]?.body).toMatchObject({ fieldValues })
+    await open(canvas)
+    await expect(canvas.getByLabelText(/수량 \(필수\)/)).toHaveValue(
+      fieldValues.amount.numberValue,
+    )
+    await expect(canvas.getByLabelText(/측정값 \(필수\)/)).toHaveValue(
+      fieldValues.measurement.numberValue,
+    )
+  },
+}
+export const InvalidNumericTextCannotSave: Story = {
+  parameters: { msw: { handlers: numericHandlers } },
+  play: async ({ canvas }) => {
+    const body = await open(canvas)
+    await userEvent.clear(body.getByLabelText(/수량 \(필수\)/))
+    await userEvent.type(body.getByLabelText(/수량 \(필수\)/), '1e100')
+    await expect(body.getByLabelText(/수량 \(필수\)/)).toBeInvalid()
+    await body.findByText('숫자와 소수점으로 입력해 주세요.')
+    await waitFor(() =>
+      expect(
+        body.getByRole('button', { name: '추가 정보 저장' }),
+      ).toBeEnabled(),
+    )
+    await userEvent.click(body.getByRole('button', { name: '추가 정보 저장' }))
+    expect(writes).toHaveLength(0)
+    expect(
+      projections.every(
+        ({ fieldValues }) =>
+          !fieldValues.amount || !fieldValues.amount.numberValue?.includes('e'),
+      ),
+    ).toBe(true)
+  },
+}
+export const RefreshKeepsOnlyEditedFields: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.put('/api/v1/agent/tickets/1042/configuration', () => {
+          numericCurrent = {
+            ...numericCurrent,
+            version: 4,
+            fieldValues: {
+              ...numericCurrent.fieldValues,
+              amount: { numberValue: '9007199254740995' },
+            },
+          }
+          return HttpResponse.json({ status: 412 }, { status: 412 })
+        }),
+        ...numericHandlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    const body = await open(canvas)
+    await userEvent.type(body.getByLabelText(/주문번호 \(필수\)/), '-확인')
+    await waitFor(() =>
+      expect(
+        body.getByRole('button', { name: '추가 정보 저장' }),
+      ).toBeEnabled(),
+    )
+    await userEvent.click(body.getByRole('button', { name: '추가 정보 저장' }))
+    await body.findByText(/티켓 또는 폼이 변경/)
+    await userEvent.click(
+      body.getByRole('button', { name: '최신 설정 불러오기' }),
+    )
+    await waitFor(() =>
+      expect(body.getByLabelText(/수량 \(필수\)/)).toHaveValue(
+        '9007199254740995',
+      ),
+    )
+    await expect(body.getByLabelText(/주문번호 \(필수\)/)).toHaveValue(
+      'ORD-1042-확인',
+    )
+    await waitFor(() =>
+      expect(projections.at(-1)?.fieldValues).toEqual({
+        'order.reference': { shortTextValue: 'ORD-1042-확인' },
+      }),
+    )
   },
 }

@@ -15418,6 +15418,31 @@ components:
           maxLength: 10000
       minProperties: 1
       maxProperties: 1
+    AgentTicketFieldValue:
+      description: 상담사 조회·후보 판정·저장용 값입니다. 숫자는 브라우저 반올림을 피하도록 지수 없는 십진수 문자열로 전달하며 서버가 numeric(30,12)와 필드별 범위를 검증합니다. 생략한 필드는
+        기존 저장 값을 유지합니다.
+      type: object
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        booleanValue:
+          type: boolean
+        numberValue:
+          type: string
+          pattern: ^-?[0-9]+(\.[0-9]+)?$
+          maxLength: 80
+          description: 정수부 최대 18자리·소수부 최대 12자리인 정확한 숫자 값입니다. 유효 자릿수·소수 자릿수와 minimum/maximum의 필드별 제한도 적용합니다.
+          example: '9007199254740993'
+        optionId:
+          type: string
+          format: uuid
+        shortTextValue:
+          type: string
+          maxLength: 1000
+        longTextValue:
+          type: string
+          maxLength: 10000
     TicketConfigurationValues:
       type: object
       required:
@@ -15452,7 +15477,7 @@ components:
         fieldValues:
           type: object
           additionalProperties:
-            $ref: '#/components/schemas/TicketFieldValue'
+            $ref: '#/components/schemas/AgentTicketFieldValue'
         tags:
           type: array
           items:
@@ -15547,7 +15572,7 @@ components:
           type: object
           maxProperties: 100
           additionalProperties:
-            $ref: '#/components/schemas/TicketFieldValue'
+            $ref: '#/components/schemas/AgentTicketFieldValue'
         customStatusId:
           type: string
           format: uuid
@@ -15579,7 +15604,7 @@ components:
         fieldValues:
           type: object
           additionalProperties:
-            $ref: '#/components/schemas/TicketFieldValue'
+            $ref: '#/components/schemas/AgentTicketFieldValue'
         addTagIds:
           type: array
           maxItems: 50

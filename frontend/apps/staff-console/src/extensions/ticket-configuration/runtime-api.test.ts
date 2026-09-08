@@ -39,3 +39,34 @@ it('rejects ambiguous values and projections without explicit authorization', ()
     decodeConfiguration({ ...response, writable: undefined }),
   ).toBeUndefined()
 })
+
+it.each([
+  '9007199254740993',
+  '123456789012345678.123456789012',
+  '-0.000000000001',
+])(
+  'preserves the exact decimal string %s from the HTTP response',
+  (numberValue) => {
+    const decoded = decodeConfiguration(
+      JSON.parse(
+        JSON.stringify({
+          ...response,
+          fieldValues: { amount: { numberValue } },
+        }),
+      ),
+    )
+    expect(decoded?.fieldValues.amount).toEqual({ numberValue })
+  },
+)
+
+it.each([9007199254740992, '', 'NaN', 'Infinity', '1e100', '1'.repeat(81)])(
+  'rejects an inexact or malformed numeric response: %s',
+  (numberValue) => {
+    expect(
+      decodeConfiguration({
+        ...response,
+        fieldValues: { amount: { numberValue } },
+      }),
+    ).toBeUndefined()
+  },
+)

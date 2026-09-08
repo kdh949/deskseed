@@ -59,7 +59,7 @@ internal class JdbcTicketConfigurationRuntimeQuery(
             { result, _ ->
                 result.getString("machine_key") to TicketConfigurationRuntimeValue(
                     booleanValue = result.nullableBoolean("boolean_value"),
-                    numberValue = result.getBigDecimal("number_value"),
+                    numberValue = result.getBigDecimal("number_value")?.stripTrailingZeros()?.toPlainString(),
                     optionId = result.getObject("option_id", UUID::class.java),
                     shortTextValue = result.getString("short_text_value"),
                     longTextValue = result.getString("long_text_value"),

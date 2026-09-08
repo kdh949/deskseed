@@ -14,6 +14,7 @@ import {
 } from '../../design-system/canonical'
 import {
   getConfiguration,
+  isDecimalFieldValue,
   projectConfiguration,
   saveConfiguration,
   type AgentConfiguration,
@@ -34,6 +35,7 @@ export function AgentTicketConfigurationPanel({
   const [base, setBase] = useState<AgentConfiguration | null>(null)
   const [shown, setShown] = useState<AgentConfiguration | null>(null)
   const [values, setValues] = useState<Record<string, FieldValue>>({})
+  const [editedKeys, setEditedKeys] = useState<Set<string>>(new Set())
   const [tags, setTags] = useState<string[]>([])
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
@@ -56,8 +58,18 @@ export function AgentTicketConfigurationPanel({
       setStale(false)
       if (!preserve) {
         setValues(result.fieldValues)
+        setEditedKeys(new Set())
         setTags(result.tags.map((t) => t.id))
         setStatus('')
+      } else {
+        setValues((current) => {
+          const next = { ...result.fieldValues }
+          for (const key of editedKeys) {
+            if (current[key]) next[key] = current[key]
+            else delete next[key]
+          }
+          return next
+        })
       }
     } catch (cause) {
       setError(
@@ -77,7 +89,14 @@ export function AgentTicketConfigurationPanel({
     const timer = window.setTimeout(() => {
       const keys = new Set(base.form?.fields.map((f) => f.machineKey) ?? [])
       const candidates = Object.fromEntries(
-        Object.entries(values).filter(([key]) => keys.has(key)),
+        Object.entries(values).filter(
+          ([key, value]) =>
+            editedKeys.has(key) &&
+            keys.has(key) &&
+            value !== undefined &&
+            (value.numberValue === undefined ||
+              isDecimalFieldValue(value.numberValue)),
+        ),
       )
       void projectConfiguration(ticketNumber, candidates, status || undefined)
         .then((result) => {
@@ -108,7 +127,7 @@ export function AgentTicketConfigurationPanel({
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [open, base, values, status, ticketNumber, attempt, stale])
+  }, [open, base, values, editedKeys, status, ticketNumber, attempt, stale])
   const submit = async () => {
     if (
       !base ||
@@ -131,7 +150,10 @@ export function AgentTicketConfigurationPanel({
           ? { formId: base.form.formId, formVersion: base.form.formVersion }
           : {}),
         fieldValues: Object.fromEntries(
-          Object.entries(values).filter(([key]) => editable.has(key)),
+          Object.entries(values).filter(
+            ([key, value]) =>
+              editedKeys.has(key) && editable.has(key) && value !== undefined,
+          ),
         ),
         addTagIds: tags.filter((id) => !base.tags.some((t) => t.id === id)),
         removeTagIds: base.tags
@@ -229,14 +251,17 @@ export function AgentTicketConfigurationPanel({
                       key={field.id}
                       field={field}
                       value={values[field.machineKey]}
-                      change={(value) =>
+                      change={(value) => {
+                        setEditedKeys((current) =>
+                          new Set(current).add(field.machineKey),
+                        )
                         setValues((current) => {
                           const next = { ...current }
                           if (value) next[field.machineKey] = value
                           else delete next[field.machineKey]
                           return next
                         })
-                      }
+                      }}
                     />
                   ))
               ) : (
@@ -360,24 +385,21 @@ function AgentConfigurationField({
       <SeedTextField
         {...control}
         required={field.required || value?.numberValue !== undefined}
-        type="number"
-        step="any"
-        defaultValue={value?.numberValue ?? ''}
+        value={value?.numberValue ?? ''}
+        error={
+          value?.numberValue !== undefined &&
+          !isDecimalFieldValue(value.numberValue)
+            ? '숫자와 소수점으로 입력해 주세요.'
+            : undefined
+        }
         onChange={(e) => {
           const raw = e.target.value
-          const number = Number(raw)
-          const digits = (raw.split(/[eE]/)[0] ?? '')
-            .replace(/[^0-9]/g, '')
-            .replace(/^0+/, '')
-          const invalid =
-            raw !== '' &&
-            (!Number.isFinite(number) ||
-              digits.length > 15 ||
-              (number === 0 && /[1-9]/.test(digits)))
           e.target.setCustomValidity(
-            invalid ? '입력한 숫자가 너무 크거나 정밀합니다.' : '',
+            raw !== '' && !isDecimalFieldValue(raw)
+              ? '숫자와 소수점으로 입력해 주세요.'
+              : '',
           )
-          change(raw === '' || invalid ? undefined : { numberValue: number })
+          change(raw === '' ? undefined : { numberValue: raw })
         }}
       />
     )

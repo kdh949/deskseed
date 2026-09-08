@@ -313,11 +313,12 @@ internal class JdbcTicketConfigurationMutationHandler(
                 StoredValue(optionId = optionId)
             }
             TicketCustomFieldType.NUMBER -> value.numberValue?.let { raw ->
+                if (raw.length > 80) invalid("NUMBER_VALUE_INVALID", "The number value is too long")
                 val decimal = try { BigDecimal(raw) } catch (_: NumberFormatException) {
                     invalid("NUMBER_VALUE_INVALID", "The number value is invalid")
                 }
                 checkNumberValidation(decimal, validation)
-                StoredValue(numberValue = decimal)
+                StoredValue(numberValue = decimal.setScale(12, java.math.RoundingMode.UNNECESSARY))
             }
             TicketCustomFieldType.SHORT_TEXT -> value.shortTextValue?.let { raw ->
                 checkTextValidation(raw, validation, 1_000)
@@ -331,6 +332,12 @@ internal class JdbcTicketConfigurationMutationHandler(
     }
 
     private fun checkNumberValidation(value: BigDecimal, validation: JsonNode) {
+        // PostgreSQL numeric(30,12) must not silently round or overflow a submitted value.
+        val stored = value.stripTrailingZeros()
+        if (stored.scale() > 12) invalid("NUMBER_SCALE_EXCEEDED", "The number value exceeds storage scale")
+        if (stored.precision().toLong() - stored.scale().toLong() > 18) {
+            invalid("NUMBER_PRECISION_EXCEEDED", "The number value exceeds storage precision")
+        }
         validation.path("minimum").takeIf(JsonNode::isNumber)?.decimalValue()?.let {
             if (value < it) invalid("NUMBER_BELOW_MINIMUM", "The number value is below the configured minimum")
         }

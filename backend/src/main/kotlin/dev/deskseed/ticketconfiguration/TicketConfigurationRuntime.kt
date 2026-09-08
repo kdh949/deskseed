@@ -2,14 +2,13 @@ package dev.deskseed.ticketconfiguration
 
 import dev.deskseed.ticketing.TicketStatus
 import dev.deskseed.ticketing.TicketKind
-import java.math.BigDecimal
 import java.util.UUID
 
 /** Server-authorized projection boundary for agent reads; it exposes no JDBC entities. */
 @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 data class TicketConfigurationRuntimeValue(
     val booleanValue: Boolean? = null,
-    val numberValue: BigDecimal? = null,
+    val numberValue: String? = null,
     val optionId: UUID? = null,
     val shortTextValue: String? = null,
     val longTextValue: String? = null,

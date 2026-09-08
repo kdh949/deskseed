@@ -2,7 +2,7 @@ import { requestStaffResource } from '../../api/client'
 import type { FieldType } from './api'
 export type FieldValue = {
   booleanValue?: boolean
-  numberValue?: number
+  numberValue?: string
   optionId?: string
   shortTextValue?: string
   longTextValue?: string
@@ -48,6 +48,10 @@ export type ConfigurationCommand = {
 }
 const record = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
+export const isDecimalFieldValue = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length <= 80 &&
+  /^-?[0-9]+(\.[0-9]+)?$/.test(value)
 const choices = (v: unknown) =>
   Array.isArray(v) &&
   v.every(
@@ -108,7 +112,7 @@ export function decodeConfiguration(
       type === 'booleanValue'
         ? typeof value !== 'boolean'
         : type === 'numberValue'
-          ? typeof value !== 'number' || !Number.isFinite(value)
+          ? !isDecimalFieldValue(value)
           : !['optionId', 'shortTextValue', 'longTextValue'].includes(type) ||
             typeof value !== 'string'
     )

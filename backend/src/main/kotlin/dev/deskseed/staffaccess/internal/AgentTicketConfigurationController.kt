@@ -11,6 +11,7 @@ import dev.deskseed.ticketconfiguration.TicketConfigurationRuntimeValues
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import org.springframework.http.ResponseEntity
@@ -25,7 +26,6 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
-import java.math.BigDecimal
 import java.util.UUID
 
 /** HTTP translation only; the ticketing command owns authorization, replay, audit, and rollback. */
@@ -136,7 +136,9 @@ internal data class UpdateTicketConfigurationRequest(
 
 internal data class TicketConfigurationFieldValueRequest(
     val booleanValue: Boolean? = null,
-    val numberValue: BigDecimal? = null,
+    @field:Size(max = 80)
+    @field:Pattern(regexp = "^-?[0-9]+(\\.[0-9]+)?$")
+    val numberValue: String? = null,
     val optionId: UUID? = null,
     @field:Size(max = 1_000) val shortTextValue: String? = null,
     @field:Size(max = 10_000) val longTextValue: String? = null,
@@ -144,7 +146,7 @@ internal data class TicketConfigurationFieldValueRequest(
     fun toCommandValue(): TicketConfigurationFieldValue = try {
         TicketConfigurationFieldValue(
             booleanValue = booleanValue,
-            numberValue = numberValue?.toPlainString(),
+            numberValue = numberValue,
             optionId = optionId,
             shortTextValue = shortTextValue,
             longTextValue = longTextValue,
