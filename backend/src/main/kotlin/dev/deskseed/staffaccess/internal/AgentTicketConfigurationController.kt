@@ -44,6 +44,12 @@ internal class AgentTicketConfigurationController(
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(runtimeQuery.listAgentDescriptors())
     }
 
+    @GetMapping("/ticket-configuration/filter-catalog")
+    fun filterCatalog(@AuthenticationPrincipal principal: StaffPrincipal): ResponseEntity<dev.deskseed.ticketconfiguration.SavedViewConfigurationCatalog> {
+        require(principal.id != UUID(0, 0))
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(runtimeQuery.savedViewCatalog())
+    }
+
     @GetMapping("/tickets/{ticketNumber}/configuration")
     fun read(
         @AuthenticationPrincipal principal: StaffPrincipal,

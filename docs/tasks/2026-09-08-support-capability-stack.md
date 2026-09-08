@@ -55,7 +55,7 @@
 
 - [x] 최신 main·기존 PR·dirty worktree 확인, 별도 작업 디렉터리 구성
 - [x] Staff/Customer Storybook MCP inventory와 현재 지침 조회
-- [ ] configuration
+- [x] configuration
 - [x] collaboration
 - [x] macros
 - [x] knowledge
@@ -101,3 +101,7 @@ Passed: 관리자 knowledge 통합 5, API 계약 5, architecture 1, staff unit 2
 ### Slice 6: 상담사 필드·태그·상태 운영
 
 서버 후보 판정과 상담사 configuration drawer, 관리자 태그/상태 CRUD를 연결했다. 폼 ID/버전 확인과 원래 command identity 유지로 입력 충돌·재시도를 처리한다. `2026-09-08-agent-ticket-configuration.md`에 검증 경계 기록. View 조건과 자동화는 아직 후속이다.
+
+## Slice 1d — configuration Saved Views
+
+TAG/FORM/CUSTOM_STATUS/CUSTOM_FIELD equality filters now connect customer intake and agent configuration to saved queue preview/list/counts. Details and validation: `2026-09-08-configuration-view-filters.md`.

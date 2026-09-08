@@ -45,6 +45,7 @@ data class AgentTicketFormProjection(val formId: UUID, val formVersion: Int, val
 
 interface TicketConfigurationRuntimeQuery {
     fun listAgentDescriptors(): List<TicketConfigurationDescriptorView>
+    fun savedViewCatalog(): SavedViewConfigurationCatalog
 
     fun readAgentConfiguration(
         ticketId: UUID,
@@ -90,3 +91,6 @@ interface CustomerTicketFormProjectionQuery {
     fun project(formId: UUID?, ticketKind: TicketKind): CustomerTicketFormProjection
     fun projectCandidate(input: dev.deskseed.ticketing.CustomerRequestFormValues): CustomerTicketFormProjection
 }
+
+data class SavedViewCatalogField(val id: UUID, val machineKey: String, val label: String, val type: TicketCustomFieldType, val options: List<AgentConfigurationChoice>)
+data class SavedViewConfigurationCatalog(val fields: List<SavedViewCatalogField>, val tags: List<AgentConfigurationChoice>, val forms: List<AgentConfigurationChoice>, val statuses: List<AgentConfigurationChoice>)

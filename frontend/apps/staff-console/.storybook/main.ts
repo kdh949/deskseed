@@ -11,6 +11,7 @@ const config: StorybookConfig = {
     '../src/design-system/patterns/SeedWorkspace.stories.tsx',
     '../src/pages/StaffLoginPage.stories.tsx',
     '../src/features/ticket-views/AgentViewsPage.stories.tsx',
+    '../src/features/ticket-views/ViewConfigurationDrawer.stories.tsx',
     '../src/features/ticket-search/AgentSearchPage.stories.tsx',
     '../src/features/ticket-create/CreateAgentTicketForm.stories.tsx',
     '../src/features/ticket-workspace/AgentTicketEditorWorkspace.stories.tsx',

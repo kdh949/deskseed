@@ -39,6 +39,19 @@ internal class JdbcTicketConfigurationRuntimeQuery(
         )
     }
 
+    override fun savedViewCatalog(): dev.deskseed.ticketconfiguration.SavedViewConfigurationCatalog {
+        val options = jdbc.query("select option.field_definition_id, option.id, option.staff_label from ticket_field_options option join ticket_field_definitions field on field.id = option.field_definition_id where option.active and field.active and field.agent_visible and field.searchable and not field.sensitive order by option.display_order, option.id", { rs, _ -> rs.getObject("field_definition_id", UUID::class.java) to dev.deskseed.ticketconfiguration.AgentConfigurationChoice(rs.getObject("id", UUID::class.java), rs.getString("staff_label")) }).groupBy({ it.first }, { it.second })
+        val fields = jdbc.query("select id, machine_key, staff_label, field_type from ticket_field_definitions where active and agent_visible and searchable and not sensitive and field_type <> 'LONG_TEXT' order by staff_label, id", { rs, _ ->
+            val id = rs.getObject("id", UUID::class.java)
+            dev.deskseed.ticketconfiguration.SavedViewCatalogField(id, rs.getString("machine_key"), rs.getString("staff_label"), dev.deskseed.ticketconfiguration.TicketCustomFieldType.valueOf(rs.getString("field_type")), options[id].orEmpty())
+        })
+        fun choices(sql: String) = jdbc.query(sql, { rs, _ -> dev.deskseed.ticketconfiguration.AgentConfigurationChoice(rs.getObject("id", UUID::class.java), rs.getString("label")) })
+        return dev.deskseed.ticketconfiguration.SavedViewConfigurationCatalog(fields,
+            choices("select id, label from ticket_tag_definitions where active order by label, id"),
+            choices("select id, name as label from ticket_forms where published_version is not null order by name, id"),
+            choices("select id, agent_label as label from custom_ticket_statuses where active order by display_order, id"))
+    }
+
     override fun readAgentConfiguration(
         ticketId: UUID,
         ticketNumber: Long,

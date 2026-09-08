@@ -209,6 +209,10 @@ const SAVED_VIEW_CONDITION_FIELDS = new Set<SavedViewConditionField>([
   'FIRST_REPLY_SLA_STATE',
   'TICKET_KIND',
   'UPDATED_AT',
+  'TAG',
+  'FORM',
+  'CUSTOM_STATUS',
+  'CUSTOM_FIELD',
 ])
 const SAVED_VIEW_CONDITION_OPERATORS = new Set<SavedViewConditionOperator>([
   'EQUALS',
@@ -2746,6 +2750,11 @@ function decodeSavedViewCondition(
     !SAVED_VIEW_CONDITION_OPERATORS.has(
       value.operator as SavedViewConditionOperator,
     ) ||
+    (value.field === 'CUSTOM_FIELD'
+      ? typeof value.fieldKey !== 'string' ||
+        value.fieldKey.length > 120 ||
+        !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(value.fieldKey)
+      : value.fieldKey !== undefined) ||
     !Array.isArray(value.values) ||
     value.values.length > 10 ||
     !value.values.every(isNonBlankString)
@@ -2756,6 +2765,7 @@ function decodeSavedViewCondition(
     field: value.field as SavedViewConditionField,
     operator: value.operator as SavedViewConditionOperator,
     values: value.values,
+    ...(typeof value.fieldKey === 'string' ? { fieldKey: value.fieldKey } : {}),
   }
 }
 

@@ -38,8 +38,8 @@ export const Create: Story = {
     )
     await userEvent.type(canvas.getByLabelText('보기 이름'), '결제 문의')
     await userEvent.type(canvas.getByLabelText('설명'), '결제 문의 검토용')
-    await userEvent.click(canvas.getByRole('button', { name: 'Preview' }))
-    await expect(canvas.getByText('Preview: 정확히 3개')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '미리보기' }))
+    await expect(canvas.getByText('미리보기: 정확히 3개')).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: '보기 만들기' }))
     await expect(args.onSave).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -133,5 +133,130 @@ export const ConflictRecovery: Story = {
       canvas.getByRole('button', { name: '최신 버전 다시 불러오기' }),
     )
     await expect(args.onReload).toHaveBeenCalled()
+  },
+}
+
+const catalog = {
+  fields: [
+    {
+      id: '11111111-1111-4111-8111-111111111113',
+      machineKey: 'refund.amount',
+      label: '환불 금액',
+      type: 'NUMBER' as const,
+      options: [],
+    },
+  ],
+  tags: [{ id: '11111111-1111-4111-8111-111111111114', label: '환불 검토' }],
+  forms: [{ id: '11111111-1111-4111-8111-111111111115', label: '환불 문의' }],
+  statuses: [],
+}
+export const ConfigurationFilters: Story = {
+  args: { ...Create.args, catalog },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.type(canvas.getByLabelText('보기 이름'), '환불 모아보기')
+    await userEvent.selectOptions(
+      canvas.getByLabelText('모든 조건 (all) 1 필드'),
+      'TAG',
+    )
+    await userEvent.selectOptions(
+      canvas.getByLabelText('모든 조건 (all) 1 값'),
+      catalog.tags[0]!.id,
+    )
+    await userEvent.click(
+      canvas.getAllByRole('button', { name: '조건 추가' })[0]!,
+    )
+    await userEvent.selectOptions(
+      canvas.getByLabelText('모든 조건 (all) 2 필드'),
+      'CUSTOM_FIELD:refund.amount',
+    )
+    await userEvent.type(
+      canvas.getByLabelText('모든 조건 (all) 2 값'),
+      '12000.5',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '미리보기' }))
+    await expect(canvas.getByText('미리보기: 정확히 3개')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '보기 만들기' }))
+    await expect(args.onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        definition: expect.objectContaining({
+          conditions: {
+            version: 1,
+            all: [
+              {
+                field: 'TAG',
+                operator: 'EQUALS',
+                values: [catalog.tags[0]!.id],
+              },
+              {
+                field: 'CUSTOM_FIELD',
+                fieldKey: 'refund.amount',
+                operator: 'EQUALS',
+                values: ['12000.5'],
+              },
+            ],
+            any: [],
+          },
+        }),
+      }),
+    )
+  },
+}
+export const UnavailableConfigurationField: Story = {
+  args: {
+    ...Create.args,
+    catalog: { ...catalog, fields: [] },
+    editor:
+      Edit.args.editor?.mode === 'edit'
+        ? {
+            mode: 'edit',
+            view: {
+              ...Edit.args.editor.view,
+              conditions: {
+                version: 1,
+                all: [
+                  {
+                    field: 'CUSTOM_FIELD',
+                    fieldKey: 'retired.amount',
+                    operator: 'NOT_EQUALS',
+                    values: ['100'],
+                  },
+                ],
+                any: [],
+              },
+            },
+          }
+        : null,
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      canvas.getByRole('button', { name: '변경 저장' }),
+    ).toBeDisabled()
+    await expect(canvas.getByRole('alert')).toHaveTextContent(
+      '사용 가능한 필터를 확인',
+    )
+    await userEvent.selectOptions(
+      canvas.getByLabelText('모든 조건 (all) 1 필드'),
+      'TAG',
+    )
+    await userEvent.selectOptions(
+      canvas.getByLabelText('모든 조건 (all) 1 값'),
+      catalog.tags[0]!.id,
+    )
+    await expect(
+      canvas.getByRole('button', { name: '변경 저장' }),
+    ).toBeEnabled()
+  },
+}
+export const CatalogFailure: Story = {
+  args: { ...Create.args, catalogError: true, onReloadCatalog: fn() },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole('button', { name: '필터 다시 불러오기' }),
+    )
+    await expect(args.onReloadCatalog).toHaveBeenCalled()
+    await userEvent.type(canvas.getByLabelText('보기 이름'), '기본 상태 보기')
+    await expect(
+      canvas.getByRole('button', { name: '보기 만들기' }),
+    ).toBeEnabled()
   },
 }

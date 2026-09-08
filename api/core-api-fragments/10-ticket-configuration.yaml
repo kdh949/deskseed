@@ -559,6 +559,22 @@ paths:
         '404': {$ref: '#/components/responses/CustomerTicketFormUnavailable'}
         '409': {$ref: '#/components/responses/CustomerTicketFormVersionConflict'}
         '503': {$ref: '#/components/responses/CustomerRequestConfigurationUnavailable'}
+  /api/v1/agent/ticket-configuration/filter-catalog:
+    get:
+      summary: 저장 보기에서 선택 가능한 티켓 설정 조회
+      description: 활성 상담사 세션에 조회용 비민감 필드와 태그·최초 접수 폼·업무 상태의 이름과 안정적인 ID를 반환합니다. 필드 값이나 조건 내부 구현은 반환하지 않습니다.
+      operationId: getSavedViewConfigurationCatalog
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-001, REQ-CFG-010, REQ-CFG-012, REQ-CFG-013]
+      tags: [Ticket Configuration Runtime]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}]
+      responses:
+        '200': {description: 현재 생성·편집에 사용할 수 있는 설정 카탈로그입니다. 보관된 최초 접수 폼도 포함합니다., content: {application/json: {schema: {$ref: '#/components/schemas/SavedViewConfigurationCatalog'}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+        '503': {$ref: '#/components/responses/Problem'}
   /api/v1/agent/ticket-configuration/descriptors:
     get:
       summary: 상담사 View/Search/Macro/Rules/Analytics용 configuration descriptor catalog 조회
@@ -1310,6 +1326,23 @@ components:
         version: {type: integer, format: int64}
         auditId: {type: string, format: uuid}
         replayed: {type: boolean}
+    SavedViewConfigurationCatalog:
+      type: object
+      required: [fields, tags, forms, statuses]
+      properties:
+        fields: {type: array, items: {$ref: '#/components/schemas/SavedViewCatalogField'}}
+        tags: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+        forms: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+        statuses: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+    SavedViewCatalogField:
+      type: object
+      required: [id, machineKey, label, type, options]
+      properties:
+        id: {type: string, format: uuid}
+        machineKey: {type: string}
+        label: {type: string}
+        type: {type: string, enum: [CHECKBOX, NUMBER, SINGLE_SELECT, SHORT_TEXT]}
+        options: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
     TicketConfigurationDescriptor:
       type: object
       required: [key, schemaVersion, contexts]

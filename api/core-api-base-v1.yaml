@@ -5133,6 +5133,10 @@ components:
       - FIRST_REPLY_SLA_STATE
       - TICKET_KIND
       - UPDATED_AT
+      - TAG
+      - FORM
+      - CUSTOM_STATUS
+      - CUSTOM_FIELD
     SavedViewConditionOperator:
       type: string
       enum:
@@ -5153,6 +5157,11 @@ components:
       - operator
       - values
       properties:
+        fieldKey:
+          type: string
+          maxLength: 120
+          pattern: '^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$'
+          description: CUSTOM_FIELD 조건에서만 필수인 조회용 필드의 안정적인 machine key입니다.
         field:
           $ref: '#/components/schemas/SavedViewConditionField'
         operator:
@@ -5166,7 +5175,7 @@ components:
             type: string
             minLength: 1
             maxLength: 100
-      description: field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다. IS_CURRENT_ACTOR, IS_UNASSIGNED, IS_CURRENT_ACTOR_GROUP, LESS_THAN_SOLVED는 빈 values만 허용하고 UPDATED_AT/WITHIN_LAST_DAYS는 bounded 정수 하루 수 하나만 허용합니다. raw SQL, SpEL, JavaScript, script expression은 허용하지 않습니다.
+      description: TAG/FORM/CUSTOM_STATUS는 UUID 값을 받고 CUSTOM_FIELD는 fieldKey와 typed equality 값의 문자열을 받습니다. NOT_EQUALS/NOT_IN은 값이 없는 티켓도 포함하지만 조회 불가 필드 조건은 항상 불일치합니다. FORM은 최초 고객 접수 폼입니다. field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다. IS_CURRENT_ACTOR, IS_UNASSIGNED, IS_CURRENT_ACTOR_GROUP, LESS_THAN_SOLVED는 빈 values만 허용하고 UPDATED_AT/WITHIN_LAST_DAYS는 bounded 정수 하루 수 하나만 허용합니다. raw SQL, SpEL, JavaScript, script expression은 허용하지 않습니다.
     SavedViewConditions:
       type: object
       additionalProperties: false
