@@ -186,9 +186,9 @@ export const ConflictPreservesDraft: Story = {
       '최신 접수 안내',
     )
     await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
-    await expect(await canvas.findByRole('status')).toHaveTextContent(
-      '버전 4을 저장했습니다.',
-    )
+    await expect(
+      await canvas.findByText('버전 4을 저장했습니다.'),
+    ).toBeVisible()
   },
 }
 export const SharedActivationHistory: Story = {
@@ -451,8 +451,8 @@ export const NewCustomStatusRequiresLatestChoice: Story = {
     )
     await expect(canvas.getByLabelText('변경할 상태')).toHaveValue('')
     await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
-    await expect(await canvas.findByRole('status')).toHaveTextContent(
-      '버전 4을 저장했습니다.',
-    )
+    await expect(
+      await canvas.findByText('버전 4을 저장했습니다.'),
+    ).toBeVisible()
   },
 }
