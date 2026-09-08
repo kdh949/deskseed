@@ -130,6 +130,91 @@ class TriggerExecutionIntegrationTest {
     }
 
     @Test
+    fun `unmatched rules do not consume the action execution budget`() {
+        val admin = browser()
+        val targetGroup = activeGroup("미일치 액션 예산 그룹")
+        repeat(67) { index ->
+            createAndActivate(
+                admin,
+                triggerJson(
+                    "미일치 액션 예산 ${index + 1}",
+                    index + 1,
+                    """{"group":"ALL","field":"PRIORITY","operator":"IS","value":"LOW"}""",
+                    """{"type":"SET_GROUP","groupId":"$targetGroup"},{"type":"SET_PRIORITY","priority":"HIGH"},{"type":"ENQUEUE_WEBHOOK","eventType":"ticket.trigger.executed"}""",
+                ),
+            )
+        }
+        val ticketNumber = createUrgentTicket(admin, "unmatched-budget@example.com", "미일치 액션 예산")
+
+        assertThat(worker.runOnce("unmatched-budget-worker")).isTrue()
+
+        assertThat(jdbc.queryForMap(
+            "select status, last_error_code from trigger_evaluation_jobs where ticket_number = ?",
+            ticketNumber,
+        )).containsEntry("status", "SUCCEEDED").containsEntry("last_error_code", null)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from trigger_executions where outcome = 'NOT_MATCHED'",
+            Long::class.java,
+        )).isEqualTo(67L)
+        assertThat(jdbc.queryForMap("select group_id, priority, version from tickets where ticket_number = ?", ticketNumber))
+            .containsEntry("group_id", null)
+            .containsEntry("priority", "URGENT")
+            .containsEntry("version", 0L)
+    }
+
+    @Test
+    fun `matched rules enforce the action execution budget after two hundred actions`() {
+        val admin = browser()
+        val targetGroup = activeGroup("실행 액션 예산 그룹")
+        val fiveActions = """{"type":"SET_GROUP","groupId":"$targetGroup"},{"type":"SET_PRIORITY","priority":"HIGH"},{"type":"SET_ASSIGNEE","assigneeId":null},{"type":"NOTIFY_UNASSIGNED_GROUP"},{"type":"ENQUEUE_WEBHOOK","eventType":"ticket.trigger.executed"}"""
+        repeat(40) { index ->
+            createAndActivate(
+                admin,
+                triggerJson(
+                    "실행 액션 예산 ${index + 1}",
+                    index + 1,
+                    """{"group":"ALL","field":"PRIORITY","operator":"IS_NOT","value":"LOW"}""",
+                    fiveActions,
+                ),
+            )
+        }
+        val boundaryTicketNumber = createUrgentTicket(admin, "matched-budget-200@example.com", "실행 액션 예산 200")
+
+        assertThat(worker.runOnce("matched-budget-worker")).isTrue()
+        assertThat(jdbc.queryForMap(
+            "select status, last_error_code from trigger_evaluation_jobs where ticket_number = ?",
+            boundaryTicketNumber,
+        )).containsEntry("status", "SUCCEEDED").containsEntry("last_error_code", null)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from trigger_executions execution join trigger_evaluation_jobs job on job.id = execution.job_id where job.ticket_number = ? and execution.outcome = 'MATCHED'",
+            Long::class.java,
+            boundaryTicketNumber,
+        )).isEqualTo(40L)
+
+        createAndActivate(
+            admin,
+            triggerJson(
+                "실행 액션 예산 201",
+                41,
+                """{"group":"ALL","field":"PRIORITY","operator":"IS_NOT","value":"LOW"}""",
+                """{"type":"SET_PRIORITY","priority":"HIGH"}""",
+            ),
+        )
+        val overflowTicketNumber = createUrgentTicket(admin, "matched-budget-201@example.com", "실행 액션 예산 201")
+
+        assertThat(worker.runOnce("matched-budget-worker")).isTrue()
+        assertThat(jdbc.queryForMap(
+            "select status, last_error_code from trigger_evaluation_jobs where ticket_number = ?",
+            overflowTicketNumber,
+        )).containsEntry("status", "RETRY_SCHEDULED").containsEntry("last_error_code", "ILLEGALARGUMENTEXCEPTION")
+        assertThat(jdbc.queryForObject(
+            "select count(*) from trigger_executions execution join trigger_evaluation_jobs job on job.id = execution.job_id where job.ticket_number = ?",
+            Long::class.java,
+            overflowTicketNumber,
+        )).isZero()
+    }
+
+    @Test
     fun `trigger execution for an internal work item creates no external webhook delivery`() {
         val admin = browser()
         val targetGroup = activeGroup("내부 작업 트리거 그룹")

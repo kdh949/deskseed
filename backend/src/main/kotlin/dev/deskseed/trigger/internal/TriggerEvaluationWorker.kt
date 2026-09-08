@@ -164,8 +164,6 @@ internal class TriggerEvaluationExecutor(
                 return@forEach
             }
             val definition = loadDefinition(snapshot)
-            actionCount += definition.actions.size
-            require(actionCount <= MAX_ACTION_COUNT) { "Trigger action limit exceeded" }
             val repetitionKey = "${snapshot.triggerId}:${snapshot.triggerVersion}:$fingerprint"
             if (!seen.add(repetitionKey)) {
                 insertExecution(job, snapshot, executionId, "LOOP_BLOCKED", fingerprint, null, "STATE_REPETITION", startedAt)
@@ -182,6 +180,8 @@ internal class TriggerEvaluationExecutor(
 
             val failures = evaluation.failures(definition.actions, ticket)
             if (failures.isNotEmpty()) throw TriggerExecutionRejectedException(failures.first())
+            actionCount += definition.actions.size
+            require(actionCount <= MAX_ACTION_COUNT) { "Trigger action limit exceeded" }
             val targetGroup = definition.actions.filterIsInstance<TriggerSetGroupAction>().singleOrNull()?.groupId
             val assignment = definition.actions.filterIsInstance<TriggerSetAssigneeAction>().singleOrNull()
             val context = CommandContext(
