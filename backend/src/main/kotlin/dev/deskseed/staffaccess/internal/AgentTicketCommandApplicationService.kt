@@ -60,6 +60,7 @@ internal data class UpdateTicketConfigurationInput(
     val addTagIds: Set<UUID>,
     val removeTagIds: Set<UUID>,
     val customStatusId: UUID?,
+    val formId: UUID? = null,
 )
 
 internal data class TransferTicketInput(
@@ -150,6 +151,7 @@ internal class AgentTicketCommandApplicationService(
             ticketNumber = ticketNumber,
             expectedVersion = input.expectedVersion,
             formVersion = input.formVersion,
+            formId = input.formId,
             fieldValues = input.fieldValues,
             addTagIds = input.addTagIds,
             removeTagIds = input.removeTagIds,

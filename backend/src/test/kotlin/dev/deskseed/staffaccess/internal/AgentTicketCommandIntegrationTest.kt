@@ -76,6 +76,93 @@ class AgentTicketCommandIntegrationTest {
     }
 
     @Test
+    fun `configuration numeric strings preserve stored and edited precision without unrelated writes`() {
+        val agentId = insertStaff("exact-number@example.com", "숫자 확인 상담사", "AGENT")
+        val browser = login("exact-number@example.com")
+        val created = createAssignedTicket(browser, agentId, insertGroup("숫자 확인", agentId), "number-customer@example.com")
+        val fieldId = UUID.randomUUID()
+        val formId = UUID.randomUUID()
+        val tagId = UUID.randomUUID()
+        val definition = """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":true}}],"conditionalRules":[],"allowedCustomStatusIds":[]}"""
+        jdbcTemplate.update("""
+            insert into ticket_field_definitions
+                (id, machine_key, field_type, staff_label, customer_visible, customer_editable, agent_visible,
+                 agent_editable, searchable, analytics_eligible, sensitive, validation_json, active,
+                 definition_version, created_at, updated_at)
+            values (?, 'amount', 'NUMBER', '정확한 수량', false, false, true, true, false, false,
+                    true, '{"minimum":-1,"maximum":1000000000000000000,"scale":12}'::jsonb,
+                    true, 1, now(), now())
+        """.trimIndent(), fieldId)
+        jdbcTemplate.update("""
+            insert into ticket_forms
+                (id, name, lifecycle, default_for_customer, default_for_agent, draft_definition_json,
+                 current_version, published_version, aggregate_version, created_at, updated_at)
+            values (?, '숫자 폼', 'DRAFT', false, true, cast(? as jsonb), 1, null, 1, now(), now())
+        """.trimIndent(), formId, definition)
+        jdbcTemplate.update("""
+            insert into ticket_form_versions
+                (form_id, version, definition_json, published_by_staff_id, published_by_display, published_at)
+            values (?, 1, cast(? as jsonb), ?, '숫자 확인 상담사', now())
+        """.trimIndent(), formId, definition, agentId)
+        jdbcTemplate.update("update ticket_forms set lifecycle = 'PUBLISHED', published_version = 1 where id = ?", formId)
+        jdbcTemplate.update("""
+            insert into ticket_custom_field_values(ticket_id, field_definition_id, number_value, field_definition_version, updated_at)
+            values (?, ?, cast('9007199254740993' as numeric), 1, now())
+        """.trimIndent(), created.ticketId, fieldId)
+        jdbcTemplate.update("""
+            insert into ticket_tag_definitions(id, normalized_value, label, active, definition_version, created_at, updated_at)
+            values (?, 'number-check', '수량 확인', true, 1, now(), now())
+        """.trimIndent(), tagId)
+        fun storedNumber() = jdbcTemplate.queryForObject(
+            "select number_value from ticket_custom_field_values where ticket_id = ? and field_definition_id = ?",
+            java.math.BigDecimal::class.java, created.ticketId, fieldId,
+        )!!
+        fun assertRead(value: String) {
+            mockMvc.perform(get("/api/v1/agent/tickets/{ticketNumber}/configuration", created.ticketNumber).session(browser.session))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.fieldValues.amount.numberValue").value(value))
+                .andExpect(jsonPath("$.fieldValues.amount.numberValue").isString)
+        }
+        assertRead("9007199254740993")
+        mockMvc.perform(post("/api/v1/agent/tickets/{ticketNumber}/configuration/projection", created.ticketNumber)
+            .session(browser.session).header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"fieldValues":{}}"""))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.fieldValues.amount.numberValue").value("9007199254740993"))
+        mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "tag-only-exact-number", "\"0\"",
+            """{"formId":"$formId","formVersion":1,"fieldValues":{},"addTagIds":["$tagId"],"clientCommandId":"${UUID.randomUUID()}"}"""))
+            .andExpect(status().isOk)
+        assertThat(storedNumber()).isEqualByComparingTo("9007199254740993")
+        assertThat(jdbcTemplate.queryForObject("select count(*) from ticket_audit_events where field_name = 'amount'", Long::class.java)).isZero()
+        var version = 1
+        for (value in listOf("123456789012345678.123456789012", "-0.000000000001", "9007199254740993")) {
+            val auditCount = jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, created.ticketId)
+            val before = storedNumber()
+            mockMvc.perform(post("/api/v1/agent/tickets/{ticketNumber}/configuration/projection", created.ticketNumber)
+                .session(browser.session).header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+                .content("""{"fieldValues":{"amount":{"numberValue":"$value"}}}"""))
+                .andExpect(status().isOk)
+            assertThat(storedNumber()).isEqualByComparingTo(before)
+            assertThat(jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, created.ticketId)).isEqualTo(auditCount)
+            val body = """{"formId":"$formId","formVersion":1,"fieldValues":{"amount":{"numberValue":"$value"}},"clientCommandId":"${UUID.randomUUID()}"}"""
+            mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "edit-exact-number-$version", "\"$version\"", body))
+                .andExpect(status().isOk)
+            mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "replay-exact-number-$version", "\"$version\"", body))
+                .andExpect(status().isOk).andExpect(jsonPath("$.replayed").value(true))
+            version++
+            assertThat(storedNumber()).isEqualByComparingTo(value)
+            assertRead(value)
+        }
+        for (value in listOf("1000000000000000000", "0.0000000000001", "-2", "NaN", "1e100", "1".repeat(81))) {
+            mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "reject-invalid-number", "\"$version\"",
+                """{"formId":"$formId","formVersion":1,"fieldValues":{"amount":{"numberValue":"$value"}},"clientCommandId":"${UUID.randomUUID()}"}"""))
+                .andExpect(status().isBadRequest)
+            assertThat(storedNumber()).isEqualByComparingTo("9007199254740993")
+        }
+        assertThat(jdbcTemplate.queryForObject("select version from tickets where id = ?", Long::class.java, created.ticketId)).isEqualTo(version.toLong())
+    }
+
+    @Test
     fun `agent creation stores explicit first visibility and one ordered audit atomically`() {
         val agentId = insertStaff("creator@example.com", "상담사 생성", "AGENT")
         val groupId = insertGroup("생성 그룹", agentId)
@@ -275,6 +362,9 @@ class AgentTicketCommandIntegrationTest {
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.fieldValues['payment.reference'].shortTextValue").value("customer-payment-reference-secret"))
             .andExpect(jsonPath("$.customStatus.id").value(statusId.toString()))
+            .andExpect(jsonPath("$.writable").value(true))
+            .andExpect(jsonPath("$.form.fields[0].machineKey").value("payment.reference"))
+            .andExpect(jsonPath("$.availableTags[0].id").value(tagId.toString()))
         assertThat(jdbcTemplate.queryForList(
             "select action from access_audit_events where resource_id = ? order by occurred_at, id",
             String::class.java,
@@ -357,7 +447,7 @@ class AgentTicketCommandIntegrationTest {
         val openStatusId = UUID.randomUUID()
         val pendingStatusId = UUID.randomUUID()
         val definitionJson =
-            """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":false}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"statusCategory","equals":"PENDING"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]},{"id":"${UUID.randomUUID()}","priority":20,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"customStatusId","equals":"$pendingStatusId"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]}],"allowedCustomStatusIds":["$openStatusId","$pendingStatusId"]}"""
+            """{"placements":[{"fieldId":"$fieldId","order":0,"customer":{"visible":false,"editable":false,"required":false},"agent":{"visible":true,"editable":true,"required":true}}],"conditionalRules":[{"id":"${UUID.randomUUID()}","priority":10,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"statusCategory","equals":"PENDING"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]},{"id":"${UUID.randomUUID()}","priority":20,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"customStatusId","equals":"$pendingStatusId"}}},"effects":[{"fieldId":"$fieldId","behavior":"HIDE"}]}],"allowedCustomStatusIds":["$openStatusId","$pendingStatusId"]}"""
 
         jdbcTemplate.update(
             """
@@ -418,6 +508,27 @@ class AgentTicketCommandIntegrationTest {
             openStatusId,
             created.ticketId,
         )
+        mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "missing-required-field", "\"0\"",
+            """{"formId":"$formId","formVersion":1,"fieldValues":{},"clientCommandId":"${UUID.randomUUID()}"}"""))
+            .andExpect(status().isBadRequest)
+        mockMvc.perform(configurationCommandRequest(browser, created.ticketNumber, "wrong-form-identity", "\"0\"",
+            """{"formId":"${UUID.randomUUID()}","formVersion":1,"fieldValues":{"refund.reason":{"shortTextValue":"환불 확인"}},"clientCommandId":"${UUID.randomUUID()}"}"""))
+            .andExpect(status().isBadRequest)
+        val auditCountBeforeProjection = jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, created.ticketId)
+        mockMvc.perform(post("/api/v1/agent/tickets/{ticketNumber}/configuration/projection", created.ticketNumber)
+            .session(browser.session).header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"fieldValues":{},"customStatusId":"$pendingStatusId"}"""))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.form.formId").value(formId.toString()))
+            .andExpect(jsonPath("$.form.fields[0].visible").value(false))
+            .andExpect(jsonPath("$.form.fields[0].editable").value(false))
+            .andExpect(header().string("Cache-Control", "no-store"))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from ticket_audits where ticket_id = ?", Long::class.java, created.ticketId)).isEqualTo(auditCountBeforeProjection)
+        assertThat(jdbcTemplate.queryForMap("select status, version from tickets where id = ?", created.ticketId)).containsEntry("status", "OPEN").containsEntry("version", 0L)
+        mockMvc.perform(post("/api/v1/agent/tickets/{ticketNumber}/configuration/projection", created.ticketNumber)
+            .session(browser.session).header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"fieldValues":{"unknown.staff.key":{"shortTextValue":"secret"}}}"""))
+            .andExpect(status().isBadRequest)
         mockMvc.perform(
             configurationCommandRequest(
                 browser,

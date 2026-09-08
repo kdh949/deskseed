@@ -1,5 +1,9 @@
 package dev.deskseed.ticketconfiguration.internal
 
+import dev.deskseed.ticketconfiguration.AgentTicketFormProjection
+import dev.deskseed.ticketconfiguration.AgentTicketFormField
+import dev.deskseed.ticketconfiguration.AgentConfigurationChoice
+import dev.deskseed.ticketconfiguration.TicketFieldValidation
 import dev.deskseed.ticketconfiguration.TicketConfigurationValidationException
 import dev.deskseed.ticketconfiguration.TicketCustomFieldType
 import dev.deskseed.ticketconfiguration.TicketFormActorPolicy
@@ -32,6 +36,45 @@ internal class JdbcTicketConfigurationMutationHandler(
     private val objectMapper: ObjectMapper,
     private val conditions: TicketFormConditionEngine,
 ) : TicketConfigurationMutationHandler {
+    /** Uses exactly the command's form selection and condition evaluation without mutating values. */
+    fun projectEditor(request: TicketConfigurationMutationRequest): AgentTicketFormProjection? {
+        val form = resolveAgentForm(request) ?: return null
+        val currentStatus = jdbc.query("select custom_status_id from tickets where id = ?", { rs, _ -> rs.getObject(1, UUID::class.java) }, request.ticketId).singleOrNull()
+        val requestedStatus = request.customStatusId?.let(::activeStatus)
+        requestedStatus?.let { validateStatusFormCompatibility(it, form) }
+        val fields = formFields(form)
+        // Unknown/non-visible candidates never enter condition facts or a response.
+        request.fieldValues.keys.forEach { key ->
+            if (fields.values.none { it.machineKey == key && it.agentVisible && it.active }) invalid("FIELD_NOT_EDITABLE", "The field is unavailable")
+        }
+        val policies = projectAgentFields(form, request, fields, currentStatus, requestedStatus)
+        val copies = jdbc.query("select id, staff_label, staff_description from ticket_field_definitions where id = any (cast(? as uuid[]))",
+            { rs, _ -> rs.getObject("id", UUID::class.java) to (rs.getString("staff_label") to rs.getString("staff_description")) }, fields.keys.toTypedArray()).toMap()
+        val options = jdbc.query("select field_definition_id, id, staff_label from ticket_field_options where active and field_definition_id = any (cast(? as uuid[])) order by display_order, id",
+            { rs, _ -> rs.getObject("field_definition_id", UUID::class.java) to AgentConfigurationChoice(rs.getObject("id", UUID::class.java), rs.getString("staff_label")) }, fields.keys.toTypedArray()).groupBy({ it.first }, { it.second })
+        return AgentTicketFormProjection(form.id, form.version, form.definition.placements.sortedBy { it.order }.mapNotNull { placement ->
+            val field = fields[placement.fieldId]?.takeIf { it.agentVisible && it.active } ?: return@mapNotNull null
+            val policy = policies.getValue(field.id)
+            val copy = copies.getValue(field.id)
+            AgentTicketFormField(field.id, field.machineKey, field.type, copy.first, copy.second,
+                objectMapper.readValue(field.validationJson, TicketFieldValidation::class.java), policy.visible,
+                policy.visible && policy.editable && field.agentEditable, policy.visible && policy.required,
+                options[field.id].orEmpty())
+        })
+    }
+
+    fun availableStatuses(request: TicketConfigurationMutationRequest): List<AgentConfigurationChoice> {
+        if (request.currentStatus == TicketStatus.CLOSED) return emptyList()
+        val form = resolveAgentForm(request)
+        return jdbc.query("select id, agent_label, status_category, allowed_form_ids from custom_ticket_statuses where active and status_category <> 'CLOSED' order by display_order, id", { rs, _ ->
+            val status = CustomStatus(rs.getObject("id", UUID::class.java), TicketStatus.valueOf(rs.getString("status_category")),
+                (rs.getArray("allowed_form_ids").array as Array<*>).map { UUID.fromString(it.toString()) }.toSet())
+            if ((status.allowedFormIds.isEmpty() || form?.id in status.allowedFormIds) &&
+                (form == null || form.definition.allowedCustomStatusIds.isEmpty() || status.id in form.definition.allowedCustomStatusIds))
+                AgentConfigurationChoice(status.id, rs.getString("agent_label")) else null
+        }).filterNotNull()
+    }
+
     override fun validate(request: TicketConfigurationMutationRequest) {
         val currentCustomStatus = jdbc.query(
             "select custom_status_id from tickets where id = ?",
@@ -44,10 +87,7 @@ internal class JdbcTicketConfigurationMutationHandler(
         val requestedFields = request.fieldValues.mapValues { (machineKey, _) ->
             fieldByMachineKey(machineKey) ?: invalid("FIELD_NOT_FOUND", "The configured field does not exist")
         }
-        val projectionFields = form?.definition?.placements
-            ?.mapNotNull { placement -> fieldById(placement.fieldId) }
-            ?.associateBy { it.id }
-            ?: emptyMap()
+        val projectionFields = form?.let(::formFields) ?: emptyMap()
         val projection = form?.let {
             projectAgentFields(it, request, projectionFields, currentCustomStatus, requestedCustomStatus)
         }
@@ -63,6 +103,7 @@ internal class JdbcTicketConfigurationMutationHandler(
             }
             validateValue(field, request.fieldValues.getValue(machineKey))
         }
+        validateRequired(request, projection, projectionFields)
         requireTagDefinitions(request.addTagIds, activeOnly = true)
         requireTagDefinitions(request.removeTagIds, activeOnly = false)
     }
@@ -79,10 +120,7 @@ internal class JdbcTicketConfigurationMutationHandler(
         val requestedFields = request.fieldValues.mapValues { (machineKey, value) ->
             fieldByMachineKey(machineKey) ?: invalid("FIELD_NOT_FOUND", "The configured field does not exist")
         }
-        val projectionFields = form?.definition?.placements
-            ?.mapNotNull { placement -> fieldById(placement.fieldId) }
-            ?.associateBy { it.id }
-            ?: emptyMap()
+        val projectionFields = form?.let(::formFields) ?: emptyMap()
         val projection = form?.let {
             projectAgentFields(it, request, projectionFields, currentCustomStatus, requestedCustomStatus)
         }
@@ -90,6 +128,8 @@ internal class JdbcTicketConfigurationMutationHandler(
         if (request.fieldValues.isNotEmpty() && form == null) {
             invalid("AGENT_FORM_UNAVAILABLE", "Agent field updates require one published default agent form")
         }
+
+        validateRequired(request, projection, projectionFields)
 
         val changedFieldKeys = mutableListOf<String>()
         requestedFields.toSortedMap().forEach { (machineKey, field) ->
@@ -176,6 +216,15 @@ internal class JdbcTicketConfigurationMutationHandler(
         )
     }
 
+    private fun validateRequired(request: TicketConfigurationMutationRequest, projection: Map<UUID, FieldState>, projectionFields: Map<UUID, FieldDefinition>) {
+        projection.filterValues { it.visible && it.editable && it.required }.keys.forEach { fieldId ->
+            val field = projectionFields.getValue(fieldId)
+            val effective = request.fieldValues[field.machineKey]?.let { validateValue(field, it) } ?: currentValue(request.ticketId, fieldId)
+            if (effective == null || effective.shortTextValue?.isBlank() == true || effective.longTextValue?.isBlank() == true)
+                invalid("REQUIRED_FIELD_MISSING", "The form requires a value")
+        }
+    }
+
     private fun resolveAgentForm(request: TicketConfigurationMutationRequest): FormSnapshot? {
         val forms = jdbc.query(
             """
@@ -195,6 +244,7 @@ internal class JdbcTicketConfigurationMutationHandler(
         }
         if (forms.size > 1) invalid("AMBIGUOUS_AGENT_FORM", "Only one default published agent form may be selected")
         val form = forms.singleOrNull()
+        if (request.formId != null && form?.id != request.formId) invalid("FORM_ID_NOT_PROJECTED", "The selected agent form changed")
         if (request.formVersion != null && (form == null || form.version != request.formVersion)) {
             invalid("FORM_VERSION_NOT_PROJECTED", "The request formVersion is not the current default agent form snapshot")
         }
@@ -234,8 +284,10 @@ internal class JdbcTicketConfigurationMutationHandler(
         "formVersion" to form.version.toString(),
     ).apply {
         (requestedCustomStatus?.id ?: currentCustomStatus)?.let { put("customStatusId", it.toString()) }
+        val currentValues = jdbc.query("select field_definition_id, boolean_value, number_value, option_id, short_text_value, long_text_value from ticket_custom_field_values where ticket_id = ?",
+            { rs, _ -> rs.getObject("field_definition_id", UUID::class.java) to StoredValue(rs.nullableBoolean("boolean_value"), rs.getBigDecimal("number_value"), rs.getObject("option_id", UUID::class.java), rs.getString("short_text_value"), rs.getString("long_text_value")) }, request.ticketId).toMap()
         fields.forEach { field ->
-            currentValue(request.ticketId, field.id)?.factValue()?.let { put("field.${field.id}", it) }
+            currentValues[field.id]?.factValue()?.let { put("field.${field.id}", it) }
             request.fieldValues[field.machineKey]?.let { value ->
                 value.booleanValue?.toString()
                     ?: value.numberValue
@@ -261,11 +313,12 @@ internal class JdbcTicketConfigurationMutationHandler(
                 StoredValue(optionId = optionId)
             }
             TicketCustomFieldType.NUMBER -> value.numberValue?.let { raw ->
+                if (raw.length > 80) invalid("NUMBER_VALUE_INVALID", "The number value is too long")
                 val decimal = try { BigDecimal(raw) } catch (_: NumberFormatException) {
                     invalid("NUMBER_VALUE_INVALID", "The number value is invalid")
                 }
                 checkNumberValidation(decimal, validation)
-                StoredValue(numberValue = decimal)
+                StoredValue(numberValue = decimal.setScale(12, java.math.RoundingMode.UNNECESSARY))
             }
             TicketCustomFieldType.SHORT_TEXT -> value.shortTextValue?.let { raw ->
                 checkTextValidation(raw, validation, 1_000)
@@ -279,6 +332,12 @@ internal class JdbcTicketConfigurationMutationHandler(
     }
 
     private fun checkNumberValidation(value: BigDecimal, validation: JsonNode) {
+        // PostgreSQL numeric(30,12) must not silently round or overflow a submitted value.
+        val stored = value.stripTrailingZeros()
+        if (stored.scale() > 12) invalid("NUMBER_SCALE_EXCEEDED", "The number value exceeds storage scale")
+        if (stored.precision().toLong() - stored.scale().toLong() > 18) {
+            invalid("NUMBER_PRECISION_EXCEEDED", "The number value exceeds storage precision")
+        }
         validation.path("minimum").takeIf(JsonNode::isNumber)?.decimalValue()?.let {
             if (value < it) invalid("NUMBER_BELOW_MINIMUM", "The number value is below the configured minimum")
         }
@@ -370,15 +429,11 @@ internal class JdbcTicketConfigurationMutationHandler(
         machineKey,
     ).singleOrNull()
 
-    private fun fieldById(fieldId: UUID): FieldDefinition? = jdbc.query(
-        """
-        select id, machine_key, field_type, active, agent_visible, agent_editable, sensitive,
-               validation_json, definition_version
-          from ticket_field_definitions where id = ?
-        """.trimIndent(),
-        { result, _ -> field(result) },
-        fieldId,
-    ).singleOrNull()
+    private fun formFields(form: FormSnapshot): Map<UUID, FieldDefinition> = jdbc.query(
+        """select id, machine_key, field_type, active, agent_visible, agent_editable, sensitive, validation_json, definition_version
+            from ticket_field_definitions where id = any (cast(? as uuid[]))""",
+        { result, _ -> field(result) }, form.definition.placements.map { it.fieldId }.toTypedArray(),
+    ).associateBy { it.id }
 
     private fun field(result: java.sql.ResultSet) = FieldDefinition(
         result.getObject("id", UUID::class.java), result.getString("machine_key"),

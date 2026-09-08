@@ -105,6 +105,7 @@ data class UpdateTicketConfigurationCommand(
     val customStatusId: UUID?,
     val actor: StaffTicketCommandActor,
     val context: CommandContext,
+    val formId: UUID? = null,
 )
 
 data class ApplyMacroTicketCommand(
@@ -176,6 +177,7 @@ data class TicketConfigurationMutationRequest(
     val removeTagIds: Set<UUID>,
     val customStatusId: UUID?,
     val occurredAt: Instant,
+    val formId: UUID? = null,
 )
 
 data class TicketConfigurationAuditChange(

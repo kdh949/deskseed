@@ -11,6 +11,7 @@ import dev.deskseed.ticketconfiguration.TicketConfigurationRuntimeValues
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import org.springframework.http.ResponseEntity
@@ -20,11 +21,11 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
-import java.math.BigDecimal
 import java.util.UUID
 
 /** HTTP translation only; the ticketing command owns authorization, replay, audit, and rollback. */
@@ -48,6 +49,19 @@ internal class AgentTicketConfigurationController(
         @AuthenticationPrincipal principal: StaffPrincipal,
         @PathVariable @Positive ticketNumber: Long,
         request: HttpServletRequest,
+    ): ResponseEntity<TicketConfigurationRuntimeValues> = configuration(principal, ticketNumber, request)
+
+    @PostMapping("/tickets/{ticketNumber}/configuration/projection")
+    fun project(
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        @PathVariable @Positive ticketNumber: Long,
+        @Valid @RequestBody body: ProjectAgentTicketConfigurationRequest,
+        request: HttpServletRequest,
+    ): ResponseEntity<TicketConfigurationRuntimeValues> = configuration(principal, ticketNumber, request,
+        body.fieldValues.mapValues { it.value.toCommandValue() }, body.customStatusId)
+
+    private fun configuration(principal: StaffPrincipal, ticketNumber: Long, request: HttpServletRequest,
+        candidates: Map<String, TicketConfigurationFieldValue> = emptyMap(), customStatusId: UUID? = null,
     ): ResponseEntity<TicketConfigurationRuntimeValues> {
         val workspace = ticketReadApplicationService.readTicket(
             principal = principal,
@@ -68,7 +82,7 @@ internal class AgentTicketConfigurationController(
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())
             .eTag(ticket.version.toString())
-            .body(runtimeQuery.readAgentConfiguration(ticket.id, ticket.ticketNumber, ticket.version, ticket.status))
+            .body(runtimeQuery.readAgentConfiguration(ticket.id, ticket.ticketNumber, ticket.version, ticket.status, candidates, customStatusId).copy(writable = "UPDATE" in workspace.capabilities && ticket.status != dev.deskseed.ticketing.TicketStatus.CLOSED))
     }
 
     @PutMapping("/tickets/{ticketNumber}/configuration")
@@ -79,6 +93,7 @@ internal class AgentTicketConfigurationController(
         @Valid @RequestBody body: UpdateTicketConfigurationRequest,
         request: HttpServletRequest,
     ): ResponseEntity<TicketConfigurationCommandResponse> {
+        if (body.formId != null && body.formVersion == null) throw TicketCommandInvalidException("formId requires formVersion")
         val expectedVersion = expectedVersion(ifMatch)
         if (body.addTagIds.size != body.addTagIds.toSet().size || body.removeTagIds.size != body.removeTagIds.toSet().size) {
             throw TicketCommandInvalidException("Tag ID collections must be unique")
@@ -92,6 +107,7 @@ internal class AgentTicketConfigurationController(
             input = UpdateTicketConfigurationInput(
                 expectedVersion = expectedVersion,
                 formVersion = body.formVersion,
+                formId = body.formId,
                 fieldValues = body.fieldValues.mapValues { (_, value) -> value.toCommandValue() },
                 addTagIds = body.addTagIds.toSet(),
                 removeTagIds = body.removeTagIds.toSet(),
@@ -109,6 +125,7 @@ internal class AgentTicketConfigurationController(
 }
 
 internal data class UpdateTicketConfigurationRequest(
+    val formId: UUID? = null,
     @field:Positive val formVersion: Int? = null,
     @field:Size(max = 100) @field:Valid val fieldValues: Map<String, TicketConfigurationFieldValueRequest> = emptyMap(),
     @field:Size(max = 50) val addTagIds: List<UUID> = emptyList(),
@@ -119,7 +136,9 @@ internal data class UpdateTicketConfigurationRequest(
 
 internal data class TicketConfigurationFieldValueRequest(
     val booleanValue: Boolean? = null,
-    val numberValue: BigDecimal? = null,
+    @field:Size(max = 80)
+    @field:Pattern(regexp = "^-?[0-9]+(\\.[0-9]+)?$")
+    val numberValue: String? = null,
     val optionId: UUID? = null,
     @field:Size(max = 1_000) val shortTextValue: String? = null,
     @field:Size(max = 10_000) val longTextValue: String? = null,
@@ -127,7 +146,7 @@ internal data class TicketConfigurationFieldValueRequest(
     fun toCommandValue(): TicketConfigurationFieldValue = try {
         TicketConfigurationFieldValue(
             booleanValue = booleanValue,
-            numberValue = numberValue?.toPlainString(),
+            numberValue = numberValue,
             optionId = optionId,
             shortTextValue = shortTextValue,
             longTextValue = longTextValue,
@@ -142,4 +161,9 @@ internal data class TicketConfigurationCommandResponse(
     val version: Long,
     val auditId: UUID,
     val replayed: Boolean,
+)
+
+internal data class ProjectAgentTicketConfigurationRequest(
+    @field:Size(max = 100) @field:Valid val fieldValues: Map<String, TicketConfigurationFieldValueRequest> = emptyMap(),
+    val customStatusId: UUID? = null,
 )

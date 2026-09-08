@@ -29,7 +29,8 @@
   margin: 0;
   padding: 0;
 }
-.configuration-list > li {
+.configuration-list > li,
+.configuration-list-item {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -57,4 +58,24 @@
   margin: 0;
   padding: var(--ds-space-150);
   border: var(--ds-border-hairline) solid var(--ds-palette-line);
+}
+
+.configuration-controls {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  margin: 0 0 16px;
+}
+.configuration-controls legend {
+  padding: 0;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.configuration-controls input,
+.configuration-controls select,
+.configuration-controls textarea {
+  min-width: 0;
+  max-width: 100%;
 }
