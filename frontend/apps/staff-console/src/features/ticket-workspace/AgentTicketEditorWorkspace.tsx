@@ -1113,6 +1113,7 @@ function TicketContext({
     (ticket) => (ticket ? [ticket] : []),
   )
   const collaboration = useCollaborationNotes(detail)
+  const [showAllRelated, setShowAllRelated] = useState(false)
   const people = detail.assignmentOptions.groups
     .flatMap((group) => group.members)
     .filter(
@@ -1154,12 +1155,18 @@ function TicketContext({
       >
         {related.length > 0 ? (
           <ul className="seed-related-tickets">
-            {related.slice(0, 4).map((ticket) => (
+            {(showAllRelated ? related : related.slice(0, 4)).map((ticket) => (
               <li key={ticket.ticketNumber}>
                 <Link to={`/agent/tickets/${ticket.ticketNumber}`}>
                   #{ticket.ticketNumber}
                 </Link>
-                <span>{ticket.subject}</span>
+                <span>
+                  {detail.context.parent?.ticketNumber === ticket.ticketNumber
+                    ? '상위 문의'
+                    : '내부 협업'}{' '}
+                  · {ticket.subject}
+                  {ticket.group ? ` · ${ticket.group.name}` : ''}
+                </span>
                 <SeedStatusBadge tone={statusTone(ticket.status)}>
                   {STATUS_LABELS[ticket.status]}
                 </SeedStatusBadge>
@@ -1170,6 +1177,16 @@ function TicketContext({
           <p className="seed-context-empty">
             연결된 상위·하위 티켓이 없습니다.
           </p>
+        )}
+        {detail.ticket.openChildCount > 0 && (
+          <p>진행 중인 내부 협업 요청 {detail.ticket.openChildCount}건</p>
+        )}
+        {related.length > 4 && (
+          <SeedButton onClick={() => setShowAllRelated(!showAllRelated)}>
+            {showAllRelated
+              ? '관련 티켓 접기'
+              : `관련 티켓 ${related.length}건 모두 보기`}
+          </SeedButton>
         )}
       </SeedContextCard>
       <SeedCollaborationThread

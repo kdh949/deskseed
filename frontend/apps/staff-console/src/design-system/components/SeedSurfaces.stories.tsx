@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent } from 'storybook/test'
 import '../foundations/seed-story-helpers.css'
-import { SeedButton } from '../primitives/SeedCore'
+import { SeedButton, SeedTextField } from '../primitives/SeedCore'
 import {
   SeedContextCard,
   SeedDrawer,
@@ -143,6 +143,79 @@ export const Drawer: Story = {
       canvas.getByRole('dialog', { name: '티켓 컨텍스트' }),
     ).toBeVisible()
     await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+  },
+}
+
+export const DrawerPreservesInputFocus: Story = {
+  render: function InputDrawer() {
+    const [open, setOpen] = useState(false)
+    const [value, setValue] = useState('')
+    return (
+      <>
+        <SeedButton onClick={() => setOpen(true)}>편집 열기</SeedButton>
+        <SeedDrawer
+          open={open}
+          onClose={() => setOpen(false)}
+          title="입력 유지"
+        >
+          <SeedTextField
+            label="이관 사유"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </SeedDrawer>
+      </>
+    )
+  },
+  play: async ({ canvas }) => {
+    const trigger = canvas.getByRole('button', { name: '편집 열기' })
+    await userEvent.click(trigger)
+    const input = canvas.getByLabelText('이관 사유')
+    await userEvent.type(input, '고객 요청으로 담당 변경')
+    await expect(input).toHaveValue('고객 요청으로 담당 변경')
+    await expect(input).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+  },
+}
+
+export const NestedDrawerKeyboard: Story = {
+  render: function NestedDrawer() {
+    const [outer, setOuter] = useState(false)
+    const [inner, setInner] = useState(false)
+    return (
+      <>
+        <SeedButton onClick={() => setOuter(true)}>컨텍스트 보기</SeedButton>
+        <SeedDrawer
+          open={outer}
+          onClose={() => setOuter(false)}
+          title="티켓 컨텍스트"
+        >
+          <SeedButton onClick={() => setInner(true)}>이관 시작</SeedButton>
+          <SeedDrawer
+            open={inner}
+            onClose={() => setInner(false)}
+            title="이관 입력"
+          >
+            <SeedTextField label="사유" />
+          </SeedDrawer>
+        </SeedDrawer>
+      </>
+    )
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(canvas.getByRole('button', { name: '컨텍스트 보기' }))
+    const trigger = canvas.getByRole('button', { name: '이관 시작' })
+    await userEvent.click(trigger)
+    await userEvent.type(canvas.getByLabelText('사유'), '확인')
+    await userEvent.keyboard('{Escape}')
+    await expect(
+      canvas.queryByRole('dialog', { name: '이관 입력' }),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('dialog', { name: '티켓 컨텍스트' }),
+    ).toBeVisible()
     await expect(trigger).toHaveFocus()
   },
 }

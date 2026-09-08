@@ -56,7 +56,7 @@
 - [x] 최신 main·기존 PR·dirty worktree 확인, 별도 작업 디렉터리 구성
 - [x] Staff/Customer Storybook MCP inventory와 현재 지침 조회
 - [ ] configuration
-- [ ] collaboration
+- [x] collaboration
 - [ ] macros
 - [ ] knowledge
 - [ ] automation
@@ -70,3 +70,14 @@
 - Customer submission, agent configuration, tags/statuses and View filters remain pending in subsequent slices. Backend CFG gates are not rerun for this frontend-only slice.
 
 - Final slice verification: full staff Storybook MCP suite 71/71 PASS (fresh test process); 1280/390/320px rendered conflict state has no horizontal overflow. `validate_documentation.py`, ESLint and `git diff --check` PASS.
+
+## Slice 2 — single-ticket transfer and internal collaboration
+
+- Added a context contribution with lazy BACKGROUND ticket reads, active group/member selection, transfer reason and INTERNAL child request input. Both commands reuse existing If-Match and stable clientCommandId semantics.
+- Ambiguous errors retain the exact submitted payload and command ID; definite version conflict preserves input until an explicit latest-version refresh. Successful commands refresh ticket and View queries, and child success links to the created ticket.
+- Related tickets now label parent versus internal collaboration, show the target group/open child count and offer all related tickets beyond the first four.
+- Found and fixed a reusable Drawer focus reset: inline onClose callbacks no longer steal focus on input changes. Nested dialogs handle only their own keyboard events; disabled fieldset controls are excluded from focus cycling. Regression stories cover typing and nested Escape/focus restoration.
+- Passed: TransferChildTicketIntegrationTest (6 tests), staff unit suite (209 tests), typecheck, staff production build; focused Storybook transfer/retry/conflict/denied/empty/loading/error and drawer regressions. 1280/390/320px actual drawer rendering has no horizontal overflow.
+- No API, migration, server authorization, audit, retention or external I/O changes. Customer projection continues to exclude child tickets. Deployment, browser-to-live-backend end-to-end and performance measurement were not run for this slice.
+
+- Final collaboration validation: full staff Storybook MCP 81/81 PASS; six PostgreSQL transfer/child integration tests PASS; documentation/design-system boundary checks PASS.

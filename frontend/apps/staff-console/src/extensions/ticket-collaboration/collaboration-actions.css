@@ -1,0 +1,16 @@
+.ticket-collaboration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-100);
+}
+.ticket-collaboration-form,
+.ticket-collaboration-form fieldset {
+  display: grid;
+  gap: var(--ds-space-200);
+  min-width: 0;
+}
+.ticket-collaboration-form fieldset {
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  padding: var(--ds-space-150);
+  margin: 0;
+}
