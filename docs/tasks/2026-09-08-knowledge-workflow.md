@@ -23,3 +23,11 @@ REQ-KB-001/002/004, ADR 0013/0018/0040; ACC-001, CHG-001, TKT-002, DOC-001. 기�
 Passed: AdminKnowledgeIntegrationTest 5, ApiDocumentationIntegrationTest 5, ArchitectureTest 1; staff unit 214; Storybook MCP 전체 99/99 및 a11y; typecheck/build/ESLint/boundaries/docs; Chromium 1280/390/320px 넘침 없음 및 390px 육안 확인. 공개 삽입 전 audience 변경 차단, nested Drawer에서 기존 답변 보존·링크 삽입을 검증했다. 실제 backend browser E2E, 운영 성능/배포는 Not run.
 
 직원 문서 링크는 `/agent/knowledge/articles/:slug`, 고객 문서는 실제 고객 앱의 `/articles/:slug`를 사용한다. 기존 동일 origin 경로 배포를 따른다. extension-host에 sensitive context를 추가하지 않고 소유 workspace가 일반 React prop으로 초안 변경 callback을 전달한다.
+
+## PR #162 검토 후 보완
+
+REQ-KB-001/004, ADR 0013/0018/0040과 UI-002/004, DOC-001을 유지한다. 발행 충돌 후 명시적 재조회에서는 최신 revision 본문을 표시한다. 충돌 전후 모두 DRAFT이고 실제 미저장 편집이 있을 때만 사용자 초안을 보존한다. IN_REVIEW 상태에서 다른 관리자가 수정·재검토한 경우와 DRAFT로 되돌린 경우를 각각 검증했다. 기존 If-Match, ADMIN_UI 권한/감사와 서버 lifecycle 의미는 바뀌지 않는다.
+
+검증: 원 구현의 구본문 잔류 Storybook 회귀 실패 확인 후 수정, 지식 관리 Storybook MCP 8개 및 a11y 통과(기존 미저장 초안 보존 포함). Staff unit 220개, typecheck, 변경 파일 ESLint/Prettier, staff build와 디자인 시스템 경계 검사 통과. 전체 Storybook 최초 실행의 새 상태 전환 테스트 1개는 비동기 화면 대기 선택자를 보완한 뒤 focused MCP 재실행으로 통과했다.
+
+별도 API/DB migration, 보관 정책, 외부 I/O, 성능 변경 없음. 실제 서버 연동 browser E2E, 부하 측정, 배포는 이번 보완에서 실행하지 않았다.

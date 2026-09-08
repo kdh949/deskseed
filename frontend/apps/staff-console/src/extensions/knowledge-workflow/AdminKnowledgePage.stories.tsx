@@ -147,6 +147,117 @@ export const ConflictPreservesDraft: Story = {
     )
   },
 }
+let reviewVersion = 1
+let latestLifecycle = 'IN_REVIEW'
+export const PublishConflictReloadsReview: Story = {
+  beforeEach: () => {
+    reviewVersion = 1
+    latestLifecycle = 'IN_REVIEW'
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/admin/knowledge/articles/:id', () =>
+          HttpResponse.json({
+            ...article,
+            lifecycle:
+              reviewVersion === 1
+                ? 'IN_REVIEW'
+                : reviewVersion === 5
+                  ? 'PUBLISHED'
+                  : latestLifecycle,
+            version: reviewVersion,
+          }),
+        ),
+        http.get('/api/v1/admin/knowledge/articles/:id/revisions', () =>
+          HttpResponse.json([
+            reviewVersion === 1
+              ? revision
+              : {
+                  ...revision,
+                  revisionNumber: 2,
+                  document: {
+                    schemaVersion: 1,
+                    blocks: [
+                      {
+                        type: 'paragraph',
+                        text: '새 검토 내용: 환불 전 주문 상태를 확인하세요.',
+                      },
+                    ],
+                  },
+                },
+          ]),
+        ),
+        http.post(
+          '/api/v1/admin/knowledge/articles/:id/publish',
+          ({ request }) => {
+            if (request.headers.get('If-Match') === '"1"') {
+              reviewVersion = 4
+              return HttpResponse.json({ status: 412 }, { status: 412 })
+            }
+            expect(request.headers.get('If-Match')).toBe('"4"')
+            reviewVersion = 5
+            return HttpResponse.json({
+              ...article,
+              lifecycle: 'PUBLISHED',
+              version: 5,
+            })
+          },
+        ),
+        ...base,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '열기: refund-guide' }),
+    )
+    await expect(
+      await canvas.findByText('주문번호를 확인한 뒤 환불을 요청하세요.'),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '발행' }))
+    await expect(
+      await canvas.findByText('최신 내용을 확인하세요.'),
+    ).toBeVisible()
+    await expect(canvas.getByRole('button', { name: '발행' })).toBeDisabled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '최신 내용 확인' }),
+    )
+    await expect(
+      await canvas.findByText('새 검토 내용: 환불 전 주문 상태를 확인하세요.'),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByText('주문번호를 확인한 뒤 환불을 요청하세요.'),
+    ).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: '발행' }))
+    await waitFor(() =>
+      expect(canvas.getByRole('button', { name: '공개 중지' })).toBeEnabled(),
+    )
+  },
+}
+export const PublishConflictReloadsReturnedDraft: Story = {
+  ...PublishConflictReloadsReview,
+  beforeEach: () => {
+    reviewVersion = 1
+    latestLifecycle = 'DRAFT'
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '열기: refund-guide' }),
+    )
+    await userEvent.click(await canvas.findByRole('button', { name: '발행' }))
+    await canvas.findByText('최신 내용을 확인하세요.')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '최신 내용 확인' }),
+    )
+    await expect(await canvas.findByLabelText(/블록 1 내용/)).toHaveValue(
+      '새 검토 내용: 환불 전 주문 상태를 확인하세요.',
+    )
+    await waitFor(() =>
+      expect(canvas.getByRole('button', { name: '검토 요청' })).toBeEnabled(),
+    )
+  },
+}
 export const Empty: Story = {
   parameters: {
     msw: {

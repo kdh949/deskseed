@@ -111,7 +111,7 @@ export function AdminKnowledgePage() {
     if (!revision) throw new Error('문서 버전을 찾지 못했습니다.')
     setSelected(article)
     setRevisions(versions)
-    if (!preserve) {
+    if (!preserve || !dirty || article.lifecycle !== 'DRAFT') {
       const nextDraft = {
         sectionId: article.sectionId,
         slug: article.slug,
