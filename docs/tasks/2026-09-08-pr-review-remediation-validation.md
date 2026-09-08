@@ -36,6 +36,7 @@
 - Passed: `make docs-check`, OpenAPI source bundle `--check`, `git diff --check`, 각 후속 PR의 상위 수정 ancestry 확인.
 - Passed: 변경 화면의 실제 미리보기와 320px/390px 고객 폼, 320px/390px/1280px 매크로 overflow 확인.
 - 초기 실패와 보완: 기본 Kotlin compiler heap 부족으로 첫 통합 실행이 중단되어 저장소 설정 변경 없이 in-process compiler, 2 GiB heap, max-workers=1로 재실행했다. 매크로 story는 다른 status 안내를 먼저 읽던 검증을 실제 저장 완료 문구가 나타날 때까지 기다리도록 보완했다.
+- CI 후속 보완: #167에 있던 공통 답변 편집 story의 붙여넣기·완료 대기 검증을 #159부터 선반영해 중간 PR의 한글 입력 누락을 방지했다. 최상위 파일 내용은 기존 검증본과 같다. #168 자동화 이력 테스트는 나노초 입력의 PostgreSQL 마이크로초 반올림과 예상값 절삭이 달라 1μs 오차로 실패하는 것을 재현했고, 입력을 저장 정밀도로 맞춘 뒤 정의·실행 테스트 10개를 재검증했다. 자동화 실행 로직과 허용 오차는 변경하지 않았다.
 - Not run locally: 전체 backend suite, 실제 백엔드와 연결한 전체 browser E2E, 부하/용량 측정, staging/production 배포. GitHub의 각 최종 head CI 및 merge 결과는 원격 상태로 별도 확인한다.
 
 ## 호환성과 운영

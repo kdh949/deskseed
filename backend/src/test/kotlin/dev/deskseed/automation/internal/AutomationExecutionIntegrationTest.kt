@@ -51,7 +51,7 @@ class AutomationExecutionIntegrationTest {
     @Test
     fun `eligible solved interval closes once through an automation actor ticket command`() {
         val policy = activePolicy(60)
-        val now = Instant.now().minusSeconds(5)
+        val now = Instant.now().minusSeconds(5).truncatedTo(java.time.temporal.ChronoUnit.MICROS)
         val solvedAt = now.minusSeconds(3_700)
         val ticketId = solvedTicket(60_001, solvedAt)
         assertThat(scanner.scanOnce(now)).isEqualTo(1)
@@ -83,7 +83,7 @@ class AutomationExecutionIntegrationTest {
         assertThat(history.executions.single().outcome).isEqualTo("CLOSED")
         assertThat(history.executions.single().auditId).isEqualTo(audit["id"])
         assertThat(history.candidates.single().status).isEqualTo("SUCCEEDED")
-        assertThat(history.candidates.single().eligibleAt).isEqualTo(solvedAt.plusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.MICROS))
+        assertThat(history.candidates.single().eligibleAt).isEqualTo(solvedAt.plusSeconds(3600))
         assertThat(worker.runOnce("automation-test-worker")).isFalse()
         assertThat(jdbc.queryForObject(
             "select count(*) from ticket_audits where ticket_id = ? and actor_type = 'AUTOMATION'",
