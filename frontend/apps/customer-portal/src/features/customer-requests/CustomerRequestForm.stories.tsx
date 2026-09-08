@@ -205,6 +205,9 @@ export const AmbiguousRetryKeepsPayload: Story = {
     ;(args.submit as ReturnType<typeof fn>)
       .mockReset()
       .mockRejectedValueOnce(new TypeError('transport'))
+      .mockRejectedValueOnce(
+        new ApiError('요청이 많습니다.', 429, undefined, 'req-rate-1', '60'),
+      )
       .mockResolvedValue(submittedRequest)
   },
   play: async ({ canvas, args }) => {
@@ -215,9 +218,17 @@ export const AmbiguousRetryKeepsPayload: Story = {
     })
     await expect(canvas.getByLabelText('문의 내용')).toBeDisabled()
     await userEvent.click(retry)
+    await expect(await canvas.findByText(/60초 후 다시 시도/)).toBeVisible()
+    await expect(canvas.getByLabelText('문의 내용')).toBeDisabled()
+    await expect(args.onSubmitted).not.toHaveBeenCalled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '같은 내용으로 접수 확인' }),
+    )
     await waitFor(() => expect(args.onSubmitted).toHaveBeenCalled())
     const calls = (args.submit as ReturnType<typeof fn>).mock.calls
+    await expect(calls).toHaveLength(3)
     await expect(calls[0]![0]).toEqual(calls[1]![0])
+    await expect(calls[0]![0]).toEqual(calls[2]![0])
   },
 }
 export const SignedInRequester: Story = {

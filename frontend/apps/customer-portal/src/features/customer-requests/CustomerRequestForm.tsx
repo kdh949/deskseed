@@ -135,7 +135,9 @@ export function CustomerRequestForm({
       pending.current = null
       setUncertain(false)
     } catch (error) {
-      const ambiguous = !(error instanceof ApiError) || error.status >= 500
+      // A later rejection cannot establish whether the original request committed.
+      const ambiguous =
+        uncertain || !(error instanceof ApiError) || error.status >= 500
       setUncertain(ambiguous)
       if (!ambiguous) pending.current = null
       setSubmitError(toSubmitError(error))

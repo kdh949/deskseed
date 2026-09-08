@@ -98,6 +98,63 @@ describe('CustomerRequestForm', () => {
     expect(screen.getByLabelText('문의 내용')).toHaveValue(
       '결제 승인 내역을 확인해 주세요.',
     )
+    expect(screen.getByLabelText('문의 내용')).toBeEnabled()
+    expect(screen.getByRole('button', { name: '문의 접수' })).toBeEnabled()
+  })
+
+  it('keeps the original request and attachment after an uncertain result followed by rate limiting', async () => {
+    const user = userEvent.setup()
+    const submitted = {
+      ticketNumber: 1042,
+      status: 'NEW',
+      accessToken: 'a'.repeat(43),
+      createdAt: '2026-08-15T00:00:00Z',
+    }
+    const submit = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('response lost'))
+      .mockRejectedValueOnce(
+        new ApiError('요청이 많습니다.', 429, undefined, 'req-rate-1', '60'),
+      )
+      .mockResolvedValueOnce(submitted)
+    const onSubmitted = vi.fn()
+    render(
+      <CustomerRequestForm
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={onSubmitted}
+        submit={submit}
+      />,
+    )
+
+    await user.type(screen.getByLabelText('이름'), '김민아')
+    await user.type(screen.getByLabelText('이메일'), 'mina@example.test')
+    await user.type(screen.getByLabelText('제목'), '결제 확인 요청')
+    await user.type(
+      screen.getByLabelText('문의 내용'),
+      '결제 승인 내역을 확인해 주세요.',
+    )
+    const attachment = new File(['receipt'], 'receipt.txt', {
+      type: 'text/plain',
+    })
+    await user.upload(screen.getByLabelText('첨부 파일'), attachment)
+    await user.click(screen.getByRole('button', { name: '문의 접수' }))
+    await user.click(
+      await screen.findByRole('button', { name: '같은 내용으로 접수 확인' }),
+    )
+
+    expect(await screen.findByText(/60초 후 다시 시도/)).toBeVisible()
+    expect(screen.getByLabelText('문의 내용')).toBeDisabled()
+    expect(screen.getByLabelText('첨부 파일')).toBeDisabled()
+    expect(onSubmitted).not.toHaveBeenCalled()
+    await user.click(
+      screen.getByRole('button', { name: '같은 내용으로 접수 확인' }),
+    )
+
+    expect(submit).toHaveBeenCalledTimes(3)
+    expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0])
+    expect(submit.mock.calls[2]).toEqual(submit.mock.calls[0])
+    expect(submit.mock.calls[2]?.[1]).toEqual([attachment])
+    expect(onSubmitted).toHaveBeenCalledExactlyOnceWith(submitted)
   })
 
   it('rejects more than five initial attachments before submit', async () => {

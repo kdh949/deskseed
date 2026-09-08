@@ -178,10 +178,15 @@ internal class JdbcCustomerTicketFormProjectionQuery(
     private fun normalizeValue(field: CustomerFormFieldSnapshot, value: TicketConfigurationFieldValue): TicketConfigurationFieldValue {
         val validation = field.validation
         fun invalid(): Nothing = throw CustomerFormValidationException()
-        fun text(raw: String?, maximum: Int): String {
+        fun text(raw: String?, maximum: Int, allowLineBreaks: Boolean = false): String {
             if (raw == null) invalid()
             val clean = raw.trim()
-            if (clean.length > maximum || clean.any(Char::isISOControl) ||
+            val invalidControl = clean.indices.any { index ->
+                val character = clean[index]
+                character.isISOControl() && !(allowLineBreaks &&
+                    (character == '\n' || (character == '\r' && clean.getOrNull(index + 1) == '\n')))
+            }
+            if (clean.length > maximum || invalidControl ||
                 validation.minLength?.let { clean.length < it } == true || validation.maxLength?.let { clean.length > it } == true) invalid()
             if (validation.regex?.let { pattern -> runCatching { Regex(pattern).matches(clean) }.getOrDefault(false) } == false) invalid()
             return clean
@@ -190,7 +195,7 @@ internal class JdbcCustomerTicketFormProjectionQuery(
             TicketCustomFieldType.CHECKBOX -> TicketConfigurationFieldValue(booleanValue = value.booleanValue ?: invalid())
             TicketCustomFieldType.SINGLE_SELECT -> TicketConfigurationFieldValue(optionId = value.optionId?.takeIf { id -> field.options.any { it.id == id } } ?: invalid())
             TicketCustomFieldType.SHORT_TEXT -> TicketConfigurationFieldValue(shortTextValue = text(value.shortTextValue, 1000))
-            TicketCustomFieldType.LONG_TEXT -> TicketConfigurationFieldValue(longTextValue = text(value.longTextValue, 10000))
+            TicketCustomFieldType.LONG_TEXT -> TicketConfigurationFieldValue(longTextValue = text(value.longTextValue, 10000, allowLineBreaks = true))
             TicketCustomFieldType.NUMBER -> {
                 if ((value.numberValue?.length ?: 0) > 80) invalid()
                 val number = runCatching { BigDecimal(value.numberValue ?: invalid()).stripTrailingZeros() }.getOrElse { invalid() }

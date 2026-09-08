@@ -505,6 +505,47 @@ class AdminTicketConfigurationIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from customers where id = ?", Long::class.java, prepared.customerId)).isZero()
     }
 
+    @Test
+    fun `customer long text accepts line breaks in preview and preserves them on submit`() {
+        val admin = browser("ADMIN")
+        val field = createPublicField(admin, "request.details", "LONG_TEXT")
+        val form = createPublishedForm(admin, defaultFormJson("상세 문의", field, true, false))
+        for (lineBreak in listOf("\n", "\r\n")) {
+            val text = "첫 번째 줄${lineBreak}두 번째 줄"
+            val values = mapOf("request.details" to mapOf("longTextValue" to text))
+            previewForm(form, values).andExpect(status().isOk)
+            val response = submitForm(form, values).andExpect(status().isCreated).andReturn().response.contentAsString
+            val number = mapper.readTree(response).path("ticketNumber").asLong()
+            assertThat(jdbc.queryForObject("select long_text_value from ticket_custom_field_values value join tickets ticket on ticket.id = value.ticket_id where ticket.ticket_number = ?", String::class.java, number))
+                .isEqualTo(text)
+        }
+    }
+
+    @Test
+    fun `customer text still rejects short text line breaks and other control characters`() {
+        val admin = browser("ADMIN")
+        val shortField = createPublicField(admin, "request.reference", "SHORT_TEXT")
+        val shortForm = createPublishedForm(admin, defaultFormJson("주문 문의", shortField, true, false))
+        val longField = createPublicField(admin, "request.details", "LONG_TEXT")
+        val longForm = createPublishedForm(admin, defaultFormJson("상세 문의", longField, false, false))
+        val ticketCount = jdbc.queryForObject("select count(*) from tickets", Long::class.java)
+        for (control in listOf("\n", "\r\n", "\t", "\u0000", "\u001b", "\u007f")) {
+            val values = mapOf("request.reference" to mapOf("shortTextValue" to "첫 줄${control}다음 줄"))
+            previewForm(shortForm, values).andExpect(status().isBadRequest)
+            submitForm(shortForm, values).andExpect(status().isBadRequest)
+        }
+        for (control in listOf("\r", "\t", "\u0000", "\u001b", "\u007f")) {
+            val values = mapOf("request.details" to mapOf("longTextValue" to "첫 줄${control}다음 줄"))
+            previewForm(longForm, values).andExpect(status().isBadRequest)
+            submitForm(longForm, values).andExpect(status().isBadRequest)
+        }
+        assertThat(jdbc.queryForObject("select count(*) from tickets", Long::class.java)).isEqualTo(ticketCount)
+    }
+
+    private fun previewForm(form: UUID, values: Map<String, Any>) = mockMvc.perform(
+        post("/api/v1/customer/ticket-form-projections").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(mapOf("ticketKind" to "CUSTOMER_REQUEST", "formId" to form, "formVersion" to 1, "fieldValues" to values))))
+
     private fun createPublicField(admin: Browser, key: String, type: String): UUID = UUID.fromString(stringField(
         mockMvc.perform(post("/api/v1/admin/ticket-fields").session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
             .content(fieldJson(key).replace("SINGLE_SELECT", type))).andExpect(status().isCreated).andReturn().response.contentAsString, "id"))
