@@ -16,3 +16,11 @@ FORM은 고객의 최초 ticket_customer_form_bindings를 사용하며 현재 �
 
 Preview: http://localhost:6006/?path=/story/06-domain-workspace-viewconfigurationdrawer--configuration-filters
 Preview: http://localhost:6006/?path=/story/06-domain-workspace-viewconfigurationdrawer--unavailable-configuration-field
+
+## PR #165 문자열 값 입력 보완
+
+REQ-CFG-014/REQ-VIEW-001, ADR 0041과 UI-002/004, DOC-001을 유지한다. SHORT_TEXT의 EQUALS/NOT_EQUALS는 입력 전체를 한 값으로 보존한다. IN/NOT_IN은 한 줄에 한 값씩 입력하며 쉼표는 값에 포함된다. 줄바꿈 직후 빈 줄을 삭제하지 않아 다음 값을 이어 쓸 수 있고, 빈 값이 남아 있으면 미리보기와 저장을 막는다. 숫자/ID 필터, AST v1, 서버 비교/권한/감사/동시성 계약은 그대로다.
+
+검증: 원 구현에서 `서울, 강남`이 잘못 분리되는 Storybook 회귀 실패 확인 후 수정. 단일 비교 2종과 다중 비교 2종의 미리보기/저장 값, Enter 후 빈 줄 보존과 다음 값 타이핑을 검증했다. View drawer 8개와 Agent Views Page 1개 Storybook MCP 및 a11y, staff unit 220개, typecheck, 변경 파일 ESLint/Prettier, staff build와 디자인 시스템 경계 검사 통과. Chromium 1280/390/320px 가로 넘침 0, 320px 화면 육안 확인.
+
+API/DB migration, 외부 I/O, 보관 정책 및 성능 계약 변경 없음. 실제 서버 연동 browser E2E, 부하 측정, EXPLAIN, 배포는 이번 보완에서 실행하지 않았다.

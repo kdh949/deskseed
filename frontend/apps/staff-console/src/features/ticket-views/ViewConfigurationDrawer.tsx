@@ -629,6 +629,30 @@ function ConditionValues({
       </SeedSelect>
     )
   }
+  if (condition.field === 'CUSTOM_FIELD' && field?.type === 'SHORT_TEXT') {
+    if (['IN', 'NOT_IN'].includes(condition.operator))
+      return (
+        <SeedTextAreaField
+          aria-label={label}
+          label={label}
+          hint="한 줄에 값 하나씩 입력하세요. 쉼표는 값에 포함됩니다."
+          rows={3}
+          value={condition.values.join('\n')}
+          onChange={(event) =>
+            onChange(event.target.value ? event.target.value.split('\n') : [])
+          }
+        />
+      )
+    return (
+      <SeedTextField
+        label={label}
+        value={condition.values[0] ?? ''}
+        onChange={(event) =>
+          onChange(event.target.value ? [event.target.value] : [])
+        }
+      />
+    )
+  }
   return (
     <input
       aria-label={label}
@@ -681,6 +705,8 @@ function validate(
         return '사용 가능한 필터를 확인한 뒤 조건을 변경하거나 삭제하세요.'
       if (!condition.values.length || condition.values.length > 10)
         return '필터 값을 1개 이상, 10개 이하로 선택하세요.'
+      if (condition.values.some((value) => !value.trim()))
+        return '비어 있는 필터 값을 입력하거나 삭제하세요.'
     }
   }
   return ''

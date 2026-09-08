@@ -201,6 +201,111 @@ export const ConfigurationFilters: Story = {
     )
   },
 }
+export const ShortTextValuesWithCommas: Story = {
+  args: {
+    ...Create.args,
+    catalog: {
+      ...catalog,
+      fields: [
+        {
+          id: '11111111-1111-4111-8111-111111111116',
+          machineKey: 'delivery.area',
+          label: '배송 지역',
+          type: 'SHORT_TEXT',
+          options: [],
+        },
+      ],
+    },
+  },
+  play: async ({ args, canvas, userEvent }) => {
+    await userEvent.type(canvas.getByLabelText('보기 이름'), '배송 지역별 문의')
+    await userEvent.selectOptions(
+      canvas.getByLabelText('모든 조건 (all) 1 필드'),
+      'CUSTOM_FIELD:delivery.area',
+    )
+    await userEvent.type(
+      canvas.getByLabelText('모든 조건 (all) 1 값'),
+      '서울, 강남',
+    )
+    for (const operator of ['EQUALS', 'NOT_EQUALS']) {
+      await userEvent.selectOptions(
+        canvas.getByLabelText('모든 조건 (all) 1 연산자'),
+        operator,
+      )
+      const conditions = {
+        version: 1,
+        all: [
+          {
+            field: 'CUSTOM_FIELD',
+            fieldKey: 'delivery.area',
+            operator,
+            values: ['서울, 강남'],
+          },
+        ],
+        any: [],
+      }
+      await userEvent.click(canvas.getByRole('button', { name: '미리보기' }))
+      await expect(args.onPreview).toHaveBeenLastCalledWith(
+        expect.objectContaining({ conditions }),
+      )
+      await userEvent.click(canvas.getByRole('button', { name: '보기 만들기' }))
+      await expect(args.onSave).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          definition: expect.objectContaining({ conditions }),
+        }),
+      )
+    }
+    await userEvent.selectOptions(
+      canvas.getByLabelText('모든 조건 (all) 1 연산자'),
+      'IN',
+    )
+    await userEvent.type(
+      canvas.getByLabelText('모든 조건 (all) 1 값'),
+      '{Enter}',
+    )
+    await expect(canvas.getByLabelText('모든 조건 (all) 1 값')).toHaveValue(
+      '서울, 강남\n',
+    )
+    await expect(
+      canvas.getByRole('button', { name: '미리보기' }),
+    ).toBeDisabled()
+    await expect(
+      canvas.getByRole('button', { name: '보기 만들기' }),
+    ).toBeDisabled()
+    await userEvent.type(
+      canvas.getByLabelText('모든 조건 (all) 1 값'),
+      '부산, 해운대',
+    )
+    for (const operator of ['IN', 'NOT_IN']) {
+      await userEvent.selectOptions(
+        canvas.getByLabelText('모든 조건 (all) 1 연산자'),
+        operator,
+      )
+      const conditions = {
+        version: 1,
+        all: [
+          {
+            field: 'CUSTOM_FIELD',
+            fieldKey: 'delivery.area',
+            operator,
+            values: ['서울, 강남', '부산, 해운대'],
+          },
+        ],
+        any: [],
+      }
+      await userEvent.click(canvas.getByRole('button', { name: '미리보기' }))
+      await expect(args.onPreview).toHaveBeenLastCalledWith(
+        expect.objectContaining({ conditions }),
+      )
+      await userEvent.click(canvas.getByRole('button', { name: '보기 만들기' }))
+      await expect(args.onSave).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          definition: expect.objectContaining({ conditions }),
+        }),
+      )
+    }
+  },
+}
 export const UnavailableConfigurationField: Story = {
   args: {
     ...Create.args,
