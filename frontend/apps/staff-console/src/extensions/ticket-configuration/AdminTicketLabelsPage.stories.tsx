@@ -111,6 +111,49 @@ export const EditStatus: Story = {
     )
   },
 }
+export const CreateOnHoldStatus: Story = {
+  args: { kind: 'statuses' },
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/admin/ticket-statuses', () =>
+          HttpResponse.json([{ ...status, statusCategory: 'ON_HOLD' }]),
+        ),
+        http.post('/api/v1/admin/ticket-statuses', async ({ request }) => {
+          body = await request.json()
+          return HttpResponse.json(
+            { ...status, ...(body as object) },
+            { status: 201 },
+          )
+        }),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('button', { name: '고객 확인 대기 편집' }),
+    ).toBeVisible()
+    await expect(canvas.getByText('보류 · 사용 중')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '새 상태' }))
+    await userEvent.type(canvas.getByLabelText(/식별 이름/), 'waiting-team')
+    await userEvent.type(
+      canvas.getByLabelText(/상담사 표시 이름/),
+      '협업 회신 대기',
+    )
+    await userEvent.selectOptions(
+      canvas.getByLabelText('기본 처리 단계'),
+      'ON_HOLD',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '설정 저장' }))
+    await waitFor(() =>
+      expect(body).toMatchObject({ statusCategory: 'ON_HOLD' }),
+    )
+    await waitFor(() =>
+      expect(canvas.queryByRole('dialog')).not.toBeInTheDocument(),
+    )
+  },
+}
 export const ConflictKeepsDraft: Story = {
   parameters: {
     msw: {

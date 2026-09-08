@@ -37,7 +37,7 @@ export const decodeStatus = (v: unknown): CustomStatus | undefined =>
   typeof v.id === 'string' &&
   typeof v.machineKey === 'string' &&
   typeof v.agentLabel === 'string' &&
-  ['NEW', 'OPEN', 'PENDING', 'HOLD', 'SOLVED'].includes(
+  ['NEW', 'OPEN', 'PENDING', 'ON_HOLD', 'SOLVED'].includes(
     String(v.statusCategory),
   ) &&
   typeof v.active === 'boolean' &&
