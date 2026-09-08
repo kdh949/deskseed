@@ -95,17 +95,64 @@ export const CreateAndReview: Story = {
     )
   },
 }
+const originalSharedActions = [
+  { type: 'GROUP', groupId: 'group-a' },
+  ...macro.actions,
+  { type: 'PRIORITY', priority: 'NORMAL' },
+]
+const latestSharedActions = [
+  { type: 'PRIORITY', priority: 'HIGH' },
+  { type: 'GROUP', groupId: 'group-b' },
+  ...macro.actions,
+]
+let conflictRequests = 0
 export const ConflictPreservesDraft: Story = {
+  beforeEach: () => {
+    conflictRequests = 0
+  },
   parameters: {
     msw: {
       handlers: [
-        listing,
+        http.get('/api/v1/agent/personal-macros', () =>
+          HttpResponse.json([
+            conflictRequests === 0
+              ? { ...macro, actions: originalSharedActions }
+              : {
+                  ...macro,
+                  name: '최신 접수 안내',
+                  actions: latestSharedActions,
+                  currentVersion: 3,
+                  aggregateVersion: 5,
+                },
+          ]),
+        ),
         csrf,
         http.post(
           '/api/v1/agent/personal-macros/:id/versions',
-          ({ request }) => {
-            expect(request.headers.get('If-Match')).toBe('"3"')
-            return HttpResponse.json({ status: 412 }, { status: 412 })
+          async ({ request }) => {
+            conflictRequests++
+            if (conflictRequests === 1) {
+              expect(request.headers.get('If-Match')).toBe('"3"')
+              return HttpResponse.json({ status: 412 }, { status: 412 })
+            }
+            expect(request.headers.get('If-Match')).toBe('"5"')
+            expect(await request.json()).toEqual({
+              name: '최신 접수 안내',
+              actions: [
+                latestSharedActions[0],
+                latestSharedActions[1],
+                {
+                  type: 'COMMENT',
+                  visibility: 'PUBLIC',
+                  template: macro.actions[0]!.template + ' 추가 문구',
+                },
+              ],
+            })
+            return HttpResponse.json({
+              ...macro,
+              currentVersion: 4,
+              aggregateVersion: 6,
+            })
           },
         ),
       ],
@@ -133,6 +180,14 @@ export const ConflictPreservesDraft: Story = {
       expect(
         canvas.getByRole('button', { name: '새 버전 저장' }),
       ).toBeEnabled(),
+    )
+    await expect(canvas.getByLabelText('변경할 우선순위')).toHaveValue('HIGH')
+    await expect(canvas.getByLabelText(/매크로 이름/)).toHaveValue(
+      '최신 접수 안내',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
+    await expect(await canvas.findByRole('status')).toHaveTextContent(
+      '버전 4을 저장했습니다.',
     )
   },
 }
@@ -231,5 +286,173 @@ export const Loading: Story = {
         }),
       ],
     },
+  },
+}
+
+let sameFieldRequests = 0
+export const SameFieldConflictRequiresChoice: Story = {
+  beforeEach: () => {
+    sameFieldRequests = 0
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        csrf,
+        http.get('/api/v1/agent/personal-macros', async () => {
+          if (sameFieldRequests > 0) await delay(150)
+          return HttpResponse.json([
+            sameFieldRequests === 0
+              ? macro
+              : {
+                  ...macro,
+                  currentVersion: 3,
+                  aggregateVersion: 5,
+                  actions: [
+                    {
+                      type: 'COMMENT',
+                      visibility: 'PUBLIC',
+                      template: '다른 관리자의 문구',
+                    },
+                  ],
+                },
+          ])
+        }),
+        http.post('/api/v1/agent/personal-macros/:id/versions', () => {
+          sameFieldRequests++
+          return HttpResponse.json({ status: 412 }, { status: 412 })
+        }),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '편집: 접수 안내' }),
+    )
+    await userEvent.type(canvas.getByLabelText('답변 문구'), ' 추가 문구')
+    await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
+    await canvas.findByText('최신 내용을 확인한 뒤 다시 저장하세요.')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '최신 목록 확인' }),
+    )
+    await expect(
+      await canvas.findByText('같은 항목에 다른 변경이 있습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '새 버전 저장' }),
+    ).toBeDisabled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '최신 목록 확인' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '새 버전 저장' }),
+    ).toBeDisabled()
+    await expect(
+      canvas.getByRole('button', { name: '충돌 항목의 최신 값 사용' }),
+    ).toBeDisabled()
+    await expect(
+      canvas.getByRole('button', { name: '내 편집값 유지' }),
+    ).toBeDisabled()
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('button', { name: '충돌 항목의 최신 값 사용' }),
+      ).toBeEnabled(),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '새 버전 저장' }),
+    ).toBeDisabled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '충돌 항목의 최신 값 사용' }),
+    )
+    await expect(canvas.getByLabelText('답변 문구')).toHaveValue(
+      '다른 관리자의 문구',
+    )
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('button', { name: '새 버전 저장' }),
+      ).toBeEnabled(),
+    )
+  },
+}
+
+let customStatusRequests = 0
+export const NewCustomStatusRequiresLatestChoice: Story = {
+  beforeEach: () => {
+    customStatusRequests = 0
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        csrf,
+        http.get('/api/v1/agent/personal-macros', () =>
+          HttpResponse.json([
+            customStatusRequests === 0
+              ? macro
+              : {
+                  ...macro,
+                  currentVersion: 3,
+                  aggregateVersion: 5,
+                  actions: [
+                    ...macro.actions,
+                    {
+                      type: 'CUSTOM_STATUS',
+                      customStatusId: '33333333-3333-4333-8333-333333333333',
+                    },
+                  ],
+                },
+          ]),
+        ),
+        http.post(
+          '/api/v1/agent/personal-macros/:id/versions',
+          async ({ request }) => {
+            customStatusRequests++
+            if (customStatusRequests === 1)
+              return HttpResponse.json({ status: 412 }, { status: 412 })
+            const body = (await request.json()) as {
+              actions: { type: string }[]
+            }
+            expect(body.actions.map((a) => a.type)).toEqual([
+              'COMMENT',
+              'CUSTOM_STATUS',
+            ])
+            return HttpResponse.json({
+              ...macro,
+              currentVersion: 4,
+              aggregateVersion: 6,
+            })
+          },
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '편집: 접수 안내' }),
+    )
+    await userEvent.selectOptions(
+      canvas.getByLabelText('변경할 상태'),
+      'PENDING',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
+    await canvas.findByText('최신 내용을 확인한 뒤 다시 저장하세요.')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '최신 목록 확인' }),
+    )
+    await expect(
+      await canvas.findByText('같은 항목에 다른 변경이 있습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '내 편집값 유지' }),
+    ).toBeDisabled()
+    await expect(
+      canvas.getByRole('button', { name: '새 버전 저장' }),
+    ).toBeDisabled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '충돌 항목의 최신 값 사용' }),
+    )
+    await expect(canvas.getByLabelText('변경할 상태')).toHaveValue('')
+    await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
+    await expect(await canvas.findByRole('status')).toHaveTextContent(
+      '버전 4을 저장했습니다.',
+    )
   },
 }

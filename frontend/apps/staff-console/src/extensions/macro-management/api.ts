@@ -105,6 +105,35 @@ export function editableDraft(macro?: AgentMacroDefinition) {
     ),
   }
 }
+export const EDITABLE_MACRO_FIELDS = [
+  'name',
+  'template',
+  'visibility',
+  'status',
+  'priority',
+] as const
+export type EditableMacroField = (typeof EDITABLE_MACRO_FIELDS)[number]
+export function refreshMacroDraft(
+  draft: ReturnType<typeof editableDraft>,
+  previous: AgentMacroDefinition,
+  latest: AgentMacroDefinition,
+) {
+  const before = editableDraft(previous)
+  const next = editableDraft(latest)
+  const conflicts: EditableMacroField[] = []
+  for (const field of EDITABLE_MACRO_FIELDS) {
+    if (draft[field] === before[field]) continue
+    if (
+      (next[field] !== before[field] && next[field] !== draft[field]) ||
+      (field === 'status' &&
+        draft.status !== '' &&
+        next.preserved.some((action) => action.type === 'CUSTOM_STATUS'))
+    )
+      conflicts.push(field)
+    next[field] = draft[field]
+  }
+  return { draft: next, conflicts }
+}
 export function toMacroDraft(
   draft: ReturnType<typeof editableDraft>,
 ): MacroDraft {

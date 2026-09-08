@@ -17,6 +17,8 @@ import {
   getMacroHistory,
   listManagedMacros,
   saveMacro,
+  refreshMacroDraft,
+  type EditableMacroField,
   toMacroDraft,
   type MacroScope,
 } from './api'
@@ -52,22 +54,39 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
     retry: false,
   })
   const [draft, setDraft] = useState(editableDraft())
+  const [conflicts, setConflicts] = useState<EditableMacroField[]>([])
+  const customStatusConflict =
+    conflicts.includes('status') &&
+    draft.preserved.some((action) => action.type === 'CUSTOM_STATUS')
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
   const [success, setSuccess] = useState('')
   const [refreshRequired, setRefreshRequired] = useState(false)
   const refresh = async () => {
+    if (busy || macros.isFetching) return
     const result = await macros.refetch()
     if (!result.error) {
       if (editing && editing !== 'new') {
         const latest = result.data?.find((m) => m.id === editing.id)
-        if (latest) setEditing(latest)
+        if (latest) {
+          const refreshed = refreshMacroDraft(draft, editing, latest)
+          setDraft(refreshed.draft)
+          setConflicts((pending) =>
+            [...new Set([...pending, ...refreshed.conflicts])].filter(
+              (field) =>
+                refreshed.draft[field] !== editableDraft(latest)[field],
+            ),
+          )
+          setEditing(latest)
+        } else return
       }
       setRefreshRequired(false)
     }
   }
   const begin = (macro: AgentMacroDefinition | 'new') => {
+    if (busy || macros.isFetching) return
     setEditing(macro)
+    setConflicts([])
     setDraft(editableDraft(macro === 'new' ? undefined : macro))
     setError(null)
     setSuccess('')
@@ -77,7 +96,8 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
     command: () => Promise<AgentMacroDefinition>,
     saved: boolean,
   ) => {
-    if (busy || refreshRequired) return
+    if (busy || macros.isFetching || refreshRequired || conflicts.length > 0)
+      return
     setBusy(true)
     setError(null)
     setSuccess('')
@@ -135,12 +155,15 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
       </header>
       <div className="macro-actions">
         <SeedButton
-          disabled={busy || !macros.data}
+          disabled={busy || macros.isFetching || !macros.data}
           onClick={() => begin('new')}
         >
           매크로 만들기
         </SeedButton>
-        <SeedButton disabled={busy} onClick={() => void refresh()}>
+        <SeedButton
+          disabled={busy || macros.isFetching}
+          onClick={() => void refresh()}
+        >
           최신 목록 확인
         </SeedButton>
       </div>
@@ -177,7 +200,10 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
                 </p>
               </div>
               <div className="macro-actions">
-                <SeedButton disabled={busy} onClick={() => begin(macro)}>
+                <SeedButton
+                  disabled={busy || macros.isFetching}
+                  onClick={() => begin(macro)}
+                >
                   편집: {macro.name}
                 </SeedButton>
                 <SeedButton
@@ -229,7 +255,50 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
           <h2>
             {editing === 'new' ? '매크로 만들기' : `${editing.name} 새 버전`}
           </h2>
-          <fieldset disabled={busy}>
+          {conflicts.length > 0 && editing !== 'new' && (
+            <SeedNotice
+              title="같은 항목에 다른 변경이 있습니다."
+              tone="warning"
+            >
+              <p>
+                최신 변경:{' '}
+                {conflicts
+                  .map(
+                    (field) =>
+                      `${{ name: '이름', template: '답변 문구', visibility: '공개 범위', status: '상태', priority: '우선순위' }[field]} = ${editableDraft(editing)[field] || '없음'}`,
+                  )
+                  .join(', ')}
+                . 아래 편집값을 유지할지 선택하세요.
+              </p>
+              {customStatusConflict && (
+                <p>
+                  최신 사용자 정의 상태와 기본 상태를 함께 적용할 수 없습니다.
+                  충돌 항목의 최신 값을 사용해 주세요.
+                </p>
+              )}
+              <SeedButton
+                disabled={busy || macros.isFetching}
+                onClick={() => {
+                  const latest = editableDraft(editing)
+                  setDraft((current) => {
+                    const next = { ...current }
+                    for (const field of conflicts) next[field] = latest[field]
+                    return next
+                  })
+                  setConflicts([])
+                }}
+              >
+                충돌 항목의 최신 값 사용
+              </SeedButton>
+              <SeedButton
+                disabled={busy || macros.isFetching || customStatusConflict}
+                onClick={() => setConflicts([])}
+              >
+                내 편집값 유지
+              </SeedButton>
+            </SeedNotice>
+          )}
+          <fieldset disabled={busy || macros.isFetching}>
             <legend>답변과 변경 사항</legend>
             <SeedTextField
               label="매크로 이름"
@@ -310,13 +379,19 @@ export function MacroManagementPage({ scope }: { scope: MacroScope }) {
                 variant="primary"
                 disabled={
                   refreshRequired ||
+                  conflicts.length > 0 ||
                   !draft.name.trim() ||
                   !toMacroDraft(draft).actions.length
                 }
               >
                 {editing === 'new' ? '매크로 저장' : '새 버전 저장'}
               </SeedButton>
-              <SeedButton onClick={() => setEditing(null)}>
+              <SeedButton
+                onClick={() => {
+                  setEditing(null)
+                  setConflicts([])
+                }}
+              >
                 편집 닫기
               </SeedButton>
             </div>
