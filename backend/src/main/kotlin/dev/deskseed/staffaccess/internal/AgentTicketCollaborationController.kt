@@ -139,7 +139,7 @@ internal data class AgentNotificationResponse(
     val id: UUID,
     val type: String,
     val ticketNumber: Long,
-    val noteId: UUID,
+    val noteId: UUID?,
     val actor: CollaborationActorResponse,
     val createdAt: Instant,
     val readAt: Instant?,
@@ -167,7 +167,7 @@ private fun AgentNotification.toResponse() = AgentNotificationResponse(
     type = type.name,
     ticketNumber = ticketNumber,
     noteId = noteId,
-    actor = actor.toResponse(),
+    actor = CollaborationActorResponse(actor.id, actor.type.name, actor.displayName),
     createdAt = createdAt,
     readAt = readAt,
 )

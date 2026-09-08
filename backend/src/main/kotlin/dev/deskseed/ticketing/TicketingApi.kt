@@ -170,3 +170,13 @@ data class PublicAgentReplyRecorded(
     val context: CommandContext,
     val ticketAuditId: UUID,
 )
+
+/** Body-free, in-transaction notification of a user/integration mutation for rule evaluation. */
+data class TicketMutationRecorded(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ticketAuditId: UUID,
+    val correlationId: String,
+    val occurredAt: Instant,
+    val customerReply: Boolean = false,
+)

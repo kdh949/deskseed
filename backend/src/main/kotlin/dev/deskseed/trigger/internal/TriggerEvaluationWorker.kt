@@ -18,6 +18,9 @@ import dev.deskseed.trigger.TriggerConditionGroup
 import dev.deskseed.trigger.TriggerConditionOperator
 import dev.deskseed.trigger.TriggerEventType
 import dev.deskseed.trigger.TriggerSetGroupAction
+import dev.deskseed.trigger.TriggerSetPriorityAction
+import dev.deskseed.trigger.TriggerSetAssigneeAction
+import dev.deskseed.trigger.TriggerNotifyUnassignedGroupAction
 import dev.deskseed.trigger.TriggerWebhookAction
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Scheduled
@@ -32,6 +35,8 @@ import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+
+internal class TriggerExecutionRejectedException(val code: String) : RuntimeException(code)
 
 internal data class ClaimedTriggerJob(
     val id: UUID,
@@ -123,8 +128,10 @@ internal class TriggerEvaluationJobStore(
         )
     }
 
-    private fun failureCode(failure: Throwable): String = generateSequence(failure) { it.cause }
-        .last().javaClass.simpleName.uppercase().replace(Regex("[^A-Z0-9_]"), "_").take(80)
+    private fun failureCode(failure: Throwable): String {
+        val root = generateSequence(failure) { it.cause }.last()
+        return if (root is TriggerExecutionRejectedException) root.code else root.javaClass.simpleName.uppercase().replace(Regex("[^A-Z0-9_]"), "_").take(80)
+    }
 
     private companion object { const val MAX_ATTEMPTS = 5 }
 }
@@ -136,6 +143,8 @@ internal class TriggerEvaluationExecutor(
     private val ticketCommands: TriggerTicketCommandService,
     private val eventPublication: EventPublicationPort,
     private val clock: Clock,
+    private val evaluation: TriggerTicketEvaluation,
+    private val unassignedAlerts: dev.deskseed.collaboration.UnassignedTicketAlerts,
 ) {
     @Transactional
     fun execute(job: ClaimedTriggerJob) {
@@ -146,7 +155,7 @@ internal class TriggerEvaluationExecutor(
         var actionCount = 0
         job.versions.sortedWith(compareBy<TriggerVersionSnapshot> { it.position }.thenBy { it.triggerId }).forEach { snapshot ->
             if (executionExists(job.id, snapshot)) return@forEach
-            val ticket = loadTicket(job.ticketNumber)
+            val ticket = evaluation.load(job.ticketNumber, lock = true) ?: error("Trigger ticket is unavailable")
             val fingerprint = fingerprint(job.eventType, ticket)
             val executionId = UUID.randomUUID()
             val startedAt = Instant.now(clock)
@@ -162,12 +171,19 @@ internal class TriggerEvaluationExecutor(
                 insertExecution(job, snapshot, executionId, "LOOP_BLOCKED", fingerprint, null, "STATE_REPETITION", startedAt)
                 return@forEach
             }
-            if (!matches(definition.conditions, job.eventType, ticket)) {
+            if (ticket.status == "CLOSED") {
+                insertExecution(job, snapshot, executionId, "NO_OP", fingerprint, null, "TICKET_CLOSED", startedAt)
+                return@forEach
+            }
+            if (!evaluation.matched(definition.conditions, evaluation.outcomes(definition.conditions, job.eventType, ticket))) {
                 insertExecution(job, snapshot, executionId, "NOT_MATCHED", fingerprint, null, null, startedAt)
                 return@forEach
             }
 
+            val failures = evaluation.failures(definition.actions, ticket)
+            if (failures.isNotEmpty()) throw TriggerExecutionRejectedException(failures.first())
             val targetGroup = definition.actions.filterIsInstance<TriggerSetGroupAction>().singleOrNull()?.groupId
+            val assignment = definition.actions.filterIsInstance<TriggerSetAssigneeAction>().singleOrNull()
             val context = CommandContext(
                 RequestSource.TRIGGER,
                 "trigger-job-${job.id}",
@@ -183,7 +199,13 @@ internal class TriggerEvaluationExecutor(
                 job.rootTicketAuditId,
                 targetGroup,
                 context,
+                priority = definition.actions.filterIsInstance<TriggerSetPriorityAction>().singleOrNull()?.priority,
+                setAssignee = assignment != null,
+                assigneeId = assignment?.assigneeId,
             ))
+            if (definition.actions.any { it is TriggerNotifyUnassignedGroupAction }) {
+                unassignedAlerts.append(ticket.id, checkNotNull(targetGroup ?: ticket.groupId), snapshot.triggerId, snapshot.triggerVersion, executionId, startedAt)
+            }
             if (definition.actions.any { it.type == TriggerActionType.ENQUEUE_WEBHOOK }) {
                 appendWebhookIntent(job, snapshot, executionId, result.auditId, ticket.kind, context)
             }
@@ -213,46 +235,11 @@ internal class TriggerEvaluationExecutor(
         )
         val actions = jdbc.query(
             "select action_type, configuration_json::text from trigger_actions where trigger_id = ? and trigger_version = ? order by ordinal",
-            { result, _ -> when (TriggerActionType.valueOf(result.getString(1))) {
-                TriggerActionType.SET_GROUP -> TriggerSetGroupAction(
-                    UUID.fromString(objectMapper.readTree(result.getString(2))["groupId"].asText()),
-                )
-                TriggerActionType.ENQUEUE_WEBHOOK -> TriggerWebhookAction(
-                    objectMapper.readTree(result.getString(2))["eventType"].asText(),
-                )
-            } },
+            { result, _ -> triggerAction(objectMapper, result.getString(1), result.getString(2)) },
             snapshot.triggerId, snapshot.triggerVersion,
         )
         check(conditions.isNotEmpty() && actions.isNotEmpty()) { "Trigger version snapshot is incomplete" }
         return TriggerDefinitionSnapshot(conditions, actions)
-    }
-
-    private fun loadTicket(ticketNumber: Long): TicketSnapshot = jdbc.query(
-        "select id, version, priority, group_id, kind from tickets where ticket_number = ? for update",
-        { result, _ -> TicketSnapshot(
-            result.getObject("id", UUID::class.java), result.getLong("version"), result.getString("priority"),
-            result.getObject("group_id", UUID::class.java), TicketKind.valueOf(result.getString("kind")),
-        ) },
-        ticketNumber,
-    ).singleOrNull() ?: error("Trigger ticket is unavailable")
-
-    private fun matches(conditions: List<TriggerConditionDefinition>, event: TriggerEventType, ticket: TicketSnapshot): Boolean {
-        val results = conditions.map { condition ->
-            val current = when (condition.field) {
-                TriggerConditionField.EVENT -> event.name
-                TriggerConditionField.PRIORITY -> ticket.priority
-                TriggerConditionField.GROUP -> ticket.groupId?.toString()
-            }
-            when (condition.operator) {
-                TriggerConditionOperator.IS -> current == condition.value
-                TriggerConditionOperator.IS_NOT -> current != condition.value
-                TriggerConditionOperator.PRESENT -> current != null
-                TriggerConditionOperator.NOT_PRESENT -> current == null
-            }
-        }
-        val all = conditions.indices.filter { conditions[it].group == TriggerConditionGroup.ALL }
-        val any = conditions.indices.filter { conditions[it].group == TriggerConditionGroup.ANY }
-        return all.all(results::get) && (any.isEmpty() || any.any(results::get))
     }
 
     private fun appendWebhookIntent(
@@ -308,8 +295,8 @@ internal class TriggerEvaluationExecutor(
         Boolean::class.java, jobId, snapshot.triggerId, snapshot.triggerVersion,
     ) == true
 
-    private fun fingerprint(event: TriggerEventType, ticket: TicketSnapshot): String = sha256(
-        listOf(event.name, ticket.id, ticket.version, ticket.priority, ticket.groupId, ticket.kind).joinToString("|"),
+    private fun fingerprint(event: TriggerEventType, ticket: TriggerTicketFacts): String = sha256(
+        listOf(event.name, ticket.id, ticket.version, ticket.priority, ticket.groupId, ticket.assigneeId, ticket.kind, ticket.formId, ticket.tagIds.sorted()).joinToString("|"),
     )
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
@@ -319,14 +306,6 @@ internal class TriggerEvaluationExecutor(
         val conditions: List<TriggerConditionDefinition>,
         val actions: List<dev.deskseed.trigger.TriggerActionDefinition>,
     )
-    private data class TicketSnapshot(
-        val id: UUID,
-        val version: Long,
-        val priority: String,
-        val groupId: UUID?,
-        val kind: TicketKind,
-    )
-
     private companion object {
         const val MAX_TRIGGER_DEPTH = 100
         const val MAX_ACTION_COUNT = 200

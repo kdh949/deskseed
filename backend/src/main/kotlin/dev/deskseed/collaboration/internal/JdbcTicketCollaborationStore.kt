@@ -1,6 +1,8 @@
 package dev.deskseed.collaboration.internal
 
 import dev.deskseed.collaboration.AgentNotification
+import dev.deskseed.collaboration.AgentNotificationActor
+import dev.deskseed.foundation.ActorType
 import dev.deskseed.collaboration.AgentNotificationPage
 import dev.deskseed.collaboration.AgentNotificationType
 import dev.deskseed.collaboration.CollaborationCommandReplay
@@ -157,12 +159,13 @@ internal class JdbcTicketCollaborationStore(
         val rows = jdbc.query(
             """
             select notification.id, notification.recipient_staff_id, notification.notification_type,
-                   ticket.ticket_number, notification.note_id, note.author_staff_id,
-                   author.display_name as author_display_name, notification.created_at, notification.read_at
+                   ticket.ticket_number, notification.note_id, coalesce(note.author_staff_id, notification.trigger_id) as notification_actor_id,
+                   coalesce(author.display_name, trigger_version.name) as actor_display_name, notification.created_at, notification.read_at
               from staff_notifications notification
               join tickets ticket on ticket.id = notification.ticket_id
-              join ticket_collaboration_notes note on note.id = notification.note_id
-              join staff_accounts author on author.id = note.author_staff_id
+              left join ticket_collaboration_notes note on note.id = notification.note_id
+              left join staff_accounts author on author.id = note.author_staff_id
+              left join trigger_versions trigger_version on trigger_version.trigger_id = notification.trigger_id and trigger_version.version = notification.trigger_version
              where notification.recipient_staff_id = ?
                $cursorClause
              order by notification.created_at desc, notification.id desc
@@ -175,9 +178,10 @@ internal class JdbcTicketCollaborationStore(
                     type = AgentNotificationType.valueOf(result.getString("notification_type")),
                     ticketNumber = result.getLong("ticket_number"),
                     noteId = result.getObject("note_id", UUID::class.java),
-                    actor = CollaborationStaffSummary(
-                        result.getObject("author_staff_id", UUID::class.java),
-                        result.getString("author_display_name"),
+                    actor = AgentNotificationActor(
+                        result.getObject("notification_actor_id", UUID::class.java),
+                        if (result.getString("notification_type") == "UNASSIGNED_TICKET_ALERT") ActorType.TRIGGER else ActorType.STAFF,
+                        result.getString("actor_display_name"),
                     ),
                     createdAt = result.getTimestamp("created_at").toInstant(),
                     readAt = result.getTimestamp("read_at")?.toInstant(),

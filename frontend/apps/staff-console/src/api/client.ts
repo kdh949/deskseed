@@ -3042,9 +3042,12 @@ function decodeAgentNotification(
   const actor = decodeActorSummary(value.actor)
   if (
     !isUuid(value.id) ||
-    value.type !== 'COLLABORATION_MENTION' ||
+    (value.type !== 'COLLABORATION_MENTION' &&
+      value.type !== 'UNASSIGNED_TICKET_ALERT') ||
     !isTicketNumber(value.ticketNumber) ||
-    !isUuid(value.noteId) ||
+    (value.type === 'COLLABORATION_MENTION'
+      ? !isUuid(value.noteId) || actor?.type !== 'STAFF'
+      : value.noteId !== null || actor?.type !== 'TRIGGER') ||
     !actor ||
     !isTimestamp(value.createdAt) ||
     (value.readAt !== null && !isTimestamp(value.readAt))
@@ -3053,9 +3056,9 @@ function decodeAgentNotification(
   }
   return {
     id: value.id,
-    type: 'COLLABORATION_MENTION',
+    type: value.type,
     ticketNumber: value.ticketNumber,
-    noteId: value.noteId,
+    noteId: value.noteId as string | null,
     actor,
     createdAt: value.createdAt,
     readAt: value.readAt,

@@ -114,8 +114,14 @@ export function AgentShellLayout() {
             <SeedNotificationMenu
               items={notifications.items.map((item) => ({
                 id: item.id,
-                title: `${item.actor.displayName} 님이 회원님을 멘션했습니다`,
-                description: `티켓 #${item.ticketNumber}의 내부 협업 메모`,
+                title:
+                  item.type === 'UNASSIGNED_TICKET_ALERT'
+                    ? '그룹에 담당자가 없는 티켓이 있습니다'
+                    : `${item.actor.displayName} 님이 회원님을 멘션했습니다`,
+                description:
+                  item.type === 'UNASSIGNED_TICKET_ALERT'
+                    ? `티켓 #${item.ticketNumber} · ${item.actor.displayName}`
+                    : `티켓 #${item.ticketNumber}의 내부 협업 메모`,
                 timestamp: formatNotificationTime(item.createdAt),
                 unread: item.readAt === null,
               }))}
@@ -129,7 +135,7 @@ export function AgentShellLayout() {
                   .markRead(id)
                   .finally(() =>
                     navigate(
-                      `/agent/tickets/${notification.ticketNumber}#collaboration`,
+                      `/agent/tickets/${notification.ticketNumber}${notification.type === 'COLLABORATION_MENTION' ? '#collaboration' : ''}`,
                     ),
                   )
               }}
