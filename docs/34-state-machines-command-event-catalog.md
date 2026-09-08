@@ -445,3 +445,7 @@ rate-limit budget committed
   quarantine/upload/scan. Finalization creates that exact Customer ID and owner-match links CLEAN files in the same transaction.
 - File failure leaves no Customer or Ticket. Earlier CLEAN files remain unlinked for existing TTL cleanup. Final form/consent conflict or
   required audit/mail persistence failure rolls back Customer/Ticket/link state; the separate abuse budget remains consumed.
+
+### Knowledge 문서 수정 재개
+
+`return-to-draft`는 ADMIN_UI의 If-Match 명령으로 `IN_REVIEW` 또는 `UNPUBLISHED`를 `DRAFT`로 되돌린다. `PUBLISHED`에서 직접 호출할 수 없으며 먼저 `unpublish`해야 한다. 공개 중지 동안 고객 읽기/검색은 기존 audience·lifecycle 필터를 유지한다. `KNOWLEDGE_ARTICLE_LIFECYCLE_CHANGED` 관리 감사와 내부 `knowledge.article.lifecycle-changed` outbox를 기존 트랜잭션에 기록한다. revision은 수정하지 않는다.
