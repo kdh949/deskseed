@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import type { RichTextDocumentV1 } from '../../api/types'
 import { plainTextDocument } from '../../api/types'
 import { SeedRichTextContent } from './SeedRichTextContent'
@@ -120,10 +120,14 @@ type Story = StoryObj<typeof meta>
 
 export const EmptyDocument: Story = {
   render: () => <StatefulEditor />,
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     const editor = await canvas.findByRole('textbox', { name: '답변 내용' })
-    await userEvent.type(editor, '고객에게 보낼 답변입니다.')
-    await expect(editor).toHaveTextContent('고객에게 보낼 답변입니다.')
+    await userEvent.click(editor)
+    await expect(editor).toHaveFocus()
+    await userEvent.paste('고객에게 보낼 답변입니다.')
+    await waitFor(() =>
+      expect(editor).toHaveTextContent('고객에게 보낼 답변입니다.'),
+    )
   },
 }
 
