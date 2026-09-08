@@ -3074,7 +3074,7 @@ function decodeAgentNotificationPage(
   }
 }
 
-function decodeAgentMacroDefinition(
+export function decodeAgentMacroDefinition(
   value: unknown,
 ): AgentMacroDefinition | undefined {
   if (
