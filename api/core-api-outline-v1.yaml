@@ -14934,7 +14934,8 @@ components:
           items:
             $ref: '#/components/schemas/ProjectedTicketField'
     CustomerTicketFieldValue:
-      description: customer form candidate와 최종 제출에서 정확히 하나의 field type 값을 전달하는 closed union입니다. LONG_TEXT는 LF/CRLF 줄바꿈을 보존하며, SHORT_TEXT는 줄바꿈을 허용하지 않습니다. 두 텍스트 타입 모두 그 밖의 ISO 제어 문자는 허용하지 않습니다.
+      description: customer form candidate와 최종 제출에서 정확히 하나의 field type 값을 전달하는 closed union입니다. LONG_TEXT는 LF/CRLF 줄바꿈을 보존하며,
+        SHORT_TEXT는 줄바꿈을 허용하지 않습니다. 두 텍스트 타입 모두 그 밖의 ISO 제어 문자는 허용하지 않습니다.
       oneOf:
       - type: object
         additionalProperties: false
