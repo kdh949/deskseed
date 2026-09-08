@@ -1,4 +1,8 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react'
+import type {
+  ViewConfigurationCatalog,
+  ViewChoice,
+} from './viewConfigurationCatalog'
 import { ApiError } from '../../api/client'
 import type {
   CreateSavedViewInput,
@@ -39,6 +43,9 @@ const FIELDS: SavedViewConditionField[] = [
   'FIRST_REPLY_SLA_STATE',
   'TICKET_KIND',
   'UPDATED_AT',
+  'TAG',
+  'FORM',
+  'CUSTOM_STATUS',
 ]
 const OPERATORS: SavedViewConditionOperator[] = [
   'EQUALS',
@@ -68,6 +75,9 @@ const EMPTY_CONDITION: SavedViewCondition = {
 }
 
 type ViewConfigurationDrawerProps = {
+  catalog?: ViewConfigurationCatalog
+  catalogError?: boolean
+  onReloadCatalog?: () => void
   editor: ViewEditor | null
   onClose: () => void
   onDelete?: (view: SavedAgentView) => Promise<void>
@@ -80,6 +90,9 @@ type ViewConfigurationDrawerProps = {
 }
 
 export function ViewConfigurationDrawer({
+  catalog,
+  catalogError,
+  onReloadCatalog,
   editor,
   onClose,
   onDelete,
@@ -151,7 +164,7 @@ export function ViewConfigurationDrawer({
     columns,
     sort: 'updatedAt:desc,ticketNumber:desc',
   })
-  const validationError = validate(definition())
+  const validationError = validate(definition(), catalog)
 
   const run = async (
     kind: 'delete' | 'preview' | 'reload' | 'save',
@@ -182,7 +195,7 @@ export function ViewConfigurationDrawer({
 
   return (
     <SeedDrawer
-      description="서버에 저장되는 versioned 보기 정의입니다."
+      description="조건에 맞는 티켓을 모아 보고 팀과 공유하세요."
       onClose={onClose}
       open={editor !== null}
       returnFocusRef={returnFocusRef}
@@ -232,6 +245,14 @@ export function ViewConfigurationDrawer({
           </div>
         ) : null}
 
+        {catalogError ? (
+          <SeedNotice title="추가 필터를 불러오지 못했습니다" tone="warning">
+            <p>기본 조건은 사용할 수 있습니다. 기존 추가 조건은 유지됩니다.</p>
+            <SeedButton type="button" onClick={onReloadCatalog}>
+              필터 다시 불러오기
+            </SeedButton>
+          </SeedNotice>
+        ) : null}
         <SeedTextField
           autoFocus
           id={nameId}
@@ -260,16 +281,18 @@ export function ViewConfigurationDrawer({
             }
             value={scope}
           >
-            <option value="PERSONAL">PERSONAL · 나만</option>
-            <option value="SHARED">SHARED · 권한 있는 상담사</option>
+            <option value="PERSONAL">나만</option>
+            <option value="SHARED">팀과 공유</option>
           </SeedSelect>
         </label>
         <ConditionGroup
+          catalog={catalog}
           conditions={all}
           label="모든 조건 (all)"
           onChange={setAll}
         />
         <ConditionGroup
+          catalog={catalog}
           conditions={any}
           label="하나 이상 조건 (any)"
           onChange={setAny}
@@ -308,14 +331,14 @@ export function ViewConfigurationDrawer({
         {validationError ? <p role="alert">{validationError}</p> : null}
         {preview ? (
           <SeedNotice
-            title={`Preview: 정확히 ${preview.ticketCount.toLocaleString('ko-KR')}개`}
+            title={`미리보기: 정확히 ${preview.ticketCount.toLocaleString('ko-KR')}개`}
             tone="positive"
           >
             샘플 {preview.items.length}개 ·{' '}
             <time dateTime={preview.ticketCountAsOf}>
               {formatCountBasis(preview.ticketCountAsOf)} 기준
             </time>{' '}
-            · 서버 권한 predicate와 같은 조건 compiler를 사용했습니다.
+            · 조회 권한이 있는 티켓만 표시합니다.
           </SeedNotice>
         ) : null}
 
@@ -367,7 +390,7 @@ export function ViewConfigurationDrawer({
             }
             type="button"
           >
-            {busy === 'preview' ? 'Preview 중…' : 'Preview'}
+            {busy === 'preview' ? '미리보기 중…' : '미리보기'}
           </SeedButton>
           <SeedButton onClick={onClose} type="button">
             취소
@@ -390,10 +413,12 @@ export function ViewConfigurationDrawer({
 }
 
 function ConditionGroup({
+  catalog,
   conditions,
   label,
   onChange,
 }: {
+  catalog?: ViewConfigurationCatalog
   conditions: SavedViewCondition[]
   label: string
   onChange: (conditions: SavedViewCondition[]) => void
@@ -414,19 +439,54 @@ function ConditionGroup({
         >
           <SeedSelect
             aria-label={`${label} ${index + 1} 필드`}
-            onChange={(event) =>
+            onChange={(event) => {
+              const selected = event.target.value
+              const custom = selected.startsWith('CUSTOM_FIELD:')
+              const field = custom
+                ? 'CUSTOM_FIELD'
+                : (selected as SavedViewConditionField)
               update(index, {
-                ...condition,
-                field: event.target.value as SavedViewConditionField,
+                field,
+                ...(custom ? { fieldKey: selected.slice(13) } : {}),
+                operator: configurationField(field)
+                  ? 'EQUALS'
+                  : condition.operator,
+                values: [],
               })
+            }}
+            value={
+              condition.field === 'CUSTOM_FIELD'
+                ? `CUSTOM_FIELD:${condition.fieldKey}`
+                : condition.field
             }
-            value={condition.field}
           >
             {FIELDS.map((field) => (
               <option key={field} value={field}>
-                {field}
+                {(
+                  {
+                    TAG: '태그',
+                    FORM: '접수 폼',
+                    CUSTOM_STATUS: '업무 상태',
+                  } as Record<string, string>
+                )[field] ?? field}
               </option>
             ))}
+            {catalog?.fields.map((field) => (
+              <option
+                key={field.machineKey}
+                value={`CUSTOM_FIELD:${field.machineKey}`}
+              >
+                {field.label}
+              </option>
+            ))}
+            {condition.field === 'CUSTOM_FIELD' &&
+            !catalog?.fields.some(
+              (field) => field.machineKey === condition.fieldKey,
+            ) ? (
+              <option value={`CUSTOM_FIELD:${condition.fieldKey}`}>
+                사용 불가 필드: {condition.fieldKey}
+              </option>
+            ) : null}
           </SeedSelect>
           <SeedSelect
             aria-label={`${label} ${index + 1} 연산자`}
@@ -435,31 +495,41 @@ function ConditionGroup({
               update(index, {
                 ...condition,
                 operator,
-                values: operatorNeedsNoValues(operator) ? [] : condition.values,
+                values: operatorNeedsNoValues(operator)
+                  ? []
+                  : ['EQUALS', 'NOT_EQUALS'].includes(operator)
+                    ? condition.values.slice(0, 1)
+                    : condition.values,
               })
             }}
             value={condition.operator}
           >
-            {OPERATORS.map((operator) => (
+            {(configurationField(condition.field)
+              ? OPERATORS.slice(0, 4)
+              : OPERATORS
+            ).map((operator) => (
               <option key={operator} value={operator}>
-                {operator}
+                {
+                  {
+                    EQUALS: '같음',
+                    NOT_EQUALS: '다름',
+                    IN: '하나라도 포함',
+                    NOT_IN: '모두 제외',
+                    IS_CURRENT_ACTOR: '현재 상담사',
+                    IS_UNASSIGNED: '미배정',
+                    IS_CURRENT_ACTOR_GROUP: '내 그룹',
+                    LESS_THAN_SOLVED: '해결 전',
+                    WITHIN_LAST_DAYS: '최근 일수',
+                  }[operator]
+                }
               </option>
             ))}
           </SeedSelect>
-          <input
-            aria-label={`${label} ${index + 1} 값`}
-            disabled={operatorNeedsNoValues(condition.operator)}
-            onChange={(event) =>
-              update(index, {
-                ...condition,
-                values: event.target.value
-                  .split(',')
-                  .map((value) => value.trim())
-                  .filter(Boolean),
-              })
-            }
-            placeholder="쉼표로 여러 값 구분"
-            value={condition.values.join(', ')}
+          <ConditionValues
+            condition={condition}
+            catalog={catalog}
+            label={`${label} ${index + 1} 값`}
+            onChange={(values) => update(index, { ...condition, values })}
           />
           <SeedButton
             aria-label={`${label} ${index + 1} 삭제`}
@@ -482,6 +552,125 @@ function ConditionGroup({
   )
 }
 
+function configurationField(field: SavedViewConditionField) {
+  return ['TAG', 'FORM', 'CUSTOM_STATUS', 'CUSTOM_FIELD'].includes(field)
+}
+
+function ConditionValues({
+  condition,
+  catalog,
+  label,
+  onChange,
+}: {
+  condition: SavedViewCondition
+  catalog?: ViewConfigurationCatalog
+  label: string
+  onChange: (values: string[]) => void
+}) {
+  const field = catalog?.fields.find(
+    (item) => item.machineKey === condition.fieldKey,
+  )
+  let choices: ViewChoice[] | undefined
+  if (condition.field === 'TAG') choices = catalog?.tags ?? []
+  if (condition.field === 'FORM') choices = catalog?.forms ?? []
+  if (condition.field === 'CUSTOM_STATUS') choices = catalog?.statuses ?? []
+  if (condition.field === 'CUSTOM_FIELD' && field?.type === 'SINGLE_SELECT')
+    choices = field.options
+  if (condition.field === 'CUSTOM_FIELD' && field?.type === 'CHECKBOX')
+    choices = [
+      { id: 'true', label: '선택됨' },
+      { id: 'false', label: '선택 안 됨' },
+    ]
+  if (choices) {
+    const available = [
+      ...choices,
+      ...condition.values
+        .filter((id) => !choices!.some((choice) => choice.id === id))
+        .map((id) => ({ id, label: `현재 선택 (사용 중지): ${id}` })),
+    ]
+    if (['IN', 'NOT_IN'].includes(condition.operator))
+      return (
+        <fieldset>
+          <legend>{label}</legend>
+          {available.length ? (
+            available.map((choice) => (
+              <SeedCheckbox
+                key={choice.id}
+                label={choice.label}
+                checked={condition.values.includes(choice.id)}
+                onChange={(event) =>
+                  onChange(
+                    event.target.checked
+                      ? [...condition.values, choice.id]
+                      : condition.values.filter((value) => value !== choice.id),
+                  )
+                }
+              />
+            ))
+          ) : (
+            <p>선택할 항목이 없습니다.</p>
+          )}
+        </fieldset>
+      )
+    return (
+      <SeedSelect
+        aria-label={label}
+        value={condition.values[0] ?? ''}
+        onChange={(event) =>
+          onChange(event.target.value ? [event.target.value] : [])
+        }
+      >
+        <option value="">값 선택</option>
+        {available.map((choice) => (
+          <option key={choice.id} value={choice.id}>
+            {choice.label}
+          </option>
+        ))}
+      </SeedSelect>
+    )
+  }
+  if (condition.field === 'CUSTOM_FIELD' && field?.type === 'SHORT_TEXT') {
+    if (['IN', 'NOT_IN'].includes(condition.operator))
+      return (
+        <SeedTextAreaField
+          aria-label={label}
+          label={label}
+          hint="한 줄에 값 하나씩 입력하세요. 쉼표는 값에 포함됩니다."
+          rows={3}
+          value={condition.values.join('\n')}
+          onChange={(event) =>
+            onChange(event.target.value ? event.target.value.split('\n') : [])
+          }
+        />
+      )
+    return (
+      <SeedTextField
+        label={label}
+        value={condition.values[0] ?? ''}
+        onChange={(event) =>
+          onChange(event.target.value ? [event.target.value] : [])
+        }
+      />
+    )
+  }
+  return (
+    <input
+      aria-label={label}
+      disabled={operatorNeedsNoValues(condition.operator)}
+      onChange={(event) =>
+        onChange(
+          event.target.value
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+        )
+      }
+      placeholder="쉼표로 여러 값 구분"
+      value={condition.values.join(', ')}
+    />
+  )
+}
+
 function operatorNeedsNoValues(operator: SavedViewConditionOperator) {
   return [
     'IS_CURRENT_ACTOR',
@@ -491,13 +680,35 @@ function operatorNeedsNoValues(operator: SavedViewConditionOperator) {
   ].includes(operator)
 }
 
-function validate(definition: SavedViewDefinition) {
+function validate(
+  definition: SavedViewDefinition,
+  catalog?: ViewConfigurationCatalog,
+) {
   if (!definition.name) return '보기 이름을 입력하세요.'
   if (hasIsoControlCharacters(definition.description))
     return '설명에는 제어 문자를 입력할 수 없습니다.'
   if (!definition.conditions.all.length && !definition.conditions.any.length)
     return 'all 또는 any 조건을 하나 이상 추가하세요.'
   if (!definition.columns.length) return '표시 컬럼을 하나 이상 선택하세요.'
+  for (const condition of [
+    ...definition.conditions.all,
+    ...definition.conditions.any,
+  ]) {
+    if (configurationField(condition.field)) {
+      if (
+        !catalog ||
+        (condition.field === 'CUSTOM_FIELD' &&
+          !catalog.fields.some(
+            (field) => field.machineKey === condition.fieldKey,
+          ))
+      )
+        return '사용 가능한 필터를 확인한 뒤 조건을 변경하거나 삭제하세요.'
+      if (!condition.values.length || condition.values.length > 10)
+        return '필터 값을 1개 이상, 10개 이하로 선택하세요.'
+      if (condition.values.some((value) => !value.trim()))
+        return '비어 있는 필터 값을 입력하거나 삭제하세요.'
+    }
+  }
   return ''
 }
 

@@ -28,6 +28,7 @@ import {
   uploadAgentAttachment,
 } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
+import { TicketKnowledge } from '../../extensions/knowledge-workflow/AgentKnowledgePanel'
 import {
   SeedAvatar,
   SeedButton,
@@ -131,6 +132,37 @@ function WritableWorkspace({
         extensionAccess={extensionAccess}
         onRefresh={() => void editor.refreshEditor()}
         properties={<EditableProperties detail={detail} editor={editor} />}
+        knowledge={
+          <TicketKnowledge
+            ticketNumber={detail.ticket.ticketNumber}
+            mode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
+            disabled={editor.submitting}
+            onInsert={(title, url) => {
+              const mode = detail.ticket.isChild ? 'INTERNAL' : editor.mode
+              editor.updateRichDraft(
+                mode,
+                {
+                  type: 'doc',
+                  content: [
+                    ...editor.documents[mode].content,
+                    {
+                      type: 'paragraph',
+                      content: [
+                        {
+                          type: 'text',
+                          text: title,
+                          marks: [{ type: 'link', attrs: { href: url } }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                [editor.comments[mode], title].filter(Boolean).join('\n'),
+              )
+            }}
+          />
+        }
+
         refreshLatest={refreshLatest}
         conversation={
           <div className="seed-workspace-column">
@@ -231,7 +263,9 @@ function WorkspaceFrame({
   properties,
   conversation,
   refreshLatest,
+  knowledge,
 }: {
+  knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
   onRefresh: () => void
@@ -262,6 +296,11 @@ function WorkspaceFrame({
       detail={detail}
       extensionAccess={extensionAccess}
       externalReferences={externalReferences}
+      knowledge={
+        knowledge ?? (
+          <TicketKnowledge ticketNumber={detail.ticket.ticketNumber} />
+        )
+      }
     />
   )
   return (
@@ -1104,7 +1143,9 @@ function TicketContext({
   detail,
   extensionAccess,
   externalReferences,
+  knowledge,
 }: {
+  knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
   externalReferences: ReturnType<typeof useExternalReferences>
@@ -1113,6 +1154,7 @@ function TicketContext({
     (ticket) => (ticket ? [ticket] : []),
   )
   const collaboration = useCollaborationNotes(detail)
+  const [showAllRelated, setShowAllRelated] = useState(false)
   const people = detail.assignmentOptions.groups
     .flatMap((group) => group.members)
     .filter(
@@ -1126,6 +1168,7 @@ function TicketContext({
     }))
   return (
     <div className="seed-context-stack">
+      {knowledge}
       <SeedContextCard title="고객">
         {detail.context.customer ? (
           <div className="seed-context-person">
@@ -1154,12 +1197,18 @@ function TicketContext({
       >
         {related.length > 0 ? (
           <ul className="seed-related-tickets">
-            {related.slice(0, 4).map((ticket) => (
+            {(showAllRelated ? related : related.slice(0, 4)).map((ticket) => (
               <li key={ticket.ticketNumber}>
                 <Link to={`/agent/tickets/${ticket.ticketNumber}`}>
                   #{ticket.ticketNumber}
                 </Link>
-                <span>{ticket.subject}</span>
+                <span>
+                  {detail.context.parent?.ticketNumber === ticket.ticketNumber
+                    ? '상위 문의'
+                    : '내부 협업'}{' '}
+                  · {ticket.subject}
+                  {ticket.group ? ` · ${ticket.group.name}` : ''}
+                </span>
                 <SeedStatusBadge tone={statusTone(ticket.status)}>
                   {STATUS_LABELS[ticket.status]}
                 </SeedStatusBadge>
@@ -1170,6 +1219,16 @@ function TicketContext({
           <p className="seed-context-empty">
             연결된 상위·하위 티켓이 없습니다.
           </p>
+        )}
+        {detail.ticket.openChildCount > 0 && (
+          <p>진행 중인 내부 협업 요청 {detail.ticket.openChildCount}건</p>
+        )}
+        {related.length > 4 && (
+          <SeedButton onClick={() => setShowAllRelated(!showAllRelated)}>
+            {showAllRelated
+              ? '관련 티켓 접기'
+              : `관련 티켓 ${related.length}건 모두 보기`}
+          </SeedButton>
         )}
       </SeedContextCard>
       <SeedCollaborationThread

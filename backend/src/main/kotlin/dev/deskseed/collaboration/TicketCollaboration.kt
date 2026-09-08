@@ -47,15 +47,18 @@ data class CollaborationNotePage(
 
 enum class AgentNotificationType {
     COLLABORATION_MENTION,
+    UNASSIGNED_TICKET_ALERT,
 }
+
+data class AgentNotificationActor(val id: UUID, val type: dev.deskseed.foundation.ActorType, val displayName: String)
 
 data class AgentNotification(
     val id: UUID,
     val recipientStaffId: UUID,
     val type: AgentNotificationType,
     val ticketNumber: Long,
-    val noteId: UUID,
-    val actor: CollaborationStaffSummary,
+    val noteId: UUID?,
+    val actor: AgentNotificationActor,
     val createdAt: Instant,
     val readAt: Instant?,
 )
@@ -85,3 +88,8 @@ data class StaffNotificationCreated(
     val notificationId: UUID,
     val occurredAt: Instant,
 )
+
+/** Appends body-free alerts inside the rule execution transaction. */
+interface UnassignedTicketAlerts {
+    fun append(ticketId: UUID, groupId: UUID, triggerId: UUID, triggerVersion: Int, executionId: UUID, occurredAt: Instant)
+}

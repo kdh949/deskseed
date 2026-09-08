@@ -1,0 +1,81 @@
+.configuration-page {
+  display: grid;
+  gap: var(--ds-space-250);
+  padding: var(--ds-space-300);
+  min-width: 0;
+  font-family: var(--ds-font-sans);
+  color: var(--ds-palette-ink);
+}
+.configuration-page h1,
+.configuration-page h2,
+.configuration-page p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.configuration-page header {
+  display: grid;
+  gap: var(--ds-space-100);
+}
+.configuration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-100);
+}
+.configuration-list {
+  display: grid;
+  gap: var(--ds-space-150);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.configuration-list > li,
+.configuration-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ds-space-150);
+  padding: var(--ds-space-200);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  border-radius: var(--ds-radius-medium);
+}
+.configuration-list p {
+  margin-top: var(--ds-space-050);
+}
+.configuration-editor {
+  display: grid;
+  gap: var(--ds-space-200);
+  max-width: 52rem;
+  min-width: 0;
+  padding: var(--ds-space-200);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  border-radius: var(--ds-radius-medium);
+}
+.configuration-editor fieldset {
+  display: grid;
+  gap: var(--ds-space-150);
+  min-width: 0;
+  margin: 0;
+  padding: var(--ds-space-150);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+}
+
+.configuration-controls {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  margin: 0 0 16px;
+}
+.configuration-controls legend {
+  padding: 0;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.configuration-controls input,
+.configuration-controls select,
+.configuration-controls textarea {
+  min-width: 0;
+  max-width: 100%;
+}

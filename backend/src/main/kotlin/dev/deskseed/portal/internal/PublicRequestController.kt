@@ -59,12 +59,16 @@ internal class PublicRequestController(
         @AuthenticationPrincipal principal: CustomerPrincipal?,
         request: HttpServletRequest,
     ): ResponseEntity<SubmittedRequestResponse> {
+        body.validateIdentity(principal)
         val result = applicationService.submit(
             SubmitAnonymousRequest(
-                name = body.name,
-                email = body.email,
+                name = body.requester?.name.orEmpty(),
+                email = body.requester?.email.orEmpty(),
                 subject = body.subject,
                 message = body.message,
+                clientCommandId = body.clientCommandId.toString(),
+                formValues = body.formValues(),
+                acceptedPolicies = body.acceptedPolicies.map { dev.deskseed.customerconsent.CustomerRequestPolicySelection(it.policyKey, it.version) },
                 authenticatedCustomerId = principal?.customerId,
                 authenticatedEmail = principal?.email,
                 effectiveClientAddress = clientAddressResolver.resolve(request),
@@ -81,61 +85,42 @@ internal class PublicRequestController(
                     status = result.status,
                     accessToken = result.accessToken,
                     createdAt = result.createdAt,
+                    replayed = result.replayed,
                 ),
             )
     }
 
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun submitMultipart(
-        @RequestPart("name") @NotBlank @Size(max = 100) name: String,
-        @RequestPart("email") @NotBlank @Email @Size(max = 254) email: String,
-        @RequestPart("subject") @NotBlank @Size(max = 200) subject: String,
-        @RequestPart("message") @NotBlank @Size(max = 20_000) message: String,
-        @RequestPart(value = "privacyConsent", required = false) privacyConsent: String?,
+        @Valid @RequestPart("request") body: SubmitRequestBody,
         @RequestPart(value = "attachments", required = false) attachments: List<MultipartFile>?,
         @AuthenticationPrincipal principal: CustomerPrincipal?,
         request: HttpServletRequest,
     ): ResponseEntity<SubmittedRequestResponse> {
-        require(privacyConsent == null || privacyConsent == "true" || privacyConsent == "false") {
-            "privacyConsent must be a boolean"
-        }
+        body.validateIdentity(principal)
         val context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL)
         val input = SubmitAnonymousRequest(
-            name = name,
-            email = email,
-            subject = subject,
-            message = message,
-            authenticatedCustomerId = principal?.customerId,
-            authenticatedEmail = principal?.email,
-            effectiveClientAddress = clientAddressResolver.resolve(request),
-            context = context,
+            name = body.requester?.name.orEmpty(), email = body.requester?.email.orEmpty(),
+            subject = body.subject, message = body.message,
+            authenticatedCustomerId = principal?.customerId, authenticatedEmail = principal?.email,
+            effectiveClientAddress = clientAddressResolver.resolve(request), context = context,
+            clientCommandId = body.clientCommandId.toString(), formValues = body.formValues(),
+            acceptedPolicies = body.acceptedPolicies.map { dev.deskseed.customerconsent.CustomerRequestPolicySelection(it.policyKey, it.version) },
         )
         val files = attachments.orEmpty()
         require(files.size <= 5) { "A request can contain at most five attachments" }
         val prepared = applicationService.prepareInitialSubmission(input)
         val attachmentIds = files.map { file ->
             file.inputStream.use { stream ->
-                applicationService.uploadInitialAttachment(
-                    prepared,
-                    file.originalFilename.orEmpty(),
-                    file.contentType,
-                    stream,
-                    context.copy(commandId = UUID.randomUUID().toString()),
-                ).attachment.id
+                applicationService.uploadInitialAttachment(prepared, file.originalFilename.orEmpty(), file.contentType,
+                    stream, context.copy(commandId = UUID.randomUUID().toString())).attachment.id
             }
-        }.toSet()
-        val result = applicationService.finishInitialSubmission(prepared, subject, message, attachmentIds, context)
-        return ResponseEntity
-            .created(URI.create("/api/v1/requests/${result.ticketNumber}"))
-            .cacheControl(CacheControl.noStore())
-            .body(
-                SubmittedRequestResponse(
-                    ticketNumber = result.ticketNumber,
-                    status = result.status,
-                    accessToken = result.accessToken,
-                    createdAt = result.createdAt,
-                ),
-            )
+        }
+        val result = applicationService.finishInitialSubmission(prepared, attachmentIds)
+        return ResponseEntity.created(URI.create("/api/v1/requests/${result.ticketNumber}"))
+            .cacheControl(CacheControl.noStore()).body(SubmittedRequestResponse(
+                result.ticketNumber, result.status, result.accessToken, result.createdAt, result.replayed,
+            ))
     }
 
     @GetMapping("/{ticketNumber}")
@@ -267,37 +252,52 @@ internal class PublicRequestController(
         .getOrDefault(MediaType.APPLICATION_OCTET_STREAM)
 }
 
-@Schema(description = "고객 문의 접수 요청")
+@Schema(name = "CreateCustomerRequest", description = "현재 고객 폼과 동의 버전으로 접수하는 문의")
 internal data class SubmitRequestBody(
-    @field:Schema(description = "문의하는 고객의 표시 이름", example = "김고객")
-    @field:NotBlank
-    @field:Size(max = 100)
-    val name: String,
+    val clientCommandId: UUID,
+    @field:Valid val requester: InitialRequestRequester? = null,
+    @field:NotBlank @field:Size(max = 200) val subject: String,
+    @field:NotBlank @field:Size(max = 20_000) val message: String,
+    val formId: UUID? = null,
+    @field:Positive val formVersion: Int? = null,
+    @field:Valid @field:Size(max = 100) val fieldValues: Map<String, InitialRequestFieldValue>,
+    @field:Valid @field:Size(max = 20) val acceptedPolicies: List<InitialRequestPolicyVersion>,
+) {
+    fun validateIdentity(principal: CustomerPrincipal?) {
+        require((principal == null) == (requester != null)) { "Requester must match the authentication mode" }
+        require(clientCommandId.version() == 4 && clientCommandId.variant() == 2) { "A random command UUID is required" }
+    }
+    fun formValues() = dev.deskseed.ticketing.CustomerRequestFormValues(formId, formVersion, fieldValues.mapValues { it.value.command() })
+    override fun toString(): String = "[PROTECTED INITIAL CUSTOMER REQUEST]"
+}
 
-    @field:Schema(description = "고객 연락처로 사용할 이메일", example = "customer@example.com")
-    @field:NotBlank
-    @field:Email
-    @field:Size(max = 254)
-    val email: String,
+@Schema(name = "CustomerRequestRequester")
+internal data class InitialRequestRequester(
+    @field:NotBlank @field:Size(max = 100) val name: String,
+    @field:NotBlank @field:Email @field:Size(max = 254) val email: String,
+) { override fun toString(): String = "[PROTECTED CUSTOMER IDENTITY]" }
 
-    @field:Schema(description = "고객 문의 제목", example = "결제가 중복으로 처리됐어요")
-    @field:NotBlank
-    @field:Size(max = 200)
-    val subject: String,
-
-    @field:Schema(
-        description = "첫 PUBLIC 코멘트로 저장되는 문의 본문",
-        example = "주문 ORD-2026-1042의 결제가 두 번 승인되어 확인이 필요합니다.",
-    )
-    @field:NotBlank
-    @field:Size(max = 20_000)
-    val message: String,
-
-    @field:Schema(description = "개인정보 처리 동의 여부", example = "true", nullable = true)
-    val privacyConsent: Boolean? = null,
+@Schema(name = "AcceptedCustomerPolicyVersion")
+internal data class InitialRequestPolicyVersion(
+    @field:NotBlank @field:Size(max = 120) val policyKey: String,
+    @field:Positive val version: Int,
 )
 
-@Schema(description = "고객 문의 접수 결과")
+@Schema(name = "CustomerTicketFieldValue")
+internal data class InitialRequestFieldValue(
+    val booleanValue: Boolean? = null,
+    val numberValue: java.math.BigDecimal? = null,
+    val optionId: UUID? = null,
+    @field:Size(max = 1000) val shortTextValue: String? = null,
+    @field:Size(max = 10000) val longTextValue: String? = null,
+) {
+    fun command() = try {
+        dev.deskseed.ticketing.TicketConfigurationFieldValue(booleanValue, numberValue?.toString(), optionId, shortTextValue, longTextValue)
+    } catch (_: IllegalArgumentException) { throw dev.deskseed.ticketing.CustomerFormValidationException() }
+    override fun toString(): String = "[PROTECTED CUSTOMER FIELD VALUE]"
+}
+
+@Schema(name = "CreateCustomerRequestResult", description = "고객 문의 접수 결과")
 internal data class SubmittedRequestResponse(
     @field:Schema(description = "사람이 식별하는 티켓 번호", example = "1042")
     val ticketNumber: Long,
@@ -305,6 +305,7 @@ internal data class SubmittedRequestResponse(
     @field:Schema(description = "다시 조회할 때 사용하는 일회 발급 토큰", example = "example-token-not-valid-0000000000000000")
     val accessToken: String,
     val createdAt: Instant,
+    val replayed: Boolean,
 )
 
 @Schema(description = "고객에게 공개 가능한 문의 상세")

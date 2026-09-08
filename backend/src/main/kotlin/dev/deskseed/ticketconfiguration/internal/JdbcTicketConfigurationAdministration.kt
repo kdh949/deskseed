@@ -103,6 +103,13 @@ internal class JdbcTicketConfigurationAdministration(
                 "machineKey and type cannot change after creation",
             )
         }
+        if (current.validation != draft.validation && jdbc.queryForObject(
+            "select exists(select 1 from ticket_form_versions where customer_field_snapshot_json @> cast(? as jsonb))",
+            Boolean::class.java, "[{\"id\":\"$fieldId\"}]",
+        ) == true) {
+            throw TicketConfigurationValidationException("PUBLISHED_FIELD_VALIDATION_IMMUTABLE",
+                "발행한 고객 양식에서 사용하는 검증 기준은 새 필드를 만들어 변경해 주세요.")
+        }
         val now = Instant.now(clock)
         jdbc.update(
             """

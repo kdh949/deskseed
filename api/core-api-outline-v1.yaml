@@ -105,6 +105,7 @@ paths:
         파일 격리·검사를 끝낸 뒤 최종 transaction에서 같은 UUID의 Customer와 Ticket을 함께 생성합니다. 이메일·신뢰된 실제 client 주소·전체 요청 수에는 PostgreSQL 고정
         창 제한을 적용하고 제한 버킷에는 원문 이메일/IP를 저장하지 않습니다.
       operationId: createCustomerRequest
+      x-deskseed-contract-status: FROZEN
       tags:
       - Customer Requests
       security:
@@ -125,7 +126,8 @@ paths:
       x-deskseed-ticket-audit-events:
       - TICKET_CREATED
       - COMMENT_CREATED
-      - ATTACHMENT_ADDED
+      - ATTACHMENT_LINKED
+      - TICKET_CONFIGURATION_UPDATED
       x-deskseed-security-audit-events:
       - CUSTOMER_CONSENT_ACCEPTED
       x-deskseed-idempotency:
@@ -5109,6 +5111,7 @@ paths:
         반환합니다. staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가
         모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
       operationId: getCustomerTicketFormProjection
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-CFG-011
       - REQ-CFG-014
@@ -5165,6 +5168,7 @@ paths:
         definition은 존재를 누출하지 않는 validation 또는 unavailable problem으로 처리합니다. 이 preview is not an authorization token이며 문의 생성
         transaction은 current form/version, visibility, editability, requiredness, type과 option을 다시 검증합니다.
       operationId: projectCustomerTicketForm
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-CFG-014
       x-deskseed-side-effects: NONE
@@ -5226,6 +5230,38 @@ paths:
           $ref: '#/components/responses/CustomerTicketFormVersionConflict'
         '503':
           $ref: '#/components/responses/CustomerRequestConfigurationUnavailable'
+  /api/v1/agent/ticket-configuration/filter-catalog:
+    get:
+      summary: 저장 보기에서 선택 가능한 티켓 설정 조회
+      description: 활성 상담사 세션에 조회용 비민감 필드와 태그·최초 접수 폼·업무 상태의 이름과 안정적인 ID를 반환합니다. 필드 값이나 조건 내부 구현은 반환하지 않습니다.
+      operationId: getSavedViewConfigurationCatalog
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-001
+      - REQ-CFG-010
+      - REQ-CFG-012
+      - REQ-CFG-013
+      tags:
+      - Ticket Configuration Runtime
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 현재 생성·편집에 사용할 수 있는 설정 카탈로그입니다. 보관된 최초 접수 폼도 포함합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedViewConfigurationCatalog'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503':
+          $ref: '#/components/responses/Problem'
   /api/v1/agent/ticket-configuration/descriptors:
     get:
       summary: 상담사 View/Search/Macro/Rules/Analytics용 configuration descriptor catalog 조회
@@ -5257,6 +5293,53 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/agent/tickets/{ticketNumber}/configuration/projection:
+    post:
+      summary: 상담사 후보 필드와 상태의 조건부 폼 판정
+      description: 티켓 BACKGROUND 읽기 권한과 required access audit를 거친 뒤 현재 기본 상담사 폼을 판정합니다. 티켓 값은 변경하지 않으며 값은 URL이나 ordinary log에
+        넣지 않습니다.
+      operationId: projectAgentTicketConfiguration
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-documentation-review: MANUAL
+      x-deskseed-requirements:
+      - REQ-CFG-010
+      - REQ-CFG-011
+      - REQ-CFG-013
+      tags:
+      - Ticket Configuration Runtime
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      - $ref: '#/components/parameters/TicketConfigurationTicketNumber'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectAgentTicketConfigurationRequest'
+            example:
+              fieldValues:
+                order.reference:
+                  shortTextValue: ORD-1042
+      responses:
+        '200':
+          description: 후보 값으로 판정한 필드와 선택 가능한 태그·상태입니다. version은 현재 티켓 버전이며 입력 초안의 저장 버전을 자동 갱신하는 용도가 아닙니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketConfigurationValues'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503':
+          $ref: '#/components/responses/Problem'
   /api/v1/agent/tickets/{ticketNumber}/configuration:
     get:
       summary: 상담사용 ticket field/tag/custom status projection 조회
@@ -5698,6 +5781,36 @@ paths:
         '503':
           $ref: '#/components/responses/ProblemResponse'
   /api/v1/admin/knowledge/sections:
+    get:
+      operationId: listKnowledgeSections
+      summary: 관리자 지식 섹션 목록
+      description: 관리자 권한과 조회 감사를 확인하고 비활성 섹션을 포함한 분류별 표시 순서 목록을 반환합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-KB-001
+      tags:
+      - Knowledge Base
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 관리자 섹션 목록입니다.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeSection'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/ProblemResponse'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+        '503':
+          $ref: '#/components/responses/ProblemResponse'
     post:
       operationId: createKnowledgeSection
       summary: 관리자 knowledge section 생성
@@ -5938,8 +6051,9 @@ paths:
     post:
       operationId: transitionKnowledgeArticleLifecycle
       summary: 관리자 knowledge article lifecycle action
-      description: action은 submit-review, publish, unpublish, archive 중 하나입니다. If-Match이 맞을 때 revision pointer, lifecycle,
-        search document와 admin audit을 하나의 transaction에서 전환합니다.
+      description: action은 submit-review, publish, unpublish, archive, return-to-draft 중 하나입니다. return-to-draft는 검토 중 또는 공개
+        중지 문서를 초안으로 되돌리며 발행 중인 문서는 먼저 공개 중지해야 합니다. If-Match이 맞을 때 revision pointer, lifecycle, search document와 admin audit을
+        하나의 transaction에서 전환합니다.
       x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-KB-001
@@ -6961,6 +7075,66 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/agent/personal-macros/{macroId}/history:
+    get:
+      summary: 매크로 버전 및 활성화 이력 조회
+      description: 해당 관리 범위의 소유권 또는 공유 매크로 관리 권한을 검사하고 최근 버전 및 활성 변경을 각각 최대 100건 반환합니다. 요청 식별자와 감사 내부 메타데이터는 포함하지 않습니다.
+      operationId: getPersonalMacroHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-003
+      tags:
+      - Agent Macros
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/MacroId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 최근 버전 및 활성화 이력입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MacroHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/shared-macros/{macroId}/history:
+    get:
+      summary: 매크로 버전 및 활성화 이력 조회
+      description: 해당 관리 범위의 소유권 또는 공유 매크로 관리 권한을 검사하고 최근 버전 및 활성 변경을 각각 최대 100건 반환합니다. 요청 식별자와 감사 내부 메타데이터는 포함하지 않습니다.
+      operationId: getSharedMacroHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-CFG-003
+      tags:
+      - Admin Shared Macros
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/MacroId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 최근 버전 및 활성화 이력입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MacroHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/agent/macros:
     get:
       summary: 적용 가능한 macro 목록 조회
@@ -7638,7 +7812,7 @@ paths:
               $ref: '#/components/schemas/TriggerDryRunRequest'
       responses:
         '200':
-          description: condition별 일치 결과와 실행 전 invariant failure를 포함하되 어떤 영속 상태도 바꾸지 않습니다.
+          description: condition별 일치 결과와 실행 전 invariant failure를 포함하되 티켓·알림·작업을 변경하지 않습니다.
           content:
             application/json:
               schema:
@@ -7651,6 +7825,72 @@ paths:
           $ref: '#/components/responses/Problem'
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
+  /api/v1/admin/triggers/{triggerId}/versions/{version}:
+    get:
+      summary: 트리거 과거 버전 조회
+      description: 선택한 불변 버전의 이름·조건·액션을 현재 활성 및 aggregate 버전과 함께 반환합니다. 과거 활성 상태를 재구성하지 않습니다.
+      operationId: getTriggerVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-001
+      tags:
+      - Admin Triggers
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/TriggerId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      responses:
+        '200':
+          description: 관리자에게 허용된 규칙 메타데이터입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/triggers/{triggerId}/history:
+    get:
+      summary: 트리거 버전·활성화·실행 이력 조회
+      description: 최근 버전 20개와 활성화·실행·작업 각각 최대 50개를 반환합니다. 실패한 실행 트랜잭션은 작업의 재시도 상태로 확인하며 본문은 포함하지 않습니다.
+      operationId: getTriggerHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-001
+      tags:
+      - Admin Triggers
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/TriggerId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 관리자에게 허용된 규칙 메타데이터입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/admin/automations:
     get:
       summary: 시간 기반 자동화 정의 목록 조회
@@ -7719,6 +7959,67 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503':
           $ref: '#/components/responses/Problem'
+  /api/v1/admin/automations/{automationId}/versions/{version}:
+    get:
+      summary: 시간 자동화의 저장된 정책 버전 조회
+      description: 선택한 불변 버전의 이름과 해결 경과 분을 현재 aggregateVersion 및 활성 버전과 함께 반환합니다. 과거 정책을 검토하고 다시 활성화할 때 사용합니다.
+      operationId: getAutomationVersion
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-002
+      tags:
+      - Admin Automations
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AutomationId'
+      - $ref: '#/components/parameters/AutomationVersion'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 요청 버전의 정책과 현재 정의 메타데이터를 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationDefinition'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+  /api/v1/admin/automations/{automationId}/history:
+    get:
+      summary: 시간 자동화의 버전·활성화·실행·후보 이력 조회
+      description: 최근 버전 20개와 활성화·실행·후보 각각 최대 50개를 반환합니다. 후보에서 재시도와 실패를 확인하며 티켓 본문과 고객 정보는 포함하지 않습니다.
+      operationId: getAutomationHistory
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements:
+      - REQ-AUT-002
+      tags:
+      - Admin Automations
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/AutomationId'
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: 권한을 확인한 관리자의 정책 운영 이력입니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationHistory'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
   /api/v1/admin/automations/{automationId}/versions:
     post:
       summary: 자동 종료 정책 버전 추가
@@ -8275,6 +8576,7 @@ components:
         - publish
         - unpublish
         - archive
+        - return-to-draft
     IntegrationClientRatePolicyIfMatch:
       name: If-Match
       in: header
@@ -10033,6 +10335,10 @@ components:
       - FIRST_REPLY_SLA_STATE
       - TICKET_KIND
       - UPDATED_AT
+      - TAG
+      - FORM
+      - CUSTOM_STATUS
+      - CUSTOM_FIELD
     SavedViewConditionOperator:
       type: string
       enum:
@@ -10053,6 +10359,11 @@ components:
       - operator
       - values
       properties:
+        fieldKey:
+          type: string
+          maxLength: 120
+          pattern: ^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$
+          description: CUSTOM_FIELD 조건에서만 필수인 조회용 필드의 안정적인 machine key입니다.
         field:
           $ref: '#/components/schemas/SavedViewConditionField'
         operator:
@@ -10066,9 +10377,10 @@ components:
             type: string
             minLength: 1
             maxLength: 100
-      description: field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다. IS_CURRENT_ACTOR, IS_UNASSIGNED, IS_CURRENT_ACTOR_GROUP,
-        LESS_THAN_SOLVED는 빈 values만 허용하고 UPDATED_AT/WITHIN_LAST_DAYS는 bounded 정수 하루 수 하나만 허용합니다. raw SQL, SpEL, JavaScript,
-        script expression은 허용하지 않습니다.
+      description: TAG/FORM/CUSTOM_STATUS는 UUID 값을 받고 CUSTOM_FIELD는 fieldKey와 typed equality 값의 문자열을 받습니다. NOT_EQUALS/NOT_IN은
+        값이 없는 티켓도 포함하지만 조회 불가 필드 조건은 항상 불일치합니다. FORM은 최초 고객 접수 폼입니다. field/operator 허용 조합과 values 형식은 서버 allowlist가 다시 검증합니다.
+        IS_CURRENT_ACTOR, IS_UNASSIGNED, IS_CURRENT_ACTOR_GROUP, LESS_THAN_SOLVED는 빈 values만 허용하고 UPDATED_AT/WITHIN_LAST_DAYS는
+        bounded 정수 하루 수 하나만 허용합니다. raw SQL, SpEL, JavaScript, script expression은 허용하지 않습니다.
     SavedViewConditions:
       type: object
       additionalProperties: false
@@ -14838,7 +15150,8 @@ components:
           items:
             $ref: '#/components/schemas/ProjectedTicketField'
     CustomerTicketFieldValue:
-      description: customer form candidate와 최종 제출에서 정확히 하나의 field type 값을 전달하는 closed union입니다.
+      description: customer form candidate와 최종 제출에서 정확히 하나의 field type 값을 전달하는 closed union입니다. LONG_TEXT는 LF/CRLF 줄바꿈을 보존하며,
+        SHORT_TEXT는 줄바꿈을 허용하지 않습니다. 두 텍스트 타입 모두 그 밖의 ISO 제어 문자는 허용하지 않습니다.
       oneOf:
       - type: object
         additionalProperties: false
@@ -15275,6 +15588,31 @@ components:
           maxLength: 10000
       minProperties: 1
       maxProperties: 1
+    AgentTicketFieldValue:
+      description: 상담사 조회·후보 판정·저장용 값입니다. 숫자는 브라우저 반올림을 피하도록 지수 없는 십진수 문자열로 전달하며 서버가 numeric(30,12)와 필드별 범위를 검증합니다. 생략한 필드는
+        기존 저장 값을 유지합니다.
+      type: object
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        booleanValue:
+          type: boolean
+        numberValue:
+          type: string
+          pattern: ^-?[0-9]+(\.[0-9]+)?$
+          maxLength: 80
+          description: 정수부 최대 18자리·소수부 최대 12자리인 정확한 숫자 값입니다. 유효 자릿수·소수 자릿수와 minimum/maximum의 필드별 제한도 적용합니다.
+          example: '9007199254740993'
+        optionId:
+          type: string
+          format: uuid
+        shortTextValue:
+          type: string
+          maxLength: 1000
+        longTextValue:
+          type: string
+          maxLength: 10000
     TicketConfigurationValues:
       type: object
       required:
@@ -15283,6 +15621,7 @@ components:
       - fieldValues
       - tags
       - statusCategory
+      - writable
       properties:
         ticketNumber:
           type: integer
@@ -15293,11 +15632,22 @@ components:
           format: int64
           minimum: 0
         form:
-          $ref: '#/components/schemas/TicketFormProjection'
+          $ref: '#/components/schemas/AgentTicketFormProjection'
+        availableTags:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConfigurationChoice'
+        availableStatuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConfigurationChoice'
+        writable:
+          type: boolean
+          description: 현재 상담사가 이 티켓 설정을 변경할 수 있는지 나타냅니다.
         fieldValues:
           type: object
           additionalProperties:
-            $ref: '#/components/schemas/TicketFieldValue'
+            $ref: '#/components/schemas/AgentTicketFieldValue'
         tags:
           type: array
           items:
@@ -15306,6 +15656,96 @@ components:
           $ref: '#/components/schemas/TicketStatusCategory'
         customStatus:
           $ref: '#/components/schemas/CustomTicketStatus'
+    AgentConfigurationChoice:
+      type: object
+      required:
+      - id
+      - label
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          description: 현재 상담사에게 표시할 선택지 이름입니다.
+    AgentTicketFormProjection:
+      type: object
+      required:
+      - formId
+      - formVersion
+      - fields
+      properties:
+        formId:
+          type: string
+          format: uuid
+        formVersion:
+          type: integer
+          minimum: 1
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentTicketFormField'
+    AgentTicketFormField:
+      type: object
+      required:
+      - id
+      - machineKey
+      - type
+      - label
+      - validation
+      - visible
+      - editable
+      - required
+      - options
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineKey:
+          type: string
+        type:
+          type: string
+          enum:
+          - CHECKBOX
+          - SINGLE_SELECT
+          - NUMBER
+          - SHORT_TEXT
+          - LONG_TEXT
+        label:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        validation:
+          $ref: '#/components/schemas/TicketFieldValidation'
+        visible:
+          type: boolean
+        editable:
+          type: boolean
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConfigurationChoice'
+    ProjectAgentTicketConfigurationRequest:
+      description: 저장하지 않고 기본 상담사 폼의 조건만 판정할 typed 후보값과 상태입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        fieldValues:
+          order.reference:
+            shortTextValue: ORD-1042
+      type: object
+      properties:
+        fieldValues:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            $ref: '#/components/schemas/AgentTicketFieldValue'
+        customStatusId:
+          type: string
+          format: uuid
     UpdateTicketConfigurationRequest:
       description: server-projected form version 안에서 typed field value, tag association, custom status를 하나의 ticket command로
         변경하는 요청입니다.
@@ -15324,13 +15764,17 @@ components:
       required:
       - clientCommandId
       properties:
+        formId:
+          type: string
+          format: uuid
+          description: 편집을 시작할 때 조회한 기본 상담사 폼입니다. 제공하면 formVersion과 함께 최종 저장 시 다시 검사합니다.
         formVersion:
           type: integer
           minimum: 1
         fieldValues:
           type: object
           additionalProperties:
-            $ref: '#/components/schemas/TicketFieldValue'
+            $ref: '#/components/schemas/AgentTicketFieldValue'
         addTagIds:
           type: array
           maxItems: 50
@@ -15370,6 +15814,57 @@ components:
           format: uuid
         replayed:
           type: boolean
+    SavedViewConfigurationCatalog:
+      type: object
+      required:
+      - fields
+      - tags
+      - forms
+      - statuses
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/SavedViewCatalogField'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConfigurationChoice'
+        forms:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConfigurationChoice'
+        statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConfigurationChoice'
+    SavedViewCatalogField:
+      type: object
+      required:
+      - id
+      - machineKey
+      - label
+      - type
+      - options
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineKey:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+          enum:
+          - CHECKBOX
+          - NUMBER
+          - SINGLE_SELECT
+          - SHORT_TEXT
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConfigurationChoice'
     TicketConfigurationDescriptor:
       type: object
       required:
@@ -17070,14 +17565,19 @@ components:
           format: uuid
         type:
           type: string
-          const: COLLABORATION_MENTION
+          enum:
+          - COLLABORATION_MENTION
+          - UNASSIGNED_TICKET_ALERT
         ticketNumber:
           type: integer
           format: int64
           minimum: 1
         noteId:
-          type: string
+          type:
+          - string
+          - 'null'
           format: uuid
+          description: 멘션의 내부 메모 식별자이며 미배정 자동 알림에서는 null입니다.
         actor:
           $ref: '#/components/schemas/ActorSummary'
         createdAt:
@@ -17088,7 +17588,7 @@ components:
           - string
           - 'null'
           format: date-time
-      description: note body와 customer PII 없이 안전한 ticket deep link에 필요한 식별자만 보유합니다.
+      description: 본문과 고객 PII 없이 티켓 링크를 제공합니다. 멘션 actor는 STAFF, 미배정 알림 actor는 TRIGGER와 해당 규칙 버전 이름입니다.
     AgentNotificationPage:
       type: object
       additionalProperties: false
@@ -17109,6 +17609,68 @@ components:
           - string
           - 'null'
           maxLength: 512
+    MacroHistory:
+      type: object
+      additionalProperties: false
+      required:
+      - versions
+      - activations
+      properties:
+        versions:
+          type: array
+          maxItems: 100
+          description: 최근 버전부터 정렬된 저장 이력입니다.
+          items:
+            type: object
+            required:
+            - version
+            - name
+            - createdByDisplay
+            - createdAt
+            properties:
+              version:
+                type: integer
+                minimum: 1
+                description: 저장된 불변 버전 번호입니다.
+              name:
+                type: string
+                description: 해당 버전에 저장된 매크로 이름입니다.
+              createdByDisplay:
+                type: string
+                description: 버전을 저장한 직원의 당시 표시 이름입니다.
+              createdAt:
+                type: string
+                format: date-time
+                description: 버전 저장 시각입니다.
+        activations:
+          type: array
+          maxItems: 100
+          description: 최근 변경부터 정렬된 활성화 및 비활성화 이력입니다.
+          items:
+            type: object
+            required:
+            - version
+            - state
+            - actorDisplay
+            - occurredAt
+            properties:
+              version:
+                type: integer
+                minimum: 1
+                description: 활성 변경 대상인 불변 버전입니다.
+              state:
+                type: string
+                enum:
+                - ACTIVE
+                - INACTIVE
+                description: 변경 후 활성 상태입니다.
+              actorDisplay:
+                type: string
+                description: 활성 상태를 변경한 직원의 당시 표시 이름입니다.
+              occurredAt:
+                type: string
+                format: date-time
+                description: 활성 상태 변경 시각입니다.
     MacroDefinitionRequest:
       type: object
       description: 소유 범위 안의 불변 macro version에 저장할 이름과 순서 보존 typed action 정의입니다.
@@ -17623,6 +18185,157 @@ components:
           description: status와 solvedAt만 읽어 eligibility를 계산할 샘플 티켓 번호입니다.
       example:
         ticketNumber: 1042
+    AutomationHistory:
+      type: object
+      additionalProperties: false
+      required:
+      - versions
+      - activations
+      - executions
+      - candidates
+      properties:
+        versions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/AutomationVersionSummary'
+          description: 최근 작성한 정책 버전 순서입니다.
+        activations:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AutomationActivationSummary'
+          description: 새 후보 발견에 적용할 버전의 활성 상태 변경 이력입니다.
+        executions:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AutomationExecutionSummary'
+          description: 원자적으로 commit된 후보 처리 결과입니다.
+        candidates:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AutomationCandidateSummary'
+          description: 최근 발견된 후보의 현재 재시도·종료 상태입니다.
+    AutomationVersionSummary:
+      type: object
+      required:
+      - version
+      - name
+      - solvedAgeMinutes
+      - createdByDisplay
+      - createdAt
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        solvedAgeMinutes:
+          type: integer
+          minimum: 1
+          maximum: 525600
+        createdByDisplay:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AutomationActivationSummary:
+      type: object
+      required:
+      - version
+      - state
+      - actorDisplay
+      - occurredAt
+      properties:
+        version:
+          type: integer
+        state:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+        actorDisplay:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    AutomationExecutionSummary:
+      type: object
+      required:
+      - id
+      - version
+      - ticketNumber
+      - outcome
+      - completedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        ticketNumber:
+          type: integer
+          format: int64
+        outcome:
+          type: string
+          enum:
+          - CLOSED
+          - SKIPPED_STATE_CHANGED
+          - FAILED
+        auditId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        errorCode:
+          type:
+          - string
+          - 'null'
+        completedAt:
+          type: string
+          format: date-time
+    AutomationCandidateSummary:
+      type: object
+      required:
+      - id
+      - version
+      - ticketNumber
+      - status
+      - attemptCount
+      - eligibleAt
+      - discoveredAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        ticketNumber:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+          - PENDING
+          - LEASED
+          - SUCCEEDED
+          - SKIPPED
+          - RETRY_SCHEDULED
+          - DEAD_LETTERED
+        attemptCount:
+          type: integer
+        lastErrorCode:
+          type:
+          - string
+          - 'null'
+        eligibleAt:
+          type: string
+          format: date-time
+        discoveredAt:
+          type: string
+          format: date-time
     AutomationDefinition:
       type: object
       additionalProperties: false
@@ -17752,7 +18465,7 @@ components:
           type: array
           minItems: 1
           maxItems: 50
-          description: 저장 순서대로 실행하되 외부 HTTP 대신 durable public event intent만 추가하는 typed 액션입니다.
+          description: 필드 액션의 최종 상태를 한 명령으로 검증한 다음 알림과 durable public event intent를 추가합니다. 동일 액션 종류는 한 번만 허용합니다.
           items:
             $ref: '#/components/schemas/TriggerAction'
       example:
@@ -17860,12 +18573,14 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: 현재 priority와 group projection만 평가에 사용하는 샘플 티켓 번호입니다.
+          description: 현재 비민감 조건 값과 최종 배정 제약을 평가하는 샘플 티켓 번호입니다.
         eventType:
           type: string
           enum:
           - TICKET_CREATED
-          description: 현재 구현된 TICKET_CREATED 경계에서 trigger 조건을 평가합니다.
+          - TICKET_UPDATED
+          - CUSTOMER_REPLIED
+          description: 생성·변경·고객 재답변 경계에서 평가합니다. TICKET_UPDATED 조건은 CUSTOMER_REPLIED도 포함하며 자동화 자체 변경은 새 root를 만들지 않습니다.
       example:
         ticketNumber: 1042
         eventType: TICKET_CREATED
@@ -17890,7 +18605,10 @@ components:
           - EVENT
           - PRIORITY
           - GROUP
-          description: 초기 vertical slice가 읽을 수 있는 비민감 ticket/event 속성만 허용합니다.
+          - ASSIGNEE
+          - TAG
+          - FORM
+          description: 비민감 이벤트·우선순위·그룹·담당자·태그·최초 고객 접수 폼을 비교합니다.
         operator:
           type: string
           enum:
@@ -17904,7 +18622,8 @@ components:
           - string
           - 'null'
           maxLength: 120
-          description: IS 계열에는 enum 이름을 전달하고 presence 계열에서는 반드시 생략합니다.
+          description: EVENT/PRIORITY 비교에는 enum 이름
+          GROUP/ASSIGNEE/TAG/FORM 비교에는 UUID를 전달합니다. presence는 GROUP/ASSIGNEE에서만 허용하며 값은 생략합니다.: null
     TriggerAction:
       type: object
       additionalProperties: false
@@ -17915,14 +18634,34 @@ components:
           type: string
           enum:
           - SET_GROUP
+          - SET_PRIORITY
+          - SET_ASSIGNEE
+          - NOTIFY_UNASSIGNED_GROUP
           - ENQUEUE_WEBHOOK
-          description: 초기 vertical slice가 normal command 또는 outbox로 번역할 수 있는 액션만 허용합니다.
+          description: 최종 그룹·담당자·우선순위를 한 티켓 명령으로 적용하고 미배정 그룹 알림 또는 durable webhook intent를 추가합니다.
         groupId:
           type:
           - string
           - 'null'
           format: uuid
           description: SET_GROUP 활성화와 실행 시점에 모두 active group인지 재검사합니다.
+        priority:
+          type:
+          - string
+          - 'null'
+          enum:
+          - LOW
+          - NORMAL
+          - HIGH
+          - URGENT
+          - null
+          description: SET_PRIORITY 액션의 최종 우선순위입니다.
+        assigneeId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: SET_ASSIGNEE 액션의 최종 담당자이며 null은 배정 해제입니다. 최종 그룹의 활성 구성원만 배정합니다.
         eventType:
           type:
           - string
@@ -17931,6 +18670,141 @@ components:
           - ticket.trigger.executed
           - null
           description: webhook 구독자에게 전달 가능한 고정 public event type이며 임의 payload template은 받지 않습니다.
+    TriggerHistory:
+      type: object
+      required:
+      - versions
+      - activations
+      - executions
+      - jobs
+      properties:
+        versions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/TriggerVersionSummary'
+        activations:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TriggerActivationSummary'
+        executions:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TriggerExecutionSummary'
+        jobs:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TriggerJobSummary'
+    TriggerVersionSummary:
+      type: object
+      required:
+      - version
+      - name
+      - createdByDisplay
+      - createdAt
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+        createdByDisplay:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    TriggerActivationSummary:
+      type: object
+      required:
+      - version
+      - state
+      - actorDisplay
+      - occurredAt
+      properties:
+        version:
+          type: integer
+        state:
+          type: string
+          enum:
+          - ACTIVE
+          - INACTIVE
+        actorDisplay:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    TriggerExecutionSummary:
+      type: object
+      required:
+      - id
+      - version
+      - ticketNumber
+      - outcome
+      - completedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        ticketNumber:
+          type: integer
+          format: int64
+        outcome:
+          type: string
+        auditId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        errorCode:
+          type:
+          - string
+          - 'null'
+        completedAt:
+          type: string
+          format: date-time
+    TriggerJobSummary:
+      type: object
+      required:
+      - id
+      - ticketNumber
+      - eventType
+      - status
+      - attemptCount
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticketNumber:
+          type: integer
+          format: int64
+        eventType:
+          type: string
+          enum:
+          - TICKET_CREATED
+          - TICKET_UPDATED
+          - CUSTOMER_REPLIED
+        status:
+          type: string
+          enum:
+          - PENDING
+          - LEASED
+          - SUCCEEDED
+          - RETRY_SCHEDULED
+          - DEAD_LETTERED
+        attemptCount:
+          type: integer
+        lastErrorCode:
+          type:
+          - string
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
     TriggerDefinition:
       type: object
       additionalProperties: false
@@ -18026,6 +18900,9 @@ components:
             type: string
             enum:
             - SET_GROUP
+            - SET_PRIORITY
+            - SET_ASSIGNEE
+            - NOTIFY_UNASSIGNED_GROUP
             - ENQUEUE_WEBHOOK
           description: matched일 때 worker가 순서대로 시도할 typed action 종류입니다.
         invariantFailures:

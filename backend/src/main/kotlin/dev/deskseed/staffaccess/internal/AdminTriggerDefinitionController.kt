@@ -15,6 +15,10 @@ import dev.deskseed.trigger.TriggerDefinitionDraft
 import dev.deskseed.trigger.TriggerDefinitionView
 import dev.deskseed.trigger.TriggerEventType
 import dev.deskseed.trigger.TriggerSetGroupAction
+import dev.deskseed.trigger.TriggerSetPriorityAction
+import dev.deskseed.trigger.TriggerSetAssigneeAction
+import dev.deskseed.trigger.TriggerNotifyUnassignedGroupAction
+import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.trigger.TriggerValidationException
 import dev.deskseed.trigger.TriggerWebhookAction
 import jakarta.servlet.http.HttpServletRequest
@@ -49,6 +53,14 @@ internal class AdminTriggerDefinitionController(
     @GetMapping
     fun list(@AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
         administration.list(request.triggerActor(principal))
+
+    @GetMapping("/{triggerId}/versions/{version}")
+    fun version(@PathVariable triggerId: UUID, @PathVariable version: Int, @AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
+        ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(administration.version(triggerId, version, request.triggerActor(principal)))
+
+    @GetMapping("/{triggerId}/history")
+    fun history(@PathVariable triggerId: UUID, @AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
+        ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(administration.history(triggerId, request.triggerActor(principal)))
 
     @PostMapping
     fun create(
@@ -145,12 +157,23 @@ internal data class TriggerConditionRequest(
 internal data class TriggerActionRequest(
     @field:NotNull val type: TriggerActionType,
     val groupId: UUID? = null,
+    val assigneeId: UUID? = null,
+    val priority: TicketPriority? = null,
     @field:Size(max = 120) val eventType: String? = null,
 ) {
-    fun toDefinition(): TriggerActionDefinition = when (type) {
+    fun toDefinition(): TriggerActionDefinition {
+        require(type == TriggerActionType.SET_GROUP || groupId == null) { "groupId only belongs to SET_GROUP" }
+        require(type == TriggerActionType.SET_ASSIGNEE || assigneeId == null) { "assigneeId only belongs to SET_ASSIGNEE" }
+        require(type == TriggerActionType.SET_PRIORITY || priority == null) { "priority only belongs to SET_PRIORITY" }
+        require(type == TriggerActionType.ENQUEUE_WEBHOOK || eventType == null) { "eventType only belongs to ENQUEUE_WEBHOOK" }
+        return when (type) {
         TriggerActionType.SET_GROUP -> TriggerSetGroupAction(groupId
             ?: throw TriggerValidationException("TRIGGER_ACTION_CONFIGURATION_INVALID", "groupId is required"))
+        TriggerActionType.SET_PRIORITY -> TriggerSetPriorityAction(priority ?: throw TriggerValidationException("TRIGGER_ACTION_CONFIGURATION_INVALID", "priority is required"))
+        TriggerActionType.SET_ASSIGNEE -> TriggerSetAssigneeAction(assigneeId)
+        TriggerActionType.NOTIFY_UNASSIGNED_GROUP -> TriggerNotifyUnassignedGroupAction()
         TriggerActionType.ENQUEUE_WEBHOOK -> TriggerWebhookAction(eventType ?: TriggerWebhookAction.WEBHOOK_EVENT_TYPE)
+        }
     }
 }
 

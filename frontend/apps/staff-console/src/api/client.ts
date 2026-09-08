@@ -209,6 +209,10 @@ const SAVED_VIEW_CONDITION_FIELDS = new Set<SavedViewConditionField>([
   'FIRST_REPLY_SLA_STATE',
   'TICKET_KIND',
   'UPDATED_AT',
+  'TAG',
+  'FORM',
+  'CUSTOM_STATUS',
+  'CUSTOM_FIELD',
 ])
 const SAVED_VIEW_CONDITION_OPERATORS = new Set<SavedViewConditionOperator>([
   'EQUALS',
@@ -467,11 +471,13 @@ function decodeSubmittedRequest(value: unknown): SubmittedRequest | undefined {
     !isNonBlankString(value.accessToken) ||
     value.accessToken.length < ACCESS_TOKEN_MIN_LENGTH ||
     value.accessToken.length > ACCESS_TOKEN_MAX_LENGTH ||
-    !isTimestamp(value.createdAt)
+    !isTimestamp(value.createdAt) ||
+    typeof value.replayed !== 'boolean'
   ) {
     return undefined
   }
   return {
+    replayed: value.replayed,
     ticketNumber: value.ticketNumber,
     status: value.status,
     accessToken: value.accessToken,
@@ -810,13 +816,10 @@ export async function submitRequestWithAttachments(
     csrfToken = csrfBody.token
   }
   const form = new FormData()
-  form.set('name', input.name)
-  form.set('email', input.email)
-  form.set('subject', input.subject)
-  form.set('message', input.message)
-  if (input.privacyConsent !== undefined) {
-    form.set('privacyConsent', String(input.privacyConsent))
-  }
+  form.set(
+    'request',
+    new Blob([JSON.stringify(input)], { type: 'application/json' }),
+  )
   files.forEach((file) => form.append('attachments', file, file.name))
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',
@@ -1426,6 +1429,31 @@ async function staffFetch(
 
 async function checkedBody(response: Response): Promise<unknown> {
   return successfulResponseBody(response)
+}
+
+/** Feature clients share the same session, CSRF and actor-snapshot boundary. */
+export async function requestStaffResource<T>(
+  path: `/api/v1/${'admin' | 'agent'}/${string}`,
+  decode: (body: unknown) => T | undefined,
+  command?: {
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+    body?: unknown
+    version?: number
+  },
+): Promise<T> {
+  const response = command
+    ? await unsafeStaffFetch(
+        path,
+        command.method,
+        command.body,
+        command.version === undefined
+          ? {}
+          : { 'If-Match': `"${command.version}"` },
+      )
+    : await staffFetch(path)
+  const decoded = decode(await checkedBody(response))
+  if (decoded === undefined) throw malformedSuccess(response)
+  return decoded
 }
 
 async function checkedEmpty(response: Response): Promise<void> {
@@ -2722,6 +2750,11 @@ function decodeSavedViewCondition(
     !SAVED_VIEW_CONDITION_OPERATORS.has(
       value.operator as SavedViewConditionOperator,
     ) ||
+    (value.field === 'CUSTOM_FIELD'
+      ? typeof value.fieldKey !== 'string' ||
+        value.fieldKey.length > 120 ||
+        !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(value.fieldKey)
+      : value.fieldKey !== undefined) ||
     !Array.isArray(value.values) ||
     value.values.length > 10 ||
     !value.values.every(isNonBlankString)
@@ -2732,6 +2765,7 @@ function decodeSavedViewCondition(
     field: value.field as SavedViewConditionField,
     operator: value.operator as SavedViewConditionOperator,
     values: value.values,
+    ...(typeof value.fieldKey === 'string' ? { fieldKey: value.fieldKey } : {}),
   }
 }
 
@@ -3008,9 +3042,12 @@ function decodeAgentNotification(
   const actor = decodeActorSummary(value.actor)
   if (
     !isUuid(value.id) ||
-    value.type !== 'COLLABORATION_MENTION' ||
+    (value.type !== 'COLLABORATION_MENTION' &&
+      value.type !== 'UNASSIGNED_TICKET_ALERT') ||
     !isTicketNumber(value.ticketNumber) ||
-    !isUuid(value.noteId) ||
+    (value.type === 'COLLABORATION_MENTION'
+      ? !isUuid(value.noteId) || actor?.type !== 'STAFF'
+      : value.noteId !== null || actor?.type !== 'TRIGGER') ||
     !actor ||
     !isTimestamp(value.createdAt) ||
     (value.readAt !== null && !isTimestamp(value.readAt))
@@ -3019,9 +3056,9 @@ function decodeAgentNotification(
   }
   return {
     id: value.id,
-    type: 'COLLABORATION_MENTION',
+    type: value.type,
     ticketNumber: value.ticketNumber,
-    noteId: value.noteId,
+    noteId: value.noteId as string | null,
     actor,
     createdAt: value.createdAt,
     readAt: value.readAt,
@@ -3049,7 +3086,7 @@ function decodeAgentNotificationPage(
   }
 }
 
-function decodeAgentMacroDefinition(
+export function decodeAgentMacroDefinition(
   value: unknown,
 ): AgentMacroDefinition | undefined {
   if (

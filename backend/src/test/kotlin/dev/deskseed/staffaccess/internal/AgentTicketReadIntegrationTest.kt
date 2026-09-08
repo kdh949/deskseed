@@ -460,6 +460,50 @@ class AgentTicketReadIntegrationTest {
     }
 
     @Test
+    fun `configuration view predicates agree across preview list and counts and fail closed after restriction`() {
+        val actor = insertStaff("configuration-view@example.com", "Agent password 42", "AGENT", "뷰 상담사")
+        val browser = login("configuration-view@example.com", "Agent password 42")
+        val matching = insertTicket(3651, "환불 검토")
+        insertTicket(3652, "일반 문의")
+        val field = UUID.randomUUID()
+        val fieldKey = "view-${UUID.randomUUID().toString().replace("-", "")}"
+        val tag = UUID.randomUUID()
+        val customStatus = UUID.randomUUID()
+        val form = UUID.randomUUID()
+        jdbcTemplate.update("insert into ticket_field_definitions (id,machine_key,field_type,staff_label,searchable,created_at,updated_at) values (?,?,'NUMBER','환불 금액',true,now(),now())", field, fieldKey)
+        jdbcTemplate.update("insert into ticket_custom_field_values (ticket_id,field_definition_id,number_value,field_definition_version,updated_at) values (?,?,12000.5,1,now())", matching.id, field)
+        jdbcTemplate.update("insert into ticket_tag_definitions (id,normalized_value,label,created_at,updated_at) values (?,?,'환불',now(),now())", tag, "refund-${tag}")
+        jdbcTemplate.update("insert into ticket_tag_assignments values (?,?,now())", matching.id, tag)
+        jdbcTemplate.update("insert into custom_ticket_statuses (id,machine_key,agent_label,status_category,display_order,created_at,updated_at) values (?,?,'환불 검토','OPEN',0,now(),now())", customStatus, "review-${customStatus}")
+        jdbcTemplate.update("update tickets set custom_status_id = ? where id = ?", customStatus, matching.id)
+        jdbcTemplate.update("insert into ticket_forms (id,name,lifecycle,draft_definition_json,created_at,updated_at) values (?,'환불 문의','DRAFT','{}',now(),now())", form)
+        jdbcTemplate.update("insert into ticket_form_versions (form_id,version,definition_json,published_by_staff_id,published_by_display,published_at) values (?,1,'{}',?,'상담사',now())", form, actor)
+        jdbcTemplate.update("update ticket_forms set lifecycle = 'PUBLISHED', published_version = 1 where id = ?", form)
+        jdbcTemplate.update("insert into ticket_customer_form_bindings values (?,?,1,now())", matching.id, form)
+        fun clause(kind: String, value: String, operator: String = "EQUALS", key: String? = null) = """{"field":"$kind","operator":"$operator","values":["$value"]${key?.let { ",\"fieldKey\":\"$it\"" } ?: ""}}"""
+        fun definition(conditions: String) = """{"name":"환불 보기","conditions":{"version":1,"all":[$conditions],"any":[]},"columns":["TICKET_NUMBER","SUBJECT"],"sort":"updatedAt:desc,ticketNumber:desc"}"""
+        fun preview(conditions: String) = mockMvc.perform(post("/api/v1/agent/views/preview").session(browser).header("X-CSRF-TOKEN", csrf(browser)).header("X-Interaction-Id", UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON).content(definition(conditions)))
+        for ((kind, value) in listOf("TAG" to tag.toString(), "FORM" to form.toString(), "CUSTOM_STATUS" to customStatus.toString(), "CUSTOM_FIELD" to "12000.50")) {
+            val key = if (kind == "CUSTOM_FIELD") fieldKey else null
+            preview(clause(kind, value, key = key)).andExpect(status().isOk).andExpect(jsonPath("$.ticketCount").value(1)).andExpect(jsonPath("$.items[0].ticketNumber").value(3651))
+            preview(clause(kind, value, "NOT_EQUALS", key)).andExpect(status().isOk).andExpect(jsonPath("$.ticketCount").value(1)).andExpect(jsonPath("$.items[0].ticketNumber").value(3652))
+        }
+        val all = listOf(clause("TAG", tag.toString()), clause("FORM", form.toString()), clause("CUSTOM_STATUS", customStatus.toString()), clause("CUSTOM_FIELD", "12000.50", key = fieldKey)).joinToString(",")
+        val created = mockMvc.perform(post("/api/v1/agent/views").session(browser).header("X-CSRF-TOKEN", csrf(browser)).contentType(MediaType.APPLICATION_JSON).content(definition(all).replaceFirst("{", "{\"scope\":\"PERSONAL\","))).andExpect(status().isCreated).andExpect(jsonPath("$.conditions.all[3].fieldKey").value(fieldKey)).andReturn().response.contentAsString
+        val key = stringField(created, "key")
+        mockMvc.perform(get("/api/v1/agent/views/$key/tickets").session(browser)).andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(1))
+        mockMvc.perform(get("/api/v1/agent/views").session(browser)).andExpect(status().isOk).andExpect(jsonPath("$[?(@.key == '$key')].ticketCount").value(org.hamcrest.Matchers.contains(1)))
+        mockMvc.perform(get("/api/v1/agent/ticket-configuration/filter-catalog").session(browser)).andExpect(status().isOk).andExpect(jsonPath("$.fields[?(@.machineKey == '$fieldKey')]").isNotEmpty)
+        preview(clause("CUSTOM_FIELD", "not-a-number", key = fieldKey)).andExpect(status().isBadRequest)
+        jdbcTemplate.update("update ticket_field_definitions set sensitive = true where id = ?", field)
+        preview(clause("CUSTOM_FIELD", "12000.50", "NOT_EQUALS", fieldKey)).andExpect(status().isBadRequest)
+        mockMvc.perform(get("/api/v1/agent/ticket-configuration/filter-catalog").session(browser)).andExpect(status().isOk).andExpect(jsonPath("$.fields[?(@.machineKey == '$fieldKey')]").isEmpty)
+        mockMvc.perform(get("/api/v1/agent/views/$key/tickets").session(browser)).andExpect(status().isOk).andExpect(jsonPath("$.items.length()").value(0))
+        mockMvc.perform(get("/api/v1/agent/views").session(browser)).andExpect(status().isOk).andExpect(jsonPath("$[?(@.key == '$key')].ticketCount").value(org.hamcrest.Matchers.contains(0)))
+        mockMvc.perform(get("/api/v1/agent/ticket-configuration/filter-catalog")).andExpect(status().isUnauthorized)
+    }
+
+    @Test
     fun `saved view description defaults to empty and rejects oversized or control characters`() {
         insertStaff("saved-view-validation@example.com", "Agent password 42", "AGENT", "검증 상담사")
         val session = login("saved-view-validation@example.com", "Agent password 42")

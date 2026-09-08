@@ -7,6 +7,10 @@ import {
 } from '../../design-system'
 
 const navigation = [
+  { label: '지식 문서', to: '/admin/knowledge' },
+  { label: '티켓 필드', to: '/admin/ticket-fields' },
+  { label: '티켓 폼', to: '/admin/ticket-forms' },
+  { label: '공유 매크로', to: '/admin/shared-macros' },
   { label: '메일 운영', to: '/admin/operations/mail' },
   { label: '직원', to: '/admin/staff' },
   { label: '그룹', to: '/admin/groups' },

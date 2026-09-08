@@ -5,14 +5,13 @@ API_URL="${API_URL:-http://localhost:8080}"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
-cat > "$TEMP_DIR/request.json" <<'JSON'
-{
-  "name": "데모 고객",
-  "email": "demo@example.com",
-  "subject": "결제가 되지 않아요",
-  "message": "결제 버튼을 누르면 오류가 발생합니다."
-}
-JSON
+python3 - "$TEMP_DIR/request.json" <<'PYTHON'
+import json, sys, uuid
+with open(sys.argv[1], "w", encoding="utf-8") as target:
+    json.dump({"clientCommandId": str(uuid.uuid4()), "requester": {"name": "데모 고객", "email": "demo@example.com"},
+               "subject": "결제가 되지 않아요", "message": "결제 버튼을 누르면 오류가 발생합니다.",
+               "fieldValues": {}, "acceptedPolicies": []}, target)
+PYTHON
 
 curl --fail --silent --show-error \
   -H 'Content-Type: application/json' \

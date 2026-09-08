@@ -44,8 +44,10 @@ import {
 } from './client'
 
 const submitInput = {
-  name: '김고객',
-  email: 'customer@example.com',
+  clientCommandId: '12345678-1234-4234-8234-123456789012',
+  requester: { name: '김고객', email: 'customer@example.com' },
+  fieldValues: {},
+  acceptedPolicies: [],
   subject: '결제 오류',
   message: '결제 버튼을 누르면 오류가 납니다.',
 }
@@ -440,6 +442,7 @@ describe('customer request API client', () => {
           JSON.stringify({
             ticketNumber: 1042,
             status: 'NEW',
+            replayed: false,
             accessToken: 'one-time-access-token-that-is-long-enough',
             createdAt: '2026-08-10T00:00:00Z',
           }),
@@ -2160,6 +2163,7 @@ describe('P1 headless contract fixture', () => {
               ticketNumber: 1042,
               status: 'NEW',
               accessToken,
+              replayed: false,
               createdAt: '2026-08-16T00:00:00Z',
             }),
             { status: 201, headers: { 'Content-Type': 'application/json' } },
@@ -2223,9 +2227,7 @@ describe('P1 headless contract fixture', () => {
     })
 
     await expect(
-      submitRequestWithAttachments({ ...submitInput, privacyConsent: true }, [
-        file,
-      ]),
+      submitRequestWithAttachments(submitInput, [file]),
     ).resolves.toMatchObject({ ticketNumber: 1042, accessToken })
     await expect(
       uploadAnonymousRequestAttachment(1042, accessToken, file),

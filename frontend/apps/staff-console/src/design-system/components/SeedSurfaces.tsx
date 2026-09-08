@@ -190,6 +190,10 @@ export function SeedDrawer({
   const descriptionId = useId()
   const panelRef = useRef<HTMLElement>(null)
   const fallbackReturnFocusRef = useRef<HTMLElement | null>(null)
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  }, [onClose])
   useEffect(() => {
     if (!open) return
     if (document.activeElement instanceof HTMLElement) {
@@ -197,9 +201,11 @@ export function SeedDrawer({
     }
     panelRef.current?.focus()
     const closeFromKeyboard = (event: KeyboardEvent) => {
+      // A nested panel owns Escape/Tab even when a removed control left focus on body.
+      if (panelRef.current?.querySelector('[role="dialog"]')) return
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        closeRef.current()
         return
       }
       if (event.key === 'Tab' && panelRef.current) {
@@ -207,7 +213,7 @@ export function SeedDrawer({
           panelRef.current.querySelectorAll<HTMLElement>(
             'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
           ),
-        )
+        ).filter((element) => !element.matches(':disabled'))
         if (!focusable.length) {
           event.preventDefault()
           panelRef.current.focus()
@@ -215,7 +221,10 @@ export function SeedDrawer({
         }
         const first = focusable[0]
         const last = focusable.at(-1)
-        if (event.shiftKey && document.activeElement === first) {
+        if (document.activeElement === panelRef.current) {
+          event.preventDefault()
+          ;(event.shiftKey ? last : first)?.focus()
+        } else if (event.shiftKey && document.activeElement === first) {
           event.preventDefault()
           last?.focus()
         } else if (!event.shiftKey && document.activeElement === last) {
@@ -232,7 +241,7 @@ export function SeedDrawer({
       focusTarget?.focus()
       fallbackReturnFocusRef.current = null
     }
-  }, [onClose, open, returnFocusRef])
+  }, [open, returnFocusRef])
   if (!open) return null
   return (
     <div className="seed-drawer-layer">

@@ -25,6 +25,7 @@ enum class KnowledgeArticleLifecycle {
 
 enum class KnowledgeLifecycleAction {
     SUBMIT_REVIEW,
+    RETURN_TO_DRAFT,
     PUBLISH,
     UNPUBLISH,
     ARCHIVE,
@@ -159,6 +160,8 @@ interface KnowledgeAdministration {
         expectedVersion: Long,
         actor: KnowledgeAdminActor,
     ): KnowledgeCategoryView
+
+    fun listSections(actor: KnowledgeAdminActor): List<KnowledgeSectionView>
 
     fun createSection(input: KnowledgeSectionInput, actor: KnowledgeAdminActor): KnowledgeSectionView
 

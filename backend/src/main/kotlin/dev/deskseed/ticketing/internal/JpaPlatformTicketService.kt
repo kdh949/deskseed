@@ -388,6 +388,9 @@ internal class JpaPlatformTicketService(
                 )
             },
         )
+        if (ticket.version > expectedVersion && events.none { it.type == "TICKET_CREATED" }) {
+            eventPublisher.publishEvent(dev.deskseed.ticketing.TicketMutationRecorded(ticket.id, ticket.ticketNumber, auditId, correlationId, now))
+        }
         return auditId
     }
 

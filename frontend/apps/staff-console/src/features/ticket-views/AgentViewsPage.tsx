@@ -50,6 +50,7 @@ import {
   type ViewEditor,
 } from './ViewConfigurationDrawer'
 import { createOpaqueUuid } from '../../api/uuid'
+import { getViewConfigurationCatalog } from './viewConfigurationCatalog'
 import { BulkTicketActionPanel } from './BulkTicketActionPanel'
 
 const VIEW_NAVIGATION_COPY = {
@@ -153,6 +154,12 @@ export function AgentViewsPage() {
     Set<number>
   >(() => new Set())
   const [editor, setEditor] = useState<ViewEditor | null>(null)
+  const configurationCatalog = useQuery({
+    queryKey: ['view-configuration-catalog'],
+    queryFn: getViewConfigurationCatalog,
+    enabled: editor !== null,
+    retry: false,
+  })
   const [pendingPersonalOrder, setPendingPersonalOrder] = useState<
     string[] | null
   >(null)
@@ -716,6 +723,9 @@ export function AgentViewsPage() {
         </div>
       </section>
       <ViewConfigurationDrawer
+        catalog={configurationCatalog.data}
+        catalogError={configurationCatalog.isError}
+        onReloadCatalog={() => void configurationCatalog.refetch()}
         editor={editor}
         onClose={closeEditor}
         onDelete={deleteEditedView}

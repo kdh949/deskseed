@@ -640,20 +640,20 @@ class CustomerRequestFormContractTest(unittest.TestCase):
             },
         )
 
-    def test_candidate_projection_is_blueprint_only_and_has_no_ticket_view_side_effect(self) -> None:
+    def test_candidate_projection_is_frozen_and_has_no_ticket_view_side_effect(self) -> None:
         operation = self.operation("/api/v1/customer/ticket-form-projections")
 
         self.assertEqual("projectCustomerTicketForm", operation["operationId"])
-        self.assertNotIn("x-deskseed-contract-status", operation)
+        self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
         self.assertEqual("NONE", operation["x-deskseed-side-effects"])
         self.assertEqual("NONE", operation["x-deskseed-semantic-ticket-view"])
         self.assertIn("not an authorization token", operation["description"])
         self.assertEqual([{}], operation["security"])
 
-    def test_initial_projection_is_blueprint_only_and_fixed_to_customer_requests(self) -> None:
+    def test_initial_projection_is_frozen_and_fixed_to_customer_requests(self) -> None:
         operation = self.operation("/api/v1/customer/ticket-forms", "get")
 
-        self.assertNotIn("x-deskseed-contract-status", operation)
+        self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
         self.assertEqual(["formId"], [parameter["name"] for parameter in operation["parameters"]])
         self.assertIn("CUSTOMER_REQUEST", operation["description"])
 
@@ -688,7 +688,7 @@ class CustomerRequestFormContractTest(unittest.TestCase):
         self.assertNotIn("CreateAnonymousRequestResult", schemas)
         self.assertNotIn("privacyConsent", str(operation))
         self.assertNotIn("privacyConsent", str(schemas["CreateCustomerRequest"]))
-        self.assertNotIn("x-deskseed-contract-status", operation)
+        self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
 
     def test_initial_request_has_stable_command_replay_and_conflict_contract(self) -> None:
         operation = self.operation("/api/v1/requests")

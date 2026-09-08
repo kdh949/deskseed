@@ -176,6 +176,17 @@ internal class JdbcKnowledgeAdministration(
 
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
+    override fun listSections(actor: KnowledgeAdminActor): List<KnowledgeSectionView> {
+        val sections = jdbc.query(
+            "select id, category_id, slug, title, description, status, display_order, version from knowledge_sections order by category_id, display_order, id",
+            ::sectionView,
+        )
+        audit("KNOWLEDGE_SECTION_LISTED", actor, "KNOWLEDGE_SECTION_COLLECTION", null, mapOf("count" to sections.size.toString()))
+        return sections
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
     override fun createSection(input: KnowledgeSectionInput, actor: KnowledgeAdminActor): KnowledgeSectionView {
         val normalized = input.validated()
         requireActiveCategory(normalized.categoryId)
@@ -595,6 +606,12 @@ internal class JdbcKnowledgeAdministration(
         if (root.version != expectedVersion) throw KnowledgePreconditionFailedException(root.version)
         val now = Instant.now(clock)
         val nextLifecycle = when (action) {
+            KnowledgeLifecycleAction.RETURN_TO_DRAFT -> {
+                require(root.lifecycle in setOf(KnowledgeArticleLifecycle.IN_REVIEW, KnowledgeArticleLifecycle.UNPUBLISHED)) {
+                    "Only IN_REVIEW or UNPUBLISHED articles can return to draft"
+                }
+                KnowledgeArticleLifecycle.DRAFT
+            }
             KnowledgeLifecycleAction.SUBMIT_REVIEW -> {
                 require(root.lifecycle == KnowledgeArticleLifecycle.DRAFT) { "Only DRAFT articles can enter review" }
                 KnowledgeArticleLifecycle.IN_REVIEW

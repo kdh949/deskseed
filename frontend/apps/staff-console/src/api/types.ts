@@ -78,14 +78,27 @@ export interface SaveTicketDraftInput {
 }
 
 export interface SubmitRequestInput {
-  name: string
-  email: string
+  clientCommandId: string
+  requester?: { name: string; email: string }
   subject: string
   message: string
-  privacyConsent?: boolean
+  formId?: string
+  formVersion?: number
+  fieldValues: Record<
+    string,
+    {
+      booleanValue?: boolean
+      numberValue?: number
+      optionId?: string
+      shortTextValue?: string
+      longTextValue?: string
+    }
+  >
+  acceptedPolicies: Array<{ policyKey: string; version: number }>
 }
 
 export interface SubmittedRequest {
+  replayed: boolean
   ticketNumber: number
   status: TicketStatus
   accessToken: string
@@ -587,6 +600,10 @@ export type SavedViewConditionField =
   | 'FIRST_REPLY_SLA_STATE'
   | 'TICKET_KIND'
   | 'UPDATED_AT'
+  | 'TAG'
+  | 'FORM'
+  | 'CUSTOM_STATUS'
+  | 'CUSTOM_FIELD'
 export type SavedViewConditionOperator =
   | 'EQUALS'
   | 'NOT_EQUALS'
@@ -609,6 +626,7 @@ export type SavedViewColumn =
 export type SavedViewSort = 'updatedAt:desc,ticketNumber:desc'
 
 export interface SavedViewCondition {
+  fieldKey?: string
   field: SavedViewConditionField
   operator: SavedViewConditionOperator
   values: string[]
@@ -859,9 +877,9 @@ export interface CreateCollaborationNoteResult {
 
 export interface AgentNotification {
   id: string
-  type: 'COLLABORATION_MENTION'
+  type: 'COLLABORATION_MENTION' | 'UNASSIGNED_TICKET_ALERT'
   ticketNumber: number
-  noteId: string
+  noteId: string | null
   actor: ActorSummary
   createdAt: string
   readAt: string | null

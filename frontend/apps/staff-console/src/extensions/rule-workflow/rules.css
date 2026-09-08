@@ -1,0 +1,69 @@
+.rule-page,
+.rule-editor,
+.rule-form {
+  display: grid;
+  gap: var(--ds-space-200);
+  min-width: 0;
+}
+.rule-page {
+  padding: var(--ds-space-300);
+}
+.rule-form {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.rule-page h1,
+.rule-page p,
+.rule-editor h3,
+.rule-editor h4 {
+  margin: 0;
+}
+.rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-100);
+}
+.rule-list {
+  display: grid;
+  gap: var(--ds-space-150);
+  padding: 0;
+  list-style: none;
+}
+.rule-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-150);
+  padding: var(--ds-space-200);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  border-radius: var(--ds-radius-medium);
+}
+.rule-row {
+  display: grid;
+  gap: var(--ds-space-150);
+  min-width: 0;
+  margin: 0;
+  padding: var(--ds-space-150);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  border-radius: var(--ds-radius-medium);
+}
+.rule-editor section {
+  display: grid;
+  gap: var(--ds-space-150);
+  min-width: 0;
+}
+.rule-editor ul {
+  margin: 0;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+.rule-editor li {
+  margin-block: 6px;
+}
+@media (max-width: 480px) {
+  .rule-page {
+    padding: var(--ds-space-200);
+  }
+}

@@ -61,40 +61,6 @@ function PrimitiveCatalog() {
   )
 }
 
-function FormCatalog() {
-  const [status, setStatus] = useState('OPEN')
-  const [checked, setChecked] = useState(false)
-  return (
-    <form className="seed-story-form">
-      <SeedTextField label="제목" placeholder="문의 제목" required />
-      <SeedTextField
-        error="이메일을 확인해 주세요."
-        label="이메일"
-        leadingIcon="mail"
-        value="invalid"
-        readOnly
-      />
-      <SeedSelectField
-        label="상태"
-        onChange={(event) => setStatus(event.target.value)}
-        value={status}
-      >
-        <option value="OPEN">처리 중</option>
-        <option value="PENDING">고객 답변 대기</option>
-      </SeedSelectField>
-      <SeedTextAreaField
-        hint="고객에게 공개되는 첫 댓글입니다."
-        label="문의 내용"
-      />
-      <SeedCheckbox
-        checked={checked}
-        label="로그인 상태 유지"
-        onChange={(event) => setChecked(event.target.checked)}
-      />
-    </form>
-  )
-}
-
 function TabsCatalog() {
   const [active, setActive] = useState<'PUBLIC' | 'INTERNAL'>('PUBLIC')
   return (
@@ -213,7 +179,41 @@ type Story = StoryObj<typeof meta>
 
 export const ActionsIconsBrand: Story = {}
 
-export const FormControls: Story = { render: () => <FormCatalog /> }
+export const FormControls: Story = {
+  render: function FormCatalog() {
+    const [status, setStatus] = useState('OPEN')
+    const [checked, setChecked] = useState(false)
+    return (
+      <form className="seed-story-form">
+        <SeedTextField label="제목" placeholder="문의 제목" required />
+        <SeedTextField
+          error="이메일을 확인해 주세요."
+          label="이메일"
+          leadingIcon="mail"
+          value="invalid"
+          readOnly
+        />
+        <SeedSelectField
+          label="상태"
+          onChange={(event) => setStatus(event.target.value)}
+          value={status}
+        >
+          <option value="OPEN">처리 중</option>
+          <option value="PENDING">고객 답변 대기</option>
+        </SeedSelectField>
+        <SeedTextAreaField
+          hint="고객에게 공개되는 첫 댓글입니다."
+          label="문의 내용"
+        />
+        <SeedCheckbox
+          checked={checked}
+          label="로그인 상태 유지"
+          onChange={(event) => setChecked(event.target.checked)}
+        />
+      </form>
+    )
+  },
+}
 
 export const WorkspaceChoiceAndDateFields: Story = {
   render: () => <WorkspaceFieldCatalog />,
