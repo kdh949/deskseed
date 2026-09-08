@@ -333,7 +333,14 @@ function FormEditor({
               ...draft,
               conditionalRules: [
                 ...draft.conditionalRules,
-                { ...rule, priority: draft.conditionalRules.length },
+                {
+                  ...rule,
+                  priority:
+                    Math.max(
+                      -1,
+                      ...draft.conditionalRules.map((r) => r.priority),
+                    ) + 1,
+                },
               ],
             })
           }

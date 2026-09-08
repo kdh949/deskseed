@@ -54,6 +54,7 @@ export type FormRule = {
 }
 export type FormDraft = {
   name: string
+  description?: string | null
   defaultForCustomer: boolean
   defaultForAgent: boolean
   placements: FormPlacement[]
@@ -120,6 +121,7 @@ export function decodeForm(v: unknown): TicketForm | undefined {
     !record(v) ||
     !identity(v) ||
     typeof v.name !== 'string' ||
+    (v.description != null && typeof v.description !== 'string') ||
     !['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(String(v.lifecycle)) ||
     typeof v.defaultForCustomer !== 'boolean' ||
     typeof v.defaultForAgent !== 'boolean'
@@ -247,6 +249,7 @@ export const saveForm = (draft: FormDraft, existing?: TicketForm) =>
       method: existing ? 'PUT' : 'POST',
       body: {
         name: draft.name,
+        description: draft.description ?? null,
         defaultForCustomer: draft.defaultForCustomer,
         defaultForAgent: draft.defaultForAgent,
         placements: draft.placements,
