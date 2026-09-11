@@ -1,3 +1,7 @@
+import {
+  CustomerPasswordResetPage,
+  CustomerPasswordResetRequestPage,
+} from './features/customer-auth/CustomerPasswordResetPages'
 import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
 import { ScreenState } from './design-system'
 import { CustomerAccountRoute } from './features/customer-auth/CustomerAccountRoute'
@@ -36,6 +40,14 @@ export const customerRoutes: RouteObject[] = [
       {
         path: 'requests/:ticketNumber',
         element: <AnonymousRequestDetailPage />,
+      },
+      {
+        path: 'customer/password-reset',
+        element: <CustomerPasswordResetRequestPage />,
+      },
+      {
+        path: 'customer/password/reset',
+        element: <CustomerPasswordResetPage />,
       },
       { path: 'customer/sign-in', element: <CustomerSignInPage /> },
       {

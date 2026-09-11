@@ -386,3 +386,40 @@ function isCurrentCustomer(value: unknown): value is CurrentCustomer {
     )
   )
 }
+
+export async function requestCustomerPasswordReset(
+  email: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/customer/auth/password-reset-requests`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    },
+  )
+  if (response.status !== 202)
+    throw await responseFailure(response, 'password-reset-request-failed')
+}
+
+export async function resetCustomerPassword(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/customer/auth/password-resets`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+    },
+  )
+  if (response.status !== 204)
+    throw await responseFailure(response, 'password-reset-failed')
+}

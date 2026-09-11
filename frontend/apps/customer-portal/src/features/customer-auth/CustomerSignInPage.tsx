@@ -79,6 +79,9 @@ export function CustomerSignInPage() {
       <section className="customer-auth-card">
         <h1>DeskSeed에 로그인</h1>
         <p>이메일과 비밀번호로 로그인하세요.</p>
+        <p>
+          <Link to="/customer/password-reset">비밀번호를 잊으셨나요?</Link>
+        </p>
         <div
           aria-label="로그인 방식"
           className="customer-auth-tabs"
