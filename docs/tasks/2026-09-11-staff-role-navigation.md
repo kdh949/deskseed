@@ -11,3 +11,6 @@ STAFF_SESSION, STAFF_CONSOLE. AGENT_WORKSPACE/ADMIN_MANAGE capability와 역할�
 
 ## 설명할 trade-off
 메뉴와 라우트가 같은 서버 역할 정책을 따른다. UI는 보안 경계가 아니며 서버 권한 검사는 유지된다.
+
+## 리뷰 보완
+계정 전환은 원격 로그아웃 성공 또는 401 확인 후에만 로컬 세션을 종료한다. 503/네트워크 실패는 실제 StaffSessionProvider를 통한 재시도 테스트로 검증하며 일반 로그아웃의 기존 로컬 정보 폐기 정책은 유지한다. 정규화된 agent 확장 경로를 보존하되 기존 route gate가 권한을 검사한다. 공통 직원 404는 역할 gate 밖에서 shell을 사용하고 section으로 렌더링해 main landmark를 중첩하지 않는다. 감사자 상단바는 canonical seed-topbar의 grid/sticky/배경/간격을 공유한다.

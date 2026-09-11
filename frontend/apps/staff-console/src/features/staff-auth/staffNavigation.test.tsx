@@ -42,8 +42,19 @@ it('routes each role to an allowed home and keeps only permitted internal return
   expect(staffDestination(admin, '/admin/triggers')).toBe('/admin/triggers')
   expect(staffDestination(agent, '/admin/staff')).toBe('/agent/views/my-open')
   expect(staffDestination(agent, '/agent/tickets/42')).toBe('/agent/tickets/42')
+  for (const path of [
+    '/agent/personal-macros',
+    '/agent/extensions/example/items/42',
+  ]) {
+    expect(staffDestination(agent, path)).toBe(path)
+  }
   for (const from of [
     '//evil.test',
+    '/agent//evil',
+    '/agent/login',
+    '/agent/audit',
+    '/agent/%2e%2e/admin',
+    '/agent/extension/../audit',
     'https://evil.test',
     '/agent/tickets/../audit',
     '/agent/tickets/42?token=x',
@@ -65,7 +76,9 @@ it('terminates the current session before showing another-account login', async 
   await userEvent.click(
     screen.getByRole('button', { name: '다른 계정으로 로그인' }),
   )
-  expect(session.signOut).toHaveBeenCalledTimes(1)
+  expect(session.signOut).toHaveBeenCalledWith({
+    requireRemoteConfirmation: true,
+  })
   expect(await screen.findByText('다른 계정 로그인')).toBeVisible()
 })
 it('keeps a failed logout visible with retry instead of redirecting back into the denied route', async () => {
