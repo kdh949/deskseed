@@ -198,3 +198,5 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-COL-003 | write 권한이 있는 상담사는 append-only ticket collaboration note를 작성하고 ticket-readable active staff를 멘션하며 수신자는 body-free in-app notification을 조회·읽음 처리한다 | IMPLEMENTATION_READY | Wave 1 D3 | 31, 33, 34, 39, 48, 50, 55, ADR 0046 | PostgreSQL note/mention/notification migration, write/read/mention permission, exact replay, one TicketAudit, audit rollback, customer/Platform/search/mail non노출, notification cursor/read idempotency, body-free WebSocket hint, frontend card/drawer/mention/bell Storybook·E2E |
 
 - 2026-09-11 REQ-AUTH-003: 고객 password reset 요청/fragment 소비 화면과 실패 복구 연결. [수직 슬라이스](tasks/2026-09-11-customer-password-reset.md).
+
+- 2026-09-11 REQ-AUTH-001/REQ-STAFF-001/REQ-AUDIT-001: [직원 역할별 진입 및 메뉴 복구](tasks/2026-09-11-staff-role-navigation.md).

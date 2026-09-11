@@ -41,7 +41,7 @@ const agentChildren: RouteObject[] = [
   { path: 'tickets/new', element: <CreateAgentTicketPage /> },
   { path: 'tickets/:ticketNumber', element: <AgentTicketWorkspacePage /> },
   ...extensionRoutes('agent'),
-  { path: '*', element: <Navigate to="/agent/views/my-open" replace /> },
+  { path: '*', element: <StaffNotFound /> },
 ]
 
 const auditChildren: RouteObject[] = [
@@ -61,7 +61,7 @@ const adminChildren: RouteObject[] = [
   { path: 'business-rules/schedules', element: <AdminBusinessSchedulesPage /> },
   { path: 'business-rules/sla', element: <AdminFirstReplySlaPage /> },
   ...extensionRoutes('admin'),
-  { path: '*', element: <Navigate to="operations/mail" replace /> },
+  { path: '*', element: <StaffNotFound /> },
 ]
 
 export const appRoutes: RouteObject[] = [
@@ -123,4 +123,17 @@ export const appRoutes: RouteObject[] = [
 
 export default function App() {
   return useRoutes(appRoutes)
+}
+
+function StaffNotFound() {
+  return (
+    <main className="seed-route-feedback">
+      <SeedFeedbackState
+        kind="not-found"
+        title="페이지를 찾을 수 없습니다."
+        description="주소를 확인하거나 로그인 화면에서 내 작업 화면으로 이동해 주세요."
+        action={<Link to="/agent/login">내 작업 화면으로 이동</Link>}
+      />
+    </main>
+  )
 }

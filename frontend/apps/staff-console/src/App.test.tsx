@@ -141,7 +141,7 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('redirects an authenticated admin from login to the Agent Queue', async () => {
+  it('redirects an authenticated admin from login to the admin workspace', async () => {
     vi.stubGlobal('fetch', sessionFetch('ADMIN'))
     render(
       <DeskseedThemeProvider>
@@ -151,7 +151,9 @@ describe('App', () => {
       </DeskseedThemeProvider>,
     )
 
-    expect(await screen.findByRole('region', { name: '티켓 큐' })).toBeVisible()
+    expect(
+      await screen.findByRole('navigation', { name: '관리자 설정 메뉴' }),
+    ).toBeVisible()
     expect(
       screen.queryByRole('heading', { name: '직원 로그인' }),
     ).not.toBeInTheDocument()

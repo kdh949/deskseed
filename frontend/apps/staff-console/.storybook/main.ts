@@ -10,6 +10,8 @@ const config: StorybookConfig = {
     '../src/design-system/components/SeedWorkspaceControls.stories.tsx',
     '../src/design-system/patterns/SeedWorkspace.stories.tsx',
     '../src/pages/StaffLoginPage.stories.tsx',
+    '../src/features/admin/AdminShell.stories.tsx',
+    '../src/features/agent-shell/StaffNavigation.stories.tsx',
     '../src/features/ticket-views/AgentViewsPage.stories.tsx',
     '../src/features/ticket-views/ViewConfigurationDrawer.stories.tsx',
     '../src/features/ticket-search/AgentSearchPage.stories.tsx',

@@ -1,3 +1,8 @@
+import {
+  canUseAgentWorkspace,
+  canReadAudit,
+  canManageStaff,
+} from '../staff-auth/staffNavigation'
 import { useCallback, useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import {
@@ -20,9 +25,11 @@ export function AgentShellLayout() {
   const staff = session.staff
   const location = useLocation()
   const navigate = useNavigate()
-  const notifications = useAgentNotifications()
+  const canWork = canUseAgentWorkspace(staff)
+  const notifications = useAgentNotifications(canWork)
 
   useEffect(() => {
+    if (!canWork) return
     const openSearch = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -31,47 +38,56 @@ export function AgentShellLayout() {
     }
     window.addEventListener('keydown', openSearch)
     return () => window.removeEventListener('keydown', openSearch)
-  }, [navigate])
+  }, [navigate, canWork])
 
   if (!staff?.displayName) return null
 
-  const canCreateTicket =
-    (staff.role === 'AGENT' || staff.role === 'ADMIN') &&
-    staff.capabilities.includes('AGENT_WORKSPACE')
+  const canCreateTicket = canWork
   const extensionItems = frontendExtensions.agentNavigationFor({
     role: staff.role,
     capabilities: staff.capabilities,
   })
-  const items: SeedNavigationItem[] = [
-    {
-      id: '/agent/views/my-open',
-      label: '티켓',
-      icon: 'ticket',
-      active:
-        location.pathname.startsWith('/agent/views') ||
-        location.pathname.startsWith('/agent/tickets'),
-    },
-    {
-      id: '/agent/search',
-      label: '검색',
-      icon: 'search',
-      active: location.pathname === '/agent/search',
-    },
-    ...extensionItems.map((item) => ({
-      id: item.to,
-      label: item.label,
-      icon: 'columns' as const,
-      active: location.pathname.startsWith(item.to),
-    })),
-  ]
+  const items: SeedNavigationItem[] = canWork
+    ? [
+        {
+          id: '/agent/views/my-open',
+          label: '티켓',
+          icon: 'ticket',
+          active:
+            location.pathname.startsWith('/agent/views') ||
+            location.pathname.startsWith('/agent/tickets'),
+        },
+        {
+          id: '/agent/search',
+          label: '검색',
+          icon: 'search',
+          active: location.pathname === '/agent/search',
+        },
+        ...extensionItems.map((item) => ({
+          id: item.to,
+          label: item.label,
+          icon: 'columns' as const,
+          active: location.pathname.startsWith(item.to),
+        })),
+      ]
+    : []
   const footerItems: SeedNavigationItem[] = [
-    ...(staff.role === 'ADMIN' || staff.capabilities.includes('AUDIT_VIEW')
+    ...(canReadAudit(staff)
       ? [
           {
             id: '/agent/audit',
             label: '감사',
             icon: 'eye' as const,
             active: location.pathname.startsWith('/agent/audit'),
+          },
+        ]
+      : []),
+    ...(canManageStaff(staff)
+      ? [
+          {
+            id: '/admin/operations/mail',
+            label: '관리자 운영',
+            icon: 'settings' as const,
           },
         ]
       : []),
@@ -104,48 +120,55 @@ export function AgentShellLayout() {
         />
       }
       topbar={
-        <SeedTopBar
-          breadcrumb={breadcrumbFor(location.pathname)}
-          onCreate={
-            canCreateTicket ? () => navigate('/agent/tickets/new') : undefined
-          }
-          onSearch={() => navigate('/agent/search')}
-          notifications={
-            <SeedNotificationMenu
-              items={notifications.items.map((item) => ({
-                id: item.id,
-                title:
-                  item.type === 'UNASSIGNED_TICKET_ALERT'
-                    ? '그룹에 담당자가 없는 티켓이 있습니다'
-                    : `${item.actor.displayName} 님이 회원님을 멘션했습니다`,
-                description:
-                  item.type === 'UNASSIGNED_TICKET_ALERT'
-                    ? `티켓 #${item.ticketNumber} · ${item.actor.displayName}`
-                    : `티켓 #${item.ticketNumber}의 내부 협업 메모`,
-                timestamp: formatNotificationTime(item.createdAt),
-                unread: item.readAt === null,
-              }))}
-              onRetry={notifications.load}
-              onSelect={(id) => {
-                const notification = notifications.items.find(
-                  (item) => item.id === id,
-                )
-                if (!notification) return
-                void notifications
-                  .markRead(id)
-                  .finally(() =>
-                    navigate(
-                      `/agent/tickets/${notification.ticketNumber}${notification.type === 'COLLABORATION_MENTION' ? '#collaboration' : ''}`,
-                    ),
+        canWork ? (
+          <SeedTopBar
+            breadcrumb={breadcrumbFor(location.pathname)}
+            onCreate={
+              canCreateTicket ? () => navigate('/agent/tickets/new') : undefined
+            }
+            onSearch={() => navigate('/agent/search')}
+            notifications={
+              <SeedNotificationMenu
+                items={notifications.items.map((item) => ({
+                  id: item.id,
+                  title:
+                    item.type === 'UNASSIGNED_TICKET_ALERT'
+                      ? '그룹에 담당자가 없는 티켓이 있습니다'
+                      : `${item.actor.displayName} 님이 회원님을 멘션했습니다`,
+                  description:
+                    item.type === 'UNASSIGNED_TICKET_ALERT'
+                      ? `티켓 #${item.ticketNumber} · ${item.actor.displayName}`
+                      : `티켓 #${item.ticketNumber}의 내부 협업 메모`,
+                  timestamp: formatNotificationTime(item.createdAt),
+                  unread: item.readAt === null,
+                }))}
+                onRetry={notifications.load}
+                onSelect={(id) => {
+                  const notification = notifications.items.find(
+                    (item) => item.id === id,
                   )
-              }}
-              state={notifications.state}
-              unreadCount={notifications.unreadCount}
-            />
-          }
-          profileInitials={initials || 'DS'}
-          profileName={staff.displayName}
-        />
+                  if (!notification) return
+                  void notifications
+                    .markRead(id)
+                    .finally(() =>
+                      navigate(
+                        `/agent/tickets/${notification.ticketNumber}${notification.type === 'COLLABORATION_MENTION' ? '#collaboration' : ''}`,
+                      ),
+                    )
+                }}
+                state={notifications.state}
+                unreadCount={notifications.unreadCount}
+              />
+            }
+            profileInitials={initials || 'DS'}
+            profileName={staff.displayName}
+          />
+        ) : (
+          <header className="seed-audit-topbar">
+            <strong>감사 / 활동 기록</strong>
+            <span>{staff.displayName}</span>
+          </header>
+        )
       }
     >
       <Outlet />
@@ -153,7 +176,7 @@ export function AgentShellLayout() {
   )
 }
 
-function useAgentNotifications() {
+function useAgentNotifications(enabled: boolean) {
   const [items, setItems] = useState<
     Awaited<ReturnType<typeof listAgentNotifications>>['items']
   >([])
@@ -162,6 +185,7 @@ function useAgentNotifications() {
     'loading',
   )
   const load = useCallback(async () => {
+    if (!enabled) return
     setState('loading')
     try {
       const page = await listAgentNotifications()
@@ -171,12 +195,12 @@ function useAgentNotifications() {
     } catch {
       setState('error')
     }
-  }, [])
+  }, [enabled])
   useEffect(() => {
     void load()
   }, [load])
   useEffect(() => {
-    if (typeof WebSocket === 'undefined') return
+    if (!enabled || typeof WebSocket === 'undefined') return
     const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     let socket: WebSocket | null = null
     try {
@@ -197,7 +221,7 @@ function useAgentNotifications() {
       return
     }
     return () => socket?.close()
-  }, [load])
+  }, [load, enabled])
   const markRead = async (id: string) => {
     try {
       await markAgentNotificationRead(id)

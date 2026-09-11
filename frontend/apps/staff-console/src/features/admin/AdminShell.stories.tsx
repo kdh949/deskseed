@@ -28,6 +28,7 @@ export const MailOperations: Story = {
       </main>
     ),
     displayName: '운영 관리자',
+    canOpenWorkspace: true,
     onSignOut: fn(),
   },
   play: async ({ args, canvas }) => {
@@ -35,6 +36,9 @@ export const MailOperations: Story = {
       canvas.getByRole('navigation', { name: '관리자 설정 메뉴' }),
     ).toBeVisible()
     await expect(canvas.getByRole('link', { name: '메일 운영' })).toBeVisible()
+    for (const name of ['티켓 태그', '업무 상태', '트리거', '시간 자동화']) {
+      await expect(canvas.getByRole('link', { name })).toBeVisible()
+    }
     await userEvent.click(canvas.getByRole('button', { name: '로그아웃' }))
     await expect(args.onSignOut).toHaveBeenCalled()
   },
