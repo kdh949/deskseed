@@ -1,3 +1,5 @@
+import type { ConsentBlock } from '../../../design-system'
+import { decodeConsentBlocks } from './consentDocument'
 import type { CustomerAccessMode } from '../../../api/types'
 
 export interface CurrentCustomer {
@@ -24,7 +26,7 @@ export interface CustomerConsentPolicy {
   version: number
   title: string
   required: boolean
-  paragraphs: string[]
+  blocks: ConsentBlock[]
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -140,38 +142,13 @@ export async function listRegistrationConsentPolicies(): Promise<
       !Array.isArray(document.blocks)
     )
       throw new Error('customer-consent-policy-response-invalid')
-    const paragraphs = document.blocks.flatMap((value): string[] => {
-      if (!value || typeof value !== 'object')
-        throw new Error('customer-consent-policy-response-invalid')
-      const block = value as Record<string, unknown>
-      if (block.type === 'divider') return []
-      if (
-        block.type === 'list' &&
-        Array.isArray(block.items) &&
-        block.items.every((text) => typeof text === 'string' && text.trim())
-      )
-        return block.items
-      if (
-        ['paragraph', 'heading', 'callout', 'quote', 'link'].includes(
-          String(block.type),
-        ) &&
-        typeof block.text === 'string' &&
-        block.text.trim()
-      ) {
-        return block.type === 'link' && typeof block.url === 'string'
-          ? [block.text + ' (' + block.url + ')']
-          : [block.text]
-      }
-      throw new Error('customer-consent-policy-response-invalid')
-    })
-    if (!paragraphs.length)
-      throw new Error('customer-consent-policy-response-invalid')
+    const blocks = decodeConsentBlocks(document.blocks)
     return {
       policyKey: policy.policyKey,
       version: Number(policy.version),
       title: policy.title,
       required: policy.required,
-      paragraphs,
+      blocks,
     }
   })
   if (

@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
   CustomerIcon,
+  ConsentDocument,
   DsButton,
   Notification,
   RetryButton,
@@ -14,6 +15,11 @@ import {
   listRegistrationConsentPolicies,
   requestCustomerRegistration,
 } from './api/customerAuthClient'
+import {
+  passwordValidationMessage,
+  profileValidationMessage,
+  registrationFieldLimits,
+} from './customerRegistrationValidation'
 
 export function CustomerRegisterPage() {
   const navigate = useNavigate()
@@ -64,6 +70,12 @@ export function CustomerRegisterPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!requiredAccepted || !accepted.length || submitting) return
+    if (
+      passwordValidationMessage(form.password) ||
+      profileValidationMessage('displayName', form.displayName) ||
+      profileValidationMessage('companyName', form.companyName)
+    )
+      return
     setSubmitting(true)
     setFailure(null)
     try {
@@ -82,17 +94,38 @@ export function CustomerRegisterPage() {
         state: { email: form.email, purpose: 'registration' },
       })
     } catch (error) {
-      setFailure(
-        error instanceof CustomerAuthApiError && error.status === 409
-          ? '가입 약관이 변경되었습니다. 최신 내용을 확인하고 다시 동의해 주세요.'
-          : error instanceof CustomerAuthApiError && error.status === 429
-            ? '가입 요청이 잠시 제한되었습니다. 잠시 후 다시 시도해 주세요.'
-            : '입력 내용을 유지했습니다. 가입 요청을 확인한 뒤 다시 시도해 주세요.',
-      )
-      if (error instanceof CustomerAuthApiError && error.status === 409) {
-        setAccepted([])
-        void policies.refetch()
+      if (
+        error instanceof CustomerAuthApiError &&
+        [400, 409].includes(error.status)
+      ) {
+        const previous = policies.data
+          .map(
+            ({ policyKey, version, required }) =>
+              `${policyKey}:${version}:${required}`,
+          )
+          .sort()
+          .join('|')
+        const refreshed = await policies.refetch()
+        const next = refreshed.data
+          ?.map(
+            ({ policyKey, version, required }) =>
+              `${policyKey}:${version}:${required}`,
+          )
+          .sort()
+          .join('|')
+        if (refreshed.isSuccess && next !== previous) {
+          setAccepted([])
+          setFailure(
+            '가입 약관이 변경되었습니다. 최신 내용을 확인하고 다시 동의해 주세요.',
+          )
+          return
+        }
       }
+      setFailure(
+        error instanceof CustomerAuthApiError && error.status === 429
+          ? '가입 요청이 잠시 제한되었습니다. 잠시 후 다시 시도해 주세요.'
+          : '입력 내용을 유지했습니다. 가입 요청을 확인한 뒤 다시 시도해 주세요.',
+      )
     } finally {
       setSubmitting(false)
     }
@@ -107,11 +140,12 @@ export function CustomerRegisterPage() {
         <p>문의 접수와 답변 확인을 더 빠르고 안전하게 이용하세요.</p>
         {failure ? (
           <Notification title="가입 요청을 완료할 수 없습니다." tone="danger">
-            <p role="alert">{failure}</p>
+            <p>{failure}</p>
           </Notification>
         ) : null}
         <form onSubmit={(event) => void submit(event)}>
           <RegisterField
+            field="displayName"
             label="이름"
             onChange={(displayName) =>
               setForm((current) => ({ ...current, displayName }))
@@ -119,12 +153,14 @@ export function CustomerRegisterPage() {
             value={form.displayName}
           />
           <RegisterField
+            field="email"
             label="이메일"
             onChange={(email) => setForm((current) => ({ ...current, email }))}
             type="email"
             value={form.email}
           />
           <RegisterField
+            field="companyName"
             label="회사명"
             onChange={(companyName) =>
               setForm((current) => ({ ...current, companyName }))
@@ -132,6 +168,7 @@ export function CustomerRegisterPage() {
             value={form.companyName}
           />
           <RegisterField
+            field="password"
             label="비밀번호"
             minLength={12}
             onChange={(password) =>
@@ -148,9 +185,7 @@ export function CustomerRegisterPage() {
                 <div className="customer-field" key={key}>
                   <details>
                     <summary>{policy.title} 내용 보기</summary>
-                    {policy.paragraphs.map((paragraph, index) => (
-                      <p key={index}>{paragraph}</p>
-                    ))}
+                    <ConsentDocument blocks={policy.blocks} />
                   </details>
                   <label className="customer-checkbox">
                     <input
@@ -212,31 +247,44 @@ export function CustomerRegisterPage() {
 }
 
 function RegisterField({
+  field,
   label,
   onChange,
   type = 'text',
   value,
   minLength,
 }: {
+  field: keyof typeof registrationFieldLimits
   label: string
   onChange: (value: string) => void
   type?: string
   value: string
   minLength?: number
 }) {
+  const errorId = useId()
+  const error = value
+    ? field === 'password'
+      ? passwordValidationMessage(value)
+      : field === 'email'
+        ? null
+        : profileValidationMessage(field, value)
+    : null
   return (
     <label>
       {label}
       <span aria-hidden="true"> *</span>
       <input
         autoComplete={type === 'password' ? 'new-password' : undefined}
-        maxLength={type === 'password' ? 256 : label === '이름' ? 200 : 320}
+        maxLength={registrationFieldLimits[field] * (field === 'email' ? 1 : 2)}
+        aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
         minLength={minLength}
         onChange={(event) => onChange(event.target.value)}
         required
         type={type}
         value={value}
       />
+      {error && <span id={errorId}>{error}</span>}
     </label>
   )
 }
