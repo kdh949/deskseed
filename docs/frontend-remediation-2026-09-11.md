@@ -1,6 +1,6 @@
 # 프론트엔드 감사 후 수정 결과
 
-기준 커밋 `72a5439ba321a89212494643cb0f2113babcd34e`에서 확인한 F01~F22를 수직 슬라이스로 수정했다. 원래 main 작업 디렉터리와 감사 자료는 보존하고 별도 worktree에서 작업했다. 머지와 배포는 수행하지 않았다. **시각 기준 이미지 12장 갱신은 사람의 검토·승인 대기**다. 자동 승인 검토가 기존 기준선 덮어쓰기를 거절했으며 현재 기준 이미지는 그대로 유지한다.
+기준 커밋 `72a5439ba321a89212494643cb0f2113babcd34e`에서 확인한 F01~F22를 수직 슬라이스로 수정했다. 원래 main 작업 디렉터리와 감사 자료는 보존하고 별도 worktree에서 작업했다. 머지와 배포는 수행하지 않았다. **사용자 승인 후 시각 기준 이미지 12장을 반영했다.** macOS/Linux에서 스크린샷 비교를 포함한 mock 페이지 E2E가 각각 21개 통과했다. 승인과 검증 범위는 아래에 기록한다.
 
 ## PR과 수정 범위
 
@@ -58,9 +58,9 @@
 | 디자인 시스템 경계 | Passed | 교차 앱 import/token/build manifest 검사, boundary test 4 |
 | `contract:check` | Passed | 기존 21개 FROZEN operation의 OpenAPI/MSW 검사. 전체 API runtime parity 주장이 아님 |
 | `make docs-check` | Passed | OpenAPI bundle/documentation 계약 검사 |
-| 페이지 E2E 기능·접근성 | Passed | `npm run test:e2e:dev -- --ignore-snapshots`: 20 tests. 합성 API 개발 서버 suite이며 기존 시각 비교 실패는 아래에 별도 기록 |
-| 기존 스크린샷 비교 | Failed / 승인 대기 | macOS Queue 1280/1440/1920에서 약 2% 차이. 기존 기준선 유지 |
-| 시각 후보 생성 | Passed, 기준선 승인 아님 | macOS·Linux 각각 Queue/Workspace 3개 폭, 총 12장. 각 플랫폼의 실제 Chromium에서 생성 |
+| 페이지 E2E 기능·접근성·시각 비교 | Passed | 승인 후 macOS/Linux 각각 21 tests. 기존 CI 대상 20개와 새 탭 인증 복귀 1개. 스크린샷 생략·갱신 옵션 없이 실행 |
+| 승인된 스크린샷 비교 | Passed | Queue/Workspace 1280/1440/1920, macOS/Linux 총 12장. 기존 허용치 1% 유지 |
+| 시각 기준선 승인·적용 | Complete | 2026-09-11 사용자 명시적 승인. 각 플랫폼 Chromium에서 생성한 기존 후보 12장의 해시를 확인하고 동일 이미지 적용 |
 | #170~#175 원격 CI | Passed | 각 최신 head의 CI gate SUCCESS. #175의 browser/backend/compose는 분류에 따라 Skipped |
 | 마지막 PR 원격 CI | 별도 결과 기록 | head별 terminal 결과는 PR checks를 확인 |
 | 실제 SMTP/DB 고객 가입·reset·완료 E2E | Not run | Storybook·MSW·페이지 mock 검증으로 대체 주장하지 않음 |
@@ -69,9 +69,9 @@
 
 초기 로컬 Chromium 실행은 macOS sandbox가 막아 앱 assertion 전에 실패했고 허용된 별도 실행으로 기능 검증을 진행했다. Storybook의 장시간 개발 서버는 메모리 오류 후 CI와 같은 Node 22.23.2로 재시작해 전체 검증을 완료했다. 이러한 환경 실패를 제품 테스트 통과로 계산하지 않았다.
 
-## 시각 검토 후보
+## 승인된 시각 기준선
 
-[후보 안내와 이미지 목록](evidence/frontend-remediation-2026-09-11/visual-review.md). 후보 이미지는 저장소 밖에 보존하고 해시 manifest만 문서에 추가했으며 `frontend/e2e/__screenshots__/`는 수정하지 않았다. docs/40의 “사람의 화면 검토 없이 대량 snapshot 갱신을 승인하지 않는다”에 따라 사람의 검토와 갱신 승인이 필요하다. 승인 후 각 플랫폼 후보를 해당 플랫폼 기준선에 반영하고 E2E/CI를 다시 실행해야 한다.
+[승인 내역·변경 전후·이미지 목록·검증 명령](evidence/frontend-remediation-2026-09-11/visual-review.md). 초기 자동 승인 거절 이후 사용자가 갱신과 원격 반영을 명시적으로 승인했다. macOS/Linux 후보 12장을 각 플랫폼 기준선에 적용했고, 전체 mock 페이지 E2E는 각 플랫폼에서 21개 통과했다. Queue Shell/Workspace Anatomy의 focused MCP interaction/a11y 2개도 통과했다. 이 후속 변경은 기준 이미지와 문서만 포함하며 원격 CI 결과는 PR checks에서 별도로 확인한다.
 
 [모바일 입력 크기](evidence/frontend-remediation-2026-09-11/registration-mobile-fonts.json), [상담 글자 크기](evidence/frontend-remediation-2026-09-11/workspace-fonts.json), [감사 날짜 입력 폭](evidence/frontend-remediation-2026-09-11/audit-fonts.json), [Storybook 등록 증거](evidence/frontend-remediation-2026-09-11/storybook-coverage.json).
 

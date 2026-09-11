@@ -1,6 +1,6 @@
 {
-  "status": "PENDING_HUMAN_REVIEW",
-  "baselineModified": false,
+  "status": "APPROVED_APPLIED",
+  "baselineModified": true,
   "localComparison": "/private/tmp/deskseed-frontend-visual-review.html",
   "candidates": [
     {
@@ -99,5 +99,10 @@
       "baselineSha256": "88a065a4dd58565e21426e14cd189d99f8cc7faa88af35e092d6a5eb992b51f6",
       "candidateSha256": "ae6bc5ef0c3cf47ac095c6cfa4ad48e70393d85cc0e53ccccac37c272d5b54a5"
     }
-  ]
+  ],
+  "approval": {
+    "date": "2026-09-11",
+    "source": "User instruction in the #176 CI remediation conversation",
+    "scope": "Apply the 12 prepared Darwin/Linux baselines and publish to PR #176"
+  }
 }

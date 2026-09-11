@@ -208,4 +208,4 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 - 2026-09-11 REQ-UI-001/004/005: [고객·직원 타이포그래피와 모바일 가입 가독성](tasks/2026-09-11-frontend-readable-typography.md).
 
-- 2026-09-11 REQ-UI-001/005/007, REQ-PERM-002, REQ-AUD-002: [운영 화면 스타일 복구](tasks/2026-09-11-staff-operational-styles.md), [직원 Storybook 60개 파일 전체 등록](tasks/2026-09-11-frontend-storybook-coverage.md). [수정 결과](frontend-remediation-2026-09-11.md)의 시각 기준선 갱신은 사람의 검토·승인 대기다. 제품 요구사항 상태 자체를 상향하지 않는다.
+- 2026-09-11 REQ-UI-001/005/007, REQ-PERM-002, REQ-AUD-002: [운영 화면 스타일 복구](tasks/2026-09-11-staff-operational-styles.md), [직원 Storybook 60개 파일 전체 등록](tasks/2026-09-11-frontend-storybook-coverage.md). 사용자 승인 후 macOS/Linux 시각 기준선 12장을 반영하고 UI-001/005의 실제 pixel 비교를 포함한 E2E를 각 플랫폼에서 21개 통과했다. [수정 결과](frontend-remediation-2026-09-11.md), [승인 및 검증 기록](evidence/frontend-remediation-2026-09-11/visual-review.md). 제품 요구사항 상태 자체를 상향하지 않는다.
