@@ -7,3 +7,10 @@ export function useHelpScope() {
     session?.customer?.id ?? null,
   ] as const
 }
+
+export function isHelpScopeReady(scope: ReturnType<typeof useHelpScope>) {
+  return (
+    scope[1] === 'anonymous' ||
+    (scope[1] === 'authenticated' && scope[2] !== null)
+  )
+}

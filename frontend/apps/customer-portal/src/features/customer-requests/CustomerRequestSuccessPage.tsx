@@ -1,18 +1,20 @@
 import { Link, useLocation, useParams } from 'react-router'
 import { CustomerIcon, ScreenState } from '../../design-system'
 import successImage from '../../assets/deskseed/customer-request-success.png'
-import { useOptionalCustomerSession } from '../customer-auth/CustomerSessionContext'
+import { readRequestAccessToken } from '../customer-portal/customerAccessToken'
 import type { SubmittedRequest } from '../../api/types'
 
 export function CustomerRequestSuccessPage() {
   const { ticketNumber = '' } = useParams()
   const location = useLocation()
-  const session = useOptionalCustomerSession()
   const number = /^[1-9]\d*$/.test(ticketNumber) ? Number(ticketNumber) : NaN
   const candidate: unknown = (location.state as { submitted?: unknown } | null)
     ?.submitted
   const submitted = receipt(candidate, number)
-  const detailPath = `${session?.status === 'authenticated' ? '/account' : ''}/requests/${number}`
+  // Every submission returns a ticket-scoped proof; login alone does not claim it.
+  const detailPath = readRequestAccessToken(window.sessionStorage, number)
+    ? `/requests/${number}`
+    : '/requests/lookup'
   if (!Number.isSafeInteger(number))
     return (
       <div className="customer-page">

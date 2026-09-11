@@ -163,7 +163,7 @@ export function AgentShellLayout() {
             profileName={staff.displayName}
           />
         ) : (
-          <header className="seed-audit-topbar">
+          <header className="seed-topbar seed-audit-topbar">
             <strong>감사 / 활동 기록</strong>
             <span>{staff.displayName}</span>
           </header>

@@ -29,8 +29,10 @@ export function staffDestination(staff: CurrentStaff, value: unknown) {
   if (canManageStaff(staff) && value.startsWith('/admin/')) return value
   if (
     canUseAgentWorkspace(staff) &&
-    (value === '/agent/search' ||
-      /^\/agent\/(views|tickets)\/[a-zA-Z0-9-]+$/.test(value))
+    // The existing route gates authorize registered extensions after navigation.
+    /^\/agent\/(?!login(?:\/|$)|audit(?:\/|$))[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(
+      value,
+    )
   )
     return value
   return staffHome(staff)

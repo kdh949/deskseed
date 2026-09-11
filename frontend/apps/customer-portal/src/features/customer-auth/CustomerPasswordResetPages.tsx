@@ -6,13 +6,20 @@ import {
   requestCustomerPasswordReset,
   resetCustomerPassword,
 } from './api/customerAuthClient'
+import {
+  passwordValidationMessage,
+  registrationFieldLimits,
+} from './customerRegistrationValidation'
 import { consumeMagicLinkFragment } from './magicLinkFragment'
 import { useOptionalCustomerSession } from './CustomerSessionContext'
 
 function failureMessage(error: unknown) {
-  return error instanceof CustomerAuthApiError && error.status === 429
-    ? '요청이 많습니다. 잠시 후 다시 시도해 주세요.'
-    : '요청을 완료하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요.'
+  if (error instanceof CustomerAuthApiError) {
+    if (error.status === 429)
+      return '요청이 많습니다. 잠시 후 다시 시도해 주세요.'
+    if (error.status === 400) return '입력 내용을 확인하고 다시 시도해 주세요.'
+  }
+  return '일시적으로 요청을 완료하지 못했습니다. 입력은 유지됩니다. 잠시 후 다시 시도해 주세요.'
 }
 
 export function CustomerPasswordResetRequestPage() {
@@ -24,6 +31,7 @@ export function CustomerPasswordResetRequestPage() {
     event.preventDefault()
     if (pending) return
     setPending(true)
+    setSent(false)
     setFailure(null)
     try {
       await requestCustomerPasswordReset(email.trim())
@@ -60,7 +68,12 @@ export function CustomerPasswordResetRequestPage() {
           maxLength={254}
           required
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          disabled={pending}
+          onChange={(event) => {
+            setEmail(event.target.value)
+            setSent(false)
+            setFailure(null)
+          }}
         />
         <DsButton type="submit" disabled={pending}>
           {pending
@@ -98,6 +111,11 @@ export function CustomerPasswordResetPage() {
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (state !== 'ready' || !token.current) return
+    const invalid = passwordValidationMessage(password)
+    if (invalid) {
+      setFailure(invalid)
+      return
+    }
     setState('pending')
     setFailure(null)
     try {
@@ -107,10 +125,7 @@ export function CustomerPasswordResetPage() {
       setState('complete')
       void session?.retry()
     } catch (error) {
-      if (
-        error instanceof CustomerAuthApiError &&
-        [400, 401].includes(error.status)
-      ) {
+      if (error instanceof CustomerAuthApiError && error.status === 401) {
         token.current = null
         setPassword('')
         setState('invalid')
@@ -161,7 +176,7 @@ export function CustomerPasswordResetPage() {
           </p>
           {failure && (
             <Notification tone="danger" title="비밀번호를 변경하지 못했습니다.">
-              <p>{failure}</p>
+              <p id="reset-password-feedback">{failure}</p>
             </Notification>
           )}
           <form onSubmit={(event) => void submit(event)}>
@@ -170,8 +185,10 @@ export function CustomerPasswordResetPage() {
               id="reset-password"
               type="password"
               autoComplete="new-password"
+              aria-describedby="reset-password-feedback"
+              aria-invalid={Boolean(failure)}
               minLength={12}
-              maxLength={128}
+              maxLength={registrationFieldLimits.password * 2}
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}

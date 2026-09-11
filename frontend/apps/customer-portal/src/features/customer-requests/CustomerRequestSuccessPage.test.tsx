@@ -1,7 +1,17 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  CustomerSessionProvider,
+  useCustomerSession,
+} from '../customer-auth/CustomerSessionContext'
+import { storeRequestAccessToken } from '../customer-portal/customerAccessToken'
 import { CustomerRequestSuccessPage } from './CustomerRequestSuccessPage'
+afterEach(() => {
+  sessionStorage.clear()
+  vi.unstubAllGlobals()
+})
 function show(number: string, submitted?: object) {
   return render(
     <MemoryRouter
@@ -39,6 +49,7 @@ it.each([
   },
 )
 it('shows the server receipt status including a replay of an already solved request', () => {
+  storeRequestAccessToken(sessionStorage, 42, 'a'.repeat(43))
   show('42', {
     ticketNumber: 42,
     status: 'SOLVED',
@@ -52,3 +63,64 @@ it('shows the server receipt status including a replay of an already solved requ
     '/requests/42',
   )
 })
+
+it.each([true, false])(
+  'does not infer receipt ownership from a later login (held proof: %s)',
+  async (heldProof) => {
+    if (heldProof) storeRequestAccessToken(sessionStorage, 42, 'a'.repeat(43))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          id: '11111111-1111-4111-8111-111111111111',
+          email: 'other@example.test',
+          displayName: '다른 고객',
+          companyName: '',
+          verifiedAt: '2026-09-01T00:00:00Z',
+          credentialState: 'PASSWORD',
+          registrationState: 'COMPLETE',
+          availableAuthenticationMethods: ['PASSWORD'],
+        }),
+      ),
+    )
+    function SessionStatus() {
+      return <output>{useCustomerSession().status}</output>
+    }
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <CustomerSessionProvider>
+          <SessionStatus />
+          <MemoryRouter
+            initialEntries={[
+              {
+                pathname: '/requests/submitted/42',
+                state: {
+                  submitted: {
+                    ticketNumber: 42,
+                    status: 'NEW',
+                    createdAt: '2026-09-01T00:00:00Z',
+                  },
+                },
+              },
+            ]}
+          >
+            <Routes>
+              <Route
+                path="/requests/submitted/:ticketNumber"
+                element={<CustomerRequestSuccessPage />}
+              />
+            </Routes>
+          </MemoryRouter>
+        </CustomerSessionProvider>
+      </QueryClientProvider>,
+    )
+    await screen.findByText('authenticated')
+    expect(
+      await screen.findByRole('link', { name: '문의 보기' }),
+    ).toHaveAttribute('href', heldProof ? '/requests/42' : '/requests/lookup')
+  },
+)
