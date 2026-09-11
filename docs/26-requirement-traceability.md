@@ -206,3 +206,5 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 - 2026-09-11 REQ-KB-001/003/004: [고객 도움말 전체 탐색과 문서·상태 복구](tasks/2026-09-11-customer-help-recovery.md).
 
 - 2026-09-11 REQ-TKT-001: [확인된 응답만 표시하는 고객 접수 완료 화면](tasks/2026-09-11-customer-request-receipt.md).
+
+- 2026-09-11 REQ-UI-001/004/005: [고객·직원 타이포그래피와 모바일 가입 가독성](tasks/2026-09-11-frontend-readable-typography.md).

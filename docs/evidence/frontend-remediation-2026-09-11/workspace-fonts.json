@@ -1,0 +1,111 @@
+{
+  "elements": [
+    {
+      "fontSize": "18px",
+      "lineHeight": "24.3px",
+      "tag": "H1",
+      "text": "결제 승인 상태 확인 요청",
+      "width": 170.234375
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "tag": "LABEL",
+      "text": "상태",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "tag": "LABEL",
+      "text": "우선순위",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "tag": "LABEL",
+      "text": "그룹",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "20px",
+      "tag": "LABEL",
+      "text": "담당자",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "SPAN",
+      "text": "고객 A",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "SPAN",
+      "text": "customer-a@example.test",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "SPAN",
+      "text": "2026. 8. 15. 오후 6:00",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "SPAN",
+      "text": "위험 · 8월 15일 오후 9:00",
+      "width": 258
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "BUTTON",
+      "text": "대화 4",
+      "width": 57.40625
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "BUTTON",
+      "text": "PUBLIC 3",
+      "width": 83.40625
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "BUTTON",
+      "text": "INTERNAL 1",
+      "width": 98.890625
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "BUTTON",
+      "text": "PUBLIC 답변",
+      "width": 106.328125
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "BUTTON",
+      "text": "INTERNAL 메모",
+      "width": 125.0625
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "24.8px",
+      "tag": "DIV",
+      "text": "",
+      "width": 1120
+    }
+  ],
+  "scrollWidth": 1448,
+  "width": 1448
+}

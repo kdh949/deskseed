@@ -74,7 +74,7 @@
 .seed-notification-menu__panel small,
 .seed-notification-menu__panel time {
   color: var(--ds-palette-ink-muted);
-  font-size: 0.6875rem;
+  font-size: var(--ds-font-size-300);
   font-weight: 400;
 }
 
@@ -106,7 +106,7 @@
   justify-content: space-between;
   padding: 0.375rem 0.625rem;
   border-bottom: var(--ds-border-hairline) solid var(--ds-palette-line);
-  font-size: 0.8125rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-collaboration__notes {
@@ -131,29 +131,29 @@
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-collaboration__notes time {
   color: var(--ds-palette-ink-muted);
-  font-size: 0.6875rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-collaboration__notes p {
   margin: 0.1875rem 0 0;
-  font-size: 0.75rem;
+  font-size: var(--ds-font-size-300);
   line-height: 1.45;
 }
 
 .seed-collaboration__notes small {
   color: var(--ds-palette-link);
-  font-size: 0.6875rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-collaboration__empty {
   margin: 0;
   color: var(--ds-palette-ink-muted);
-  font-size: 0.75rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-collaboration__composer {
@@ -172,7 +172,7 @@
   border: var(--ds-border-hairline) solid var(--ds-palette-line-strong);
   border-radius: 0.25rem;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-collaboration__composer textarea:focus-visible {
@@ -202,7 +202,7 @@
   border-radius: 0.25rem;
   background: var(--ds-palette-info-soft);
   color: var(--ds-palette-link);
-  font-size: 0.6875rem;
+  font-size: var(--ds-font-size-300);
   cursor: pointer;
 }
 
@@ -212,7 +212,7 @@
   border: 0;
   background: transparent;
   color: var(--ds-palette-link);
-  font-size: 0.75rem;
+  font-size: var(--ds-font-size-300);
   cursor: pointer;
 }
 
@@ -243,7 +243,7 @@
 
 .seed-notification-menu__panel > header span {
   color: var(--ds-palette-ink-muted);
-  font-size: 0.6875rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-notification-menu__panel > button.is-unread {
@@ -281,7 +281,7 @@
 
 .seed-composer-footer .seed-attachment-upload__heading .seed-button {
   min-height: 1.75rem;
-  font-size: 0.75rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-composer-footer .seed-attachment-upload__list,
