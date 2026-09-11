@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw'
 import { Navigate, Route, Routes } from 'react-router'
 import { expect, userEvent } from 'storybook/test'
 import { CustomerRegistrationCompletePage } from './CustomerRegistrationCompletePage'
+import { CustomerSignInPage } from './CustomerSignInPage'
 import { CustomerAccountRoute } from './CustomerAccountRoute'
 const customer = {
   id: 'customer-completion',
@@ -58,19 +59,26 @@ const meta = {
             headerName: 'X-CSRF-TOKEN',
           }),
         ),
-        completion: http.put('/api/v1/customer/me/registration', () =>
-          HttpResponse.json({
-            ...customer,
-            credentialState: 'PASSWORD',
-            registrationState: 'COMPLETE',
-            availableAuthenticationMethods: ['PASSWORD'],
-          }),
+        completion: http.put(
+          '/api/v1/customer/me/registration',
+          ({ request }) => {
+            expect(request.headers.get('X-Deskseed-Expected-Customer-Id')).toBe(
+              customer.id,
+            )
+            return HttpResponse.json({
+              ...customer,
+              credentialState: 'PASSWORD',
+              registrationState: 'COMPLETE',
+              availableAuthenticationMethods: ['PASSWORD'],
+            })
+          },
         ),
       },
     },
   },
   render: () => (
     <Routes>
+      <Route path="/customer/sign-in" element={<CustomerSignInPage />} />
       <Route
         path="/customer/register/complete"
         element={<CustomerRegistrationCompletePage />}
@@ -132,5 +140,42 @@ export const DeniedPreservesInput: Story = {
     await expect(canvas.getByLabelText(/비밀번호/)).toHaveValue(
       'synthetic-password-123',
     )
+  },
+}
+
+let sessionExpired = false
+export const ExpiredSessionRecovery: Story = {
+  beforeEach: () => {
+    sessionExpired = false
+  },
+  parameters: {
+    msw: {
+      handlers: {
+        customerSession: http.get('/api/v1/customer/me', () =>
+          sessionExpired
+            ? new HttpResponse(null, { status: 401 })
+            : HttpResponse.json(customer),
+        ),
+        completion: http.put('/api/v1/customer/me/registration', () => {
+          sessionExpired = true
+          return new HttpResponse(null, { status: 401 })
+        }),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('heading', { name: '가입 마무리' })
+    await userEvent.type(
+      canvas.getByLabelText(/비밀번호/),
+      'synthetic-password-123',
+    )
+    await userEvent.click(canvas.getByRole('checkbox', { name: /가입 약관/ }))
+    await userEvent.click(canvas.getByRole('button', { name: '가입 완료' }))
+    await expect(
+      await canvas.findByRole('heading', { name: 'DeskSeed에 로그인' }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByLabelText('비밀번호', { exact: false }),
+    ).toHaveValue('')
   },
 }

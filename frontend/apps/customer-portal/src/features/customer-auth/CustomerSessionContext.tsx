@@ -39,9 +39,13 @@ export function CustomerSessionProvider({ children }: { children: ReactNode }) {
   const customerIdRef = useRef<string | null>(null)
   const requestVersion = useRef(0)
 
-  const clearOwnedRequestQueries = useCallback(() => {
+  const clearHelpQueries = useCallback(() => {
     void queryClient.cancelQueries({ queryKey: ['help'] })
     queryClient.removeQueries({ queryKey: ['help'] })
+  }, [queryClient])
+
+  const clearOwnedRequestQueries = useCallback(() => {
+    clearHelpQueries()
     void queryClient.cancelQueries({
       queryKey: customerRequestQueryKeys.listRoot,
     })
@@ -50,7 +54,7 @@ export function CustomerSessionProvider({ children }: { children: ReactNode }) {
     })
     queryClient.removeQueries({ queryKey: customerRequestQueryKeys.listRoot })
     queryClient.removeQueries({ queryKey: customerRequestQueryKeys.detailRoot })
-  }, [queryClient])
+  }, [clearHelpQueries, queryClient])
 
   const replaceCustomer = useCallback(
     (nextCustomer: CurrentCustomer | null) => {
@@ -67,17 +71,20 @@ export function CustomerSessionProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current
     setStatus('loading')
+    clearHelpQueries()
     try {
       const current = await getCurrentCustomer()
       if (version !== requestVersion.current) return
+      clearHelpQueries()
       replaceCustomer(current)
       setStatus(current ? 'authenticated' : 'anonymous')
     } catch {
       if (version !== requestVersion.current) return
+      clearHelpQueries()
       replaceCustomer(null)
       setStatus('error')
     }
-  }, [replaceCustomer])
+  }, [clearHelpQueries, replaceCustomer])
 
   useEffect(() => {
     void refresh()

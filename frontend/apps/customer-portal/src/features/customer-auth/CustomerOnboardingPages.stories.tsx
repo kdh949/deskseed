@@ -142,3 +142,82 @@ export const RegistrationEmail: Story = {
     ).toHaveAttribute('href', '/customer/register')
   },
 }
+
+let currentPolicyVersion = 2
+export const ChangedPolicyRecovery: Story = {
+  render: Registration.render,
+  beforeEach: () => {
+    currentPolicyVersion = 2
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/customer/consent-policies', () =>
+          HttpResponse.json({
+            policies: [
+              {
+                policyKey: 'terms',
+                version: currentPolicyVersion,
+                title: '이용약관',
+                required: true,
+                document: {
+                  schemaVersion: 1,
+                  blocks: [
+                    {
+                      type: 'paragraph',
+                      text: '가입 동의 내용을 확인해 주세요.',
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        ),
+        http.post('/api/v1/customer/registrations', () => {
+          currentPolicyVersion = 3
+          return new HttpResponse(null, { status: 400 })
+        }),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('checkbox', { name: /이용약관/ })
+    for (const [label, value] of [
+      ['이름', '고객'],
+      ['이메일', 'customer@example.test'],
+      ['회사명', '회사'],
+      ['비밀번호', 'synthetic-password-123'],
+    ] as const)
+      await userEvent.type(
+        canvas.getByLabelText(label, { exact: false }),
+        value,
+      )
+    await userEvent.click(canvas.getByRole('checkbox', { name: /이용약관/ }))
+    await userEvent.click(canvas.getByRole('button', { name: '계정 만들기' }))
+    await expect(
+      await canvas.findByText(/가입 약관이 변경되었습니다/),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('checkbox', { name: /이용약관/ }),
+    ).not.toBeChecked()
+    await expect(
+      canvas.getByLabelText('비밀번호', { exact: false }),
+    ).toHaveValue('synthetic-password-123')
+  },
+}
+export const InvalidPasswordLength: Story = {
+  ...Registration,
+  play: async ({ canvas }) => {
+    await canvas.findByRole('checkbox', { name: /이용약관/ })
+    await userEvent.type(
+      canvas.getByLabelText('비밀번호', { exact: false }),
+      'a'.repeat(129),
+    )
+    await expect(
+      canvas.getByLabelText('비밀번호', { exact: false }),
+    ).toHaveAttribute('aria-invalid', 'true')
+    await expect(
+      canvas.getByText('비밀번호는 12~128자로 입력해 주세요.'),
+    ).toBeVisible()
+  },
+}

@@ -1,6 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect } from 'react'
 import { Route, Routes, useNavigate } from 'react-router'
+import { http, HttpResponse } from 'msw'
+import { useCustomerSession } from '../customer-auth/CustomerSessionContext'
+import {
+  storeRequestAccessToken,
+  requestAccessTokenStorageKey,
+} from '../customer-portal/customerAccessToken'
 import { expect } from 'storybook/test'
 import { StoryRoute } from '../../../.storybook/StoryRoute'
 import { CustomerSiteLayout } from '../../design-system'
@@ -48,6 +54,10 @@ function ConfirmedReceipt() {
   )
 }
 export const Submitted: Story = {
+  beforeEach: () => {
+    storeRequestAccessToken(sessionStorage, 1288, 'a'.repeat(43))
+    return () => sessionStorage.removeItem(requestAccessTokenStorageKey(1288))
+  },
   render: () => (
     <CustomerSiteLayout
       session={{
@@ -108,5 +118,38 @@ export const InvalidNumber: Story = {
       await canvas.findByText('문의 번호를 확인해 주세요.'),
     ).toBeVisible()
     await expect(canvas.queryByText(/DS-NaN/)).not.toBeInTheDocument()
+  },
+}
+
+function AuthenticatedReceipt() {
+  return useCustomerSession().status === 'authenticated' ? (
+    <ConfirmedReceipt />
+  ) : null
+}
+export const AnonymousReceiptAfterSignIn: Story = {
+  ...Submitted,
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/customer/me', () =>
+          HttpResponse.json({
+            id: '11111111-1111-4111-8111-111111111111',
+            email: 'other@example.test',
+            displayName: '다른 고객',
+            companyName: '',
+            verifiedAt: '2026-09-01T00:00:00Z',
+            credentialState: 'PASSWORD',
+            registrationState: 'COMPLETE',
+            availableAuthenticationMethods: ['PASSWORD'],
+          }),
+        ),
+      ],
+    },
+  },
+  render: () => <AuthenticatedReceipt />,
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: '문의 보기' }),
+    ).toHaveAttribute('href', '/requests/1288')
   },
 }

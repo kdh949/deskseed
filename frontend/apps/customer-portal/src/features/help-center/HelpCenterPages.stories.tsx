@@ -115,7 +115,7 @@ export const Home: Story = {
   ),
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole('heading', { name: /무엇을 도와드릴까요/ }),
+      await canvas.findByRole('heading', { name: /무엇을 도와드릴까요/ }),
     ).toBeVisible()
     await expect(
       canvas.getByRole('navigation', { name: '빠른 작업' }),
@@ -243,6 +243,10 @@ export const SearchResults: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
         http.post('/api/v1/help/search', () =>
           HttpResponse.json({
             items: [
@@ -288,6 +292,10 @@ export const EmptyArticle: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
         http.get('/api/v1/help/articles/:slug', ({ params }) =>
           HttpResponse.json({
             slug: params.slug,
@@ -324,6 +332,10 @@ export const Article: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
         http.get('/api/v1/help/articles/:slug', ({ params }) =>
           HttpResponse.json({
             slug: params.slug,
@@ -427,6 +439,10 @@ export const ArticleUnavailable: Story = {
     msw: {
       handlers: [
         http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
+        http.get(
           '/api/v1/help/articles/:slug',
           () => new HttpResponse(null, { status: 503 }),
         ),
@@ -444,6 +460,10 @@ export const FeedbackUnavailable: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
         http.post(
           '/api/v1/help/articles/:slug/feedback',
           () => new HttpResponse(null, { status: 503 }),
@@ -461,5 +481,49 @@ export const FeedbackUnavailable: Story = {
         '의견을 저장하지 못했습니다. 다시 선택해 주세요.',
       ),
     ).toBeVisible()
+  },
+}
+
+let retrySession = false
+const unexpectedHelp = fn()
+export const SessionFailureRecovery: Story = {
+  beforeEach: () => {
+    retrySession = false
+    unexpectedHelp.mockClear()
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: retrySession ? 401 : 503 }),
+        ),
+        http.get('/api/v1/help/categories', () => {
+          if (!retrySession) unexpectedHelp()
+          return HttpResponse.json([])
+        }),
+        http.get('/api/v1/help/sections/announcements', () => {
+          if (!retrySession) unexpectedHelp()
+          return HttpResponse.json({
+            slug: 'announcements',
+            title: '공지사항',
+            articles: [],
+          })
+        }),
+      ],
+    },
+  },
+  render: () => <HelpCenterHomePage />,
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('로그인 상태를 확인할 수 없습니다.'),
+    ).toBeVisible()
+    await expect(unexpectedHelp).not.toHaveBeenCalled()
+    retrySession = true
+    await userEvent.click(canvas.getByRole('button', { name: '다시 시도' }))
+    await expect(
+      await canvas.findByText('등록된 도움말 주제가 없습니다.'),
+    ).toBeVisible()
+    await expect(unexpectedHelp).not.toHaveBeenCalled()
   },
 }

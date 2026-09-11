@@ -1,5 +1,6 @@
 import { HelpDocument } from './HelpDocument'
-import { useHelpScope } from './useHelpScope'
+import { useOptionalCustomerSession } from '../customer-auth/CustomerSessionContext'
+import { isHelpScopeReady, useHelpScope } from './useHelpScope'
 import {
   useInfiniteQuery,
   useQuery,
@@ -30,12 +31,12 @@ export function HelpCenterHomePage() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const categories = useQuery({
-    enabled: scope[1] !== 'loading',
+    enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'categories'],
     queryFn: ({ signal }) => listHelpCategories(signal),
   })
   const announcements = useQuery({
-    enabled: scope[1] !== 'loading',
+    enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'section', 'announcements'],
     queryFn: ({ signal }) => getHelpSection('announcements', undefined, signal),
   })
@@ -43,6 +44,8 @@ export function HelpCenterHomePage() {
     event.preventDefault()
     if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`)
   }
+  if (!isHelpScopeReady(scope)) return <HelpSessionState />
+
   return (
     <div className="customer-home">
       <section className="customer-home-hero">
@@ -143,7 +146,7 @@ export function HelpSearchPage() {
   useEffect(() => setQuery(initial), [initial])
   const normalized = initial.trim()
   const results = useInfiniteQuery({
-    enabled: scope[1] !== 'loading' && Boolean(normalized),
+    enabled: isHelpScopeReady(scope) && Boolean(normalized),
     queryKey: [...scope, 'search', normalized],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
@@ -156,6 +159,8 @@ export function HelpSearchPage() {
     event.preventDefault()
     setParameters(query.trim() ? { q: query.trim() } : {})
   }
+  if (!isHelpScopeReady(scope)) return <HelpSessionState />
+
   return (
     <div className="customer-page-wide customer-search-page">
       <div className="customer-content-column">
@@ -242,10 +247,12 @@ export function HelpSearchPage() {
 function SearchSidebar() {
   const scope = useHelpScope()
   const categories = useQuery({
-    enabled: scope[1] !== 'loading',
+    enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'categories'],
     queryFn: ({ signal }) => listHelpCategories(signal),
   })
+  if (!isHelpScopeReady(scope)) return <HelpSessionState />
+
   return (
     <aside className="customer-aside">
       <section>
@@ -268,10 +275,12 @@ export function HelpArticlePage() {
   const scope = useHelpScope()
   const { articleSlug = '' } = useParams()
   const article = useQuery({
-    enabled: scope[1] !== 'loading',
+    enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'article', articleSlug],
     queryFn: ({ signal }) => getHelpArticle(articleSlug, signal),
   })
+  if (!isHelpScopeReady(scope)) return <HelpSessionState />
+
   if (article.isPending)
     return (
       <div className="customer-page">
@@ -491,10 +500,12 @@ function formatDate(value: string) {
 export function HelpCategoriesPage() {
   const scope = useHelpScope()
   const categories = useQuery({
-    enabled: scope[1] !== 'loading',
+    enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'categories'],
     queryFn: ({ signal }) => listHelpCategories(signal),
   })
+  if (!isHelpScopeReady(scope)) return <HelpSessionState />
+
   return (
     <div className="customer-page">
       <Link to="/">홈</Link>
@@ -509,10 +520,12 @@ export function HelpCategoryPage() {
   const scope = useHelpScope()
   const { categorySlug = '' } = useParams()
   const category = useQuery({
-    enabled: scope[1] !== 'loading',
+    enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'category', categorySlug],
     queryFn: ({ signal }) => getHelpCategory(categorySlug, signal),
   })
+  if (!isHelpScopeReady(scope)) return <HelpSessionState />
+
   return (
     <div className="customer-page">
       <Link to="/categories">모든 문서</Link>
@@ -556,7 +569,7 @@ export function HelpSectionPage() {
   const scope = useHelpScope()
   const { sectionSlug = '' } = useParams()
   const section = useInfiniteQuery({
-    enabled: scope[1] !== 'loading',
+    enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'section-pages', sectionSlug],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
@@ -566,6 +579,8 @@ export function HelpSectionPage() {
   })
   const first = section.data?.pages[0]
   const articles = section.data?.pages.flatMap((page) => page.articles) ?? []
+  if (!isHelpScopeReady(scope)) return <HelpSessionState />
+
   return (
     <div className="customer-page">
       <Link to="/categories">모든 문서</Link>
@@ -612,6 +627,33 @@ export function HelpSectionPage() {
           {section.isFetchingNextPage ? '불러오는 중…' : '문서 더 보기'}
         </DsButton>
       )}
+    </div>
+  )
+}
+
+function HelpSessionState() {
+  const session = useOptionalCustomerSession()
+  const loading = session?.status === 'loading'
+  return (
+    <div className="customer-page">
+      <ScreenState
+        kind={loading ? 'loading' : 'error'}
+        title={
+          loading
+            ? '로그인 상태를 확인하고 있습니다.'
+            : '로그인 상태를 확인할 수 없습니다.'
+        }
+        description={
+          loading
+            ? undefined
+            : '로그인 상태를 확인한 뒤 도움말을 다시 불러옵니다.'
+        }
+        action={
+          !loading && session ? (
+            <RetryButton onClick={() => void session.retry()} />
+          ) : undefined
+        }
+      />
     </div>
   )
 }

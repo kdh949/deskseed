@@ -126,6 +126,10 @@
   font-family: var(--ds-font-sans);
 }
 
+.seed-route-feedback--within-shell {
+  min-height: 0;
+}
+
 .seed-state-actions {
   display: flex;
   align-items: center;
