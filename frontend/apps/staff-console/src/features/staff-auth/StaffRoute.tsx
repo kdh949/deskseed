@@ -134,7 +134,7 @@ function DeniedActions() {
     setPending(true)
     setFailure(false)
     try {
-      await session.signOut()
+      await session.signOut({ requireRemoteConfirmation: true })
       navigate('/agent/login', { replace: true })
     } catch {
       setFailure(true)

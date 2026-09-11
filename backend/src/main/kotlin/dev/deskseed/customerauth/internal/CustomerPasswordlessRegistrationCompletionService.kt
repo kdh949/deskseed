@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Instant
+import java.util.UUID
 
 internal class CustomerPasswordlessRegistrationConflictException : RuntimeException(null, null, false, false)
 
@@ -62,6 +63,7 @@ internal class CustomerPasswordlessRegistrationCompletionService(
         command: CustomerPasswordlessRegistrationCommand,
         remoteAddress: String,
         context: CommandContext,
+        expectedCustomerId: UUID? = null,
     ): NewCustomerSession {
         require(rawSession.length in 32..256 && rawSession.none(Char::isISOControl)) {
             "customer session is invalid"
@@ -88,6 +90,10 @@ internal class CustomerPasswordlessRegistrationCompletionService(
             throw CustomerAuthenticationRateLimitedException(requireNotNull(decision.retryAfter))
         }
 
+        if (expectedCustomerId != null && expectedCustomerId != principal.customerId) {
+            requiredTransaction { auditDenied(principal, "CONFLICT", decision, context) }
+            throw CustomerPasswordlessRegistrationConflictException()
+        }
         val passwordHash = passwordHasher.encode(command.password)
         return try {
             requiredTransaction {
