@@ -133,6 +133,12 @@ export const FailedAccountSwitch: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get('/api/v1/agent/csrf', () =>
+          HttpResponse.json({
+            token: 'synthetic-csrf-token',
+            headerName: 'X-CSRF-TOKEN',
+          }),
+        ),
         http.get('/api/v1/agent/me', () => HttpResponse.json(staff)),
         http.delete(
           '/api/v1/agent/session',
