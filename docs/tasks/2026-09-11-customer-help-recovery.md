@@ -11,3 +11,6 @@ PUBLIC 또는 현재 CUSTOMER_SESSION audience, 서버 permission projection이 
 
 ## 검증과 호환성
 UI-002/004/006, REQ-KB-004 frontend safe-renderer: 구조 보존/HTML text 처리/위험 URL 차단, 6번째 카테고리·공지 다음 페이지·검색 cursor, 피드백 pending/실패/문서 전환, 세션 logout cache 제거 unit, MCP interaction/a11y 및 preview, typecheck/lint/build/boundary. 실 DB audience E2E 및 검색 부하/전체 backend gate 미실행. migration 없음, UI revert 가능. 사용자에게 없는 문서와 서버 실패를 구분해 설명한다.
+
+## 리뷰 보완
+도움말 6개 화면은 audience가 anonymous 또는 고객 ID가 확인된 authenticated 상태일 때만 조회한다. loading/error에서는 기존 결과와 refetch 액션을 숨기고 세션 확인·재시도를 안내한다. 세션 확인 시작/완료/실패 때 도움말 요청을 취소하고 캐시를 제거해 최초 error/null 상태도 복구 시 재사용하지 않는다. 실제 세션 Provider를 사용하는 오류→익명 복구 회귀를 추가한다. section slug는 기존 V52의 전역 unique index가 보장하므로 추가 migration이나 API 변경은 필요하지 않다.

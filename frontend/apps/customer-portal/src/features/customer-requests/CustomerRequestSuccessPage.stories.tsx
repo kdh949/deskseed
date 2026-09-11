@@ -2,10 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect } from 'react'
 import { Route, Routes, useNavigate } from 'react-router'
 import { http, HttpResponse } from 'msw'
-import {
-  CustomerSessionProvider,
-  useCustomerSession,
-} from '../customer-auth/CustomerSessionContext'
+import { useCustomerSession } from '../customer-auth/CustomerSessionContext'
 import {
   storeRequestAccessToken,
   requestAccessTokenStorageKey,
@@ -149,11 +146,7 @@ export const AnonymousReceiptAfterSignIn: Story = {
       ],
     },
   },
-  render: () => (
-    <CustomerSessionProvider>
-      <AuthenticatedReceipt />
-    </CustomerSessionProvider>
-  ),
+  render: () => <AuthenticatedReceipt />,
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole('link', { name: '문의 보기' }),
