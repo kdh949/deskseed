@@ -42,6 +42,7 @@ describe('CustomerSignInPage', () => {
 
     renderPage()
 
+    await user.click(screen.getByRole('button', { name: '이메일 링크' }))
     await user.type(screen.getByLabelText(/이메일 주소/), 'mina@example.test')
     await user.click(screen.getByRole('button', { name: '로그인 링크 보내기' }))
 
@@ -67,6 +68,7 @@ describe('CustomerSignInPage', () => {
 
     renderPage()
 
+    await user.click(screen.getByRole('button', { name: '이메일 링크' }))
     await user.type(screen.getByLabelText(/이메일 주소/), 'mina@example.test')
     await user.click(screen.getByRole('button', { name: '로그인 링크 보내기' }))
 

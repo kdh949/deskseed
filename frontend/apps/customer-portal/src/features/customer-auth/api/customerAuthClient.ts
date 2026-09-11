@@ -96,6 +96,43 @@ export async function verifyCustomerRegistration(token: string): Promise<void> {
     )
 }
 
+export async function completePasswordlessCustomerRegistration(
+  input: Omit<CustomerRegistrationInput, 'email'>,
+): Promise<CurrentCustomer> {
+  const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
+    credentials: 'include',
+    cache: 'no-store',
+    referrerPolicy: 'no-referrer',
+  })
+  if (!csrfResponse.ok)
+    throw await responseFailure(csrfResponse, 'customer-csrf-read-failed')
+  const csrf: unknown = await csrfResponse.json()
+  if (!isCsrfToken(csrf)) throw new Error('customer-csrf-response-invalid')
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/customer/me/registration`,
+    {
+      method: 'PUT',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrf.token,
+      },
+      body: JSON.stringify(input),
+    },
+  )
+  if (!response.ok)
+    throw await responseFailure(
+      response,
+      'customer-registration-completion-failed',
+    )
+  const body: unknown = await response.json()
+  if (!isCurrentCustomer(body))
+    throw new Error('customer-session-response-invalid')
+  return body
+}
+
 export async function listRegistrationConsentPolicies(): Promise<
   CustomerConsentPolicy[]
 > {

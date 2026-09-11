@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { ScreenState } from '../../design-system'
 import { consumeMagicLinkFragment } from './magicLinkFragment'
 import {
@@ -8,10 +8,16 @@ import {
 } from './api/customerAuthClient'
 import { useCustomerSession } from './CustomerSessionContext'
 
+import {
+  customerAuthDestination,
+  takeCustomerAuthDestination,
+} from './customerAuthDestination'
+
 type ConsumeState = 'consuming' | 'missing' | 'invalid' | 'unavailable'
 
 export function CustomerMagicLinkConsumePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const session = useCustomerSession()
   const [state, setState] = useState<ConsumeState>('consuming')
   const started = useRef(false)
@@ -31,12 +37,18 @@ export function CustomerMagicLinkConsumePage() {
     void consumeCustomerMagicLink(token)
       .then((customer) => {
         session.acceptAuthenticatedCustomer(customer)
-        navigate('/account/requests', { replace: true })
+        const from =
+          (location.state as { from?: unknown } | null)?.from ??
+          takeCustomerAuthDestination()
+        navigate(customerAuthDestination(customer, from), {
+          replace: true,
+          state: { from },
+        })
       })
       .catch((error: unknown) => {
         setState(isInvalidLinkError(error) ? 'invalid' : 'unavailable')
       })
-  }, [navigate, session])
+  }, [navigate, session, location.state])
 
   if (state === 'consuming') {
     return (

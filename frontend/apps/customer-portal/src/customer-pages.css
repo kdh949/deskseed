@@ -550,7 +550,7 @@
   color: var(--customer-color-muted);
   background: transparent;
 }
-.customer-auth-tabs button[aria-selected='true'] {
+.customer-auth-tabs button[aria-pressed='true'] {
   color: var(--customer-color-primary);
   background: #fff;
   box-shadow: 0 2px 8px rgba(45, 70, 120, 0.1);

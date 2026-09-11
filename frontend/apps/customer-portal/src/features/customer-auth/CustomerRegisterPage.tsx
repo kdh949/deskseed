@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import {
   CustomerIcon,
   DsButton,
@@ -10,21 +10,30 @@ import {
 } from '../../design-system'
 import registrationImage from '../../assets/deskseed/customer-registration.png'
 import {
+  type CurrentCustomer,
+  completePasswordlessCustomerRegistration,
   CustomerAuthApiError,
   listRegistrationConsentPolicies,
   requestCustomerRegistration,
 } from './api/customerAuthClient'
 
-export function CustomerRegisterPage() {
+import { useOptionalCustomerSession } from './CustomerSessionContext'
+import { customerAuthDestination } from './customerAuthDestination'
+
+export function CustomerRegisterPage({
+  customer,
+}: { customer?: CurrentCustomer } = {}) {
+  const session = useOptionalCustomerSession()
+  const location = useLocation()
   const navigate = useNavigate()
   const policies = useQuery({
     queryKey: ['customer', 'consent', 'registration'],
     queryFn: listRegistrationConsentPolicies,
   })
   const [form, setForm] = useState({
-    displayName: '',
-    email: '',
-    companyName: '',
+    displayName: customer?.displayName ?? '',
+    email: customer?.email ?? '',
+    companyName: customer?.companyName ?? '',
     password: '',
   })
   const [accepted, setAccepted] = useState<string[]>([])
@@ -67,20 +76,32 @@ export function CustomerRegisterPage() {
     setSubmitting(true)
     setFailure(null)
     try {
-      await requestCustomerRegistration({
-        ...form,
-        acceptedPolicies: policies.data
-          .filter((policy) =>
-            accepted.includes(`${policy.policyKey}:${policy.version}`),
-          )
-          .map(({ policyKey, version }) => ({
-            policyKey,
-            version,
-          })),
-      })
-      navigate('/customer/sign-in/check-email', {
-        state: { email: form.email, purpose: 'registration' },
-      })
+      const acceptedPolicies = policies.data
+        .filter((policy) =>
+          accepted.includes(`${policy.policyKey}:${policy.version}`),
+        )
+        .map(({ policyKey, version }) => ({ policyKey, version }))
+      if (customer) {
+        const current = await completePasswordlessCustomerRegistration({
+          password: form.password,
+          displayName: form.displayName,
+          companyName: form.companyName,
+          acceptedPolicies,
+        })
+        session?.acceptAuthenticatedCustomer(current)
+        navigate(
+          customerAuthDestination(
+            current,
+            (location.state as { from?: unknown } | null)?.from,
+          ),
+          { replace: true },
+        )
+      } else {
+        await requestCustomerRegistration({ ...form, acceptedPolicies })
+        navigate('/customer/sign-in/check-email', {
+          state: { email: form.email, purpose: 'registration' },
+        })
+      }
     } catch (error) {
       setFailure(
         error instanceof CustomerAuthApiError && error.status === 409
@@ -103,11 +124,15 @@ export function CustomerRegisterPage() {
         <span className="customer-breadcrumb">
           <Link to="/">홈</Link> / 회원가입
         </span>
-        <h1>DeskSeed 계정 만들기</h1>
-        <p>문의 접수와 답변 확인을 더 빠르고 안전하게 이용하세요.</p>
+        <h1>{customer ? '가입 마무리' : 'DeskSeed 계정 만들기'}</h1>
+        <p>
+          {customer
+            ? '비밀번호와 가입 정보를 등록해 주세요.'
+            : '문의 접수와 답변 확인을 더 빠르고 안전하게 이용하세요.'}
+        </p>
         {failure ? (
           <Notification title="가입 요청을 완료할 수 없습니다." tone="danger">
-            <p role="alert">{failure}</p>
+            <p>{failure}</p>
           </Notification>
         ) : null}
         <form onSubmit={(event) => void submit(event)}>
@@ -118,12 +143,18 @@ export function CustomerRegisterPage() {
             }
             value={form.displayName}
           />
-          <RegisterField
-            label="이메일"
-            onChange={(email) => setForm((current) => ({ ...current, email }))}
-            type="email"
-            value={form.email}
-          />
+          {customer ? (
+            <p>이메일: {customer.email}</p>
+          ) : (
+            <RegisterField
+              label="이메일"
+              onChange={(email) =>
+                setForm((current) => ({ ...current, email }))
+              }
+              type="email"
+              value={form.email}
+            />
+          )}
           <RegisterField
             label="회사명"
             onChange={(companyName) =>
@@ -179,7 +210,11 @@ export function CustomerRegisterPage() {
             tone="primary"
             type="submit"
           >
-            {submitting ? '가입 요청 중…' : '계정 만들기'}
+            {submitting
+              ? '가입 요청 중…'
+              : customer
+                ? '가입 완료'
+                : '계정 만들기'}
           </DsButton>
         </form>
         <p className="customer-auth-switch">

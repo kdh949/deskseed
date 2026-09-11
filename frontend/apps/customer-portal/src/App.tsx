@@ -3,6 +3,7 @@ import { ScreenState } from './design-system'
 import { CustomerAccountRoute } from './features/customer-auth/CustomerAccountRoute'
 import { CustomerCheckEmailPage } from './features/customer-auth/CustomerCheckEmailPage'
 import { CustomerMagicLinkConsumePage } from './features/customer-auth/CustomerMagicLinkConsumePage'
+import { CustomerRegistrationCompletePage } from './features/customer-auth/CustomerRegistrationCompletePage'
 import { CustomerRegistrationVerifyPage } from './features/customer-auth/CustomerRegistrationVerifyPage'
 import { CustomerRegisterPage } from './features/customer-auth/CustomerRegisterPage'
 import { CustomerRouteLayout } from './features/customer-auth/CustomerRouteLayout'
@@ -46,6 +47,10 @@ export const customerRoutes: RouteObject[] = [
         element: <CustomerMagicLinkConsumePage />,
       },
       { path: 'customer/register', element: <CustomerRegisterPage /> },
+      {
+        path: 'customer/register/complete',
+        element: <CustomerRegistrationCompletePage />,
+      },
       {
         path: 'customer/register/verify',
         element: <CustomerRegistrationVerifyPage />,

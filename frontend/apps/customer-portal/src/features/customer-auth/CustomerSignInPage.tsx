@@ -1,24 +1,31 @@
 import { useId, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { CustomerIcon, DsButton, Notification } from '../../design-system'
 import authImage from '../../assets/deskseed/customer-auth-mail.png'
 import {
+  CustomerAuthApiError,
   createCustomerPasswordSession,
   requestCustomerMagicLink,
 } from './api/customerAuthClient'
 import { useOptionalCustomerSession } from './CustomerSessionContext'
 
+import {
+  customerAuthDestination,
+  rememberCustomerAuthDestination,
+} from './customerAuthDestination'
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function CustomerSignInPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const session = useOptionalCustomerSession()
-  const [mode, setMode] = useState<'magic' | 'password'>('magic')
+  const [mode, setMode] = useState<'magic' | 'password'>('password')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [attempted, setAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
   const emailId = useId()
   const passwordId = useId()
   const invalidEmail = attempted && !EMAIL_PATTERN.test(email.trim())
@@ -30,10 +37,13 @@ export function CustomerSignInPage() {
     if (!EMAIL_PATTERN.test(normalizedEmail) || submitting) return
     if (mode === 'password' && !password) return
     setSubmitting(true)
-    setFailed(false)
+    setFailure(null)
     try {
       if (mode === 'magic') {
         await requestCustomerMagicLink(normalizedEmail)
+        rememberCustomerAuthDestination(
+          (location.state as { from?: unknown } | null)?.from,
+        )
         navigate('/customer/sign-in/check-email', {
           state: { email: normalizedEmail },
         })
@@ -43,10 +53,22 @@ export function CustomerSignInPage() {
           password,
         )
         session?.acceptAuthenticatedCustomer(customer)
-        navigate('/account/requests', { replace: true })
+        navigate(
+          customerAuthDestination(
+            customer,
+            (location.state as { from?: unknown } | null)?.from,
+          ),
+          { replace: true },
+        )
       }
-    } catch {
-      setFailed(true)
+    } catch (error) {
+      setFailure(
+        error instanceof CustomerAuthApiError && error.status === 401
+          ? '이메일 또는 비밀번호가 올바르지 않습니다.'
+          : error instanceof CustomerAuthApiError && error.status === 429
+            ? '로그인 요청이 잠시 제한되었습니다. 잠시 후 다시 시도해 주세요.'
+            : '입력 내용을 유지했습니다. 잠시 후 다시 시도해 주세요.',
+      )
     } finally {
       setSubmitting(false)
     }
@@ -56,32 +78,33 @@ export function CustomerSignInPage() {
     <div className="customer-auth-page">
       <section className="customer-auth-card">
         <h1>DeskSeed에 로그인</h1>
-        <p>이메일로 안전한 일회성 링크를 받거나 비밀번호로 로그인하세요.</p>
+        <p>이메일과 비밀번호로 로그인하세요.</p>
         <div
           aria-label="로그인 방식"
           className="customer-auth-tabs"
-          role="tablist"
+          role="group"
         >
           <button
-            aria-selected={mode === 'magic'}
+            aria-pressed={mode === 'magic'}
             onClick={() => setMode('magic')}
-            role="tab"
             type="button"
           >
             이메일 링크
           </button>
           <button
-            aria-selected={mode === 'password'}
+            aria-pressed={mode === 'password'}
             onClick={() => setMode('password')}
-            role="tab"
             type="button"
           >
             비밀번호
           </button>
         </div>
-        {failed ? (
+        {mode === 'magic' ? (
+          <p>비밀번호 없이 문의한 고객은 이메일 링크로 로그인할 수 있습니다.</p>
+        ) : null}
+        {failure ? (
           <Notification title="로그인 요청을 완료할 수 없습니다." tone="danger">
-            <p>입력 내용을 유지했습니다. 잠시 후 다시 시도해 주세요.</p>
+            <p>{failure}</p>
           </Notification>
         ) : null}
         <form onSubmit={(event) => void submit(event)}>
@@ -96,10 +119,14 @@ export function CustomerSignInPage() {
               id={emailId}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="you@company.com"
+              required
               type="email"
               value={email}
             />
           </div>
+          {attempted && mode === 'password' && !password ? (
+            <small role="alert">비밀번호를 입력해 주세요.</small>
+          ) : null}
           {invalidEmail ? (
             <small role="alert">올바른 이메일 주소를 입력해 주세요.</small>
           ) : null}
@@ -114,6 +141,8 @@ export function CustomerSignInPage() {
                   autoComplete="current-password"
                   id={passwordId}
                   onChange={(event) => setPassword(event.target.value)}
+                  required
+                  aria-invalid={(attempted && !password) || undefined}
                   type="password"
                   value={password}
                 />
@@ -121,6 +150,7 @@ export function CustomerSignInPage() {
             </>
           ) : null}
           <DsButton
+            disabled={submitting}
             icon={mode === 'magic' ? 'mail' : 'lock'}
             tone="primary"
             type="submit"
