@@ -1,4 +1,5 @@
 export * from './CustomerIcon'
+export * from './ConsentDocument'
 export * from './CustomerCommentContent'
 export * from './CustomerPrimitives'
 export * from './CustomerRequestLookupPanel'

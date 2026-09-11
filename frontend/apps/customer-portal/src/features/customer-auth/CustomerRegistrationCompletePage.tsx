@@ -18,11 +18,16 @@ export function CustomerRegistrationCompletePage() {
         <ScreenState
           kind="error"
           title="로그인 상태를 확인할 수 없습니다."
-          action={<Link to="/customer/sign-in">다시 로그인</Link>}
+          action={
+            <Link to="/customer/sign-in" state={location.state}>
+              다시 로그인
+            </Link>
+          }
         />
       </div>
     )
-  if (!session.customer) return <Navigate replace to="/customer/sign-in" />
+  if (!session.customer)
+    return <Navigate replace to="/customer/sign-in" state={location.state} />
   if (session.customer.registrationState === 'COMPLETE')
     return (
       <Navigate
