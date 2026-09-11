@@ -1,5 +1,11 @@
-import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { HelpDocument } from './HelpDocument'
+import { useHelpScope } from './useHelpScope'
+import {
+  useInfiniteQuery,
+  useQuery,
+  type UseQueryResult,
+} from '@tanstack/react-query'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   CustomerIcon,
@@ -10,6 +16,8 @@ import {
 import heroImage from '../../assets/deskseed/customer-help-hero.png'
 import {
   getHelpArticle,
+  getHelpCategory,
+  HelpApiError,
   getHelpSection,
   listHelpCategories,
   recordHelpArticleFeedback,
@@ -18,15 +26,18 @@ import {
 } from './helpCenterClient'
 
 export function HelpCenterHomePage() {
+  const scope = useHelpScope()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const categories = useQuery({
-    queryKey: ['help', 'categories'],
-    queryFn: listHelpCategories,
+    enabled: scope[1] !== 'loading',
+    queryKey: [...scope, 'categories'],
+    queryFn: ({ signal }) => listHelpCategories(signal),
   })
   const announcements = useQuery({
-    queryKey: ['help', 'section', 'announcements'],
-    queryFn: () => getHelpSection('announcements'),
+    enabled: scope[1] !== 'loading',
+    queryKey: [...scope, 'section', 'announcements'],
+    queryFn: ({ signal }) => getHelpSection('announcements', undefined, signal),
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -72,7 +83,7 @@ export function HelpCenterHomePage() {
             <CustomerIcon name="speechBubble" />
             고객 지원 문의
           </Link>
-          <Link to="/search">
+          <Link to="/categories">
             <CustomerIcon name="book" />
             모든 문서 보기
           </Link>
@@ -86,7 +97,7 @@ export function HelpCenterHomePage() {
         <div className="customer-panel customer-announcements">
           <header>
             <h2>공지사항</h2>
-            <Link to="/search?q=공지">전체 보기</Link>
+            <Link to="/sections/announcements">전체 보기</Link>
           </header>
           {announcements.isPending ? (
             <div className="customer-announcement-state" role="status">
@@ -125,15 +136,22 @@ export function HelpCenterHomePage() {
 }
 
 export function HelpSearchPage() {
+  const scope = useHelpScope()
   const [parameters, setParameters] = useSearchParams()
   const initial = parameters.get('q') ?? ''
   const [query, setQuery] = useState(initial)
+  useEffect(() => setQuery(initial), [initial])
   const normalized = initial.trim()
-  const results = useQuery({
-    enabled: Boolean(normalized),
-    queryKey: ['help', 'search', normalized],
-    queryFn: () => searchHelpArticles(normalized),
+  const results = useInfiniteQuery({
+    enabled: scope[1] !== 'loading' && Boolean(normalized),
+    queryKey: [...scope, 'search', normalized],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      searchHelpArticles(normalized, pageParam, signal),
+    getNextPageParam: (page) =>
+      page.hasMore ? (page.nextCursor ?? undefined) : undefined,
   })
+  const hits = results.data?.pages.flatMap((page) => page.items) ?? []
   const submit = (event: FormEvent) => {
     event.preventDefault()
     setParameters(query.trim() ? { q: query.trim() } : {})
@@ -147,6 +165,7 @@ export function HelpSearchPage() {
         <h1>검색 결과</h1>
         <p>
           {normalized ? `“${normalized}” 검색 결과` : '검색어를 입력해 주세요.'}
+          {!normalized && <Link to="/categories">모든 문서 둘러보기</Link>}
         </p>
         <form aria-label="도움말 결과 검색" onSubmit={submit} role="search">
           <CustomerIcon name="search" />
@@ -170,9 +189,9 @@ export function HelpSearchPage() {
           />
         ) : null}
         {results.data ? (
-          results.data.length ? (
+          hits.length ? (
             <div className="customer-search-results">
-              {results.data.map((item, index) => (
+              {hits.map((item, index) => (
                 <Link
                   className={index === 0 ? 'is-top' : ''}
                   key={item.articleSlug}
@@ -206,6 +225,14 @@ export function HelpSearchPage() {
             />
           )
         ) : null}
+        {results.hasNextPage && (
+          <DsButton
+            disabled={results.isFetchingNextPage}
+            onClick={() => void results.fetchNextPage()}
+          >
+            {results.isFetchingNextPage ? '불러오는 중…' : '검색 결과 더 보기'}
+          </DsButton>
+        )}
       </div>
       <SearchSidebar />
     </div>
@@ -213,9 +240,11 @@ export function HelpSearchPage() {
 }
 
 function SearchSidebar() {
+  const scope = useHelpScope()
   const categories = useQuery({
-    queryKey: ['help', 'categories'],
-    queryFn: listHelpCategories,
+    enabled: scope[1] !== 'loading',
+    queryKey: [...scope, 'categories'],
+    queryFn: ({ signal }) => listHelpCategories(signal),
   })
   return (
     <aside className="customer-aside">
@@ -236,12 +265,13 @@ function SearchSidebar() {
 }
 
 export function HelpArticlePage() {
+  const scope = useHelpScope()
   const { articleSlug = '' } = useParams()
   const article = useQuery({
-    queryKey: ['help', 'article', articleSlug],
-    queryFn: () => getHelpArticle(articleSlug),
+    enabled: scope[1] !== 'loading',
+    queryKey: [...scope, 'article', articleSlug],
+    queryFn: ({ signal }) => getHelpArticle(articleSlug, signal),
   })
-  const [feedback, setFeedback] = useState<'yes' | 'no' | null>(null)
   if (article.isPending)
     return (
       <div className="customer-page">
@@ -253,21 +283,54 @@ export function HelpArticlePage() {
       <div className="customer-page">
         <ScreenState
           action={<RetryButton onClick={() => void article.refetch()} />}
-          kind="not-found"
-          title="문서를 찾을 수 없습니다."
+          kind={
+            article.error instanceof HelpApiError &&
+            article.error.status === 404
+              ? 'not-found'
+              : article.error instanceof HelpApiError &&
+                  [401, 403].includes(article.error.status)
+                ? 'denied'
+                : 'error'
+          }
+          title={
+            article.error instanceof HelpApiError &&
+            article.error.status === 404
+              ? '문서를 찾을 수 없습니다.'
+              : '문서를 불러올 수 없습니다.'
+          }
         />
       </div>
     )
-  const data = article.data
-  const textBlocks = data.blocks.flatMap((block, index) => {
-    const text = block.text?.trim()
-    return text ? [{ key: `${block.type}-${index}`, text }] : []
-  })
+  return (
+    <HelpArticleContent
+      key={[...scope, articleSlug].join(':')}
+      data={article.data}
+    />
+  )
+}
+function HelpArticleContent({
+  data,
+}: {
+  data: Awaited<ReturnType<typeof getHelpArticle>>
+}) {
+  const [feedback, setFeedback] = useState<
+    'ready' | 'pending' | 'complete' | 'error'
+  >('ready')
+  async function sendFeedback(helpful: boolean) {
+    if (feedback === 'pending' || feedback === 'complete') return
+    setFeedback('pending')
+    try {
+      await recordHelpArticleFeedback(data.slug, helpful)
+      setFeedback('complete')
+    } catch {
+      setFeedback('error')
+    }
+  }
   return (
     <div className="customer-article-layout customer-article-layout--content-only">
       <article className="customer-article">
         <span className="customer-breadcrumb">
-          <Link to="/search">모든 문서</Link> / 도움말
+          <Link to="/categories">모든 문서</Link> / 도움말
         </span>
         <header>
           <div>
@@ -281,12 +344,8 @@ export function HelpArticlePage() {
             문서 인쇄
           </button>
         </header>
-        {textBlocks.length ? (
-          <section aria-label="문서 본문" className="customer-article-body">
-            {textBlocks.map((block) => (
-              <p key={block.key}>{block.text}</p>
-            ))}
-          </section>
+        {data.blocks.length ? (
+          <HelpDocument blocks={data.blocks} />
         ) : (
           <ScreenState
             action={<Link to="/requests/new">지원팀에 문의하기</Link>}
@@ -307,23 +366,25 @@ export function HelpArticlePage() {
         </section>
         <section>
           <h2>이 문서가 도움이 되었나요?</h2>
-          {feedback ? (
+          {feedback === 'pending' && (
+            <p role="status">의견을 저장하고 있습니다.</p>
+          )}
+          {feedback === 'error' && (
+            <p role="alert">의견을 저장하지 못했습니다. 다시 선택해 주세요.</p>
+          )}
+          {feedback === 'complete' ? (
             <p>의견을 보내주셔서 감사합니다.</p>
           ) : (
             <>
               <DsButton
-                onClick={() => {
-                  setFeedback('yes')
-                  void recordHelpArticleFeedback(articleSlug, true)
-                }}
+                disabled={feedback === 'pending'}
+                onClick={() => void sendFeedback(true)}
               >
                 네, 도움이 됐어요
               </DsButton>
               <DsButton
-                onClick={() => {
-                  setFeedback('no')
-                  void recordHelpArticleFeedback(articleSlug, false)
-                }}
+                disabled={feedback === 'pending'}
+                onClick={() => void sendFeedback(false)}
                 tone="danger"
               >
                 아니요
@@ -366,7 +427,7 @@ function CategoryCollection({ query }: { query: CategoriesQuery }) {
     )
   return (
     <div className="customer-topic-grid">
-      {query.data.slice(0, 5).map((item, index) => (
+      {query.data.map((item, index) => (
         <CategoryCard category={item} index={index} key={item.slug} />
       ))}
     </div>
@@ -377,8 +438,8 @@ function CategoryLinks({ query }: { query: CategoriesQuery }) {
   if (query.isPending) return <p role="status">주제를 불러오고 있습니다.</p>
   if (query.isError) return <p role="alert">주제를 불러올 수 없습니다.</p>
   if (!query.data.length) return <p>등록된 주제가 없습니다.</p>
-  return query.data.slice(0, 5).map((item) => (
-    <Link key={item.slug} to={`/search?q=${encodeURIComponent(item.title)}`}>
+  return query.data.map((item) => (
+    <Link key={item.slug} to={`/categories/${encodeURIComponent(item.slug)}`}>
       <CustomerIcon name="book" />
       {item.title}
       <span aria-hidden="true">›</span>
@@ -395,8 +456,8 @@ function CategoryCard({
 }) {
   return (
     <Link
-      className={`customer-topic customer-topic--${index + 1}`}
-      to={`/search?q=${encodeURIComponent(category.title)}`}
+      className={`customer-topic customer-topic--${(index % 5) + 1}`}
+      to={`/categories/${encodeURIComponent(category.slug)}`}
     >
       <span>
         <CustomerIcon
@@ -424,5 +485,133 @@ function CategoryCard({
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' }).format(
     new Date(value),
+  )
+}
+
+export function HelpCategoriesPage() {
+  const scope = useHelpScope()
+  const categories = useQuery({
+    enabled: scope[1] !== 'loading',
+    queryKey: [...scope, 'categories'],
+    queryFn: ({ signal }) => listHelpCategories(signal),
+  })
+  return (
+    <div className="customer-page">
+      <Link to="/">홈</Link>
+      <h1>모든 문서</h1>
+      <p>주제를 선택해 섹션과 문서를 둘러보세요.</p>
+      <h2>주제별 둘러보기</h2>
+      <CategoryCollection query={categories} />
+    </div>
+  )
+}
+export function HelpCategoryPage() {
+  const scope = useHelpScope()
+  const { categorySlug = '' } = useParams()
+  const category = useQuery({
+    enabled: scope[1] !== 'loading',
+    queryKey: [...scope, 'category', categorySlug],
+    queryFn: ({ signal }) => getHelpCategory(categorySlug, signal),
+  })
+  return (
+    <div className="customer-page">
+      <Link to="/categories">모든 문서</Link>
+      {category.isPending ? (
+        <ScreenState kind="loading" title="주제를 불러오고 있습니다." />
+      ) : category.isError ? (
+        <ScreenState
+          kind={
+            category.error instanceof HelpApiError &&
+            category.error.status === 404
+              ? 'not-found'
+              : 'error'
+          }
+          title="주제를 불러올 수 없습니다."
+          action={<RetryButton onClick={() => void category.refetch()} />}
+        />
+      ) : (
+        <>
+          <h1>{category.data.title}</h1>
+          <p>{category.data.description}</p>
+          {category.data.sections?.length ? (
+            <ul>
+              {category.data.sections.map((section) => (
+                <li key={section.slug}>
+                  <Link to={`/sections/${encodeURIComponent(section.slug)}`}>
+                    {section.title}
+                  </Link>
+                  <p>{section.description}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ScreenState kind="empty" title="등록된 섹션이 없습니다." />
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+export function HelpSectionPage() {
+  const scope = useHelpScope()
+  const { sectionSlug = '' } = useParams()
+  const section = useInfiniteQuery({
+    enabled: scope[1] !== 'loading',
+    queryKey: [...scope, 'section-pages', sectionSlug],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      getHelpSection(sectionSlug, pageParam, signal),
+    getNextPageParam: (page) =>
+      page.hasMore ? (page.nextCursor ?? undefined) : undefined,
+  })
+  const first = section.data?.pages[0]
+  const articles = section.data?.pages.flatMap((page) => page.articles) ?? []
+  return (
+    <div className="customer-page">
+      <Link to="/categories">모든 문서</Link>
+      {section.isPending && (
+        <ScreenState kind="loading" title="문서 목록을 불러오고 있습니다." />
+      )}
+      {section.isError && (
+        <ScreenState
+          kind={
+            section.error instanceof HelpApiError &&
+            section.error.status === 404
+              ? 'not-found'
+              : 'error'
+          }
+          title="문서 목록을 불러올 수 없습니다."
+          action={<RetryButton onClick={() => void section.refetch()} />}
+        />
+      )}
+      {first && (
+        <>
+          <h1>{first.title}</h1>
+          <p>{first.description}</p>
+          {articles.length ? (
+            <ul>
+              {articles.map((article) => (
+                <li key={article.slug}>
+                  <Link to={`/articles/${encodeURIComponent(article.slug)}`}>
+                    {article.title}
+                  </Link>
+                  <p>{article.summary}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ScreenState kind="empty" title="등록된 문서가 없습니다." />
+          )}
+        </>
+      )}
+      {section.hasNextPage && (
+        <DsButton
+          disabled={section.isFetchingNextPage}
+          onClick={() => void section.fetchNextPage()}
+        >
+          {section.isFetchingNextPage ? '불러오는 중…' : '문서 더 보기'}
+        </DsButton>
+      )}
+    </div>
   )
 }

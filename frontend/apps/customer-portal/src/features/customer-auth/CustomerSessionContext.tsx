@@ -40,6 +40,8 @@ export function CustomerSessionProvider({ children }: { children: ReactNode }) {
   const requestVersion = useRef(0)
 
   const clearOwnedRequestQueries = useCallback(() => {
+    void queryClient.cancelQueries({ queryKey: ['help'] })
+    queryClient.removeQueries({ queryKey: ['help'] })
     void queryClient.cancelQueries({
       queryKey: customerRequestQueryKeys.listRoot,
     })

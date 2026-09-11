@@ -20,6 +20,9 @@ import { CustomerRequestLookupPage } from './features/customer-requests/Customer
 import { CustomerRequestSuccessPage } from './features/customer-requests/CustomerRequestSuccessPage'
 import {
   HelpArticlePage,
+  HelpCategoriesPage,
+  HelpCategoryPage,
+  HelpSectionPage,
   HelpCenterHomePage,
   HelpSearchPage,
 } from './features/help-center/HelpCenterPages'
@@ -29,6 +32,9 @@ export const customerRoutes: RouteObject[] = [
     element: <CustomerRouteLayout />,
     children: [
       { index: true, element: <HelpCenterHomePage /> },
+      { path: 'categories', element: <HelpCategoriesPage /> },
+      { path: 'categories/:categorySlug', element: <HelpCategoryPage /> },
+      { path: 'sections/:sectionSlug', element: <HelpSectionPage /> },
       { path: 'search', element: <HelpSearchPage /> },
       { path: 'articles/:articleSlug', element: <HelpArticlePage /> },
       { path: 'requests/new', element: <CustomerRequestCreatePage /> },

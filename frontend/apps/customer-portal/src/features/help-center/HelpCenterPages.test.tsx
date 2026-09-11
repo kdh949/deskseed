@@ -64,7 +64,7 @@ describe('Help Center pages', () => {
           currentPublishedRevision: {
             title: '비어 있는 문서',
             createdAt: '2026-08-27T00:00:00Z',
-            document: { blocks: [] },
+            document: { schemaVersion: 1, blocks: [] },
           },
         }),
       ),

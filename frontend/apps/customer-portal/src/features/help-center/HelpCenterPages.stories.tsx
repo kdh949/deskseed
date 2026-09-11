@@ -5,6 +5,9 @@ import { StoryRoute } from '../../../.storybook/StoryRoute'
 import { CustomerSiteLayout } from '../../design-system'
 import {
   HelpArticlePage,
+  HelpCategoriesPage,
+  HelpCategoryPage,
+  HelpSectionPage,
   HelpCenterHomePage,
   HelpSearchPage,
 } from './HelpCenterPages'
@@ -291,7 +294,7 @@ export const EmptyArticle: Story = {
             currentPublishedRevision: {
               title: '비어 있는 도움말 문서',
               createdAt: '2026-08-27T00:00:00Z',
-              document: { blocks: [] },
+              document: { schemaVersion: 1, blocks: [] },
             },
           }),
         ),
@@ -330,6 +333,7 @@ export const Article: Story = {
                 '결제 수단과 청구 정보를 안전하게 변경하는 방법을 안내합니다.',
               createdAt: '2026-08-27T00:00:00Z',
               document: {
+                schemaVersion: 1,
                 blocks: [
                   {
                     type: 'paragraph',
@@ -357,6 +361,105 @@ export const Article: Story = {
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole('heading', { name: '결제 정보 변경 방법' }),
+    ).toBeVisible()
+  },
+}
+
+export const Categories: Story = {
+  parameters: { msw: { handlers: homeHandlers } },
+  render: () => (
+    <AnonymousChrome>
+      <HelpCategoriesPage />
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: /주문/ }),
+    ).toHaveAttribute('href', '/categories/orders')
+  },
+}
+export const CategorySections: Story = {
+  parameters: {
+    msw: {
+      handlers: {
+        category: http.get('/api/v1/help/categories/orders', () =>
+          HttpResponse.json({
+            id: 'orders',
+            slug: 'orders',
+            title: '주문',
+            sections: [{ slug: 'announcements', title: '공지사항' }],
+          }),
+        ),
+      },
+    },
+  },
+  render: () => (
+    <AnonymousChrome>
+      <StoryRoute path="/categories/:categorySlug" to="/categories/orders">
+        <HelpCategoryPage />
+      </StoryRoute>
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: '공지사항' }),
+    ).toHaveAttribute('href', '/sections/announcements')
+  },
+}
+export const SectionArticles: Story = {
+  parameters: { msw: { handlers: homeHandlers } },
+  render: () => (
+    <AnonymousChrome>
+      <StoryRoute path="/sections/:sectionSlug" to="/sections/announcements">
+        <HelpSectionPage />
+      </StoryRoute>
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
+    ).toBeVisible()
+  },
+}
+export const ArticleUnavailable: Story = {
+  ...Article,
+  parameters: {
+    msw: {
+      handlers: [
+        http.get(
+          '/api/v1/help/articles/:slug',
+          () => new HttpResponse(null, { status: 503 }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('문서를 불러올 수 없습니다.'),
+    ).toBeVisible()
+  },
+}
+export const FeedbackUnavailable: Story = {
+  ...Article,
+  parameters: {
+    msw: {
+      handlers: [
+        http.post(
+          '/api/v1/help/articles/:slug/feedback',
+          () => new HttpResponse(null, { status: 503 }),
+        ),
+        ...(Article.parameters?.msw.handlers ?? []),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '네, 도움이 됐어요' }),
+    )
+    await expect(
+      await canvas.findByText(
+        '의견을 저장하지 못했습니다. 다시 선택해 주세요.',
+      ),
     ).toBeVisible()
   },
 }
