@@ -10,6 +10,7 @@ import {
 } from '../../design-system'
 import registrationImage from '../../assets/deskseed/customer-registration.png'
 import {
+  CustomerAuthApiError,
   listRegistrationConsentPolicies,
   requestCustomerRegistration,
 } from './api/customerAuthClient'
@@ -26,9 +27,9 @@ export function CustomerRegisterPage() {
     companyName: '',
     password: '',
   })
-  const [accepted, setAccepted] = useState(false)
+  const [accepted, setAccepted] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
   if (policies.isPending)
     return (
       <div className="customer-page">
@@ -45,24 +46,53 @@ export function CustomerRegisterPage() {
         />
       </div>
     )
+  if (!policies.data.length)
+    return (
+      <div className="customer-page">
+        <ScreenState
+          kind="empty"
+          title="가입 약관을 준비하고 있습니다."
+          description="잠시 후 다시 방문해 주세요."
+        />
+      </div>
+    )
+  const requiredAccepted = policies.data
+    .filter((policy) => policy.required)
+    .every((policy) =>
+      accepted.includes(`${policy.policyKey}:${policy.version}`),
+    )
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!accepted || submitting) return
+    if (!requiredAccepted || !accepted.length || submitting) return
     setSubmitting(true)
-    setFailed(false)
+    setFailure(null)
     try {
       await requestCustomerRegistration({
         ...form,
-        acceptedPolicies: policies.data.map(({ policyKey, version }) => ({
-          policyKey,
-          version,
-        })),
+        acceptedPolicies: policies.data
+          .filter((policy) =>
+            accepted.includes(`${policy.policyKey}:${policy.version}`),
+          )
+          .map(({ policyKey, version }) => ({
+            policyKey,
+            version,
+          })),
       })
       navigate('/customer/sign-in/check-email', {
-        state: { email: form.email },
+        state: { email: form.email, purpose: 'registration' },
       })
-    } catch {
-      setFailed(true)
+    } catch (error) {
+      setFailure(
+        error instanceof CustomerAuthApiError && error.status === 409
+          ? '가입 약관이 변경되었습니다. 최신 내용을 확인하고 다시 동의해 주세요.'
+          : error instanceof CustomerAuthApiError && error.status === 429
+            ? '가입 요청이 잠시 제한되었습니다. 잠시 후 다시 시도해 주세요.'
+            : '입력 내용을 유지했습니다. 가입 요청을 확인한 뒤 다시 시도해 주세요.',
+      )
+      if (error instanceof CustomerAuthApiError && error.status === 409) {
+        setAccepted([])
+        void policies.refetch()
+      }
     } finally {
       setSubmitting(false)
     }
@@ -75,9 +105,9 @@ export function CustomerRegisterPage() {
         </span>
         <h1>DeskSeed 계정 만들기</h1>
         <p>문의 접수와 답변 확인을 더 빠르고 안전하게 이용하세요.</p>
-        {failed ? (
+        {failure ? (
           <Notification title="가입 요청을 완료할 수 없습니다." tone="danger">
-            <p>입력 내용을 유지했습니다. 잠시 후 다시 시도해 주세요.</p>
+            <p role="alert">{failure}</p>
           </Notification>
         ) : null}
         <form onSubmit={(event) => void submit(event)}>
@@ -110,21 +140,42 @@ export function CustomerRegisterPage() {
             type="password"
             value={form.password}
           />
-          <label className="customer-checkbox">
-            <input
-              checked={accepted}
-              onChange={(event) => setAccepted(event.target.checked)}
-              type="checkbox"
-            />
-            <span>
-              {policies.data.length
-                ? policies.data.map((policy) => policy.title).join(', ')
-                : '이용약관 및 개인정보 처리방침'}
-              에 동의합니다.
-            </span>
-          </label>
+          <fieldset className="customer-request-additional">
+            <legend>가입 동의 항목</legend>
+            {policies.data.map((policy) => {
+              const key = `${policy.policyKey}:${policy.version}`
+              return (
+                <div className="customer-field" key={key}>
+                  <details>
+                    <summary>{policy.title} 내용 보기</summary>
+                    {policy.paragraphs.map((paragraph, index) => (
+                      <p key={index}>{paragraph}</p>
+                    ))}
+                  </details>
+                  <label className="customer-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={accepted.includes(key)}
+                      required={policy.required}
+                      onChange={(event) =>
+                        setAccepted((current) =>
+                          event.target.checked
+                            ? [...current, key]
+                            : current.filter((value) => value !== key),
+                        )
+                      }
+                    />
+                    <span>
+                      {policy.title}에 동의합니다. (
+                      {policy.required ? '필수' : '선택'})
+                    </span>
+                  </label>
+                </div>
+              )
+            })}
+          </fieldset>
           <DsButton
-            disabled={!accepted || submitting}
+            disabled={!requiredAccepted || !accepted.length || submitting}
             tone="primary"
             type="submit"
           >
@@ -179,6 +230,7 @@ function RegisterField({
       <span aria-hidden="true"> *</span>
       <input
         autoComplete={type === 'password' ? 'new-password' : undefined}
+        maxLength={type === 'password' ? 256 : label === '이름' ? 200 : 320}
         minLength={minLength}
         onChange={(event) => onChange(event.target.value)}
         required

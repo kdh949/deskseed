@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
-import { expect } from 'storybook/test'
+import { expect, userEvent } from 'storybook/test'
+import { Navigate, Route, Routes } from 'react-router'
 import { CustomerSiteLayout } from '../../design-system'
 import { CustomerCheckEmailPage } from './CustomerCheckEmailPage'
 import { CustomerRegisterPage } from './CustomerRegisterPage'
@@ -36,12 +37,30 @@ export const Registration: Story = {
                 version: 3,
                 title: '이용약관',
                 required: true,
+                document: {
+                  schemaVersion: 1,
+                  blocks: [
+                    {
+                      type: 'paragraph',
+                      text: '가입 동의 내용을 확인해 주세요.',
+                    },
+                  ],
+                },
               },
               {
                 policyKey: 'privacy',
                 version: 2,
                 title: '개인정보 처리방침',
                 required: true,
+                document: {
+                  schemaVersion: 1,
+                  blocks: [
+                    {
+                      type: 'paragraph',
+                      text: '가입 동의 내용을 확인해 주세요.',
+                    },
+                  ],
+                },
               },
             ],
           }),
@@ -61,6 +80,24 @@ export const Registration: Story = {
     await expect(
       canvas.getByRole('button', { name: '계정 만들기' }),
     ).toBeDisabled()
+    await userEvent.click(canvas.getByText('이용약관 내용 보기'))
+    await expect(
+      canvas.getAllByText('가입 동의 내용을 확인해 주세요.')[0],
+    ).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('checkbox', { name: '이용약관에 동의합니다. (필수)' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '계정 만들기' }),
+    ).toBeDisabled()
+    await userEvent.click(
+      canvas.getByRole('checkbox', {
+        name: '개인정보 처리방침에 동의합니다. (필수)',
+      }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '계정 만들기' }),
+    ).toBeEnabled()
   },
 }
 
@@ -74,5 +111,34 @@ export const CheckEmail: Story = {
     await expect(
       canvas.getByRole('heading', { name: '받은 편지함을 확인해 주세요' }),
     ).toBeVisible()
+  },
+}
+
+export const RegistrationEmail: Story = {
+  render: () => (
+    <Routes>
+      <Route path="/registration-email" element={<CustomerCheckEmailPage />} />
+      <Route
+        path="*"
+        element={
+          <Navigate
+            replace
+            to="/registration-email"
+            state={{ email: 'customer@example.test', purpose: 'registration' }}
+          />
+        }
+      />
+    </Routes>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText(/가입을 요청한 브라우저/),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: '링크 다시 보내기' }),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('link', { name: '가입 정보 다시 입력하기' }),
+    ).toHaveAttribute('href', '/customer/register')
   },
 }
