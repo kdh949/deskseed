@@ -1,5 +1,11 @@
-import { Link, Navigate, Outlet, useLocation } from 'react-router'
-import type { ReactNode } from 'react'
+import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router'
+import { useState, type ReactNode } from 'react'
+import {
+  canUseAgentWorkspace,
+  canReadAudit,
+  canManageStaff,
+  staffHome,
+} from './staffNavigation'
 import { SeedButton, SeedFeedbackState } from '../../design-system/canonical'
 import { StaffSessionProvider, useStaffSession } from './StaffSessionContext'
 
@@ -51,9 +57,7 @@ export function StaffRoute() {
 
 export function AgentRoute() {
   const session = useStaffSession()
-  const allowed =
-    (session.staff?.role === 'ADMIN' || session.staff?.role === 'AGENT') &&
-    session.staff.capabilities.includes('AGENT_WORKSPACE')
+  const allowed = canUseAgentWorkspace(session.staff)
   if (!allowed) {
     return (
       <StaffGate title="상담사 작업 공간 권한이 필요합니다.">
@@ -61,7 +65,7 @@ export function AgentRoute() {
           kind="denied"
           title="상담사 작업 공간 권한이 필요합니다."
           description="이 계정은 티켓 큐와 작업 공간을 열 수 없습니다."
-          action={<Link to="/agent/login">다른 계정으로 로그인</Link>}
+          action={<DeniedActions />}
         />
       </StaffGate>
     )
@@ -71,7 +75,7 @@ export function AgentRoute() {
 
 export function AuditRoute() {
   const session = useStaffSession()
-  const allowed = session.staff?.role === 'SECURITY_AUDITOR'
+  const allowed = canReadAudit(session.staff)
   if (!allowed) {
     return (
       <StaffGate title="감사 권한이 필요합니다.">
@@ -79,7 +83,7 @@ export function AuditRoute() {
           kind="denied"
           title="감사 권한이 필요합니다."
           description="이 계정은 감사 탐색기와 내보내기 작업을 열 수 없습니다."
-          action={<Link to="/agent/login">다른 계정으로 로그인</Link>}
+          action={<DeniedActions />}
         />
       </StaffGate>
     )
@@ -89,9 +93,7 @@ export function AuditRoute() {
 
 export function AdminRoute() {
   const session = useStaffSession()
-  const allowed =
-    session.staff?.role === 'ADMIN' &&
-    session.staff.capabilities.includes('ADMIN_MANAGE')
+  const allowed = canManageStaff(session.staff)
   if (!allowed) {
     return (
       <StaffGate title="관리자 운영 권한이 필요합니다.">
@@ -99,7 +101,7 @@ export function AdminRoute() {
           kind="denied"
           title="관리자 운영 권한이 필요합니다."
           description="이 계정은 운영 설정과 관리자 작업을 열 수 없습니다."
-          action={<Link to="/agent/login">다른 계정으로 로그인</Link>}
+          action={<DeniedActions />}
         />
       </StaffGate>
     )
@@ -119,5 +121,38 @@ function StaffGate({
       <h1 className="seed-visually-hidden">{title}</h1>
       {children}
     </main>
+  )
+}
+
+function DeniedActions() {
+  const session = useStaffSession()
+  const navigate = useNavigate()
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState(false)
+  async function switchAccount() {
+    if (pending) return
+    setPending(true)
+    setFailure(false)
+    try {
+      await session.signOut({ requireRemoteConfirmation: true })
+      navigate('/agent/login', { replace: true })
+    } catch {
+      setFailure(true)
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <div>
+      {session.staff && (
+        <p>
+          <Link to={staffHome(session.staff)}>내 작업 화면으로 이동</Link>
+        </p>
+      )}
+      <SeedButton onClick={() => void switchAccount()} disabled={pending}>
+        다른 계정으로 로그인
+      </SeedButton>
+      {failure && <p>로그아웃하지 못했습니다. 다시 시도해 주세요.</p>}
+    </div>
   )
 }

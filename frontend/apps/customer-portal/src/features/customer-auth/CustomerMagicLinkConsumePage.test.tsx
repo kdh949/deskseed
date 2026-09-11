@@ -27,7 +27,10 @@ function renderPage() {
           path="/customer/sign-in/consume"
           element={<CustomerMagicLinkConsumePage />}
         />
-        <Route path="/account/requests" element={<p>account-open</p>} />
+        <Route
+          path="/customer/register/complete"
+          element={<p>registration-required</p>}
+        />
       </Routes>
     </MemoryRouter>,
   )
@@ -72,7 +75,7 @@ describe('CustomerMagicLinkConsumePage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('account-open')).toBeVisible()
+    expect(await screen.findByText('registration-required')).toBeVisible()
     expect(window.location.hash).toBe('')
     expect(sessionStorage.length).toBe(0)
     expect(customerSession.acceptAuthenticatedCustomer).toHaveBeenCalledWith({

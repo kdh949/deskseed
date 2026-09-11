@@ -37,6 +37,14 @@ export function CustomerAccountRoute() {
     )
   }
 
+  if (session.customer.registrationState === 'REGISTRATION_REQUIRED')
+    return (
+      <Navigate
+        replace
+        to="/customer/register/complete"
+        state={{ from: accountDestination(location.pathname) }}
+      />
+    )
   return <Outlet />
 }
 

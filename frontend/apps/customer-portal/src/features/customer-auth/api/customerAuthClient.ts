@@ -1,3 +1,5 @@
+import type { ConsentBlock } from '../../../design-system'
+import { decodeConsentBlocks } from './consentDocument'
 import type { CustomerAccessMode } from '../../../api/types'
 
 export interface CurrentCustomer {
@@ -24,6 +26,7 @@ export interface CustomerConsentPolicy {
   version: number
   title: string
   required: boolean
+  blocks: ConsentBlock[]
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -76,6 +79,64 @@ export async function requestCustomerRegistration(
     )
 }
 
+export async function verifyCustomerRegistration(token: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/customer/registration-verifications`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    },
+  )
+  if (response.status !== 204)
+    throw await responseFailure(
+      response,
+      'customer-registration-verification-failed',
+    )
+}
+
+export async function completePasswordlessCustomerRegistration(
+  input: Omit<CustomerRegistrationInput, 'email'>,
+  expectedCustomerId: string,
+): Promise<CurrentCustomer> {
+  const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
+    credentials: 'include',
+    cache: 'no-store',
+    referrerPolicy: 'no-referrer',
+  })
+  if (!csrfResponse.ok)
+    throw await responseFailure(csrfResponse, 'customer-csrf-read-failed')
+  const csrf: unknown = await csrfResponse.json()
+  if (!isCsrfToken(csrf)) throw new Error('customer-csrf-response-invalid')
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/customer/me/registration`,
+    {
+      method: 'PUT',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrf.token,
+        'X-Deskseed-Expected-Customer-Id': expectedCustomerId,
+      },
+      body: JSON.stringify(input),
+    },
+  )
+  if (!response.ok)
+    throw await responseFailure(
+      response,
+      'customer-registration-completion-failed',
+    )
+  const body: unknown = await response.json()
+  if (!isCurrentCustomer(body))
+    throw new Error('customer-session-response-invalid')
+  return body
+}
+
 export async function listRegistrationConsentPolicies(): Promise<
   CustomerConsentPolicy[]
 > {
@@ -96,18 +157,44 @@ export async function listRegistrationConsentPolicies(): Promise<
     !Array.isArray((body as { policies?: unknown }).policies)
   )
     throw new Error('customer-consent-policy-response-invalid')
-  return (body as { policies: unknown[] }).policies.flatMap((item) => {
+  const policies = (body as { policies: unknown[] }).policies
+  if (policies.length > 20)
+    throw new Error('customer-consent-policy-response-invalid')
+  const decoded = policies.map((item): CustomerConsentPolicy => {
+    if (typeof item !== 'object' || item === null)
+      throw new Error('customer-consent-policy-response-invalid')
+    const policy = item as Record<string, unknown>
+    const document = policy.document as {
+      schemaVersion?: unknown
+      blocks?: unknown
+    } | null
     if (
-      typeof item !== 'object' ||
-      item === null ||
-      typeof (item as Record<string, unknown>).policyKey !== 'string' ||
-      typeof (item as Record<string, unknown>).version !== 'number' ||
-      typeof (item as Record<string, unknown>).title !== 'string' ||
-      typeof (item as Record<string, unknown>).required !== 'boolean'
+      typeof policy.policyKey !== 'string' ||
+      !policy.policyKey ||
+      !Number.isSafeInteger(policy.version) ||
+      Number(policy.version) < 1 ||
+      typeof policy.title !== 'string' ||
+      !policy.title ||
+      typeof policy.required !== 'boolean' ||
+      !document ||
+      document.schemaVersion !== 1 ||
+      !Array.isArray(document.blocks)
     )
-      return []
-    return [item as CustomerConsentPolicy]
+      throw new Error('customer-consent-policy-response-invalid')
+    const blocks = decodeConsentBlocks(document.blocks)
+    return {
+      policyKey: policy.policyKey,
+      version: Number(policy.version),
+      title: policy.title,
+      required: policy.required,
+      blocks,
+    }
   })
+  if (
+    new Set(decoded.map((policy) => policy.policyKey)).size !== decoded.length
+  )
+    throw new Error('customer-consent-policy-response-invalid')
+  return decoded
 }
 
 export async function createCustomerPasswordSession(
@@ -277,4 +364,41 @@ function isCurrentCustomer(value: unknown): value is CurrentCustomer {
       ['MAGIC_LINK', 'PASSWORD'].includes(String(method)),
     )
   )
+}
+
+export async function requestCustomerPasswordReset(
+  email: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/customer/auth/password-reset-requests`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    },
+  )
+  if (response.status !== 202)
+    throw await responseFailure(response, 'password-reset-request-failed')
+}
+
+export async function resetCustomerPassword(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/customer/auth/password-resets`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+    },
+  )
+  if (response.status !== 204)
+    throw await responseFailure(response, 'password-reset-failed')
 }

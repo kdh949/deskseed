@@ -953,6 +953,7 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - magic-link login mail is issued only for an eligible identity without a password while every request retains the same generic response.
 - consume accepts only a single-use `PASSWORDLESS_LOGIN` token and rotates into a session whose projection requires registration completion.
 - completion requires that session plus CSRF and current registration policy versions; password/profile/consents, credential-version update, session rotation/revocation, and security audit are atomic.
+- completion compares an optional expected-customer header with the authenticated principal before writing; the current portal always supplies it, mismatch leaves profile/credential/consents unchanged and produces a denied security audit.
 - completion never lists or claims an anonymous ticket from email equality; AUTH-004 proof remains required.
 
 ### CONSENT-001 — Immutable consent policy lifecycle

@@ -229,7 +229,14 @@ class AgentTicketReadIntegrationTest {
         insertTicket(3501, "내 open", status = "OPEN", groupId = group, assigneeId = agent)
         insertTicket(3502, "내 그룹 미배정", status = "NEW", groupId = group)
         insertTicket(3503, "공유 pending", status = "PENDING")
-        insertTicket(3504, "최근 solved", status = "SOLVED", groupId = group, assigneeId = agent)
+        insertTicket(
+            3504,
+            "최근 solved",
+            status = "SOLVED",
+            groupId = group,
+            assigneeId = agent,
+            updatedAt = Instant.now().minusSeconds(60),
+        )
         insertTicket(
             3505,
             "내 child task",

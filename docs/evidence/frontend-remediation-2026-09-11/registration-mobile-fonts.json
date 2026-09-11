@@ -1,0 +1,104 @@
+{
+  "elements": [
+    {
+      "fontSize": "28.08px",
+      "lineHeight": "35.1px",
+      "tag": "H1",
+      "text": "DeskSeed 계정 만들기",
+      "width": 297
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "LABEL",
+      "text": "이름 *",
+      "width": 297
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "normal",
+      "tag": "INPUT",
+      "text": "",
+      "width": 297
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "LABEL",
+      "text": "이메일 *",
+      "width": 297
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "normal",
+      "tag": "INPUT",
+      "text": "",
+      "width": 297
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "LABEL",
+      "text": "회사명 *",
+      "width": 297
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "normal",
+      "tag": "INPUT",
+      "text": "",
+      "width": 297
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "LABEL",
+      "text": "비밀번호 *",
+      "width": 297
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "normal",
+      "tag": "INPUT",
+      "text": "",
+      "width": 297
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "normal",
+      "tag": "LEGEND",
+      "text": "가입 동의 항목",
+      "width": 95.96875
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "LABEL",
+      "text": "이용약관에 동의합니다. (필수)",
+      "width": 297
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "normal",
+      "tag": "INPUT",
+      "text": "",
+      "width": 20
+    },
+    {
+      "fontSize": "14px",
+      "lineHeight": "normal",
+      "tag": "LABEL",
+      "text": "개인정보 처리방침에 동의합니다. (필수)",
+      "width": 297
+    },
+    {
+      "fontSize": "16px",
+      "lineHeight": "normal",
+      "tag": "INPUT",
+      "text": "",
+      "width": 20
+    }
+  ],
+  "scrollWidth": 375,
+  "width": 390
+}

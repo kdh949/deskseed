@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useId, useState, type FormEvent } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router'
 import {
   CustomerIcon,
+  ConsentDocument,
   DsButton,
   Notification,
   RetryButton,
@@ -10,25 +11,41 @@ import {
 } from '../../design-system'
 import registrationImage from '../../assets/deskseed/customer-registration.png'
 import {
+  type CurrentCustomer,
+  completePasswordlessCustomerRegistration,
+  CustomerAuthApiError,
+  getCurrentCustomer,
   listRegistrationConsentPolicies,
   requestCustomerRegistration,
 } from './api/customerAuthClient'
+import {
+  passwordValidationMessage,
+  profileValidationMessage,
+  registrationFieldLimits,
+} from './customerRegistrationValidation'
 
-export function CustomerRegisterPage() {
+import { useOptionalCustomerSession } from './CustomerSessionContext'
+import { customerAuthDestination } from './customerAuthDestination'
+
+export function CustomerRegisterPage({
+  customer,
+}: { customer?: CurrentCustomer } = {}) {
+  const session = useOptionalCustomerSession()
+  const location = useLocation()
   const navigate = useNavigate()
   const policies = useQuery({
     queryKey: ['customer', 'consent', 'registration'],
     queryFn: listRegistrationConsentPolicies,
   })
   const [form, setForm] = useState({
-    displayName: '',
-    email: '',
-    companyName: '',
+    displayName: customer?.displayName ?? '',
+    email: customer?.email ?? '',
+    companyName: customer?.companyName ?? '',
     password: '',
   })
-  const [accepted, setAccepted] = useState(false)
+  const [accepted, setAccepted] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
   if (policies.isPending)
     return (
       <div className="customer-page">
@@ -45,24 +62,126 @@ export function CustomerRegisterPage() {
         />
       </div>
     )
+  if (!policies.data.length)
+    return (
+      <div className="customer-page">
+        <ScreenState
+          kind="empty"
+          title="가입 약관을 준비하고 있습니다."
+          description="잠시 후 다시 방문해 주세요."
+        />
+      </div>
+    )
+  const requiredAccepted = policies.data
+    .filter((policy) => policy.required)
+    .every((policy) =>
+      accepted.includes(`${policy.policyKey}:${policy.version}`),
+    )
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!accepted || submitting) return
+    if (!requiredAccepted || !accepted.length || submitting) return
+    if (
+      passwordValidationMessage(form.password) ||
+      profileValidationMessage('displayName', form.displayName) ||
+      profileValidationMessage('companyName', form.companyName)
+    )
+      return
     setSubmitting(true)
-    setFailed(false)
+    setFailure(null)
     try {
-      await requestCustomerRegistration({
-        ...form,
-        acceptedPolicies: policies.data.map(({ policyKey, version }) => ({
-          policyKey,
-          version,
-        })),
-      })
-      navigate('/customer/sign-in/check-email', {
-        state: { email: form.email },
-      })
-    } catch {
-      setFailed(true)
+      const acceptedPolicies = policies.data
+        .filter((policy) =>
+          accepted.includes(`${policy.policyKey}:${policy.version}`),
+        )
+        .map(({ policyKey, version }) => ({ policyKey, version }))
+      if (customer) {
+        const current = await completePasswordlessCustomerRegistration(
+          {
+            password: form.password,
+            displayName: form.displayName,
+            companyName: form.companyName,
+            acceptedPolicies,
+          },
+          customer.id,
+        )
+        session?.acceptAuthenticatedCustomer(current)
+        navigate(
+          customerAuthDestination(
+            current,
+            (location.state as { from?: unknown } | null)?.from,
+          ),
+          { replace: true },
+        )
+      } else {
+        await requestCustomerRegistration({ ...form, acceptedPolicies })
+        navigate('/customer/sign-in/check-email', {
+          state: { email: form.email, purpose: 'registration' },
+        })
+      }
+    } catch (error) {
+      if (
+        customer &&
+        error instanceof CustomerAuthApiError &&
+        error.status === 401
+      ) {
+        await session?.retry()
+        return
+      }
+      if (
+        customer &&
+        error instanceof CustomerAuthApiError &&
+        error.status === 409
+      ) {
+        try {
+          const latest = await getCurrentCustomer()
+          if (!latest) {
+            await session?.retry()
+            return
+          }
+          if (
+            latest.id !== customer.id ||
+            latest.registrationState === 'COMPLETE'
+          ) {
+            session?.acceptAuthenticatedCustomer(latest)
+            return
+          }
+        } catch {
+          await session?.retry()
+          return
+        }
+      }
+      if (
+        error instanceof CustomerAuthApiError &&
+        [400, 409].includes(error.status)
+      ) {
+        const previous = policies.data
+          .map(
+            ({ policyKey, version, required }) =>
+              `${policyKey}:${version}:${required}`,
+          )
+          .sort()
+          .join('|')
+        const refreshed = await policies.refetch()
+        const next = refreshed.data
+          ?.map(
+            ({ policyKey, version, required }) =>
+              `${policyKey}:${version}:${required}`,
+          )
+          .sort()
+          .join('|')
+        if (refreshed.isSuccess && next !== previous) {
+          setAccepted([])
+          setFailure(
+            '가입 약관이 변경되었습니다. 최신 내용을 확인하고 다시 동의해 주세요.',
+          )
+          return
+        }
+      }
+      setFailure(
+        error instanceof CustomerAuthApiError && error.status === 429
+          ? '가입 요청이 잠시 제한되었습니다. 잠시 후 다시 시도해 주세요.'
+          : '입력 내용을 유지했습니다. 가입 요청을 확인한 뒤 다시 시도해 주세요.',
+      )
     } finally {
       setSubmitting(false)
     }
@@ -73,28 +192,41 @@ export function CustomerRegisterPage() {
         <span className="customer-breadcrumb">
           <Link to="/">홈</Link> / 회원가입
         </span>
-        <h1>DeskSeed 계정 만들기</h1>
-        <p>문의 접수와 답변 확인을 더 빠르고 안전하게 이용하세요.</p>
-        {failed ? (
+        <h1>{customer ? '가입 마무리' : 'DeskSeed 계정 만들기'}</h1>
+        <p>
+          {customer
+            ? '비밀번호와 가입 정보를 등록해 주세요.'
+            : '문의 접수와 답변 확인을 더 빠르고 안전하게 이용하세요.'}
+        </p>
+        {failure ? (
           <Notification title="가입 요청을 완료할 수 없습니다." tone="danger">
-            <p>입력 내용을 유지했습니다. 잠시 후 다시 시도해 주세요.</p>
+            <p>{failure}</p>
           </Notification>
         ) : null}
         <form onSubmit={(event) => void submit(event)}>
           <RegisterField
+            field="displayName"
             label="이름"
             onChange={(displayName) =>
               setForm((current) => ({ ...current, displayName }))
             }
             value={form.displayName}
           />
+          {customer ? (
+            <p>이메일: {customer.email}</p>
+          ) : (
+            <RegisterField
+              field="email"
+              label="이메일"
+              onChange={(email) =>
+                setForm((current) => ({ ...current, email }))
+              }
+              type="email"
+              value={form.email}
+            />
+          )}
           <RegisterField
-            label="이메일"
-            onChange={(email) => setForm((current) => ({ ...current, email }))}
-            type="email"
-            value={form.email}
-          />
-          <RegisterField
+            field="companyName"
             label="회사명"
             onChange={(companyName) =>
               setForm((current) => ({ ...current, companyName }))
@@ -102,6 +234,7 @@ export function CustomerRegisterPage() {
             value={form.companyName}
           />
           <RegisterField
+            field="password"
             label="비밀번호"
             minLength={12}
             onChange={(password) =>
@@ -110,25 +243,48 @@ export function CustomerRegisterPage() {
             type="password"
             value={form.password}
           />
-          <label className="customer-checkbox">
-            <input
-              checked={accepted}
-              onChange={(event) => setAccepted(event.target.checked)}
-              type="checkbox"
-            />
-            <span>
-              {policies.data.length
-                ? policies.data.map((policy) => policy.title).join(', ')
-                : '이용약관 및 개인정보 처리방침'}
-              에 동의합니다.
-            </span>
-          </label>
+          <fieldset className="customer-request-additional">
+            <legend>가입 동의 항목</legend>
+            {policies.data.map((policy) => {
+              const key = `${policy.policyKey}:${policy.version}`
+              return (
+                <div className="customer-field" key={key}>
+                  <details>
+                    <summary>{policy.title} 내용 보기</summary>
+                    <ConsentDocument blocks={policy.blocks} />
+                  </details>
+                  <label className="customer-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={accepted.includes(key)}
+                      required={policy.required}
+                      onChange={(event) =>
+                        setAccepted((current) =>
+                          event.target.checked
+                            ? [...current, key]
+                            : current.filter((value) => value !== key),
+                        )
+                      }
+                    />
+                    <span>
+                      {policy.title}에 동의합니다. (
+                      {policy.required ? '필수' : '선택'})
+                    </span>
+                  </label>
+                </div>
+              )
+            })}
+          </fieldset>
           <DsButton
-            disabled={!accepted || submitting}
+            disabled={!requiredAccepted || !accepted.length || submitting}
             tone="primary"
             type="submit"
           >
-            {submitting ? '가입 요청 중…' : '계정 만들기'}
+            {submitting
+              ? '가입 요청 중…'
+              : customer
+                ? '가입 완료'
+                : '계정 만들기'}
           </DsButton>
         </form>
         <p className="customer-auth-switch">
@@ -161,30 +317,44 @@ export function CustomerRegisterPage() {
 }
 
 function RegisterField({
+  field,
   label,
   onChange,
   type = 'text',
   value,
   minLength,
 }: {
+  field: keyof typeof registrationFieldLimits
   label: string
   onChange: (value: string) => void
   type?: string
   value: string
   minLength?: number
 }) {
+  const errorId = useId()
+  const error = value
+    ? field === 'password'
+      ? passwordValidationMessage(value)
+      : field === 'email'
+        ? null
+        : profileValidationMessage(field, value)
+    : null
   return (
     <label>
       {label}
       <span aria-hidden="true"> *</span>
       <input
         autoComplete={type === 'password' ? 'new-password' : undefined}
+        maxLength={registrationFieldLimits[field] * (field === 'email' ? 1 : 2)}
+        aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
         minLength={minLength}
         onChange={(event) => onChange(event.target.value)}
         required
         type={type}
         value={value}
       />
+      {error && <span id={errorId}>{error}</span>}
     </label>
   )
 }

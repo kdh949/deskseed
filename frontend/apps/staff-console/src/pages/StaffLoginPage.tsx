@@ -1,3 +1,4 @@
+import { staffDestination } from '../features/staff-auth/staffNavigation'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
@@ -12,20 +13,6 @@ import {
   SeedStatusBadge,
   SeedTextField,
 } from '../design-system/canonical'
-
-function safeDestination(value: unknown): string {
-  if (
-    typeof value === 'string' &&
-    value.startsWith('/') &&
-    !value.startsWith('//') &&
-    (value.startsWith('/agent/views/') ||
-      value.startsWith('/agent/tickets/') ||
-      value === '/agent/search')
-  ) {
-    return value
-  }
-  return '/agent/views/my-open'
-}
 
 function LoginWorkspacePreview() {
   return (
@@ -99,7 +86,15 @@ export function StaffLoginPage() {
     )
   }
   if (session.status === 'authenticated' && session.staff) {
-    return <Navigate to={safeDestination(undefined)} replace />
+    return (
+      <Navigate
+        to={staffDestination(
+          session.staff,
+          (location.state as { from?: unknown } | null)?.from,
+        )}
+        replace
+      />
+    )
   }
 
   async function submit(event: FormEvent) {
@@ -107,9 +102,9 @@ export function StaffLoginPage() {
     setSubmitting(true)
     setError(null)
     try {
-      await session.signIn(email, password)
+      const current = await session.signIn(email, password)
       const from = (location.state as { from?: unknown } | null)?.from
-      navigate(safeDestination(from), { replace: true })
+      navigate(staffDestination(current, from), { replace: true })
     } catch (caught) {
       setError(
         caught instanceof ApiError && caught.status === 429

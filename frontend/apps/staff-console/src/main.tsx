@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { SeedThemeProvider } from './design-system/canonical'
 import { appRoutes } from './App'
-import './design-system/canonical-index.css'
+import './design-system/index.css'
 
 function startApplication() {
   const queryClient = new QueryClient({

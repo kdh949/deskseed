@@ -9,6 +9,10 @@ import {
 const navigation = [
   { label: '지식 문서', to: '/admin/knowledge' },
   { label: '티켓 필드', to: '/admin/ticket-fields' },
+  { label: '티켓 태그', to: '/admin/ticket-tags' },
+  { label: '업무 상태', to: '/admin/ticket-statuses' },
+  { label: '트리거', to: '/admin/triggers' },
+  { label: '시간 자동화', to: '/admin/automations' },
   { label: '티켓 폼', to: '/admin/ticket-forms' },
   { label: '공유 매크로', to: '/admin/shared-macros' },
   { label: '메일 운영', to: '/admin/operations/mail' },
@@ -37,9 +41,11 @@ export function AdminShell({
   children,
   displayName,
   onSignOut,
+  canOpenWorkspace = false,
 }: {
   children?: ReactNode
   displayName: string
+  canOpenWorkspace?: boolean
   onSignOut?: () => void
 }) {
   const outlet = useOutlet()
@@ -73,6 +79,9 @@ export function AdminShell({
       </header>
       <div className="admin-shell-body">
         <nav aria-label="관리자 설정 메뉴" className="admin-shell-navigation">
+          {canOpenWorkspace && (
+            <NavLink to="/agent/views/my-open">상담 작업 공간</NavLink>
+          )}
           <h2>운영 설정</h2>
           <ul>
             {navigation.map((item) => (

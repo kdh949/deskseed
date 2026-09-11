@@ -65,7 +65,7 @@ export function CustomerRequestCreatePage() {
     return (
       <CustomerRouteState
         action={<Link to="/customer/sign-in">고객 로그인</Link>}
-        description="로그인용 이메일 링크를 받은 뒤 문의를 접수해 주세요."
+        description="로그인한 뒤 문의를 접수해 주세요."
         kind="denied"
         title="로그인이 필요한 문의 접수입니다."
       />
@@ -89,7 +89,13 @@ export function CustomerRequestCreatePage() {
           submitted.accessToken,
         )
         navigate(`/requests/submitted/${submitted.ticketNumber}`, {
-          state: { submitted },
+          state: {
+            submitted: {
+              ticketNumber: submitted.ticketNumber,
+              status: submitted.status,
+              createdAt: submitted.createdAt,
+            },
+          },
         })
       }}
       submit={(input, files = []) =>

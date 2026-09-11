@@ -2,7 +2,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HelpArticlePage, HelpCenterHomePage } from './HelpCenterPages'
+import userEvent from '@testing-library/user-event'
+import { CustomerSessionProvider } from '../customer-auth/CustomerSessionContext'
+import {
+  HelpArticlePage,
+  HelpCenterHomePage,
+  HelpSearchPage,
+  HelpCategoriesPage,
+  HelpCategoryPage,
+  HelpSectionPage,
+} from './HelpCenterPages'
 
 function renderWithQuery(element: React.ReactElement, path = '/') {
   const queryClient = new QueryClient({
@@ -64,7 +73,7 @@ describe('Help Center pages', () => {
           currentPublishedRevision: {
             title: '비어 있는 문서',
             createdAt: '2026-08-27T00:00:00Z',
-            document: { blocks: [] },
+            document: { schemaVersion: 1, blocks: [] },
           },
         }),
       ),
@@ -82,4 +91,92 @@ describe('Help Center pages', () => {
     expect(screen.queryByText(/설정 메뉴|프로필 메뉴/)).toBeNull()
     expect(screen.queryByRole('heading', { name: '관련 문서' })).toBeNull()
   })
+})
+
+it.each([
+  ['/', <HelpCenterHomePage />],
+  ['/search?q=account', <HelpSearchPage />],
+  ['/categories', <HelpCategoriesPage />],
+  ['/categories/support', <HelpCategoryPage />],
+  ['/sections/support', <HelpSectionPage />],
+  ['/articles/restricted', <HelpArticlePage />],
+])('does not fetch help with an unknown audience at %s', async (path, page) => {
+  const helpRequests = vi.fn()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/v1/help/')) {
+        helpRequests()
+        return Response.json({
+          title: 'restricted response with still-valid cookie',
+        })
+      }
+      return new Response(null, { status: 503 })
+    }),
+  )
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <CustomerSessionProvider>
+        <MemoryRouter initialEntries={[String(path)]}>{page}</MemoryRouter>
+      </CustomerSessionProvider>
+    </QueryClientProvider>,
+  )
+  expect(
+    await screen.findByText('로그인 상태를 확인할 수 없습니다.'),
+  ).toBeVisible()
+  expect(helpRequests).not.toHaveBeenCalled()
+  expect(screen.queryByText(/restricted/)).not.toBeInTheDocument()
+})
+
+it('removes unidentified cached help when a failed initial session recovers as anonymous', async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 60000 } },
+  })
+  let sessionRequests = 0
+  let helpRequests = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/customer/me'))
+        return new Response(null, {
+          status: ++sessionRequests === 1 ? 503 : 401,
+        })
+      helpRequests++
+      if (url.endsWith('/help/categories')) return Response.json([])
+      return Response.json({
+        slug: 'announcements',
+        title: '공개 공지사항',
+        description: '',
+        articles: [],
+      })
+    }),
+  )
+  render(
+    <QueryClientProvider client={queryClient}>
+      <CustomerSessionProvider>
+        <MemoryRouter>
+          <HelpCenterHomePage />
+        </MemoryRouter>
+      </CustomerSessionProvider>
+    </QueryClientProvider>,
+  )
+  await screen.findByText('로그인 상태를 확인할 수 없습니다.')
+  expect(helpRequests).toBe(0)
+  const legacyKey = ['help', 'error', null, 'categories']
+  queryClient.setQueryData(legacyKey, [
+    { slug: 'restricted', title: '제한 문서' },
+  ])
+  await userEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+  expect(
+    await screen.findByText('등록된 도움말 주제가 없습니다.'),
+  ).toBeVisible()
+  expect(queryClient.getQueryData(legacyKey)).toBeUndefined()
+  expect(screen.queryByText('제한 문서')).not.toBeInTheDocument()
+  expect(sessionRequests).toBe(2)
+  expect(helpRequests).toBe(2)
 })

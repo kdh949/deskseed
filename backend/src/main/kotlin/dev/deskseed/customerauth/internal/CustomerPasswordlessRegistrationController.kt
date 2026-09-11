@@ -16,7 +16,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
 @RestController
 @Validated
@@ -28,6 +30,7 @@ internal class CustomerPasswordlessRegistrationController(
     fun completeRegistration(
         @Valid @RequestBody body: CustomerPasswordlessRegistrationRequest,
         @AuthenticationPrincipal principal: CustomerPrincipal,
+        @RequestHeader(name = "X-Deskseed-Expected-Customer-Id", required = false) expectedCustomerId: String?,
         request: HttpServletRequest,
         response: HttpServletResponse,
     ): ResponseEntity<CurrentCustomerResponse> {
@@ -44,6 +47,10 @@ internal class CustomerPasswordlessRegistrationController(
             ),
             remoteAddress = clientAddressResolver.resolve(request),
             context = CommandContexts.from(request, RequestSource.CUSTOMER_PORTAL),
+            expectedCustomerId = expectedCustomerId?.let {
+                require(it.length == 36) { "expected customer must be a canonical UUID" }
+                UUID.fromString(it).also { id -> require(id.toString() == it) { "expected customer must be a canonical UUID" } }
+            },
         )
         response.addCookie(CustomerMagicLinkController.sessionCookie(session.rawToken))
         return ResponseEntity.ok()

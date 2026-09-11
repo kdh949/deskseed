@@ -1,22 +1,7 @@
 import type { StorybookConfig } from '@storybook/react-vite'
 
 const config: StorybookConfig = {
-  stories: [
-    '../src/extensions/**/*.stories.tsx',
-    '../src/design-system/foundations/CanonicalFoundations.stories.tsx',
-    '../src/design-system/primitives/SeedCore.stories.tsx',
-    '../src/design-system/components/SeedSurfaces.stories.tsx',
-    '../src/design-system/components/SeedRichText.stories.tsx',
-    '../src/design-system/components/SeedWorkspaceControls.stories.tsx',
-    '../src/design-system/patterns/SeedWorkspace.stories.tsx',
-    '../src/pages/StaffLoginPage.stories.tsx',
-    '../src/features/ticket-views/AgentViewsPage.stories.tsx',
-    '../src/features/ticket-views/ViewConfigurationDrawer.stories.tsx',
-    '../src/features/ticket-search/AgentSearchPage.stories.tsx',
-    '../src/features/ticket-create/CreateAgentTicketForm.stories.tsx',
-    '../src/features/ticket-workspace/AgentTicketEditorWorkspace.stories.tsx',
-    '../src/features/ticket-workspace/AgentTicketWorkspacePage.stories.tsx',
-  ],
+  stories: ['../src/**/*.stories.tsx'],
   addons: [
     '@chromatic-com/storybook',
     '@storybook/addon-vitest',
