@@ -41,3 +41,6 @@ AUTH-005, CONSENT-002, UI-002/004/006 관련 프론트엔드 회귀. npm run tes
 
 ## Human explanation / Completion
 가입 검증과 로그인을 분리해 목적이 다른 proof를 혼용하지 않는다. 서버가 현재 동의 버전과 인증 여부를 판단하고 UI는 상태와 복구만 표현한다. 검증 수치와 Storybook 링크는 PR에 기록한다.
+
+## PR 리뷰 보완
+400/409 뒤 현재 정책을 재조회하고 key/version/required 집합이 바뀐 경우에만 기존 동의를 초기화한다. 일반 입력 오류에서는 선택과 입력을 보존한다. email 254, password 12~128, displayName 1~100, companyName 1~160의 서버 코드 포인트 검증을 적용하고 필드에 오류를 연결한다. 약관은 신규 고객 DS `ConsentDocument`의 검증된 typed block으로 제목·목록 순서·HTTPS 링크 의미를 보존한다. 기존 버튼/알림/레이아웃을 재사용하며 편집기나 외부 문서 fetch를 추가하지 않는다.

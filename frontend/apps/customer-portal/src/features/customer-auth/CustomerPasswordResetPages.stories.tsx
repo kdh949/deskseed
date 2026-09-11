@@ -136,3 +136,35 @@ export const RateLimited: Story = {
     await expect(await canvas.findByText(/요청이 많습니다/)).toBeVisible()
   },
 }
+export const InvalidInputRecovery: Story = {
+  parameters: {
+    msw: {
+      handlers: {
+        reset: http.post(
+          '/api/v1/customer/auth/password-resets',
+          async ({ request }) => {
+            const body = (await request.json()) as { newPassword: string }
+            return new HttpResponse(null, {
+              status: body.newPassword === 'corrected-password-123' ? 204 : 400,
+            })
+          },
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    const field = await canvas.findByLabelText('새 비밀번호')
+    await userEvent.type(field, 'synthetic-password-123')
+    await userEvent.click(canvas.getByRole('button', { name: '비밀번호 변경' }))
+    await expect(
+      await canvas.findByText('입력 내용을 확인하고 다시 시도해 주세요.'),
+    ).toBeVisible()
+    await expect(field).toHaveValue('synthetic-password-123')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'corrected-password-123')
+    await userEvent.click(canvas.getByRole('button', { name: '비밀번호 변경' }))
+    await expect(
+      await canvas.findByText('비밀번호를 변경했습니다.'),
+    ).toBeVisible()
+  },
+}

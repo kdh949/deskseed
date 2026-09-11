@@ -114,3 +114,76 @@ it('uses the reset purpose for initial and repeated mail requests without claimi
   )
   expect(fetcher).toHaveBeenCalledTimes(2)
 })
+it('retains a valid proof after input rejection and accepts a corrected password', async () => {
+  const token = 'synthetic-reset-proof-0000000000000000'
+  window.history.replaceState(null, '', '/#token=' + token)
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(null, { status: 400 }))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetcher)
+  render(
+    <MemoryRouter>
+      <CustomerPasswordResetPage />
+    </MemoryRouter>,
+  )
+  const user = userEvent.setup()
+  const field = screen.getByLabelText('새 비밀번호')
+  await user.type(field, 'abcdefghij🙂')
+  await user.click(screen.getByRole('button', { name: '비밀번호 변경' }))
+  expect(fetcher).not.toHaveBeenCalled()
+  await user.type(field, 'k')
+  await user.click(screen.getByRole('button', { name: '비밀번호 변경' }))
+  expect(
+    await screen.findByText('입력 내용을 확인하고 다시 시도해 주세요.'),
+  ).toBeVisible()
+  expect(field).toHaveValue('abcdefghij🙂k')
+  await user.clear(field)
+  await user.type(field, 'corrected-password-123')
+  await user.click(screen.getByRole('button', { name: '비밀번호 변경' }))
+  expect(await screen.findByText('비밀번호를 변경했습니다.')).toBeVisible()
+  expect(JSON.parse(fetcher.mock.calls[1]![1].body)).toEqual({
+    token,
+    newPassword: 'corrected-password-123',
+  })
+})
+it.each([429, 503, 'network'])(
+  'clears previous mail success on email changes and failed retry: %s',
+  async (failure) => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+    if (failure === 'network')
+      fetcher.mockRejectedValueOnce(new TypeError('offline'))
+    else
+      fetcher.mockResolvedValueOnce(
+        new Response(null, { status: failure as number }),
+      )
+    vi.stubGlobal('fetch', fetcher)
+    render(
+      <MemoryRouter>
+        <CustomerPasswordResetRequestPage />
+      </MemoryRouter>,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('이메일 주소'), 'first@example.test')
+    await user.click(screen.getByRole('button', { name: '재설정 링크 요청' }))
+    expect(await screen.findByText(/재설정 가능한 계정이면/)).toBeVisible()
+    await user.clear(screen.getByLabelText('이메일 주소'))
+    expect(screen.queryByText(/재설정 가능한 계정이면/)).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('이메일 주소'), 'next@example.test')
+    await user.click(screen.getByRole('button', { name: '재설정 링크 요청' }))
+    await user.click(
+      await screen.findByRole('button', { name: '재설정 링크 다시 요청' }),
+    )
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.queryByText(/재설정 가능한 계정이면/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('이메일 주소')).toHaveValue(
+      'next@example.test',
+    )
+    expect(
+      screen.getByText(failure === 429 ? /요청이 많습니다/ : /일시적으로 요청/),
+    ).toBeVisible()
+  },
+)

@@ -11,3 +11,6 @@ CUSTOMER_PORTAL, anonymous one-time proof. 기존 고객 DsButton/Notification/S
 
 ## 검증 / 호환성
 UI-002/004/006, AUTH-007 frontend 부분: customer unit, typecheck, lint, boundary, customer build, MCP interaction/a11y 및 preview. 실 DB/SMTP 및 전체 backend gate 미실행. 기존 메일 URL 호환, migration 없음, UI revert 가능. 사용자에게 재설정 성공과 별도 로그인을 구분해 설명한다.
+
+## 리뷰 보완
+400 입력 오류는 proof와 입력을 유지하고, 401만 만료 상태로 전환한다. 가입 검증과 같은 Unicode 코드 포인트 길이·제어문자 규칙을 재사용한다. 503/네트워크 오류는 수동 재시도를 안내하며, 이메일 변경/새 제출은 이전 성공 안내를 지운다. 이 UI 검증은 실제 메일·DB single-use/세션 폐기 검증을 대체하지 않는다.

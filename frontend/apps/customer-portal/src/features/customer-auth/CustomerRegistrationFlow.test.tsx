@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -40,6 +40,113 @@ function registration() {
     </QueryClientProvider>,
   )
 }
+
+async function fillRegistration() {
+  const user = userEvent.setup()
+  await screen.findByRole('checkbox', { name: /필수 약관/ })
+  for (const [label, value] of [
+    ['이름', '고객'],
+    ['이메일', 'customer@example.test'],
+    ['회사명', '회사'],
+    ['비밀번호', 'synthetic-password-123'],
+  ] as const)
+    fireEvent.change(screen.getByLabelText(label, { exact: false }), {
+      target: { value },
+    })
+  await user.click(screen.getByRole('checkbox', { name: /필수 약관/ }))
+  return user
+}
+
+it.each([true, false])(
+  'recovers from registration 400 and resets consent only if policies changed: %s',
+  async (changed) => {
+    let policyReads = 0
+    let submissions = 0
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('consent-policies')) {
+        policyReads++
+        return Response.json({
+          policies: policies.map((p) => ({
+            ...p,
+            version: changed && policyReads > 1 ? 3 : 2,
+          })),
+        })
+      }
+      submissions++
+      if (submissions === 1) return new Response(null, { status: 400 })
+      expect(JSON.parse(String(init?.body)).acceptedPolicies[0].version).toBe(
+        changed ? 3 : 2,
+      )
+      return new Response(null, { status: 202 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    registration()
+    const user = await fillRegistration()
+    await user.click(screen.getByRole('button', { name: '계정 만들기' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      changed ? '가입 약관이 변경되었습니다.' : '입력 내용을 유지했습니다.',
+    )
+    expect(policyReads).toBe(2)
+    expect(screen.getByLabelText('비밀번호', { exact: false })).toHaveValue(
+      'synthetic-password-123',
+    )
+    const agreement = screen.getByRole('checkbox', { name: /필수 약관/ })
+    if (changed) {
+      expect(agreement).not.toBeChecked()
+      await user.click(agreement)
+    } else expect(agreement).toBeChecked()
+    await user.click(screen.getByRole('button', { name: '계정 만들기' }))
+    expect(await screen.findByText(/가입을 요청한 브라우저/)).toBeVisible()
+  },
+)
+
+it('blocks overlong input in place and preserves ordered consent and link semantics', async () => {
+  const fetch = vi.fn(async () =>
+    Response.json({
+      policies: [
+        {
+          ...policies[0],
+          document: {
+            schemaVersion: 1,
+            blocks: [
+              { type: 'heading', level: 2, text: '이용 조건' },
+              {
+                type: 'list',
+                ordered: true,
+                items: ['첫 번째 조건', '두 번째 조건'],
+              },
+              {
+                type: 'link',
+                text: '정책 원문',
+                url: 'https://example.test/policy',
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  registration()
+  const user = await fillRegistration()
+  await user.click(screen.getByText('필수 약관 내용 보기'))
+  expect(screen.getByRole('heading', { name: '이용 조건' })).toBeVisible()
+  expect(screen.getByRole('list').tagName).toBe('OL')
+  expect(screen.getByRole('link', { name: '정책 원문' })).toHaveAttribute(
+    'href',
+    'https://example.test/policy',
+  )
+  const password = screen.getByLabelText('비밀번호', { exact: false })
+  fireEvent.change(password, { target: { value: 'a'.repeat(129) } })
+  expect(password).toHaveAttribute('aria-invalid', 'true')
+  expect(screen.getByText('비밀번호는 12~128자로 입력해 주세요.')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: '계정 만들기' }))
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(screen.getByLabelText('이메일', { exact: false })).toHaveAttribute(
+    'maxlength',
+    '254',
+  )
+})
 it('shows policies and submits only selected versions without a magic-link resend', async () => {
   const calls: Array<{ url: string; body?: string }> = []
   vi.stubGlobal(
