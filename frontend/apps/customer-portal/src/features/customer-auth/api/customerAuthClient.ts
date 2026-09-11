@@ -100,6 +100,7 @@ export async function verifyCustomerRegistration(token: string): Promise<void> {
 
 export async function completePasswordlessCustomerRegistration(
   input: Omit<CustomerRegistrationInput, 'email'>,
+  expectedCustomerId: string,
 ): Promise<CurrentCustomer> {
   const csrfResponse = await fetch(`${API_BASE_URL}/api/v1/customer/csrf`, {
     credentials: 'include',
@@ -120,6 +121,7 @@ export async function completePasswordlessCustomerRegistration(
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-TOKEN': csrf.token,
+        'X-Deskseed-Expected-Customer-Id': expectedCustomerId,
       },
       body: JSON.stringify(input),
     },

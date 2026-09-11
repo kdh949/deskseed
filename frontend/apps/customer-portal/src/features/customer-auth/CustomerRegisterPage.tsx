@@ -14,6 +14,7 @@ import {
   type CurrentCustomer,
   completePasswordlessCustomerRegistration,
   CustomerAuthApiError,
+  getCurrentCustomer,
   listRegistrationConsentPolicies,
   requestCustomerRegistration,
 } from './api/customerAuthClient'
@@ -94,12 +95,15 @@ export function CustomerRegisterPage({
         )
         .map(({ policyKey, version }) => ({ policyKey, version }))
       if (customer) {
-        const current = await completePasswordlessCustomerRegistration({
-          password: form.password,
-          displayName: form.displayName,
-          companyName: form.companyName,
-          acceptedPolicies,
-        })
+        const current = await completePasswordlessCustomerRegistration(
+          {
+            password: form.password,
+            displayName: form.displayName,
+            companyName: form.companyName,
+            acceptedPolicies,
+          },
+          customer.id,
+        )
         session?.acceptAuthenticatedCustomer(current)
         navigate(
           customerAuthDestination(
@@ -115,6 +119,37 @@ export function CustomerRegisterPage({
         })
       }
     } catch (error) {
+      if (
+        customer &&
+        error instanceof CustomerAuthApiError &&
+        error.status === 401
+      ) {
+        await session?.retry()
+        return
+      }
+      if (
+        customer &&
+        error instanceof CustomerAuthApiError &&
+        error.status === 409
+      ) {
+        try {
+          const latest = await getCurrentCustomer()
+          if (!latest) {
+            await session?.retry()
+            return
+          }
+          if (
+            latest.id !== customer.id ||
+            latest.registrationState === 'COMPLETE'
+          ) {
+            session?.acceptAuthenticatedCustomer(latest)
+            return
+          }
+        } catch {
+          await session?.retry()
+          return
+        }
+      }
       if (
         error instanceof CustomerAuthApiError &&
         [400, 409].includes(error.status)

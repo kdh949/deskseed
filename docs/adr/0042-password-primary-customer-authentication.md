@@ -49,6 +49,10 @@ magic-link 접근을 유지해야 한다. 단순히 두 방식을 모두 허용�
 이 결정은 ADR 0029의 authentication-method와 password-reset deferral 부분만 supersede한다. ADR 0029의
 single-use token, enumeration safety, session security, explicit claim, durable outbound-mail 경계는 유지한다.
 
+## Browser completion actor consistency
+
+가입 완료 화면은 표시된 customer ID를 `X-Deskseed-Expected-Customer-Id`로 전송한다. 서버는 이 ID로 대상을 선택하지 않고 현재 인증 principal과 비교해 저장 전에 불일치를 거부한다. 기존 클라이언트 호환을 위해 header는 optional이며 현재 Customer Portal은 항상 전송한다. 기존 CSRF 검사, rate limit, required denied audit와 409 등록 충돌 계약을 재사용하고 새 세션 방식이나 DB 구조를 추가하지 않는다.
+
 ## Alternatives
 
 - 모든 계정에 magic link와 password를 함께 허용: password credential 우회 경로가 되고 계정 상태별
