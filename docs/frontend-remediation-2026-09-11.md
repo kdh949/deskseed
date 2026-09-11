@@ -14,7 +14,7 @@
 | [#173](https://github.com/kdh949/deskseed/pull/173) | 역할별 진입·관리자 메뉴·알림 연결 복구 | F08~F11, F20, F21 |
 | [#174](https://github.com/kdh949/deskseed/pull/174) | 도움말 탐색·본문·평가·캐시, 확인된 접수 완료 | F07, F12~F16, R01 |
 | [#175](https://github.com/kdh949/deskseed/pull/175) | 고객·상담 화면 타이포그래피와 모바일 가입 | F18, F19 |
-| `feature/frontend-storybook-coverage` | 운영 화면 스타일 복구·전체 Storybook 등록·검토 자료 | F22, 추가 확인된 CSS·대비·날짜 필터 문제 |
+| [#176](https://github.com/kdh949/deskseed/pull/176) | 운영 화면 스타일 복구·전체 Storybook 등록·검토 자료 | F22, 추가 확인된 CSS·대비·날짜 필터 문제 |
 
 ## 항목별 결과
 
@@ -71,7 +71,7 @@
 
 ## 시각 검토 후보
 
-[후보 안내와 이미지 목록](evidence/frontend-remediation-2026-09-11/visual-review.md). 후보는 `docs/evidence/.../visual-candidates/`에만 추가했으며 `frontend/e2e/__screenshots__/`는 수정하지 않았다. docs/40의 “사람의 화면 검토 없이 대량 snapshot 갱신을 승인하지 않는다”에 따라 사람의 검토와 갱신 승인이 필요하다. 승인 후 각 플랫폼 후보를 해당 플랫폼 기준선에 반영하고 E2E/CI를 다시 실행해야 한다.
+[후보 안내와 이미지 목록](evidence/frontend-remediation-2026-09-11/visual-review.md). 후보 이미지는 저장소 밖에 보존하고 해시 manifest만 문서에 추가했으며 `frontend/e2e/__screenshots__/`는 수정하지 않았다. docs/40의 “사람의 화면 검토 없이 대량 snapshot 갱신을 승인하지 않는다”에 따라 사람의 검토와 갱신 승인이 필요하다. 승인 후 각 플랫폼 후보를 해당 플랫폼 기준선에 반영하고 E2E/CI를 다시 실행해야 한다.
 
 [모바일 입력 크기](evidence/frontend-remediation-2026-09-11/registration-mobile-fonts.json), [상담 글자 크기](evidence/frontend-remediation-2026-09-11/workspace-fonts.json), [감사 날짜 입력 폭](evidence/frontend-remediation-2026-09-11/audit-fonts.json), [Storybook 등록 증거](evidence/frontend-remediation-2026-09-11/storybook-coverage.json).
 

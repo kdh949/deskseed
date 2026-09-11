@@ -1,0 +1,103 @@
+{
+  "status": "PENDING_HUMAN_REVIEW",
+  "baselineModified": false,
+  "localComparison": "/private/tmp/deskseed-frontend-visual-review.html",
+  "candidates": [
+    {
+      "platform": "darwin",
+      "filename": "frontend-system-view-queue-1280.png",
+      "width": 1280,
+      "height": 1434,
+      "baselineSha256": "df5e746951f6d86742d3159999bf989a2549b2b160e02a0617c1449260803244",
+      "candidateSha256": "3377cd6e2e2dc7d61796ad0d0eb9ba782491467909dc9f3655a2a11e41549989"
+    },
+    {
+      "platform": "darwin",
+      "filename": "frontend-system-view-queue-1440.png",
+      "width": 1440,
+      "height": 1434,
+      "baselineSha256": "562aef8a482f9a8f662fb0d9d1c5a69396ce67cdfd3b638bb8448a621887225a",
+      "candidateSha256": "8d460358f338559b97ef9f68a817ea61bfa942f19fa7a45a1c1e1ea377ef3218"
+    },
+    {
+      "platform": "darwin",
+      "filename": "frontend-system-view-queue-1920.png",
+      "width": 1920,
+      "height": 1434,
+      "baselineSha256": "0dc3288b2a944c3fa01532ed07b2b2038ab273022293ee86801f915c9106df14",
+      "candidateSha256": "f4a4dd0cfe0b93c6a4ecd1d68a018c164f9fc8133889ab52c8176599b9fab3b7"
+    },
+    {
+      "platform": "darwin",
+      "filename": "frontend-system-workspace-1280.png",
+      "width": 1280,
+      "height": 900,
+      "baselineSha256": "c70d3225a4dd7c245897d354de5c3ee0adbb8c5f3249382d14c75ff8fdea7bfa",
+      "candidateSha256": "68676bb632b599a55cced8d6236c5dea34d157152750a27012af9851374c618a"
+    },
+    {
+      "platform": "darwin",
+      "filename": "frontend-system-workspace-1440.png",
+      "width": 1440,
+      "height": 900,
+      "baselineSha256": "3956351de5f2c35017284cb106cd37454e9bf12a66095caae7ba6b8bbe1b8149",
+      "candidateSha256": "88c9096cba8e65b3e213edc7964f66f7a67fb1b4fb158678284cc14cee1fb90a"
+    },
+    {
+      "platform": "darwin",
+      "filename": "frontend-system-workspace-1920.png",
+      "width": 1920,
+      "height": 900,
+      "baselineSha256": "03507636ee345ffaee669bbed4fdfdb6a92bcc7d6b991786bab415916f9c7e46",
+      "candidateSha256": "523d6e94b54a46e21ceae02c555795b8cd21e39c459f57adae0419686b85d187"
+    },
+    {
+      "platform": "linux",
+      "filename": "frontend-system-view-queue-1280.png",
+      "width": 1280,
+      "height": 1434,
+      "baselineSha256": "f07686f3294b31a44104ad6946fc61f83fea80d0e99348b5941751f21bcf8d8f",
+      "candidateSha256": "97667b0bca1b2099337bf4995e3213e95b7206501cabdefe390e5d24b4dcc547"
+    },
+    {
+      "platform": "linux",
+      "filename": "frontend-system-view-queue-1440.png",
+      "width": 1440,
+      "height": 1434,
+      "baselineSha256": "7f15423de0db40d447e239b3726ad1c16bba93ad31795853006ffb9c39d4d604",
+      "candidateSha256": "da5a44c74d3bacede4a5b850c5f5d71c2ab013ecf8a9a0ed8720201974121764"
+    },
+    {
+      "platform": "linux",
+      "filename": "frontend-system-view-queue-1920.png",
+      "width": 1920,
+      "height": 1434,
+      "baselineSha256": "3872821663b938c4ba550deb8f5a55a16c8aac029618d935e5834440eb2be3e8",
+      "candidateSha256": "80e77be2c6e0f5ff16cd2fe09963293c45b9abd2b575b2b0ff25e6ed81e0305b"
+    },
+    {
+      "platform": "linux",
+      "filename": "frontend-system-workspace-1280.png",
+      "width": 1280,
+      "height": 900,
+      "baselineSha256": "76012f0f5c89ae44d70699778fe136d6fb6edd1c66805eb9e32b9df148adbdf6",
+      "candidateSha256": "9b85d49f811b690f4c6d1be445eed059b1ffd8744b8cee72d24ec8ea38a1cd5e"
+    },
+    {
+      "platform": "linux",
+      "filename": "frontend-system-workspace-1440.png",
+      "width": 1440,
+      "height": 900,
+      "baselineSha256": "11041e8d4cade0388e45c92e83389d941366bafd2f24bfaa71e9e319e3137aa5",
+      "candidateSha256": "60a2433a987f8526932b37b54a9b06e6b75052d2b051afbdbfe92146e3460cff"
+    },
+    {
+      "platform": "linux",
+      "filename": "frontend-system-workspace-1920.png",
+      "width": 1920,
+      "height": 900,
+      "baselineSha256": "88a065a4dd58565e21426e14cd189d99f8cc7faa88af35e092d6a5eb992b51f6",
+      "candidateSha256": "ae6bc5ef0c3cf47ac095c6cfa4ad48e70393d85cc0e53ccccac37c272d5b54a5"
+    }
+  ]
+}
