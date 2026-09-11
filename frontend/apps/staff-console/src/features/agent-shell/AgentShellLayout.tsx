@@ -3,7 +3,8 @@ import {
   canReadAudit,
   canManageStaff,
 } from '../staff-auth/staffNavigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect } from 'react'
+import { useAgentNotifications } from './useAgentNotifications'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import {
   SeedNavigationRail,
@@ -12,11 +13,6 @@ import {
   SeedTopBar,
   type SeedNavigationItem,
 } from '../../design-system/canonical'
-import {
-  ApiError,
-  listAgentNotifications,
-  markAgentNotificationRead,
-} from '../../api/client'
 import { frontendExtensions } from '../../extension-host/catalog'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
 
@@ -26,7 +22,9 @@ export function AgentShellLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const canWork = canUseAgentWorkspace(staff)
-  const notifications = useAgentNotifications(canWork)
+  const notifications = useAgentNotifications(
+    canWork ? (staff?.id ?? null) : null,
+  )
 
   useEffect(() => {
     if (!canWork) return
@@ -150,6 +148,7 @@ export function AgentShellLayout() {
                   if (!notification) return
                   void notifications
                     .markRead(id)
+                    .catch(() => notifications.load())
                     .finally(() =>
                       navigate(
                         `/agent/tickets/${notification.ticketNumber}${notification.type === 'COLLABORATION_MENTION' ? '#collaboration' : ''}`,
@@ -174,76 +173,6 @@ export function AgentShellLayout() {
       <Outlet />
     </SeedPageShell>
   )
-}
-
-function useAgentNotifications(enabled: boolean) {
-  const [items, setItems] = useState<
-    Awaited<ReturnType<typeof listAgentNotifications>>['items']
-  >([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [state, setState] = useState<'idle' | 'loading' | 'empty' | 'error'>(
-    'loading',
-  )
-  const load = useCallback(async () => {
-    if (!enabled) return
-    setState('loading')
-    try {
-      const page = await listAgentNotifications()
-      setItems(page.items)
-      setUnreadCount(page.unreadCount)
-      setState(page.items.length ? 'idle' : 'empty')
-    } catch {
-      setState('error')
-    }
-  }, [enabled])
-  useEffect(() => {
-    void load()
-  }, [load])
-  useEffect(() => {
-    if (!enabled || typeof WebSocket === 'undefined') return
-    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    let socket: WebSocket | null = null
-    try {
-      socket = new WebSocket(
-        `${scheme}//${window.location.host}/ws/agent/collaboration`,
-      )
-      socket.onmessage = (event) => {
-        if (typeof event.data !== 'string' || event.data.length > 4096) return
-        try {
-          const message = JSON.parse(event.data) as Record<string, unknown>
-          if (message.version === 1 && message.type === 'notification.created')
-            void load()
-        } catch {
-          // Invalid realtime hints are ignored; REST remains authoritative.
-        }
-      }
-    } catch {
-      return
-    }
-    return () => socket?.close()
-  }, [load, enabled])
-  const markRead = async (id: string) => {
-    try {
-      await markAgentNotificationRead(id)
-      setItems((current) =>
-        current.map((item) =>
-          item.id === id
-            ? { ...item, readAt: item.readAt ?? new Date().toISOString() }
-            : item,
-        ),
-      )
-      setUnreadCount((current) =>
-        Math.max(
-          0,
-          current -
-            (items.find((item) => item.id === id)?.readAt === null ? 1 : 0),
-        ),
-      )
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 404) void load()
-    }
-  }
-  return { items, load: () => void load(), markRead, state, unreadCount }
 }
 
 function formatNotificationTime(value: string) {

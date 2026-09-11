@@ -10,4 +10,4 @@ CUSTOMER_PORTAL, anonymous one-time proof. 기존 고객 DsButton/Notification/S
 계정 존재와 무관한 같은 accepted 안내. pending 중 중복 제출 방지, 자동 retry 없음. 429/503은 입력 유지하고 수동 재시도. invalid proof는 폐기하고 새 메일 요청 경로. 성공 후 현재 세션을 재조회한다. 외부 주소나 원문을 로그/스토리지로 전달하지 않는다.
 
 ## 검증 / 호환성
-UI-002/004/006, AUTH-004/006 frontend 부분: customer unit, typecheck, lint, boundary, customer build, MCP interaction/a11y 및 preview. 실 DB/SMTP 및 전체 backend gate 미실행. 기존 메일 URL 호환, migration 없음, UI revert 가능. 사용자에게 재설정 성공과 별도 로그인을 구분해 설명한다.
+UI-002/004/006, AUTH-007 frontend 부분: customer unit, typecheck, lint, boundary, customer build, MCP interaction/a11y 및 preview. 실 DB/SMTP 및 전체 backend gate 미실행. 기존 메일 URL 호환, migration 없음, UI revert 가능. 사용자에게 재설정 성공과 별도 로그인을 구분해 설명한다.

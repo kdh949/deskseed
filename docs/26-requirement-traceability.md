@@ -199,4 +199,6 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 - 2026-09-11 REQ-AUTH-003: 고객 password reset 요청/fragment 소비 화면과 실패 복구 연결. [수직 슬라이스](tasks/2026-09-11-customer-password-reset.md).
 
-- 2026-09-11 REQ-AUTH-001/REQ-STAFF-001/REQ-AUDIT-001: [직원 역할별 진입 및 메뉴 복구](tasks/2026-09-11-staff-role-navigation.md).
+- 2026-09-11 REQ-AUTH-005/REQ-PERM-002/REQ-AUD-002: [직원 역할별 진입 및 메뉴 복구](tasks/2026-09-11-staff-role-navigation.md).
+
+- 2026-09-11 REQ-COL-003/REQ-AUT-001: [직원 알림 연결 복구와 상태 재조회](tasks/2026-09-11-staff-notification-recovery.md).
