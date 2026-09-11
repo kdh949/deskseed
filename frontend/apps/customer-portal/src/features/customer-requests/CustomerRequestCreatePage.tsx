@@ -89,7 +89,13 @@ export function CustomerRequestCreatePage() {
           submitted.accessToken,
         )
         navigate(`/requests/submitted/${submitted.ticketNumber}`, {
-          state: { submitted },
+          state: {
+            submitted: {
+              ticketNumber: submitted.ticketNumber,
+              status: submitted.status,
+              createdAt: submitted.createdAt,
+            },
+          },
         })
       }}
       submit={(input, files = []) =>
