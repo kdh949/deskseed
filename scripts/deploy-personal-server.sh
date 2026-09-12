@@ -35,6 +35,15 @@ for command_name in curl docker flock git stat uname; do
   }
 done
 
+if [[ "$observability_enabled" == true ]]; then
+  for command_name in ip python3; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+      printf 'Required observability command is unavailable: %s\n' "$command_name" >&2
+      exit 127
+    }
+  done
+fi
+
 if [[ ! -d "$app_dir" ]]; then
   printf 'Deskseed application directory does not exist: %s\n' "$app_dir" >&2
   exit 2
@@ -110,6 +119,10 @@ if [[ "$observability_enabled" == true ]]; then
 fi
 
 "${compose[@]}" config --quiet
+if [[ "$observability_enabled" == true ]]; then
+  "${compose[@]}" config --format json |
+    python3 "$repository_root/scripts/validate-personal-staging-observability-bind.py"
+fi
 resolved_images="$("${compose[@]}" config --images)"
 required_images=(
   "ghcr.io/kdh949/deskseed-backend:$expected_sha"
@@ -248,8 +261,9 @@ fi
 
 health_ready=false
 for attempt in $(seq 1 "$health_attempts"); do
-  if curl --fail --silent --show-error --connect-timeout 3 --max-time 5 \
-      "http://$origin/actuator/health" >/dev/null 2>&1 &&
+  if health_response="$(curl --fail --silent --show-error --connect-timeout 3 --max-time 5 \
+      "http://$origin/actuator/health")" &&
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"' <<<"$health_response" &&
     curl --fail --silent --show-error --connect-timeout 3 --max-time 5 \
       "http://$origin/" >/dev/null 2>&1; then
     health_ready=true

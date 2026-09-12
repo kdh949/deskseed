@@ -8,6 +8,8 @@ staging_compose="$repository_root/compose.personal-staging.yaml"
 observability_compose="$repository_root/compose.personal-staging-observability.yaml"
 observability_alloy="$repository_root/ops/observability/personal-staging/alloy/config.alloy"
 observability_profile="$repository_root/backend/src/main/resources/application-personal-staging-observability.yml"
+observability_nginx="$repository_root/frontend/nginx.personal-staging-observability.conf"
+observability_bind_validator="$repository_root/scripts/validate-personal-staging-observability-bind.py"
 deploy_script="$repository_root/scripts/deploy-personal-server.sh"
 expected_sha=125727bbd2194bcf0937a7eca452231ffc7a4bb1
 backend_image="ghcr.io/kdh949/deskseed-backend:$expected_sha"
@@ -26,7 +28,8 @@ assert_contains() {
 }
 
 for required_file in "$workflow" "$staging_compose" "$observability_compose" \
-  "$observability_alloy" "$observability_profile" "$deploy_script"; do
+  "$observability_alloy" "$observability_profile" "$observability_nginx" \
+  "$observability_bind_validator" "$deploy_script"; do
   [[ -f "$required_file" ]] || fail "Required deployment artifact is missing: $required_file"
 done
 
@@ -55,7 +58,7 @@ if [[ "$(grep -Fxc '    build: !reset null' "$staging_compose")" -ne 2 ]]; then
   fail "Personal staging Compose must clear both application build definitions."
 fi
 
-assert_contains "$observability_compose" "SPRING_PROFILES_ADDITIONAL: personal-staging-observability"
+assert_contains "$observability_compose" "SPRING_PROFILES_INCLUDE: personal-staging-observability"
 assert_contains "$observability_compose" "DESKSEED_LOKI_OTLP_HTTP_ENDPOINT"
 assert_contains "$observability_compose" "image: grafana/alloy:v1.18.0"
 assert_contains "$observability_profile" "enabled: false"
@@ -123,12 +126,26 @@ write_executable "$fake_bin/uname" \
 
 write_executable "$fake_bin/curl" \
   '#!/usr/bin/env bash' \
-  'exit 0'
+  'printf "%s\n" "{\"status\":\"UP\"}"'
+
+write_executable "$fake_bin/ip" \
+  '#!/usr/bin/env bash' \
+  'set -Eeuo pipefail' \
+  'if [[ "$*" == "-o addr show" ]]; then' \
+  '  printf "2: eth0    inet %s/24 scope global eth0\n" "${FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS:-10.20.30.40}"' \
+  '  exit 0' \
+  'fi' \
+  'printf "Unexpected ip arguments: %s\n" "$*" >&2' \
+  'exit 1'
 
 write_executable "$fake_bin/docker" \
   '#!/usr/bin/env bash' \
   'set -Eeuo pipefail' \
   'printf "%s\n" "$*" >>"$COMMAND_LOG"' \
+  'if [[ "${1:-}" == "compose" && "$*" == *" config --format json" ]]; then' \
+  '  printf "%s\n" "{\"services\":{\"backend\":{\"ports\":[{\"host_ip\":\"${FAKE_OBSERVABILITY_BIND_ADDRESS:-10.20.30.40}\",\"published\":\"9090\",\"target\":9090}]},\"alloy\":{\"ports\":[{\"host_ip\":\"${FAKE_OBSERVABILITY_BIND_ADDRESS:-10.20.30.40}\",\"published\":\"12345\",\"target\":12345}]}}}"' \
+  '  exit 0' \
+  'fi' \
   'if [[ "${1:-}" == "compose" && "$*" == *" config --images" ]]; then' \
   '  printf "%s\n" \' \
   '    "postgres:17-alpine" \' \
@@ -183,6 +200,8 @@ run_deploy() {
     FAKE_GIT_STATUS="${FAKE_GIT_STATUS:-}" \
     FAKE_OPERATING_SYSTEM="${FAKE_OPERATING_SYSTEM:-Linux}" \
     FAKE_MACHINE_ARCH="${FAKE_MACHINE_ARCH:-x86_64}" \
+    FAKE_OBSERVABILITY_BIND_ADDRESS="${FAKE_OBSERVABILITY_BIND_ADDRESS:-10.20.30.40}" \
+    FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS="${FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS:-10.20.30.40}" \
     MISSING_IMAGE="${MISSING_IMAGE:-}" \
     MISMATCH_REVISION_IMAGE="${MISMATCH_REVISION_IMAGE:-}" \
     DESKSEED_APP_DIR="$repository_root" \
@@ -191,6 +210,7 @@ run_deploy() {
     DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED="${DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED:-false}" \
     REGISTRY_PULL_ATTEMPTS=1 \
     REGISTRY_PULL_INTERVAL_SECONDS=0 \
+    HEALTHCHECK_ATTEMPTS=1 \
     "$deploy_script" "$1"
 }
 
@@ -274,6 +294,73 @@ assert_contains "$test_root/success.out" "Personal staging deployment passed for
 
 : >"$command_log"
 export DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED=true
+FAKE_OBSERVABILITY_BIND_ADDRESS=0.0.0.0
+export FAKE_OBSERVABILITY_BIND_ADDRESS
+if run_deploy "$expected_sha" >"$test_root/wildcard-ipv4.out" 2>&1; then
+  fail "Wildcard IPv4 observability bind was accepted."
+fi
+unset FAKE_OBSERVABILITY_BIND_ADDRESS
+grep -F "Personal-staging observability backend bind address must not be an unspecified address." \
+  "$test_root/wildcard-ipv4.out" >/dev/null
+if grep -F " pull" "$command_log" >/dev/null || grep -F " up " "$command_log" >/dev/null; then
+  fail "Wildcard observability bind reached image pull or container replacement."
+fi
+
+: >"$command_log"
+FAKE_OBSERVABILITY_BIND_ADDRESS='::'
+export FAKE_OBSERVABILITY_BIND_ADDRESS
+if run_deploy "$expected_sha" >"$test_root/wildcard-ipv6-raw.out" 2>&1; then
+  fail "Raw wildcard IPv6 observability bind was accepted."
+fi
+unset FAKE_OBSERVABILITY_BIND_ADDRESS
+grep -F "Personal-staging observability backend bind address must not be an unspecified address." \
+  "$test_root/wildcard-ipv6-raw.out" >/dev/null
+if grep -F " pull" "$command_log" >/dev/null || grep -F " up " "$command_log" >/dev/null; then
+  fail "Raw wildcard IPv6 observability bind reached image pull or container replacement."
+fi
+
+: >"$command_log"
+FAKE_OBSERVABILITY_BIND_ADDRESS='[::]'
+export FAKE_OBSERVABILITY_BIND_ADDRESS
+if run_deploy "$expected_sha" >"$test_root/wildcard-ipv6.out" 2>&1; then
+  fail "Bracketed wildcard IPv6 observability bind was accepted."
+fi
+unset FAKE_OBSERVABILITY_BIND_ADDRESS
+grep -F "Personal-staging observability backend bind address must not be an unspecified address." \
+  "$test_root/wildcard-ipv6.out" >/dev/null
+if grep -F " pull" "$command_log" >/dev/null || grep -F " up " "$command_log" >/dev/null; then
+  fail "Wildcard IPv6 observability bind reached image pull or container replacement."
+fi
+
+: >"$command_log"
+FAKE_OBSERVABILITY_BIND_ADDRESS=10.20.30.41
+FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS=10.20.30.40
+export FAKE_OBSERVABILITY_BIND_ADDRESS FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS
+if run_deploy "$expected_sha" >"$test_root/unassigned-bind.out" 2>&1; then
+  fail "Unassigned observability bind was accepted."
+fi
+unset FAKE_OBSERVABILITY_BIND_ADDRESS FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS
+grep -F "Personal-staging observability bind address is not assigned to this host." \
+  "$test_root/unassigned-bind.out" >/dev/null
+if grep -F " pull" "$command_log" >/dev/null || grep -F " up " "$command_log" >/dev/null; then
+  fail "Unassigned observability bind reached image pull or container replacement."
+fi
+
+: >"$command_log"
+FAKE_OBSERVABILITY_BIND_ADDRESS=8.8.8.8
+FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS=8.8.8.8
+export FAKE_OBSERVABILITY_BIND_ADDRESS FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS
+if run_deploy "$expected_sha" >"$test_root/global-bind.out" 2>&1; then
+  fail "Globally routable observability bind was accepted."
+fi
+unset FAKE_OBSERVABILITY_BIND_ADDRESS FAKE_ASSIGNED_OBSERVABILITY_BIND_ADDRESS
+grep -F "Personal-staging observability backend bind address must not be globally routable." \
+  "$test_root/global-bind.out" >/dev/null
+if grep -F " pull" "$command_log" >/dev/null || grep -F " up " "$command_log" >/dev/null; then
+  fail "Globally routable observability bind reached image pull or container replacement."
+fi
+
+: >"$command_log"
 run_deploy "$expected_sha" >"$test_root/observability.out" 2>&1 || {
   sed -n '1,240p' "$test_root/observability.out" >&2
   fail "Personal staging observability deployment simulation failed."
