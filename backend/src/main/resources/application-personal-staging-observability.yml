@@ -1,3 +1,8 @@
+spring:
+  config:
+    activate:
+      on-profile: personal-staging-observability
+
 management:
   server:
     port: 9090
@@ -13,7 +18,7 @@ management:
   metrics:
     tags:
       service: deskseed-backend
-      environment: load
+      environment: personal-staging
     distribution:
       percentiles-histogram:
         http.server.requests: true
@@ -25,20 +30,32 @@ management:
         http.server.requests: 5ms,10ms,25ms,50ms,100ms,250ms,500ms,1s,2s,5s,10s,30s
   tracing:
     sampling:
-      probability: ${DESKSEED_TRACE_SAMPLING_PROBABILITY:0.05}
+      probability: ${DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY:0.05}
   otlp:
     metrics:
       export:
-        # Load metrics are scraped from Prometheus; a local OTLP meter endpoint is not part of this topology.
+        # Prometheus is the only metrics path. This prevents fallback attempts to localhost:4318.
         enabled: false
   opentelemetry:
     resource-attributes:
       service.name: deskseed-backend
-      deployment.environment.name: load
+      service.namespace: deskseed
+      deployment.environment.name: personal-staging
     tracing:
       export:
         otlp:
-          endpoint: ${DESKSEED_OTLP_TRACES_ENDPOINT:http://alloy:4318/v1/traces}
+          endpoint: ${DESKSEED_PERSONAL_STAGING_OTLP_TRACES_ENDPOINT:http://alloy:4318/v1/traces}
+    logging:
+      export:
+        otlp:
+          endpoint: ${DESKSEED_PERSONAL_STAGING_OTLP_LOGS_ENDPOINT:http://alloy:4318/v1/logs}
+      limits:
+        max-attributes: 16
+        max-attribute-value-length: 256
+  logging:
+    export:
+      otlp:
+        enabled: true
 
 logging:
   structured:

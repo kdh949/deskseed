@@ -1,0 +1,81 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP request rate and server 5xx",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"personal-staging\"}[1m]))", "legendFormat": "requests/s"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"personal-staging\",status=~\"5..\"}[1m]))", "legendFormat": "server 5xx/s"}
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Backend p95 / p99 by route",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"personal-staging\"}[5m])))", "legendFormat": "{{uri}} p95"},
+        {"expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"personal-staging\"}[5m])))", "legendFormat": "{{uri}} p99"}
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM CPU and heap",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "process_cpu_usage{environment=\"personal-staging\"}", "legendFormat": "process CPU"},
+        {"expr": "sum(jvm_memory_used_bytes{environment=\"personal-staging\",area=\"heap\"}) / sum(jvm_memory_max_bytes{environment=\"personal-staging\",area=\"heap\"})", "legendFormat": "heap ratio"}
+      ],
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Hikari pool",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "hikaricp_connections_active{environment=\"personal-staging\"}", "legendFormat": "active"},
+        {"expr": "hikaricp_connections_idle{environment=\"personal-staging\"}", "legendFormat": "idle"},
+        {"expr": "hikaricp_connections_pending{environment=\"personal-staging\"}", "legendFormat": "pending"}
+      ],
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Required audit write failures",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(increase(deskseed_audit_persistence_failures_total{environment=\"personal-staging\"}[5m]))", "legendFormat": "failures / 5m"}
+      ],
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}
+    },
+    {
+      "type": "logs",
+      "title": "Backend OTLP logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [
+        {"expr": "{service_name=\"deskseed-backend\", deployment_environment_name=\"personal-staging\"}", "refId": "A"}
+      ],
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+      "gridPos": {"h": 11, "w": 16, "x": 0, "y": 16}
+    },
+    {
+      "type": "text",
+      "title": "Correlation drill-down",
+      "options": {"mode": "markdown", "content": "Use Grafana Explore with the same Loki stream and filter the `correlationId` structured-metadata field. It is intentionally not a Loki label. Open the trace ID from the selected log in Tempo; do not copy request bodies, cookies, or Authorization values into the query."},
+      "gridPos": {"h": 11, "w": 8, "x": 16, "y": 16}
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["deskseed", "personal-staging"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "title": "Deskseed Personal Staging Overview",
+  "uid": "deskseed-personal-staging-overview",
+  "version": 1
+}

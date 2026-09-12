@@ -1,0 +1,40 @@
+# Requires Docker Compose 2.24.4+ for !override merge tags.
+# This optional overlay supplements, but never replaces, the production profile.
+# It intentionally collects only Deskseed backend OTLP logs/traces and has no
+# Docker socket, host filesystem, profiler, node exporter, or cAdvisor access.
+services:
+  backend:
+    environment:
+      SPRING_PROFILES_ADDITIONAL: personal-staging-observability
+      DESKSEED_PERSONAL_STAGING_OTLP_LOGS_ENDPOINT: http://alloy:4318/v1/logs
+      DESKSEED_PERSONAL_STAGING_OTLP_TRACES_ENDPOINT: http://alloy:4318/v1/traces
+      DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY: ${DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY:-0.05}
+    ports: !override
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set a private monitoring bind address}:9090:9090"
+
+  alloy:
+    image: grafana/alloy:v1.18.0
+    user: "473:473"
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/tmp/alloy
+      - /etc/alloy/config.alloy
+    environment:
+      DESKSEED_LOKI_OTLP_HTTP_ENDPOINT: ${DESKSEED_LOKI_OTLP_HTTP_ENDPOINT:?set the private Loki OTLP HTTP endpoint}
+      DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT: ${DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT:?set the private Tempo OTLP HTTP endpoint}
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:mode=1777
+    volumes:
+      - ./ops/observability/personal-staging/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    expose:
+      - "4317"
+      - "4318"
+    ports:
+      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set a private monitoring bind address}:12345:12345"
+    networks:
+      - application
+    restart: unless-stopped

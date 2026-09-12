@@ -1,0 +1,42 @@
+groups:
+  - name: deskseed-personal-staging-observability
+    interval: 15s
+    rules:
+      - alert: DeskseedPersonalStagingTargetDown
+        expr: up{environment="personal-staging",stack="deskseed"} == 0
+        for: 2m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed personal-staging telemetry target is down
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#target-down
+
+      - alert: DeskseedPersonalStagingAuditPersistenceFailure
+        expr: increase(deskseed_audit_persistence_failures_total{environment="personal-staging"}[5m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: A required Deskseed audit write failed in personal staging
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#audit-write-failure
+
+      - alert: DeskseedPersonalStagingHttpServerErrors
+        expr: |
+          sum(rate(http_server_requests_seconds_count{environment="personal-staging",status=~"5.."}[2m]))
+          /
+          clamp_min(sum(rate(http_server_requests_seconds_count{environment="personal-staging"}[2m])), 0.001)
+          > 0.01
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: Deskseed personal-staging HTTP 5xx ratio is above 1 percent
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#http-errors
+
+      - alert: DeskseedPersonalStagingHikariSaturated
+        expr: hikaricp_connections_pending{environment="personal-staging"} > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed personal-staging database connection acquisition is waiting
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#database-saturation

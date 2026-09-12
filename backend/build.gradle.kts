@@ -72,6 +72,8 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+    // Keep the instrumentation release aligned with Spring Boot 4.1's OpenTelemetry 1.62 runtime.
+    implementation("io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:2.28.1-alpha")
     implementation("io.micrometer:micrometer-java21")
     implementation("org.springframework.boot:spring-boot-starter-mail")
     implementation("org.springframework.boot:spring-boot-starter-flyway")

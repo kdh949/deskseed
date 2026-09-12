@@ -1,0 +1,47 @@
+logging {
+  level  = "info"
+  format = "json"
+}
+
+// This collector receives only OTLP from the Deskseed backend over the private
+// application network. It deliberately has no Docker discovery/socket or host
+// filesystem inputs.
+otelcol.receiver.otlp "deskseed" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    logs   = [otelcol.processor.batch.logs.input]
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+otelcol.processor.batch "logs" {
+  output {
+    logs = [otelcol.exporter.otlphttp.loki.input]
+  }
+}
+
+otelcol.exporter.otlphttp "loki" {
+  client {
+    // Loki native OTLP endpoint, for example https://loki.private.example/otlp.
+    endpoint = sys.env("DESKSEED_LOKI_OTLP_HTTP_ENDPOINT")
+  }
+}
+
+otelcol.processor.batch "traces" {
+  output {
+    traces = [otelcol.exporter.otlphttp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlphttp "tempo" {
+  client {
+    endpoint = sys.env("DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT")
+  }
+}

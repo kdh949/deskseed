@@ -333,12 +333,13 @@ Flyway migration은 forward-only다. 저장소에는 자동 down migration이 �
 - request ID/correlation ID request context.
 - canonical change/access/admin audit과 별도 application log.
 - protected search ciphertext retention job.
+- personal-staging 전용 private Prometheus/OTLP logs·traces overlay와 monitoring-server fragment는 존재하지만, 실제 private ingest/correlation drill은 별도 운영 증거가 필요하다.
 
 현재 미충족/제약:
 
 - process/DB/migration/required dependency를 분리한 liveness/readiness contract 미완성.
 - backup age, disk risk, audit-write failure, job lag을 위한 production alert/dashboard 미구성.
-- structured JSON logging과 중앙 수집 runbook 미구성.
+- 기본 production deployment의 structured JSON logging/중앙 수집은 여전히 미구성이다. personal-staging overlay는 Docker socket 없이 이 경계를 검증하기 위한 opt-in 운영 경로일 뿐 production 완료 증거가 아니다.
 - outbox/webhook/delivery/SLA/analytics job은 제품 자체가 미구현이므로 운영 대상으로 주장하지 않음.
 
 Audit persistence failure 시 민감 read/write가 fail closed하는지 확인하고 DB capacity/permission을 조사한다. application log에 password, Authorization header, session cookie, customer access token, raw search query, comment body를 첨부하지 않는다.
@@ -350,7 +351,7 @@ Audit persistence failure 시 민감 read/write가 fail closed하는지 확인�
 | OPS-001 Fresh install/upgrade | LIMITED | empty volume, current image V11→V15, health, data preservation | 실제 previous tagged image 경로 |
 | OPS-002 Backup/restore | PASS (local synthetic DB scope) | login, ticket, canonical audit/projection, checksum, duration, RPO window | VersityGW 세 volume과 DB attachment reference의 일관 restore는 Not run; production-size drill |
 | OPS-003 Secrets/bootstrap | LIMITED | production overlay의 required env, ACL hash file, one-time audited admin, split DB roles와 startup ordering | secret manager/전체 rotation procedure와 실제 public deployment controls |
-| OPS-004 Health/observability | NOT MET | aggregate health와 request context | 분리 readiness, alert/dashboard, structured central logs |
+| OPS-004 Health/observability | NOT MET | aggregate health와 request context, personal-staging static observability contract | 분리 readiness, 실제 private scrape·Loki/Tempo ingest/correlation evidence, production alert/dashboard와 structured central logs |
 | OPS-005 Retention/maintenance | LIMITED | protected search ciphertext bounded retention 구현 | 전체 retention dry-run/legal hold, pending migration/backup age operator view |
 
 Release evidence는 `docs/evidence/release/operations/`에 command, host/runtime version, 결과, duration, RPO 해석, known limitation과 함께 저장한다. 실패 실행을 PASS로 덮어쓰지 말고 원인과 재실행을 별도 기록하거나 PR 설명에 연결한다.

@@ -5,6 +5,9 @@ repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workflow="$repository_root/.github/workflows/build-personal-staging-images.yml"
 ci_workflow="$repository_root/.github/workflows/ci.yml"
 staging_compose="$repository_root/compose.personal-staging.yaml"
+observability_compose="$repository_root/compose.personal-staging-observability.yaml"
+observability_alloy="$repository_root/ops/observability/personal-staging/alloy/config.alloy"
+observability_profile="$repository_root/backend/src/main/resources/application-personal-staging-observability.yml"
 deploy_script="$repository_root/scripts/deploy-personal-server.sh"
 expected_sha=125727bbd2194bcf0937a7eca452231ffc7a4bb1
 backend_image="ghcr.io/kdh949/deskseed-backend:$expected_sha"
@@ -22,7 +25,8 @@ assert_contains() {
     fail "Expected $file to contain: $expected"
 }
 
-for required_file in "$workflow" "$staging_compose" "$deploy_script"; do
+for required_file in "$workflow" "$staging_compose" "$observability_compose" \
+  "$observability_alloy" "$observability_profile" "$deploy_script"; do
   [[ -f "$required_file" ]] || fail "Required deployment artifact is missing: $required_file"
 done
 
@@ -49,6 +53,17 @@ if grep -F ':latest' "$staging_compose" >/dev/null; then
 fi
 if [[ "$(grep -Fxc '    build: !reset null' "$staging_compose")" -ne 2 ]]; then
   fail "Personal staging Compose must clear both application build definitions."
+fi
+
+assert_contains "$observability_compose" "SPRING_PROFILES_ADDITIONAL: personal-staging-observability"
+assert_contains "$observability_compose" "DESKSEED_LOKI_OTLP_HTTP_ENDPOINT"
+assert_contains "$observability_compose" "image: grafana/alloy:v1.18.0"
+assert_contains "$observability_profile" "enabled: false"
+assert_contains "$observability_alloy" "logs   = [otelcol.processor.batch.logs.input]"
+assert_contains "$observability_alloy" "traces = [otelcol.processor.batch.traces.input]"
+if grep -Eq '/var/run/docker.sock|discovery\.docker|loki\.source\.docker|/var/lib/docker|privileged:|PYROSCOPE_' \
+  "$observability_compose" "$observability_alloy"; then
+  fail "Personal staging observability must not collect Docker/host data or enable profiling."
 fi
 
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/deskseed-personal-staging-test.XXXXXX")"
@@ -122,6 +137,9 @@ write_executable "$fake_bin/docker" \
   '    "ghcr.io/kdh949/deskseed-frontend:$IMAGE_TAG" \' \
   '    "redis:8.2.9-alpine" \' \
   '    "ghcr.io/versity/versitygw:v1.4.1"' \
+  '  if [[ "$*" == *"compose.personal-staging-observability.yaml"* ]]; then' \
+  '    printf "%s\n" "grafana/alloy:v1.18.0"' \
+  '  fi' \
   '  exit 0' \
   'fi' \
   'if [[ "${1:-} ${2:-}" == "image inspect" ]]; then' \
@@ -170,6 +188,7 @@ run_deploy() {
     DESKSEED_APP_DIR="$repository_root" \
     DESKSEED_PRODUCTION_ENV_FILE="$env_file" \
     DESKSEED_DEPLOY_LOCK_FILE="$test_root/deploy.lock" \
+    DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED="${DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED:-false}" \
     REGISTRY_PULL_ATTEMPTS=1 \
     REGISTRY_PULL_INTERVAL_SECONDS=0 \
     "$deploy_script" "$1"
@@ -201,6 +220,16 @@ fi
 unset FAKE_GIT_STATUS
 grep -F "Server checkout is dirty; deployment refused." "$test_root/dirty.out" >/dev/null
 [[ ! -s "$command_log" ]] || fail "Dirty checkout reached Docker."
+
+: >"$command_log"
+export DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED=not-a-boolean
+if run_deploy "$expected_sha" >"$test_root/invalid-observability.out" 2>&1; then
+  fail "Invalid personal-staging observability flag was accepted."
+fi
+unset DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED
+grep -F "DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED must be true or false." \
+  "$test_root/invalid-observability.out" >/dev/null
+[[ ! -s "$command_log" ]] || fail "Invalid observability flag reached Docker."
 
 : >"$command_log"
 MISSING_IMAGE="$frontend_image"
@@ -242,5 +271,17 @@ if grep -Eq '(^| )build( |$)|:latest' "$command_log"; then
   fail "Deployment attempted an on-box build or mutable latest tag."
 fi
 assert_contains "$test_root/success.out" "Personal staging deployment passed for $expected_sha."
+
+: >"$command_log"
+export DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED=true
+run_deploy "$expected_sha" >"$test_root/observability.out" 2>&1 || {
+  sed -n '1,240p' "$test_root/observability.out" >&2
+  fail "Personal staging observability deployment simulation failed."
+}
+unset DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED
+
+assert_contains "$command_log" "--file $repository_root/compose.personal-staging-observability.yaml"
+assert_contains "$command_log" "up --detach --no-build --pull never db redis versitygw alloy"
+assert_contains "$test_root/observability.out" "Personal staging deployment passed for $expected_sha."
 
 printf 'Personal staging deployment contract passed.\n'

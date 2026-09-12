@@ -25,6 +25,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-TECH-004 | 커밋된 OpenAPI 계약을 사람이 검토한 한국어 도메인 설명·합성 예시와 함께 탐색 가능한 API Reference로 제공한다 | IMPLEMENTATION_READY | M0 | 21, 22, 39, D-054 | `ApiDocumentationIntegrationTest`, `DOC-001`, `make docs-check` |
 | REQ-PORT-001 | 먼저 작동하는 포트폴리오를 만들고 이후 성능·Kafka까지 깊게 확장한다 | IMPLEMENTATION_READY | 전체 | 05, 11, 27, 41 | 릴리스별 증거 문서 |
 | REQ-OPS-001 | 격리된 load 환경은 기존 private monitoring server에 bounded metrics, safe structured logs, sampled traces, CPU profiles를 제공하고 public product surface와 감사 원장을 분리한다 | IMPLEMENTATION_READY | Operations/load | 03, 21, 23, 25, 36, ADR 0047 | overlay/config/label boundary tests passed; private management/exporter reachability, four-signal ingest smoke and OPS-004 live evidence remain required |
+| REQ-OPS-002 | personal-staging은 `production` profile을 유지한 채 private monitoring server에 Prometheus scrape, safe OTLP logs, sampled traces를 제공하고 Docker socket/host-wide log 수집 없이 public product surface와 감사 원장을 분리한다 | IMPLEMENTATION_READY | Operations/personal-staging | 03, 21, 23, 25, 36, ADR 0048, D-065 | profile/Compose/collector/rule/dashboard contract; private allowlist, Loki/Tempo ingest, correlation drill, and OPS-004 live evidence remain required |
 
 ## 2.0 Wave 1 knowledge base
 
