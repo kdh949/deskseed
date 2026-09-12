@@ -46,6 +46,7 @@ class PersonalStagingObservabilityConfigurationTest {
     fun `personal staging logback appender captures only bounded request context`() {
         assertThat(logbackConfiguration)
             .contains("name=\"personal-staging-observability\"")
+            .contains("name=\"load &amp; !personal-staging-observability\"")
             .contains("io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender")
             .contains("<captureMdcAttributes>requestId,correlationId</captureMdcAttributes>")
             .doesNotContain("<captureMdcAttributes>*</captureMdcAttributes>")

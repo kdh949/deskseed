@@ -2,6 +2,15 @@
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
+    <springProfile name="load &amp; !personal-staging-observability">
+        <!-- Keep the load topology's Logstash JSON console contract intact. -->
+        <include resource="org/springframework/boot/logging/logback/structured-console-appender.xml"/>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
     <springProfile name="personal-staging-observability">
         <include resource="org/springframework/boot/logging/logback/structured-console-appender.xml"/>
 
@@ -16,7 +25,7 @@
         </root>
     </springProfile>
 
-    <springProfile name="!personal-staging-observability">
+    <springProfile name="!load &amp; !personal-staging-observability">
         <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
 
         <root level="INFO">

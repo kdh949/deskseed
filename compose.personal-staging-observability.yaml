@@ -5,12 +5,26 @@
 services:
   backend:
     environment:
-      SPRING_PROFILES_ADDITIONAL: personal-staging-observability
+      # Spring Boot binds this to spring.profiles.include. The production profile remains active.
+      SPRING_PROFILES_INCLUDE: personal-staging-observability
       DESKSEED_PERSONAL_STAGING_OTLP_LOGS_ENDPOINT: http://alloy:4318/v1/logs
       DESKSEED_PERSONAL_STAGING_OTLP_TRACES_ENDPOINT: http://alloy:4318/v1/traces
       DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY: ${DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY:-0.05}
     ports: !override
-      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set a private monitoring bind address}:9090:9090"
+      - target: 9090
+        published: "9090"
+        host_ip: ${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set a private monitoring bind address}
+        protocol: tcp
+
+  # Keep the deployment's existing aggregate health URL stable while management
+  # endpoints move to the private 9090 server. The file is repository-owned and
+  # mounted read-only only when this opt-in overlay is enabled.
+  frontend:
+    volumes:
+      - type: bind
+        source: ./frontend/nginx.personal-staging-observability.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
 
   alloy:
     image: grafana/alloy:v1.18.0
@@ -34,7 +48,10 @@ services:
       - "4317"
       - "4318"
     ports:
-      - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set a private monitoring bind address}:12345:12345"
+      - target: 12345
+        published: "12345"
+        host_ip: ${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set a private monitoring bind address}
+        protocol: tcp
     networks:
       - application
     restart: unless-stopped

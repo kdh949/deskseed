@@ -175,7 +175,7 @@ assert "build" not in services["backend"], services["backend"].get("build")
 assert "build" not in services["frontend"], services["frontend"].get("build")
 assert "alloy" not in services, services.keys()
 assert not services["backend"].get("ports"), services["backend"].get("ports")
-assert "SPRING_PROFILES_ADDITIONAL" not in services["backend"]["environment"]
+assert "SPRING_PROFILES_INCLUDE" not in services["backend"]["environment"]
 assert services["db-migrate"]["volumes"][0]["source"].endswith(
     "/backend/src/main/resources/db/migration"
 )
@@ -212,7 +212,7 @@ assert set(services) == {
 backend = services["backend"]
 backend_environment = backend["environment"]
 assert backend_environment["SPRING_PROFILES_ACTIVE"] == "production"
-assert backend_environment["SPRING_PROFILES_ADDITIONAL"] == "personal-staging-observability"
+assert backend_environment["SPRING_PROFILES_INCLUDE"] == "personal-staging-observability"
 assert backend_environment["DESKSEED_PERSONAL_STAGING_OTLP_LOGS_ENDPOINT"] == "http://alloy:4318/v1/logs"
 assert backend_environment["DESKSEED_PERSONAL_STAGING_OTLP_TRACES_ENDPOINT"] == "http://alloy:4318/v1/traces"
 assert backend_environment["DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY"] == "0.05"
@@ -247,6 +247,12 @@ assert int(alloy_ports[0]["published"]) == 12345, alloy_ports
 assert int(alloy_ports[0]["target"]) == 12345, alloy_ports
 assert set(map(str, alloy["expose"])) == {"4317", "4318"}
 
+frontend_mounts = services["frontend"]["volumes"]
+assert len(frontend_mounts) == 1, frontend_mounts
+assert frontend_mounts[0]["source"].endswith("/frontend/nginx.personal-staging-observability.conf"), frontend_mounts
+assert frontend_mounts[0]["target"] == "/etc/nginx/conf.d/default.conf", frontend_mounts
+assert frontend_mounts[0]["read_only"] is True, frontend_mounts
+
 mounts = alloy["volumes"]
 assert len(mounts) == 1, mounts
 assert mounts[0]["source"].endswith("/ops/observability/personal-staging/alloy/config.alloy"), mounts
@@ -258,6 +264,8 @@ assert "/rootfs" not in json.dumps(alloy)
 PY
 
 grep -Fx '    client_max_body_size 105m;' "$repository_root/frontend/nginx.conf" >/dev/null
+grep -Fx '        proxy_pass http://backend:9090;' \
+  "$repository_root/frontend/nginx.personal-staging-observability.conf" >/dev/null
 
 if docker compose \
   --project-name deskseed-production-contract \
