@@ -48,7 +48,7 @@ Completion criteria:
 - Alloy can reach the private Loki push and Tempo OTLP endpoints;
 - the backend reports successful Pyroscope agent startup without retries or rejected uploads.
 
-The Alloy Docker socket mount can expose Docker control if the collector is compromised even though the bind mount is read-only. It is accepted only on this disposable load host. Production adoption requires a separately reviewed file source or restricted socket proxy.
+The Alloy Docker socket mount can expose Docker control if the collector is compromised even though the bind mount is read-only. It is accepted only on this disposable load host. Production adoption requires a separately reviewed file source or restricted socket proxy. Never combine this overlay with personal staging; use [the personal-staging observability runbook](deskseed-personal-staging-observability.md) instead.
 
 ## 3. Apply monitoring-server files manually
 
