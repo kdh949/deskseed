@@ -54,8 +54,17 @@ docker run --rm \
   -v "$repository_root/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
   nginx:1.31-alpine nginx -t
 
+docker run --rm \
+  --add-host backend:127.0.0.1 \
+  -v "$repository_root/frontend/nginx.personal-staging-observability.conf:/etc/nginx/conf.d/default.conf:ro" \
+  nginx:1.31-alpine nginx -t
+
 jq empty "$repository_root/ops/observability/monitoring-server/grafana/deskseed-load-overview.json"
 jq empty "$repository_root/ops/observability/personal-staging/grafana/deskseed-personal-staging-overview.json"
+jq -e '
+  [.panels[] | select(.title == "Backend OTLP logs") | .targets[].expr] ==
+    ["{service_name=\"deskseed-backend\"} | deployment_environment_name = \"personal-staging\""]
+' "$repository_root/ops/observability/personal-staging/grafana/deskseed-personal-staging-overview.json" >/dev/null
 
 for scenario in agent-read public-request customer-auth-limiter collaboration-websocket; do
   docker run --rm \

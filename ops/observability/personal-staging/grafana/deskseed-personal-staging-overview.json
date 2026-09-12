@@ -58,7 +58,7 @@
       "title": "Backend OTLP logs",
       "datasource": {"type": "loki", "uid": "loki"},
       "targets": [
-        {"expr": "{service_name=\"deskseed-backend\", deployment_environment_name=\"personal-staging\"}", "refId": "A"}
+        {"expr": "{service_name=\"deskseed-backend\"} | deployment_environment_name = \"personal-staging\"", "refId": "A"}
       ],
       "options": {"dedupStrategy": "none", "enableLogDetails": true, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
       "gridPos": {"h": 11, "w": 16, "x": 0, "y": 16}

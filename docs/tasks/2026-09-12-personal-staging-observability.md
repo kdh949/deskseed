@@ -18,7 +18,7 @@
 - Actor type: SYSTEM
 - Source: opt-in personal-staging Compose overlay and operator-owned private monitoring server
 - Required role/scopes: deployment operator with the existing personal-staging deployment authority; monitoring-server administrator separately owns scrape/firewall/Loki/Tempo configuration
-- Resource constraints: the collector accepts OTLP only from the backend on the Compose `application` network; `9090`/`12345` permit only the monitoring source over the private network
+- Resource constraints: backend is the only configured OTLP sender; Alloy receiver ports stay internal to the Compose `application` network; `9090`/`12345` bind only to an operator-selected host address that the deployer verifies is assigned, non-wildcard, and non-globally-routable, while the monitoring source allowlist remains operator-owned
 - Interaction/request/correlation semantics: request and correlation IDs are bounded structured log metadata and trace context, never Prometheus or Loki labels
 
 ## Product and UX contract
@@ -74,7 +74,8 @@
 ## Acceptance scenarios
 
 - Given the normal personal-staging compose set, when the overlay is omitted, then the backend has only `production` active and publishes no `9090`/`12345` port.
-- Given the opt-in overlay and a private bind address, when Compose resolves it, then the backend retains `SPRING_PROFILES_ACTIVE=production`, adds only `personal-staging-observability`, and publishes `9090` only on that private address.
+- Given the opt-in overlay and a private bind address, when Compose resolves it, then the backend retains `SPRING_PROFILES_ACTIVE=production`, includes only `personal-staging-observability`, and publishes `9090` only on that assigned non-wildcard address.
+- Given the opt-in overlay, when the frontend checks aggregate health, then `/actuator/health` reaches management `:9090` while `/actuator/prometheus` remains a frontend `404`.
 - Given the overlay, when the collector starts, then it has an internal OTLP receiver for backend logs/traces and no Docker socket, Docker discovery, host mount, host network/PID namespace, privilege, or profiler.
 - Given a normal safe request with a bounded correlation ID, when private Loki/Tempo ingestion is configured, then Grafana can find the ID as structured metadata and follow its trace without making it a metric/log label.
 - Given a missing collector or remote telemetry endpoint, when the backend serves a ticket command/read, then domain/audit semantics remain unchanged; the operator sees telemetry delivery failure separately.
@@ -87,6 +88,7 @@
 - `bash scripts/test-personal-staging-deploy.sh`
 - `sh scripts/validate-observability-config.sh`
 - `cd backend && ./gradlew --no-daemon fastTest --tests dev.deskseed.LoadObservabilityConfigurationTest --tests dev.deskseed.PersonalStagingObservabilityConfigurationTest`
+- `cd backend && ./gradlew --no-daemon integrationTest --tests dev.deskseed.PersonalStagingObservabilityRuntimeIntegrationTest --tests dev.deskseed.PersonalStagingNginxRoutingIntegrationTest --tests dev.deskseed.LoadStructuredLoggingIntegrationTest`
 - OPS-004 live verification remains: private source allowlist, Prometheus `up`, Loki OTLP ingestion, Tempo ingestion, and a bounded correlation drill
 - ACC-007 remains a logging-policy regression gate; this task does not add a raw-content test corpus
 

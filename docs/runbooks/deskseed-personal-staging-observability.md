@@ -15,7 +15,7 @@ backend (production + personal-staging-observability)
                                                 └─ Tempo OTLP HTTP
 ```
 
-Only the backend sends OTLP to Alloy. The collector does not mount `/var/run/docker.sock`, discover Docker containers, read host files, run a profiler, or receive a host-published OTLP port.
+The backend application configuration is the only configured OTLP sender to Alloy. The collector does not mount `/var/run/docker.sock`, discover Docker containers, read host files, run a profiler, or receive a host-published OTLP port.
 
 ## 1. Prepare the monitoring server manually
 
@@ -47,7 +47,7 @@ DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT=https://tempo.monitoring.internal
 DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY=0.05
 ```
 
-`DESKSEED_OBSERVABILITY_BIND_ADDRESS` must be the host's private/VPN address, never `0.0.0.0`. Permit inbound `9090` and `12345` only from the monitoring-server address. Do not publish `4317` or `4318`. If the monitoring system requires authentication, use its private reverse-proxy/mTLS policy rather than embedding credentials in a URL or container environment.
+`DESKSEED_OBSERVABILITY_BIND_ADDRESS` must be the host's private/VPN address, never `0.0.0.0`. The deployer rejects all unspecified/wildcard forms (including `::`), globally routable addresses, and addresses not assigned to the host. Permit inbound `9090` and `12345` only from the monitoring-server address. Do not publish `4317` or `4318`. If the monitoring system requires authentication, use its private reverse-proxy/mTLS policy rather than embedding credentials in a URL or container environment.
 
 ## 3. Deploy the opt-in overlay
 
@@ -58,7 +58,7 @@ DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED=true \
   ./scripts/deploy-personal-server.sh <40-character-published-sha>
 ```
 
-The successful application deployment ends with `Personal staging deployment passed for <sha>.` When the overlay is enabled, the deployer additionally requires the Alloy container to be running. It does not prove that Loki, Tempo, or Prometheus received data.
+The successful application deployment ends with `Personal staging deployment passed for <sha>.` When the overlay is enabled, the deployer additionally requires the Alloy container to be running and confirms the existing public aggregate `/actuator/health` URL through the frontend. That frontend route reaches management `:9090` only in this overlay; `/actuator/prometheus` remains a frontend `404`. This does not prove that Loki, Tempo, or Prometheus received data.
 
 ## 4. Verify the three signals
 
@@ -73,11 +73,12 @@ Both `deskseed-backend` and `deskseed-alloy` should be `1`. The dashboard then s
 For a correlation drill, make a normal, non-sensitive authenticated read using a bounded `X-Correlation-Id`, then query Loki:
 
 ```logql
-{service_name="deskseed-backend", deployment_environment_name="personal-staging"}
+{service_name="deskseed-backend"}
+| deployment_environment_name = "personal-staging"
 | correlationId = "your-bounded-correlation-id"
 ```
 
-`correlationId`, request ID, severity, and trace context are structured metadata, not labels. Open the trace ID exposed by the selected log in Tempo. Never paste body text, a cookie, a token, Authorization value, email address, search query, or full signed URL into Grafana Explore.
+`deployment_environment_name`, `correlationId`, request ID, severity, and trace context are structured metadata, not labels. The query filters the environment after selecting the stable `service_name` stream label, so it does not rely on resource-attribute index-label promotion that older Loki 3.x installations may not provide. Open the trace ID exposed by the selected log in Tempo. Never paste body text, a cookie, a token, Authorization value, email address, search query, or full signed URL into Grafana Explore.
 
 If Prometheus shows `up=1` but logs/traces are absent, inspect the collector without printing environment values:
 
