@@ -20,7 +20,7 @@ internal class ApiDocumentationSecurityConfiguration(
     private val requireAdmin: Boolean,
 ) {
     @Bean
-    @Order(2)
+    @Order(3)
     fun apiDocumentationSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
             .securityMatcher("/docs/api", "/docs/api/**", "/api-docs/specs/**", "/v3/api-docs/**")

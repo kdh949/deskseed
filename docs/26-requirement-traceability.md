@@ -155,7 +155,11 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-CHAN-002 | 채팅·메시징은 나중에 같은 conversation model 위에 추가한다 | DEFERRED | P8+ | 38, 49 | session/transcript/channel adapter 테스트 |
 | REQ-CHAN-003 | 개발·CI outbound email은 Mailpit을 사용하고 production provider는 adapter로 분리한다 | IMPLEMENTATION_READY | P1 | 49, 53 | `MailpitApiE2ETest`, Compose `mailpit:1025` + `localhost:8025`, `MailDeliveryConfigurationValidatorTest`의 production opt-in SMTP/TLS/키 검증, `/admin/operations/mail`의 masked transport summary |
 | REQ-NOTIF-001 | 고객 알림은 ticket transaction 밖의 durable outbox로 전달한다 | IMPLEMENTATION_READY | P1/P8 | 45, 49, 53 | `OutboundMailDeliveryIntegrationTest`의 post-commit/delivery/manual retry race·audit rollback, `AdminOutboundMailIntegrationTest`의 masked admin projection/CSRF, V18 intent/attempt/event 및 V29 operations cursor index, `/admin/operations/mail` + `admin-operations.spec.ts` safe retry evidence; focused/full Storybook MCP interaction/a11y: PASS |
-| REQ-AI-001 | AI 요약·답변 제안은 검색·권한·감사·평가 기반이 준비된 뒤 선택적으로 추가한다 | DEFERRED | P10 | 38, 49 | 데이터 경계/평가/사람 승인 테스트 |
+| REQ-AI-001 | 상담사는 PUBLIC 대화만 사용한 요약·분류 제안·공개 KB 기반 답변 초안을 비동기 API로 생성하고 사람이 검토한다 | IN_PROGRESS | AI V1 | 19, 21, 23, 26, 33, 34, 39, AI design v1.2, ADR 0049 | A~G 서버 gate 구현; frontend와 live model·사람 평가는 별도 |
+| REQ-AI-002 | Backend는 job/requester/ticket/feature를 멱등 결합하고 PUBLIC-only source와 현재 권한·필수 접근 감사를 fail closed로 제공한다 | IN_PROGRESS | AI V1 A | 02, 03, 19, 21, 33, 34, 39, ADR 0049 | AI-API-001, AI-SRC-001, ARCH-001~004, ACC-002/007, IDEM-001~003 |
+| REQ-AI-003 | AI worker는 generation·lease fencing·취소·복구와 사전 비용 예약 아래 summary/triage/reply 결과를 typed 상태로 저장한다 | IN_PROGRESS | AI V1 B-D/F | 21, 23, AI design v1.2, ADR 0049 | 서버와 fake-provider/실제 PostgreSQL·Redis gate 구현; live provider·사람 품질은 별도, AI-LIFE-001/AI-COST-001/AI-TRIAGE-001/AI-REPLY-001 |
+| REQ-AI-004 | 공개 KB의 현재 revision·audience·상위 공개성을 재검증한 generation index와 hybrid retrieval만 reply 근거로 사용한다 | IN_PROGRESS | AI V1 E/F | 21, 23, 32, 33, 34, ADR 0025, ADR 0049 | exact PUBLIC revision 색인·stable snapshot/cursor reconciliation·완전 scan 후 철회·citation 재인가 구현; production corpus recall은 NOT ESTABLISHED, AI-KB-001/AI-REPLY-001 |
+| REQ-AI-005 | 관리자는 typed enable/stop/status/reindex 정책을 감사 가능하게 관리하고 feedback·보존·관측·평가·복구 근거를 운영한다 | IN_PROGRESS | AI V1 G | 19, 21, 23, 36, 52, ADR 0049 | 서버 운영 API·retention·metadata-only 관측·합성 평가 구현; external receipt/deploy는 미검증, AI-OPS-001/AI-OBS-001/AI-RET-001 |
 
 ## 9. 프론트엔드 경험
 
@@ -210,3 +214,5 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 - 2026-09-11 REQ-UI-001/004/005: [고객·직원 타이포그래피와 모바일 가입 가독성](tasks/2026-09-11-frontend-readable-typography.md).
 
 - 2026-09-11 REQ-UI-001/005/007, REQ-PERM-002, REQ-AUD-002: [운영 화면 스타일 복구](tasks/2026-09-11-staff-operational-styles.md), [직원 Storybook 60개 파일 전체 등록](tasks/2026-09-11-frontend-storybook-coverage.md). 사용자 승인 후 macOS/Linux 시각 기준선 12장을 반영하고 UI-001/005의 실제 pixel 비교를 포함한 E2E를 각 플랫폼에서 21개 통과했다. [수정 결과](frontend-remediation-2026-09-11.md), [승인 및 검증 기록](evidence/frontend-remediation-2026-09-11/visual-review.md). 제품 요구사항 상태 자체를 상향하지 않는다.
+
+- 2026-09-16 REQ-AI-001~005: [AI V1 A 계약·PUBLIC source](tasks/2026-09-16-ai-v1-a-contract-source.md), [AI V1 B~G 격리 실행·운영](tasks/2026-09-16-ai-v1-b-g-runtime.md). frontend/live provider/Langfuse/실데이터/배포·사람 평가는 별도 외부 검증이다.

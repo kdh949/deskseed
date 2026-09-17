@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Feature(StrEnum):
+    SUMMARY = "ticket.summary"
+    TRIAGE = "ticket.triage"
+    REPLY_DRAFT = "ticket.reply_draft"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    RETRY_WAIT = "RETRY_WAIT"
+    SUCCEEDED = "SUCCEEDED"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    SUPERSEDED = "SUPERSEDED"
+    EXPIRED = "EXPIRED"
+
+
+class JobPhase(StrEnum):
+    QUEUED = "QUEUED"
+    AUTHORIZE = "AUTHORIZE"
+    RETRIEVE = "RETRIEVE"
+    GENERATE = "GENERATE"
+    VALIDATE = "VALIDATE"
+    COMPLETE = "COMPLETE"
+
+
+class InputScope(StrEnum):
+    PUBLIC_ONLY = "PUBLIC_ONLY"
+    PUBLIC_KB_ONLY = "PUBLIC_KB_ONLY"
+
+
+class JobEnvelope(StrictModel):
+    schemaVersion: Literal[1]
+    eventId: UUID
+    jobId: UUID
+    workspaceKey: Annotated[str, Field(min_length=1, max_length=80)]
+    requesterId: UUID
+    ticketId: UUID
+    ticketNumber: Annotated[int, Field(gt=0)]
+    feature: Feature
+    contextRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    contextPolicyVersion: Literal["public-comments-v1"]
+    dataClass: Literal["PUBLIC_ONLY"]
+    requestRevision: Annotated[int, Field(gt=0)]
+    options: dict[str, Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=dict, max_length=2)
+    createdAt: datetime
+    deadlineAt: datetime
+    traceparent: Annotated[str | None, Field(max_length=512)] = None
+    tracestate: Annotated[str | None, Field(max_length=512)] = None
+
+    @model_validator(mode="after")
+    def deadline_after_creation(self) -> "JobEnvelope":
+        if self.deadlineAt <= self.createdAt:
+            raise ValueError("deadlineAt must be after createdAt")
+        allowed = {"language"} if self.feature != Feature.REPLY_DRAFT else {"language", "tone"}
+        if self.options.keys() - allowed:
+            raise ValueError("unsupported feature option")
+        return self
+
+
+class CancellationEnvelope(StrictModel):
+    schemaVersion: Literal[1]
+    eventId: UUID
+    jobId: UUID
+    workspaceKey: Annotated[str, Field(min_length=1, max_length=80)]
+    requestRevision: Annotated[int, Field(gt=1)]
+    createdAt: datetime
+    traceparent: Annotated[str | None, Field(max_length=512)] = None
+    tracestate: Annotated[str | None, Field(max_length=512)] = None
+
+
+class PublicComment(StrictModel):
+    id: UUID
+    body: Annotated[str, Field(min_length=1, max_length=100_000)]
+    createdAt: datetime
+
+
+class SourceContext(StrictModel):
+    jobId: UUID
+    ticketId: UUID
+    ticketNumber: int
+    ticketVersion: int
+    feature: Feature
+    requestRevision: int
+    contextRevision: str
+    contextPolicyVersion: str
+    inputScope: Literal["PUBLIC_ONLY"]
+    comments: list[PublicComment] = Field(min_length=1)
+
+
+class SummaryResult(StrictModel):
+    type: Literal["ticket.summary"] = "ticket.summary"
+    problem: Annotated[str, Field(min_length=1, max_length=2000)]
+    attemptedActions: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(max_length=20)
+    unresolvedItems: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(max_length=20)
+    nextChecks: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(max_length=20)
+
+
+class TriageResult(StrictModel):
+    type: Literal["ticket.triage"] = "ticket.triage"
+    topicCode: Literal[
+        "ACCOUNT_ACCESS", "BILLING", "USAGE", "TECHNICAL_ISSUE",
+        "POLICY", "FEEDBACK", "OTHER",
+    ]
+    suggestedTagIds: list[UUID] = Field(max_length=20)
+    suggestedPriority: Literal["LOW", "NORMAL", "HIGH", "URGENT"] | None = None
+    reasons: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(max_length=10)
+
+
+class Citation(StrictModel):
+    articleId: UUID
+    revisionId: UUID
+    chunkId: UUID
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    url: Annotated[str, Field(pattern=r"^/help/articles/[a-z0-9-]+$")]
+
+
+class ReplyDraftResult(StrictModel):
+    type: Literal["ticket.reply_draft"] = "ticket.reply_draft"
+    answer: Annotated[str, Field(min_length=1, max_length=6000)]
+    citations: list[Citation] = Field(max_length=8)
+
+
+TypedResult = SummaryResult | TriageResult | ReplyDraftResult
+
+
+class GenerationProvenance(StrictModel):
+    modelAlias: Annotated[str, Field(min_length=1, max_length=100)]
+    actualModel: Annotated[str, Field(min_length=1, max_length=160)]
+    promptVersion: Annotated[str, Field(min_length=1, max_length=80)]
+    configVersion: Annotated[str, Field(min_length=1, max_length=80)]
+    generatedAt: datetime
+    publicCommentIds: list[UUID] = Field(max_length=500)
+    contextRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class JobReceipt(StrictModel):
+    jobId: UUID
+    feature: Feature
+    status: JobStatus
+    phase: JobPhase
+    generation: int
+    leaseEpoch: int
+    requestRevision: int
+    createdAt: datetime
+    deadlineAt: datetime
+    completedAt: datetime | None = None
+    resultExpiresAt: datetime | None = None
+    pollAfterMs: int = 750
+    cancelRequested: bool
+    contextRevision: str
+    contextPolicyVersion: str
+    inputScope: InputScope
+    stale: bool
+    canInsert: bool
+    errorCode: str | None = None
+    result: TypedResult | None = Field(default=None, discriminator="type")
+    provenance: GenerationProvenance | None = None
+    costMicrousd: int | None = None
+
+
+class FeedbackRequest(StrictModel):
+    schemaVersion: Literal[1]
+    eventId: UUID
+    jobId: UUID
+    workspaceKey: Annotated[str, Field(min_length=1, max_length=80)]
+    requesterId: UUID
+    feedbackType: Literal["helpful", "unhelpful", "inserted", "edited"]
+    reasonCode: Annotated[str | None, Field(min_length=1, max_length=40)] = None
+    sourceRevision: Annotated[int, Field(gt=0)]
+    requestRevision: Annotated[int, Field(gt=1)]
+    createdAt: datetime
+
+
+class IndexEvent(StrictModel):
+    schemaVersion: Literal[1]
+    eventId: UUID
+    workspaceKey: Annotated[str, Field(min_length=1, max_length=80)]
+    articleId: UUID
+    revisionId: UUID
+    action: Literal["UPSERT", "DELETE"]
+    sourceVersion: Annotated[int, Field(gt=0)]
+    publicRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    createdAt: datetime
+
+
+class OperationRequest(StrictModel):
+    operationId: UUID
+    action: Literal["RETRY", "CANCEL", "RECONCILE", "RETENTION"]
+    reason: Annotated[str, Field(min_length=3, max_length=500)]
+    expectedGeneration: Annotated[int | None, Field(ge=0)] = None
+
+
+class Accepted(StrictModel):
+    accepted: Literal[True] = True
+    replayed: bool
+    jobId: UUID | None = None

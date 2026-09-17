@@ -1,0 +1,607 @@
+x-deskseed-fragment:
+  owner: ai-assistance-v1
+tags:
+  - name: Agent AI
+    description: 상담사가 현재 읽을 수 있는 티켓의 PUBLIC 대화만 비동기 AI 작업으로 요청·조회·취소하는 API입니다.
+  - name: Admin AI
+    description: AI 활성화·상태·공개 KB 재색인을 관리하는 관리자 API입니다.
+paths:
+  /api/v1/agent/tickets/{ticketNumber}/ai/jobs:
+    parameters:
+      - $ref: '#/components/parameters/AiTicketNumber'
+    post:
+      operationId: createAgentAiJob
+      summary: 티켓 AI 작업 접수
+      description: >-
+        현재 staffSession actor와 티켓 읽기 권한을 확인하고, feature별 PUBLIC comment projection의 revision을 계산한 뒤
+        ai_request·본문 없는 integration outbox·필수 API_RESOURCE_READ access audit를 한 transaction으로 저장합니다.
+        Idempotency-Key namespace는 workspace와 현재 staff actor에 귀속되며 같은 canonical request는 기존 job을 반환하고
+        다른 request는 409입니다. 성공은 AI 실행 완료가 아니라 Backend ACCEPTED를 뜻합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_A
+      x-deskseed-requirements: [REQ-AI-001, REQ-AI-002, REQ-AI-005]
+      x-deskseed-verification-gates: [AI-API-001, AI-SRC-001]
+      x-deskseed-audit-failure: FAIL_CLOSED
+      tags: [Agent AI]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/AiIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentAiJob'
+            example:
+              feature: ticket.reply_draft
+              expectedTicketVersion: 7
+              options: {language: ko, tone: calm}
+      responses:
+        '202':
+          description: Backend가 작업 binding과 outbox를 원자적으로 접수했습니다.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/AiNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiJobReceipt'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+        '404': {$ref: '#/components/responses/AiRequestNotFound'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '422': {$ref: '#/components/responses/AiPublicContextUnavailable'}
+        '429': {$ref: '#/components/responses/AiRequestRateLimited'}
+        '503': {$ref: '#/components/responses/AiRequestUnavailable'}
+    get:
+      operationId: listAgentAiJobs
+      summary: 티켓의 내 최근 AI 작업 목록
+      description: 현재 actor가 소유하고 현재도 읽을 수 있는 티켓의 작업 receipt만 반환하며 티켓 본문이나 다른 직원의 작업을 노출하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_A
+      x-deskseed-requirements: [REQ-AI-001, REQ-AI-002]
+      x-deskseed-verification-gates: [AI-API-001]
+      tags: [Agent AI]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        '200':
+          description: 최근 AI 작업 목록입니다.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/AiNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiJobPage'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+        '404': {$ref: '#/components/responses/AiRequestNotFound'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '503': {$ref: '#/components/responses/AiRequestUnavailable'}
+  /api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}:
+    get:
+      operationId: getAgentAiJob
+      summary: 티켓 AI 작업 조회
+      description: job owner와 현재 티켓 읽기 권한을 함께 확인하며 polling은 semantic TICKET_VIEWED를 기록하지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_A
+      x-deskseed-requirements: [REQ-AI-001, REQ-AI-002]
+      x-deskseed-verification-gates: [AI-API-001]
+      tags: [Agent AI]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/AiTicketNumber'
+        - $ref: '#/components/parameters/AiJobId'
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - name: includeResult
+          in: query
+          required: false
+          description: >-
+            기본 false에서는 polling metadata만 반환합니다. true일 때만 현재 권한·PUBLIC context·KB revision·만료를
+            다시 확인하고 AI_RESULT_READ 감사를 저장한 뒤 결과 본문을 한 번 가져옵니다.
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: 현재 Backend receipt입니다.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/AiNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiJobReceipt'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+        '404': {$ref: '#/components/responses/AiRequestNotFound'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '503': {$ref: '#/components/responses/AiRequestUnavailable'}
+  /api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}/cancel:
+    post:
+      operationId: cancelAgentAiJob
+      summary: 티켓 AI 작업 취소 요청
+      description: owner·현재 티켓 권한·상태를 잠근 뒤 requestRevision을 한 번 증가시키고 본문 없는 취소 outbox를 원자적으로 추가합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_A
+      x-deskseed-requirements: [REQ-AI-001, REQ-AI-002, REQ-AI-005]
+      x-deskseed-verification-gates: [AI-API-001, AI-LIFE-001]
+      tags: [Agent AI]
+      security:
+        - staffSession: []
+      parameters:
+        - $ref: '#/components/parameters/AiTicketNumber'
+        - $ref: '#/components/parameters/AiJobId'
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '202':
+          description: 취소 intent가 저장되었습니다. 반복 요청은 같은 revision을 반환합니다.
+          headers:
+            Cache-Control: {$ref: '#/components/headers/AiNoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiJobReceipt'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+        '404': {$ref: '#/components/responses/AiRequestNotFound'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '503': {$ref: '#/components/responses/AiRequestUnavailable'}
+  /api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}/feedback:
+    post:
+      operationId: recordAgentAiFeedback
+      summary: AI 결과 feedback 기록
+      description: 현재 owner와 티켓 권한을 재검사하고 feedback 종류별 sourceRevision을 증가시켜 audit·outbox와 원자적으로 저장합니다. 수정 본문은 받지 않습니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_G
+      x-deskseed-requirements: [REQ-AI-001, REQ-AI-005]
+      x-deskseed-verification-gates: [AI-API-001, AI-LIFE-001]
+      tags: [Agent AI]
+      security: [{staffSession: []}]
+      parameters:
+        - $ref: '#/components/parameters/AiTicketNumber'
+        - $ref: '#/components/parameters/AiJobId'
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+        - $ref: '#/components/parameters/AiIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiFeedbackRequest'}
+            example: {type: helpful, reasonCode: accurate}
+      responses:
+        '202':
+          description: feedback projection과 전달 intent가 저장되었습니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiFeedbackReceipt'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '404': {$ref: '#/components/responses/AiRequestNotFound'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '503': {$ref: '#/components/responses/AiRequestUnavailable'}
+  /api/v1/admin/ai/status:
+    get:
+      operationId: getAdminAiStatus
+      summary: AI 운영 상태 조회
+      description: 현재 관리자 actor에게 본문과 secret을 제외한 Backend outbox, AI 의존성, 비용 원장, 공개 KB 색인 상태를 조회합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_G
+      x-deskseed-requirements: [REQ-AI-005]
+      x-deskseed-verification-gates: [AI-OPS-001]
+      tags: [Admin AI]
+      security: [{staffSession: []}]
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: secret·본문 없는 AI 활성화와 outbox 상태입니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiStatus'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+  /api/v1/admin/ai/settings:
+    get:
+      operationId: getAdminAiSettings
+      summary: AI 설정 조회
+      description: 현재 관리자 actor에게 기능별 활성화 상태, 고정 model alias, 직원 allowlist와 낙관적 version을 secret 없이 반환합니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_G
+      x-deskseed-requirements: [REQ-AI-005]
+      x-deskseed-verification-gates: [AI-OPS-001]
+      tags: [Admin AI]
+      security: [{staffSession: []}]
+      parameters:
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      responses:
+        '200':
+          description: secret이 없는 versioned 설정입니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiSettings'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+    put:
+      operationId: updateAdminAiSettings
+      summary: AI 설정 변경
+      description: 현재 관리자 actor가 expectedVersion으로 기능 활성화와 직원 allowlist를 원자적으로 변경하고 관리 감사를 남깁니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_G
+      x-deskseed-requirements: [REQ-AI-005]
+      x-deskseed-verification-gates: [AI-OPS-001]
+      tags: [Admin AI]
+      security: [{staffSession: []}]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAiSettings'}
+      responses:
+        '200':
+          description: 변경된 설정입니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiSettings'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+        '503': {$ref: '#/components/responses/AiRequestUnavailable'}
+  /api/v1/admin/ai/kb/reindex:
+    post:
+      operationId: requestAdminAiKnowledgeReindex
+      summary: 공개 KB 재색인 요청
+      description: 현재 관리자 actor가 operationId로 중복을 제거하면서 PUBLIC 도움말 revision의 본문 없는 재색인 intent를 생성하고 관리 감사를 남깁니다.
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-phase: AI_V1_G
+      x-deskseed-requirements: [REQ-AI-004, REQ-AI-005]
+      x-deskseed-verification-gates: [AI-KB-001, AI-OPS-001]
+      tags: [Admin AI]
+      security: [{staffSession: []}]
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiReindexRequest'}
+      responses:
+        '202':
+          description: bounded PUBLIC manifest의 body-free refresh intent가 저장되었습니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiReindexReceipt'}
+        '400': {$ref: '#/components/responses/AiInvalidOrExpectedActor'}
+        '401': {$ref: '#/components/responses/AiGenericProblem'}
+        '403': {$ref: '#/components/responses/AiGenericProblem'}
+        '409': {$ref: '#/components/responses/AiConflictOrActorMismatch'}
+        '503': {$ref: '#/components/responses/AiRequestUnavailable'}
+components:
+  parameters:
+    AiTicketNumber:
+      name: ticketNumber
+      in: path
+      required: true
+      schema: {type: integer, format: int64, minimum: 1}
+    AiJobId:
+      name: jobId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AiIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 원문은 저장하지 않으며 workspace와 현재 staff actor 범위의 SHA-256 fingerprint로만 비교합니다.
+      schema: {type: string, minLength: 16, maxLength: 200}
+  headers:
+    AiNoStore:
+      description: AI 작업·PUBLIC ticket context 응답은 캐시하지 않습니다.
+      schema: {type: string, const: no-store}
+  schemas:
+    AiFeature:
+      type: string
+      enum: [ticket.summary, ticket.triage, ticket.reply_draft]
+    CreateAgentAiJob:
+      type: object
+      additionalProperties: false
+      description: 상담사가 현재 보고 있는 ticket version과 고정 기능·제한된 옵션으로 PUBLIC-only 비동기 작업을 접수하는 요청입니다.
+      required: [feature, expectedTicketVersion]
+      properties:
+        feature: {$ref: '#/components/schemas/AiFeature'}
+        expectedTicketVersion:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 상담사가 보고 있는 티켓 version입니다. PUBLIC contextRevision은 댓글 변경을 별도로 탐지합니다.
+        options:
+          type: object
+          additionalProperties: false
+          maxProperties: 2
+          properties:
+            language: {type: string, minLength: 1, maxLength: 40}
+            tone: {type: string, minLength: 1, maxLength: 40}
+          default: {}
+      x-deskseed-documentation-review: MANUAL
+      example:
+        feature: ticket.reply_draft
+        expectedTicketVersion: 7
+        options: {language: ko, tone: calm}
+    AiJobReceipt:
+      type: object
+      additionalProperties: false
+      required: [jobId, feature, status, phase, requestRevision, createdAt, deadlineAt, completedAt, resultExpiresAt, pollAfterMs, cancelRequested, contextRevision, contextPolicyVersion, inputScope, stale, canInsert, errorCode, result, provenance, costMicrousd]
+      properties:
+        jobId: {type: string, format: uuid}
+        feature: {$ref: '#/components/schemas/AiFeature'}
+        status: {type: string, enum: [ACCEPTED, QUEUED, RUNNING, RETRY_WAIT, SUCCEEDED, NEEDS_REVIEW, FAILED, CANCELLED, SUPERSEDED, EXPIRED]}
+        phase: {type: string, enum: [QUEUED, AUTHORIZE, RETRIEVE, GENERATE, VALIDATE, COMPLETE]}
+        generation: {type: [integer, 'null'], minimum: 1}
+        leaseEpoch: {type: [integer, 'null'], format: int64, minimum: 0}
+        requestRevision: {type: integer, format: int64, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        deadlineAt: {type: string, format: date-time}
+        completedAt: {type: [string, 'null'], format: date-time}
+        resultExpiresAt: {type: [string, 'null'], format: date-time}
+        pollAfterMs: {type: integer, format: int64, minimum: 100, maximum: 10000}
+        cancelRequested: {type: boolean}
+        contextRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+        contextPolicyVersion: {type: string, const: public-comments-v1}
+        inputScope: {type: string, const: PUBLIC_ONLY}
+        stale: {type: boolean}
+        canInsert: {type: boolean}
+        errorCode: {type: [string, 'null'], maxLength: 80}
+        result:
+          oneOf:
+            - $ref: '#/components/schemas/AiSummaryResult'
+            - $ref: '#/components/schemas/AiTriageResult'
+            - $ref: '#/components/schemas/AiReplyDraftResult'
+            - type: 'null'
+          discriminator: {propertyName: type}
+        provenance:
+          oneOf:
+            - $ref: '#/components/schemas/AiGenerationProvenance'
+            - type: 'null'
+        costMicrousd: {type: [integer, 'null'], format: int64, minimum: 0}
+    AiSummaryResult:
+      type: object
+      additionalProperties: false
+      required: [type, problem, attemptedActions, unresolvedItems, nextChecks]
+      properties:
+        type: {type: string, const: ticket.summary}
+        problem: {type: string, minLength: 1, maxLength: 2000}
+        attemptedActions: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 500}}
+        unresolvedItems: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 500}}
+        nextChecks: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 500}}
+    AiTriageResult:
+      type: object
+      additionalProperties: false
+      required: [type, topicCode, suggestedTagIds, suggestedPriority, reasons]
+      properties:
+        type: {type: string, const: ticket.triage}
+        topicCode: {type: string, enum: [ACCOUNT_ACCESS, BILLING, USAGE, TECHNICAL_ISSUE, POLICY, FEEDBACK, OTHER]}
+        suggestedTagIds: {type: array, maxItems: 20, items: {type: string, format: uuid}}
+        suggestedPriority: {type: [string, 'null'], enum: [LOW, NORMAL, HIGH, URGENT, null]}
+        reasons: {type: array, maxItems: 10, items: {type: string, minLength: 1, maxLength: 300}}
+    AiCitation:
+      type: object
+      additionalProperties: false
+      required: [articleId, revisionId, chunkId, title, url]
+      properties:
+        articleId: {type: string, format: uuid}
+        revisionId: {type: string, format: uuid}
+        chunkId: {type: string, format: uuid}
+        title: {type: string, minLength: 1, maxLength: 300}
+        url: {type: string, pattern: '^/help/articles/[a-z0-9-]+$'}
+    AiReplyDraftResult:
+      type: object
+      additionalProperties: false
+      required: [type, answer, citations]
+      properties:
+        type: {type: string, const: ticket.reply_draft}
+        answer: {type: string, minLength: 1, maxLength: 6000}
+        citations: {type: array, maxItems: 8, items: {$ref: '#/components/schemas/AiCitation'}}
+    AiGenerationProvenance:
+      type: object
+      additionalProperties: false
+      required: [modelAlias, actualModel, promptVersion, configVersion, generatedAt, publicCommentIds, contextRevision]
+      properties:
+        modelAlias: {type: string, minLength: 1, maxLength: 100}
+        actualModel: {type: string, minLength: 1, maxLength: 160}
+        promptVersion: {type: string, minLength: 1, maxLength: 80}
+        configVersion: {type: string, minLength: 1, maxLength: 80}
+        generatedAt: {type: string, format: date-time}
+        publicCommentIds: {type: array, maxItems: 500, items: {type: string, format: uuid}}
+        contextRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+    AiJobPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/AiJobReceipt'}
+    AiFeedbackRequest:
+      type: object
+      additionalProperties: false
+      description: AI 결과에 대한 정해진 평가 종류와 선택적인 짧은 사유 코드만 기록하며 상담사가 편집한 본문은 포함하지 않습니다.
+      required: [type]
+      properties:
+        type: {type: string, enum: [helpful, unhelpful, inserted, edited]}
+        reasonCode: {type: [string, 'null'], minLength: 1, maxLength: 40}
+      x-deskseed-documentation-review: MANUAL
+      example: {type: helpful, reasonCode: accurate}
+    AiFeedbackReceipt:
+      type: object
+      additionalProperties: false
+      required: [jobId, type, sourceRevision, replayed, recordedAt]
+      properties:
+        jobId: {type: string, format: uuid}
+        type: {type: string, enum: [helpful, unhelpful, inserted, edited]}
+        sourceRevision: {type: integer, format: int64, minimum: 1}
+        replayed: {type: boolean}
+        recordedAt: {type: string, format: date-time}
+    AiSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, summaryEnabled, triageEnabled, replyDraftEnabled, fastModelAlias, standardModelAlias, allowedStaffIds, version, updatedAt]
+      properties:
+        enabled: {type: boolean}
+        summaryEnabled: {type: boolean}
+        triageEnabled: {type: boolean}
+        replyDraftEnabled: {type: boolean}
+        fastModelAlias: {type: string, const: openai/gpt-5.6-luna}
+        standardModelAlias: {type: string, const: openai/gpt-5.6-terra}
+        allowedStaffIds: {type: array, maxItems: 1000, uniqueItems: true, items: {type: string, format: uuid}}
+        version: {type: integer, format: int64, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+    UpdateAiSettings:
+      type: object
+      additionalProperties: false
+      description: 관리자 actor가 현재 version을 기준으로 기능별 활성화, 고정 model alias와 직원 allowlist를 교체하는 요청입니다.
+      required: [enabled, summaryEnabled, triageEnabled, replyDraftEnabled, fastModelAlias, standardModelAlias, allowedStaffIds, expectedVersion]
+      properties:
+        enabled: {type: boolean}
+        summaryEnabled: {type: boolean}
+        triageEnabled: {type: boolean}
+        replyDraftEnabled: {type: boolean}
+        fastModelAlias: {type: string, const: openai/gpt-5.6-luna}
+        standardModelAlias: {type: string, const: openai/gpt-5.6-terra}
+        allowedStaffIds: {type: array, maxItems: 1000, uniqueItems: true, items: {type: string, format: uuid}}
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+      x-deskseed-documentation-review: MANUAL
+      example:
+        enabled: true
+        summaryEnabled: true
+        triageEnabled: true
+        replyDraftEnabled: false
+        fastModelAlias: openai/gpt-5.6-luna
+        standardModelAlias: openai/gpt-5.6-terra
+        allowedStaffIds: [10000000-0000-0000-0000-000000000010]
+        expectedVersion: 0
+    AiReindexRequest:
+      type: object
+      additionalProperties: false
+      description: PUBLIC 도움말 manifest 재색인 실행을 정확히 한 번 식별하는 관리자 요청입니다.
+      required: [operationId]
+      properties:
+        operationId: {type: string, format: uuid}
+      x-deskseed-documentation-review: MANUAL
+      example: {operationId: 20000000-0000-0000-0000-000000000001}
+    AiStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, settingsVersion, integrationConfigured, aiServiceReady, dataAsOf, aiServiceDataAsOf, aiJobCounts, budgetReservedMicrousd, budgetSettledMicrousd, budgetUnknownMicrousd, indexedPublicRevisions, knowledgeLastReconciledAt, deadLetterCount, requestOutboxPending, requestOutboxDead, knowledgeOutboxPending, knowledgeOutboxDead]
+      properties:
+        enabled: {type: boolean}
+        settingsVersion: {type: integer, format: int64, minimum: 0}
+        integrationConfigured: {type: boolean}
+        aiServiceReady: {type: [boolean, 'null']}
+        dataAsOf: {type: string, format: date-time}
+        aiServiceDataAsOf: {type: [string, 'null'], format: date-time}
+        aiJobCounts:
+          type: object
+          additionalProperties: {type: integer, format: int64, minimum: 0}
+        budgetReservedMicrousd: {type: [integer, 'null'], format: int64, minimum: 0}
+        budgetSettledMicrousd: {type: [integer, 'null'], format: int64, minimum: 0}
+        budgetUnknownMicrousd: {type: [integer, 'null'], format: int64, minimum: 0}
+        indexedPublicRevisions: {type: [integer, 'null'], format: int64, minimum: 0}
+        knowledgeLastReconciledAt: {type: [string, 'null'], format: date-time}
+        deadLetterCount: {type: [integer, 'null'], format: int64, minimum: 0}
+        requestOutboxPending: {type: integer, format: int64, minimum: 0}
+        requestOutboxDead: {type: integer, format: int64, minimum: 0}
+        knowledgeOutboxPending: {type: integer, format: int64, minimum: 0}
+        knowledgeOutboxDead: {type: integer, format: int64, minimum: 0}
+    AiReindexReceipt:
+      type: object
+      additionalProperties: false
+      required: [operationId, replayed, itemCount]
+      properties:
+        operationId: {type: string, format: uuid}
+        replayed: {type: boolean}
+        itemCount: {type: integer, minimum: 0, maximum: 1000}
+    AiProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+  responses:
+    AiInvalidOrExpectedActor:
+      description: 요청 값 또는 기대한 staff actor header가 유효하지 않습니다.
+      content:
+        application/problem+json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/InvalidExpectedStaffActorProblem'
+              - $ref: '#/components/schemas/AiProblem'
+    AiConflictOrActorMismatch:
+      description: staff session actor 불일치, idempotency payload 또는 현재 상태가 충돌합니다.
+      content:
+        application/problem+json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/StaffSessionActorMismatchProblem'
+              - $ref: '#/components/schemas/AiProblem'
+    AiGenericProblem:
+      description: 인증·인가 또는 요청 일관성 오류입니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiRequestInvalid:
+      description: frozen AI 요청 계약을 만족하지 않습니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiRequestNotFound:
+      description: 작업이 없거나 owner/current ticket authorization을 만족하지 않습니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiRequestConflict:
+      description: idempotency payload 또는 현재 상태가 충돌합니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiPublicContextUnavailable:
+      description: 처리할 수 있는 PUBLIC 대화가 없습니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiRequestRateLimited:
+      description: actor 또는 workspace 접수 제한을 초과했습니다.
+      headers:
+        Retry-After:
+          schema: {type: integer, minimum: 1}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiRequestUnavailable:
+      description: 필수 persistence 또는 access audit 실패로 작업/본문을 반환하지 않습니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiSourceUnavailable:
+      description: binding, 상태, deadline, 원 requester의 활성 상태 또는 현재 권한이 유효하지 않습니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}
+    AiSourceSuperseded:
+      description: PUBLIC contextRevision이 접수 시점과 달라 본문을 반환하지 않습니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/AiProblem'}

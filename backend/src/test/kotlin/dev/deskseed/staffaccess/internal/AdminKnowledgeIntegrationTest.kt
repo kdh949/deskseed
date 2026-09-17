@@ -22,7 +22,16 @@ import java.time.Instant
 import java.util.UUID
 
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
-    properties = ["deskseed.test.context-group=admin-knowledge"],
+    properties = [
+        "deskseed.test.context-group=admin-knowledge",
+        "deskseed.ai.source-auth.enabled=true",
+        "deskseed.ai.source-auth.key-id=test-ai-key",
+        "deskseed.ai.source-auth.secret-sha256=a695c5b0e55ed3f90a405d33c529adf48c231f5bfac981f639dbd647d83c70eb",
+        "deskseed.ai.source-auth.principal-id=10000000-0000-0000-0000-000000000001",
+        "deskseed.ai.source-auth.indexer-key-id=test-ai-index-key",
+        "deskseed.ai.source-auth.indexer-secret-sha256=54ea5727730563beceb8cd0504f8f566eb56abfac410d15e1020ce71a4abef28",
+        "deskseed.ai.source-auth.indexer-principal-id=10000000-0000-0000-0000-000000000002",
+    ],
 )
 @AutoConfigureMockMvc
 @dev.deskseed.testsupport.category.IntegrationTest
@@ -35,11 +44,13 @@ class AdminKnowledgeIntegrationTest {
 
     @BeforeEach
     fun clearState() {
+        jdbc.execute("truncate table ai_knowledge_manifest_snapshots cascade")
+        jdbc.execute("truncate table ai_knowledge_access_audit_details, access_audit_events cascade")
         // Revisions and access rows are append-only in the production application role.
         // Test isolation therefore uses one PostgreSQL TRUNCATE over the FK-connected tables.
         jdbc.execute(
             """
-            truncate table knowledge_access_audit_events, knowledge_article_feedback_totals,
+            truncate table ai_knowledge_index_outbox, knowledge_access_audit_events, knowledge_article_feedback_totals,
                 knowledge_search_documents, knowledge_article_audience_groups,
                 knowledge_article_revisions, knowledge_articles, knowledge_sections, knowledge_categories
             """.trimIndent(),
@@ -149,6 +160,48 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.currentPublishedRevision.revisionNumber").value(1))
             .andExpect(jsonPath("$.version").value(2))
 
+        val publishedRevisionId = jdbc.queryForObject(
+            "select current_published_revision_id from knowledge_articles where id = ?",
+            UUID::class.java,
+            articleId,
+        )!!
+        val manifestBody = mockMvc.perform(
+            get("/api/v1/internal/ai/kb/manifest")
+                .param("limit", "1")
+                .header("Authorization", "Bearer test-ai-index-secret")
+                .header("X-Deskseed-AI-Key-Id", "test-ai-index-key"),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].articleId").value(articleId.toString()))
+            .andExpect(jsonPath("$.items[0].revisionId").value(publishedRevisionId.toString()))
+            .andExpect(jsonPath("$.items[0].sourceVersion").value(2))
+            .andExpect(jsonPath("$.snapshotToken").isString)
+            .andExpect(jsonPath("$.expiresAt").isString)
+            .andExpect(jsonPath("$.nextCursor").doesNotExist())
+            .andReturn().response.contentAsString
+        val manifestSnapshot = manifestBody.uuidField("snapshotToken")
+        val indexEventId = UUID.randomUUID()
+        mockMvc.perform(
+            get(
+                "/api/v1/internal/ai/kb/articles/{articleId}/revisions/{revisionId}",
+                articleId,
+                publishedRevisionId,
+            )
+                .header("Authorization", "Bearer test-ai-index-secret")
+                .header("X-Deskseed-AI-Key-Id", "test-ai-index-key")
+                .header("X-Deskseed-AI-Index-Event-Id", indexEventId.toString()),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.dataClass").value("PUBLIC_KB_ONLY"))
+            .andExpect(jsonPath("$.sourceVersion").value(2))
+            .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("카드 정보를 다시 확인하세요")))
+        assertThat(
+            jdbc.queryForObject(
+                "select count(*) from ai_knowledge_access_audit_details where request_ref = ? and article_id = ?",
+                Long::class.java,
+                indexEventId,
+                articleId,
+            ),
+        ).isEqualTo(1)
+
         mockMvc.perform(
             put("/api/v1/admin/knowledge/articles/{articleId}/audience", articleId)
                 .session(browser.session)
@@ -161,6 +214,46 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.audience.type").value("STAFF"))
             .andExpect(jsonPath("$.audienceVersion").value(2))
             .andExpect(jsonPath("$.version").value(3))
+
+        mockMvc.perform(
+            get("/api/v1/internal/ai/kb/manifest")
+                .param("snapshotToken", manifestSnapshot.toString())
+                .param("limit", "1")
+                .header("Authorization", "Bearer test-ai-index-secret")
+                .header("X-Deskseed-AI-Key-Id", "test-ai-index-key"),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].articleId").value(articleId.toString()))
+            .andExpect(jsonPath("$.items[0].sourceVersion").value(2))
+        mockMvc.perform(
+            get("/api/v1/internal/ai/kb/manifest")
+                .header("Authorization", "Bearer test-ai-index-secret")
+                .header("X-Deskseed-AI-Key-Id", "test-ai-index-key"),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.items").isEmpty)
+
+        assertThat(
+            jdbc.queryForList(
+                "select action from ai_knowledge_index_outbox where article_id = ? order by action desc",
+                String::class.java,
+                articleId,
+            ),
+        ).containsExactly("UPSERT", "DELETE")
+        assertThat(
+            jdbc.queryForList(
+                "select source_version from ai_knowledge_index_outbox where article_id = ? order by source_version",
+                Long::class.java,
+                articleId,
+            ),
+        ).containsExactly(2L, 3L)
+        assertThat(
+            jdbc.queryForList(
+                "select payload_json::text from ai_knowledge_index_outbox where article_id = ?",
+                String::class.java,
+                articleId,
+            ),
+        ).allSatisfy { payload ->
+            assertThat(payload).doesNotContain("카드 정보를 다시 확인하세요", "카드 결제가 거절될 때")
+        }
 
         assertThat(
             jdbc.queryForObject(

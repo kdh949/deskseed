@@ -10,6 +10,8 @@ import dev.deskseed.eventpublication.EventPublicationPort
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.knowledge.CanonicalKnowledgeDocumentCodec
 import dev.deskseed.knowledge.CanonicalKnowledgeDocumentValidator
+import dev.deskseed.knowledge.AiKnowledgeIndexAction
+import dev.deskseed.knowledge.AiKnowledgeIndexOutbox
 import dev.deskseed.knowledge.CreateKnowledgeArticleDraft
 import dev.deskseed.knowledge.KnowledgeAdminActor
 import dev.deskseed.knowledge.KnowledgeAdministration
@@ -56,6 +58,7 @@ internal class JdbcKnowledgeAdministration(
     private val eventPublication: EventPublicationPort,
     private val objectMapper: ObjectMapper,
     private val cursorCodec: KnowledgeCursorCodec,
+    private val aiKnowledgeIndexOutbox: AiKnowledgeIndexOutbox,
     private val clock: Clock,
 ) : KnowledgeAdministration {
     private val documentValidator = CanonicalKnowledgeDocumentValidator()
@@ -664,6 +667,26 @@ internal class JdbcKnowledgeAdministration(
             data = mapOf("articleId" to articleId.toString(), "lifecycle" to nextLifecycle.name),
             occurredAt = now,
         )
+        when {
+            nextLifecycle == KnowledgeArticleLifecycle.PUBLISHED -> aiKnowledgeIndexOutbox.append(
+                articleId = articleId,
+                revisionId = checkNotNull(publishedRevisionId),
+                action = if (root.audienceType == KnowledgeAudienceType.PUBLIC) {
+                    AiKnowledgeIndexAction.UPSERT
+                } else {
+                    AiKnowledgeIndexAction.DELETE
+                },
+                occurredAt = now,
+            )
+            root.lifecycle == KnowledgeArticleLifecycle.PUBLISHED &&
+                nextLifecycle in setOf(KnowledgeArticleLifecycle.UNPUBLISHED, KnowledgeArticleLifecycle.ARCHIVED) ->
+                aiKnowledgeIndexOutbox.append(
+                    articleId = articleId,
+                    revisionId = checkNotNull(root.currentPublishedRevisionId),
+                    action = AiKnowledgeIndexAction.DELETE,
+                    occurredAt = now,
+                )
+        }
         return article(articleId)
     }
 
@@ -720,6 +743,18 @@ internal class JdbcKnowledgeAdministration(
             mapOf("articleId" to articleId.toString(), "audience" to audience.type.name),
             now,
         )
+        if (root.lifecycle == KnowledgeArticleLifecycle.PUBLISHED) {
+            aiKnowledgeIndexOutbox.append(
+                articleId = articleId,
+                revisionId = checkNotNull(root.currentPublishedRevisionId),
+                action = if (audience.type == KnowledgeAudienceType.PUBLIC) {
+                    AiKnowledgeIndexAction.UPSERT
+                } else {
+                    AiKnowledgeIndexAction.DELETE
+                },
+                occurredAt = now,
+            )
+        }
         return article(articleId)
     }
 

@@ -454,3 +454,24 @@ rate-limit budget committed
 ### Agent configuration editor (2026-09-08)
 
 The optional `formId` in UpdateTicketConfiguration must accompany `formVersion` and match the current published default agent form. When present, form identity is included in the existing command replay descriptor. Candidate POST performs BACKGROUND ticket read authorization and required access audit without changing ticket values/version/audit. The command and candidate share the same form condition evaluator; visible editable required values are checked before mutation.
+
+## 16. AI V1 request, execution, and feedback
+
+```text
+Backend ACCEPTED
+  -> AI QUEUED -> RUNNING
+       -> SUCCEEDED
+       -> NEEDS_REVIEW (no usable result body)
+       -> RETRY_WAIT -> QUEUED (new generation)
+       -> FAILED | CANCELLED | SUPERSEDED | EXPIRED
+```
+
+- Backend `AI_REQUEST_CREATED`, `AI_REQUEST_CANCELLED`, and `AI_FEEDBACK_RECORDED` are dedicated append-only activity audit rows. Request/outbox/audit commit or roll back together.
+- AI inbox deduplicates the exact event fingerprint. A higher cancellation `requestRevision` creates or advances a tombstone and an older create cannot revive it.
+- Each retry increments generation. Worker claim increments lease epoch; a terminal write must match job, generation, lease epoch, and RUNNING state.
+- Provider I/O happens without a database lock after integer micro-USD reservation. Settlement is exactly once; an indeterminate outcome remains `UNKNOWN` and consumes budget.
+- Result commit records encrypted content only for `SUCCEEDED`. Missing approved reply evidence and invalid output are terminal and body-free.
+- Metadata polling omits result content. Explicit result retrieval rechecks current Backend authorization, feature policy, PUBLIC context revision, expiry, and PUBLIC KB citations, then requires `AI_RESULT_READ` persistence before returning content.
+- Feedback uses a separate exact-idempotency ledger and monotonically increasing source revision. Langfuse export is a retryable projection and never changes canonical feedback.
+
+PUBLIC knowledge index events are body-free and exact-revision keyed. Publish/unpublish/audience changes and their Backend outbox intent share the knowledge transaction. The indexer fetches content only through its direction-specific `INTEGRATION_CLIENT` credential; source disappearance cannot be treated as a successful stale index refresh.

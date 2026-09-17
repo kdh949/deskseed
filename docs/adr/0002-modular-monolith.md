@@ -18,6 +18,8 @@ Build one Spring Boot deployable organized as Spring Modulith application module
 
 ## Consequences
 
+AI V1의 Python 실행 역할·별도 AI DB/Redis 예외는 ADR 0049로만 승인한다. 이는 기존 업무 backend bounded context를 서비스로 분해하는 일반 승인이 아니다.
+
 - One database and local transactions give fast delivery and strong consistency for the MVP.
 - Domain events may coordinate modules; external integration events and Kafka come only after durable outbox requirements exist.
 - A future service extraction must be justified by ownership, scaling, deployment, or reliability pressure.

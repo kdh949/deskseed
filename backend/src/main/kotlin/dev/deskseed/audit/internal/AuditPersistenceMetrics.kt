@@ -29,6 +29,9 @@ internal class AuditPersistenceMetrics(meterRegistry: MeterRegistry) {
     }
 
     internal enum class Operation(val tagValue: String) {
+        AI_CONTEXT_ACCESS("ai-context-access"),
+        AI_KNOWLEDGE_ACCESS("ai-knowledge-access"),
+        AI_RESULT_ACCESS("ai-result-access"),
         TICKET_RESOURCE_READ("ticket-resource-read"),
         SAVED_VIEW_EXECUTED("saved-view-executed"),
         MACRO_PREVIEWED("macro-previewed"),

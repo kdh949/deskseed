@@ -12,7 +12,11 @@ COPY backend/gradle ./gradle
 RUN chmod +x gradlew
 COPY backend/src ./src
 COPY api/core-api-outline-v1.yaml api/customer-identity-api-v1.yaml api/platform-api-outline-v1.yaml ../api/
-RUN ./gradlew --no-daemon clean bootJar
+RUN ./gradlew --no-daemon --max-workers=1 \
+      -Dorg.gradle.parallel=false \
+      -Dorg.gradle.jvmargs=-Xmx2048m \
+      -Dkotlin.compiler.execution.strategy=in-process \
+      clean bootJar
 
 FROM eclipse-temurin:21-jre-alpine
 RUN addgroup -S deskseed && adduser -S deskseed -G deskseed

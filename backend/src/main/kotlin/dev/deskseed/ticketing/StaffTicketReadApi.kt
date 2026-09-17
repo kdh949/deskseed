@@ -147,6 +147,24 @@ data class StaffTicketDetail(
     val externalReferenceCount: Int = 0,
 )
 
+/**
+ * The only ticket-content projection available to AI integrations.
+ * It excludes subject, requester, assignments, relations, attachments, internal
+ * comments, audit metadata, and every other staff-only field by construction.
+ */
+data class AiPublicTicketContext(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ticketVersion: Long,
+    val comments: List<AiPublicComment>,
+)
+
+data class AiPublicComment(
+    val id: UUID,
+    val body: String,
+    val createdAt: Instant,
+)
+
 interface StaffTicketReadStore {
     fun list(
         view: DefaultStaffView,
@@ -158,6 +176,11 @@ interface StaffTicketReadStore {
     ): List<StaffTicketSummary>
 
     fun findDetail(ticketNumber: Long): StaffTicketDetail?
+
+    /** Applies current staff authorization in SQL and returns PUBLIC comments only. */
+    fun findAiPublicContext(ticketNumber: Long, actorId: UUID): AiPublicTicketContext?
+
+    fun canReadForAi(ticketNumber: Long, actorId: UUID): Boolean
 
     fun search(
         query: String,

@@ -2,6 +2,8 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.TicketAttachmentReadProjection
+import dev.deskseed.ticketing.AiPublicComment
+import dev.deskseed.ticketing.AiPublicTicketContext
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CommentContentFormat
 import dev.deskseed.ticketing.DefaultStaffView
@@ -564,6 +566,66 @@ internal class StaffTicketQueryRepository(
             externalReferenceCount = ticketRow.externalReferenceCount,
         )
     }
+
+    override fun findAiPublicContext(ticketNumber: Long, actorId: UUID): AiPublicTicketContext? {
+        val parameters = MapSqlParameterSource()
+            .addValue("ticketNumber", ticketNumber)
+            .addValue("actorId", actorId)
+        val ticket = jdbcTemplate.query(
+            """
+            select t.id, t.ticket_number, t.version
+            from tickets t
+            where t.ticket_number = :ticketNumber
+              and exists (
+                  select 1 from staff_accounts authorized_actor
+                  where authorized_actor.id = :actorId and authorized_actor.status = 'ACTIVE'
+              )
+            """.trimIndent(),
+            parameters,
+        ) { result, _ ->
+            Triple(
+                result.getObject("id", UUID::class.java),
+                result.getLong("ticket_number"),
+                result.getLong("version"),
+            )
+        }.singleOrNull() ?: return null
+        val comments = jdbcTemplate.query(
+            """
+            select comment.id, comment.body, comment.created_at
+            from ticket_comments comment
+            where comment.ticket_id = :ticketId and comment.visibility = 'PUBLIC'
+            order by comment.created_at, comment.id
+            """.trimIndent(),
+            MapSqlParameterSource("ticketId", ticket.first),
+        ) { result, _ ->
+            AiPublicComment(
+                id = result.getObject("id", UUID::class.java),
+                body = result.getString("body"),
+                createdAt = result.getTimestamp("created_at").toInstant(),
+            )
+        }
+        return AiPublicTicketContext(
+            ticketId = ticket.first,
+            ticketNumber = ticket.second,
+            ticketVersion = ticket.third,
+            comments = comments,
+        )
+    }
+
+    override fun canReadForAi(ticketNumber: Long, actorId: UUID): Boolean = jdbcTemplate.queryForObject(
+        """
+        select exists (
+            select 1
+            from tickets t
+            join staff_accounts actor on actor.id = :actorId and actor.status = 'ACTIVE'
+            where t.ticket_number = :ticketNumber
+        )
+        """.trimIndent(),
+        MapSqlParameterSource()
+            .addValue("ticketNumber", ticketNumber)
+            .addValue("actorId", actorId),
+        Boolean::class.java,
+    ) ?: false
 
     override fun hasRelationReadGrant(ticketId: UUID, actorId: UUID): Boolean =
         jdbcTemplate.queryForObject(
