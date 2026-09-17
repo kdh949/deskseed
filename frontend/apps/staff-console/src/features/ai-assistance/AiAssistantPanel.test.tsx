@@ -148,6 +148,7 @@ describe('AiAssistantPanel', () => {
         name: '생성하기',
       })
     )[0]!
+    await waitFor(() => expect(button).toBeEnabled())
 
     fireEvent.click(button)
     fireEvent.click(button)
