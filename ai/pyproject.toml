@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Isolated Deskseed AI V1 execution service"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-  "cryptography>=46,<47",
+  "cryptography>=46,<51",
   "fastapi>=0.135,<0.136",
   "httpx>=0.28,<0.29",
   "langfuse>=4,<5",
