@@ -60,7 +60,11 @@ import {
 } from '../../design-system/canonical'
 import { AttachmentList } from '../attachments/AttachmentList'
 import { AttachmentUploadField } from '../attachments/AttachmentUploadField'
-import { AiAssistantPanel } from '../ai-assistance/AiAssistantPanel'
+import {
+  AiAssistantPanel,
+  draftFingerprint,
+  type AiPublicDraftSnapshot,
+} from '../ai-assistance/AiAssistantPanel'
 import type { ExtensionAccess } from '../../extension-host/types'
 import { ExtensionSlot } from '../../extension-host/ExtensionSlot'
 import type { EditableTicketFields } from './model/ticketEditorModel'
@@ -126,6 +130,13 @@ function WritableWorkspace({
   staffId: string
 }) {
   const editor = useTicketEditor({ detail, refreshLatest, staffId })
+  const publicDraft: AiPublicDraftSnapshot = {
+    body: editor.comments.PUBLIC,
+    document: editor.documents.PUBLIC,
+    attachmentIds: editor.attachmentIds.PUBLIC,
+  }
+  const publicDraftRef = useRef(publicDraft)
+  publicDraftRef.current = publicDraft
   return (
     <>
       <WorkspaceFrame
@@ -136,7 +147,13 @@ function WritableWorkspace({
         aiAssistant={
           <AiAssistantPanel
             composerMode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
-            onInsertReply={(answer, strategy) => {
+            onInsertReply={(answer, strategy, expectedDraft) => {
+              if (
+                draftFingerprint(publicDraftRef.current) !==
+                draftFingerprint(expectedDraft)
+              ) {
+                return false
+              }
               const currentText = editor.comments.PUBLIC
               const nextText =
                 strategy === 'append' && currentText.trim()
@@ -154,8 +171,9 @@ function WritableWorkspace({
                     }
                   : answerDocument
               editor.updateRichDraft('PUBLIC', nextDocument, nextText)
+              return true
             }}
-            publicDraft={editor.comments.PUBLIC}
+            publicDraft={publicDraft}
             ticketNumber={detail.ticket.ticketNumber}
             ticketVersion={detail.ticket.version}
           />

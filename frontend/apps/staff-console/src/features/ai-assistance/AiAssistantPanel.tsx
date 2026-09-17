@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
-import type { TicketVisibility } from '../../api/types'
+import type { RichTextDocumentV1, TicketVisibility } from '../../api/types'
 import { SeedButton, SeedIcon, SeedNotice } from '../../design-system/canonical'
 import {
   cancelAiJob,
@@ -81,6 +81,14 @@ type JobMap = Partial<Record<AiFeature, AiJobReceipt>>
 type ErrorMap = Partial<Record<AiFeature, string>>
 type InsertStrategy = 'append' | 'replace'
 
+export interface AiPublicDraftSnapshot {
+  body: string
+  document: RichTextDocumentV1
+  attachmentIds: string[]
+}
+
+class AiResultUnavailableError extends Error {}
+
 export function AiAssistantPanel({
   client = defaultClient,
   composerMode,
@@ -91,10 +99,14 @@ export function AiAssistantPanel({
 }: {
   client?: AiAssistantClient
   composerMode: TicketVisibility
-  publicDraft: string
+  publicDraft: AiPublicDraftSnapshot
   ticketNumber: number
   ticketVersion: number
-  onInsertReply: (answer: string, strategy: InsertStrategy) => void
+  onInsertReply: (
+    answer: string,
+    strategy: InsertStrategy,
+    expectedDraft: AiPublicDraftSnapshot,
+  ) => boolean | void
 }) {
   const [jobs, setJobs] = useState<JobMap>({})
   const [errors, setErrors] = useState<ErrorMap>({})
@@ -104,6 +116,9 @@ export function AiAssistantPanel({
   const [choiceJobId, setChoiceJobId] = useState<string | null>(null)
   const [insertMessage, setInsertMessage] = useState('')
   const [insertingJobId, setInsertingJobId] = useState<string | null>(null)
+  const [generatingFeatures, setGeneratingFeatures] = useState<Set<AiFeature>>(
+    () => new Set(),
+  )
   const [feedbackByJob, setFeedbackByJob] = useState<
     Record<string, AiFeedbackType | undefined>
   >({})
@@ -114,17 +129,16 @@ export function AiAssistantPanel({
     ticketVersion,
   })
   const insertInFlightRef = useRef(false)
+  const generateInFlightRef = useRef(new Set<AiFeature>())
   const pollFailuresRef = useRef(new Map<string, number>())
   const usedReplyJobsRef = useRef(new Set<string>())
 
-  useEffect(() => {
-    latestRef.current = {
-      composerMode,
-      publicDraft,
-      ticketNumber,
-      ticketVersion,
-    }
-  }, [composerMode, publicDraft, ticketNumber, ticketVersion])
+  latestRef.current = {
+    composerMode,
+    publicDraft,
+    ticketNumber,
+    ticketVersion,
+  }
 
   const replaceJob = useCallback((job: AiJobReceipt) => {
     setJobs((current) => ({ ...current, [job.feature]: job }))
@@ -133,7 +147,11 @@ export function AiAssistantPanel({
   const hydrateResult = useCallback(
     async (job: AiJobReceipt) => {
       if (job.status !== 'SUCCEEDED' || job.result !== null) return job
-      return client.get(ticketNumber, job.jobId, true)
+      const hydrated = await client.get(ticketNumber, job.jobId, true)
+      if (hydrated.status === 'SUCCEEDED' && hydrated.result === null) {
+        throw new AiResultUnavailableError()
+      }
+      return hydrated
     },
     [client, ticketNumber],
   )
@@ -161,9 +179,10 @@ export function AiAssistantPanel({
           }
         }),
       )
-      setJobs(
-        Object.fromEntries(hydrated.map((job) => [job.feature, job])) as JobMap,
-      )
+      const listed = Object.fromEntries(
+        hydrated.map((job) => [job.feature, job]),
+      ) as JobMap
+      setJobs((current) => ({ ...listed, ...current }))
     } catch (cause) {
       if (
         cause instanceof ApiError &&
@@ -202,7 +221,7 @@ export function AiAssistantPanel({
               ...current,
               [job.feature]: messageForError(cause),
             }))
-            if (nextFailureCount <= 3) setJobs((current) => ({ ...current }))
+            setJobs((current) => ({ ...current }))
           }
         },
         Math.min(job.pollAfterMs * 2 ** failureCount, 10_000),
@@ -213,6 +232,9 @@ export function AiAssistantPanel({
   }, [client, hydrateResult, jobs, replaceJob, ticketNumber])
 
   const generate = async (feature: AiFeature) => {
+    if (loading || generateInFlightRef.current.has(feature)) return
+    generateInFlightRef.current.add(feature)
+    setGeneratingFeatures((current) => new Set(current).add(feature))
     setErrors((current) => ({ ...current, [feature]: undefined }))
     setChoiceJobId(null)
     setInsertMessage('')
@@ -223,6 +245,13 @@ export function AiAssistantPanel({
         ...current,
         [feature]: messageForError(cause),
       }))
+    } finally {
+      generateInFlightRef.current.delete(feature)
+      setGeneratingFeatures((current) => {
+        const next = new Set(current)
+        next.delete(feature)
+        return next
+      })
     }
   }
 
@@ -248,7 +277,7 @@ export function AiAssistantPanel({
   }
 
   const validateReply = async (job: AiJobReceipt) => {
-    const snapshot = { ...latestRef.current }
+    const snapshot = latestSnapshot(latestRef.current)
     const latest = await client.get(ticketNumber, job.jobId, true)
     replaceJob(latest)
     const current = latestRef.current
@@ -256,7 +285,8 @@ export function AiAssistantPanel({
       snapshot.ticketNumber !== current.ticketNumber ||
       snapshot.ticketVersion !== current.ticketVersion ||
       snapshot.composerMode !== current.composerMode ||
-      snapshot.publicDraft !== current.publicDraft
+      draftFingerprint(snapshot.publicDraft) !==
+        draftFingerprint(current.publicDraft)
     ) {
       setInsertMessage(
         '검증 중 티켓이나 작성기가 변경되었습니다. 다시 시도해 주세요.',
@@ -274,7 +304,7 @@ export function AiAssistantPanel({
       )
       return null
     }
-    return latest.result
+    return { result: latest.result, publicDraft: snapshot.publicDraft }
   }
 
   const beginInsert = async (job: AiJobReceipt) => {
@@ -287,17 +317,28 @@ export function AiAssistantPanel({
     setInsertingJobId(job.jobId)
     setInsertMessage('')
     try {
-      const result = await validateReply(job)
-      if (!result) return
+      const validated = await validateReply(job)
+      if (!validated) return
       if (latestRef.current.composerMode !== 'PUBLIC') {
         setInsertMessage('PUBLIC 답변 작성기를 선택한 뒤 다시 시도해 주세요.')
         return
       }
-      if (latestRef.current.publicDraft.trim()) {
+      if (hasDraft(validated.publicDraft)) {
         setChoiceJobId(job.jobId)
         return
       }
-      onInsertReply(result.answer, 'replace')
+      if (
+        onInsertReply(
+          validated.result.answer,
+          'replace',
+          validated.publicDraft,
+        ) === false
+      ) {
+        setInsertMessage(
+          '검증 후 PUBLIC 작성기가 변경되었습니다. 다시 시도해 주세요.',
+        )
+        return
+      }
       usedReplyJobsRef.current.add(job.jobId)
       setInsertMessage(
         '답변 초안을 PUBLIC 작성기에 넣었습니다. 검토 후 보내 주세요.',
@@ -325,14 +366,26 @@ export function AiAssistantPanel({
     setInsertingJobId(job.jobId)
     setInsertMessage('')
     try {
-      const result = await validateReply(job)
-      if (!result) return
+      const validated = await validateReply(job)
+      if (!validated) return
       if (latestRef.current.composerMode !== 'PUBLIC') {
         setChoiceJobId(null)
         setInsertMessage('PUBLIC 답변 작성기를 선택한 뒤 다시 시도해 주세요.')
         return
       }
-      onInsertReply(result.answer, strategy)
+      if (
+        onInsertReply(
+          validated.result.answer,
+          strategy,
+          validated.publicDraft,
+        ) === false
+      ) {
+        setChoiceJobId(null)
+        setInsertMessage(
+          '검증 후 PUBLIC 작성기가 변경되었습니다. 다시 시도해 주세요.',
+        )
+        return
+      }
       usedReplyJobsRef.current.add(job.jobId)
       setChoiceJobId(null)
       setInsertMessage(
@@ -400,6 +453,9 @@ export function AiAssistantPanel({
                 definition={definition}
                 error={errors[definition.feature]}
                 feedback={job ? feedbackByJob[job.jobId] : undefined}
+                generationDisabled={
+                  loading || generatingFeatures.has(definition.feature)
+                }
                 insertionBusy={insertingJobId === job?.jobId}
                 job={job}
                 key={definition.feature}
@@ -431,6 +487,7 @@ function AiFeatureCard({
   definition,
   error,
   feedback,
+  generationDisabled,
   insertionBusy,
   job,
   onCancelChoice,
@@ -444,6 +501,7 @@ function AiFeatureCard({
   definition: (typeof FEATURES)[number]
   error?: string
   feedback?: AiFeedbackType
+  generationDisabled: boolean
   insertionBusy: boolean
   job?: AiJobReceipt
   onCancelChoice: () => void
@@ -543,7 +601,7 @@ function AiFeatureCard({
 
       <div className="ai-assistant-card__actions">
         <SeedButton
-          disabled={active}
+          disabled={active || generationDisabled}
           onClick={() => void onGenerate(definition.feature)}
           size="compact"
           variant={job ? 'quiet' : 'primary'}
@@ -696,7 +754,7 @@ function terminalTitle(status: AiJobReceipt['status']) {
 }
 
 function terminalDescription(job: AiJobReceipt) {
-  if (job.status === 'FAILED' && job.errorCode === 'BUDGET_EXHAUSTED')
+  if (job.status === 'FAILED' && job.errorCode === 'BUDGET_EXCEEDED')
     return '현재 AI 사용 한도에 도달했습니다. 한도가 갱신된 뒤 다시 시도해 주세요.'
   if (job.status === 'FAILED')
     return '결과를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.'
@@ -707,6 +765,9 @@ function terminalDescription(job: AiJobReceipt) {
 }
 
 function messageForError(cause: unknown) {
+  if (cause instanceof AiResultUnavailableError) {
+    return '완료된 AI 결과를 불러오지 못했습니다. 새로 생성해 주세요.'
+  }
   if (cause instanceof ApiError) {
     if (cause.status === 409)
       return '티켓이 변경되었습니다. 최신 정보를 확인한 뒤 다시 시도해 주세요.'
@@ -719,4 +780,36 @@ function messageForError(cause: unknown) {
       : cause.message
   }
   return 'AI 요청을 처리하지 못했습니다. 다시 시도해 주세요.'
+}
+
+function latestSnapshot(current: {
+  composerMode: TicketVisibility
+  publicDraft: AiPublicDraftSnapshot
+  ticketNumber: number
+  ticketVersion: number
+}) {
+  return {
+    ...current,
+    publicDraft: {
+      body: current.publicDraft.body,
+      document: structuredClone(current.publicDraft.document),
+      attachmentIds: [...current.publicDraft.attachmentIds],
+    },
+  }
+}
+
+export function draftFingerprint(draft: AiPublicDraftSnapshot) {
+  return JSON.stringify({
+    body: draft.body,
+    document: draft.document,
+    attachmentIds: draft.attachmentIds,
+  })
+}
+
+function hasDraft(draft: AiPublicDraftSnapshot) {
+  return (
+    draft.body.trim().length > 0 ||
+    draft.attachmentIds.length > 0 ||
+    draft.document.content.some((node) => node.type === 'attachmentImage')
+  )
 }

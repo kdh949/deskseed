@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { AiAssistantPanel, type AiAssistantClient } from './AiAssistantPanel'
+import { plainTextDocument } from '../../api/types'
 import type { AiFeature, AiJobReceipt, AiResult } from './api'
 
 const JOB_IDS: Record<AiFeature, string> = {
@@ -97,6 +98,12 @@ const readyJobs = [
   receipt('ticket.reply_draft'),
 ]
 
+const emptyDraft = {
+  body: '',
+  document: plainTextDocument(''),
+  attachmentIds: [],
+}
+
 const meta = {
   title: '06 Domain/AI assistance/AiAssistantPanel',
   component: AiAssistantPanel,
@@ -111,7 +118,7 @@ const meta = {
   args: {
     client: clientFor(readyJobs),
     composerMode: 'PUBLIC',
-    publicDraft: '',
+    publicDraft: emptyDraft,
     ticketNumber: 3001,
     ticketVersion: 7,
     onInsertReply: fn(),
@@ -153,7 +160,7 @@ export const BudgetExhausted: Story = {
         status: 'FAILED',
         phase: 'COMPLETE',
         canInsert: false,
-        errorCode: 'BUDGET_EXHAUSTED',
+        errorCode: 'BUDGET_EXCEEDED',
         result: null,
       }),
     ]),
@@ -163,7 +170,11 @@ export const BudgetExhausted: Story = {
 export const ExistingDraftChoice: Story = {
   args: {
     client: clientFor([receipt('ticket.reply_draft')]),
-    publicDraft: '기존에 작성하던 고객 답변입니다.',
+    publicDraft: {
+      body: '기존에 작성하던 고객 답변입니다.',
+      document: plainTextDocument('기존에 작성하던 고객 답변입니다.'),
+      attachmentIds: [],
+    },
     onInsertReply: fn(),
   },
   play: async ({ canvasElement, args }) => {
@@ -178,6 +189,9 @@ export const ExistingDraftChoice: Story = {
       expect(args.onInsertReply).toHaveBeenCalledWith(
         expect.stringContaining('결제 승인 기록'),
         'append',
+        expect.objectContaining({
+          body: '기존에 작성하던 고객 답변입니다.',
+        }),
       ),
     )
     await expect(
@@ -189,6 +203,46 @@ export const ExistingDraftChoice: Story = {
     await expect(args.onInsertReply).toHaveBeenCalledTimes(1)
     await expect(
       canvas.getByText('이 AI 초안은 이미 작성기에 넣었습니다.'),
+    ).toBeVisible()
+  },
+}
+
+export const AttachmentOnlyDraftChoice: Story = {
+  args: {
+    client: clientFor([receipt('ticket.reply_draft')]),
+    publicDraft: {
+      ...emptyDraft,
+      attachmentIds: ['77777777-7777-4777-8777-777777777777'],
+    },
+    onInsertReply: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText('안녕하세요. 결제 승인 기록을 확인하고 있습니다.')
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'PUBLIC 작성기에 사용' }),
+    )
+    await expect(
+      canvas.getByText('PUBLIC 작성기에 기존 초안이 있습니다.'),
+    ).toBeVisible()
+    await expect(args.onInsertReply).not.toHaveBeenCalled()
+  },
+}
+
+export const MissingSucceededResult: Story = {
+  args: {
+    client: clientFor([
+      receipt('ticket.summary', {
+        result: null,
+      }),
+    ]),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByText(
+        '완료된 AI 결과를 불러오지 못했습니다. 새로 생성해 주세요.',
+      ),
     ).toBeVisible()
   },
 }
