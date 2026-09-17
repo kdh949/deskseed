@@ -81,6 +81,7 @@ class IndexingService:
                     articleId=item.articleId,
                     revisionId=item.revisionId,
                     action="UPSERT",
+                    sourceVersion=item.sourceVersion,
                     publicRevision=item.publicRevision,
                     createdAt=item.publishedAt,
                 )
@@ -116,6 +117,8 @@ class IndexingService:
             raise ConflictError("knowledge source data class is not PUBLIC_KB_ONLY")
         if article.articleId != event.articleId or article.revisionId != event.revisionId:
             raise ConflictError("knowledge source binding mismatch")
+        if article.sourceVersion != event.sourceVersion:
+            raise ConflictError("knowledge source version mismatch")
         if article.publicRevision != event.publicRevision:
             raise ConflictError("knowledge source revision mismatch")
         chunks = chunk_public_article(article.body)
@@ -130,10 +133,12 @@ class IndexingService:
             self.pricing.upper_bound_microusd(self.settings.embedding_model, token_upper_bound),
         )
         try:
-            tokens = self.knowledge.replace_public_revision(
+            tokens, _ = self.knowledge.replace_public_revision(
                 event.workspaceKey,
                 article.articleId,
                 article.revisionId,
+                event.sourceVersion,
+                event.eventId,
                 article.slug,
                 article.title,
                 article.publicRevision,

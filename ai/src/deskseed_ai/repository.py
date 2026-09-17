@@ -42,6 +42,14 @@ class StaleLeaseError(RuntimeError):
     pass
 
 
+class ActiveLeaseError(RuntimeError):
+    pass
+
+
+class ProviderCallStateUnknownError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ReconciliationRun:
     run_id: UUID
@@ -420,7 +428,7 @@ class Repository:
                 )
                 return None
             if row["status"] == "RUNNING" and row["lease_expires_at"] and row["lease_expires_at"] > now:
-                return None
+                raise ActiveLeaseError("job is still owned by an active worker")
             lease_epoch = row["lease_epoch"] + 1
             connection.execute(
                 """
@@ -463,7 +471,7 @@ class Repository:
         reserve_microusd: int,
         call_type: str,
     ) -> UUID:
-        return self._reserve_budget(
+        reservation = self._reserve_budget(
             workspace_key=claim.workspace_key,
             requester_id=claim.requester_id,
             job_id=claim.job_id,
@@ -474,6 +482,11 @@ class Repository:
             reserve_microusd=reserve_microusd,
             call_type=call_type,
         )
+        if reservation is None:
+            raise ProviderCallStateUnknownError(
+                "an earlier provider call with this operation key may already have started"
+            )
+        return reservation
 
     def reserve_system_budget(
         self,
@@ -483,7 +496,7 @@ class Repository:
         pricing_version: str,
         reserve_microusd: int,
     ) -> UUID:
-        return self._reserve_budget(
+        reservation = self._reserve_budget(
             workspace_key=workspace_key,
             requester_id=None,
             job_id=None,
@@ -494,6 +507,11 @@ class Repository:
             reserve_microusd=reserve_microusd,
             call_type="INDEX_EMBEDDING",
         )
+        if reservation is None:
+            raise ProviderCallStateUnknownError(
+                "an earlier provider call with this operation key may already have started"
+            )
+        return reservation
 
     def _reserve_budget(
         self,
@@ -507,7 +525,7 @@ class Repository:
         pricing_version: str,
         reserve_microusd: int,
         call_type: str,
-    ) -> UUID:
+    ) -> UUID | None:
         now = datetime.now(UTC)
         budget_day = now.date()
         if reserve_microusd <= 0 or reserve_microusd > self.settings.job_budget_microusd:
@@ -515,10 +533,20 @@ class Repository:
         with self.database.transaction() as connection:
             connection.execute("select pg_advisory_xact_lock(hashtext(%s), hashtext(%s))", (workspace_key, str(budget_day)))
             existing = connection.execute(
-                "select reservation_id from ai_cost_ledger where operation_key = %s", (operation_key,)
+                "select reservation_id, status from ai_cost_ledger where operation_key = %s for update",
+                (operation_key,),
             ).fetchone()
             if existing:
-                return existing["reservation_id"]
+                if existing["status"] == "RESERVED":
+                    connection.execute(
+                        """
+                        update ai_cost_ledger
+                        set status = 'UNKNOWN', unknown_since = coalesce(unknown_since, clock_timestamp())
+                        where reservation_id = %s and status = 'RESERVED'
+                        """,
+                        (existing["reservation_id"],),
+                    )
+                return None
             workspace_spend = connection.execute(
                 """
                 select coalesce(sum(case when status = 'SETTLED' then settled_microusd else reserved_microusd end), 0) as total
@@ -684,21 +712,35 @@ class Repository:
         now = datetime.now(UTC)
         with self.database.transaction() as connection:
             current = connection.execute(
-                "select attempt_count from ai_jobs where job_id = %s for update", (claim.job_id,)
+                """
+                select attempt_count from ai_jobs
+                where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
+                for update
+                """,
+                (claim.job_id, claim.generation, claim.lease_epoch),
             ).fetchone()
             if not current:
-                return
+                raise StaleLeaseError("job failure lease lost")
             retry = retryable and current["attempt_count"] < self.settings.max_attempts and claim.deadline_at > now
             if retry:
                 next_generation = claim.generation + 1
-                connection.execute(
+                updated = connection.execute(
                     """
                     update ai_jobs set status = 'RETRY_WAIT', phase = 'QUEUED', generation = %s,
                         error_code = %s, lease_owner = null, lease_expires_at = null, updated_at = %s
-                    where job_id = %s and lease_epoch = %s
+                    where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                     """,
-                    (next_generation, error_code[:80], now, claim.job_id, claim.lease_epoch),
-                )
+                    (
+                        next_generation,
+                        error_code[:80],
+                        now,
+                        claim.job_id,
+                        claim.generation,
+                        claim.lease_epoch,
+                    ),
+                ).rowcount
+                if updated != 1:
+                    raise StaleLeaseError("job failure lease lost")
                 connection.execute(
                     """
                     insert into ai_dispatch_outbox (
@@ -709,14 +751,23 @@ class Repository:
                     (uuid4(), claim.job_id, next_generation, now + timedelta(seconds=2 ** current["attempt_count"]), now),
                 )
             else:
-                connection.execute(
+                updated = connection.execute(
                     """
                     update ai_jobs set status = 'FAILED', phase = 'COMPLETE', error_code = %s,
                         completed_at = %s, lease_owner = null, lease_expires_at = null, updated_at = %s
-                    where job_id = %s and lease_epoch = %s
+                    where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                     """,
-                    (error_code[:80], now, now, claim.job_id, claim.lease_epoch),
-                )
+                    (
+                        error_code[:80],
+                        now,
+                        now,
+                        claim.job_id,
+                        claim.generation,
+                        claim.lease_epoch,
+                    ),
+                ).rowcount
+                if updated != 1:
+                    raise StaleLeaseError("job failure lease lost")
 
     def terminate_job(self, claim: ClaimedJob, status: JobStatus, error_code: str) -> None:
         if status not in {JobStatus.SUPERSEDED, JobStatus.CANCELLED, JobStatus.EXPIRED, JobStatus.FAILED}:
@@ -825,12 +876,44 @@ class Repository:
                 """,
                 (event.eventId, event.articleId, event.revisionId, fingerprint),
             )
+            current = connection.execute(
+                """
+                select source_version, action from ai_kb_article_state
+                where workspace_key = %s and article_id = %s for update
+                """,
+                (event.workspaceKey, event.articleId),
+            ).fetchone()
+            if current and event.sourceVersion < current["source_version"]:
+                return Accepted(replayed=False)
+            if current and event.sourceVersion == current["source_version"]:
+                if event.action != current["action"]:
+                    raise ConflictError("index event source version has conflicting actions")
+                return Accepted(replayed=False)
+            connection.execute(
+                """
+                insert into ai_kb_article_state (
+                    workspace_key, article_id, source_version, action, event_id, updated_at
+                ) values (%s, %s, %s, %s, %s, clock_timestamp())
+                on conflict (workspace_key, article_id) do update set
+                    source_version = excluded.source_version,
+                    action = excluded.action,
+                    event_id = excluded.event_id,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    event.workspaceKey,
+                    event.articleId,
+                    event.sourceVersion,
+                    event.action,
+                    event.eventId,
+                ),
+            )
             connection.execute(
                 """
                 insert into ai_kb_index_jobs (
-                    event_id, workspace_key, article_id, revision_id, action, public_revision,
+                    event_id, workspace_key, article_id, revision_id, action, source_version, public_revision,
                     status, attempts, available_at, created_at
-                ) values (%s, %s, %s, %s, %s, %s, 'PENDING', 0, clock_timestamp(), %s)
+                ) values (%s, %s, %s, %s, %s, %s, %s, 'PENDING', 0, clock_timestamp(), %s)
                 """,
                 (
                     event.eventId,
@@ -838,6 +921,7 @@ class Repository:
                     event.articleId,
                     event.revisionId,
                     event.action,
+                    event.sourceVersion,
                     event.publicRevision,
                     event.createdAt,
                 ),
@@ -858,7 +942,8 @@ class Repository:
         with self.database.transaction() as connection:
             rows = connection.execute(
                 """
-                select event_id, workspace_key, article_id, revision_id, action, public_revision, created_at
+                select event_id, workspace_key, article_id, revision_id, action, source_version,
+                       public_revision, created_at
                 from ai_kb_index_jobs
                 where (status = 'PENDING' and available_at <= %s)
                    or (status = 'LEASED' and lease_expires_at <= %s)
@@ -884,6 +969,7 @@ class Repository:
                 articleId=row["article_id"],
                 revisionId=row["revision_id"],
                 action=row["action"],
+                sourceVersion=row["source_version"],
                 publicRevision=row["public_revision"],
                 createdAt=row["created_at"],
             )

@@ -24,7 +24,7 @@ The default rollout is OFF. Enabling requires healthy Backend outboxes, AI Postg
 ## Redis loss or pending entries
 
 - PostgreSQL `ai_dispatch_outbox` is authoritative delivery intent. Start `run-recovery` to republish stranded delivered rows after the safety interval.
-- `XAUTOCLAIM` moves idle pending entries to the recovery consumer. Generation and lease epoch fence stale workers.
+- A normal worker uses `XAUTOCLAIM` to take idle pending entries and executes them under the same source/provider credential boundary as new work. The recovery role only republishes stranded durable dispatch intents and never runs model work. Generation and lease epoch fence stale workers.
 - Do not reconstruct Stream messages with ticket or KB bodies. The only allowed fields are schema version, job ID, generation, and trace context.
 
 ## Stuck lease or retry

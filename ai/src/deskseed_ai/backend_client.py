@@ -151,6 +151,7 @@ class PublicKnowledgeArticle(BaseModel):
     slug: str
     title: str
     body: str
+    sourceVersion: int
     publicRevision: str
     publishedAt: datetime
     dataClass: str
@@ -160,6 +161,7 @@ class KnowledgeManifestItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     articleId: UUID
     revisionId: UUID
+    sourceVersion: int
     publicRevision: str
     publishedAt: datetime
 

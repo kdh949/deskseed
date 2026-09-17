@@ -27,12 +27,18 @@ internal class JdbcAiKnowledgeIndexOutbox(
         action: AiKnowledgeIndexAction,
         occurredAt: Instant,
     ) {
-        val publicRevision = jdbcTemplate.queryForObject(
-            "select content_checksum from knowledge_article_revisions where id = ? and article_id = ?",
-            String::class.java,
+        val source = jdbcTemplate.query(
+            """
+            select revision.content_checksum, article.version
+            from knowledge_article_revisions revision
+            join knowledge_articles article on article.id = revision.article_id
+            where revision.id = ? and revision.article_id = ?
+            """.trimIndent(),
+            { result, _ -> result.getString("content_checksum") to result.getLong("version") },
             revisionId,
             articleId,
-        ) ?: error("Knowledge revision checksum is unavailable")
+        ).singleOrNull() ?: error("Knowledge revision source is unavailable")
+        val (publicRevision, sourceVersion) = source
         val eventId = UUID.randomUUID()
         val payload = objectMapper.writeValueAsString(
             linkedMapOf(
@@ -42,6 +48,7 @@ internal class JdbcAiKnowledgeIndexOutbox(
                 "articleId" to articleId.toString(),
                 "revisionId" to revisionId.toString(),
                 "action" to action.name,
+                "sourceVersion" to sourceVersion,
                 "publicRevision" to publicRevision,
                 "createdAt" to occurredAt.toString(),
             ),
@@ -49,9 +56,9 @@ internal class JdbcAiKnowledgeIndexOutbox(
         jdbcTemplate.update(
             """
             insert into ai_knowledge_index_outbox (
-                event_id, workspace_key, article_id, revision_id, action, public_revision,
+                event_id, workspace_key, article_id, revision_id, action, source_version, public_revision,
                 payload_json, payload_checksum, status, attempts, available_at, created_at
-            ) values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'PENDING', 0, ?, ?)
+            ) values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'PENDING', 0, ?, ?)
             on conflict (workspace_key, article_id, revision_id, action) do nothing
             """.trimIndent(),
             eventId,
@@ -59,6 +66,7 @@ internal class JdbcAiKnowledgeIndexOutbox(
             articleId,
             revisionId,
             action.name,
+            sourceVersion,
             publicRevision,
             payload,
             sha256(payload),

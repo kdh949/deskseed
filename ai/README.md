@@ -20,7 +20,8 @@ The integration tests start real PostgreSQL with pgvector and Redis containers. 
 - `api`: authenticated Backend ingress and metadata/result reads.
 - `dispatcher`: durable PostgreSQL dispatch outbox to a content-free Redis Stream.
 - `worker`: current Backend source/policy checks, budget reservation, model execution, fencing, and terminal commit.
-- `recovery`: stranded dispatch republish and Redis `XAUTOCLAIM` recovery.
+- `recovery`: stranded durable-dispatch republish only; it never executes model work.
+- `worker`: new-message consumption plus Redis `XAUTOCLAIM` of idle pending entries under the normal source/provider credential boundary.
 - `indexer`: exact PUBLIC knowledge revision fetch/replacement plus bounded daily snapshot reconciliation.
 - `feedback`: stable score export to Langfuse when enabled.
 - `retention`: hourly encrypted-result and expired-metadata purge while preserving dedupe and cost evidence.

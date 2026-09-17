@@ -20,7 +20,14 @@ from .config import Settings
 from .observability import TraceAdapter, TraceAttributes
 from .pricing import PricingCatalog, Usage
 from .providers import GenerationProvider
-from .repository import BudgetExceededError, ClaimedJob, Repository, StaleLeaseError
+from .repository import (
+    ActiveLeaseError,
+    BudgetExceededError,
+    ClaimedJob,
+    ProviderCallStateUnknownError,
+    Repository,
+    StaleLeaseError,
+)
 from .retrieval import KnowledgeRepository
 from .schemas import Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
 from .workflows import ReplyWorkflow
@@ -99,21 +106,13 @@ class StreamRuntime:
                 self.repository.release_dispatch(event.event_id, self.settings.consumer_name, type(exception).__name__)
         return delivered
 
-    def consume_once(self, block_ms: int = 100, count: int = 10) -> int:
+    def consume_once(
+        self,
+        block_ms: int = 100,
+        count: int = 10,
+        min_idle_ms: int | None = None,
+    ) -> int:
         self.ensure_group()
-        messages = self.redis.xreadgroup(
-            groupname=self.settings.stream_group,
-            consumername=self.settings.consumer_name,
-            streams={self.settings.stream_name: ">"},
-            count=count,
-            block=block_ms,
-        )
-        return self._handle_messages(messages)
-
-    def recover_once(self, min_idle_ms: int | None = None, count: int = 10) -> int:
-        self.ensure_group()
-        self.repository.requeue_stranded_dispatches()
-        self.dispatch_once(limit=count)
         idle = min_idle_ms if min_idle_ms is not None else self.settings.lease_seconds * 1000
         claimed = self.redis.xautoclaim(
             name=self.settings.stream_name,
@@ -123,8 +122,24 @@ class StreamRuntime:
             start_id="0-0",
             count=count,
         )
-        messages = claimed[1] if len(claimed) >= 2 else []
-        return self._handle_messages([(self.settings.stream_name, messages)])
+        pending = claimed[1] if len(claimed) >= 2 else []
+        handled = self._handle_messages([(self.settings.stream_name, pending)])
+        remaining = max(0, count - len(pending))
+        if remaining == 0:
+            return handled
+        messages = self.redis.xreadgroup(
+            groupname=self.settings.stream_group,
+            consumername=self.settings.consumer_name,
+            streams={self.settings.stream_name: ">"},
+            count=remaining,
+            block=block_ms,
+        )
+        return handled + self._handle_messages(messages)
+
+    def recover_once(self, min_idle_ms: int | None = None, count: int = 10) -> int:
+        self.ensure_group()
+        self.repository.requeue_stranded_dispatches()
+        return self.dispatch_once(limit=count)
 
     def _handle_messages(self, batches: list[Any]) -> int:
         handled = 0
@@ -146,6 +161,11 @@ class StreamRuntime:
                 except StaleLeaseError:
                     self.redis.xack(self.settings.stream_name, self.settings.stream_group, message_id)
                     handled += 1
+                except ActiveLeaseError:
+                    LOGGER.info(
+                        "AI stream message remains pending for the active lease owner",
+                        extra={"message_id": message_id},
+                    )
                 except Exception as exception:
                     LOGGER.exception(
                         "AI stream message failed",
@@ -196,7 +216,11 @@ class StreamRuntime:
                     )
                     reservations.append(query_reservation)
                     self.repository.set_phase(claim, JobPhase.RETRIEVE)
-                    reply_execution = self.reply_workflow.invoke(context, claim.workspace_key)
+                    reply_execution = self.reply_workflow.invoke(
+                        context,
+                        claim.workspace_key,
+                        lambda candidates: self.backend.authorize_citations(claim.job_id, candidates),
+                    )
                     generated = reply_execution.generation
                     query_cost = self.pricing.cost_microusd(
                         self.settings.embedding_model,
@@ -244,10 +268,16 @@ class StreamRuntime:
                 self.repository.terminate_job(claim, JobStatus.FAILED, "AI_POLICY_DISABLED")
             except BudgetExceededError:
                 self.repository.fail_job(claim, "BUDGET_EXCEEDED", retryable=False)
+            except ProviderCallStateUnknownError:
+                self.repository.fail_job(claim, "PROVIDER_OUTCOME_UNKNOWN", retryable=False)
             except InputTooLongError:
                 self.repository.fail_job(claim, "INPUT_TOO_LONG", retryable=False)
             except InvalidModelOutputError:
                 self.repository.fail_job(claim, "MODEL_OUTPUT_INVALID", retryable=False)
+            except StaleLeaseError:
+                for reservation in reservations:
+                    self.repository.mark_budget_unknown(reservation)
+                raise
             except Exception as exception:
                 if reservations:
                     for reservation in reservations:

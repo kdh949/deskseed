@@ -202,10 +202,11 @@ components:
     KnowledgeManifestItem:
       type: object
       additionalProperties: false
-      required: [articleId, revisionId, publicRevision, publishedAt]
+      required: [articleId, revisionId, sourceVersion, publicRevision, publishedAt]
       properties:
         articleId: {type: string, format: uuid}
         revisionId: {type: string, format: uuid}
+        sourceVersion: {type: integer, format: int64, minimum: 1}
         publicRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
         publishedAt: {type: string, format: date-time}
     KnowledgeCandidate:
@@ -227,13 +228,14 @@ components:
     PublicKnowledgeArticle:
       type: object
       additionalProperties: false
-      required: [articleId, revisionId, slug, title, body, publicRevision, publishedAt, dataClass]
+      required: [articleId, revisionId, slug, title, body, sourceVersion, publicRevision, publishedAt, dataClass]
       properties:
         articleId: {type: string, format: uuid}
         revisionId: {type: string, format: uuid}
         slug: {type: string, minLength: 1, maxLength: 180}
         title: {type: string, minLength: 1, maxLength: 300}
         body: {type: string, minLength: 1}
+        sourceVersion: {type: integer, format: int64, minimum: 1}
         publicRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
         publishedAt: {type: string, format: date-time}
         dataClass: {type: string, const: PUBLIC_KB_ONLY}

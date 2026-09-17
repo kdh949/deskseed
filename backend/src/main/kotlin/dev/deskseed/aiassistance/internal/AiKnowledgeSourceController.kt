@@ -56,7 +56,13 @@ internal class AiKnowledgeSourceController(
                     expiresAt = page.expiresAt,
                     nextCursor = page.nextCursor,
                     items = page.items.map {
-                        AiKnowledgeManifestItemResponse(it.articleId, it.revisionId, it.publicRevision, it.publishedAt)
+                        AiKnowledgeManifestItemResponse(
+                            it.articleId,
+                            it.revisionId,
+                            it.sourceVersion,
+                            it.publicRevision,
+                            it.publishedAt,
+                        )
                     },
                 )
             },
@@ -157,6 +163,7 @@ internal data class AiKnowledgeAuthorizationResponse(val items: List<AiAuthorize
 internal data class AiKnowledgeManifestItemResponse(
     val articleId: UUID,
     val revisionId: UUID,
+    val sourceVersion: Long,
     val publicRevision: String,
     val publishedAt: Instant,
 )
@@ -174,6 +181,7 @@ internal data class AiKnowledgeArticleResponse(
     val slug: String,
     val title: String,
     val body: String,
+    val sourceVersion: Long,
     val publicRevision: String,
     val publishedAt: Instant,
     val dataClass: String = "PUBLIC_KB_ONLY",
@@ -303,6 +311,7 @@ private fun AiPublicKnowledgeArticle.toResponse() = AiKnowledgeArticleResponse(
     slug = slug,
     title = title,
     body = body,
+    sourceVersion = sourceVersion,
     publicRevision = publicRevision,
     publishedAt = publishedAt,
 )

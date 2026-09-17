@@ -27,9 +27,9 @@ internal class JdbcAiKnowledgeProjection(
         jdbcTemplate.update(
             """
             insert into ai_knowledge_manifest_snapshot_items (
-                snapshot_token, article_id, revision_id, public_revision, published_at
+                snapshot_token, article_id, revision_id, source_version, public_revision, published_at
             )
-            select ?, article.id, revision.id, revision.content_checksum, article.published_at
+            select ?, article.id, revision.id, article.version, revision.content_checksum, article.published_at
             from knowledge_articles article
             join knowledge_sections section on section.id = article.section_id and section.status = 'ACTIVE'
             join knowledge_categories category on category.id = section.category_id and category.status = 'ACTIVE'
@@ -56,7 +56,7 @@ internal class JdbcAiKnowledgeProjection(
         ).singleOrNull() ?: return null
         val rows = jdbcTemplate.query(
             """
-            select article_id, revision_id, public_revision, published_at
+            select article_id, revision_id, source_version, public_revision, published_at
             from ai_knowledge_manifest_snapshot_items
             where snapshot_token = ? and (?::uuid is null or article_id > ?::uuid)
             order by article_id
@@ -66,6 +66,7 @@ internal class JdbcAiKnowledgeProjection(
                 AiPublicKnowledgeManifestItem(
                     articleId = result.getObject("article_id", UUID::class.java),
                     revisionId = result.getObject("revision_id", UUID::class.java),
+                    sourceVersion = result.getLong("source_version"),
                     publicRevision = result.getString("public_revision"),
                     publishedAt = result.getTimestamp("published_at").toInstant(),
                 )
@@ -88,7 +89,8 @@ internal class JdbcAiKnowledgeProjection(
     override fun findCurrentPublic(articleId: UUID, revisionId: UUID): AiPublicKnowledgeArticle? = jdbcTemplate.query(
         """
         select article.id as article_id, revision.id as revision_id, article.slug,
-               revision.title, revision.plain_text, revision.content_checksum as public_revision,
+               revision.title, revision.plain_text, article.version as source_version,
+               revision.content_checksum as public_revision,
                article.published_at
         from knowledge_articles article
         join knowledge_sections section on section.id = article.section_id and section.status = 'ACTIVE'
@@ -104,6 +106,7 @@ internal class JdbcAiKnowledgeProjection(
                 slug = result.getString("slug"),
                 title = result.getString("title"),
                 body = result.getString("plain_text"),
+                sourceVersion = result.getLong("source_version"),
                 publicRevision = result.getString("public_revision"),
                 publishedAt = result.getTimestamp("published_at").toInstant(),
             )

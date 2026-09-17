@@ -194,6 +194,7 @@ class IndexEvent(StrictModel):
     articleId: UUID
     revisionId: UUID
     action: Literal["UPSERT", "DELETE"]
+    sourceVersion: Annotated[int, Field(gt=0)]
     publicRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     createdAt: datetime
 

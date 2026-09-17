@@ -9,14 +9,21 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from deskseed_ai.backend_client import PublicKnowledgeArticle
+from deskseed_ai.backend_client import BackendSupersededError, PublicKnowledgeArticle
 from deskseed_ai.config import Settings
 from deskseed_ai.indexing import IndexingService
 from deskseed_ai.main import app
 from deskseed_ai.observability import TraceAdapter
 from deskseed_ai.providers import FakeGenerationProvider
 from deskseed_ai.queue import StreamRuntime
-from deskseed_ai.repository import ConflictError, NotFoundError, Repository
+from deskseed_ai.repository import (
+    ActiveLeaseError,
+    ConflictError,
+    NotFoundError,
+    ProviderCallStateUnknownError,
+    Repository,
+    StaleLeaseError,
+)
 from deskseed_ai.retrieval import FakeEmbeddingProvider, KnowledgeRepository, chunk_public_article
 from deskseed_ai.schemas import (
     CancellationEnvelope,
@@ -155,7 +162,8 @@ def test_generation_and_lease_fence_stale_work(repository: Repository) -> None:
     repository.accept_job(item)
     claim = repository.claim_job(item.jobId, 1, "worker-a")
     assert claim is not None and claim.lease_epoch == 1
-    assert repository.claim_job(item.jobId, 1, "worker-b") is None
+    with pytest.raises(ActiveLeaseError):
+        repository.claim_job(item.jobId, 1, "worker-b")
     repository.fail_job(claim, "TRANSIENT", retryable=True)
     stale = repository.claim_job(item.jobId, 1, "worker-a")
     assert stale is None
@@ -163,6 +171,122 @@ def test_generation_and_lease_fence_stale_work(repository: Repository) -> None:
     assert retry is not None
     assert retry.generation == 2
     assert retry.lease_epoch == 2
+
+
+@pytest.mark.integration
+def test_active_lease_message_remains_pending_until_owner_can_finish(
+    repository: Repository, settings: Settings
+) -> None:
+    item = envelope()
+    repository.accept_job(item)
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+    assert runtime.dispatch_once() == 1
+    runtime.ensure_group()
+    assert runtime.redis.xreadgroup(
+        settings.stream_group,
+        "crashed-worker",
+        {settings.stream_name: ">"},
+        count=1,
+        block=1,
+    )
+    claim = repository.claim_job(item.jobId, 1, "crashed-worker")
+    assert claim is not None
+
+    assert runtime.consume_once(block_ms=1, min_idle_ms=0) == 0
+    assert runtime.redis.xpending(settings.stream_name, settings.stream_group)["pending"] == 1
+    assert repository.get_job(item.jobId).status == JobStatus.RUNNING
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("retryable", [False, True])
+def test_late_failure_cannot_overwrite_cancellation_or_create_retry(
+    repository: Repository, retryable: bool
+) -> None:
+    item = envelope()
+    repository.accept_job(item)
+    claim = repository.claim_job(item.jobId, 1, "worker")
+    assert claim is not None
+    repository.cancel(
+        CancellationEnvelope(
+            schemaVersion=1,
+            eventId=uuid4(),
+            jobId=item.jobId,
+            workspaceKey=item.workspaceKey,
+            requestRevision=2,
+            createdAt=datetime.now(UTC),
+        )
+    )
+
+    with pytest.raises(StaleLeaseError):
+        repository.fail_job(claim, "LATE_FAILURE", retryable=retryable)
+
+    assert repository.get_job(item.jobId).status == JobStatus.CANCELLED
+    with repository.database.connection() as connection:
+        generations = connection.execute(
+            "select generation from ai_dispatch_outbox where job_id = %s order by generation",
+            (item.jobId,),
+        ).fetchall()
+    assert generations == [{"generation": 1}]
+
+
+@pytest.mark.integration
+def test_stale_worker_cannot_create_a_future_generation_outbox(repository: Repository) -> None:
+    item = envelope()
+    repository.accept_job(item)
+    stale = repository.claim_job(item.jobId, 1, "worker-a")
+    assert stale is not None
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set lease_expires_at = clock_timestamp() - interval '1 second' where job_id = %s",
+            (item.jobId,),
+        )
+    current = repository.claim_job(item.jobId, 1, "worker-b")
+    assert current is not None
+
+    with pytest.raises(StaleLeaseError):
+        repository.fail_job(stale, "TRANSIENT", retryable=True)
+
+    with repository.database.connection() as connection:
+        job = connection.execute(
+            "select generation, status from ai_jobs where job_id = %s", (item.jobId,)
+        ).fetchone()
+        generations = connection.execute(
+            "select generation from ai_dispatch_outbox where job_id = %s order by generation",
+            (item.jobId,),
+        ).fetchall()
+    assert job == {"generation": 1, "status": "RUNNING"}
+    assert generations == [{"generation": 1}]
+
+
+@pytest.mark.integration
+def test_existing_provider_reservation_blocks_automatic_recall(repository: Repository) -> None:
+    item = envelope()
+    repository.accept_job(item)
+    claim = repository.claim_job(item.jobId, 1, "worker")
+    assert claim is not None
+    reservation = repository.reserve_budget(
+        claim,
+        "openai/gpt-5.6-luna",
+        "pricing-v1",
+        100,
+        "GENERATION",
+    )
+
+    with pytest.raises(ProviderCallStateUnknownError):
+        repository.reserve_budget(
+            claim,
+            "openai/gpt-5.6-luna",
+            "pricing-v1",
+            100,
+            "GENERATION",
+        )
+
+    with repository.database.connection() as connection:
+        ledger = connection.execute(
+            "select reservation_id, status from ai_cost_ledger where job_id = %s",
+            (item.jobId,),
+        ).fetchone()
+    assert ledger == {"reservation_id": reservation, "status": "UNKNOWN"}
 
 
 @pytest.mark.integration
@@ -210,7 +334,7 @@ def test_feedback_is_monotonic_and_exact_idempotent(repository: Repository, sett
 
 
 @pytest.mark.integration
-def test_xautoclaim_recovers_a_pending_message(repository: Repository, settings: Settings) -> None:
+def test_worker_xautoclaim_recovers_a_pending_message(repository: Repository, settings: Settings) -> None:
     item = envelope()
     repository.accept_job(item)
     runtime = runtime_for(repository, settings, StaticBackend(item))
@@ -224,7 +348,9 @@ def test_xautoclaim_recovers_a_pending_message(repository: Repository, settings:
         block=1,
     )
     assert claimed
-    assert runtime.recover_once(min_idle_ms=0) == 1
+    assert runtime.recover_once(min_idle_ms=0) == 0
+    assert repository.get_job(item.jobId).status == JobStatus.QUEUED
+    assert runtime.consume_once(block_ms=1, min_idle_ms=0) == 1
     assert repository.get_job(item.jobId).status == JobStatus.SUCCEEDED
 
 
@@ -283,16 +409,39 @@ def test_public_kb_revision_replacement_and_vector_retrieval(repository: Reposit
     article_id = uuid4()
     first_revision = uuid4()
     chunks = chunk_public_article("환불은 결제 후 7일 이내 요청할 수 있습니다.\n개인정보를 포함하지 마세요.")
-    token_count = knowledge.replace_public_revision(
-        "default", article_id, first_revision, "refund-policy", "환불 정책", "c" * 64, chunks
+    first_event = IndexEvent(
+        schemaVersion=1,
+        eventId=uuid4(),
+        workspaceKey="default",
+        articleId=article_id,
+        revisionId=first_revision,
+        action="UPSERT",
+        sourceVersion=1,
+        publicRevision="c" * 64,
+        createdAt=datetime.now(UTC),
     )
-    assert token_count > 0
+    repository.accept_index_event(first_event)
+    token_count, applied = knowledge.replace_public_revision(
+        "default", article_id, first_revision, 1, first_event.eventId,
+        "refund-policy", "환불 정책", "c" * 64, chunks
+    )
+    assert token_count > 0 and applied
     matches = knowledge.retrieve("default", "환불 요청 기간", limit=3)
     assert matches and matches[0].revision_id == first_revision
 
     second_revision = uuid4()
+    second_event = first_event.model_copy(
+        update={
+            "eventId": uuid4(),
+            "revisionId": second_revision,
+            "sourceVersion": 2,
+            "publicRevision": "d" * 64,
+        }
+    )
+    repository.accept_index_event(second_event)
     knowledge.replace_public_revision(
-        "default", article_id, second_revision, "refund-policy", "환불 정책", "d" * 64,
+        "default", article_id, second_revision, 2, second_event.eventId,
+        "refund-policy", "환불 정책", "d" * 64,
         chunk_public_article("환불은 결제 후 14일 이내 요청할 수 있습니다."),
     )
     matches = knowledge.retrieve("default", "환불 요청 기간", limit=3)
@@ -312,6 +461,7 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
         articleId=article_id,
         revisionId=revision_id,
         action="UPSERT",
+        sourceVersion=1,
         publicRevision="e" * 64,
         createdAt=datetime.now(UTC),
     )
@@ -325,6 +475,7 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
                 slug="public-refund",
                 title="공개 환불 도움말",
                 body="공개 도움말 본문입니다.",
+                sourceVersion=1,
                 publicRevision="e" * 64,
                 publishedAt=datetime.now(UTC),
                 dataClass="PUBLIC_KB_ONLY",
@@ -348,16 +499,146 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
 
 
 @pytest.mark.integration
+def test_delete_accepted_during_embedding_cannot_be_reversed(
+    repository: Repository, settings: Settings
+) -> None:
+    article_id = uuid4()
+    revision_id = uuid4()
+    upsert = IndexEvent(
+        schemaVersion=1,
+        eventId=uuid4(),
+        workspaceKey="default",
+        articleId=article_id,
+        revisionId=revision_id,
+        action="UPSERT",
+        sourceVersion=1,
+        publicRevision="a" * 64,
+        createdAt=datetime.now(UTC),
+    )
+    deleted = upsert.model_copy(
+        update={"eventId": uuid4(), "action": "DELETE", "sourceVersion": 2}
+    )
+    repository.accept_index_event(upsert)
+
+    class DeleteDuringEmbedding(FakeEmbeddingProvider):
+        accepted = False
+
+        def embed(self, text):
+            if not self.accepted:
+                self.accepted = True
+                repository.accept_index_event(deleted)
+            return super().embed(text)
+
+    class PublicArticleBackend:
+        def read_public_article(self, requested_article, requested_revision, request_ref):
+            return PublicKnowledgeArticle(
+                articleId=requested_article,
+                revisionId=requested_revision,
+                slug="withdrawn-article",
+                title="철회 문서",
+                body="철회되기 전 공개 본문",
+                sourceVersion=1,
+                publicRevision="a" * 64,
+                publishedAt=datetime.now(UTC),
+                dataClass="PUBLIC_KB_ONLY",
+            )
+
+    service = IndexingService(
+        PublicArticleBackend(),
+        KnowledgeRepository(repository.database, DeleteDuringEmbedding()),
+        repository,
+        settings,
+        Path(__file__).resolve().parents[1] / "config" / "pricing-v1.json",
+    )
+    assert service.process_once(limit=1) == 1
+    with repository.database.connection() as connection:
+        assert connection.execute(
+            "select count(*) as count from ai_kb_revisions where article_id = %s and status = 'PUBLIC'",
+            (article_id,),
+        ).fetchone()["count"] == 0
+
+
+@pytest.mark.integration
+def test_reply_candidates_are_reauthorized_before_provider_receives_content(
+    repository: Repository, settings: Settings
+) -> None:
+    article_id = uuid4()
+    revision_id = uuid4()
+    index_event = IndexEvent(
+        schemaVersion=1,
+        eventId=uuid4(),
+        workspaceKey="default",
+        articleId=article_id,
+        revisionId=revision_id,
+        action="UPSERT",
+        sourceVersion=1,
+        publicRevision="a" * 64,
+        createdAt=datetime.now(UTC),
+    )
+    repository.accept_index_event(index_event)
+    knowledge = KnowledgeRepository(repository.database, FakeEmbeddingProvider())
+    _, applied = knowledge.replace_public_revision(
+        "default",
+        article_id,
+        revision_id,
+        1,
+        index_event.eventId,
+        "withdrawn",
+        "철회 문서",
+        "a" * 64,
+        ["WITHDRAWN_KB_SENTINEL"],
+    )
+    assert applied
+    item = envelope(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+
+    class WithdrawnBackend(StaticBackend):
+        def authorize_citations(self, job_id, citations):
+            raise BackendSupersededError("withdrawn")
+
+    runtime = runtime_for(repository, settings, WithdrawnBackend(item))
+    provider_called = False
+    original_reply = runtime.provider.reply
+
+    def reply(context, chunks):
+        nonlocal provider_called
+        provider_called = True
+        return original_reply(context, chunks)
+
+    runtime.provider.reply = reply
+    claim = repository.claim_job(item.jobId, 1, settings.consumer_name)
+    assert claim is not None
+    runtime._execute(claim, None)
+
+    assert provider_called is False
+    assert repository.get_job(item.jobId).status == JobStatus.SUPERSEDED
+
+
+@pytest.mark.integration
 def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_scan(
     repository: Repository, settings: Settings
 ) -> None:
     knowledge = KnowledgeRepository(repository.database, FakeEmbeddingProvider())
     stale_article_id = uuid4()
     stale_revision_id = uuid4()
+    stale_event = IndexEvent(
+        schemaVersion=1,
+        eventId=uuid4(),
+        workspaceKey="default",
+        articleId=stale_article_id,
+        revisionId=stale_revision_id,
+        action="UPSERT",
+        sourceVersion=1,
+        publicRevision="a" * 64,
+        createdAt=datetime.now(UTC),
+    )
+    repository.accept_index_event(stale_event)
     knowledge.replace_public_revision(
         "default",
         stale_article_id,
         stale_revision_id,
+        1,
+        stale_event.eventId,
         "stale-article",
         "철회된 문서",
         "a" * 64,
@@ -380,6 +661,7 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
                     items=[SimpleNamespace(
                         articleId=first_article_id,
                         revisionId=first_revision_id,
+                        sourceVersion=1,
                         publicRevision="b" * 64,
                         publishedAt=published_at,
                     )],
@@ -393,6 +675,7 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
                 items=[SimpleNamespace(
                     articleId=second_article_id,
                     revisionId=second_revision_id,
+                    sourceVersion=1,
                     publicRevision="c" * 64,
                     publishedAt=published_at,
                 )],
@@ -425,7 +708,7 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
             (snapshot_token,),
         ).fetchone()
         assert run == {"status": "SUCCEEDED", "page_count": 2, "item_count": 2}
-        assert connection.execute("select count(*) as count from ai_kb_index_jobs").fetchone()["count"] == 2
+        assert connection.execute("select count(*) as count from ai_kb_index_jobs").fetchone()["count"] == 3
 
 
 class StaticBackend:
@@ -463,6 +746,10 @@ class StaticBackend:
             cancelRequested=False,
             featureEnabled=True,
         )
+
+    def authorize_citations(self, job_id, citations):
+        assert job_id == self.item.jobId
+        return citations
 
 
 def runtime_for(repository: Repository, settings: Settings, backend: StaticBackend) -> StreamRuntime:

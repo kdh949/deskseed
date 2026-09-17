@@ -6,6 +6,7 @@ import java.util.UUID
 data class AiPublicKnowledgeManifestItem(
     val articleId: UUID,
     val revisionId: UUID,
+    val sourceVersion: Long,
     val publicRevision: String,
     val publishedAt: Instant,
 )
@@ -23,6 +24,7 @@ data class AiPublicKnowledgeArticle(
     val slug: String,
     val title: String,
     val body: String,
+    val sourceVersion: Long,
     val publicRevision: String,
     val publishedAt: Instant,
 )

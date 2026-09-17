@@ -589,6 +589,10 @@ components:
           - UPSERT
           - DELETE
           title: Action
+        sourceVersion:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Sourceversion
         publicRevision:
           type: string
           pattern: ^[0-9a-f]{64}$
@@ -606,6 +610,7 @@ components:
       - articleId
       - revisionId
       - action
+      - sourceVersion
       - publicRevision
       - createdAt
       title: IndexEvent

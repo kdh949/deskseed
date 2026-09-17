@@ -63,14 +63,30 @@ class KnowledgeRepository:
         workspace_key: str,
         article_id: UUID,
         revision_id: UUID,
+        source_version: int,
+        event_id: UUID,
         slug: str,
         title: str,
         public_revision: str,
         chunks: list[str],
-    ) -> int:
+    ) -> tuple[int, bool]:
         embedded = [(text, *self.embeddings.embed(text)) for text in chunks]
         now = datetime.now(UTC)
         with self.database.transaction() as connection:
+            state = connection.execute(
+                """
+                select source_version, action, event_id from ai_kb_article_state
+                where workspace_key = %s and article_id = %s for update
+                """,
+                (workspace_key, article_id),
+            ).fetchone()
+            if (
+                not state
+                or state["source_version"] != source_version
+                or state["action"] != "UPSERT"
+                or state["event_id"] != event_id
+            ):
+                return sum(tokens for _, _, tokens in embedded), False
             connection.execute(
                 "update ai_kb_revisions set status = 'DELETED', deleted_at = %s where workspace_key = %s and article_id = %s",
                 (now, workspace_key, article_id),
@@ -102,7 +118,7 @@ class KnowledgeRepository:
                         hashlib.sha256(content.encode()).hexdigest(), _vector_literal(vector), now,
                     ),
                 )
-        return sum(tokens for _, _, tokens in embedded)
+        return sum(tokens for _, _, tokens in embedded), True
 
     def retrieve(self, workspace_key: str, query: str, limit: int = 5) -> list[KnowledgeChunk]:
         chunks, _ = self.retrieve_with_usage(workspace_key, query, limit)

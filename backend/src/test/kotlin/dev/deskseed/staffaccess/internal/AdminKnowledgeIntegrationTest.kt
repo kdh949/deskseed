@@ -173,6 +173,7 @@ class AdminKnowledgeIntegrationTest {
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.items[0].articleId").value(articleId.toString()))
             .andExpect(jsonPath("$.items[0].revisionId").value(publishedRevisionId.toString()))
+            .andExpect(jsonPath("$.items[0].sourceVersion").value(2))
             .andExpect(jsonPath("$.snapshotToken").isString)
             .andExpect(jsonPath("$.expiresAt").isString)
             .andExpect(jsonPath("$.nextCursor").doesNotExist())
@@ -190,6 +191,7 @@ class AdminKnowledgeIntegrationTest {
                 .header("X-Deskseed-AI-Index-Event-Id", indexEventId.toString()),
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.dataClass").value("PUBLIC_KB_ONLY"))
+            .andExpect(jsonPath("$.sourceVersion").value(2))
             .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("카드 정보를 다시 확인하세요")))
         assertThat(
             jdbc.queryForObject(
@@ -221,6 +223,7 @@ class AdminKnowledgeIntegrationTest {
                 .header("X-Deskseed-AI-Key-Id", "test-ai-index-key"),
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.items[0].articleId").value(articleId.toString()))
+            .andExpect(jsonPath("$.items[0].sourceVersion").value(2))
         mockMvc.perform(
             get("/api/v1/internal/ai/kb/manifest")
                 .header("Authorization", "Bearer test-ai-index-secret")
@@ -235,6 +238,13 @@ class AdminKnowledgeIntegrationTest {
                 articleId,
             ),
         ).containsExactly("UPSERT", "DELETE")
+        assertThat(
+            jdbc.queryForList(
+                "select source_version from ai_knowledge_index_outbox where article_id = ? order by source_version",
+                Long::class.java,
+                articleId,
+            ),
+        ).containsExactly(2L, 3L)
         assertThat(
             jdbc.queryForList(
                 "select payload_json::text from ai_knowledge_index_outbox where article_id = ?",
