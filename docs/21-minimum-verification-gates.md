@@ -1092,3 +1092,71 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - 예시는 실제 password, token, Authorization 값, session cookie 또는 고객 데이터를 포함하지 않는다.
 - springdoc runtime 문서의 구현 경로·HTTP method 집합은 커밋 계약의 구현 대상으로 표시된 작업과 일치한다.
 - production profile은 기본적으로 문서를 비활성화하며 명시적 활성화 시 ADMIN 읽기만 허용하고 Try it/client 기능을 숨긴다.
+
+## 21. AI V1 서버 gates
+
+### AI-API-001 — Staff job 계약과 binding
+
+- numeric ticketNumber는 Backend가 current ticket UUID로 해석하고 requester/workspace/feature를 client가 주입할 수 없다.
+- create/list/get/cancel/feedback는 current owner, active staff와 ticket read capability를 다시 확인한다.
+- 같은 idempotency key+canonical request는 하나의 job/outbox로 수렴하고 다른 payload는 409이며 동시 요청도 single-winner다.
+- polling/list/recovery read는 semantic `TICKET_VIEWED`를 만들지 않는다.
+
+### AI-SRC-001 — PUBLIC-only source와 required audit
+
+- summary, triage, reply의 SQL/projection은 ordered PUBLIC comments만 반환한다.
+- INTERNAL comment, collaboration note, child relation, customer profile, protected audit content와 비공개 KB sentinel이 source response, prompt, cache, result provenance, trace/log에 0건이다.
+- source caller는 fixed `INTEGRATION_CLIENT`이며 registered job binding, current requester/ticket/feature authorization과 cancellation/context revision을 검증한다.
+- required access audit persistence 실패 시 source/result body는 반환되지 않는다.
+
+### AI-LIFE-001 — Durable lifecycle, fencing and recovery
+
+- Backend request/outbox와 AI job/dispatch-outbox의 각 transaction을 crash point별로 검증한다.
+- duplicate HTTP/event/Redis, create/cancel 역순, terminal commit 후 ACK 전 kill, lease expiry와 stale worker, Redis data loss가 한 authoritative terminal result로 수렴한다.
+- stale generation/lease epoch은 model call과 result commit을 수행하지 않고, retry intent commit 뒤 원 message를 ACK한다.
+
+### AI-COST-001 — Reservation and bounded retry
+
+- workspace, actor 또는 SYSTEM, job budget row를 고정 순서로 lock하고 병렬 요청이 limit을 초과 승인하지 않는다.
+- query/document embedding과 모든 retry는 call별 upper bound를 먼저 예약한다.
+- unknown delivery, midnight rollover, duplicate/late settlement가 예약을 낙관적으로 해제하거나 이중 정산하지 않는다.
+- fake transport는 LiteLLM/provider hidden retry off와 interactive 2회/indexing 3회 최대 HTTP 시도를 검증한다.
+
+### AI-KB-001 — Public revision indexing and retrieval
+
+- category/section active, PUBLISHED, PUBLIC, current revision/audienceVersion을 후보 SQL 전에 적용하고 LLM 전·result commit·Backend GET에서 재검증한다.
+- publish/unpublish/archive/redact/parent disable, out-of-order event, partial manifest, generation switch와 source withdrawal이 stale index/result 사용을 막는다.
+- retrieval gold Recall@10과 ANN-vs-exact recall을 별도 측정하며 fake embedding을 품질 증거로 사용하지 않는다.
+
+### AI-TRIAGE-001 — Suggestion-only classification
+
+- schema/taxonomy에 없는 topic, inactive tag, 허용되지 않은 priority 후보를 거부한다.
+- AI endpoint는 ticket priority/tag/group/assignee를 자동 변경하지 않고 TicketAudit을 만들지 않는다.
+- 사람이 선택한 값도 이후 기존 command/version/authorization/audit 경로를 사용한다.
+
+### AI-REPLY-001 — Evidence and freshness capability
+
+- bounded reply graph는 authorize/retrieve/source validation/generate/output validation 순서만 실행하며 mutation/network tool loop가 없다.
+- citation은 이번 요청의 authorized public revision set에 100% 속해야 한다. membership은 사실성 평가를 대체하지 않는다.
+- no evidence/refusal/invalid schema는 usable answer 없이 typed `NEEDS_REVIEW`를 반환한다.
+- ticket/context/source/policy 변경·취소·권한 철회는 result body와 use capability를 차단한다.
+
+### AI-OBS-001 — Content-free telemetry
+
+- logs, metrics, OTel, Langfuse exporter에 comment/KB/result body, prompt, email/phone, Authorization/API keys와 unbounded error text가 없다.
+- Langfuse failure/drop은 canonical audit, budget settlement와 result commit을 실패시키지 않으며 손실 count를 노출한다.
+- metric labels are bounded and exclude job/ticket/actor/request identifiers.
+
+### AI-OPS-001 — Typed stop, status and recovery operations
+
+- `ai.enabled=false`가 기본이며 allowlisted staff/feature와 stop policy는 expectedVersion+CSRF+ADMIN 권한으로만 변경된다.
+- setting change와 Admin/Security audit은 함께 commit/rollback한다.
+- stop은 신규 접수와 다음 model call/result use를 막지만 cancellation, invalidation, deletion, cost settlement와 body-free status는 계속한다.
+- status는 secret/body 없이 dataAsOf, dependency freshness, queue/index/error/budget summary를 구분한다.
+
+### AI-RET-001 — Protected result retention and restore
+
+- result는 authenticated encryption과 workspace/job/key-version AAD를 사용하며 key 없음/오류 시 plaintext를 반환하지 않는다.
+- result 7일, execution metadata/feedback 30일, unresolved UNKNOWN cost와 dedupe tombstone/canonical audit의 다른 보존을 검증한다.
+- cleanup은 bounded/idempotent이고 source deletion/invalidation을 restore 뒤 재적용한다. backup에서 즉시 삭제되었다고 주장하지 않는다.
+- original 100 functional + 30 security/failure dataset, immutable versions, tune/holdout 분리와 reproducible evaluator가 존재한다. 사람 평가는 실행하지 않았으면 `Pending human review`다.

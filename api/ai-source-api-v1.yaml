@@ -1,0 +1,253 @@
+openapi: 3.1.0
+info:
+  title: Deskseed AI Source API
+  version: 1.0.0
+  description: AI worker와 indexer가 Backend의 현재 권한을 재검증한 PUBLIC-only source를 읽는 내부 계약입니다.
+servers:
+  - url: http://backend:8080
+    description: 내부 backend-ai-control network
+security:
+  - aiSourceKeyId: []
+    aiSourceBearer: []
+paths:
+  /api/v1/internal/ai/requests/{jobId}/context:
+    get:
+      operationId: readAiSourceRequestContext
+      summary: bound job의 PUBLIC 대화 조회
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: required access audit가 함께 commit된 PUBLIC comment projection입니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceContext'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/internal/ai/requests/{jobId}/context-revision:
+    get:
+      operationId: readAiSourceRequestRevision
+      summary: 결과 저장 전 권한·취소·PUBLIC revision 재검증
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: 본문 없는 현재 source authorization 상태입니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceRevision'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /api/v1/internal/ai/requests/{jobId}/kb/authorize:
+    post:
+      operationId: authorizeAiResultKnowledgeCitations
+      summary: 결과 저장 전 PUBLIC KB citation 재검증
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [candidates]
+              properties:
+                candidates:
+                  type: array
+                  maxItems: 8
+                  items: {$ref: '#/components/schemas/KnowledgeCandidate'}
+      responses:
+        '200':
+          description: 현재도 PUBLIC인 exact revision의 canonical citation metadata입니다. 본문은 포함하지 않습니다.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 8
+                    items: {$ref: '#/components/schemas/AuthorizedKnowledgeCandidate'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/internal/ai/kb/manifest:
+    get:
+      operationId: readAiPublicKnowledgeManifest
+      summary: bounded PUBLIC KB manifest 조회
+      parameters:
+        - name: snapshotToken
+          in: query
+          description: 첫 페이지 응답에서 받은 일관된 manifest snapshot 식별자입니다. 첫 페이지에서는 생략합니다.
+          schema: {type: string, format: uuid}
+        - name: cursor
+          in: query
+          description: 이전 페이지의 nextCursor입니다. snapshotToken 없이 전달할 수 없습니다.
+          schema: {type: string, format: uuid}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000, default: 1000}
+      responses:
+        '200':
+          description: 본문이 없는 고정 snapshot의 현재 PUBLIC revision 페이지입니다.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [snapshotToken, expiresAt, nextCursor, items]
+                properties:
+                  snapshotToken: {type: string, format: uuid}
+                  expiresAt: {type: string, format: date-time}
+                  nextCursor: {type: [string, 'null'], format: uuid}
+                  items:
+                    type: array
+                    maxItems: 1000
+                    items: {$ref: '#/components/schemas/KnowledgeManifestItem'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+  /api/v1/internal/ai/kb/articles/{articleId}/revisions/{revisionId}:
+    get:
+      operationId: readAiPublicKnowledgeArticle
+      summary: exact current PUBLIC KB revision 조회
+      parameters:
+        - {name: articleId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: revisionId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: X-Deskseed-AI-Index-Event-Id, in: header, required: true, schema: {type: string, format: uuid}}
+        - {name: purpose, in: query, required: false, schema: {type: string, enum: [INDEX, RECONCILE, RETRIEVAL, RESULT], default: INDEX}}
+      responses:
+        '200':
+          description: required audit가 함께 commit된 canonical PUBLIC article입니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublicKnowledgeArticle'}
+        '401': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '503': {$ref: '#/components/responses/Problem'}
+  /api/v1/internal/ai/policy:
+    get:
+      operationId: readAiExecutionPolicy
+      summary: model call 전후 AI stop·feature·model alias 정책 조회
+      responses:
+        '200':
+          description: secret과 본문이 없는 current policy입니다.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiPolicy'}
+        '401': {$ref: '#/components/responses/Problem'}
+components:
+  securitySchemes:
+    aiSourceKeyId: {type: apiKey, in: header, name: X-Deskseed-AI-Key-Id}
+    aiSourceBearer: {type: http, scheme: bearer, bearerFormat: opaque}
+  parameters:
+    JobId: {name: jobId, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Problem:
+      description: fail-closed authentication, authorization, freshness, or audit failure입니다.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  schemas:
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, detail]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+    SourceContext:
+      type: object
+      additionalProperties: false
+      required: [jobId, ticketId, ticketNumber, ticketVersion, feature, requestRevision, contextRevision, contextPolicyVersion, inputScope, comments]
+      properties:
+        jobId: {type: string, format: uuid}
+        ticketId: {type: string, format: uuid}
+        ticketNumber: {type: integer, format: int64, minimum: 1}
+        ticketVersion: {type: integer, format: int64, minimum: 0}
+        feature: {type: string, enum: [ticket.summary, ticket.triage, ticket.reply_draft]}
+        requestRevision: {type: integer, format: int64, minimum: 1}
+        contextRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+        contextPolicyVersion: {type: string, const: public-comments-v1}
+        inputScope: {type: string, const: PUBLIC_ONLY}
+        comments:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, body, createdAt]
+            properties:
+              id: {type: string, format: uuid}
+              body: {type: string, minLength: 1, maxLength: 100000}
+              createdAt: {type: string, format: date-time}
+    SourceRevision:
+      type: object
+      additionalProperties: false
+      required: [jobId, requestRevision, contextRevision, authorized, cancelRequested, featureEnabled]
+      properties:
+        jobId: {type: string, format: uuid}
+        requestRevision: {type: integer, format: int64, minimum: 1}
+        contextRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+        authorized: {type: boolean}
+        cancelRequested: {type: boolean}
+        featureEnabled: {type: boolean}
+    KnowledgeManifestItem:
+      type: object
+      additionalProperties: false
+      required: [articleId, revisionId, publicRevision, publishedAt]
+      properties:
+        articleId: {type: string, format: uuid}
+        revisionId: {type: string, format: uuid}
+        publicRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+        publishedAt: {type: string, format: date-time}
+    KnowledgeCandidate:
+      type: object
+      additionalProperties: false
+      required: [articleId, revisionId, chunkId]
+      properties:
+        articleId: {type: string, format: uuid}
+        revisionId: {type: string, format: uuid}
+        chunkId: {type: string, format: uuid}
+    AuthorizedKnowledgeCandidate:
+      allOf:
+        - $ref: '#/components/schemas/KnowledgeCandidate'
+        - type: object
+          required: [title, url]
+          properties:
+            title: {type: string, minLength: 1, maxLength: 300}
+            url: {type: string, pattern: '^/help/articles/[a-z0-9-]+$'}
+    PublicKnowledgeArticle:
+      type: object
+      additionalProperties: false
+      required: [articleId, revisionId, slug, title, body, publicRevision, publishedAt, dataClass]
+      properties:
+        articleId: {type: string, format: uuid}
+        revisionId: {type: string, format: uuid}
+        slug: {type: string, minLength: 1, maxLength: 180}
+        title: {type: string, minLength: 1, maxLength: 300}
+        body: {type: string, minLength: 1}
+        publicRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+        publishedAt: {type: string, format: date-time}
+        dataClass: {type: string, const: PUBLIC_KB_ONLY}
+    AiPolicy:
+      type: object
+      additionalProperties: false
+      required: [enabled, features, fastModelAlias, standardModelAlias, version, updatedAt, dataAsOf]
+      properties:
+        enabled: {type: boolean}
+        features:
+          type: object
+          additionalProperties: {type: boolean}
+        fastModelAlias: {type: string, const: openai/gpt-5.6-luna}
+        standardModelAlias: {type: string, const: openai/gpt-5.6-terra}
+        version: {type: integer, format: int64, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+        dataAsOf: {type: string, format: date-time}

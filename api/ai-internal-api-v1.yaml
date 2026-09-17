@@ -1,0 +1,1020 @@
+openapi: 3.1.0
+info:
+  title: Deskseed AI Internal API
+  version: 1.0.0
+  description: Deskseed Backend 전용 AI 수신·상태·운영 계약입니다. direction-specific machine credential이 필요하며 staff/public ingress에 노출하지
+    않습니다.
+paths:
+  /internal/v1/jobs:
+    post:
+      summary: Accept Job
+      operationId: accept_job_internal_v1_jobs_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobEnvelope'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/jobs/{job_id}:
+    get:
+      summary: Get Job
+      operationId: get_job_internal_v1_jobs__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Job Id
+      - name: includeResult
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Includeresult
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobReceipt'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/jobs/{job_id}/cancel:
+    post:
+      summary: Cancel Job
+      operationId: cancel_job_internal_v1_jobs__job_id__cancel_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Job Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationEnvelope'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/feedback:
+    post:
+      summary: Feedback
+      operationId: feedback_internal_v1_feedback_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/index-events:
+    post:
+      summary: Index Event
+      operationId: index_event_internal_v1_index_events_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexEvent'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/operations:
+    post:
+      summary: Operation
+      operationId: operation_internal_v1_operations_post
+      parameters:
+      - name: jobId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Jobid
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/status:
+    get:
+      summary: Service Status
+      operationId: service_status_internal_v1_status_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Service Status Internal V1 Status Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/livez:
+    get:
+      summary: Livez
+      operationId: livez_internal_v1_livez_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Livez Internal V1 Livez Get
+  /internal/v1/readyz:
+    get:
+      summary: Readyz
+      operationId: readyz_internal_v1_readyz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    Accepted:
+      properties:
+        accepted:
+          type: boolean
+          const: true
+          title: Accepted
+          default: true
+        replayed:
+          type: boolean
+          title: Replayed
+        jobId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Jobid
+      additionalProperties: false
+      type: object
+      required:
+      - replayed
+      title: Accepted
+    CancellationEnvelope:
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+          title: Schemaversion
+        eventId:
+          type: string
+          format: uuid
+          title: Eventid
+        jobId:
+          type: string
+          format: uuid
+          title: Jobid
+        workspaceKey:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Workspacekey
+        requestRevision:
+          type: integer
+          exclusiveMinimum: 1.0
+          title: Requestrevision
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        traceparent:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Traceparent
+        tracestate:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Tracestate
+      additionalProperties: false
+      type: object
+      required:
+      - schemaVersion
+      - eventId
+      - jobId
+      - workspaceKey
+      - requestRevision
+      - createdAt
+      title: CancellationEnvelope
+    Citation:
+      properties:
+        articleId:
+          type: string
+          format: uuid
+          title: Articleid
+        revisionId:
+          type: string
+          format: uuid
+          title: Revisionid
+        chunkId:
+          type: string
+          format: uuid
+          title: Chunkid
+        title:
+          type: string
+          maxLength: 300
+          minLength: 1
+          title: Title
+        url:
+          type: string
+          pattern: ^/help/articles/[a-z0-9-]+$
+          title: Url
+      additionalProperties: false
+      type: object
+      required:
+      - articleId
+      - revisionId
+      - chunkId
+      - title
+      - url
+      title: Citation
+    Feature:
+      type: string
+      enum:
+      - ticket.summary
+      - ticket.triage
+      - ticket.reply_draft
+      title: Feature
+    FeedbackRequest:
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+          title: Schemaversion
+        eventId:
+          type: string
+          format: uuid
+          title: Eventid
+        jobId:
+          type: string
+          format: uuid
+          title: Jobid
+        workspaceKey:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Workspacekey
+        requesterId:
+          type: string
+          format: uuid
+          title: Requesterid
+        feedbackType:
+          type: string
+          enum:
+          - helpful
+          - unhelpful
+          - inserted
+          - edited
+          title: Feedbacktype
+        reasonCode:
+          anyOf:
+          - type: string
+            maxLength: 40
+            minLength: 1
+          - type: 'null'
+          title: Reasoncode
+        sourceRevision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Sourcerevision
+        requestRevision:
+          type: integer
+          exclusiveMinimum: 1.0
+          title: Requestrevision
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      additionalProperties: false
+      type: object
+      required:
+      - schemaVersion
+      - eventId
+      - jobId
+      - workspaceKey
+      - requesterId
+      - feedbackType
+      - sourceRevision
+      - requestRevision
+      - createdAt
+      title: FeedbackRequest
+    GenerationProvenance:
+      properties:
+        modelAlias:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Modelalias
+        actualModel:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Actualmodel
+        promptVersion:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Promptversion
+        configVersion:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Configversion
+        generatedAt:
+          type: string
+          format: date-time
+          title: Generatedat
+        publicCommentIds:
+          items:
+            type: string
+            format: uuid
+          type: array
+          maxItems: 500
+          title: Publiccommentids
+        contextRevision:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Contextrevision
+      additionalProperties: false
+      type: object
+      required:
+      - modelAlias
+      - actualModel
+      - promptVersion
+      - configVersion
+      - generatedAt
+      - publicCommentIds
+      - contextRevision
+      title: GenerationProvenance
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    IndexEvent:
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+          title: Schemaversion
+        eventId:
+          type: string
+          format: uuid
+          title: Eventid
+        workspaceKey:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Workspacekey
+        articleId:
+          type: string
+          format: uuid
+          title: Articleid
+        revisionId:
+          type: string
+          format: uuid
+          title: Revisionid
+        action:
+          type: string
+          enum:
+          - UPSERT
+          - DELETE
+          title: Action
+        publicRevision:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Publicrevision
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      additionalProperties: false
+      type: object
+      required:
+      - schemaVersion
+      - eventId
+      - workspaceKey
+      - articleId
+      - revisionId
+      - action
+      - publicRevision
+      - createdAt
+      title: IndexEvent
+    InputScope:
+      type: string
+      enum:
+      - PUBLIC_ONLY
+      - PUBLIC_KB_ONLY
+      title: InputScope
+    JobEnvelope:
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+          title: Schemaversion
+        eventId:
+          type: string
+          format: uuid
+          title: Eventid
+        jobId:
+          type: string
+          format: uuid
+          title: Jobid
+        workspaceKey:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Workspacekey
+        requesterId:
+          type: string
+          format: uuid
+          title: Requesterid
+        ticketId:
+          type: string
+          format: uuid
+          title: Ticketid
+        ticketNumber:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Ticketnumber
+        feature:
+          $ref: '#/components/schemas/Feature'
+        contextRevision:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Contextrevision
+        contextPolicyVersion:
+          type: string
+          const: public-comments-v1
+          title: Contextpolicyversion
+        dataClass:
+          type: string
+          const: PUBLIC_ONLY
+          title: Dataclass
+        requestRevision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Requestrevision
+        options:
+          additionalProperties:
+            type: string
+            maxLength: 40
+            minLength: 1
+          type: object
+          maxProperties: 2
+          title: Options
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        deadlineAt:
+          type: string
+          format: date-time
+          title: Deadlineat
+        traceparent:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Traceparent
+        tracestate:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Tracestate
+      additionalProperties: false
+      type: object
+      required:
+      - schemaVersion
+      - eventId
+      - jobId
+      - workspaceKey
+      - requesterId
+      - ticketId
+      - ticketNumber
+      - feature
+      - contextRevision
+      - contextPolicyVersion
+      - dataClass
+      - requestRevision
+      - createdAt
+      - deadlineAt
+      title: JobEnvelope
+    JobPhase:
+      type: string
+      enum:
+      - QUEUED
+      - AUTHORIZE
+      - RETRIEVE
+      - GENERATE
+      - VALIDATE
+      - COMPLETE
+      title: JobPhase
+    JobReceipt:
+      properties:
+        jobId:
+          type: string
+          format: uuid
+          title: Jobid
+        feature:
+          $ref: '#/components/schemas/Feature'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        phase:
+          $ref: '#/components/schemas/JobPhase'
+        generation:
+          type: integer
+          title: Generation
+        leaseEpoch:
+          type: integer
+          title: Leaseepoch
+        requestRevision:
+          type: integer
+          title: Requestrevision
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+        deadlineAt:
+          type: string
+          format: date-time
+          title: Deadlineat
+        completedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completedat
+        resultExpiresAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resultexpiresat
+        pollAfterMs:
+          type: integer
+          title: Pollafterms
+          default: 750
+        cancelRequested:
+          type: boolean
+          title: Cancelrequested
+        contextRevision:
+          type: string
+          title: Contextrevision
+        contextPolicyVersion:
+          type: string
+          title: Contextpolicyversion
+        inputScope:
+          $ref: '#/components/schemas/InputScope'
+        stale:
+          type: boolean
+          title: Stale
+        canInsert:
+          type: boolean
+          title: Caninsert
+        errorCode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Errorcode
+        result:
+          anyOf:
+          - oneOf:
+            - $ref: '#/components/schemas/SummaryResult'
+            - $ref: '#/components/schemas/TriageResult'
+            - $ref: '#/components/schemas/ReplyDraftResult'
+            discriminator:
+              propertyName: type
+              mapping:
+                ticket.reply_draft: '#/components/schemas/ReplyDraftResult'
+                ticket.summary: '#/components/schemas/SummaryResult'
+                ticket.triage: '#/components/schemas/TriageResult'
+          - type: 'null'
+          title: Result
+        provenance:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationProvenance'
+          - type: 'null'
+        costMicrousd:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Costmicrousd
+      additionalProperties: false
+      type: object
+      required:
+      - jobId
+      - feature
+      - status
+      - phase
+      - generation
+      - leaseEpoch
+      - requestRevision
+      - createdAt
+      - deadlineAt
+      - cancelRequested
+      - contextRevision
+      - contextPolicyVersion
+      - inputScope
+      - stale
+      - canInsert
+      title: JobReceipt
+    JobStatus:
+      type: string
+      enum:
+      - QUEUED
+      - RUNNING
+      - RETRY_WAIT
+      - SUCCEEDED
+      - NEEDS_REVIEW
+      - FAILED
+      - CANCELLED
+      - SUPERSEDED
+      - EXPIRED
+      title: JobStatus
+    OperationRequest:
+      properties:
+        operationId:
+          type: string
+          format: uuid
+          title: Operationid
+        action:
+          type: string
+          enum:
+          - RETRY
+          - CANCEL
+          - RECONCILE
+          - RETENTION
+          title: Action
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        expectedGeneration:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Expectedgeneration
+      additionalProperties: false
+      type: object
+      required:
+      - operationId
+      - action
+      - reason
+      title: OperationRequest
+    ReplyDraftResult:
+      properties:
+        type:
+          type: string
+          const: ticket.reply_draft
+          title: Type
+          default: ticket.reply_draft
+        answer:
+          type: string
+          maxLength: 6000
+          minLength: 1
+          title: Answer
+        citations:
+          items:
+            $ref: '#/components/schemas/Citation'
+          type: array
+          maxItems: 8
+          title: Citations
+      additionalProperties: false
+      type: object
+      required:
+      - answer
+      - citations
+      title: ReplyDraftResult
+    SummaryResult:
+      properties:
+        type:
+          type: string
+          const: ticket.summary
+          title: Type
+          default: ticket.summary
+        problem:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Problem
+        attemptedActions:
+          items:
+            type: string
+            maxLength: 500
+            minLength: 1
+          type: array
+          maxItems: 20
+          title: Attemptedactions
+        unresolvedItems:
+          items:
+            type: string
+            maxLength: 500
+            minLength: 1
+          type: array
+          maxItems: 20
+          title: Unresolveditems
+        nextChecks:
+          items:
+            type: string
+            maxLength: 500
+            minLength: 1
+          type: array
+          maxItems: 20
+          title: Nextchecks
+      additionalProperties: false
+      type: object
+      required:
+      - problem
+      - attemptedActions
+      - unresolvedItems
+      - nextChecks
+      title: SummaryResult
+    TriageResult:
+      properties:
+        type:
+          type: string
+          const: ticket.triage
+          title: Type
+          default: ticket.triage
+        topicCode:
+          type: string
+          enum:
+          - ACCOUNT_ACCESS
+          - BILLING
+          - USAGE
+          - TECHNICAL_ISSUE
+          - POLICY
+          - FEEDBACK
+          - OTHER
+          title: Topiccode
+        suggestedTagIds:
+          items:
+            type: string
+            format: uuid
+          type: array
+          maxItems: 20
+          title: Suggestedtagids
+        suggestedPriority:
+          anyOf:
+          - type: string
+            enum:
+            - LOW
+            - NORMAL
+            - HIGH
+            - URGENT
+          - type: 'null'
+          title: Suggestedpriority
+        reasons:
+          items:
+            type: string
+            maxLength: 300
+            minLength: 1
+          type: array
+          maxItems: 10
+          title: Reasons
+      additionalProperties: false
+      type: object
+      required:
+      - topicCode
+      - suggestedTagIds
+      - reasons
+      title: TriageResult
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

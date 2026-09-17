@@ -28,7 +28,7 @@ internal class StaffAccessSecurityConfiguration(
     private val customerCsrfFilter: CustomerCsrfFilter,
 ) {
     @Bean
-    @Order(3)
+    @Order(4)
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         val csrfRepository = HttpSessionCsrfTokenRepository().apply {
             setHeaderName("X-CSRF-TOKEN")

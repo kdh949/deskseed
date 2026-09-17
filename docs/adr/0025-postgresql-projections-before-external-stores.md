@@ -14,4 +14,6 @@ Start with PostgreSQL queries, views, interval/projection tables, and materializ
 - Query operational entities for every historical metric forever: rejected for correctness/performance.
 
 ## Consequences
+
+AI V1의 공개 KB vector index는 ADR 0049가 승인한 별도 PostgreSQL+pgvector 파생 projection이다. canonical KB와 공개성 판단은 계속 Deskseed Backend가 소유하며 AI index가 source of truth가 되지 않는다.
 Every projection has a checkpoint/rebuild contract. PostgreSQL remains source of truth.

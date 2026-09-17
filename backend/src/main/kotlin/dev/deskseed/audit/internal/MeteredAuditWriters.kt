@@ -1,6 +1,9 @@
 package dev.deskseed.audit.internal
 
 import dev.deskseed.audit.AccessAuditWriter
+import dev.deskseed.audit.AiContextAccessAudit
+import dev.deskseed.audit.AiKnowledgeAccessAudit
+import dev.deskseed.audit.AiResultAccessAudit
 import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AttachmentDownloadAccessAudit
@@ -21,6 +24,21 @@ internal class MeteredAccessAuditWriter(
     private val delegate: JpaAccessAuditWriter,
     private val metrics: AuditPersistenceMetrics,
 ) : AccessAuditWriter {
+    override fun appendAiResultAccess(event: AiResultAccessAudit) =
+        record(AuditPersistenceMetrics.Operation.AI_RESULT_ACCESS) {
+            delegate.appendAiResultAccess(event)
+        }
+
+    override fun appendAiKnowledgeAccess(event: AiKnowledgeAccessAudit) =
+        record(AuditPersistenceMetrics.Operation.AI_KNOWLEDGE_ACCESS) {
+            delegate.appendAiKnowledgeAccess(event)
+        }
+
+    override fun appendAiContextAccess(event: AiContextAccessAudit) =
+        record(AuditPersistenceMetrics.Operation.AI_CONTEXT_ACCESS) {
+            delegate.appendAiContextAccess(event)
+        }
+
     override fun appendTicketResourceRead(event: TicketResourceReadAccessAudit) =
         record(AuditPersistenceMetrics.Operation.TICKET_RESOURCE_READ) {
             delegate.appendTicketResourceRead(event)

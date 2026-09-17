@@ -3,6 +3,9 @@ package dev.deskseed.audit.internal
 import dev.deskseed.audit.AccessAuditContext
 import dev.deskseed.audit.AccessAuditOutcome
 import dev.deskseed.audit.AccessAuditWriter
+import dev.deskseed.audit.AiContextAccessAudit
+import dev.deskseed.audit.AiKnowledgeAccessAudit
+import dev.deskseed.audit.AiResultAccessAudit
 import dev.deskseed.audit.AttachmentDownloadAccessAudit
 import dev.deskseed.audit.CustomerSearchExecutedAccessAudit
 import dev.deskseed.audit.SearchExecutedAccessAudit
@@ -24,6 +27,143 @@ import java.util.UUID
 internal class JpaAccessAuditWriter(
     private val jdbcTemplate: JdbcTemplate,
 ) : AccessAuditWriter {
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun appendAiResultAccess(event: AiResultAccessAudit) {
+        validateStaffContext(event.context)
+        require(event.feature in setOf("ticket.summary", "ticket.triage", "ticket.reply_draft"))
+        require(event.requestRevision > 0)
+        require(event.outcome == AccessAuditOutcome.SUCCEEDED)
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                source, action, resource_type, resource_id, ticket_number,
+                interaction_id, session_fingerprint, auth_type, request_id, correlation_id,
+                ip_address, user_agent, outcome, http_status
+            ) values (?, ?, ?, ?, ?, ?, 'API_RESOURCE_READ', 'TICKET', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            Timestamp.from(event.occurredAt),
+            event.context.actorType.name,
+            event.context.actorId,
+            actorSnapshot(event.context.actorDisplaySnapshot),
+            event.context.source.name,
+            event.ticketId,
+            event.ticketNumber,
+            event.jobId,
+            event.context.sessionFingerprint,
+            event.context.authType.name,
+            event.context.requestId.take(100),
+            event.context.correlationId.take(100),
+            event.context.ipAddress?.take(64),
+            sanitize(event.context.userAgent, 256),
+            event.outcome.name,
+            event.httpStatus,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ai_result_access_audit_details (
+                access_event_id, job_id, requester_staff_id, feature, request_revision
+            ) values (?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            event.jobId,
+            event.requesterStaffId,
+            event.feature,
+            event.requestRevision,
+        )
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun appendAiKnowledgeAccess(event: AiKnowledgeAccessAudit) {
+        validateAiContext(event.context)
+        require(event.purpose in setOf("INDEX", "RECONCILE", "RETRIEVAL", "RESULT")) {
+            "Unsupported AI knowledge read purpose"
+        }
+        require(event.outcome == AccessAuditOutcome.SUCCEEDED) { "AI knowledge audit requires success outcome" }
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                source, action, resource_type, resource_id, ticket_number,
+                interaction_id, session_fingerprint, auth_type, request_id, correlation_id,
+                ip_address, user_agent, outcome, http_status
+            ) values (?, ?, ?, ?, ?, ?, 'API_RESOURCE_READ', 'KNOWLEDGE_ARTICLE', ?, null, ?, null, ?, ?, ?, null, null, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            Timestamp.from(event.occurredAt),
+            event.context.actorType.name,
+            event.context.actorId,
+            actorSnapshot(event.context.actorDisplaySnapshot),
+            event.context.source.name,
+            event.articleId,
+            event.requestRef,
+            event.context.authType.name,
+            event.context.requestId.take(100),
+            event.context.correlationId.take(100),
+            event.outcome.name,
+            event.httpStatus,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ai_knowledge_access_audit_details (
+                access_event_id, request_ref, article_id, revision_id, purpose
+            ) values (?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            event.requestRef,
+            event.articleId,
+            event.revisionId,
+            event.purpose,
+        )
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun appendAiContextAccess(event: AiContextAccessAudit) {
+        validateAiContext(event.context)
+        require(event.feature in setOf("ticket.summary", "ticket.triage", "ticket.reply_draft")) {
+            "Unsupported AI feature"
+        }
+        require(event.requestRevision > 0) { "AI request revision must be positive" }
+        require(event.outcome == AccessAuditOutcome.SUCCEEDED) { "AI context audit requires success outcome" }
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot,
+                source, action, resource_type, resource_id, ticket_number,
+                interaction_id, session_fingerprint, auth_type, request_id, correlation_id,
+                ip_address, user_agent, outcome, http_status
+            ) values (?, ?, ?, ?, ?, ?, 'API_RESOURCE_READ', 'TICKET', ?, ?, ?, null, ?, ?, ?, null, null, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            Timestamp.from(event.occurredAt),
+            event.context.actorType.name,
+            event.context.actorId,
+            actorSnapshot(event.context.actorDisplaySnapshot),
+            event.context.source.name,
+            event.ticketId,
+            event.ticketNumber,
+            event.jobId,
+            event.context.authType.name,
+            event.context.requestId.take(100),
+            event.context.correlationId.take(100),
+            event.outcome.name,
+            event.httpStatus,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ai_context_access_audit_details (
+                access_event_id, job_id, requester_staff_id, feature, request_revision
+            ) values (?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId,
+            event.jobId,
+            event.requesterStaffId,
+            event.feature,
+            event.requestRevision,
+        )
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     override fun appendTicketResourceRead(event: TicketResourceReadAccessAudit) {
         validateResourceReadContext(event.context)
@@ -452,6 +592,19 @@ internal class JpaAccessAuditWriter(
             return
         }
         validateStaffContext(context)
+    }
+
+    private fun validateAiContext(context: AccessAuditContext) {
+        require(context.actorType == ActorType.INTEGRATION_CLIENT) {
+            "AI context access audit requires an integration client actor"
+        }
+        require(context.source == RequestSource.AI_SERVICE) { "AI context access audit requires AI_SERVICE source" }
+        require(context.authType == dev.deskseed.audit.AccessAuditAuthType.API_KEY) {
+            "AI context access audit requires API_KEY authentication"
+        }
+        require(context.sessionFingerprint == null) {
+            "AI context access audit cannot contain a staff session fingerprint"
+        }
     }
 
     private fun validateAttachmentDownloadContext(context: AccessAuditContext) {

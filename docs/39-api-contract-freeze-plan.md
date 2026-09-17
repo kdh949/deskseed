@@ -104,6 +104,11 @@ GET  /api/v1/agent/tickets/{ticketNumber}/audits
 POST /api/v1/agent/tickets/{ticketNumber}/children
 POST /api/v1/agent/tickets/{ticketNumber}/transfer
 GET  /api/v1/agent/search
+POST /api/v1/agent/tickets/{ticketNumber}/ai/jobs
+GET  /api/v1/agent/tickets/{ticketNumber}/ai/jobs
+GET  /api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}
+POST /api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}/cancel
+POST /api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}/feedback
 ```
 
 ### Admin v1
@@ -117,6 +122,9 @@ GET/POST /api/v1/admin/customer-consent-policies
 GET/PUT  /api/v1/admin/customer-consent-policies/{policyId}
 POST     /api/v1/admin/customer-consent-policies/{policyId}/publish
 POST     /api/v1/admin/customer-consent-policies/{policyId}/archive
+GET/PUT  /api/v1/admin/ai/settings
+GET      /api/v1/admin/ai/status
+POST     /api/v1/admin/ai/kb/reindex
 GET/PUT /api/v1/admin/permissions...
 GET/POST /api/v1/admin/sla-policies
 POST /api/v1/admin/sla-policies/preview
@@ -131,6 +139,8 @@ POST     /api/v1/admin/integration-clients/{clientId}/rotate
 ```
 
 Integration client create/rotate responses are `no-store` one-time secret envelopes. The I1 freeze adds management endpoints only; `/api/v1/platform/**` remains unexposed until the Platform Ticket API slice.
+
+AI source and execution APIs are separate machine-only documents: `api/ai-source-api-v1.yaml` and `api/ai-internal-api-v1.yaml`. They are not browser or SDK surfaces. Core result polling defaults to metadata-only; `includeResult=true` is the explicit, audited content read.
 
 ### Audit v1
 

@@ -14,7 +14,7 @@ internal class PlatformSecurityConfiguration(
     private val problemWriter: PlatformProblemWriter,
 ) {
     @Bean
-    @Order(1)
+    @Order(2)
     fun platformSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
             .securityMatcher("/api/v1/platform/**")
@@ -57,4 +57,3 @@ internal class PlatformSecurityConfiguration(
         return http.build()
     }
 }
-

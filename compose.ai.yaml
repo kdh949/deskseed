@@ -1,0 +1,173 @@
+x-ai-runtime-environment: &ai-runtime-environment
+  DESKSEED_AI_ENVIRONMENT: ${DESKSEED_AI_ENVIRONMENT:-local}
+  DESKSEED_AI_DATABASE_URL: postgresql://${DESKSEED_AI_POSTGRES_USER:-deskseed_ai}:${DESKSEED_AI_POSTGRES_PASSWORD:-deskseed-ai-local-only}@ai-db:5432/${DESKSEED_AI_POSTGRES_DB:-deskseed_ai}
+  DESKSEED_AI_REDIS_URL: redis://ai-redis:6379/0
+  DESKSEED_AI_RESULT_ENCRYPTION_KEY: ${DESKSEED_AI_RESULT_ENCRYPTION_KEY:-blQCo9Z+KMXyoGDJ/u1hTELrnYDh8fVcLw6oHzg6edE=}
+  DESKSEED_AI_MIGRATE_ON_START: "false"
+  DESKSEED_AI_RUN_BACKGROUND_WORKERS: "false"
+
+x-ai-process: &ai-process
+  image: deskseed-ai:local
+  restart: unless-stopped
+  depends_on:
+    ai-migrate: {condition: service_completed_successfully}
+    ai-redis: {condition: service_healthy}
+  networks: [ai-runtime]
+
+services:
+  ai-db:
+    image: pgvector/pgvector:0.8.6-pg17-bookworm
+    environment:
+      POSTGRES_DB: ${DESKSEED_AI_POSTGRES_DB:-deskseed_ai}
+      POSTGRES_USER: ${DESKSEED_AI_POSTGRES_USER:-deskseed_ai}
+      POSTGRES_PASSWORD: ${DESKSEED_AI_POSTGRES_PASSWORD:-deskseed-ai-local-only}
+    volumes: [deskseed-ai-postgres:/var/lib/postgresql/data]
+    networks: [ai-runtime]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DESKSEED_AI_POSTGRES_USER:-deskseed_ai} -d ${DESKSEED_AI_POSTGRES_DB:-deskseed_ai}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ai-redis:
+    image: redis:8.2.9-alpine
+    command: [redis-server, --appendonly, "yes", --appendfsync, everysec, --maxmemory-policy, noeviction]
+    volumes: [deskseed-ai-redis:/data]
+    networks: [ai-runtime]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ai-migrate:
+    image: deskseed-ai:local
+    build: {context: ., dockerfile: ai/Dockerfile}
+    restart: "no"
+    command: [python, -m, deskseed_ai.cli, migrate]
+    environment:
+      DESKSEED_AI_ENVIRONMENT: ${DESKSEED_AI_ENVIRONMENT:-local}
+      DESKSEED_AI_PROCESS_ROLE: migration
+      DESKSEED_AI_DATABASE_URL: postgresql://${DESKSEED_AI_POSTGRES_USER:-deskseed_ai}:${DESKSEED_AI_POSTGRES_PASSWORD:-deskseed-ai-local-only}@ai-db:5432/${DESKSEED_AI_POSTGRES_DB:-deskseed_ai}
+    depends_on:
+      ai-db: {condition: service_healthy}
+    networks: [ai-runtime]
+
+  ai-service:
+    <<: *ai-process
+    command: [uvicorn, deskseed_ai.main:app, --host, 0.0.0.0, --port, "8090", --no-access-log]
+    environment:
+      <<: *ai-runtime-environment
+      DESKSEED_AI_PROCESS_ROLE: api
+      DESKSEED_AI_PROVIDER_MODE: fake
+      DESKSEED_AI_INBOUND_AUTH_ENABLED: "true"
+      DESKSEED_AI_INBOUND_KEY_ID: ${DESKSEED_AI_BACKEND_TO_AI_KEY_ID:-backend-to-ai-local-v1}
+      DESKSEED_AI_INBOUND_SECRET_SHA256: ${DESKSEED_AI_BACKEND_TO_AI_SECRET_SHA256:-d5bb5ca22aaeb1c5c6ca3c0a6a41c41f2389d4d4603a1d7cda0de17f288d9f06}
+    networks: [ai-runtime, backend-ai-control]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/internal/v1/readyz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  ai-dispatcher:
+    <<: *ai-process
+    command: [python, -m, deskseed_ai.cli, run-dispatcher]
+    environment:
+      <<: *ai-runtime-environment
+      DESKSEED_AI_PROCESS_ROLE: dispatcher
+      DESKSEED_AI_PROVIDER_MODE: fake
+
+  ai-worker:
+    <<: *ai-process
+    command: [python, -m, deskseed_ai.cli, run-worker]
+    environment:
+      <<: *ai-runtime-environment
+      DESKSEED_AI_PROCESS_ROLE: worker
+      DESKSEED_AI_BACKEND_BASE_URL: http://backend:8080
+      DESKSEED_AI_BACKEND_SOURCE_KEY_ID: ${DESKSEED_AI_TO_BACKEND_KEY_ID:-ai-to-backend-local-v1}
+      DESKSEED_AI_BACKEND_SOURCE_SECRET: ${DESKSEED_AI_TO_BACKEND_SECRET:-deskseed-local-ai-to-backend-secret-change-before-production}
+      DESKSEED_AI_PROVIDER_MODE: ${DESKSEED_AI_PROVIDER_MODE:-fake}
+      DESKSEED_AI_LIVE_PROVIDER_ENABLED: ${DESKSEED_AI_LIVE_PROVIDER_ENABLED:-false}
+      DESKSEED_AI_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DESKSEED_AI_LANGFUSE_ENABLED: ${DESKSEED_AI_LANGFUSE_ENABLED:-false}
+      DESKSEED_AI_LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      DESKSEED_AI_LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      DESKSEED_AI_LANGFUSE_HOST: ${DESKSEED_AI_LANGFUSE_HOST:-https://cloud.langfuse.com}
+    depends_on:
+      ai-migrate: {condition: service_completed_successfully}
+      ai-redis: {condition: service_healthy}
+      backend: {condition: service_started}
+    networks: [ai-runtime, backend-ai-control]
+
+  ai-recovery:
+    <<: *ai-process
+    command: [python, -m, deskseed_ai.cli, run-recovery]
+    environment:
+      <<: *ai-runtime-environment
+      DESKSEED_AI_PROCESS_ROLE: recovery
+      DESKSEED_AI_PROVIDER_MODE: fake
+
+  ai-indexer:
+    <<: *ai-process
+    command: [python, -m, deskseed_ai.cli, run-indexer]
+    environment:
+      <<: *ai-runtime-environment
+      DESKSEED_AI_PROCESS_ROLE: indexer
+      DESKSEED_AI_BACKEND_BASE_URL: http://backend:8080
+      DESKSEED_AI_BACKEND_INDEX_KEY_ID: ${DESKSEED_AI_INDEX_TO_BACKEND_KEY_ID:-ai-index-to-backend-local-v1}
+      DESKSEED_AI_BACKEND_INDEX_SECRET: ${DESKSEED_AI_INDEX_TO_BACKEND_SECRET:-deskseed-local-ai-index-to-backend-secret-change-before-production}
+      DESKSEED_AI_PROVIDER_MODE: ${DESKSEED_AI_PROVIDER_MODE:-fake}
+      DESKSEED_AI_LIVE_PROVIDER_ENABLED: ${DESKSEED_AI_LIVE_PROVIDER_ENABLED:-false}
+      DESKSEED_AI_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      ai-migrate: {condition: service_completed_successfully}
+      ai-redis: {condition: service_healthy}
+      backend: {condition: service_started}
+    networks: [ai-runtime, backend-ai-control]
+
+  ai-feedback:
+    <<: *ai-process
+    command: [python, -m, deskseed_ai.cli, run-feedback]
+    environment:
+      <<: *ai-runtime-environment
+      DESKSEED_AI_PROCESS_ROLE: feedback
+      DESKSEED_AI_PROVIDER_MODE: fake
+      DESKSEED_AI_LANGFUSE_ENABLED: ${DESKSEED_AI_LANGFUSE_ENABLED:-false}
+      DESKSEED_AI_LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      DESKSEED_AI_LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      DESKSEED_AI_LANGFUSE_HOST: ${DESKSEED_AI_LANGFUSE_HOST:-https://cloud.langfuse.com}
+
+  ai-retention:
+    <<: *ai-process
+    command: [python, -m, deskseed_ai.cli, run-retention]
+    environment:
+      <<: *ai-runtime-environment
+      DESKSEED_AI_PROCESS_ROLE: retention
+      DESKSEED_AI_PROVIDER_MODE: fake
+
+  backend:
+    environment:
+      DESKSEED_AI_SOURCE_AUTH_ENABLED: "true"
+      DESKSEED_AI_SOURCE_AUTH_KEY_ID: ${DESKSEED_AI_TO_BACKEND_KEY_ID:-ai-to-backend-local-v1}
+      DESKSEED_AI_SOURCE_AUTH_SECRET_SHA256: ${DESKSEED_AI_TO_BACKEND_SECRET_SHA256:-b91230fe85596e59fc418382486427e78cc2af68f0e849d8dd537b7922de9d81}
+      DESKSEED_AI_SOURCE_AUTH_PRINCIPAL_ID: ${DESKSEED_AI_SERVICE_PRINCIPAL_ID:-10000000-0000-0000-0000-000000000001}
+      DESKSEED_AI_SOURCE_AUTH_PRINCIPAL_NAME: Deskseed AI Worker
+      DESKSEED_AI_SOURCE_AUTH_INDEXER_KEY_ID: ${DESKSEED_AI_INDEX_TO_BACKEND_KEY_ID:-ai-index-to-backend-local-v1}
+      DESKSEED_AI_SOURCE_AUTH_INDEXER_SECRET_SHA256: ${DESKSEED_AI_INDEX_TO_BACKEND_SECRET_SHA256:-9a618ac95e835339b373dc97d5b0e42843176197ab9eb269b1eedd6517b642ae}
+      DESKSEED_AI_SOURCE_AUTH_INDEXER_PRINCIPAL_ID: ${DESKSEED_AI_INDEXER_PRINCIPAL_ID:-10000000-0000-0000-0000-000000000002}
+      DESKSEED_AI_SOURCE_AUTH_INDEXER_PRINCIPAL_NAME: Deskseed AI Indexer
+      DESKSEED_AI_INTEGRATION_ENABLED: "true"
+      DESKSEED_AI_INTEGRATION_SCHEDULING_ENABLED: "true"
+      DESKSEED_AI_INTEGRATION_BASE_URL: http://ai-service:8090
+      DESKSEED_AI_INTEGRATION_KEY_ID: ${DESKSEED_AI_BACKEND_TO_AI_KEY_ID:-backend-to-ai-local-v1}
+      DESKSEED_AI_INTEGRATION_SECRET: ${DESKSEED_AI_BACKEND_TO_AI_SECRET:-deskseed-local-backend-to-ai-secret-change-before-production}
+    networks: [backend-ai-control]
+
+volumes:
+  deskseed-ai-postgres:
+  deskseed-ai-redis:
+
+networks:
+  ai-runtime: {internal: true}
+  backend-ai-control: {internal: true}
