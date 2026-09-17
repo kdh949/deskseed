@@ -1,8 +1,8 @@
 # AI V1 frontend handoff
 
-Status: `DEFERRED_UI`
+Status: `IMPLEMENTED_LOCAL_UI` (2026-09-17)
 
-No file under `frontend/` is changed by the server/runtime slice. This document freezes the contract and failure states a later Agent Ticket Workspace task must implement. Live provider, deployed-environment, and human quality validation remain separate.
+The Agent Ticket Workspace now consumes the AI V1 contract through `features/ai-assistance/`. The implementation used the staff-console Storybook documentation tools and the task brief `docs/tasks/2026-09-17-ai-v1-frontend-assistant.md`. Live provider, deployed-environment, and human quality validation remain separate.
 
 ## Agent flow
 
@@ -13,7 +13,7 @@ No file under `frontend/` is changed by the server/runtime slice. This document 
 5. Immediately before insertion, use the existing ticket command with current optimistic concurrency semantics. The AI result is never an authorization token.
 6. Send optional feedback with a new `Idempotency-Key`; never send the edited reply body.
 
-## States to implement later
+## Implemented UI states
 
 - Loading/polling with `pollAfterMs` and bounded backoff.
 - Empty/no prior jobs.
@@ -30,6 +30,6 @@ PUBLIC and INTERNAL composer drafts remain separate. AI must never auto-submit, 
 - Triage: fixed topic code, optional fixed priority, validated tag IDs, reasons. Until a current allowed-tag source is contracted, server output with tag IDs fails closed.
 - Reply draft: answer plus approved PUBLIC KB citations. A reply with no approved citation is not returned as usable content.
 
-## Frontend verification still required
+## Frontend verification
 
-Storybook interaction/accessibility, responsive browser checks, API transport tests, and draft-preservation tests are `NOT RUN` in this server-only slice.
+The component stories cover ready, polling, stale, budget failure, existing-draft choice, and INTERNAL composer guard states. API tests cover unsafe citation rejection, session/CSRF/actor/idempotency transport, result revalidation, and feedback. Focused Storybook interaction/a11y, workspace package gates, preview URLs, and any remaining browser/manual visual result are recorded in the 2026-09-17 task completion report.

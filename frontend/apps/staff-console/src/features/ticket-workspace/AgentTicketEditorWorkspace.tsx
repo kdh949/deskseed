@@ -60,6 +60,11 @@ import {
 } from '../../design-system/canonical'
 import { AttachmentList } from '../attachments/AttachmentList'
 import { AttachmentUploadField } from '../attachments/AttachmentUploadField'
+import {
+  AiAssistantPanel,
+  draftFingerprint,
+  type AiPublicDraftSnapshot,
+} from '../ai-assistance/AiAssistantPanel'
 import type { ExtensionAccess } from '../../extension-host/types'
 import { ExtensionSlot } from '../../extension-host/ExtensionSlot'
 import type { EditableTicketFields } from './model/ticketEditorModel'
@@ -125,6 +130,13 @@ function WritableWorkspace({
   staffId: string
 }) {
   const editor = useTicketEditor({ detail, refreshLatest, staffId })
+  const publicDraft: AiPublicDraftSnapshot = {
+    body: editor.comments.PUBLIC,
+    document: editor.documents.PUBLIC,
+    attachmentIds: editor.attachmentIds.PUBLIC,
+  }
+  const publicDraftRef = useRef(publicDraft)
+  publicDraftRef.current = publicDraft
   return (
     <>
       <WorkspaceFrame
@@ -132,6 +144,40 @@ function WritableWorkspace({
         extensionAccess={extensionAccess}
         onRefresh={() => void editor.refreshEditor()}
         properties={<EditableProperties detail={detail} editor={editor} />}
+        aiAssistant={
+          <AiAssistantPanel
+            composerMode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
+            onInsertReply={(answer, strategy, expectedDraft) => {
+              if (
+                draftFingerprint(publicDraftRef.current) !==
+                draftFingerprint(expectedDraft)
+              ) {
+                return false
+              }
+              const currentText = editor.comments.PUBLIC
+              const nextText =
+                strategy === 'append' && currentText.trim()
+                  ? `${currentText}\n\n${answer}`
+                  : answer
+              const answerDocument = plainTextDocument(answer)
+              const nextDocument =
+                strategy === 'append' && currentText.trim()
+                  ? {
+                      type: 'doc' as const,
+                      content: [
+                        ...editor.documents.PUBLIC.content,
+                        ...answerDocument.content,
+                      ],
+                    }
+                  : answerDocument
+              editor.updateRichDraft('PUBLIC', nextDocument, nextText)
+              return true
+            }}
+            publicDraft={publicDraft}
+            ticketNumber={detail.ticket.ticketNumber}
+            ticketVersion={detail.ticket.version}
+          />
+        }
         knowledge={
           <TicketKnowledge
             ticketNumber={detail.ticket.ticketNumber}
@@ -257,6 +303,7 @@ function ReadOnlyWorkspace({
 }
 
 function WorkspaceFrame({
+  aiAssistant,
   detail,
   extensionAccess,
   onRefresh,
@@ -265,6 +312,7 @@ function WorkspaceFrame({
   refreshLatest,
   knowledge,
 }: {
+  aiAssistant?: React.ReactNode
   knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
@@ -293,6 +341,7 @@ function WorkspaceFrame({
   }
   const context = (
     <TicketContext
+      aiAssistant={aiAssistant}
       detail={detail}
       extensionAccess={extensionAccess}
       externalReferences={externalReferences}
@@ -1140,11 +1189,13 @@ function ConflictResolution({
 }
 
 function TicketContext({
+  aiAssistant,
   detail,
   extensionAccess,
   externalReferences,
   knowledge,
 }: {
+  aiAssistant?: React.ReactNode
   knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
@@ -1168,6 +1219,7 @@ function TicketContext({
     }))
   return (
     <div className="seed-context-stack">
+      {aiAssistant}
       {knowledge}
       <SeedContextCard title="고객">
         {detail.context.customer ? (

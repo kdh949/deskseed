@@ -568,6 +568,10 @@ export function useTicketEditor({
     },
     comments,
     documents,
+    attachmentIds: {
+      PUBLIC: attachmentStates.PUBLIC.ids,
+      INTERNAL: attachmentStates.INTERNAL.ids,
+    },
     updateDraft,
     updateRichDraft,
     serverFields,
