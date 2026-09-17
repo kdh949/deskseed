@@ -1439,6 +1439,7 @@ export async function requestStaffResource<T>(
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
     body?: unknown
     version?: number
+    headers?: Record<string, string>
   },
 ): Promise<T> {
   const response = command
@@ -1447,8 +1448,11 @@ export async function requestStaffResource<T>(
         command.method,
         command.body,
         command.version === undefined
-          ? {}
-          : { 'If-Match': `"${command.version}"` },
+          ? (command.headers ?? {})
+          : {
+              ...command.headers,
+              'If-Match': `"${command.version}"`,
+            },
       )
     : await staffFetch(path)
   const decoded = decode(await checkedBody(response))

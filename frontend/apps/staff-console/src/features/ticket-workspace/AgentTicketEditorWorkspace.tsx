@@ -60,6 +60,7 @@ import {
 } from '../../design-system/canonical'
 import { AttachmentList } from '../attachments/AttachmentList'
 import { AttachmentUploadField } from '../attachments/AttachmentUploadField'
+import { AiAssistantPanel } from '../ai-assistance/AiAssistantPanel'
 import type { ExtensionAccess } from '../../extension-host/types'
 import { ExtensionSlot } from '../../extension-host/ExtensionSlot'
 import type { EditableTicketFields } from './model/ticketEditorModel'
@@ -132,6 +133,33 @@ function WritableWorkspace({
         extensionAccess={extensionAccess}
         onRefresh={() => void editor.refreshEditor()}
         properties={<EditableProperties detail={detail} editor={editor} />}
+        aiAssistant={
+          <AiAssistantPanel
+            composerMode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
+            onInsertReply={(answer, strategy) => {
+              const currentText = editor.comments.PUBLIC
+              const nextText =
+                strategy === 'append' && currentText.trim()
+                  ? `${currentText}\n\n${answer}`
+                  : answer
+              const answerDocument = plainTextDocument(answer)
+              const nextDocument =
+                strategy === 'append' && currentText.trim()
+                  ? {
+                      type: 'doc' as const,
+                      content: [
+                        ...editor.documents.PUBLIC.content,
+                        ...answerDocument.content,
+                      ],
+                    }
+                  : answerDocument
+              editor.updateRichDraft('PUBLIC', nextDocument, nextText)
+            }}
+            publicDraft={editor.comments.PUBLIC}
+            ticketNumber={detail.ticket.ticketNumber}
+            ticketVersion={detail.ticket.version}
+          />
+        }
         knowledge={
           <TicketKnowledge
             ticketNumber={detail.ticket.ticketNumber}
@@ -257,6 +285,7 @@ function ReadOnlyWorkspace({
 }
 
 function WorkspaceFrame({
+  aiAssistant,
   detail,
   extensionAccess,
   onRefresh,
@@ -265,6 +294,7 @@ function WorkspaceFrame({
   refreshLatest,
   knowledge,
 }: {
+  aiAssistant?: React.ReactNode
   knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
@@ -293,6 +323,7 @@ function WorkspaceFrame({
   }
   const context = (
     <TicketContext
+      aiAssistant={aiAssistant}
       detail={detail}
       extensionAccess={extensionAccess}
       externalReferences={externalReferences}
@@ -1140,11 +1171,13 @@ function ConflictResolution({
 }
 
 function TicketContext({
+  aiAssistant,
   detail,
   extensionAccess,
   externalReferences,
   knowledge,
 }: {
+  aiAssistant?: React.ReactNode
   knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
@@ -1168,6 +1201,7 @@ function TicketContext({
     }))
   return (
     <div className="seed-context-stack">
+      {aiAssistant}
       {knowledge}
       <SeedContextCard title="고객">
         {detail.context.customer ? (

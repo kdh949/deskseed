@@ -329,12 +329,18 @@ const csrfHandler = http.get('/api/v1/agent/csrf', () =>
   HttpResponse.json({ token: 'a'.repeat(32), headerName: 'X-CSRF-TOKEN' }),
 )
 
+const aiJobsHandler = http.get(
+  '/api/v1/agent/tickets/:ticketNumber/ai/jobs',
+  () => HttpResponse.json({ items: [] }),
+)
+
 const workspaceHandlers = (...overrides: HttpHandler[]) => [
   ...overrides,
   externalReferenceHandler,
   collaborationHandler,
   macroHandler,
   macroPreviewHandler,
+  aiJobsHandler,
   csrfHandler,
   ...mswHandlers,
 ]
