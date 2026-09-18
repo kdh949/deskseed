@@ -4,15 +4,26 @@ import dev.deskseed.ticketing.AiPublicTicketContext
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
-internal const val AI_CONTEXT_POLICY_VERSION = "public-comments-v1"
+internal const val LEGACY_AI_CONTEXT_POLICY_VERSION = "public-comments-v1"
+internal const val AI_CONTEXT_POLICY_VERSION = "public-comments-v2"
 
-internal fun computeAiContextRevision(context: AiPublicTicketContext): String = sha256(
+internal fun computeAiContextRevision(
+    context: AiPublicTicketContext,
+    policyVersion: String = AI_CONTEXT_POLICY_VERSION,
+): String = sha256(
     buildString {
-        append(AI_CONTEXT_POLICY_VERSION).append('\u001f')
+        require(policyVersion == LEGACY_AI_CONTEXT_POLICY_VERSION || policyVersion == AI_CONTEXT_POLICY_VERSION) {
+            "Unsupported AI context policy version"
+        }
+        append(policyVersion).append('\u001f')
         append(context.ticketId).append('\u001f').append(context.ticketVersion)
         context.comments.forEach { comment ->
             append('\u001e').append(comment.id)
-                .append('\u001f').append(comment.createdAt)
+            if (policyVersion == AI_CONTEXT_POLICY_VERSION) {
+                append('\u001f').append(comment.sequence)
+                    .append('\u001f').append(comment.authorRole.name)
+            }
+            append('\u001f').append(comment.createdAt)
                 .append('\u001f').append(sha256(comment.body))
         }
     },

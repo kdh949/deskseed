@@ -42,7 +42,8 @@ internal class AiResultAuthorizer(
     ): AiJobReceipt {
         val binding = jdbcTemplate.query(
             """
-            select ticket_id, feature, request_revision, context_revision, cancellation_requested
+            select ticket_id, feature, request_revision, context_revision, context_policy_version,
+                   cancellation_requested
             from ai_requests
             where job_id = ? and requester_staff_id = ? and ticket_number = ?
             for share
@@ -53,6 +54,7 @@ internal class AiResultAuthorizer(
                     feature = result.getString("feature"),
                     requestRevision = result.getLong("request_revision"),
                     contextRevision = result.getString("context_revision"),
+                    contextPolicyVersion = result.getString("context_policy_version"),
                     cancelled = result.getBoolean("cancellation_requested"),
                 )
             },
@@ -63,7 +65,8 @@ internal class AiResultAuthorizer(
         val context = ticketStore.findAiPublicContext(ticketNumber, actor.id)
             ?: throw AiRequestNotFoundException()
         val featureEnabled = isFeatureEnabled(AiFeature.fromValue(binding.feature), actor.id)
-        val contextFresh = computeAiContextRevision(context) == binding.contextRevision &&
+        val contextFresh = remote.contextPolicyVersion == binding.contextPolicyVersion &&
+            computeAiContextRevision(context, binding.contextPolicyVersion) == binding.contextRevision &&
             remote.contextRevision == binding.contextRevision
         val resultUnexpired = remote.result == null || remote.resultExpiresAt?.isAfter(Instant.now(clock)) == true
         val provenanceFresh = remote.result == null || remote.provenance?.let { provenance ->
@@ -147,6 +150,7 @@ internal class AiResultAuthorizer(
         val feature: String,
         val requestRevision: Long,
         val contextRevision: String,
+        val contextPolicyVersion: String,
         val cancelled: Boolean,
     )
 }

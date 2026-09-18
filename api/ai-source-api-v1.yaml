@@ -164,6 +164,15 @@ components:
         status: {type: integer}
         detail: {type: string}
     SourceContext:
+      oneOf:
+        - $ref: '#/components/schemas/SourceContextV1'
+        - $ref: '#/components/schemas/SourceContextV2'
+      discriminator:
+        propertyName: contextPolicyVersion
+        mapping:
+          public-comments-v1: '#/components/schemas/SourceContextV1'
+          public-comments-v2: '#/components/schemas/SourceContextV2'
+    SourceContextV1:
       type: object
       additionalProperties: false
       required: [jobId, ticketId, ticketNumber, ticketVersion, feature, requestRevision, contextRevision, contextPolicyVersion, inputScope, comments]
@@ -186,6 +195,37 @@ components:
             required: [id, body, createdAt]
             properties:
               id: {type: string, format: uuid}
+              body: {type: string, minLength: 1, maxLength: 100000}
+              createdAt: {type: string, format: date-time}
+    SourceContextV2:
+      type: object
+      additionalProperties: false
+      required: [jobId, ticketId, ticketNumber, ticketVersion, feature, requestRevision, contextRevision, contextPolicyVersion, inputScope, comments]
+      properties:
+        jobId: {type: string, format: uuid}
+        ticketId: {type: string, format: uuid}
+        ticketNumber: {type: integer, format: int64, minimum: 1}
+        ticketVersion: {type: integer, format: int64, minimum: 0}
+        feature: {type: string, enum: [ticket.summary, ticket.triage, ticket.reply_draft]}
+        requestRevision: {type: integer, format: int64, minimum: 1}
+        contextRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+        contextPolicyVersion: {type: string, const: public-comments-v2}
+        inputScope: {type: string, const: PUBLIC_ONLY}
+        comments:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, sequence, authorRole, body, createdAt]
+            properties:
+              id: {type: string, format: uuid}
+              sequence:
+                type: integer
+                format: int64
+                minimum: 1
+                description: Canonical stored order로 정렬한 PUBLIC-only projection의 1부터 시작하는 연속 순번입니다.
+              authorRole: {type: string, enum: [CUSTOMER, STAFF, INTEGRATION_CLIENT, SYSTEM, UNKNOWN]}
               body: {type: string, minLength: 1, maxLength: 100000}
               createdAt: {type: string, format: date-time}
     SourceRevision:

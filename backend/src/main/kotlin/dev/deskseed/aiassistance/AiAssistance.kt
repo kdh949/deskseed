@@ -202,6 +202,8 @@ data class AiServiceIdentity(
 
 data class AiSourceComment(
     val id: UUID,
+    val sequence: Long,
+    val authorRole: String,
     val body: String,
     val createdAt: Instant,
 )

@@ -2,6 +2,7 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.TicketAttachmentReadProjection
+import dev.deskseed.ticketing.AiCommentAuthorRole
 import dev.deskseed.ticketing.AiPublicComment
 import dev.deskseed.ticketing.AiPublicTicketContext
 import dev.deskseed.ticketing.CommentVisibility
@@ -591,15 +592,25 @@ internal class StaffTicketQueryRepository(
         }.singleOrNull() ?: return null
         val comments = jdbcTemplate.query(
             """
-            select comment.id, comment.body, comment.created_at
+            select comment.id,
+                   row_number() over (order by comment.sequence_number) as public_sequence_number,
+                   comment.author_type, comment.body, comment.created_at
             from ticket_comments comment
             where comment.ticket_id = :ticketId and comment.visibility = 'PUBLIC'
-            order by comment.created_at, comment.id
+            order by comment.sequence_number
             """.trimIndent(),
             MapSqlParameterSource("ticketId", ticket.first),
         ) { result, _ ->
             AiPublicComment(
                 id = result.getObject("id", UUID::class.java),
+                sequence = result.getLong("public_sequence_number"),
+                authorRole = when (result.getString("author_type")) {
+                    "CUSTOMER" -> AiCommentAuthorRole.CUSTOMER
+                    "AGENT" -> AiCommentAuthorRole.STAFF
+                    "INTEGRATION_CLIENT" -> AiCommentAuthorRole.INTEGRATION_CLIENT
+                    "SYSTEM", "AUTOMATION" -> AiCommentAuthorRole.SYSTEM
+                    else -> AiCommentAuthorRole.UNKNOWN
+                },
                 body = result.getString("body"),
                 createdAt = result.getTimestamp("created_at").toInstant(),
             )

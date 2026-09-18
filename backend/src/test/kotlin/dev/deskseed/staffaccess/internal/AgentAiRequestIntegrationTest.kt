@@ -5,6 +5,9 @@ import dev.deskseed.aiassistance.AiExecutionStatusReader
 import dev.deskseed.aiassistance.AiGenerationProvenance
 import dev.deskseed.aiassistance.AiJobReceipt
 import dev.deskseed.aiassistance.AiSummaryResult
+import dev.deskseed.aiassistance.internal.LEGACY_AI_CONTEXT_POLICY_VERSION
+import dev.deskseed.aiassistance.internal.computeAiContextRevision
+import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -41,6 +44,7 @@ import java.util.UUID
 class AgentAiRequestIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
+    @Autowired private lateinit var ticketStore: StaffTicketReadStore
     @Autowired private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
     @MockitoBean private lateinit var executionStatusReader: AiExecutionStatusReader
 
@@ -74,6 +78,8 @@ class AgentAiRequestIntegrationTest {
             String::class.java,
         )!!
         assertThat(payload).doesNotContain(PUBLIC_BODY, INTERNAL_BODY, fixture.subject, "@example.com")
+        assertThat(payload).contains("\"contextPolicyVersion\": \"public-comments-v2\"")
+            .contains("\"language\": \"ko\"")
         assertThat(count("select count(*) from access_audit_events where action = 'TICKET_VIEWED'"))
             .isZero()
         assertThat(count("select count(*) from access_audit_events where action = 'API_RESOURCE_READ' and actor_type = 'STAFF'"))
@@ -84,6 +90,21 @@ class AgentAiRequestIntegrationTest {
     fun `source returns only ordered PUBLIC comments and records fixed service plus requester attribution`() {
         val fixture = fixture(9102)
         val session = login(fixture.email, PASSWORD)
+        val sameTimestamp = Timestamp.from(Instant.parse("2026-09-16T00:00:05Z"))
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AGENT', ?, 'PUBLIC', '상담사 공개 안내', ?)
+            """.trimIndent(),
+            UUID.randomUUID(), fixture.ticketId, fixture.staffId, sameTimestamp,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AUTOMATION', null, 'PUBLIC', '자동화 공개 안내', ?)
+            """.trimIndent(),
+            UUID.randomUUID(), fixture.ticketId, sameTimestamp,
+        )
         val created = create(
             session,
             fixture.staffId,
@@ -97,8 +118,15 @@ class AgentAiRequestIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.inputScope").value("PUBLIC_ONLY"))
-            .andExpect(jsonPath("$.comments.length()").value(1))
+            .andExpect(jsonPath("$.contextPolicyVersion").value("public-comments-v2"))
+            .andExpect(jsonPath("$.comments.length()").value(3))
             .andExpect(jsonPath("$.comments[0].body").value(PUBLIC_BODY))
+            .andExpect(jsonPath("$.comments[0].sequence").value(1))
+            .andExpect(jsonPath("$.comments[0].authorRole").value("CUSTOMER"))
+            .andExpect(jsonPath("$.comments[1].sequence").value(2))
+            .andExpect(jsonPath("$.comments[1].authorRole").value("STAFF"))
+            .andExpect(jsonPath("$.comments[2].sequence").value(3))
+            .andExpect(jsonPath("$.comments[2].authorRole").value("SYSTEM"))
             .andReturn().response.contentAsString
         assertThat(response).doesNotContain(INTERNAL_BODY, fixture.subject, fixture.email)
 
@@ -116,6 +144,36 @@ class AgentAiRequestIntegrationTest {
                 """.trimIndent(),
             ),
         ).isEqualTo(1)
+    }
+
+    @Test
+    fun `source preserves legacy v1 revision and response shape for an in-flight binding`() {
+        val fixture = fixture(9110)
+        val session = login(fixture.email, PASSWORD)
+        val created = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-idempotency-key-legacy-v1",
+            requestBody("ticket.summary"),
+        ).andExpect(status().isAccepted).andReturn().response.contentAsString
+        val jobId = uuidField(created, "jobId")
+        val context = ticketStore.findAiPublicContext(fixture.number, fixture.staffId)!!
+        val legacyRevision = computeAiContextRevision(context, LEGACY_AI_CONTEXT_POLICY_VERSION)
+        jdbcTemplate.update(
+            "update ai_requests set context_policy_version = ?, context_revision = ? where job_id = ?",
+            LEGACY_AI_CONTEXT_POLICY_VERSION,
+            legacyRevision,
+            jobId,
+        )
+
+        source(jobId)
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.contextPolicyVersion").value(LEGACY_AI_CONTEXT_POLICY_VERSION))
+            .andExpect(jsonPath("$.contextRevision").value(legacyRevision))
+            .andExpect(jsonPath("$.comments[0].body").value(PUBLIC_BODY))
+            .andExpect(jsonPath("$.comments[0].sequence").doesNotExist())
+            .andExpect(jsonPath("$.comments[0].authorRole").doesNotExist())
     }
 
     @Test
@@ -199,6 +257,31 @@ class AgentAiRequestIntegrationTest {
         create(session, fixture.staffId, fixture.number, "ai-idempotency-key-0007", requestBody("ticket.summary"))
             .andExpect(status().isServiceUnavailable)
         assertThat(count("select count(*) from ai_requests")).isZero()
+    }
+
+    @Test
+    fun `unsupported AI options fail before request outbox and audit mutation`() {
+        val fixture = fixture(9109)
+        val session = login(fixture.email, PASSWORD)
+
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-idempotency-key-unsupported-language",
+            requestBody("ticket.summary", """{"language":"en"}"""),
+        ).andExpect(status().isBadRequest)
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-idempotency-key-unsupported-tone",
+            requestBody("ticket.summary", """{"tone":"calm"}"""),
+        ).andExpect(status().isBadRequest)
+
+        assertThat(count("select count(*) from ai_requests")).isZero()
+        assertThat(count("select count(*) from ai_integration_outbox")).isZero()
+        assertThat(count("select count(*) from access_audit_events where action = 'API_RESOURCE_READ'")).isZero()
     }
 
     @Test
@@ -297,7 +380,7 @@ class AgentAiRequestIntegrationTest {
                 pollAfterMs = 750,
                 cancelRequested = false,
                 contextRevision = contextRevision,
-                contextPolicyVersion = "public-comments-v1",
+                contextPolicyVersion = "public-comments-v2",
                 phase = "COMPLETE",
                 completedAt = now,
                 resultExpiresAt = now.plusSeconds(3600),
@@ -315,7 +398,7 @@ class AgentAiRequestIntegrationTest {
                 pollAfterMs = 750,
                 cancelRequested = false,
                 contextRevision = contextRevision,
-                contextPolicyVersion = "public-comments-v1",
+                contextPolicyVersion = "public-comments-v2",
                 phase = "COMPLETE",
                 completedAt = now,
                 resultExpiresAt = now.plusSeconds(3600),

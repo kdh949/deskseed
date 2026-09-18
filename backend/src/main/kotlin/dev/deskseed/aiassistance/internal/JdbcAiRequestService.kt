@@ -238,7 +238,7 @@ internal class JdbcAiRequestService(
         val backendReceipt = jdbcTemplate.query(
             """
             select job_id, feature, status, request_revision, created_at, deadline_at,
-                   cancellation_requested, context_revision, request_fingerprint
+                   cancellation_requested, context_revision, context_policy_version, request_fingerprint
             from ai_requests
             where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_number = ?
             """.trimIndent(),
@@ -405,7 +405,7 @@ internal class JdbcAiRequestService(
         return jdbcTemplate.query(
             """
             select job_id, feature, status, request_revision, created_at, deadline_at,
-                   cancellation_requested, context_revision, request_fingerprint
+                   cancellation_requested, context_revision, context_policy_version, request_fingerprint
             from ai_requests
             where workspace_key = ? and requester_staff_id = ? and ticket_number = ?
             order by created_at desc, job_id desc
@@ -456,7 +456,7 @@ internal class JdbcAiRequestService(
         val context = ticketStore.findAiPublicContext(binding.ticketNumber, binding.requesterStaffId)
             ?: throw AiSourceRequestUnavailableException()
         if (context.comments.isEmpty()) throw AiSourceRequestUnavailableException()
-        val currentRevision = computeAiContextRevision(context)
+        val currentRevision = computeAiContextRevision(context, binding.contextPolicyVersion)
         if (currentRevision != binding.contextRevision) {
             jdbcTemplate.update(
                 "update ai_requests set status = 'SUPERSEDED', updated_at = ? where job_id = ?",
@@ -505,7 +505,9 @@ internal class JdbcAiRequestService(
             contextRevision = currentRevision,
             contextPolicyVersion = binding.contextPolicyVersion,
             inputScope = INPUT_SCOPE,
-            comments = context.comments.map { AiSourceComment(it.id, it.body, it.createdAt) },
+            comments = context.comments.map {
+                AiSourceComment(it.id, it.sequence, it.authorRole.name, it.body, it.createdAt)
+            },
         )
     }
 
@@ -514,7 +516,7 @@ internal class JdbcAiRequestService(
         val binding = jdbcTemplate.query(
             """
             select requester_staff_id, ticket_number, feature, status, request_revision,
-                   context_revision, cancellation_requested, deadline_at
+                   context_revision, context_policy_version, cancellation_requested, deadline_at
             from ai_requests where job_id = ? and workspace_key = ?
             """.trimIndent(),
             { result, _ -> RevisionBinding(
@@ -524,6 +526,7 @@ internal class JdbcAiRequestService(
                 status = AiBackendRequestStatus.valueOf(result.getString("status")),
                 requestRevision = result.getLong("request_revision"),
                 contextRevision = result.getString("context_revision"),
+                contextPolicyVersion = result.getString("context_policy_version"),
                 cancelRequested = result.getBoolean("cancellation_requested"),
                 deadlineAt = result.getTimestamp("deadline_at").toInstant(),
             ) },
@@ -531,7 +534,9 @@ internal class JdbcAiRequestService(
             workspaceKey,
         ).singleOrNull() ?: throw AiSourceRequestUnavailableException()
         val context = ticketStore.findAiPublicContext(binding.ticketNumber, binding.requesterId)
-        val currentRevision = context?.let(::computeAiContextRevision) ?: binding.contextRevision
+        val currentRevision = context?.let {
+            computeAiContextRevision(it, binding.contextPolicyVersion)
+        } ?: binding.contextRevision
         val featureEnabled = isFeatureEnabled(binding.feature, binding.requesterId)
         val authorized = context != null && context.comments.isNotEmpty() &&
             binding.status == AiBackendRequestStatus.ACCEPTED && !binding.cancelRequested &&
@@ -593,18 +598,25 @@ internal class JdbcAiRequestService(
     }
 
     private fun normalizeOptions(feature: AiFeature, options: Map<String, String>): Map<String, String> {
-        val allowedKeys = when (feature) {
-            AiFeature.TICKET_REPLY_DRAFT -> setOf("language", "tone")
-            AiFeature.TICKET_SUMMARY, AiFeature.TICKET_TRIAGE -> setOf("language")
+        val defaults = when (feature) {
+            AiFeature.TICKET_REPLY_DRAFT -> sortedMapOf("language" to "ko", "tone" to "calm")
+            AiFeature.TICKET_SUMMARY, AiFeature.TICKET_TRIAGE -> sortedMapOf("language" to "ko")
         }
-        if (options.keys.any { it !in allowedKeys }) throw AiRequestInvalidException("Unsupported AI request option")
-        return options.toSortedMap().mapValues { (key, rawValue) ->
+        if (options.keys.any { it !in defaults.keys }) throw AiRequestInvalidException("Unsupported AI request option")
+        val normalized = options.toSortedMap().mapValues { (key, rawValue) ->
             val value = rawValue.trim()
             if (value.isEmpty() || value.length > 40 || value.any(Char::isISOControl)) {
                 throw AiRequestInvalidException("AI option $key is invalid")
             }
             value
         }
+        if (normalized["language"]?.let { it != "ko" } == true) {
+            throw AiRequestInvalidException("Unsupported AI language option")
+        }
+        if (normalized["tone"]?.let { it != "calm" } == true) {
+            throw AiRequestInvalidException("Unsupported AI tone option")
+        }
+        return (defaults + normalized).toSortedMap()
     }
 
     private fun acquireIdempotencyLock(actorId: UUID, idempotencyFingerprint: String) {
@@ -650,7 +662,7 @@ internal class JdbcAiRequestService(
     private fun findByIdempotency(actorId: UUID, fingerprint: String): Binding? = jdbcTemplate.query(
         """
         select job_id, feature, status, request_revision, created_at, deadline_at,
-               cancellation_requested, context_revision, request_fingerprint
+               cancellation_requested, context_revision, context_policy_version, request_fingerprint
         from ai_requests
         where workspace_key = ? and requester_staff_id = ? and idempotency_key_fingerprint = ?
         """.trimIndent(),
@@ -663,7 +675,7 @@ internal class JdbcAiRequestService(
     private fun findForUpdate(jobId: UUID, actorId: UUID, ticketNumber: Long): Binding? = jdbcTemplate.query(
         """
         select job_id, feature, status, request_revision, created_at, deadline_at,
-               cancellation_requested, context_revision, request_fingerprint
+               cancellation_requested, context_revision, context_policy_version, request_fingerprint
         from ai_requests
         where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_number = ?
         for update
@@ -685,6 +697,7 @@ internal class JdbcAiRequestService(
             deadlineAt = result.getTimestamp("deadline_at").toInstant(),
             cancelRequested = result.getBoolean("cancellation_requested"),
             contextRevision = result.getString("context_revision"),
+            contextPolicyVersion = result.getString("context_policy_version"),
         ),
         requestFingerprint = result.getString("request_fingerprint"),
     )
@@ -760,6 +773,7 @@ internal class JdbcAiRequestService(
         deadlineAt: Instant,
         cancelRequested: Boolean,
         contextRevision: String,
+        contextPolicyVersion: String = AI_CONTEXT_POLICY_VERSION,
     ) = AiJobReceipt(
         jobId = jobId,
         feature = feature,
@@ -770,7 +784,7 @@ internal class JdbcAiRequestService(
         pollAfterMs = POLL_AFTER_MS,
         cancelRequested = cancelRequested,
         contextRevision = contextRevision,
-        contextPolicyVersion = AI_CONTEXT_POLICY_VERSION,
+        contextPolicyVersion = contextPolicyVersion,
     )
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
@@ -801,6 +815,7 @@ internal class JdbcAiRequestService(
         val status: AiBackendRequestStatus,
         val requestRevision: Long,
         val contextRevision: String,
+        val contextPolicyVersion: String,
         val cancelRequested: Boolean,
         val deadlineAt: Instant,
     )

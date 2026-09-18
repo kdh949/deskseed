@@ -161,9 +161,19 @@ data class AiPublicTicketContext(
 
 data class AiPublicComment(
     val id: UUID,
+    val sequence: Long,
+    val authorRole: AiCommentAuthorRole,
     val body: String,
     val createdAt: Instant,
 )
+
+enum class AiCommentAuthorRole {
+    CUSTOMER,
+    STAFF,
+    INTEGRATION_CLIENT,
+    SYSTEM,
+    UNKNOWN,
+}
 
 interface StaffTicketReadStore {
     fun list(

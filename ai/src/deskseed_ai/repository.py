@@ -644,6 +644,7 @@ class Repository:
         cost_microusd: int,
         actual_model: str,
         source_comment_ids: list[UUID],
+        prompt_version: str,
     ) -> None:
         now = datetime.now(UTC)
         ciphertext, nonce = self.cipher.encrypt(
@@ -667,7 +668,7 @@ class Repository:
                     now + timedelta(days=7),
                     actual_model,
                     actual_model,
-                    self.settings.prompt_version,
+                    prompt_version,
                     self.settings.config_version,
                     source_comment_ids,
                     now,

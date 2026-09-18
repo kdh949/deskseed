@@ -19447,12 +19447,16 @@ components:
           properties:
             language:
               type: string
-              minLength: 1
-              maxLength: 40
+              enum:
+              - ko
+              default: ko
+              description: 현재 검증된 출력 언어입니다. 생략하면 Backend가 `ko`로 정규화합니다.
             tone:
               type: string
-              minLength: 1
-              maxLength: 40
+              enum:
+              - calm
+              default: calm
+              description: 답변 초안에서만 허용하는 현재 검증된 문체입니다. 생략하면 Backend가 `calm`으로 정규화합니다.
           default: {}
       x-deskseed-documentation-review: MANUAL
       example:

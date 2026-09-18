@@ -1,12 +1,13 @@
 package dev.deskseed.aiassistance.internal
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import dev.deskseed.aiassistance.AiRequestMetadata
-import dev.deskseed.aiassistance.AiSourceContextService
-import org.springframework.jdbc.core.JdbcTemplate
 import dev.deskseed.aiassistance.AiSourceRequestSupersededException
 import dev.deskseed.aiassistance.AiSourceRequestUnavailableException
+import dev.deskseed.aiassistance.AiSourceContextService
 import dev.deskseed.foundation.RequestIdFilter
 import jakarta.servlet.http.HttpServletRequest
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.http.CacheControl
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
@@ -54,7 +55,15 @@ internal class AiSourceController(private val contextService: AiSourceContextSer
                 contextRevision = context.contextRevision,
                 contextPolicyVersion = context.contextPolicyVersion,
                 inputScope = context.inputScope,
-                comments = context.comments.map { AiSourceCommentResponse(it.id, it.body, it.createdAt) },
+                comments = context.comments.map {
+                    AiSourceCommentResponse(
+                        id = it.id,
+                        body = it.body,
+                        createdAt = it.createdAt,
+                        sequence = it.sequence.takeIf { context.contextPolicyVersion == AI_CONTEXT_POLICY_VERSION },
+                        authorRole = it.authorRole.takeIf { context.contextPolicyVersion == AI_CONTEXT_POLICY_VERSION },
+                    )
+                },
             ),
         )
     }
@@ -117,7 +126,14 @@ internal data class AiSourceContextResponse(
     val comments: List<AiSourceCommentResponse>,
 )
 
-internal data class AiSourceCommentResponse(val id: UUID, val body: String, val createdAt: Instant)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+internal data class AiSourceCommentResponse(
+    val id: UUID,
+    val body: String,
+    val createdAt: Instant,
+    val sequence: Long? = null,
+    val authorRole: String? = null,
+)
 
 @RestControllerAdvice(
     assignableTypes = [

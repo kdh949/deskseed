@@ -600,10 +600,10 @@ def test_reply_candidates_are_reauthorized_before_provider_receives_content(
     provider_called = False
     original_reply = runtime.provider.reply
 
-    def reply(context, chunks):
+    def reply(context, chunks, options):
         nonlocal provider_called
         provider_called = True
-        return original_reply(context, chunks)
+        return original_reply(context, chunks, options)
 
     runtime.provider.reply = reply
     claim = repository.claim_job(item.jobId, 1, settings.consumer_name)
