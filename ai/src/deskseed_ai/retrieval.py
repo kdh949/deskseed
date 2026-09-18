@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .db import Database
+from .pricing import Usage
+from .usage_normalization import bounded_text, normalize_litellm_usage, value
 
 
 @dataclass(frozen=True)
@@ -20,17 +23,39 @@ class KnowledgeChunk:
     score: float
 
 
+@dataclass(frozen=True)
+class EmbeddingResult:
+    vector: list[float]
+    receipt: ProviderCallReceipt
+
+
 class EmbeddingProvider:
-    def embed(self, text: str) -> tuple[list[float], int]:
+    def embed(self, text: str, call_id: UUID, record_receipt: ReceiptRecorder) -> EmbeddingResult:
         raise NotImplementedError
 
 
 class FakeEmbeddingProvider(EmbeddingProvider):
-    def embed(self, text: str) -> tuple[list[float], int]:
+    def __init__(self, model: str = "openai/text-embedding-3-small"):
+        self.model = model
+
+    def embed(self, text: str, call_id: UUID, record_receipt: ReceiptRecorder) -> EmbeddingResult:
         digest = hashlib.sha256(text.encode()).digest()
         values = [((digest[index % len(digest)] / 255.0) - 0.5) for index in range(1536)]
         magnitude = math.sqrt(sum(value * value for value in values)) or 1.0
-        return [value / magnitude for value in values], max(1, len(text) // 4)
+        receipt = ProviderCallReceipt(
+            call_id=call_id,
+            provider_request_id=f"fake-{call_id}",
+            requested_alias=self.model,
+            actual_model=self.model,
+            usage_schema_version="synthetic-v1",
+            usage_status=UsageStatus.KNOWN,
+            usage=Usage(max(1, len(text) // 4), 0, 0, 0),
+            usage_issue_code=None,
+            service_tier="standard",
+            context_price_band="short",
+        )
+        record_receipt(receipt)
+        return EmbeddingResult([value / magnitude for value in values], receipt)
 
 
 class LiteLlmEmbeddingProvider(EmbeddingProvider):
@@ -39,7 +64,7 @@ class LiteLlmEmbeddingProvider(EmbeddingProvider):
         self.api_key = api_key
         self.timeout_seconds = timeout_seconds
 
-    def embed(self, text: str) -> tuple[list[float], int]:
+    def embed(self, text: str, call_id: UUID, record_receipt: ReceiptRecorder) -> EmbeddingResult:
         from litellm import embedding
 
         response = embedding(
@@ -49,14 +74,36 @@ class LiteLlmEmbeddingProvider(EmbeddingProvider):
             timeout=min(45, self.timeout_seconds),
             num_retries=0,
         )
+        status, usage, issue = normalize_litellm_usage(value(response, "usage"), output_optional=True)
+        service_tier = bounded_text(value(response, "service_tier"), 24)
+        if service_tier in {None, "default"}:
+            service_tier = "standard"
+        receipt = ProviderCallReceipt(
+            call_id=call_id,
+            provider_request_id=bounded_text(value(response, "id"), 200),
+            requested_alias=self.model,
+            actual_model=bounded_text(value(response, "model"), 160),
+            usage_schema_version="litellm-1.101-v1",
+            usage_status=status,
+            usage=usage,
+            usage_issue_code=issue,
+            service_tier=service_tier,
+            context_price_band="short",
+        )
+        record_receipt(receipt)
         vector = list(response.data[0]["embedding"])
-        return vector, int(response.usage.total_tokens)
+        return EmbeddingResult(vector, receipt)
 
 
 class KnowledgeRepository:
     def __init__(self, database: Database, embeddings: EmbeddingProvider):
         self.database = database
         self.embeddings = embeddings
+
+    def embed_text(
+        self, text: str, call_id: UUID, record_receipt: ReceiptRecorder
+    ) -> EmbeddingResult:
+        return self.embeddings.embed(text, call_id, record_receipt)
 
     def replace_public_revision(
         self,
@@ -70,7 +117,32 @@ class KnowledgeRepository:
         public_revision: str,
         chunks: list[str],
     ) -> tuple[int, bool]:
-        embedded = [(text, *self.embeddings.embed(text)) for text in chunks]
+        embedded_results = [self.embeddings.embed(text, uuid4(), lambda _receipt: None) for text in chunks]
+        embedded = [(text, result.vector, result.receipt) for text, result in zip(chunks, embedded_results)]
+        return self.replace_public_revision_with_vectors(
+            workspace_key,
+            article_id,
+            revision_id,
+            source_version,
+            event_id,
+            slug,
+            title,
+            public_revision,
+            embedded,
+        )
+
+    def replace_public_revision_with_vectors(
+        self,
+        workspace_key: str,
+        article_id: UUID,
+        revision_id: UUID,
+        source_version: int,
+        event_id: UUID,
+        slug: str,
+        title: str,
+        public_revision: str,
+        embedded: list[tuple[str, list[float], ProviderCallReceipt]],
+    ) -> tuple[int, bool]:
         now = datetime.now(UTC)
         with self.database.transaction() as connection:
             state = connection.execute(
@@ -86,7 +158,7 @@ class KnowledgeRepository:
                 or state["action"] != "UPSERT"
                 or state["event_id"] != event_id
             ):
-                return sum(tokens for _, _, tokens in embedded), False
+                return _known_input_tokens(embedded), False
             connection.execute(
                 "update ai_kb_revisions set status = 'DELETED', deleted_at = %s where workspace_key = %s and article_id = %s",
                 (now, workspace_key, article_id),
@@ -118,7 +190,7 @@ class KnowledgeRepository:
                         hashlib.sha256(content.encode()).hexdigest(), _vector_literal(vector), now,
                     ),
                 )
-        return sum(tokens for _, _, tokens in embedded), True
+        return _known_input_tokens(embedded), True
 
     def retrieve(self, workspace_key: str, query: str, limit: int = 5) -> list[KnowledgeChunk]:
         chunks, _ = self.retrieve_with_usage(workspace_key, query, limit)
@@ -127,7 +199,25 @@ class KnowledgeRepository:
     def retrieve_with_usage(
         self, workspace_key: str, query: str, limit: int = 5
     ) -> tuple[list[KnowledgeChunk], int]:
-        vector, tokens = self.embeddings.embed(query)
+        result = self.embeddings.embed(query, uuid4(), lambda _receipt: None)
+        chunks = self._retrieve_with_vector(workspace_key, query, result.vector, limit)
+        tokens = result.receipt.usage.input_total_tokens if result.receipt.usage is not None else 0
+        return chunks, tokens
+
+    def retrieve_with_receipt(
+        self,
+        workspace_key: str,
+        query: str,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+        limit: int = 5,
+    ) -> tuple[list[KnowledgeChunk], ProviderCallReceipt]:
+        result = self.embeddings.embed(query, call_id, record_receipt)
+        return self._retrieve_with_vector(workspace_key, query, result.vector, limit), result.receipt
+
+    def _retrieve_with_vector(
+        self, workspace_key: str, query: str, vector: list[float], limit: int
+    ) -> list[KnowledgeChunk]:
         with self.database.connection() as connection:
             rows = connection.execute(
                 """
@@ -149,7 +239,7 @@ class KnowledgeRepository:
                 """,
                 (_vector_literal(vector), query, workspace_key, limit),
             ).fetchall()
-        return [KnowledgeChunk(**row) for row in rows], tokens
+        return [KnowledgeChunk(**row) for row in rows]
 
 
 def chunk_public_article(body: str, max_chars: int = 1200, overlap: int = 120) -> list[str]:
@@ -173,3 +263,11 @@ def chunk_public_article(body: str, max_chars: int = 1200, overlap: int = 120) -
 
 def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(f"{value:.8f}" for value in vector) + "]"
+
+
+def _known_input_tokens(embedded: list[tuple[str, list[float], ProviderCallReceipt]]) -> int:
+    return sum(
+        receipt.usage.input_total_tokens
+        for _, _, receipt in embedded
+        if receipt.usage_status == UsageStatus.KNOWN and receipt.usage is not None
+    )

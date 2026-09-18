@@ -7,6 +7,7 @@ from uuid import UUID
 
 from langgraph.graph import END, START, StateGraph
 
+from .call_receipts import ReceiptRecorder
 from .providers import GenerationProvider, ProviderResult
 from .retrieval import KnowledgeChunk, KnowledgeRepository
 from .schemas import Citation, Feature, ReplyDraftResult, SourceContext
@@ -21,14 +22,15 @@ class ReplyState(TypedDict, total=False):
     options: dict[str, str]
     authorized_citations: dict[UUID, Citation]
     generation: ProviderResult
-    query_tokens: int
+    query_call_id: UUID
+    query_receipt_recorder: ReceiptRecorder
+    prepare_generation: Callable[[SourceContext, list[KnowledgeChunk]], tuple[UUID, ReceiptRecorder]]
     validated: bool
 
 
 @dataclass(frozen=True)
 class ReplyExecution:
     generation: ProviderResult
-    query_embedding_tokens: int
 
 
 class ReplyWorkflow:
@@ -57,6 +59,11 @@ class ReplyWorkflow:
         workspace_key: str,
         authorize_candidates: Callable[[list[Citation]], list[Citation]],
         options: dict[str, str],
+        query_call_id: UUID,
+        query_receipt_recorder: ReceiptRecorder,
+        prepare_generation: Callable[
+            [SourceContext, list[KnowledgeChunk]], tuple[UUID, ReceiptRecorder]
+        ],
     ) -> ReplyExecution:
         state = self._graph.invoke(
             {
@@ -64,12 +71,15 @@ class ReplyWorkflow:
                 "workspace_key": workspace_key,
                 "authorize_candidates": authorize_candidates,
                 "options": options,
+                "query_call_id": query_call_id,
+                "query_receipt_recorder": query_receipt_recorder,
+                "prepare_generation": prepare_generation,
             },
             config={"recursion_limit": 8},
         )
         if not state.get("validated"):
             raise ValueError("reply validation did not complete")
-        return ReplyExecution(state["generation"], state["query_tokens"])
+        return ReplyExecution(state["generation"])
 
     def _authorize(self, state: ReplyState) -> dict[str, Any]:
         context = state["context"]
@@ -79,9 +89,15 @@ class ReplyWorkflow:
 
     def _retrieve(self, state: ReplyState) -> dict[str, Any]:
         context = state["context"]
-        query = "\n".join(comment.body for comment in context.comments)[-4000:]
-        knowledge, tokens = self.knowledge.retrieve_with_usage(state["workspace_key"], query, limit=5)
-        return {"knowledge": knowledge, "query_tokens": tokens}
+        query = reply_query(context)
+        knowledge, _receipt = self.knowledge.retrieve_with_receipt(
+            state["workspace_key"],
+            query,
+            state["query_call_id"],
+            state["query_receipt_recorder"],
+            limit=5,
+        )
+        return {"knowledge": knowledge}
 
     def _validate_sources(self, state: ReplyState) -> dict[str, Any]:
         candidates = [
@@ -104,10 +120,12 @@ class ReplyWorkflow:
         return {"authorized_citations": authorized_by_chunk}
 
     def _generate(self, state: ReplyState) -> dict[str, Any]:
+        call_id, recorder = state["prepare_generation"](state["context"], state["knowledge"])
         return {
-            "generation": self.provider.reply(state["context"], state["knowledge"], state["options"]),
+            "generation": self.provider.reply(
+                state["context"], state["knowledge"], state["options"], call_id, recorder
+            ),
         }
-
     def _validate(self, state: ReplyState) -> dict[str, Any]:
         generated = state["generation"]
         result = generated.result
@@ -129,8 +147,11 @@ class ReplyWorkflow:
             "validated": True,
             "generation": ProviderResult(
                 result=result.model_copy(update={"citations": canonical}),
-                usage=generated.usage,
-                model=generated.model,
+                receipt=generated.receipt,
                 prompt_version=generated.prompt_version,
             ),
         }
+
+
+def reply_query(context: SourceContext) -> str:
+    return "\n".join(comment.body for comment in context.comments)[-4000:]

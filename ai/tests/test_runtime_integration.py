@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,17 +11,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deskseed_ai.backend_client import BackendSupersededError, PublicKnowledgeArticle
+from deskseed_ai.call_receipts import ProviderCallReceipt, UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.indexing import IndexingService
 from deskseed_ai.main import app
 from deskseed_ai.observability import TraceAdapter
-from deskseed_ai.providers import FakeGenerationProvider
+from deskseed_ai.pricing import Usage
+from deskseed_ai.providers import FakeGenerationProvider, InvalidProviderOutputError
 from deskseed_ai.queue import StreamRuntime
 from deskseed_ai.repository import (
     ActiveLeaseError,
+    BudgetExceededError,
     ConflictError,
     NotFoundError,
     ProviderCallStateUnknownError,
+    ProviderReceiptConflictError,
     Repository,
     StaleLeaseError,
 )
@@ -55,6 +60,21 @@ def envelope(feature: Feature = Feature.SUMMARY) -> JobEnvelope:
         options={"language": "ko"},
         createdAt=now,
         deadlineAt=now + timedelta(minutes=2),
+    )
+
+
+def provider_receipt(call_id, alias="openai/gpt-5.6-luna", request_id="provider-1"):
+    return ProviderCallReceipt(
+        call_id=call_id,
+        provider_request_id=request_id,
+        requested_alias=alias,
+        actual_model=alias,
+        usage_schema_version="fixture-v1",
+        usage_status=UsageStatus.KNOWN,
+        usage=Usage(10, 2, 1, 5),
+        usage_issue_code=None,
+        service_tier="standard",
+        context_price_band="short",
     )
 
 
@@ -154,6 +174,70 @@ def test_fake_provider_completes_typed_job_through_postgres_and_redis(
         assert bytes(row["result_ciphertext"]).find("ticket".encode()) == -1
         assert row["result_nonce"] is not None
     assert ledger["status"] == "SETTLED"
+
+
+@pytest.mark.integration
+def test_invalid_output_after_response_keeps_known_cost_and_no_result(
+    repository: Repository, settings: Settings
+) -> None:
+    item = envelope(Feature.SUMMARY)
+    repository.accept_job(item)
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+
+    class InvalidAfterReceipt(FakeGenerationProvider):
+        def summary(self, context, options, call_id, record_receipt):
+            record_receipt(provider_receipt(call_id, self.settings.model_fast))
+            raise InvalidProviderOutputError("synthetic invalid JSON")
+
+    runtime.provider = InvalidAfterReceipt(settings)
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.NEEDS_REVIEW
+    assert job.errorCode == "MODEL_OUTPUT_INVALID"
+    assert job.result is None
+    assert job.costMicrousd is not None
+    with repository.database.connection() as connection:
+        assert connection.execute(
+            "select status from ai_cost_ledger where job_id = %s", (item.jobId,)
+        ).fetchone() == {"status": "SETTLED"}
+
+
+@pytest.mark.integration
+def test_receipt_persistence_failure_marks_call_unknown_and_blocks_result(
+    repository: Repository, settings: Settings, monkeypatch
+) -> None:
+    item = envelope(Feature.SUMMARY)
+    repository.accept_job(item)
+    claim = repository.claim_job(item.jobId, 1, settings.consumer_name)
+    assert claim is not None
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+
+    def fail_receipt(*_args, **_kwargs):
+        raise RuntimeError("synthetic receipt persistence failure")
+
+    monkeypatch.setattr(repository, "record_provider_response", fail_receipt)
+    with pytest.raises(RuntimeError, match="receipt persistence"):
+        runtime._execute(claim, None)
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.FAILED
+    assert job.errorCode == "PROVIDER_OUTCOME_UNKNOWN"
+    with repository.database.connection() as connection:
+        assert connection.execute(
+            """
+            select call.lifecycle_status, call.settlement_status, cost.status
+            from ai_provider_calls call
+            join ai_cost_ledger cost on cost.reservation_id = call.reservation_id
+            where call.job_id = %s
+            """,
+            (item.jobId,),
+        ).fetchone() == {
+            "lifecycle_status": "UNKNOWN",
+            "settlement_status": "UNKNOWN",
+            "status": "UNKNOWN",
+        }
 
 
 @pytest.mark.integration
@@ -287,6 +371,217 @@ def test_existing_provider_reservation_blocks_automatic_recall(repository: Repos
             (item.jobId,),
         ).fetchone()
     assert ledger == {"reservation_id": reservation, "status": "UNKNOWN"}
+
+
+@pytest.mark.integration
+def test_provider_receipt_settles_overrun_idempotently_and_flags_conflict(
+    repository: Repository,
+) -> None:
+    item = envelope()
+    repository.accept_job(item)
+    claim = repository.claim_job(item.jobId, 1, "worker")
+    assert claim is not None
+    reservation = repository.reserve_budget(
+        claim, "openai/gpt-5.6-luna", "pricing-v2", 10, "GENERATION"
+    )
+    call_id = uuid4()
+    repository.create_provider_call(
+        reservation,
+        call_id,
+        "openai/gpt-5.6-luna",
+        "pricing-v2",
+        "standard",
+        "short",
+    )
+    repository.mark_provider_call_dispatching(call_id)
+    receipt = provider_receipt(call_id)
+
+    assert repository.record_provider_response(receipt, 25) == 25
+    assert repository.record_provider_response(receipt, 25) == 25
+    with pytest.raises(ProviderReceiptConflictError):
+        repository.record_provider_response(
+            provider_receipt(call_id, request_id="different-provider-response"), 25
+        )
+
+    with repository.database.connection() as connection:
+        ledger = connection.execute(
+            """
+            select status, settled_microusd, overrun_microusd
+            from ai_cost_ledger where reservation_id = %s
+            """,
+            (reservation,),
+        ).fetchone()
+        provider_call = connection.execute(
+            """
+            select lifecycle_status, settlement_status, known_cost_microusd, overrun_microusd
+            from ai_provider_calls where call_id = %s
+            """,
+            (call_id,),
+        ).fetchone()
+    assert ledger == {"status": "SETTLED", "settled_microusd": 25, "overrun_microusd": 15}
+    assert provider_call == {
+        "lifecycle_status": "RESPONDED",
+        "settlement_status": "CONFLICT",
+        "known_cost_microusd": 25,
+        "overrun_microusd": 15,
+    }
+
+
+@pytest.mark.integration
+def test_unavailable_usage_is_persisted_as_unknown_not_zero(repository: Repository) -> None:
+    item = envelope()
+    repository.accept_job(item)
+    claim = repository.claim_job(item.jobId, 1, "worker")
+    assert claim is not None
+    reservation = repository.reserve_budget(
+        claim, "openai/gpt-5.6-luna", "pricing-v2", 100, "GENERATION"
+    )
+    call_id = uuid4()
+    repository.create_provider_call(
+        reservation,
+        call_id,
+        "openai/gpt-5.6-luna",
+        "pricing-v2",
+        "standard",
+        "short",
+    )
+    repository.mark_provider_call_dispatching(call_id)
+    receipt = provider_receipt(call_id)
+    unavailable = receipt.__class__(
+        **{
+            **receipt.__dict__,
+            "usage_status": UsageStatus.UNAVAILABLE,
+            "usage": None,
+            "usage_issue_code": "USAGE_MISSING",
+        }
+    )
+
+    assert repository.record_provider_response(unavailable, 0) is None
+    assert repository.job_cost_microusd(item.jobId) is None
+    with repository.database.connection() as connection:
+        assert connection.execute(
+            """
+            select call.lifecycle_status, call.settlement_status, call.known_cost_microusd,
+                   cost.status, cost.settled_microusd
+            from ai_provider_calls call
+            join ai_cost_ledger cost on cost.reservation_id = call.reservation_id
+            where call.call_id = %s
+            """,
+            (call_id,),
+        ).fetchone() == {
+            "lifecycle_status": "RESPONDED",
+            "settlement_status": "UNKNOWN",
+            "known_cost_microusd": None,
+            "status": "UNKNOWN",
+            "settled_microusd": None,
+        }
+
+
+@pytest.mark.integration
+def test_known_provider_response_settles_after_job_cancellation(repository: Repository) -> None:
+    item = envelope()
+    repository.accept_job(item)
+    claim = repository.claim_job(item.jobId, 1, "worker")
+    assert claim is not None
+    reservation = repository.reserve_budget(
+        claim, "openai/gpt-5.6-luna", "pricing-v2", 100, "GENERATION"
+    )
+    call_id = uuid4()
+    repository.create_provider_call(
+        reservation,
+        call_id,
+        "openai/gpt-5.6-luna",
+        "pricing-v2",
+        "standard",
+        "short",
+    )
+    repository.mark_provider_call_dispatching(call_id)
+    repository.cancel(
+        CancellationEnvelope(
+            schemaVersion=1,
+            eventId=uuid4(),
+            jobId=item.jobId,
+            workspaceKey=item.workspaceKey,
+            requestRevision=2,
+            createdAt=datetime.now(UTC),
+        )
+    )
+
+    repository.record_provider_response(provider_receipt(call_id), 12)
+
+    assert repository.get_job(item.jobId).status == JobStatus.CANCELLED
+    with repository.database.connection() as connection:
+        assert connection.execute(
+            "select status, settled_microusd from ai_cost_ledger where reservation_id = %s",
+            (reservation,),
+        ).fetchone() == {"status": "SETTLED", "settled_microusd": 12}
+
+
+@pytest.mark.integration
+def test_prior_day_unknown_reservation_remains_admission_debt(repository: Repository) -> None:
+    first = envelope()
+    repository.accept_job(first)
+    first_claim = repository.claim_job(first.jobId, 1, "worker-a")
+    assert first_claim is not None
+    reservation = repository.reserve_budget(
+        first_claim, "openai/gpt-5.6-luna", "pricing-v2", 100, "GENERATION"
+    )
+    repository.mark_budget_unknown(reservation)
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_cost_ledger set budget_date = current_date - 1 where reservation_id = %s",
+            (reservation,),
+        )
+    repository.settings = repository.settings.model_copy(
+        update={"workspace_daily_budget_microusd": 150}
+    )
+    second = envelope()
+    repository.accept_job(second)
+    second_claim = repository.claim_job(second.jobId, 1, "worker-b")
+    assert second_claim is not None
+
+    with pytest.raises(BudgetExceededError):
+        repository.reserve_budget(
+            second_claim, "openai/gpt-5.6-luna", "pricing-v2", 51, "GENERATION"
+        )
+
+
+@pytest.mark.integration
+def test_twenty_concurrent_reservations_cannot_overspend_workspace(repository: Repository) -> None:
+    repository.settings = repository.settings.model_copy(
+        update={
+            "workspace_daily_budget_microusd": 1000,
+            "actor_daily_budget_microusd": 1000,
+            "job_budget_microusd": 1000,
+        }
+    )
+    claims = []
+    for index in range(20):
+        item = envelope()
+        repository.accept_job(item)
+        claim = repository.claim_job(item.jobId, 1, f"worker-{index}")
+        assert claim is not None
+        claims.append(claim)
+
+    def reserve(index):
+        try:
+            repository.reserve_budget(
+                claims[index], "openai/gpt-5.6-luna", "pricing-v2", 100, "GENERATION"
+            )
+            return True
+        except BudgetExceededError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        accepted = list(executor.map(reserve, range(20)))
+
+    assert accepted.count(True) == 10
+    assert accepted.count(False) == 10
+    with repository.database.connection() as connection:
+        total = connection.execute(
+            "select sum(reserved_microusd) as total from ai_cost_ledger"
+        ).fetchone()["total"]
+    assert total == 1000
 
 
 @pytest.mark.integration
@@ -486,14 +781,14 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
         KnowledgeRepository(repository.database, FakeEmbeddingProvider()),
         repository,
         settings,
-        Path(__file__).resolve().parents[1] / "config" / "pricing-v1.json",
+        Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
     )
     assert repository.accept_index_event(event).replayed is False
     assert service.process_once() == 1
     with repository.database.connection() as connection:
         row = connection.execute(
             "select budget_bucket, call_type, status from ai_cost_ledger where operation_key = %s",
-            (f"index:{event.eventId}",),
+            (f"index:{event.eventId}:0",),
         ).fetchone()
     assert row == {"budget_bucket": "SYSTEM", "call_type": "INDEX_EMBEDDING", "status": "SETTLED"}
 
@@ -523,11 +818,11 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
     class DeleteDuringEmbedding(FakeEmbeddingProvider):
         accepted = False
 
-        def embed(self, text):
+        def embed(self, text, call_id, record_receipt):
             if not self.accepted:
                 self.accepted = True
                 repository.accept_index_event(deleted)
-            return super().embed(text)
+            return super().embed(text, call_id, record_receipt)
 
     class PublicArticleBackend:
         def read_public_article(self, requested_article, requested_revision, request_ref):
@@ -548,7 +843,7 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
         KnowledgeRepository(repository.database, DeleteDuringEmbedding()),
         repository,
         settings,
-        Path(__file__).resolve().parents[1] / "config" / "pricing-v1.json",
+        Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
     )
     assert service.process_once(limit=1) == 1
     with repository.database.connection() as connection:
@@ -600,10 +895,10 @@ def test_reply_candidates_are_reauthorized_before_provider_receives_content(
     provider_called = False
     original_reply = runtime.provider.reply
 
-    def reply(context, chunks, options):
+    def reply(context, chunks, options, call_id, record_receipt):
         nonlocal provider_called
         provider_called = True
-        return original_reply(context, chunks, options)
+        return original_reply(context, chunks, options, call_id, record_receipt)
 
     runtime.provider.reply = reply
     claim = repository.claim_job(item.jobId, 1, settings.consumer_name)
@@ -612,6 +907,15 @@ def test_reply_candidates_are_reauthorized_before_provider_receives_content(
 
     assert provider_called is False
     assert repository.get_job(item.jobId).status == JobStatus.SUPERSEDED
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, settlement_status from ai_provider_calls
+            where job_id = %s order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+    assert calls == [{"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"}]
 
 
 @pytest.mark.integration
@@ -687,7 +991,7 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
         knowledge,
         repository,
         settings,
-        Path(__file__).resolve().parents[1] / "config" / "pricing-v1.json",
+        Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
     )
 
     assert service.reconcile_once() is True
@@ -761,5 +1065,5 @@ def runtime_for(repository: Repository, settings: Settings, backend: StaticBacke
         FakeGenerationProvider(settings),
         knowledge,
         TraceAdapter(settings),
-        Path(__file__).resolve().parents[1] / "config" / "pricing-v1.json",
+        Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
     )

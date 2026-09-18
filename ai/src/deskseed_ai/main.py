@@ -50,13 +50,13 @@ class Runtime:
                 settings.job_timeout_seconds,
             )
             if settings.provider_mode == "litellm"
-            else FakeEmbeddingProvider()
+            else FakeEmbeddingProvider(settings.embedding_model)
         )
         self.knowledge = KnowledgeRepository(self.database, embeddings)
         self.traces = TraceAdapter(settings)
         self.feedback = FeedbackExporter(self.repository, self.traces)
         self.backend = BackendClient(settings)
-        pricing_path = ROOT / "config" / "pricing-v1.json"
+        pricing_path = ROOT / "config" / "pricing-v2.json"
         self.indexing = IndexingService(
             self.backend,
             self.knowledge,

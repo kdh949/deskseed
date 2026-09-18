@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from psycopg.types.json import Jsonb
 
+from .call_receipts import ProviderCallReceipt, UsageStatus
 from .config import Settings
 from .db import Database
 from .schemas import (
@@ -47,6 +48,10 @@ class ActiveLeaseError(RuntimeError):
 
 
 class ProviderCallStateUnknownError(RuntimeError):
+    pass
+
+
+class ProviderReceiptConflictError(RuntimeError):
     pass
 
 
@@ -546,11 +551,26 @@ class Repository:
                         """,
                         (existing["reservation_id"],),
                     )
+                    connection.execute(
+                        """
+                        update ai_provider_calls
+                        set lifecycle_status = 'UNKNOWN',
+                            settlement_status = case
+                                when settlement_status = 'CONFLICT' then 'CONFLICT' else 'UNKNOWN'
+                            end,
+                            updated_at = clock_timestamp()
+                        where reservation_id = %s and lifecycle_status in ('RESERVED', 'DISPATCHING')
+                        """,
+                        (existing["reservation_id"],),
+                    )
                 return None
             workspace_spend = connection.execute(
                 """
                 select coalesce(sum(case when status = 'SETTLED' then settled_microusd else reserved_microusd end), 0) as total
-                from ai_cost_ledger where workspace_key = %s and budget_date = %s and status in ('RESERVED', 'SETTLED', 'UNKNOWN')
+                from ai_cost_ledger
+                where workspace_key = %s
+                  and ((budget_date = %s and status in ('RESERVED', 'SETTLED', 'UNKNOWN'))
+                    or status = 'UNKNOWN')
                 """,
                 (workspace_key, budget_day),
             ).fetchone()["total"]
@@ -560,8 +580,10 @@ class Repository:
                 actor_spend = connection.execute(
                     """
                     select coalesce(sum(case when status = 'SETTLED' then settled_microusd else reserved_microusd end), 0) as total
-                    from ai_cost_ledger where workspace_key = %s and requester_id = %s and budget_date = %s
-                      and status in ('RESERVED', 'SETTLED', 'UNKNOWN')
+                    from ai_cost_ledger
+                    where workspace_key = %s and requester_id = %s
+                      and ((budget_date = %s and status in ('RESERVED', 'SETTLED', 'UNKNOWN'))
+                        or status = 'UNKNOWN')
                     """,
                     (workspace_key, requester_id, budget_day),
                 ).fetchone()["total"]
@@ -612,11 +634,11 @@ class Repository:
             updated = connection.execute(
                 """
                 update ai_cost_ledger set status = 'SETTLED', settled_microusd = %s,
+                    overrun_microusd = greatest(0, %s - reserved_microusd),
                     settled_at = clock_timestamp(), unknown_since = null
                 where reservation_id = %s and status in ('RESERVED', 'UNKNOWN')
-                  and reserved_microusd >= %s
                 """,
-                (actual_microusd, reservation_id, actual_microusd),
+                (actual_microusd, actual_microusd, reservation_id),
             ).rowcount
             if updated == 0:
                 existing = connection.execute(
@@ -624,7 +646,254 @@ class Repository:
                     (reservation_id,),
                 ).fetchone()
                 if not existing or existing["status"] != "SETTLED" or existing["settled_microusd"] != actual_microusd:
-                    raise ValueError("actual cost exceeds or conflicts with the reservation")
+                    raise ValueError("actual cost conflicts with the existing settlement")
+
+    def create_provider_call(
+        self,
+        reservation_id: UUID,
+        call_id: UUID,
+        requested_alias: str,
+        pricing_version: str,
+        service_tier: str,
+        context_price_band: str,
+    ) -> None:
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            reservation = connection.execute(
+                """
+                select operation_key, job_id, call_type, model_alias, pricing_version, status
+                from ai_cost_ledger where reservation_id = %s for update
+                """,
+                (reservation_id,),
+            ).fetchone()
+            if not reservation or reservation["status"] != "RESERVED":
+                raise ProviderCallStateUnknownError("provider call reservation is not dispatchable")
+            if reservation["model_alias"] != requested_alias or reservation["pricing_version"] != pricing_version:
+                raise ValueError("provider call does not match its reservation")
+            existing = connection.execute(
+                "select * from ai_provider_calls where reservation_id = %s or call_id = %s for update",
+                (reservation_id, call_id),
+            ).fetchone()
+            if existing:
+                expected = (
+                    existing["call_id"] == call_id
+                    and existing["requested_alias"] == requested_alias
+                    and existing["pricing_version"] == pricing_version
+                    and existing["service_tier"] == service_tier
+                    and existing["context_price_band"] == context_price_band
+                )
+                if not expected:
+                    raise ProviderReceiptConflictError("provider call identity conflicts with existing call")
+                return
+            connection.execute(
+                """
+                insert into ai_provider_calls (
+                    call_id, reservation_id, operation_key, job_id, stage,
+                    lifecycle_status, settlement_status, requested_alias, pricing_version,
+                    service_tier, context_price_band, created_at, updated_at
+                ) values (%s, %s, %s, %s, %s, 'RESERVED', 'PENDING', %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    call_id,
+                    reservation_id,
+                    reservation["operation_key"],
+                    reservation["job_id"],
+                    reservation["call_type"],
+                    requested_alias,
+                    pricing_version,
+                    service_tier,
+                    context_price_band,
+                    now,
+                    now,
+                ),
+            )
+
+    def mark_provider_call_dispatching(self, call_id: UUID) -> None:
+        with self.database.transaction() as connection:
+            updated = connection.execute(
+                """
+                update ai_provider_calls
+                set lifecycle_status = 'DISPATCHING', dispatching_at = clock_timestamp(),
+                    updated_at = clock_timestamp()
+                where call_id = %s and lifecycle_status = 'RESERVED' and settlement_status = 'PENDING'
+                """,
+                (call_id,),
+            ).rowcount
+            if updated != 1:
+                raise ProviderCallStateUnknownError("provider call is not dispatchable")
+
+    def record_provider_response(
+        self,
+        receipt: ProviderCallReceipt,
+        known_cost_microusd: int | None,
+    ) -> int | None:
+        if known_cost_microusd is not None and known_cost_microusd < 0:
+            raise ValueError("known cost cannot be negative")
+        canonical = {
+            "callId": str(receipt.call_id),
+            "providerRequestId": receipt.provider_request_id,
+            "requestedAlias": receipt.requested_alias,
+            "actualModel": receipt.actual_model,
+            "usageSchemaVersion": receipt.usage_schema_version,
+            "usageStatus": receipt.usage_status.value,
+            "usage": None
+            if receipt.usage is None
+            else {
+                "inputUncached": receipt.usage.input_uncached_tokens,
+                "inputCacheRead": receipt.usage.input_cache_read_tokens,
+                "inputCacheWrite": receipt.usage.input_cache_write_tokens,
+                "outputBilled": receipt.usage.output_billed_tokens,
+            },
+            "usageIssueCode": receipt.usage_issue_code,
+            "serviceTier": receipt.service_tier,
+            "contextPriceBand": receipt.context_price_band,
+        }
+        fingerprint = sha256_text(json.dumps(canonical, sort_keys=True, separators=(",", ":")))
+        now = datetime.now(UTC)
+        with self.database.connection() as connection:
+            call = connection.execute(
+                """
+                select provider_call.*, cost.reserved_microusd
+                from ai_provider_calls provider_call
+                join ai_cost_ledger cost on cost.reservation_id = provider_call.reservation_id
+                where provider_call.call_id = %s for update of provider_call, cost
+                """,
+                (receipt.call_id,),
+            ).fetchone()
+            if not call:
+                raise NotFoundError("provider call not found")
+            if call["receipt_fingerprint"] is not None:
+                if call["receipt_fingerprint"] == fingerprint:
+                    return call["known_cost_microusd"]
+                connection.execute(
+                    """
+                    update ai_provider_calls set settlement_status = 'CONFLICT', updated_at = %s
+                    where call_id = %s
+                    """,
+                    (now, receipt.call_id),
+                )
+                connection.commit()
+                raise ProviderReceiptConflictError("provider receipt conflicts with immutable facts")
+            if call["lifecycle_status"] not in {"DISPATCHING", "UNKNOWN"}:
+                raise ProviderCallStateUnknownError("provider response has no dispatch intent")
+            if (
+                call["requested_alias"] != receipt.requested_alias
+                or call["service_tier"] != receipt.service_tier
+                or call["context_price_band"] != receipt.context_price_band
+            ):
+                connection.execute(
+                    """
+                    update ai_provider_calls set settlement_status = 'CONFLICT', updated_at = %s
+                    where call_id = %s
+                    """,
+                    (now, receipt.call_id),
+                )
+                connection.commit()
+                raise ProviderReceiptConflictError("provider receipt does not match dispatch contract")
+            usage = receipt.usage if receipt.usage_status == UsageStatus.KNOWN else None
+            if receipt.usage_status == UsageStatus.KNOWN and usage is None:
+                raise ValueError("known usage receipt has no usage buckets")
+            if receipt.usage_status != UsageStatus.KNOWN:
+                known_cost_microusd = None
+            overrun = (
+                max(0, known_cost_microusd - call["reserved_microusd"])
+                if known_cost_microusd is not None
+                else 0
+            )
+            settlement_status = "SETTLED" if known_cost_microusd is not None else "UNKNOWN"
+            connection.execute(
+                """
+                update ai_provider_calls set
+                    lifecycle_status = 'RESPONDED', settlement_status = %s,
+                    actual_model = %s, provider_request_id = %s,
+                    usage_schema_version = %s, usage_status = %s, usage_issue_code = %s,
+                    input_uncached_tokens = %s, input_cache_read_tokens = %s,
+                    input_cache_write_tokens = %s, output_billed_tokens = %s,
+                    known_cost_microusd = %s, overrun_microusd = %s,
+                    receipt_fingerprint = %s, responded_at = %s, updated_at = %s
+                where call_id = %s
+                """,
+                (
+                    settlement_status,
+                    receipt.actual_model,
+                    receipt.provider_request_id,
+                    receipt.usage_schema_version,
+                    receipt.usage_status.value,
+                    receipt.usage_issue_code,
+                    usage.input_uncached_tokens if usage else None,
+                    usage.input_cache_read_tokens if usage else None,
+                    usage.input_cache_write_tokens if usage else None,
+                    usage.output_billed_tokens if usage else None,
+                    known_cost_microusd,
+                    overrun,
+                    fingerprint,
+                    now,
+                    now,
+                    receipt.call_id,
+                ),
+            )
+            if known_cost_microusd is None:
+                connection.execute(
+                    """
+                    update ai_cost_ledger set status = 'UNKNOWN',
+                        unknown_since = coalesce(unknown_since, %s)
+                    where reservation_id = %s and status in ('RESERVED', 'UNKNOWN')
+                    """,
+                    (now, call["reservation_id"]),
+                )
+            else:
+                connection.execute(
+                    """
+                    update ai_cost_ledger set status = 'SETTLED', settled_microusd = %s,
+                        overrun_microusd = %s, settled_at = %s, unknown_since = null
+                    where reservation_id = %s and status in ('RESERVED', 'UNKNOWN')
+                    """,
+                    (known_cost_microusd, overrun, now, call["reservation_id"]),
+                )
+        return known_cost_microusd
+
+    def mark_provider_call_unknown(self, call_id: UUID) -> None:
+        with self.database.transaction() as connection:
+            call = connection.execute(
+                "select reservation_id, receipt_fingerprint from ai_provider_calls where call_id = %s for update",
+                (call_id,),
+            ).fetchone()
+            if not call:
+                return
+            if call["receipt_fingerprint"] is not None:
+                return
+            connection.execute(
+                """
+                update ai_provider_calls
+                set lifecycle_status = 'UNKNOWN',
+                    settlement_status = case
+                        when settlement_status = 'CONFLICT' then 'CONFLICT' else 'UNKNOWN'
+                    end,
+                    updated_at = clock_timestamp()
+                where call_id = %s and receipt_fingerprint is null
+                """,
+                (call_id,),
+            )
+            connection.execute(
+                """
+                update ai_cost_ledger
+                set status = 'UNKNOWN', unknown_since = coalesce(unknown_since, clock_timestamp())
+                where reservation_id = %s and status = 'RESERVED'
+                """,
+                (call["reservation_id"],),
+            )
+
+    def job_cost_microusd(self, job_id: UUID) -> int | None:
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """
+                select count(*) filter (where settlement_status != 'SETTLED') as unsettled,
+                       coalesce(sum(known_cost_microusd), 0) as known_cost
+                from ai_provider_calls where job_id = %s
+                """,
+                (job_id,),
+            ).fetchone()
+        return None if row["unsettled"] else row["known_cost"]
 
     def mark_budget_unknown(self, reservation_id: UUID) -> None:
         with self.database.transaction() as connection:
@@ -641,7 +910,7 @@ class Repository:
         claim: ClaimedJob,
         result: TypedResult,
         status: JobStatus,
-        cost_microusd: int,
+        cost_microusd: int | None,
         actual_model: str,
         source_comment_ids: list[UUID],
         prompt_version: str,
@@ -683,7 +952,7 @@ class Repository:
             if updated != 1:
                 raise StaleLeaseError("job completion lease lost")
 
-    def complete_needs_review(self, claim: ClaimedJob, error_code: str, cost_microusd: int) -> None:
+    def complete_needs_review(self, claim: ClaimedJob, error_code: str, cost_microusd: int | None) -> None:
         now = datetime.now(UTC)
         with self.database.transaction() as connection:
             updated = connection.execute(
