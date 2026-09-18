@@ -32,7 +32,12 @@ from .repository import (
 )
 from .retrieval import KnowledgeRepository
 from .schemas import AuthorRole, Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
-from .workflows import ReplyWorkflow, reply_query
+from .workflows import (
+    InvalidReplyOutputError,
+    InvalidSourceAuthorizationError,
+    ReplyWorkflow,
+    reply_query,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -190,6 +195,8 @@ class StreamRuntime:
         )
         with self.traces.job(attributes), self._heartbeat(claim):
             try:
+                source_map_digest: str | None = None
+                source_chunk_ids: list[UUID] | None = None
                 context = self.backend.read_context(claim.job_id, traceparent)
                 if context.contextRevision != claim.context_revision:
                     raise BackendSupersededError("context revision mismatch")
@@ -238,6 +245,8 @@ class StreamRuntime:
                         prepare_generation,
                     )
                     generated = reply_execution.generation
+                    source_map_digest = reply_execution.source_map_digest
+                    source_chunk_ids = list(reply_execution.source_chunk_ids) or None
                 elif claim.feature == Feature.SUMMARY:
                     call_id, recorder = self._prepare_call(
                         claim,
@@ -270,13 +279,17 @@ class StreamRuntime:
                 if current.contextRevision != claim.context_revision:
                     raise BackendSupersededError("context changed before result commit")
                 self.backend.read_policy(claim.feature.value)
+                if generated is None:
+                    self.repository.complete_needs_review(claim, "NO_APPROVED_KNOWLEDGE", cost)
+                    return
                 result = generated.result
                 if isinstance(result, TriageResult) and result.suggestedTagIds:
                     raise InvalidModelOutputError("triage tags require a backend allowlist")
                 if isinstance(result, ReplyDraftResult) and result.citations:
-                    result = result.model_copy(
-                        update={"citations": self.backend.authorize_citations(claim.job_id, result.citations)}
-                    )
+                    authorized = self.backend.authorize_citations(claim.job_id, result.citations)
+                    if authorized != result.citations:
+                        raise BackendSupersededError("reply citation changed before result commit")
+                    result = result.model_copy(update={"citations": authorized})
                 needs_review = isinstance(result, ReplyDraftResult) and not result.citations
                 if needs_review:
                     self.repository.complete_needs_review(claim, "NO_APPROVED_KNOWLEDGE", cost)
@@ -289,10 +302,14 @@ class StreamRuntime:
                         generated.receipt.actual_model or generated.receipt.requested_alias,
                         [item.id for item in context.comments],
                         generated.prompt_version,
+                        source_map_digest,
+                        source_chunk_ids,
                     )
             except BackendSupersededError:
                 self.repository.terminate_job(claim, JobStatus.SUPERSEDED, "CONTEXT_SUPERSEDED")
             except BackendAuthorizationError:
+                self.repository.fail_job(claim, "SOURCE_AUTHORIZATION_FAILED", retryable=False)
+            except InvalidSourceAuthorizationError:
                 self.repository.fail_job(claim, "SOURCE_AUTHORIZATION_FAILED", retryable=False)
             except BackendPolicyDisabledError:
                 self.repository.terminate_job(claim, JobStatus.FAILED, "AI_POLICY_DISABLED")
@@ -309,6 +326,12 @@ class StreamRuntime:
                     self.repository.job_cost_microusd(claim.job_id),
                 )
             except InvalidModelOutputError:
+                self.repository.complete_needs_review(
+                    claim,
+                    "MODEL_OUTPUT_INVALID",
+                    self.repository.job_cost_microusd(claim.job_id),
+                )
+            except InvalidReplyOutputError:
                 self.repository.complete_needs_review(
                     claim,
                     "MODEL_OUTPUT_INVALID",

@@ -61,7 +61,7 @@ paths:
                   items: {$ref: '#/components/schemas/KnowledgeCandidate'}
       responses:
         '200':
-          description: 현재도 PUBLIC인 exact revision의 canonical citation metadata입니다. 본문은 포함하지 않습니다.
+          description: 요청 순서를 유지하며 현재도 PUBLIC인 exact revision만 포함한 canonical citation metadata입니다. 철회·비공개·stale 후보는 제외되므로 items는 부분 목록 또는 빈 목록일 수 있고, 본문은 포함하지 않습니다.
           content:
             application/json:
               schema:
@@ -71,6 +71,7 @@ paths:
                 properties:
                   items:
                     type: array
+                    minItems: 0
                     maxItems: 8
                     items: {$ref: '#/components/schemas/AuthorizedKnowledgeCandidate'}
         '401': {$ref: '#/components/responses/Problem'}

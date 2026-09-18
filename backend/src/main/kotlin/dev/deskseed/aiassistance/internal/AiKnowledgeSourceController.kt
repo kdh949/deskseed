@@ -251,10 +251,10 @@ internal class AiKnowledgeSourceService(
         candidates: List<AiKnowledgeCandidate>,
         metadata: AiRequestMetadata,
     ): List<Pair<AiKnowledgeCandidate, AiPublicKnowledgeArticle>> {
-        require(candidates.distinctBy { it.articleId to it.revisionId }.size == candidates.size)
-        return candidates.map { candidate ->
+        require(candidates.distinctBy { Triple(it.articleId, it.revisionId, it.chunkId) }.size == candidates.size)
+        return candidates.mapNotNull { candidate ->
             val article = projection.findCurrentPublic(candidate.articleId, candidate.revisionId)
-                ?: throw AiKnowledgeSourceNotFoundException()
+                ?: return@mapNotNull null
             appendAudit(principal, jobId, article, AiKnowledgeReadPurpose.RESULT, metadata)
             candidate to article
         }

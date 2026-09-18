@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .config import Settings
 from .schemas import Citation, SourceContext
@@ -87,10 +87,35 @@ class BackendClient:
             raise BackendSupersededError("knowledge citation authorization changed")
         if response.status_code != 200:
             raise BackendAuthorizationError(f"backend citation authorization rejected status {response.status_code}")
-        body = AuthorizedKnowledgeResponse.model_validate(response.json())
-        if len(body.items) != len(citations):
-            raise BackendSupersededError("knowledge citation authorization is incomplete")
-        return [Citation.model_validate(item.model_dump()) for item in body.items]
+        try:
+            body = AuthorizedKnowledgeResponse.model_validate(response.json())
+        except (ValidationError, ValueError, TypeError) as exception:
+            raise BackendAuthorizationError("backend citation authorization response is malformed") from exception
+        requested = {
+            item.chunkId: (index, item.articleId, item.revisionId)
+            for index, item in enumerate(citations)
+        }
+        positions: list[int] = []
+        seen: set[UUID] = set()
+        authorized: list[Citation] = []
+        for item in body.items:
+            expected = requested.get(item.chunkId)
+            if (
+                expected is None
+                or item.chunkId in seen
+                or item.articleId != expected[1]
+                or item.revisionId != expected[2]
+            ):
+                raise BackendAuthorizationError("backend citation authorization response is invalid")
+            positions.append(expected[0])
+            seen.add(item.chunkId)
+            try:
+                authorized.append(Citation.model_validate(item.model_dump()))
+            except ValidationError as exception:
+                raise BackendAuthorizationError("backend citation metadata is invalid") from exception
+        if positions != sorted(positions):
+            raise BackendAuthorizationError("backend citation authorization order is invalid")
+        return authorized
 
     def _source_headers(self) -> dict[str, str]:
         return {
@@ -206,4 +231,4 @@ class AuthorizedKnowledgeCandidate(BaseModel):
 
 class AuthorizedKnowledgeResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    items: list[AuthorizedKnowledgeCandidate]
+    items: list[AuthorizedKnowledgeCandidate] = Field(max_length=8)

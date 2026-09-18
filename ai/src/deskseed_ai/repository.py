@@ -918,7 +918,11 @@ class Repository:
         actual_model: str,
         source_comment_ids: list[UUID],
         prompt_version: str,
+        source_map_digest: str | None = None,
+        source_chunk_ids: list[UUID] | None = None,
     ) -> None:
+        if (source_map_digest is None) != (source_chunk_ids is None):
+            raise ValueError("source map digest and chunk IDs must be stored together")
         now = datetime.now(UTC)
         ciphertext, nonce = self.cipher.encrypt(
             result.model_dump_json().encode(), str(claim.job_id).encode()
@@ -930,6 +934,7 @@ class Repository:
                     result_ciphertext = %s, result_nonce = %s, result_expires_at = %s,
                     model_alias = %s, actual_model = %s, prompt_version = %s,
                     config_version = %s, source_comment_ids = %s, generated_at = %s,
+                    source_map_digest = %s, source_chunk_ids = %s,
                     cost_microusd = %s, completed_at = %s, updated_at = %s,
                     lease_owner = null, lease_expires_at = null, error_code = null
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
@@ -945,6 +950,8 @@ class Repository:
                     self.settings.config_version,
                     source_comment_ids,
                     now,
+                    source_map_digest,
+                    source_chunk_ids,
                     cost_microusd,
                     now,
                     now,
@@ -965,6 +972,7 @@ class Repository:
                     result_schema_version = null, result_ciphertext = null, result_nonce = null,
                     result_expires_at = null, model_alias = null, actual_model = null,
                     prompt_version = null, config_version = null, source_comment_ids = '{}',
+                    source_map_digest = null, source_chunk_ids = null,
                     generated_at = null, cost_microusd = %s, completed_at = %s, updated_at = %s,
                     lease_owner = null, lease_expires_at = null, error_code = %s
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
@@ -1510,6 +1518,7 @@ class Repository:
                         result_schema_version = null, result_expires_at = null,
                         model_alias = null, actual_model = null, prompt_version = null,
                         config_version = null, source_comment_ids = null, generated_at = null,
+                        source_map_digest = null, source_chunk_ids = null,
                         updated_at = clock_timestamp() where job_id = %s
                     """,
                     (row["job_id"],),

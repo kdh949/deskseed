@@ -170,6 +170,20 @@ class ReplyDraftResult(StrictModel):
 TypedResult = SummaryResult | TriageResult | ReplyDraftResult
 
 
+class ReplyProviderOutput(StrictModel):
+    answer: Annotated[str, Field(min_length=1, max_length=6000)]
+    sourceRefs: list[Annotated[str, Field(pattern=r"^S[1-8]$")]] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def source_refs_are_unique(self) -> "ReplyProviderOutput":
+        if len(set(self.sourceRefs)) != len(self.sourceRefs):
+            raise ValueError("sourceRefs must be unique")
+        return self
+
+
+ProviderOutput = SummaryResult | TriageResult | ReplyProviderOutput
+
+
 class GenerationProvenance(StrictModel):
     modelAlias: Annotated[str, Field(min_length=1, max_length=100)]
     actualModel: Annotated[str, Field(min_length=1, max_length=160)]

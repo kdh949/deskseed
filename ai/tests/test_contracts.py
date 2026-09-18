@@ -8,16 +8,26 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
+from deskseed_ai.backend_client import BackendAuthorizationError, BackendClient
 from deskseed_ai.call_receipts import UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.pricing import PricingCatalog, Usage
 from deskseed_ai.prompting import prompt_for
 from deskseed_ai.providers import LiteLlmGenerationProvider
 from deskseed_ai.queue import InputTooLongError, _bounded_context
-from deskseed_ai.retrieval import LiteLlmEmbeddingProvider
-from deskseed_ai.schemas import AuthorRole, Feature, JobEnvelope, PublicComment, SourceContext
+from deskseed_ai.retrieval import KnowledgeChunk, LiteLlmEmbeddingProvider
+from deskseed_ai.schemas import (
+    AuthorRole,
+    Citation,
+    Feature,
+    JobEnvelope,
+    PublicComment,
+    ReplyProviderOutput,
+    SourceContext,
+)
 from deskseed_ai.security import authenticate_machine
 from deskseed_ai.usage_normalization import normalize_litellm_usage
+from deskseed_ai.workflows import source_map_digest
 
 
 def test_production_requires_explicit_machine_auth() -> None:
@@ -362,6 +372,154 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     assert str(second_id) not in calls[0]["messages"][1]["content"]
     assert generated.prompt_version == prompt_for(Feature.SUMMARY).version
     assert len(receipts) == 2
+
+
+def test_reply_provider_receives_only_request_local_source_refs(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import litellm
+
+    settings = Settings(environment="test", openai_api_key="test-only-key")
+    article_id = uuid4()
+    revision_id = uuid4()
+    chunk_id = uuid4()
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer":"공개 안내","sourceRefs":["S1"]}'))],
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+            id="response-reply-1",
+            model=settings.model_standard,
+            service_tier="default",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    context = _v2_context(Feature.REPLY_DRAFT, [(AuthorRole.CUSTOMER, "로그인 오류가 계속됩니다.")])
+    knowledge = [
+        KnowledgeChunk(
+            chunk_id=chunk_id,
+            article_id=article_id,
+            revision_id=revision_id,
+            title="로그인 도움말",
+            slug="login-help",
+            content="비밀번호 재설정 후 다시 로그인하세요.",
+            score=1.0,
+        )
+    ]
+
+    generated = LiteLlmGenerationProvider(settings).reply(
+        context,
+        knowledge,
+        {"language": "ko", "tone": "calm"},
+        uuid4(),
+        lambda _receipt: None,
+    )
+
+    assert isinstance(generated.result, ReplyProviderOutput)
+    payload = json.loads(calls[0]["messages"][1]["content"])
+    assert payload["approvedPublicKnowledge"] == [
+        {
+            "sourceRef": "S1",
+            "title": "로그인 도움말",
+            "content": "비밀번호 재설정 후 다시 로그인하세요.",
+        }
+    ]
+    serialized = calls[0]["messages"][1]["content"]
+    assert str(article_id) not in serialized
+    assert str(revision_id) not in serialized
+    assert str(chunk_id) not in serialized
+    assert "login-help" not in serialized
+    schema = calls[0]["response_format"]["json_schema"]["schema"]
+    assert set(schema["properties"]) == {"answer", "sourceRefs"}
+
+
+def test_reply_provider_output_rejects_duplicate_and_nonlocal_source_refs() -> None:
+    with pytest.raises(ValidationError):
+        ReplyProviderOutput(answer="답변", sourceRefs=["S1", "S1"])
+    with pytest.raises(ValidationError):
+        ReplyProviderOutput(answer="답변", sourceRefs=["S99"])
+
+
+def test_backend_citation_authorization_accepts_only_an_ordered_exact_subset(monkeypatch) -> None:
+    import httpx
+
+    first = Citation(
+        articleId=uuid4(),
+        revisionId=uuid4(),
+        chunkId=uuid4(),
+        title="첫 도움말",
+        url="/help/articles/first-help",
+    )
+    second = Citation(
+        articleId=uuid4(),
+        revisionId=uuid4(),
+        chunkId=uuid4(),
+        title="두 번째 도움말",
+        url="/help/articles/second-help",
+    )
+    response_items = [second.model_dump(mode="json")]
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"items": response_items}
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    backend = BackendClient(Settings(environment="test"))
+
+    assert backend.authorize_citations(uuid4(), [first, second]) == [second]
+
+    response_items[:] = [second.model_dump(mode="json"), first.model_dump(mode="json")]
+    with pytest.raises(BackendAuthorizationError):
+        backend.authorize_citations(uuid4(), [first, second])
+
+    response_items[:] = [second.model_copy(update={"chunkId": uuid4()}).model_dump(mode="json")]
+    with pytest.raises(BackendAuthorizationError):
+        backend.authorize_citations(uuid4(), [first, second])
+
+    response_items[:] = [{"chunkId": str(second.chunkId)}]
+    with pytest.raises(BackendAuthorizationError):
+        backend.authorize_citations(uuid4(), [first, second])
+
+
+def test_source_map_digest_is_deterministic_and_excludes_knowledge_body() -> None:
+    first = Citation(
+        articleId=uuid4(),
+        revisionId=uuid4(),
+        chunkId=uuid4(),
+        title="첫 도움말",
+        url="/help/articles/first-help",
+    )
+    second = Citation(
+        articleId=uuid4(),
+        revisionId=uuid4(),
+        chunkId=uuid4(),
+        title="두 번째 도움말",
+        url="/help/articles/second-help",
+    )
+    ordered = {"S1": first, "S2": second}
+
+    digest = source_map_digest(ordered)
+
+    assert digest == source_map_digest(dict(ordered))
+    assert digest != source_map_digest({"S1": second, "S2": first})
+    assert len(digest) == 64
 
 
 def test_reply_context_keeps_latest_customer_suffix_and_canonical_order() -> None:
