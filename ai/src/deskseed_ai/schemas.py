@@ -53,7 +53,7 @@ class AuthorRole(StrEnum):
 
 
 class JobEnvelope(StrictModel):
-    schemaVersion: Literal[1]
+    schemaVersion: Literal[1, 2]
     eventId: UUID
     jobId: UUID
     workspaceKey: Annotated[str, Field(min_length=1, max_length=80)]
@@ -63,6 +63,8 @@ class JobEnvelope(StrictModel):
     feature: Feature
     contextRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     contextPolicyVersion: Literal["public-comments-v1", "public-comments-v2"]
+    aiInputRevision: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
+    inputPolicyVersion: Literal["summary-input-v1", "triage-input-v1", "reply-input-v1"] | None = None
     dataClass: Literal["PUBLIC_ONLY"]
     requestRevision: Annotated[int, Field(gt=0)]
     options: dict[str, Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=dict, max_length=2)
@@ -84,6 +86,20 @@ class JobEnvelope(StrictModel):
                 expected["tone"] = "calm"
             if self.options != expected:
                 raise ValueError("v2 feature options must be normalized by the Backend")
+        expected_input_policy = {
+            Feature.SUMMARY: "summary-input-v1",
+            Feature.TRIAGE: "triage-input-v1",
+            Feature.REPLY_DRAFT: "reply-input-v1",
+        }[self.feature]
+        if self.schemaVersion == 1:
+            if self.aiInputRevision is not None or self.inputPolicyVersion is not None:
+                raise ValueError("v1 jobs cannot contain v2 input revision metadata")
+        elif (
+            self.contextPolicyVersion != "public-comments-v2"
+            or self.aiInputRevision is None
+            or self.inputPolicyVersion != expected_input_policy
+        ):
+            raise ValueError("v2 jobs require matching input revision metadata")
         return self
 
 
@@ -115,19 +131,34 @@ class SourceContext(StrictModel):
     requestRevision: int
     contextRevision: str
     contextPolicyVersion: str
+    aiInputRevision: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
+    inputPolicyVersion: Literal["summary-input-v1", "triage-input-v1", "reply-input-v1"] | None = None
     inputScope: Literal["PUBLIC_ONLY"]
     comments: list[PublicComment] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_policy_shape(self) -> "SourceContext":
         if self.contextPolicyVersion == "public-comments-v1":
-            if any(comment.sequence is not None or comment.authorRole is not None for comment in self.comments):
+            if (
+                self.aiInputRevision is not None
+                or self.inputPolicyVersion is not None
+                or any(comment.sequence is not None or comment.authorRole is not None for comment in self.comments)
+            ):
                 raise ValueError("v1 comments cannot contain v2 role or sequence fields")
             return self
         if self.contextPolicyVersion != "public-comments-v2":
             raise ValueError("unsupported context policy version")
         if any(comment.sequence is None or comment.authorRole is None for comment in self.comments):
             raise ValueError("v2 comments require role and sequence")
+        expected_input_policy = {
+            Feature.SUMMARY: "summary-input-v1",
+            Feature.TRIAGE: "triage-input-v1",
+            Feature.REPLY_DRAFT: "reply-input-v1",
+        }[self.feature]
+        if (self.aiInputRevision is None) != (self.inputPolicyVersion is None):
+            raise ValueError("v2 context input revision metadata must be paired")
+        if self.inputPolicyVersion is not None and self.inputPolicyVersion != expected_input_policy:
+            raise ValueError("v2 context input policy does not match the feature")
         sequences = [comment.sequence for comment in self.comments if comment.sequence is not None]
         if sequences != list(range(1, len(sequences) + 1)):
             raise ValueError("v2 PUBLIC comment sequence must be contiguous and increasing")

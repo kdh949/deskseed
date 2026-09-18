@@ -127,6 +127,45 @@ def test_v2_job_envelope_requires_backend_normalized_feature_options() -> None:
         JobEnvelope.model_validate(base | {"options": {"language": "en", "tone": "calm"}})
 
 
+@pytest.mark.parametrize(
+    ("feature", "policy", "options"),
+    [
+        ("ticket.summary", "summary-input-v1", {"language": "ko"}),
+        ("ticket.triage", "triage-input-v1", {"language": "ko"}),
+        ("ticket.reply_draft", "reply-input-v1", {"language": "ko", "tone": "calm"}),
+    ],
+)
+def test_schema_v2_job_requires_matching_input_revision_metadata(feature, policy, options) -> None:
+    now = datetime.now(UTC)
+    base = {
+        "schemaVersion": 2,
+        "eventId": uuid4(),
+        "jobId": uuid4(),
+        "workspaceKey": "default",
+        "requesterId": uuid4(),
+        "ticketId": uuid4(),
+        "ticketNumber": 1,
+        "feature": feature,
+        "contextRevision": "a" * 64,
+        "contextPolicyVersion": "public-comments-v2",
+        "aiInputRevision": "b" * 64,
+        "inputPolicyVersion": policy,
+        "dataClass": "PUBLIC_ONLY",
+        "requestRevision": 1,
+        "options": options,
+        "createdAt": now,
+        "deadlineAt": now + timedelta(seconds=30),
+    }
+
+    JobEnvelope.model_validate(base)
+    with pytest.raises(ValidationError):
+        JobEnvelope.model_validate({key: value for key, value in base.items() if key != "aiInputRevision"})
+    with pytest.raises(ValidationError):
+        JobEnvelope.model_validate(base | {"inputPolicyVersion": "summary-input-v1" if policy != "summary-input-v1" else "triage-input-v1"})
+    with pytest.raises(ValidationError):
+        JobEnvelope.model_validate(base | {"schemaVersion": 1})
+
+
 def test_source_context_v1_and_v2_shapes_are_compatible_but_not_mixed() -> None:
     now = datetime.now(UTC)
     common = {
@@ -144,6 +183,36 @@ def test_source_context_v1_and_v2_shapes_are_compatible_but_not_mixed() -> None:
         contextPolicyVersion="public-comments-v1",
         comments=[PublicComment(id=uuid4(), body="legacy", createdAt=now)],
     )
+    SourceContext(
+        **common,
+        contextPolicyVersion="public-comments-v2",
+        aiInputRevision="b" * 64,
+        inputPolicyVersion="summary-input-v1",
+        comments=[
+            PublicComment(
+                id=uuid4(),
+                sequence=1,
+                authorRole=AuthorRole.CUSTOMER,
+                body="current-v2",
+                createdAt=now,
+            )
+        ],
+    )
+    with pytest.raises(ValidationError):
+        SourceContext(
+            **common,
+            contextPolicyVersion="public-comments-v2",
+            aiInputRevision="b" * 64,
+            comments=[
+                PublicComment(
+                    id=uuid4(),
+                    sequence=1,
+                    authorRole=AuthorRole.CUSTOMER,
+                    body="unpaired",
+                    createdAt=now,
+                )
+            ],
+        )
     SourceContext(
         **common,
         contextPolicyVersion="public-comments-v2",

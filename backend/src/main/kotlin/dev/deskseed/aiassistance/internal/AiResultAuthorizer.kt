@@ -43,7 +43,7 @@ internal class AiResultAuthorizer(
         val binding = jdbcTemplate.query(
             """
             select ticket_id, feature, request_revision, context_revision, context_policy_version,
-                   cancellation_requested
+                   ai_input_revision, input_policy_version, cancellation_requested
             from ai_requests
             where job_id = ? and requester_staff_id = ? and ticket_number = ?
             for share
@@ -55,6 +55,8 @@ internal class AiResultAuthorizer(
                     requestRevision = result.getLong("request_revision"),
                     contextRevision = result.getString("context_revision"),
                     contextPolicyVersion = result.getString("context_policy_version"),
+                    aiInputRevision = result.getString("ai_input_revision"),
+                    inputPolicyVersion = result.getString("input_policy_version"),
                     cancelled = result.getBoolean("cancellation_requested"),
                 )
             },
@@ -65,9 +67,12 @@ internal class AiResultAuthorizer(
         val context = ticketStore.findAiPublicContext(ticketNumber, actor.id)
             ?: throw AiRequestNotFoundException()
         val featureEnabled = isFeatureEnabled(AiFeature.fromValue(binding.feature), actor.id)
+        val inputFresh = binding.inputPolicyVersion?.let { policyVersion ->
+            computeAiInputRevision(context, AiFeature.fromValue(binding.feature), policyVersion) == binding.aiInputRevision
+        } ?: (binding.aiInputRevision == null)
         val contextFresh = remote.contextPolicyVersion == binding.contextPolicyVersion &&
             computeAiContextRevision(context, binding.contextPolicyVersion) == binding.contextRevision &&
-            remote.contextRevision == binding.contextRevision
+            remote.contextRevision == binding.contextRevision && inputFresh
         val resultUnexpired = remote.result == null || remote.resultExpiresAt?.isAfter(Instant.now(clock)) == true
         val provenanceFresh = remote.result == null || remote.provenance?.let { provenance ->
             provenance.contextRevision == binding.contextRevision &&
@@ -151,6 +156,8 @@ internal class AiResultAuthorizer(
         val requestRevision: Long,
         val contextRevision: String,
         val contextPolicyVersion: String,
+        val aiInputRevision: String?,
+        val inputPolicyVersion: String?,
         val cancelled: Boolean,
     )
 }

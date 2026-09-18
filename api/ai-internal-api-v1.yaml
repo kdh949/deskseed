@@ -657,7 +657,9 @@ components:
       properties:
         schemaVersion:
           type: integer
-          const: 1
+          enum:
+          - 1
+          - 2
           title: Schemaversion
         eventId:
           type: string
@@ -696,6 +698,21 @@ components:
           - public-comments-v1
           - public-comments-v2
           title: Contextpolicyversion
+        aiInputRevision:
+          anyOf:
+          - type: string
+            pattern: ^[0-9a-f]{64}$
+          - type: 'null'
+          title: Aiinputrevision
+        inputPolicyVersion:
+          anyOf:
+          - type: string
+            enum:
+            - summary-input-v1
+            - triage-input-v1
+            - reply-input-v1
+          - type: 'null'
+          title: Inputpolicyversion
         dataClass:
           type: string
           const: PUBLIC_ONLY

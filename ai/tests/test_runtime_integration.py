@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.errors import CheckViolation
 
 from deskseed_ai.backend_client import (
     BackendAuthorizationError,
@@ -62,6 +63,37 @@ def envelope(feature: Feature = Feature.SUMMARY) -> JobEnvelope:
         dataClass="PUBLIC_ONLY",
         requestRevision=1,
         options={"language": "ko"},
+        createdAt=now,
+        deadlineAt=now + timedelta(minutes=2),
+    )
+
+
+def envelope_v2(feature: Feature = Feature.SUMMARY) -> JobEnvelope:
+    now = datetime.now(UTC)
+    policy = {
+        Feature.SUMMARY: "summary-input-v1",
+        Feature.TRIAGE: "triage-input-v1",
+        Feature.REPLY_DRAFT: "reply-input-v1",
+    }[feature]
+    options = {"language": "ko"}
+    if feature == Feature.REPLY_DRAFT:
+        options["tone"] = "calm"
+    return JobEnvelope(
+        schemaVersion=2,
+        eventId=uuid4(),
+        jobId=uuid4(),
+        workspaceKey="default",
+        requesterId=uuid4(),
+        ticketId=uuid4(),
+        ticketNumber=1042,
+        feature=feature,
+        contextRevision="a" * 64,
+        contextPolicyVersion="public-comments-v2",
+        aiInputRevision="b" * 64,
+        inputPolicyVersion=policy,
+        dataClass="PUBLIC_ONLY",
+        requestRevision=1,
+        options=options,
         createdAt=now,
         deadlineAt=now + timedelta(minutes=2),
     )
@@ -187,6 +219,72 @@ def test_fake_provider_completes_typed_job_through_postgres_and_redis(
         assert bytes(row["result_ciphertext"]).find("ticket".encode()) == -1
         assert row["result_nonce"] is not None
     assert ledger["status"] == "SETTLED"
+
+
+@pytest.mark.integration
+def test_schema_v2_job_persists_and_executes_with_bound_input_revision(
+    repository: Repository, settings: Settings
+) -> None:
+    item = envelope_v2(Feature.SUMMARY)
+
+    repository.accept_job(item)
+
+    with repository.database.connection() as connection:
+        stored = connection.execute(
+            "select ai_input_revision, input_policy_version from ai_jobs where job_id = %s",
+            (item.jobId,),
+        ).fetchone()
+    assert stored == {
+        "ai_input_revision": item.aiInputRevision,
+        "input_policy_version": item.inputPolicyVersion,
+    }
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+    assert repository.get_job(item.jobId).status == JobStatus.SUCCEEDED
+
+
+@pytest.mark.integration
+def test_ai_database_rejects_unpaired_or_feature_mismatched_input_revision(
+    repository: Repository,
+) -> None:
+    item = envelope_v2(Feature.SUMMARY)
+    repository.accept_job(item)
+
+    with pytest.raises(CheckViolation):
+        with repository.database.transaction() as connection:
+            connection.execute(
+                "update ai_jobs set ai_input_revision = null where job_id = %s",
+                (item.jobId,),
+            )
+    with pytest.raises(CheckViolation):
+        with repository.database.transaction() as connection:
+            connection.execute(
+                "update ai_jobs set input_policy_version = 'reply-input-v1' where job_id = %s",
+                (item.jobId,),
+            )
+
+
+@pytest.mark.integration
+def test_schema_v2_job_is_superseded_when_input_revision_changes_before_commit(
+    repository: Repository, settings: Settings
+) -> None:
+    item = envelope_v2(Feature.SUMMARY)
+    repository.accept_job(item)
+
+    class ChangedInputBackend(StaticBackend):
+        def read_context_revision(self, job_id):
+            current = super().read_context_revision(job_id)
+            current.aiInputRevision = "c" * 64
+            return current
+
+    runtime = runtime_for(repository, settings, ChangedInputBackend(item))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.SUPERSEDED
+    assert job.result is None
 
 
 @pytest.mark.integration
@@ -1279,6 +1377,7 @@ class StaticBackend:
 
     def read_context(self, job_id, traceparent=None) -> SourceContext:
         assert job_id == self.item.jobId
+        is_v2 = self.item.contextPolicyVersion == "public-comments-v2"
         return SourceContext(
             jobId=self.item.jobId,
             ticketId=self.item.ticketId,
@@ -1287,9 +1386,19 @@ class StaticBackend:
             feature=self.item.feature,
             requestRevision=1,
             contextRevision=self.item.contextRevision,
-            contextPolicyVersion="public-comments-v1",
+            contextPolicyVersion=self.item.contextPolicyVersion,
+            aiInputRevision=self.item.aiInputRevision,
+            inputPolicyVersion=self.item.inputPolicyVersion,
             inputScope="PUBLIC_ONLY",
-            comments=[PublicComment(id=uuid4(), body="공개 결제 문의입니다.", createdAt=datetime.now(UTC))],
+            comments=[
+                PublicComment(
+                    id=uuid4(),
+                    sequence=1 if is_v2 else None,
+                    authorRole="CUSTOMER" if is_v2 else None,
+                    body="공개 결제 문의입니다.",
+                    createdAt=datetime.now(UTC),
+                )
+            ],
         )
 
     def read_policy(self, feature):
@@ -1304,6 +1413,8 @@ class StaticBackend:
         assert job_id == self.item.jobId
         return SimpleNamespace(
             contextRevision=self.item.contextRevision,
+            aiInputRevision=self.item.aiInputRevision,
+            inputPolicyVersion=self.item.inputPolicyVersion,
             authorized=True,
             cancelRequested=False,
             featureEnabled=True,

@@ -198,7 +198,11 @@ class StreamRuntime:
                 source_map_digest: str | None = None
                 source_chunk_ids: list[UUID] | None = None
                 context = self.backend.read_context(claim.job_id, traceparent)
-                if context.contextRevision != claim.context_revision:
+                if (
+                    context.contextRevision != claim.context_revision
+                    or context.aiInputRevision != claim.ai_input_revision
+                    or context.inputPolicyVersion != claim.input_policy_version
+                ):
                     raise BackendSupersededError("context revision mismatch")
                 policy = self.backend.read_policy(claim.feature.value)
                 model = self.settings.model_standard if claim.feature == Feature.REPLY_DRAFT else self.settings.model_fast
@@ -276,7 +280,11 @@ class StreamRuntime:
                 self.repository.set_phase(claim, JobPhase.VALIDATE)
                 cost = self.repository.job_cost_microusd(claim.job_id)
                 current = self.backend.read_context_revision(claim.job_id)
-                if current.contextRevision != claim.context_revision:
+                if (
+                    current.contextRevision != claim.context_revision
+                    or current.aiInputRevision != claim.ai_input_revision
+                    or current.inputPolicyVersion != claim.input_policy_version
+                ):
                     raise BackendSupersededError("context changed before result commit")
                 self.backend.read_policy(claim.feature.value)
                 if generated is None:

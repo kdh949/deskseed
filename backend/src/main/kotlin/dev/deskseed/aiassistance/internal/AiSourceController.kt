@@ -54,6 +54,8 @@ internal class AiSourceController(private val contextService: AiSourceContextSer
                 requestRevision = context.requestRevision,
                 contextRevision = context.contextRevision,
                 contextPolicyVersion = context.contextPolicyVersion,
+                aiInputRevision = context.aiInputRevision,
+                inputPolicyVersion = context.inputPolicyVersion,
                 inputScope = context.inputScope,
                 comments = context.comments.map {
                     AiSourceCommentResponse(
@@ -71,7 +73,21 @@ internal class AiSourceController(private val contextService: AiSourceContextSer
     @GetMapping("/{jobId}/context-revision")
     fun revision(
         @PathVariable jobId: UUID,
-    ) = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(contextService.revision(jobId))
+    ): ResponseEntity<AiSourceRevisionResponse> {
+        val revision = contextService.revision(jobId)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+            AiSourceRevisionResponse(
+                jobId = revision.jobId,
+                requestRevision = revision.requestRevision,
+                contextRevision = revision.contextRevision,
+                aiInputRevision = revision.aiInputRevision,
+                inputPolicyVersion = revision.inputPolicyVersion,
+                authorized = revision.authorized,
+                cancelRequested = revision.cancelRequested,
+                featureEnabled = revision.featureEnabled,
+            ),
+        )
+    }
 }
 
 @RestController
@@ -113,6 +129,7 @@ internal data class AiPolicyResponse(
     val dataAsOf: Instant,
 )
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 internal data class AiSourceContextResponse(
     val jobId: UUID,
     val ticketId: UUID,
@@ -122,6 +139,8 @@ internal data class AiSourceContextResponse(
     val requestRevision: Long,
     val contextRevision: String,
     val contextPolicyVersion: String,
+    val aiInputRevision: String? = null,
+    val inputPolicyVersion: String? = null,
     val inputScope: String,
     val comments: List<AiSourceCommentResponse>,
 )
@@ -133,6 +152,18 @@ internal data class AiSourceCommentResponse(
     val createdAt: Instant,
     val sequence: Long? = null,
     val authorRole: String? = null,
+)
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+internal data class AiSourceRevisionResponse(
+    val jobId: UUID,
+    val requestRevision: Long,
+    val contextRevision: String,
+    val aiInputRevision: String? = null,
+    val inputPolicyVersion: String? = null,
+    val authorized: Boolean,
+    val cancelRequested: Boolean,
+    val featureEnabled: Boolean,
 )
 
 @RestControllerAdvice(

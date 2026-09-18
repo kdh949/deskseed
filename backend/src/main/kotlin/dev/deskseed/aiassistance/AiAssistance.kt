@@ -217,6 +217,8 @@ data class AiSourceContext(
     val requestRevision: Long,
     val contextRevision: String,
     val contextPolicyVersion: String,
+    val aiInputRevision: String? = null,
+    val inputPolicyVersion: String? = null,
     val inputScope: String,
     val comments: List<AiSourceComment>,
 )
@@ -235,6 +237,8 @@ data class AiSourceRevision(
     val jobId: UUID,
     val requestRevision: Long,
     val contextRevision: String,
+    val aiInputRevision: String? = null,
+    val inputPolicyVersion: String? = null,
     val authorized: Boolean,
     val cancelRequested: Boolean,
     val featureEnabled: Boolean,
