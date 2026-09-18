@@ -56,6 +56,7 @@ def repository(settings: Settings) -> Iterator[Repository]:
                 ai_kb_index_inbox, ai_cost_ledger, ai_dispatch_outbox, ai_jobs, ai_job_inbox cascade
             """
         )
+        connection.execute("update ai_telemetry_counters set counter_value = 0, updated_at = clock_timestamp()")
     Redis.from_url(settings.redis_url.get_secret_value()).flushdb()
     try:
         yield Repository(database, settings, EnvelopeCipher(settings))

@@ -7,6 +7,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from .backend_client import BackendClient
 from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
+from .observability import CallTraceAttributes, TraceAdapter
 from .pricing import PricingCatalog
 from .repository import ConflictError, Repository
 from .retrieval import KnowledgeRepository, chunk_public_article
@@ -23,12 +24,14 @@ class IndexingService:
         repository: Repository,
         settings: Settings,
         pricing_path: Path,
+        traces: TraceAdapter,
     ):
         self.backend = backend
         self.knowledge = knowledge
         self.repository = repository
         self.settings = settings
         self.pricing = PricingCatalog(pricing_path)
+        self.traces = traces
         self.owner = f"indexer-{uuid4()}"
 
     def process_once(self, limit: int = 10) -> int:
@@ -151,7 +154,7 @@ class IndexingService:
                 result = self.knowledge.embed_text(
                     chunk,
                     call_id,
-                    self._receipt_recorder(call_id),
+                    self._receipt_recorder(call_id, reservation),
                 )
                 embedded.append((chunk, result.vector, result.receipt))
             except Exception:
@@ -170,7 +173,7 @@ class IndexingService:
         )
         return tokens
 
-    def _receipt_recorder(self, expected_call_id: UUID) -> ReceiptRecorder:
+    def _receipt_recorder(self, expected_call_id: UUID, reservation_id: UUID) -> ReceiptRecorder:
         def record(receipt: ProviderCallReceipt) -> None:
             if receipt.call_id != expected_call_id:
                 raise ValueError("provider receipt call identity mismatch")
@@ -190,6 +193,16 @@ class IndexingService:
                     )
                 except ValueError:
                     known_cost = None
-            self.repository.record_provider_response(receipt, known_cost)
+            persisted_cost = self.repository.record_provider_response(receipt, known_cost)
+            self.traces.export_provider_call(
+                CallTraceAttributes(
+                    trace_id=reservation_id.hex,
+                    observation_id=expected_call_id.hex,
+                    stage="INDEX_EMBEDDING",
+                    pricing_version=self.pricing.version,
+                    known_cost_microusd=persisted_cost,
+                ),
+                receipt,
+            )
 
         return record

@@ -30,6 +30,7 @@ from .schemas import (
     JobEnvelope,
     JobReceipt,
     OperationRequest,
+    ServiceStatus,
 )
 from .security import EnvelopeCipher, authenticate_machine
 
@@ -53,7 +54,7 @@ class Runtime:
             else FakeEmbeddingProvider(settings.embedding_model)
         )
         self.knowledge = KnowledgeRepository(self.database, embeddings)
-        self.traces = TraceAdapter(settings)
+        self.traces = TraceAdapter(settings, counter_sink=self.repository.increment_telemetry_counter)
         self.feedback = FeedbackExporter(self.repository, self.traces)
         self.backend = BackendClient(settings)
         pricing_path = ROOT / "config" / "pricing-v2.json"
@@ -63,6 +64,7 @@ class Runtime:
             self.repository,
             settings,
             pricing_path,
+            self.traces,
         )
         self.stream = StreamRuntime(
             settings,
@@ -224,19 +226,23 @@ def operation(
     return service.repository.operate(job_id, payload)
 
 
-@app.get("/internal/v1/status")
-def service_status(_: Protected, service: Annotated[Runtime, Depends(runtime)]) -> dict[str, object]:
+@app.get("/internal/v1/status", response_model=ServiceStatus)
+def service_status(_: Protected, service: Annotated[Runtime, Depends(runtime)]) -> ServiceStatus:
     postgres = service.database.ping()
     redis = service.stream.ping()
-    return {
-        "ready": postgres and redis,
-        "dataAsOf": datetime.now(UTC).isoformat(),
-        "dependencies": {"postgres": postgres, "redis": redis},
-        "providerMode": service.settings.provider_mode,
-        "liveProviderEnabled": service.settings.live_provider_enabled,
-        "langfuseEnabled": service.settings.langfuse_enabled,
-        "jobCounts": service.repository.status_counts(),
-    } | service.repository.operational_status()
+    return ServiceStatus.model_validate(
+        {
+            "ready": postgres and redis,
+            "dataAsOf": datetime.now(UTC),
+            "dependencies": {"postgres": postgres, "redis": redis},
+            "providerMode": service.settings.provider_mode,
+            "liveProviderEnabled": service.settings.live_provider_enabled,
+            "langfuseEnabled": service.settings.langfuse_enabled,
+            "telemetry": service.repository.telemetry_status(service.traces.enabled),
+            "jobCounts": service.repository.status_counts(),
+        }
+        | service.repository.operational_status()
+    )
 
 
 @app.get("/internal/v1/livez")

@@ -162,11 +162,19 @@ def test_fake_provider_completes_typed_job_through_postgres_and_redis(
     assert receipt.costMicrousd is not None and receipt.costMicrousd >= 0
     with repository.database.connection() as connection:
         row = connection.execute(
-            "select result_ciphertext, result_nonce, status from ai_jobs where job_id = %s", (item.jobId,)
+            "select result_ciphertext, result_nonce, status, trace_id from ai_jobs where job_id = %s", (item.jobId,)
         ).fetchone()
         ledger = connection.execute(
             "select status, settled_microusd from ai_cost_ledger where job_id = %s", (item.jobId,)
         ).fetchone()
+        calls = connection.execute(
+            "select call_id, trace_id, observation_id from ai_provider_calls where job_id = %s",
+            (item.jobId,),
+        ).fetchall()
+    assert row["trace_id"] == item.jobId.hex
+    assert calls
+    assert all(call["trace_id"] == item.jobId.hex for call in calls)
+    assert all(call["observation_id"] == call["call_id"].hex for call in calls)
     if feature == Feature.REPLY_DRAFT:
         assert row["result_ciphertext"] is None
         assert row["result_nonce"] is None
@@ -202,6 +210,72 @@ def test_invalid_output_after_response_keeps_known_cost_and_no_result(
         assert connection.execute(
             "select status from ai_cost_ledger where job_id = %s", (item.jobId,)
         ).fetchone() == {"status": "SETTLED"}
+
+
+@pytest.mark.integration
+def test_provider_observation_runs_after_receipt_and_settlement_commit(
+    repository: Repository, settings: Settings
+) -> None:
+    item = envelope(Feature.SUMMARY)
+    repository.accept_job(item)
+
+    class PersistedReceiptClient:
+        provider_observations = 0
+
+        def start_observation(self, **kwargs):
+            if kwargs["name"] == "deskseed-ai-generation":
+                self.provider_observations += 1
+                call_id = kwargs["metadata"]["observationId"]
+                with repository.database.connection() as connection:
+                    row = connection.execute(
+                        """
+                        select lifecycle_status, settlement_status, usage_status
+                        from ai_provider_calls where observation_id = %s
+                        """,
+                        (call_id,),
+                    ).fetchone()
+                assert row == {
+                    "lifecycle_status": "RESPONDED",
+                    "settlement_status": "SETTLED",
+                    "usage_status": "KNOWN",
+                }
+            return SimpleNamespace(update=lambda **_kwargs: None, end=lambda: None)
+
+    telemetry_client = PersistedReceiptClient()
+    traces = TraceAdapter(settings, telemetry_client)
+    runtime = runtime_for(repository, settings, StaticBackend(item), traces)
+
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+    assert telemetry_client.provider_observations == 1
+    assert repository.get_job(item.jobId).status == JobStatus.SUCCEEDED
+
+
+@pytest.mark.integration
+def test_provider_observation_failure_is_durable_and_does_not_fail_job(
+    repository: Repository, settings: Settings
+) -> None:
+    item = envelope(Feature.SUMMARY)
+    repository.accept_job(item)
+
+    class ProviderObservationFailureClient:
+        def start_observation(self, **kwargs):
+            if kwargs["name"] == "deskseed-ai-generation":
+                raise RuntimeError("synthetic telemetry outage")
+            return SimpleNamespace(update=lambda **_kwargs: None, end=lambda: None)
+
+    traces = TraceAdapter(
+        settings,
+        ProviderObservationFailureClient(),
+        repository.increment_telemetry_counter,
+    )
+    runtime = runtime_for(repository, settings, StaticBackend(item), traces)
+
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+    assert repository.get_job(item.jobId).status == JobStatus.SUCCEEDED
+    telemetry = repository.telemetry_status(enabled=True)
+    assert telemetry["dropped"]["providerObservation"] == 1
 
 
 @pytest.mark.integration
@@ -782,15 +856,26 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
         repository,
         settings,
         Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
+        TraceAdapter(settings),
     )
     assert repository.accept_index_event(event).replayed is False
     assert service.process_once() == 1
     with repository.database.connection() as connection:
         row = connection.execute(
-            "select budget_bucket, call_type, status from ai_cost_ledger where operation_key = %s",
+            """
+            select cost.reservation_id, cost.budget_bucket, cost.call_type, cost.status,
+                   provider.call_id, provider.trace_id, provider.observation_id
+            from ai_cost_ledger cost
+            join ai_provider_calls provider on provider.reservation_id = cost.reservation_id
+            where cost.operation_key = %s
+            """,
             (f"index:{event.eventId}:0",),
         ).fetchone()
-    assert row == {"budget_bucket": "SYSTEM", "call_type": "INDEX_EMBEDDING", "status": "SETTLED"}
+    assert row["budget_bucket"] == "SYSTEM"
+    assert row["call_type"] == "INDEX_EMBEDDING"
+    assert row["status"] == "SETTLED"
+    assert row["trace_id"] == row["reservation_id"].hex
+    assert row["observation_id"] == row["call_id"].hex
 
 
 @pytest.mark.integration
@@ -844,6 +929,7 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
         repository,
         settings,
         Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
+        TraceAdapter(settings),
     )
     assert service.process_once(limit=1) == 1
     with repository.database.connection() as connection:
@@ -992,6 +1078,7 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
         repository,
         settings,
         Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
+        TraceAdapter(settings),
     )
 
     assert service.reconcile_once() is True
@@ -1056,7 +1143,12 @@ class StaticBackend:
         return citations
 
 
-def runtime_for(repository: Repository, settings: Settings, backend: StaticBackend) -> StreamRuntime:
+def runtime_for(
+    repository: Repository,
+    settings: Settings,
+    backend: StaticBackend,
+    traces: TraceAdapter | None = None,
+) -> StreamRuntime:
     knowledge = KnowledgeRepository(repository.database, FakeEmbeddingProvider())
     return StreamRuntime(
         settings,
@@ -1064,6 +1156,6 @@ def runtime_for(repository: Repository, settings: Settings, backend: StaticBacke
         backend,
         FakeGenerationProvider(settings),
         knowledge,
-        TraceAdapter(settings),
+        traces or TraceAdapter(settings),
         Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
     )

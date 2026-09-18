@@ -27,7 +27,10 @@ class FeedbackExporter:
                     reason_code=item.reason_code,
                     timestamp=item.first_recorded_at,
                 ):
-                    self.repository.release_feedback_export(item, "LANGFUSE_DISABLED")
+                    self.repository.release_feedback_export(
+                        item,
+                        "LANGFUSE_DISABLED" if not self.traces.enabled else "LANGFUSE_EXPORT_FAILED",
+                    )
                     continue
                 self.repository.mark_feedback_exported(item)
                 exported += 1

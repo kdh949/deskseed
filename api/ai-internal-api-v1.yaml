@@ -296,9 +296,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Service Status Internal V1 Status Get
+                $ref: '#/components/schemas/ServiceStatus'
         '422':
           description: Validation Error
           content:
@@ -352,6 +350,27 @@ components:
       required:
       - replayed
       title: Accepted
+    BudgetStatus:
+      properties:
+        reservedMicrousd:
+          type: integer
+          minimum: 0.0
+          title: Reservedmicrousd
+        settledMicrousd:
+          type: integer
+          minimum: 0.0
+          title: Settledmicrousd
+        unknownMicrousd:
+          type: integer
+          minimum: 0.0
+          title: Unknownmicrousd
+      additionalProperties: false
+      type: object
+      required:
+      - reservedMicrousd
+      - settledMicrousd
+      - unknownMicrousd
+      title: BudgetStatus
     CancellationEnvelope:
       properties:
         schemaVersion:
@@ -433,6 +452,20 @@ components:
       - title
       - url
       title: Citation
+    DependencyStatus:
+      properties:
+        postgres:
+          type: boolean
+          title: Postgres
+        redis:
+          type: boolean
+          title: Redis
+      additionalProperties: false
+      type: object
+      required:
+      - postgres
+      - redis
+      title: DependencyStatus
     Feature:
       type: string
       enum:
@@ -849,6 +882,24 @@ components:
       - SUPERSEDED
       - EXPIRED
       title: JobStatus
+    KnowledgeIndexStatus:
+      properties:
+        publicRevisions:
+          type: integer
+          minimum: 0.0
+          title: Publicrevisions
+        lastReconciledAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lastreconciledat
+      additionalProperties: false
+      type: object
+      required:
+      - publicRevisions
+      - lastReconciledAt
+      title: KnowledgeIndexStatus
     OperationRequest:
       properties:
         operationId:
@@ -905,6 +956,60 @@ components:
       - answer
       - citations
       title: ReplyDraftResult
+    ServiceStatus:
+      properties:
+        ready:
+          type: boolean
+          title: Ready
+        dataAsOf:
+          type: string
+          format: date-time
+          title: Dataasof
+        dependencies:
+          $ref: '#/components/schemas/DependencyStatus'
+        providerMode:
+          type: string
+          enum:
+          - fake
+          - litellm
+          title: Providermode
+        liveProviderEnabled:
+          type: boolean
+          title: Liveproviderenabled
+        langfuseEnabled:
+          type: boolean
+          title: Langfuseenabled
+        telemetry:
+          $ref: '#/components/schemas/TelemetryExporterStatus'
+        jobCounts:
+          additionalProperties:
+            type: integer
+            minimum: 0.0
+          type: object
+          title: Jobcounts
+        budget:
+          $ref: '#/components/schemas/BudgetStatus'
+        index:
+          $ref: '#/components/schemas/KnowledgeIndexStatus'
+        deadLetterCount:
+          type: integer
+          minimum: 0.0
+          title: Deadlettercount
+      additionalProperties: false
+      type: object
+      required:
+      - ready
+      - dataAsOf
+      - dependencies
+      - providerMode
+      - liveProviderEnabled
+      - langfuseEnabled
+      - telemetry
+      - jobCounts
+      - budget
+      - index
+      - deadLetterCount
+      title: ServiceStatus
     SummaryResult:
       properties:
         type:
@@ -949,6 +1054,74 @@ components:
       - unresolvedItems
       - nextChecks
       title: SummaryResult
+    TelemetryDropCounters:
+      properties:
+        jobStart:
+          type: integer
+          minimum: 0.0
+          title: Jobstart
+          description: job trace 시작 export 실패 누적 횟수
+          examples:
+          - 0
+        jobUpdate:
+          type: integer
+          minimum: 0.0
+          title: Jobupdate
+          description: job outcome update export 실패 누적 횟수
+          examples:
+          - 0
+        jobEnd:
+          type: integer
+          minimum: 0.0
+          title: Jobend
+          description: job trace 종료 export 실패 누적 횟수
+          examples:
+          - 0
+        providerObservation:
+          type: integer
+          minimum: 0.0
+          title: Providerobservation
+          description: canonical receipt 저장 뒤 provider observation export 실패 누적 횟수
+          examples:
+          - 1
+        flush:
+          type: integer
+          minimum: 0.0
+          title: Flush
+          description: exporter flush 실패 누적 횟수
+          examples:
+          - 0
+      additionalProperties: false
+      type: object
+      required:
+      - jobStart
+      - jobUpdate
+      - jobEnd
+      - providerObservation
+      - flush
+      title: TelemetryDropCounters
+    TelemetryExporterStatus:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+          description: 현재 프로세스에 export client가 구성되었는지 여부
+        dropped:
+          $ref: '#/components/schemas/TelemetryDropCounters'
+        feedbackRetries:
+          type: integer
+          minimum: 0.0
+          title: Feedbackretries
+          description: feedback score export 실패로 durable retry가 필요한 누적 횟수
+          examples:
+          - 2
+      additionalProperties: false
+      type: object
+      required:
+      - enabled
+      - dropped
+      - feedbackRetries
+      title: TelemetryExporterStatus
     TriageResult:
       properties:
         type:

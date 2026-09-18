@@ -18,7 +18,7 @@ from .backend_client import (
 )
 from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
-from .observability import TraceAdapter, TraceAttributes
+from .observability import CallTraceAttributes, TraceAdapter, TraceAttributes
 from .pricing import PricingCatalog
 from .prompting import prompt_for
 from .providers import GenerationProvider, InvalidProviderOutputError
@@ -183,9 +183,10 @@ class StreamRuntime:
             prompt_version=prompt_for(claim.feature).version,
             graph_version=self.settings.graph_version,
             config_version=self.settings.config_version,
-            context_revision=claim.context_revision,
+            context_policy_version=claim.context_policy_version,
             generation=claim.generation,
             lease_epoch=claim.lease_epoch,
+            traceparent=claim.traceparent,
         )
         with self.traces.job(attributes), self._heartbeat(claim):
             try:
@@ -356,9 +357,9 @@ class StreamRuntime:
             self.pricing.context_price_band,
         )
         self.repository.mark_provider_call_dispatching(call_id)
-        return call_id, self._receipt_recorder(call_id)
+        return call_id, self._receipt_recorder(call_id, claim.job_id.hex, call_type)
 
-    def _receipt_recorder(self, expected_call_id: UUID) -> ReceiptRecorder:
+    def _receipt_recorder(self, expected_call_id: UUID, trace_id: str, stage: str) -> ReceiptRecorder:
         def record(receipt: ProviderCallReceipt) -> None:
             if receipt.call_id != expected_call_id:
                 raise ValueError("provider receipt call identity mismatch")
@@ -378,7 +379,17 @@ class StreamRuntime:
                     )
                 except ValueError:
                     known_cost = None
-            self.repository.record_provider_response(receipt, known_cost)
+            persisted_cost = self.repository.record_provider_response(receipt, known_cost)
+            self.traces.export_provider_call(
+                CallTraceAttributes(
+                    trace_id=trace_id,
+                    observation_id=expected_call_id.hex,
+                    stage=stage,
+                    pricing_version=self.pricing.version,
+                    known_cost_microusd=persisted_cost,
+                ),
+                receipt,
+            )
 
         return record
 
