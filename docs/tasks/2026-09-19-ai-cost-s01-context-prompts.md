@@ -25,7 +25,7 @@
 - Requirements: REQ-AI-001, REQ-AI-002, REQ-AI-003.
 - UI/routes: no rendered UI change; current AGT-004 client remains compatible.
 - `public-comments-v2` adds required `sequence` and `authorRole` to each PUBLIC source comment.
-- `sequence` is the persisted per-ticket `ticket_comments.sequence_number`; ordering is `sequence_number`, never timestamp inference. The current schema lacks this column, so S01 adds it with a deterministic `(created_at, id)` backfill and serialized assignment for later inserts.
+- `ticket_comments.sequence_number` is the persisted canonical per-ticket order; ordering never relies on timestamp inference after migration. The source `sequence` is the contiguous ordinal of the PUBLIC-only projection ordered by that canonical value, so an INTERNAL comment cannot be inferred from a sequence gap. The current schema lacks the canonical column, so S01 adds it with a deterministic `(created_at, id)` backfill and serialized assignment for later inserts.
 - Source author mapping is `CUSTOMER -> CUSTOMER`, `AGENT -> STAFF`, `INTEGRATION_CLIENT -> INTEGRATION_CLIENT`, `SYSTEM/AUTOMATION -> SYSTEM`; an unknown future stored value maps to `UNKNOWN` rather than being inferred from body or display name.
 - New jobs use `public-comments-v2`. The AI reader accepts v1 and v2 so rollout can deploy reader compatibility before the Backend v2 writer. A v1 binding keeps its v1 revision semantics and source shape.
 - Supported normalized options are deliberately narrow: language `ko` for all features and tone `calm` for reply draft. Omitted options receive these defaults; unknown values fail before outbox creation.
@@ -53,7 +53,7 @@
 - If no CUSTOMER comment exists, the latest PUBLIC comment is protected and the provider is told only its stored non-customer role.
 - First PUBLIC comment and latest STAFF response are anchors added when the remaining bound allows; duplicate anchors are removed by sequence.
 - Short conversations preserve exact bodies and order. Earlier comments are selected newest-first for capacity, then emitted in canonical sequence order.
-- Every ticket has one monotonic comment sequence. Concurrent inserts serialize on the ticket row and the database rejects duplicate `(ticket_id, sequence_number)` values.
+- Every ticket has one monotonic stored comment sequence. Concurrent inserts serialize on the ticket row and the database rejects duplicate `(ticket_id, sequence_number)` values. The AI source renumbers only the authorized PUBLIC projection contiguously and does not expose INTERNAL gaps.
 - v1 in-flight jobs are not reinterpreted as v2 and cannot be revived by a policy mismatch.
 - Required source access audit still persists before a body response; audit failure remains fail closed.
 - No external network call occurs in a Backend transaction. Provider retry remains disabled.
@@ -103,7 +103,7 @@ Live Korean tone/language quality remains Pending and the fake-provider evaluato
 ## Compatibility and migration
 
 - OpenAPI: source v2 is additive beside legacy v1; Core option strings become closed enums matching existing `ko/calm` clients.
-- Migration: V94 adds and backfills `sequence_number`, makes it non-null, adds `(ticket_id, sequence_number)` uniqueness, and assigns the next value under the ticket-row lock for new inserts. Rollback uses forward-fix or backup restore rather than dropping ordering facts.
+- Migration: V94 adds and backfills canonical `sequence_number`, makes it non-null, adds `(ticket_id, sequence_number)` uniqueness, and assigns the next value under the ticket-row lock for new inserts. API projection preserves its separate PUBLIC-only ordinal. Rollback uses forward-fix or backup restore rather than dropping ordering facts.
 - Deployment: AI reader compatibility first, then Backend v2 writer, then workers using v2 prompts. Existing v1 jobs drain under v1 semantics.
 - Rollback: stop new AI admission, return writer to v1 while the dual reader remains, drain jobs, then roll back provider/prompt code. Canonical source/audit remains available.
 
