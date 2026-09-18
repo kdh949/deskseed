@@ -13,13 +13,20 @@ from .config import Settings
 from .pricing import PricingCatalog, Usage
 from .prompting import prompt_for
 from .retrieval import KnowledgeChunk
-from .schemas import Feature, ReplyDraftResult, SourceContext, SummaryResult, TriageResult, TypedResult
+from .schemas import (
+    Feature,
+    ProviderOutput,
+    ReplyProviderOutput,
+    SourceContext,
+    SummaryResult,
+    TriageResult,
+)
 from .usage_normalization import bounded_text, normalize_litellm_usage, value
 
 
 @dataclass(frozen=True)
 class ProviderResult:
-    result: TypedResult
+    result: ProviderOutput
     receipt: ProviderCallReceipt
     prompt_version: str
 
@@ -147,22 +154,11 @@ class FakeGenerationProvider(GenerationProvider):
         call_id: UUID,
         record_receipt: ReceiptRecorder,
     ) -> ProviderResult:
-        if knowledge:
-            first = knowledge[0]
-            answer = f"문의해 주셔서 감사합니다. 공개 도움말 기준으로 안내드립니다: {first.content[:500]}"
-            citations = [
-                {
-                    "articleId": first.article_id,
-                    "revisionId": first.revision_id,
-                    "chunkId": first.chunk_id,
-                    "title": first.title,
-                    "url": f"/help/articles/{first.slug}",
-                }
-            ]
-        else:
-            answer = "문의해 주셔서 감사합니다. 확인 가능한 공개 도움말 근거가 부족하여 상담사의 추가 확인이 필요합니다."
-            citations = []
-        result = ReplyDraftResult(answer=answer, citations=citations)
+        if not knowledge:
+            raise ValueError("reply provider requires approved knowledge")
+        first = knowledge[0]
+        answer = f"문의해 주셔서 감사합니다. 공개 도움말 기준으로 안내드립니다: {first.content[:500]}"
+        result = ReplyProviderOutput(answer=answer, sourceRefs=["S1"])
         prompt = prompt_for(Feature.REPLY_DRAFT)
         usage = _fake_usage(
             _conversation(context) + json.dumps(dict(options), sort_keys=True),
@@ -228,7 +224,7 @@ class LiteLlmGenerationProvider(GenerationProvider):
         return self._complete(
             self.settings.model_standard,
             context,
-            ReplyDraftResult,
+            ReplyProviderOutput,
             knowledge,
             options,
             Feature.REPLY_DRAFT,
@@ -240,7 +236,7 @@ class LiteLlmGenerationProvider(GenerationProvider):
         self,
         model: str,
         context: SourceContext,
-        schema: type[TypedResult],
+        schema: type[ProviderOutput],
         knowledge: list[KnowledgeChunk],
         options: Mapping[str, str],
         feature: Feature,
@@ -310,16 +306,16 @@ def _fake_receipt(call_id: UUID, model: str, usage: Usage) -> ProviderCallReceip
 def _feature_config(
     settings: Settings,
     feature: Feature,
-) -> tuple[str, type[TypedResult], int]:
+) -> tuple[str, type[ProviderOutput], int]:
     if feature == Feature.REPLY_DRAFT:
-        return settings.model_standard, ReplyDraftResult, 2048
+        return settings.model_standard, ReplyProviderOutput, 2048
     if feature == Feature.SUMMARY:
         return settings.model_fast, SummaryResult, 1024
     return settings.model_fast, TriageResult, 768
 
 
-def _output_limit(schema: type[TypedResult]) -> int:
-    if schema is ReplyDraftResult:
+def _output_limit(schema: type[ProviderOutput]) -> int:
+    if schema is ReplyProviderOutput:
         return 2048
     if schema is SummaryResult:
         return 1024
@@ -329,7 +325,7 @@ def _output_limit(schema: type[TypedResult]) -> int:
 def _request_contract(
     model: str,
     context: SourceContext,
-    schema: type[TypedResult],
+    schema: type[ProviderOutput],
     knowledge: list[KnowledgeChunk],
     options: Mapping[str, str],
     feature: Feature,
@@ -348,14 +344,11 @@ def _request_contract(
     ]
     public_knowledge = [
         {
-            "articleId": str(item.article_id),
-            "revisionId": str(item.revision_id),
-            "chunkId": str(item.chunk_id),
+            "sourceRef": f"S{index}",
             "title": item.title,
-            "slug": item.slug,
             "content": item.content,
         }
-        for item in knowledge
+        for index, item in enumerate(knowledge, start=1)
     ]
     return {
         "model": model,
@@ -378,7 +371,7 @@ def _request_contract(
             "json_schema": {"name": schema.__name__, "strict": True, "schema": schema.model_json_schema()},
         },
         "max_completion_tokens": output_limit,
-        "reasoning_effort": "none" if schema is not ReplyDraftResult else "low",
+        "reasoning_effort": "none" if schema is not ReplyProviderOutput else "low",
         "service_tier": "default",
     }
 

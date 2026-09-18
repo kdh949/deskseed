@@ -10,14 +10,17 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from deskseed_ai.backend_client import BackendSupersededError, PublicKnowledgeArticle
+from deskseed_ai.backend_client import (
+    BackendAuthorizationError,
+    PublicKnowledgeArticle,
+)
 from deskseed_ai.call_receipts import ProviderCallReceipt, UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.indexing import IndexingService
 from deskseed_ai.main import app
 from deskseed_ai.observability import TraceAdapter
 from deskseed_ai.pricing import Usage
-from deskseed_ai.providers import FakeGenerationProvider, InvalidProviderOutputError
+from deskseed_ai.providers import FakeGenerationProvider, InvalidProviderOutputError, ProviderResult
 from deskseed_ai.queue import StreamRuntime
 from deskseed_ai.repository import (
     ActiveLeaseError,
@@ -38,6 +41,7 @@ from deskseed_ai.schemas import (
     JobEnvelope,
     JobStatus,
     PublicComment,
+    ReplyProviderOutput,
     SourceContext,
 )
 
@@ -168,7 +172,7 @@ def test_fake_provider_completes_typed_job_through_postgres_and_redis(
             "select status, settled_microusd from ai_cost_ledger where job_id = %s", (item.jobId,)
         ).fetchone()
         calls = connection.execute(
-            "select call_id, trace_id, observation_id from ai_provider_calls where job_id = %s",
+            "select call_id, trace_id, observation_id, stage from ai_provider_calls where job_id = %s",
             (item.jobId,),
         ).fetchall()
     assert row["trace_id"] == item.jobId.hex
@@ -178,6 +182,7 @@ def test_fake_provider_completes_typed_job_through_postgres_and_redis(
     if feature == Feature.REPLY_DRAFT:
         assert row["result_ciphertext"] is None
         assert row["result_nonce"] is None
+        assert [call["stage"] for call in calls] == ["QUERY_EMBEDDING"]
     else:
         assert bytes(row["result_ciphertext"]).find("ticket".encode()) == -1
         assert row["result_nonce"] is not None
@@ -940,7 +945,7 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
 
 
 @pytest.mark.integration
-def test_reply_candidates_are_reauthorized_before_provider_receives_content(
+def test_reply_skips_generation_when_all_retrieved_candidates_are_withdrawn(
     repository: Repository, settings: Settings
 ) -> None:
     article_id = uuid4()
@@ -975,7 +980,7 @@ def test_reply_candidates_are_reauthorized_before_provider_receives_content(
 
     class WithdrawnBackend(StaticBackend):
         def authorize_citations(self, job_id, citations):
-            raise BackendSupersededError("withdrawn")
+            return []
 
     runtime = runtime_for(repository, settings, WithdrawnBackend(item))
     provider_called = False
@@ -992,7 +997,11 @@ def test_reply_candidates_are_reauthorized_before_provider_receives_content(
     runtime._execute(claim, None)
 
     assert provider_called is False
-    assert repository.get_job(item.jobId).status == JobStatus.SUPERSEDED
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.NEEDS_REVIEW
+    assert job.errorCode == "NO_APPROVED_KNOWLEDGE"
+    assert job.result is None
+    assert job.canInsert is False
     with repository.database.connection() as connection:
         calls = connection.execute(
             """
@@ -1002,6 +1011,168 @@ def test_reply_candidates_are_reauthorized_before_provider_receives_content(
             (item.jobId,),
         ).fetchall()
     assert calls == [{"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"}]
+
+
+@pytest.mark.integration
+def test_reply_uses_only_partial_current_public_authorization_and_persists_source_map(
+    repository: Repository, settings: Settings
+) -> None:
+    chunks = index_public_chunks(repository, 2)
+    item = envelope(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+
+    class PartialBackend(StaticBackend):
+        def authorize_citations(self, job_id, citations):
+            assert job_id == self.item.jobId
+            if len(citations) > 1:
+                return [
+                    citations[-1].model_copy(
+                        update={"title": "Canonical 공개 도움말", "url": "/help/articles/canonical-help"}
+                    )
+                ]
+            return citations
+
+    runtime = runtime_for(repository, settings, PartialBackend(item))
+    received_chunk_ids: list = []
+    received_titles: list[str] = []
+    original_reply = runtime.provider.reply
+
+    def reply(context, approved, options, call_id, record_receipt):
+        received_chunk_ids.extend(chunk.chunk_id for chunk in approved)
+        received_titles.extend(chunk.title for chunk in approved)
+        return original_reply(context, approved, options, call_id, record_receipt)
+
+    runtime.provider.reply = reply
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.SUCCEEDED
+    assert job.result is not None
+    assert len(job.result.citations) == 1
+    assert received_chunk_ids == [job.result.citations[0].chunkId]
+    assert received_titles == ["Canonical 공개 도움말"]
+    assert job.result.citations[0].url == "/help/articles/canonical-help"
+    assert received_chunk_ids[0] in {chunk.chunk_id for chunk in chunks}
+    with repository.database.connection() as connection:
+        row = connection.execute(
+            "select source_map_digest, source_chunk_ids from ai_jobs where job_id = %s",
+            (item.jobId,),
+        ).fetchone()
+        calls = connection.execute(
+            "select stage, settlement_status from ai_provider_calls where job_id = %s order by created_at",
+            (item.jobId,),
+        ).fetchall()
+    assert len(row["source_map_digest"]) == 64
+    assert row["source_chunk_ids"] == received_chunk_ids
+    assert calls == [
+        {"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"},
+        {"stage": "GENERATION", "settlement_status": "SETTLED"},
+    ]
+
+
+@pytest.mark.integration
+def test_reply_source_authorization_failure_is_not_reported_as_no_evidence(
+    repository: Repository, settings: Settings
+) -> None:
+    item = envelope(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+
+    class UnavailableBackend(StaticBackend):
+        def authorize_citations(self, job_id, citations):
+            raise BackendAuthorizationError("synthetic 503")
+
+    runtime = runtime_for(repository, settings, UnavailableBackend(item))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.FAILED
+    assert job.errorCode == "SOURCE_AUTHORIZATION_FAILED"
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select stage, settlement_status from ai_provider_calls where job_id = %s order by created_at",
+            (item.jobId,),
+        ).fetchall()
+    assert calls == [{"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"}]
+
+
+@pytest.mark.integration
+def test_reply_result_is_superseded_when_selected_source_is_withdrawn_after_generation(
+    repository: Repository, settings: Settings
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+
+    class WithdrawAfterGenerationBackend(StaticBackend):
+        authorization_count = 0
+
+        def authorize_citations(self, job_id, citations):
+            self.authorization_count += 1
+            return citations if self.authorization_count == 1 else []
+
+    runtime = runtime_for(repository, settings, WithdrawAfterGenerationBackend(item))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.SUPERSEDED
+    assert job.result is None
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select stage, settlement_status from ai_provider_calls where job_id = %s order by created_at",
+            (item.jobId,),
+        ).fetchall()
+        metadata = connection.execute(
+            "select source_map_digest, source_chunk_ids from ai_jobs where job_id = %s",
+            (item.jobId,),
+        ).fetchone()
+    assert calls == [
+        {"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"},
+        {"stage": "GENERATION", "settlement_status": "SETTLED"},
+    ]
+    assert metadata == {"source_map_digest": None, "source_chunk_ids": None}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("source_refs", [["S99"], ["S1", "S1"], []])
+def test_reply_rejects_unknown_duplicate_or_empty_source_refs_after_known_generation_cost(
+    repository: Repository, settings: Settings, source_refs: list[str]
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+
+    class InvalidRefsProvider(FakeGenerationProvider):
+        def reply(self, context, knowledge, options, call_id, record_receipt):
+            generated = super().reply(context, knowledge, options, call_id, record_receipt)
+            return ProviderResult(
+                ReplyProviderOutput.model_construct(answer="합성 답변", sourceRefs=source_refs),
+                generated.receipt,
+                generated.prompt_version,
+            )
+
+    invalid_provider = InvalidRefsProvider(settings)
+    runtime.provider = invalid_provider
+    runtime.reply_workflow.provider = invalid_provider
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.NEEDS_REVIEW
+    assert job.errorCode == "MODEL_OUTPUT_INVALID"
+    assert job.result is None
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select stage, settlement_status from ai_provider_calls where job_id = %s order by created_at",
+            (item.jobId,),
+        ).fetchall()
+    assert calls == [
+        {"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"},
+        {"stage": "GENERATION", "settlement_status": "SETTLED"},
+    ]
 
 
 @pytest.mark.integration
@@ -1141,6 +1312,45 @@ class StaticBackend:
     def authorize_citations(self, job_id, citations):
         assert job_id == self.item.jobId
         return citations
+
+
+def index_public_chunks(repository: Repository, count: int) -> list:
+    knowledge = KnowledgeRepository(repository.database, FakeEmbeddingProvider())
+    indexed = []
+    for ordinal in range(count):
+        article_id = uuid4()
+        revision_id = uuid4()
+        event = IndexEvent(
+            schemaVersion=1,
+            eventId=uuid4(),
+            workspaceKey="default",
+            articleId=article_id,
+            revisionId=revision_id,
+            action="UPSERT",
+            sourceVersion=1,
+            publicRevision=f"{ordinal + 1:x}" * 64,
+            createdAt=datetime.now(UTC),
+        )
+        repository.accept_index_event(event)
+        _, applied = knowledge.replace_public_revision(
+            "default",
+            article_id,
+            revision_id,
+            1,
+            event.eventId,
+            f"public-help-{ordinal + 1}",
+            f"공개 도움말 {ordinal + 1}",
+            event.publicRevision,
+            [f"공개 해결 절차 {ordinal + 1}"],
+        )
+        assert applied
+    with repository.database.connection() as connection:
+        indexed = connection.execute(
+            "select chunk_id, article_id, revision_id, title, slug, content, 1.0 as score "
+            "from ai_kb_chunks join ai_kb_revisions using (article_id, revision_id) "
+            "where ai_kb_chunks.workspace_key = 'default' order by chunk_id"
+        ).fetchall()
+    return [SimpleNamespace(**row) for row in indexed]
 
 
 def runtime_for(
