@@ -3,27 +3,54 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
+from uuid import UUID
 
+from pydantic import ValidationError
+
+from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
-from .pricing import Usage
+from .pricing import PricingCatalog, Usage
 from .prompting import prompt_for
 from .retrieval import KnowledgeChunk
 from .schemas import Feature, ReplyDraftResult, SourceContext, SummaryResult, TriageResult, TypedResult
+from .usage_normalization import bounded_text, normalize_litellm_usage, value
 
 
 @dataclass(frozen=True)
 class ProviderResult:
     result: TypedResult
-    usage: Usage
-    model: str
+    receipt: ProviderCallReceipt
     prompt_version: str
 
 
+@dataclass(frozen=True)
+class ProviderResponseEnvelope:
+    raw_structured_output: str | None
+    receipt: ProviderCallReceipt
+
+
+class InvalidProviderOutputError(RuntimeError):
+    pass
+
+
 class GenerationProvider:
-    def summary(self, context: SourceContext, options: Mapping[str, str]) -> ProviderResult:
+    def summary(
+        self,
+        context: SourceContext,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
         raise NotImplementedError
 
-    def triage(self, context: SourceContext, options: Mapping[str, str]) -> ProviderResult:
+    def triage(
+        self,
+        context: SourceContext,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
         raise NotImplementedError
 
     def reply(
@@ -31,15 +58,35 @@ class GenerationProvider:
         context: SourceContext,
         knowledge: list[KnowledgeChunk],
         options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
     ) -> ProviderResult:
         raise NotImplementedError
+
+    def estimate_input_tokens(
+        self,
+        pricing: PricingCatalog,
+        feature: Feature,
+        context: SourceContext,
+        knowledge: list[KnowledgeChunk],
+        options: Mapping[str, str],
+    ) -> int:
+        model, schema, output_limit = _feature_config(self.settings, feature)
+        request = _request_contract(model, context, schema, knowledge, options, feature, output_limit)
+        return pricing.count_json_tokens(model, request)
 
 
 class FakeGenerationProvider(GenerationProvider):
     def __init__(self, settings: Settings):
         self.settings = settings
 
-    def summary(self, context: SourceContext, options: Mapping[str, str]) -> ProviderResult:
+    def summary(
+        self,
+        context: SourceContext,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
         text = _conversation(context)
         result = SummaryResult(
             problem=text[:500],
@@ -48,14 +95,22 @@ class FakeGenerationProvider(GenerationProvider):
             nextChecks=["공개 대화의 최신 상태 확인"],
         )
         prompt = prompt_for(Feature.SUMMARY)
+        usage = _fake_usage(text + json.dumps(dict(options), sort_keys=True), result.model_dump_json())
+        receipt = _fake_receipt(call_id, self.settings.model_fast, usage)
+        record_receipt(receipt)
         return ProviderResult(
             result,
-            _fake_usage(text + json.dumps(dict(options), sort_keys=True), result.model_dump_json()),
-            self.settings.model_fast,
+            receipt,
             prompt.version,
         )
 
-    def triage(self, context: SourceContext, options: Mapping[str, str]) -> ProviderResult:
+    def triage(
+        self,
+        context: SourceContext,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
         text = _conversation(context).lower()
         urgent = any(word in text for word in ("긴급", "즉시", "장애", "결제"))
         if "결제" in text or "환불" in text:
@@ -75,10 +130,12 @@ class FakeGenerationProvider(GenerationProvider):
             reasons=["PUBLIC 대화의 합성 규칙 기반 분류"],
         )
         prompt = prompt_for(Feature.TRIAGE)
+        usage = _fake_usage(text + json.dumps(dict(options), sort_keys=True), result.model_dump_json())
+        receipt = _fake_receipt(call_id, self.settings.model_fast, usage)
+        record_receipt(receipt)
         return ProviderResult(
             result,
-            _fake_usage(text + json.dumps(dict(options), sort_keys=True), result.model_dump_json()),
-            self.settings.model_fast,
+            receipt,
             prompt.version,
         )
 
@@ -87,6 +144,8 @@ class FakeGenerationProvider(GenerationProvider):
         context: SourceContext,
         knowledge: list[KnowledgeChunk],
         options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
     ) -> ProviderResult:
         if knowledge:
             first = knowledge[0]
@@ -105,13 +164,15 @@ class FakeGenerationProvider(GenerationProvider):
             citations = []
         result = ReplyDraftResult(answer=answer, citations=citations)
         prompt = prompt_for(Feature.REPLY_DRAFT)
+        usage = _fake_usage(
+            _conversation(context) + json.dumps(dict(options), sort_keys=True),
+            result.model_dump_json(),
+        )
+        receipt = _fake_receipt(call_id, self.settings.model_standard, usage)
+        record_receipt(receipt)
         return ProviderResult(
             result,
-            _fake_usage(
-                _conversation(context) + json.dumps(dict(options), sort_keys=True),
-                result.model_dump_json(),
-            ),
-            self.settings.model_standard,
+            receipt,
             prompt.version,
         )
 
@@ -120,17 +181,49 @@ class LiteLlmGenerationProvider(GenerationProvider):
     def __init__(self, settings: Settings):
         self.settings = settings
 
-    def summary(self, context: SourceContext, options: Mapping[str, str]) -> ProviderResult:
-        return self._complete(self.settings.model_fast, context, SummaryResult, [], options, Feature.SUMMARY)
+    def summary(
+        self,
+        context: SourceContext,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        return self._complete(
+            self.settings.model_fast,
+            context,
+            SummaryResult,
+            [],
+            options,
+            Feature.SUMMARY,
+            call_id,
+            record_receipt,
+        )
 
-    def triage(self, context: SourceContext, options: Mapping[str, str]) -> ProviderResult:
-        return self._complete(self.settings.model_fast, context, TriageResult, [], options, Feature.TRIAGE)
+    def triage(
+        self,
+        context: SourceContext,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        return self._complete(
+            self.settings.model_fast,
+            context,
+            TriageResult,
+            [],
+            options,
+            Feature.TRIAGE,
+            call_id,
+            record_receipt,
+        )
 
     def reply(
         self,
         context: SourceContext,
         knowledge: list[KnowledgeChunk],
         options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
     ) -> ProviderResult:
         return self._complete(
             self.settings.model_standard,
@@ -139,6 +232,8 @@ class LiteLlmGenerationProvider(GenerationProvider):
             knowledge,
             options,
             Feature.REPLY_DRAFT,
+            call_id,
+            record_receipt,
         )
 
     def _complete(
@@ -149,71 +244,38 @@ class LiteLlmGenerationProvider(GenerationProvider):
         knowledge: list[KnowledgeChunk],
         options: Mapping[str, str],
         feature: Feature,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
     ) -> ProviderResult:
         from litellm import completion
 
-        prompt = prompt_for(feature)
-        public_messages = [
-            {
-                "commentRef": f"C{index}",
-                "authorRole": comment.authorRole.value if comment.authorRole is not None else "UNKNOWN",
-                "sequence": comment.sequence if comment.sequence is not None else index,
-                "createdAt": comment.createdAt.isoformat(),
-                "body": comment.body,
-            }
-            for index, comment in enumerate(context.comments, start=1)
-        ]
-        public_knowledge = [
-            {
-                "articleId": str(item.article_id),
-                "revisionId": str(item.revision_id),
-                "chunkId": str(item.chunk_id),
-                "title": item.title,
-                "slug": item.slug,
-                "content": item.content,
-            }
-            for item in knowledge
-        ]
+        output_limit = _output_limit(schema)
+        request = _request_contract(model, context, schema, knowledge, options, feature, output_limit)
         response = completion(
             model=model,
             api_key=self.settings.openai_api_key.get_secret_value(),
-            messages=[
-                {
-                    "role": "system",
-                    "content": prompt.content,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "options": dict(options),
-                            "publicConversation": public_messages,
-                            "approvedPublicKnowledge": public_knowledge,
-                        },
-                        ensure_ascii=False,
-                    ),
-                },
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": schema.__name__, "strict": True, "schema": schema.model_json_schema()},
-            },
+            messages=request["messages"],
+            response_format=request["response_format"],
             reasoning_effort="none" if model == self.settings.model_fast else "low",
             store=False,
             num_retries=0,
             timeout=min(45, self.settings.job_timeout_seconds),
-            max_completion_tokens=(
-                2048 if schema is ReplyDraftResult else 1024 if schema is SummaryResult else 768
-            ),
+            max_completion_tokens=output_limit,
+            service_tier="default",
         )
-        result = schema.model_validate_json(response.choices[0].message.content)
-        usage = Usage(
-            input_tokens=int(response.usage.prompt_tokens),
-            cached_input_tokens=int(getattr(response.usage, "cache_read_input_tokens", 0) or 0),
-            output_tokens=int(response.usage.completion_tokens),
-            cache_write_tokens=int(getattr(response.usage, "cache_creation_input_tokens", 0) or 0),
+        receipt = _litellm_receipt(call_id, model, response)
+        envelope = ProviderResponseEnvelope(
+            raw_structured_output=getattr(response.choices[0].message, "content", None),
+            receipt=receipt,
         )
-        return ProviderResult(result, usage, model, prompt.version)
+        record_receipt(envelope.receipt)
+        if envelope.raw_structured_output is None:
+            raise InvalidProviderOutputError("provider response has no structured output")
+        try:
+            result = schema.model_validate_json(envelope.raw_structured_output)
+        except (ValidationError, ValueError, TypeError) as exception:
+            raise InvalidProviderOutputError("provider structured output is invalid") from exception
+        return ProviderResult(result, receipt, prompt_for(feature).version)
 
 
 def provider_for(settings: Settings) -> GenerationProvider:
@@ -227,4 +289,114 @@ def _conversation(context: SourceContext) -> str:
 
 
 def _fake_usage(input_text: str, output_text: str) -> Usage:
-    return Usage(max(1, len(input_text) // 4), 0, max(1, len(output_text) // 4))
+    return Usage(max(1, len(input_text) // 4), 0, 0, max(1, len(output_text) // 4))
+
+
+def _fake_receipt(call_id: UUID, model: str, usage: Usage) -> ProviderCallReceipt:
+    return ProviderCallReceipt(
+        call_id=call_id,
+        provider_request_id=f"fake-{call_id}",
+        requested_alias=model,
+        actual_model=model,
+        usage_schema_version="synthetic-v1",
+        usage_status=UsageStatus.KNOWN,
+        usage=usage,
+        usage_issue_code=None,
+        service_tier="standard",
+        context_price_band="short",
+    )
+
+
+def _feature_config(
+    settings: Settings,
+    feature: Feature,
+) -> tuple[str, type[TypedResult], int]:
+    if feature == Feature.REPLY_DRAFT:
+        return settings.model_standard, ReplyDraftResult, 2048
+    if feature == Feature.SUMMARY:
+        return settings.model_fast, SummaryResult, 1024
+    return settings.model_fast, TriageResult, 768
+
+
+def _output_limit(schema: type[TypedResult]) -> int:
+    if schema is ReplyDraftResult:
+        return 2048
+    if schema is SummaryResult:
+        return 1024
+    return 768
+
+
+def _request_contract(
+    model: str,
+    context: SourceContext,
+    schema: type[TypedResult],
+    knowledge: list[KnowledgeChunk],
+    options: Mapping[str, str],
+    feature: Feature,
+    output_limit: int,
+) -> dict[str, Any]:
+    prompt = prompt_for(feature)
+    public_messages = [
+        {
+            "commentRef": f"C{index}",
+            "authorRole": comment.authorRole.value if comment.authorRole is not None else "UNKNOWN",
+            "sequence": comment.sequence if comment.sequence is not None else index,
+            "createdAt": comment.createdAt.isoformat(),
+            "body": comment.body,
+        }
+        for index, comment in enumerate(context.comments, start=1)
+    ]
+    public_knowledge = [
+        {
+            "articleId": str(item.article_id),
+            "revisionId": str(item.revision_id),
+            "chunkId": str(item.chunk_id),
+            "title": item.title,
+            "slug": item.slug,
+            "content": item.content,
+        }
+        for item in knowledge
+    ]
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt.content},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "options": dict(options),
+                        "publicConversation": public_messages,
+                        "approvedPublicKnowledge": public_knowledge,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": schema.__name__, "strict": True, "schema": schema.model_json_schema()},
+        },
+        "max_completion_tokens": output_limit,
+        "reasoning_effort": "none" if schema is not ReplyDraftResult else "low",
+        "service_tier": "default",
+    }
+
+
+def _litellm_receipt(call_id: UUID, requested_alias: str, response: object) -> ProviderCallReceipt:
+    status, usage, issue = normalize_litellm_usage(value(response, "usage"))
+    service_tier = bounded_text(value(response, "service_tier"), 24)
+    if service_tier in {None, "default"}:
+        service_tier = "standard"
+    return ProviderCallReceipt(
+        call_id=call_id,
+        provider_request_id=bounded_text(value(response, "id"), 200),
+        requested_alias=requested_alias,
+        actual_model=bounded_text(value(response, "model"), 160),
+        usage_schema_version="litellm-1.101-v1",
+        usage_status=status,
+        usage=usage,
+        usage_issue_code=issue,
+        service_tier=service_tier,
+        context_price_band="short",
+    )

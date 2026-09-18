@@ -378,6 +378,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic-settings" },
     { name = "redis" },
+    { name = "tiktoken" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -401,6 +402,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3,<4" },
     { name = "pydantic-settings", specifier = ">=2.13,<3" },
     { name = "redis", specifier = ">=7.4,<8" },
+    { name = "tiktoken", specifier = ">=0.14,<0.15" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.42,<0.43" },
 ]
 

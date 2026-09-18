@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from .backend_client import BackendClient
+from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
-from .pricing import PricingCatalog, Usage
+from .pricing import PricingCatalog
 from .repository import ConflictError, Repository
 from .retrieval import KnowledgeRepository, chunk_public_article
 from .schemas import IndexEvent
@@ -124,31 +125,71 @@ class IndexingService:
         chunks = chunk_public_article(article.body)
         if not chunks:
             raise ConflictError("published knowledge article is empty")
-        token_upper_bound = sum(len(chunk.encode("utf-8")) for chunk in chunks)
-        reservation = self.repository.reserve_system_budget(
-            event.workspaceKey,
-            f"index:{event.eventId}",
-            self.settings.embedding_model,
-            self.pricing.version,
-            self.pricing.upper_bound_microusd(self.settings.embedding_model, token_upper_bound),
-        )
-        try:
-            tokens, _ = self.knowledge.replace_public_revision(
+        embedded = []
+        for ordinal, chunk in enumerate(chunks):
+            call_id = uuid4()
+            reservation = self.repository.reserve_system_budget(
                 event.workspaceKey,
-                article.articleId,
-                article.revisionId,
-                event.sourceVersion,
-                event.eventId,
-                article.slug,
-                article.title,
-                article.publicRevision,
-                chunks,
+                f"index:{event.eventId}:{ordinal}",
+                self.settings.embedding_model,
+                self.pricing.version,
+                self.pricing.upper_bound_microusd(
+                    self.settings.embedding_model,
+                    self.pricing.count_text_tokens(self.settings.embedding_model, chunk),
+                ),
             )
-            self.repository.settle_budget(
+            self.repository.create_provider_call(
                 reservation,
-                self.pricing.cost_microusd(self.settings.embedding_model, Usage(tokens, 0, 0)),
+                call_id,
+                self.settings.embedding_model,
+                self.pricing.version,
+                self.pricing.service_tier,
+                self.pricing.context_price_band,
             )
-            return tokens
-        except Exception:
-            self.repository.mark_budget_unknown(reservation)
-            raise
+            self.repository.mark_provider_call_dispatching(call_id)
+            try:
+                result = self.knowledge.embed_text(
+                    chunk,
+                    call_id,
+                    self._receipt_recorder(call_id),
+                )
+                embedded.append((chunk, result.vector, result.receipt))
+            except Exception:
+                self.repository.mark_provider_call_unknown(call_id)
+                raise
+        tokens, _ = self.knowledge.replace_public_revision_with_vectors(
+            event.workspaceKey,
+            article.articleId,
+            article.revisionId,
+            event.sourceVersion,
+            event.eventId,
+            article.slug,
+            article.title,
+            article.publicRevision,
+            embedded,
+        )
+        return tokens
+
+    def _receipt_recorder(self, expected_call_id: UUID) -> ReceiptRecorder:
+        def record(receipt: ProviderCallReceipt) -> None:
+            if receipt.call_id != expected_call_id:
+                raise ValueError("provider receipt call identity mismatch")
+            known_cost = None
+            if (
+                receipt.usage_status == UsageStatus.KNOWN
+                and receipt.usage is not None
+                and receipt.actual_model is not None
+            ):
+                try:
+                    known_cost = self.pricing.cost_microusd(
+                        receipt.requested_alias,
+                        receipt.actual_model,
+                        receipt.usage,
+                        receipt.service_tier,
+                        receipt.context_price_band,
+                    )
+                except ValueError:
+                    known_cost = None
+            self.repository.record_provider_response(receipt, known_cost)
+
+        return record

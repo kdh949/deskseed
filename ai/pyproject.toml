@@ -13,6 +13,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.3,<4",
   "pydantic-settings>=2.13,<3",
   "redis>=7.4,<8",
+  "tiktoken>=0.14,<0.15",
   "uvicorn[standard]>=0.42,<0.43",
 ]
 

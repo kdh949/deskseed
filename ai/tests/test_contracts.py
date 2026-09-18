@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
+from deskseed_ai.call_receipts import UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.pricing import PricingCatalog, Usage
 from deskseed_ai.prompting import prompt_for
@@ -15,6 +17,7 @@ from deskseed_ai.queue import InputTooLongError, _bounded_context
 from deskseed_ai.retrieval import LiteLlmEmbeddingProvider
 from deskseed_ai.schemas import AuthorRole, Feature, JobEnvelope, PublicComment, SourceContext
 from deskseed_ai.security import authenticate_machine
+from deskseed_ai.usage_normalization import normalize_litellm_usage
 
 
 def test_production_requires_explicit_machine_auth() -> None:
@@ -177,11 +180,90 @@ def test_source_context_v1_and_v2_shapes_are_compatible_but_not_mixed() -> None:
 def test_pricing_is_integer_and_rounds_up(tmp_path) -> None:
     path = tmp_path / "pricing.json"
     path.write_text(
-        '{"version":"v1","models":{"m":{"input":200000,"cachedInput":20000,"output":1200000}}}',
+        '{"version":"v1","serviceTier":"standard","contextPriceBand":"short",'
+        '"models":{"m":{"actualModels":["m"],"maxInputTokensForBand":1000,'
+        '"input":200000,"cachedInput":20000,"cacheWrite":250000,"output":1200000}}}',
         encoding="utf-8",
     )
     catalog = PricingCatalog(path)
-    assert catalog.cost_microusd("m", Usage(input_tokens=1, cached_input_tokens=0, output_tokens=1)) == 2
+    assert catalog.cost_microusd("m", "m", Usage(1, 0, 0, 1)) == 2
+
+
+def test_actual_model_selects_price_instead_of_requested_alias(tmp_path) -> None:
+    path = tmp_path / "pricing.json"
+    path.write_text(
+        '{"version":"v2","serviceTier":"standard","contextPriceBand":"short",'
+        '"models":{"cheap":{"actualModels":["cheap"],"maxInputTokensForBand":1000,'
+        '"input":100000,"output":100000},"expensive":{"actualModels":["expensive"],'
+        '"maxInputTokensForBand":1000,"input":900000,"output":900000}}}',
+        encoding="utf-8",
+    )
+    catalog = PricingCatalog(path)
+    assert catalog.cost_microusd("cheap", "expensive", Usage(1_000, 0, 0, 0)) == 900
+
+
+def test_usage_normalization_keeps_exclusive_cache_buckets() -> None:
+    status, usage, issue = normalize_litellm_usage(
+        {
+            "prompt_tokens": 1000,
+            "completion_tokens": 50,
+            "cache_read_input_tokens": 800,
+            "cache_creation_input_tokens": 200,
+            "prompt_tokens_details": {
+                "cached_tokens": 800,
+                "cache_creation_tokens": 200,
+            },
+            "completion_tokens_details": {"reasoning_tokens": 20},
+        }
+    )
+    assert (status, issue) == (UsageStatus.KNOWN, None)
+    assert usage == Usage(0, 800, 200, 50)
+
+
+def test_reviewed_luna_cache_fixture_has_exact_integer_cost() -> None:
+    catalog = PricingCatalog(Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json")
+    assert catalog.cost_microusd(
+        "openai/gpt-5.6-luna",
+        "gpt-5.6-luna",
+        Usage(0, 800, 200, 50),
+    ) == 126
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_status", "expected_issue"),
+    [
+        (
+            {
+                "prompt_tokens": 1000,
+                "completion_tokens": 50,
+                "cache_read_input_tokens": 800,
+                "prompt_tokens_details": {"cached_tokens": 700},
+            },
+            UsageStatus.INCONSISTENT,
+            "USAGE_DUPLICATE_MISMATCH",
+        ),
+        ({"completion_tokens": 5}, UsageStatus.UNAVAILABLE, "USAGE_TOTAL_MISSING"),
+        (
+            {"prompt_tokens": -1, "completion_tokens": 5},
+            UsageStatus.INCONSISTENT,
+            "USAGE_VALUE_INVALID",
+        ),
+        (
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "completion_tokens_details": {"reasoning_tokens": 6},
+            },
+            UsageStatus.INCONSISTENT,
+            "REASONING_EXCEEDS_OUTPUT",
+        ),
+    ],
+)
+def test_usage_normalization_rejects_unreliable_provider_facts(
+    payload, expected_status, expected_issue
+) -> None:
+    status, usage, issue = normalize_litellm_usage(payload)
+    assert (status, usage, issue) == (expected_status, None, expected_issue)
 
 
 def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
@@ -199,6 +281,9 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
                 '"attemptedActions":[],"unresolvedItems":[],"nextChecks":[]}'
             )))],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+            id="response-1",
+            model=settings.model_fast,
+            service_tier="default",
         )
 
     def fake_embedding(**kwargs):
@@ -206,6 +291,9 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
         return SimpleNamespace(
             data=[{"embedding": [0.0] * 1536}],
             usage=SimpleNamespace(total_tokens=3),
+            id="embedding-1",
+            model="openai/text-embedding-3-small",
+            service_tier="default",
         )
 
     monkeypatch.setattr(litellm, "completion", fake_completion)
@@ -241,8 +329,13 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
         ],
     )
 
-    generated = LiteLlmGenerationProvider(settings).summary(context, {"language": "ko"})
-    LiteLlmEmbeddingProvider("openai/text-embedding-3-small", "test-only-key", 30).embed("공개 도움말")
+    receipts = []
+    generated = LiteLlmGenerationProvider(settings).summary(
+        context, {"language": "ko"}, uuid4(), receipts.append
+    )
+    LiteLlmEmbeddingProvider("openai/text-embedding-3-small", "test-only-key", 30).embed(
+        "공개 도움말", uuid4(), receipts.append
+    )
 
     assert len(calls) == 2
     assert all(call["num_retries"] == 0 for call in calls)
@@ -268,6 +361,7 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     assert str(first_id) not in calls[0]["messages"][1]["content"]
     assert str(second_id) not in calls[0]["messages"][1]["content"]
     assert generated.prompt_version == prompt_for(Feature.SUMMARY).version
+    assert len(receipts) == 2
 
 
 def test_reply_context_keeps_latest_customer_suffix_and_canonical_order() -> None:

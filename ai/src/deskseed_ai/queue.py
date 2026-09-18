@@ -5,7 +5,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from redis import Redis
 from redis.exceptions import ResponseError
@@ -16,11 +16,12 @@ from .backend_client import (
     BackendPolicyDisabledError,
     BackendSupersededError,
 )
+from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
 from .observability import TraceAdapter, TraceAttributes
-from .pricing import PricingCatalog, Usage
+from .pricing import PricingCatalog
 from .prompting import prompt_for
-from .providers import GenerationProvider
+from .providers import GenerationProvider, InvalidProviderOutputError
 from .repository import (
     ActiveLeaseError,
     BudgetExceededError,
@@ -31,7 +32,7 @@ from .repository import (
 )
 from .retrieval import KnowledgeRepository
 from .schemas import AuthorRole, Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
-from .workflows import ReplyWorkflow
+from .workflows import ReplyWorkflow, reply_query
 
 LOGGER = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ class StreamRuntime:
         return handled
 
     def _execute(self, claim: ClaimedJob, traceparent: str | None) -> None:
-        reservations: list[UUID] = []
+        calls: list[UUID] = []
         attributes = TraceAttributes(
             job_id=claim.job_id,
             feature=claim.feature.value,
@@ -196,49 +197,74 @@ class StreamRuntime:
                 if model not in {policy.fastModelAlias, policy.standardModelAlias}:
                     raise BackendPolicyDisabledError("configured model alias differs from backend policy")
                 context = _bounded_context(context, claim.feature)
-                output_limit = 2048 if claim.feature == Feature.REPLY_DRAFT else 1024 if claim.feature == Feature.SUMMARY else 768
-                generation_reservation = self.repository.reserve_budget(
-                    claim,
-                    model,
-                    self.pricing.version,
-                    self.pricing.upper_bound_microusd(model, 16_000, output_limit),
-                    "GENERATION",
-                )
-                reservations.append(generation_reservation)
-                query_reservation = None
-                query_cost = 0
                 if claim.feature == Feature.REPLY_DRAFT:
-                    query_reservation = self.repository.reserve_budget(
+                    query = reply_query(context)
+                    query_call_id, query_recorder = self._prepare_call(
                         claim,
                         self.settings.embedding_model,
-                        self.pricing.version,
-                        self.pricing.upper_bound_microusd(self.settings.embedding_model, 2_000),
+                        self.pricing.count_text_tokens(self.settings.embedding_model, query),
+                        0,
                         "QUERY_EMBEDDING",
                     )
-                    reservations.append(query_reservation)
+                    calls.append(query_call_id)
                     self.repository.set_phase(claim, JobPhase.RETRIEVE)
+
+                    def prepare_generation(source_context, knowledge):
+                        call_id, recorder = self._prepare_call(
+                            claim,
+                            model,
+                            self.provider.estimate_input_tokens(
+                                self.pricing,
+                                claim.feature,
+                                source_context,
+                                knowledge,
+                                claim.options,
+                            ),
+                            2048,
+                            "GENERATION",
+                        )
+                        calls.append(call_id)
+                        self.repository.set_phase(claim, JobPhase.GENERATE)
+                        return call_id, recorder
+
                     reply_execution = self.reply_workflow.invoke(
                         context,
                         claim.workspace_key,
                         lambda candidates: self.backend.authorize_citations(claim.job_id, candidates),
                         claim.options,
+                        query_call_id,
+                        query_recorder,
+                        prepare_generation,
                     )
                     generated = reply_execution.generation
-                    query_cost = self.pricing.cost_microusd(
-                        self.settings.embedding_model,
-                        Usage(reply_execution.query_embedding_tokens, 0, 0),
-                    )
-                    self.repository.settle_budget(query_reservation, query_cost)
                 elif claim.feature == Feature.SUMMARY:
+                    call_id, recorder = self._prepare_call(
+                        claim,
+                        model,
+                        self.provider.estimate_input_tokens(
+                            self.pricing, claim.feature, context, [], claim.options
+                        ),
+                        1024,
+                        "GENERATION",
+                    )
+                    calls.append(call_id)
                     self.repository.set_phase(claim, JobPhase.GENERATE)
-                    generated = self.provider.summary(context, claim.options)
+                    generated = self.provider.summary(context, claim.options, call_id, recorder)
                 else:
+                    call_id, recorder = self._prepare_call(
+                        claim,
+                        model,
+                        self.provider.estimate_input_tokens(
+                            self.pricing, claim.feature, context, [], claim.options
+                        ),
+                        768,
+                        "GENERATION",
+                    )
+                    calls.append(call_id)
                     self.repository.set_phase(claim, JobPhase.GENERATE)
-                    generated = self.provider.triage(context, claim.options)
+                    generated = self.provider.triage(context, claim.options, call_id, recorder)
                 self.repository.set_phase(claim, JobPhase.VALIDATE)
-                generation_cost = self.pricing.cost_microusd(generated.model, generated.usage)
-                self.repository.settle_budget(generation_reservation, generation_cost)
-                cost = generation_cost + query_cost
+                cost = self.repository.job_cost_microusd(claim.job_id)
                 current = self.backend.read_context_revision(claim.job_id)
                 if current.contextRevision != claim.context_revision:
                     raise BackendSupersededError("context changed before result commit")
@@ -259,7 +285,7 @@ class StreamRuntime:
                         result,
                         JobStatus.SUCCEEDED,
                         cost,
-                        generated.model,
+                        generated.receipt.actual_model or generated.receipt.requested_alias,
                         [item.id for item in context.comments],
                         generated.prompt_version,
                     )
@@ -275,20 +301,96 @@ class StreamRuntime:
                 self.repository.fail_job(claim, "PROVIDER_OUTCOME_UNKNOWN", retryable=False)
             except InputTooLongError:
                 self.repository.fail_job(claim, "INPUT_TOO_LONG", retryable=False)
+            except InvalidProviderOutputError:
+                self.repository.complete_needs_review(
+                    claim,
+                    "MODEL_OUTPUT_INVALID",
+                    self.repository.job_cost_microusd(claim.job_id),
+                )
             except InvalidModelOutputError:
-                self.repository.fail_job(claim, "MODEL_OUTPUT_INVALID", retryable=False)
+                self.repository.complete_needs_review(
+                    claim,
+                    "MODEL_OUTPUT_INVALID",
+                    self.repository.job_cost_microusd(claim.job_id),
+                )
             except StaleLeaseError:
-                for reservation in reservations:
-                    self.repository.mark_budget_unknown(reservation)
+                self._mark_calls_unknown(calls)
                 raise
             except Exception as exception:
-                if reservations:
-                    for reservation in reservations:
-                        self.repository.mark_budget_unknown(reservation)
+                if calls:
+                    self._mark_calls_unknown(calls)
                     self.repository.fail_job(claim, "PROVIDER_OUTCOME_UNKNOWN", retryable=False)
                 else:
                     self.repository.fail_job(claim, type(exception).__name__.upper()[:80], retryable=True)
                 raise
+
+    def _prepare_call(
+        self,
+        claim: ClaimedJob,
+        requested_alias: str,
+        input_tokens: int,
+        output_tokens: int,
+        call_type: str,
+    ) -> tuple[UUID, ReceiptRecorder]:
+        reserve = self.pricing.upper_bound_microusd(
+            requested_alias,
+            input_tokens,
+            output_tokens,
+            self.pricing.service_tier,
+            self.pricing.context_price_band,
+        )
+        reservation_id = self.repository.reserve_budget(
+            claim,
+            requested_alias,
+            self.pricing.version,
+            reserve,
+            call_type,
+        )
+        call_id = uuid4()
+        self.repository.create_provider_call(
+            reservation_id,
+            call_id,
+            requested_alias,
+            self.pricing.version,
+            self.pricing.service_tier,
+            self.pricing.context_price_band,
+        )
+        self.repository.mark_provider_call_dispatching(call_id)
+        return call_id, self._receipt_recorder(call_id)
+
+    def _receipt_recorder(self, expected_call_id: UUID) -> ReceiptRecorder:
+        def record(receipt: ProviderCallReceipt) -> None:
+            if receipt.call_id != expected_call_id:
+                raise ValueError("provider receipt call identity mismatch")
+            known_cost: int | None = None
+            if (
+                receipt.usage_status == UsageStatus.KNOWN
+                and receipt.usage is not None
+                and receipt.actual_model is not None
+            ):
+                try:
+                    known_cost = self.pricing.cost_microusd(
+                        receipt.requested_alias,
+                        receipt.actual_model,
+                        receipt.usage,
+                        receipt.service_tier,
+                        receipt.context_price_band,
+                    )
+                except ValueError:
+                    known_cost = None
+            self.repository.record_provider_response(receipt, known_cost)
+
+        return record
+
+    def _mark_calls_unknown(self, call_ids: list[UUID]) -> None:
+        for call_id in call_ids:
+            try:
+                self.repository.mark_provider_call_unknown(call_id)
+            except Exception:
+                LOGGER.exception(
+                    "AI provider call could not be marked unknown",
+                    extra={"call_id": str(call_id)},
+                )
 
     @contextmanager
     def _heartbeat(self, claim: ClaimedJob):

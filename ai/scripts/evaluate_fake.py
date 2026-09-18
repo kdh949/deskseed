@@ -73,18 +73,19 @@ def main() -> None:
             ],
         )
         options = {"language": "ko", "tone": "calm"} if feature == Feature.REPLY_DRAFT else {"language": "ko"}
+        call_id = uuid4()
         if feature == Feature.SUMMARY:
-            result = provider.summary(context, options).result
+            result = provider.summary(context, options, call_id, lambda _receipt: None).result
             status = "SUCCEEDED"
         elif feature == Feature.TRIAGE:
-            result = provider.triage(context, options).result
+            result = provider.triage(context, options, call_id, lambda _receipt: None).result
             status = "SUCCEEDED"
             if not isinstance(result, TriageResult) or result.topicCode != case["expectedTopicCode"]:
                 raise SystemExit(f"{case['id']}: unexpected topic")
             if result.suggestedTagIds:
                 raise SystemExit(f"{case['id']}: unvalidated tags are forbidden")
         else:
-            result = provider.reply(context, [], options).result
+            result = provider.reply(context, [], options, call_id, lambda _receipt: None).result
             status = "SUCCEEDED" if result.citations else "NEEDS_REVIEW"
         if status != case["expectedStatus"]:
             raise SystemExit(f"{case['id']}: expected {case['expectedStatus']}, got {status}")
