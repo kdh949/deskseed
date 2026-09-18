@@ -25,7 +25,7 @@
 - Requirements: REQ-AI-001, REQ-AI-002, REQ-AI-003.
 - UI/routes: no rendered UI change; current AGT-004 client remains compatible.
 - `public-comments-v2` adds required `sequence` and `authorRole` to each PUBLIC source comment.
-- `sequence` is the persisted per-ticket `ticket_comments.sequence_number`; ordering is `sequence_number`, never timestamp inference.
+- `sequence` is the persisted per-ticket `ticket_comments.sequence_number`; ordering is `sequence_number`, never timestamp inference. The current schema lacks this column, so S01 adds it with a deterministic `(created_at, id)` backfill and serialized assignment for later inserts.
 - Source author mapping is `CUSTOMER -> CUSTOMER`, `AGENT -> STAFF`, `INTEGRATION_CLIENT -> INTEGRATION_CLIENT`, `SYSTEM/AUTOMATION -> SYSTEM`; an unknown future stored value maps to `UNKNOWN` rather than being inferred from body or display name.
 - New jobs use `public-comments-v2`. The AI reader accepts v1 and v2 so rollout can deploy reader compatibility before the Backend v2 writer. A v1 binding keeps its v1 revision semantics and source shape.
 - Supported normalized options are deliberately narrow: language `ko` for all features and tone `calm` for reply draft. Omitted options receive these defaults; unknown values fail before outbox creation.
@@ -35,13 +35,13 @@
 ## In scope
 
 - AI source OpenAPI v1/v2 compatibility contract and deterministic Core bundle update for option enums/defaults.
+- V94 additive migration for per-ticket comment sequence, deterministic existing-row backfill, uniqueness and concurrent insert serialization.
 - Backend PUBLIC projection, author mapping, stable sequence, policy-aware revision, option normalization and source response.
 - Python source schemas, bounded context selection, option propagation, feature prompt loading/digest and provider payload.
 - Backend and Python regression tests for ordering, INTERNAL exclusion, latest-customer protection, same timestamp, long input and option behavior.
 
 ## Out of scope
 
-- Database migration: the existing `ticket_comments.sequence_number`, author type and JSON option columns already carry all S01 state, so this slice has no schema change.
 - S02 call receipts, tokenizer-backed cost reservation and exclusive usage normalization.
 - S04 no-evidence generation bypass, S05 feature-specific input revision, S06+ cache/coalescing.
 - Live provider calls, current-server data extraction, Langfuse Cloud, deployment and UI changes.
@@ -53,6 +53,7 @@
 - If no CUSTOMER comment exists, the latest PUBLIC comment is protected and the provider is told only its stored non-customer role.
 - First PUBLIC comment and latest STAFF response are anchors added when the remaining bound allows; duplicate anchors are removed by sequence.
 - Short conversations preserve exact bodies and order. Earlier comments are selected newest-first for capacity, then emitted in canonical sequence order.
+- Every ticket has one monotonic comment sequence. Concurrent inserts serialize on the ticket row and the database rejects duplicate `(ticket_id, sequence_number)` values.
 - v1 in-flight jobs are not reinterpreted as v2 and cannot be revived by a policy mismatch.
 - Required source access audit still persists before a body response; audit failure remains fail closed.
 - No external network call occurs in a Backend transaction. Provider retry remains disabled.
@@ -102,7 +103,7 @@ Live Korean tone/language quality remains Pending and the fake-provider evaluato
 ## Compatibility and migration
 
 - OpenAPI: source v2 is additive beside legacy v1; Core option strings become closed enums matching existing `ko/calm` clients.
-- Migration: none; no new persisted column or constraint is required.
+- Migration: V94 adds and backfills `sequence_number`, makes it non-null, adds `(ticket_id, sequence_number)` uniqueness, and assigns the next value under the ticket-row lock for new inserts. Rollback uses forward-fix or backup restore rather than dropping ordering facts.
 - Deployment: AI reader compatibility first, then Backend v2 writer, then workers using v2 prompts. Existing v1 jobs drain under v1 semantics.
 - Rollback: stop new AI admission, return writer to v1 while the dual reader remains, drain jobs, then roll back provider/prompt code. Canonical source/audit remains available.
 
