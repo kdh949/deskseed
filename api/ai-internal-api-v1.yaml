@@ -659,7 +659,9 @@ components:
           title: Contextrevision
         contextPolicyVersion:
           type: string
-          const: public-comments-v1
+          enum:
+          - public-comments-v1
+          - public-comments-v2
           title: Contextpolicyversion
         dataClass:
           type: string

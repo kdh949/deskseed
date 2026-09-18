@@ -44,6 +44,14 @@ class InputScope(StrEnum):
     PUBLIC_KB_ONLY = "PUBLIC_KB_ONLY"
 
 
+class AuthorRole(StrEnum):
+    CUSTOMER = "CUSTOMER"
+    STAFF = "STAFF"
+    INTEGRATION_CLIENT = "INTEGRATION_CLIENT"
+    SYSTEM = "SYSTEM"
+    UNKNOWN = "UNKNOWN"
+
+
 class JobEnvelope(StrictModel):
     schemaVersion: Literal[1]
     eventId: UUID
@@ -54,7 +62,7 @@ class JobEnvelope(StrictModel):
     ticketNumber: Annotated[int, Field(gt=0)]
     feature: Feature
     contextRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    contextPolicyVersion: Literal["public-comments-v1"]
+    contextPolicyVersion: Literal["public-comments-v1", "public-comments-v2"]
     dataClass: Literal["PUBLIC_ONLY"]
     requestRevision: Annotated[int, Field(gt=0)]
     options: dict[str, Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=dict, max_length=2)
@@ -70,6 +78,12 @@ class JobEnvelope(StrictModel):
         allowed = {"language"} if self.feature != Feature.REPLY_DRAFT else {"language", "tone"}
         if self.options.keys() - allowed:
             raise ValueError("unsupported feature option")
+        if self.contextPolicyVersion == "public-comments-v2":
+            expected = {"language": "ko"}
+            if self.feature == Feature.REPLY_DRAFT:
+                expected["tone"] = "calm"
+            if self.options != expected:
+                raise ValueError("v2 feature options must be normalized by the Backend")
         return self
 
 
@@ -86,6 +100,8 @@ class CancellationEnvelope(StrictModel):
 
 class PublicComment(StrictModel):
     id: UUID
+    sequence: Annotated[int | None, Field(gt=0)] = None
+    authorRole: AuthorRole | None = None
     body: Annotated[str, Field(min_length=1, max_length=100_000)]
     createdAt: datetime
 
@@ -101,6 +117,21 @@ class SourceContext(StrictModel):
     contextPolicyVersion: str
     inputScope: Literal["PUBLIC_ONLY"]
     comments: list[PublicComment] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_policy_shape(self) -> "SourceContext":
+        if self.contextPolicyVersion == "public-comments-v1":
+            if any(comment.sequence is not None or comment.authorRole is not None for comment in self.comments):
+                raise ValueError("v1 comments cannot contain v2 role or sequence fields")
+            return self
+        if self.contextPolicyVersion != "public-comments-v2":
+            raise ValueError("unsupported context policy version")
+        if any(comment.sequence is None or comment.authorRole is None for comment in self.comments):
+            raise ValueError("v2 comments require role and sequence")
+        sequences = [comment.sequence for comment in self.comments if comment.sequence is not None]
+        if sequences != list(range(1, len(sequences) + 1)):
+            raise ValueError("v2 PUBLIC comment sequence must be contiguous and increasing")
+        return self
 
 
 class SummaryResult(StrictModel):

@@ -19,6 +19,7 @@ from .backend_client import (
 from .config import Settings
 from .observability import TraceAdapter, TraceAttributes
 from .pricing import PricingCatalog, Usage
+from .prompting import prompt_for
 from .providers import GenerationProvider
 from .repository import (
     ActiveLeaseError,
@@ -29,7 +30,7 @@ from .repository import (
     StaleLeaseError,
 )
 from .retrieval import KnowledgeRepository
-from .schemas import Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
+from .schemas import AuthorRole, Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
 from .workflows import ReplyWorkflow
 
 LOGGER = logging.getLogger(__name__)
@@ -178,7 +179,7 @@ class StreamRuntime:
         attributes = TraceAttributes(
             job_id=claim.job_id,
             feature=claim.feature.value,
-            prompt_version=self.settings.prompt_version,
+            prompt_version=prompt_for(claim.feature).version,
             graph_version=self.settings.graph_version,
             config_version=self.settings.config_version,
             context_revision=claim.context_revision,
@@ -220,6 +221,7 @@ class StreamRuntime:
                         context,
                         claim.workspace_key,
                         lambda candidates: self.backend.authorize_citations(claim.job_id, candidates),
+                        claim.options,
                     )
                     generated = reply_execution.generation
                     query_cost = self.pricing.cost_microusd(
@@ -229,10 +231,10 @@ class StreamRuntime:
                     self.repository.settle_budget(query_reservation, query_cost)
                 elif claim.feature == Feature.SUMMARY:
                     self.repository.set_phase(claim, JobPhase.GENERATE)
-                    generated = self.provider.summary(context)
+                    generated = self.provider.summary(context, claim.options)
                 else:
                     self.repository.set_phase(claim, JobPhase.GENERATE)
-                    generated = self.provider.triage(context)
+                    generated = self.provider.triage(context, claim.options)
                 self.repository.set_phase(claim, JobPhase.VALIDATE)
                 generation_cost = self.pricing.cost_microusd(generated.model, generated.usage)
                 self.repository.settle_budget(generation_reservation, generation_cost)
@@ -259,6 +261,7 @@ class StreamRuntime:
                         cost,
                         generated.model,
                         [item.id for item in context.comments],
+                        generated.prompt_version,
                     )
             except BackendSupersededError:
                 self.repository.terminate_job(claim, JobStatus.SUPERSEDED, "CONTEXT_SUPERSEDED")
@@ -315,15 +318,38 @@ def _bounded_context(context, feature: Feature):
         if sum(len(item.body.encode("utf-8")) for item in context.comments) > 16_000:
             raise InputTooLongError("PUBLIC context exceeds the configured input bound")
         return context
-    first = context.comments[0]
-    if len(first.body.encode("utf-8")) > 8_000:
-        raise InputTooLongError("first PUBLIC inquiry exceeds the configured reply bound")
-    selected = [first]
-    used = len(first.body.encode("utf-8"))
-    for item in reversed(context.comments[1:]):
-        size = len(item.body.encode("utf-8"))
-        if used + size > 8_000:
+    comments = context.comments
+    latest_customer_index = next(
+        (
+            index
+            for index in range(len(comments) - 1, -1, -1)
+            if comments[index].authorRole == AuthorRole.CUSTOMER
+        ),
+        len(comments) - 1,
+    )
+    selected_indexes = set(range(latest_customer_index, len(comments)))
+    used = sum(len(comments[index].body.encode("utf-8")) for index in selected_indexes)
+    if used > 8_000:
+        raise InputTooLongError("latest PUBLIC request suffix exceeds the configured reply bound")
+
+    latest_staff_index = next(
+        (
+            index
+            for index in range(len(comments) - 1, -1, -1)
+            if comments[index].authorRole == AuthorRole.STAFF
+        ),
+        None,
+    )
+    anchors = [0]
+    if latest_staff_index is not None:
+        anchors.append(latest_staff_index)
+    candidates = anchors + list(range(latest_customer_index - 1, -1, -1))
+    for index in candidates:
+        if index in selected_indexes:
             continue
-        selected.insert(1, item)
-        used += size
+        size = len(comments[index].body.encode("utf-8"))
+        if used + size <= 8_000:
+            selected_indexes.add(index)
+            used += size
+    selected = [comment for index, comment in enumerate(comments) if index in selected_indexes]
     return context.model_copy(update={"comments": selected})

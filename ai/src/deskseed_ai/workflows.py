@@ -18,6 +18,7 @@ class ReplyState(TypedDict, total=False):
     authorized: bool
     knowledge: list[KnowledgeChunk]
     authorize_candidates: Callable[[list[Citation]], list[Citation]]
+    options: dict[str, str]
     authorized_citations: dict[UUID, Citation]
     generation: ProviderResult
     query_tokens: int
@@ -55,12 +56,14 @@ class ReplyWorkflow:
         context: SourceContext,
         workspace_key: str,
         authorize_candidates: Callable[[list[Citation]], list[Citation]],
+        options: dict[str, str],
     ) -> ReplyExecution:
         state = self._graph.invoke(
             {
                 "context": context,
                 "workspace_key": workspace_key,
                 "authorize_candidates": authorize_candidates,
+                "options": options,
             },
             config={"recursion_limit": 8},
         )
@@ -101,7 +104,9 @@ class ReplyWorkflow:
         return {"authorized_citations": authorized_by_chunk}
 
     def _generate(self, state: ReplyState) -> dict[str, Any]:
-        return {"generation": self.provider.reply(state["context"], state["knowledge"])}
+        return {
+            "generation": self.provider.reply(state["context"], state["knowledge"], state["options"]),
+        }
 
     def _validate(self, state: ReplyState) -> dict[str, Any]:
         generated = state["generation"]
@@ -126,5 +131,6 @@ class ReplyWorkflow:
                 result=result.model_copy(update={"citations": canonical}),
                 usage=generated.usage,
                 model=generated.model,
+                prompt_version=generated.prompt_version,
             ),
         }
