@@ -74,6 +74,8 @@ class ClaimedJob:
     requester_id: UUID
     context_revision: str
     context_policy_version: str
+    ai_input_revision: str | None
+    input_policy_version: str | None
     traceparent: str | None
     deadline_at: datetime
     options: dict[str, str]
@@ -166,10 +168,11 @@ class Repository:
                     job_id, workspace_key, requester_id, ticket_id, ticket_number, feature,
                     status, phase, generation, lease_epoch, request_revision, cancel_requested,
                     context_revision, context_policy_version, input_scope, options_json,
+                    ai_input_revision, input_policy_version,
                     request_fingerprint, traceparent, tracestate, created_at, deadline_at, updated_at
                 ) values (
                     %s, %s, %s, %s, %s, %s, %s, %s, 1, 0, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
                 (
@@ -187,6 +190,8 @@ class Repository:
                     envelope.contextPolicyVersion,
                     envelope.dataClass,
                     Jsonb(envelope.options),
+                    envelope.aiInputRevision,
+                    envelope.inputPolicyVersion,
                     fingerprint,
                     envelope.traceparent,
                     envelope.tracestate,
@@ -455,6 +460,8 @@ class Repository:
             requester_id=row["requester_id"],
             context_revision=row["context_revision"],
             context_policy_version=row["context_policy_version"],
+            ai_input_revision=row["ai_input_revision"],
+            input_policy_version=row["input_policy_version"],
             traceparent=row["traceparent"],
             deadline_at=row["deadline_at"],
             options=row["options_json"],

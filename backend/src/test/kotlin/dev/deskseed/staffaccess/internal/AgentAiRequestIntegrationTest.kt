@@ -6,14 +6,18 @@ import dev.deskseed.aiassistance.AiGenerationProvenance
 import dev.deskseed.aiassistance.AiJobReceipt
 import dev.deskseed.aiassistance.AiSummaryResult
 import dev.deskseed.aiassistance.internal.LEGACY_AI_CONTEXT_POLICY_VERSION
+import dev.deskseed.aiassistance.internal.computeAiInputRevision
 import dev.deskseed.aiassistance.internal.computeAiContextRevision
+import dev.deskseed.aiassistance.internal.inputPolicyVersion
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.mock.web.MockHttpSession
@@ -79,11 +83,47 @@ class AgentAiRequestIntegrationTest {
         )!!
         assertThat(payload).doesNotContain(PUBLIC_BODY, INTERNAL_BODY, fixture.subject, "@example.com")
         assertThat(payload).contains("\"contextPolicyVersion\": \"public-comments-v2\"")
+            .contains("\"schemaVersion\": 2")
+            .contains("\"inputPolicyVersion\": \"summary-input-v1\"")
             .contains("\"language\": \"ko\"")
+        val context = ticketStore.findAiPublicContext(fixture.number, fixture.staffId)!!
+        val expectedInputRevision = computeAiInputRevision(context, dev.deskseed.aiassistance.AiFeature.TICKET_SUMMARY)
+        assertThat(payload).contains("\"aiInputRevision\": \"$expectedInputRevision\"")
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select ai_input_revision, input_policy_version from ai_requests where job_id = ?",
+                uuidField(first, "jobId"),
+            ),
+        ).containsEntry("ai_input_revision", expectedInputRevision)
+            .containsEntry("input_policy_version", inputPolicyVersion(dev.deskseed.aiassistance.AiFeature.TICKET_SUMMARY))
         assertThat(count("select count(*) from access_audit_events where action = 'TICKET_VIEWED'"))
             .isZero()
         assertThat(count("select count(*) from access_audit_events where action = 'API_RESOURCE_READ' and actor_type = 'STAFF'"))
             .isEqualTo(1)
+    }
+
+    @Test
+    fun `request storage rejects unpaired or feature mismatched input revision metadata`() {
+        val fixture = fixture(9111)
+        val session = login(fixture.email, PASSWORD)
+        val created = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-idempotency-key-input-shape",
+            requestBody("ticket.summary"),
+        ).andExpect(status().isAccepted).andReturn().response.contentAsString
+        val jobId = uuidField(created, "jobId")
+
+        assertThatThrownBy {
+            jdbcTemplate.update("update ai_requests set ai_input_revision = null where job_id = ?", jobId)
+        }.isInstanceOf(DataIntegrityViolationException::class.java)
+        assertThatThrownBy {
+            jdbcTemplate.update(
+                "update ai_requests set input_policy_version = 'reply-input-v1' where job_id = ?",
+                jobId,
+            )
+        }.isInstanceOf(DataIntegrityViolationException::class.java)
     }
 
     @Test
@@ -119,6 +159,8 @@ class AgentAiRequestIntegrationTest {
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.inputScope").value("PUBLIC_ONLY"))
             .andExpect(jsonPath("$.contextPolicyVersion").value("public-comments-v2"))
+            .andExpect(jsonPath("$.aiInputRevision").isString)
+            .andExpect(jsonPath("$.inputPolicyVersion").value("reply-input-v1"))
             .andExpect(jsonPath("$.comments.length()").value(3))
             .andExpect(jsonPath("$.comments[0].body").value(PUBLIC_BODY))
             .andExpect(jsonPath("$.comments[0].sequence").value(1))
@@ -129,6 +171,11 @@ class AgentAiRequestIntegrationTest {
             .andExpect(jsonPath("$.comments[2].authorRole").value("SYSTEM"))
             .andReturn().response.contentAsString
         assertThat(response).doesNotContain(INTERNAL_BODY, fixture.subject, fixture.email)
+        sourceRevision(jobId)
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.aiInputRevision").isString)
+            .andExpect(jsonPath("$.inputPolicyVersion").value("reply-input-v1"))
+            .andExpect(jsonPath("$.authorized").value(true))
 
         assertThat(
             count(
@@ -161,7 +208,11 @@ class AgentAiRequestIntegrationTest {
         val context = ticketStore.findAiPublicContext(fixture.number, fixture.staffId)!!
         val legacyRevision = computeAiContextRevision(context, LEGACY_AI_CONTEXT_POLICY_VERSION)
         jdbcTemplate.update(
-            "update ai_requests set context_policy_version = ?, context_revision = ? where job_id = ?",
+            """
+            update ai_requests set context_policy_version = ?, context_revision = ?,
+                ai_input_revision = null, input_policy_version = null
+            where job_id = ?
+            """.trimIndent(),
             LEGACY_AI_CONTEXT_POLICY_VERSION,
             legacyRevision,
             jobId,
@@ -171,9 +222,15 @@ class AgentAiRequestIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.contextPolicyVersion").value(LEGACY_AI_CONTEXT_POLICY_VERSION))
             .andExpect(jsonPath("$.contextRevision").value(legacyRevision))
+            .andExpect(jsonPath("$.aiInputRevision").doesNotExist())
+            .andExpect(jsonPath("$.inputPolicyVersion").doesNotExist())
             .andExpect(jsonPath("$.comments[0].body").value(PUBLIC_BODY))
             .andExpect(jsonPath("$.comments[0].sequence").doesNotExist())
             .andExpect(jsonPath("$.comments[0].authorRole").doesNotExist())
+        sourceRevision(jobId)
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.aiInputRevision").doesNotExist())
+            .andExpect(jsonPath("$.inputPolicyVersion").doesNotExist())
     }
 
     @Test
@@ -462,6 +519,12 @@ class AgentAiRequestIntegrationTest {
     private fun source(jobId: UUID, secret: String = "test-ai-source-secret") = mockMvc.perform(
         get("/api/v1/internal/ai/requests/{jobId}/context", jobId)
             .header("Authorization", "Bearer $secret")
+            .header("X-Deskseed-AI-Key-Id", "test-ai-key"),
+    )
+
+    private fun sourceRevision(jobId: UUID) = mockMvc.perform(
+        get("/api/v1/internal/ai/requests/{jobId}/context-revision", jobId)
+            .header("Authorization", "Bearer test-ai-source-secret")
             .header("X-Deskseed-AI-Key-Id", "test-ai-key"),
     )
 

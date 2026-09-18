@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .config import Settings
 from .schemas import Citation, SourceContext
@@ -204,9 +205,17 @@ class ContextRevision(BaseModel):
     jobId: UUID
     requestRevision: int
     contextRevision: str
+    aiInputRevision: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
+    inputPolicyVersion: Literal["summary-input-v1", "triage-input-v1", "reply-input-v1"] | None = None
     authorized: bool
     cancelRequested: bool
     featureEnabled: bool
+
+    @model_validator(mode="after")
+    def input_revision_metadata_is_paired(self) -> "ContextRevision":
+        if (self.aiInputRevision is None) != (self.inputPolicyVersion is None):
+            raise ValueError("input revision metadata must be paired")
+        return self
 
 
 class AiPolicy(BaseModel):

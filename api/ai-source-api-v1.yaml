@@ -211,6 +211,14 @@ components:
         requestRevision: {type: integer, format: int64, minimum: 1}
         contextRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
         contextPolicyVersion: {type: string, const: public-comments-v2}
+        aiInputRevision:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: schema v2 job에서는 기능이 읽는 ordered PUBLIC comment facts만 Backend가 canonical digest한 값입니다. pre-S05 legacy job에는 없으며 권한이나 context freshness를 대체하지 않습니다.
+        inputPolicyVersion:
+          type: [string, 'null']
+          enum: [summary-input-v1, triage-input-v1, reply-input-v1, null]
+          description: schema v2 job의 feature별 AI 입력 필드와 canonicalization 정책 버전입니다. pre-S05 legacy job에는 없습니다.
         inputScope: {type: string, const: PUBLIC_ONLY}
         comments:
           type: array
@@ -237,6 +245,13 @@ components:
         jobId: {type: string, format: uuid}
         requestRevision: {type: integer, format: int64, minimum: 1}
         contextRevision: {type: string, pattern: '^[0-9a-f]{64}$'}
+        aiInputRevision:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: 신규 schema v2 job에는 bound current 값이 있으며 legacy job에는 없습니다.
+        inputPolicyVersion:
+          type: [string, 'null']
+          enum: [summary-input-v1, triage-input-v1, reply-input-v1, null]
         authorized: {type: boolean}
         cancelRequested: {type: boolean}
         featureEnabled: {type: boolean}

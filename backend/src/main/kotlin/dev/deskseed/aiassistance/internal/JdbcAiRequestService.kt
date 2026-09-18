@@ -75,6 +75,8 @@ internal class JdbcAiRequestService(
         val optionsJson = objectMapper.writeValueAsString(normalizedOptions)
         val idempotencyFingerprint = sha256(command.idempotencyKey)
         val contextRevision = computeAiContextRevision(context)
+        val inputPolicyVersion = inputPolicyVersion(command.feature)
+        val aiInputRevision = computeAiInputRevision(context, command.feature, inputPolicyVersion)
         val requestFingerprint = sha256(
             listOf(
                 context.ticketId,
@@ -102,8 +104,9 @@ internal class JdbcAiRequestService(
                 job_id, workspace_key, requester_staff_id, ticket_id, ticket_number,
                 feature, status, expected_ticket_version, options_json, request_fingerprint,
                 idempotency_key_fingerprint, context_policy_version, context_revision,
+                ai_input_revision, input_policy_version,
                 request_revision, cancellation_requested, created_at, updated_at, deadline_at
-            ) values (?, ?, ?, ?, ?, ?, 'ACCEPTED', ?, ?::jsonb, ?, ?, ?, ?, 1, false, ?, ?, ?)
+            ) values (?, ?, ?, ?, ?, ?, 'ACCEPTED', ?, ?::jsonb, ?, ?, ?, ?, ?, ?, 1, false, ?, ?, ?)
             """.trimIndent(),
             jobId,
             workspaceKey,
@@ -117,12 +120,14 @@ internal class JdbcAiRequestService(
             idempotencyFingerprint,
             CONTEXT_POLICY_VERSION,
             contextRevision,
+            aiInputRevision,
+            inputPolicyVersion,
             Timestamp.from(now),
             Timestamp.from(now),
             Timestamp.from(deadline),
         )
         val envelope = linkedMapOf<String, Any?>(
-            "schemaVersion" to OUTBOX_SCHEMA_VERSION,
+            "schemaVersion" to JOB_REQUEST_OUTBOX_SCHEMA_VERSION,
             "eventId" to UUID.randomUUID().toString(),
             "jobId" to jobId.toString(),
             "workspaceKey" to workspaceKey,
@@ -132,6 +137,8 @@ internal class JdbcAiRequestService(
             "feature" to command.feature.value,
             "contextRevision" to contextRevision,
             "contextPolicyVersion" to CONTEXT_POLICY_VERSION,
+            "aiInputRevision" to aiInputRevision,
+            "inputPolicyVersion" to inputPolicyVersion,
             "dataClass" to INPUT_SCOPE,
             "requestRevision" to 1,
             "options" to normalizedOptions,
@@ -428,7 +435,8 @@ internal class JdbcAiRequestService(
         val binding = jdbcTemplate.query(
             """
             select job_id, requester_staff_id, ticket_number, feature, status,
-                   request_revision, deadline_at, context_revision, context_policy_version
+                   request_revision, deadline_at, context_revision, context_policy_version,
+                   ai_input_revision, input_policy_version
             from ai_requests
             where job_id = ? and workspace_key = ?
             for update
@@ -444,6 +452,8 @@ internal class JdbcAiRequestService(
                     deadlineAt = result.getTimestamp("deadline_at").toInstant(),
                     contextRevision = result.getString("context_revision"),
                     contextPolicyVersion = result.getString("context_policy_version"),
+                    aiInputRevision = result.getString("ai_input_revision"),
+                    inputPolicyVersion = result.getString("input_policy_version"),
                 )
             },
             jobId,
@@ -457,7 +467,10 @@ internal class JdbcAiRequestService(
             ?: throw AiSourceRequestUnavailableException()
         if (context.comments.isEmpty()) throw AiSourceRequestUnavailableException()
         val currentRevision = computeAiContextRevision(context, binding.contextPolicyVersion)
-        if (currentRevision != binding.contextRevision) {
+        val currentAiInputRevision = binding.inputPolicyVersion?.let {
+            computeAiInputRevision(context, AiFeature.fromValue(binding.feature), it)
+        }
+        if (currentRevision != binding.contextRevision || currentAiInputRevision != binding.aiInputRevision) {
             jdbcTemplate.update(
                 "update ai_requests set status = 'SUPERSEDED', updated_at = ? where job_id = ?",
                 Timestamp.from(now),
@@ -504,6 +517,8 @@ internal class JdbcAiRequestService(
             requestRevision = binding.requestRevision,
             contextRevision = currentRevision,
             contextPolicyVersion = binding.contextPolicyVersion,
+            aiInputRevision = currentAiInputRevision,
+            inputPolicyVersion = binding.inputPolicyVersion,
             inputScope = INPUT_SCOPE,
             comments = context.comments.map {
                 AiSourceComment(it.id, it.sequence, it.authorRole.name, it.body, it.createdAt)
@@ -516,7 +531,8 @@ internal class JdbcAiRequestService(
         val binding = jdbcTemplate.query(
             """
             select requester_staff_id, ticket_number, feature, status, request_revision,
-                   context_revision, context_policy_version, cancellation_requested, deadline_at
+                   context_revision, context_policy_version, ai_input_revision, input_policy_version,
+                   cancellation_requested, deadline_at
             from ai_requests where job_id = ? and workspace_key = ?
             """.trimIndent(),
             { result, _ -> RevisionBinding(
@@ -527,6 +543,8 @@ internal class JdbcAiRequestService(
                 requestRevision = result.getLong("request_revision"),
                 contextRevision = result.getString("context_revision"),
                 contextPolicyVersion = result.getString("context_policy_version"),
+                aiInputRevision = result.getString("ai_input_revision"),
+                inputPolicyVersion = result.getString("input_policy_version"),
                 cancelRequested = result.getBoolean("cancellation_requested"),
                 deadlineAt = result.getTimestamp("deadline_at").toInstant(),
             ) },
@@ -537,14 +555,20 @@ internal class JdbcAiRequestService(
         val currentRevision = context?.let {
             computeAiContextRevision(it, binding.contextPolicyVersion)
         } ?: binding.contextRevision
+        val currentAiInputRevision = binding.inputPolicyVersion?.let { policyVersion ->
+            context?.let { computeAiInputRevision(it, binding.feature, policyVersion) }
+        } ?: binding.aiInputRevision
         val featureEnabled = isFeatureEnabled(binding.feature, binding.requesterId)
         val authorized = context != null && context.comments.isNotEmpty() &&
             binding.status == AiBackendRequestStatus.ACCEPTED && !binding.cancelRequested &&
-            binding.deadlineAt.isAfter(Instant.now(clock)) && currentRevision == binding.contextRevision && featureEnabled
+            binding.deadlineAt.isAfter(Instant.now(clock)) && currentRevision == binding.contextRevision &&
+            currentAiInputRevision == binding.aiInputRevision && featureEnabled
         return AiSourceRevision(
             jobId = jobId,
             requestRevision = binding.requestRevision,
             contextRevision = currentRevision,
+            aiInputRevision = currentAiInputRevision,
+            inputPolicyVersion = binding.inputPolicyVersion,
             authorized = authorized,
             cancelRequested = binding.cancelRequested,
             featureEnabled = featureEnabled,
@@ -806,6 +830,8 @@ internal class JdbcAiRequestService(
         val deadlineAt: Instant,
         val contextRevision: String,
         val contextPolicyVersion: String,
+        val aiInputRevision: String?,
+        val inputPolicyVersion: String?,
     )
 
     private data class RevisionBinding(
@@ -816,6 +842,8 @@ internal class JdbcAiRequestService(
         val requestRevision: Long,
         val contextRevision: String,
         val contextPolicyVersion: String,
+        val aiInputRevision: String?,
+        val inputPolicyVersion: String?,
         val cancelRequested: Boolean,
         val deadlineAt: Instant,
     )
@@ -833,6 +861,7 @@ internal class JdbcAiRequestService(
         const val CONTEXT_POLICY_VERSION = AI_CONTEXT_POLICY_VERSION
         const val INPUT_SCOPE = "PUBLIC_ONLY"
         const val OUTBOX_SCHEMA_VERSION = 1
+        const val JOB_REQUEST_OUTBOX_SCHEMA_VERSION = 2
         const val POLL_AFTER_MS = 750L
         const val ACTOR_REQUESTS_PER_MINUTE = 5L
         const val WORKSPACE_REQUESTS_PER_MINUTE = 30L
