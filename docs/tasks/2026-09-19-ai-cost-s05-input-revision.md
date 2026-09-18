@@ -28,7 +28,8 @@ Backend가 AI가 실제로 읽을 수 있는 ordered PUBLIC 대화의 기능별 
 - 기능별 input policy는 `summary-input-v1`, `triage-input-v1`, `reply-input-v1`의 닫힌 값이다. 현재는 세 기능 모두 같은 PUBLIC comment 필드를 읽지만 feature domain separator와 policy version을 분리해 향후 한 기능의 입력 확대가 다른 기능의 cache identity를 바꾸지 않게 한다.
 - canonical serialization은 길이 경계와 UTF-8을 사용해 필드 결합 모호성을 없애고, body 원문 대신 SHA-256만 중간 representation에 넣는다. 최종 `aiInputRevision`도 lowercase SHA-256 64자다.
 - v2 source context와 revision response는 bound `aiInputRevision`/`inputPolicyVersion`을 반환한다. Backend는 current PUBLIC projection으로 값을 다시 계산해 bound 값과 다르면 source body를 반환하지 않는다.
-- legacy `public-comments-v1`/schema v1 job은 두 신규 필드가 null이며 기존 `contextRevision` 검증만 수행한다. nullable metadata가 있다고 v1 job을 cache 후보로 승격하지 않는다.
+- legacy schema v1 job은 `public-comments-v1` 또는 S01이 이미 발행한 `public-comments-v2`일 수 있으며, 두 경우 모두 신규 필드가 null이고 기존 `contextRevision` 검증만 수행한다. nullable metadata가 있다고 v1 job을 cache 후보로 승격하지 않는다.
+- `public-comments-v2` source shape의 신규 필드는 schema v2 job에서 paired required지만, pre-S05 schema v1 binding의 응답에서는 둘 다 생략한다. context policy 이름만으로 과거 job을 새 의미로 재해석하지 않는다.
 - 외부 Core `AiJobReceipt`/provenance와 현재 Staff UI response에는 신규 필드를 추가하지 않는다. S08의 명시적 generation mode와 UI rollout 전에는 현재 decoder와 신규 생성 의미를 유지한다.
 
 ## In scope
@@ -81,7 +82,7 @@ Backend가 AI가 실제로 읽을 수 있는 ordered PUBLIC 대화의 기능별 
 2. PUBLIC comment body, persisted role, sequence, createdAt 또는 ID가 바뀌면 해당 feature `aiInputRevision`이 달라진다.
 3. 동일 PUBLIC projection이라도 summary/triage/reply는 서로 다른 feature policy/domain으로 digest가 분리된다.
 4. 신규 Backend job은 schema v2 envelope와 DB row에 동일한 revision/policy를 원자적으로 저장하고 AI DB도 정확히 보존한다.
-5. legacy schema v1/public-comments-v1 envelope는 신규 필드 없이 수용되고 기존 context freshness로 실행되며 cache-eligible metadata를 얻지 않는다.
+5. legacy schema v1 envelope는 `public-comments-v1`과 pre-S05 `public-comments-v2` 모두 신규 필드 없이 수용되고 기존 context freshness로 실행되며 cache-eligible metadata를 얻지 않는다.
 6. schema v2에서 revision 누락, policy 누락, 잘못된 64자 digest, feature-policy mismatch 또는 v1에 신규 필드 혼합은 422/contract rejection이며 job row가 없다.
 7. v2 source read에서 current `aiInputRevision`이 bound 값과 다르면 PUBLIC body와 successful access audit를 반환하지 않고 superseded 처리한다.
 8. context revision이 다르면 aiInputRevision이 같아도 기존 in-flight source/result freshness는 계속 차단된다.
@@ -106,7 +107,7 @@ Backend가 AI가 실제로 읽을 수 있는 ordered PUBLIC 대화의 기능별 
 
 - Backend V95와 AI 007은 nullable paired columns를 추가한다. 기존 rows는 null/null이며 backfill하거나 과거 hash를 재해석하지 않는다.
 - 신규 Backend writer는 outbox schema v2를 emit한다. 배포 순서는 v2를 수용하는 AI ingress/migration 준비 후 Backend writer 전환이다. rollback은 신규 admission을 멈추고 v1 writer/dual reader로 복귀해 v2 job을 drain한 뒤 수행한다.
-- source OpenAPI는 `public-comments-v1`을 그대로 유지하고 v2에 신규 required fields를 추가한다. legacy v1 response shape에는 신규 필드를 넣지 않는다.
+- source OpenAPI는 `public-comments-v1`을 그대로 유지하고 v2에 nullable paired fields를 추가한다. 신규 schema v2 binding에서는 둘 다 필수 의미이며, legacy schema v1 response에서는 둘 다 생략한다.
 - external Core Staff API와 UI payload는 additive change도 하지 않아 현재 strict decoder에 영향을 주지 않는다.
 - forward fix가 기본이다. 컬럼 제거 rollback은 v2 writer/reader 중단과 v2 job drain을 확인한 뒤 constraint와 두 컬럼을 제거한다.
 
