@@ -241,3 +241,53 @@ class Accepted(StrictModel):
     accepted: Literal[True] = True
     replayed: bool
     jobId: UUID | None = None
+
+
+class TelemetryDropCounters(StrictModel):
+    jobStart: Annotated[int, Field(ge=0, description="job trace 시작 export 실패 누적 횟수", examples=[0])]
+    jobUpdate: Annotated[int, Field(ge=0, description="job outcome update export 실패 누적 횟수", examples=[0])]
+    jobEnd: Annotated[int, Field(ge=0, description="job trace 종료 export 실패 누적 횟수", examples=[0])]
+    providerObservation: Annotated[
+        int,
+        Field(ge=0, description="canonical receipt 저장 뒤 provider observation export 실패 누적 횟수", examples=[1]),
+    ]
+    flush: Annotated[int, Field(ge=0, description="exporter flush 실패 누적 횟수", examples=[0])]
+
+
+class TelemetryExporterStatus(StrictModel):
+    enabled: Annotated[bool, Field(description="현재 프로세스에 export client가 구성되었는지 여부")]
+    dropped: TelemetryDropCounters
+    feedbackRetries: Annotated[
+        int,
+        Field(ge=0, description="feedback score export 실패로 durable retry가 필요한 누적 횟수", examples=[2]),
+    ]
+
+
+class DependencyStatus(StrictModel):
+    postgres: bool
+    redis: bool
+
+
+class BudgetStatus(StrictModel):
+    reservedMicrousd: Annotated[int, Field(ge=0)]
+    settledMicrousd: Annotated[int, Field(ge=0)]
+    unknownMicrousd: Annotated[int, Field(ge=0)]
+
+
+class KnowledgeIndexStatus(StrictModel):
+    publicRevisions: Annotated[int, Field(ge=0)]
+    lastReconciledAt: datetime | None
+
+
+class ServiceStatus(StrictModel):
+    ready: bool
+    dataAsOf: datetime
+    dependencies: DependencyStatus
+    providerMode: Literal["fake", "litellm"]
+    liveProviderEnabled: bool
+    langfuseEnabled: bool
+    telemetry: TelemetryExporterStatus
+    jobCounts: dict[str, Annotated[int, Field(ge=0)]]
+    budget: BudgetStatus
+    index: KnowledgeIndexStatus
+    deadLetterCount: Annotated[int, Field(ge=0)]

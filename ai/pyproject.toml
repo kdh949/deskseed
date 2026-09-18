@@ -47,6 +47,8 @@ strict = true
 plugins = ["pydantic.mypy"]
 files = [
   "src/deskseed_ai/config.py",
+  "src/deskseed_ai/evaluation.py",
+  "src/deskseed_ai/observability.py",
   "src/deskseed_ai/pricing.py",
   "src/deskseed_ai/schemas.py",
   "src/deskseed_ai/security.py",

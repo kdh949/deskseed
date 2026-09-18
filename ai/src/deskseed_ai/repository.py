@@ -73,6 +73,8 @@ class ClaimedJob:
     workspace_key: str
     requester_id: UUID
     context_revision: str
+    context_policy_version: str
+    traceparent: str | None
     deadline_at: datetime
     options: dict[str, str]
 
@@ -452,6 +454,8 @@ class Repository:
             workspace_key=row["workspace_key"],
             requester_id=row["requester_id"],
             context_revision=row["context_revision"],
+            context_policy_version=row["context_policy_version"],
+            traceparent=row["traceparent"],
             deadline_at=row["deadline_at"],
             options=row["options_json"],
         )
@@ -1548,6 +1552,34 @@ class Repository:
         with self.database.connection() as connection:
             rows = connection.execute("select status, count(*) as count from ai_jobs group by status").fetchall()
             return {row["status"]: row["count"] for row in rows}
+
+    def increment_telemetry_counter(self, counter_key: str) -> None:
+        with self.database.transaction() as connection:
+            updated = connection.execute(
+                """
+                update ai_telemetry_counters
+                set counter_value = counter_value + 1, updated_at = clock_timestamp()
+                where counter_key = %s
+                """,
+                (counter_key,),
+            ).rowcount
+            if updated != 1:
+                raise ValueError("unsupported telemetry counter")
+
+    def telemetry_status(self, enabled: bool) -> dict[str, object]:
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "select counter_key, counter_value from ai_telemetry_counters"
+            ).fetchall()
+        counters = {row["counter_key"]: int(row["counter_value"]) for row in rows}
+        return {
+            "enabled": enabled,
+            "dropped": {
+                key: counters.get(key, 0)
+                for key in ("jobStart", "jobUpdate", "jobEnd", "providerObservation", "flush")
+            },
+            "feedbackRetries": counters.get("feedbackRetry", 0),
+        }
 
     def operational_status(self) -> dict[str, object]:
         with self.database.connection() as connection:
