@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -11,7 +12,8 @@ from pydantic import ValidationError
 from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
 from .pricing import PricingCatalog, Usage
-from .prompting import context_memory_prompt, prompt_for, rewrite_validation_prompt
+from .prompt_cache import PromptCachePlan, prepare_prompt_cache_request
+from .prompting import FeaturePrompt, context_memory_prompt, prompt_for, rewrite_validation_prompt
 from .retrieval import KnowledgeChunk
 from .schemas import (
     ContextMemoryPayload,
@@ -336,8 +338,9 @@ class FakeGenerationProvider(GenerationProvider):
 
 
 class LiteLlmGenerationProvider(GenerationProvider):
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, pricing: PricingCatalog):
         self.settings = settings
+        self.pricing = pricing
 
     def context_memory(
         self,
@@ -348,11 +351,17 @@ class LiteLlmGenerationProvider(GenerationProvider):
     ) -> ProviderResult:
         from litellm import completion
 
-        request = _context_memory_request(self.settings.model_fast, context, previous)
+        prompt = context_memory_prompt()
+        request = _context_memory_request(self.settings.model_fast, context, previous, prompt)
+        cache = self._prompt_cache_plan(
+            request,
+            prompt,
+            "context_memory",
+        )
         response = completion(
             model=self.settings.model_fast,
             api_key=self.settings.openai_api_key.get_secret_value(),
-            messages=request["messages"],
+            messages=cache.messages,
             response_format=request["response_format"],
             reasoning_effort="none",
             store=False,
@@ -360,8 +369,9 @@ class LiteLlmGenerationProvider(GenerationProvider):
             timeout=min(45, self.settings.job_timeout_seconds),
             max_completion_tokens=1024,
             service_tier="default",
+            **cache.transport_options,
         )
-        receipt = _litellm_receipt(call_id, self.settings.model_fast, response)
+        receipt = _litellm_receipt(call_id, self.settings.model_fast, response, cache)
         record_receipt(receipt)
         raw = getattr(response.choices[0].message, "content", None)
         if raw is None:
@@ -370,7 +380,7 @@ class LiteLlmGenerationProvider(GenerationProvider):
             result = ContextMemoryProviderOutput.model_validate_json(raw)
         except (ValidationError, ValueError, TypeError) as exception:
             raise InvalidProviderOutputError("provider context memory output is invalid") from exception
-        return ProviderResult(result, receipt, context_memory_prompt().version)
+        return ProviderResult(result, receipt, prompt.version)
 
     def summary(
         self,
@@ -441,12 +451,14 @@ class LiteLlmGenerationProvider(GenerationProvider):
         call_id: UUID,
         record_receipt: ReceiptRecorder,
     ) -> ProviderResult:
+        prompt = prompt_for(Feature.REPLY_REWRITE)
         return self._complete_rewrite_payload(
-            _rewrite_request(self.settings.model_standard, source, options),
+            _rewrite_request(self.settings.model_standard, source, options, prompt),
             ReplyRewriteProviderOutput,
             call_id,
             record_receipt,
-            prompt_for(Feature.REPLY_REWRITE).version,
+            prompt,
+            Feature.REPLY_REWRITE.value,
         )
 
     def validate_rewrite(
@@ -456,14 +468,16 @@ class LiteLlmGenerationProvider(GenerationProvider):
         call_id: UUID,
         record_receipt: ReceiptRecorder,
     ) -> ProviderResult:
+        prompt = rewrite_validation_prompt()
         return self._complete_rewrite_payload(
             _rewrite_validation_request(
-                self.settings.model_standard, source, candidate
+                self.settings.model_standard, source, candidate, prompt
             ),
             ReplyRewritePreservationVerdict,
             call_id,
             record_receipt,
-            rewrite_validation_prompt().version,
+            prompt,
+            "ticket.reply_rewrite.validation",
         )
 
     def _complete_rewrite_payload(
@@ -472,15 +486,17 @@ class LiteLlmGenerationProvider(GenerationProvider):
         schema: type[ProviderOutput],
         call_id: UUID,
         record_receipt: ReceiptRecorder,
-        prompt_version: str,
+        prompt: FeaturePrompt,
+        feature: str,
     ) -> ProviderResult:
         from litellm import completion
 
         model = self.settings.model_standard
+        cache = self._prompt_cache_plan(request, prompt, feature)
         response = completion(
             model=model,
             api_key=self.settings.openai_api_key.get_secret_value(),
-            messages=request["messages"],
+            messages=cache.messages,
             response_format=request["response_format"],
             reasoning_effort="low",
             store=False,
@@ -488,8 +504,9 @@ class LiteLlmGenerationProvider(GenerationProvider):
             timeout=min(45, self.settings.job_timeout_seconds),
             max_completion_tokens=request["max_completion_tokens"],
             service_tier="default",
+            **cache.transport_options,
         )
-        receipt = _litellm_receipt(call_id, model, response)
+        receipt = _litellm_receipt(call_id, model, response, cache)
         record_receipt(receipt)
         raw = getattr(response.choices[0].message, "content", None)
         if raw is None:
@@ -498,7 +515,7 @@ class LiteLlmGenerationProvider(GenerationProvider):
             result = schema.model_validate_json(raw)
         except (ValidationError, ValueError, TypeError) as exception:
             raise InvalidProviderOutputError("provider rewrite output is invalid") from exception
-        return ProviderResult(result, receipt, prompt_version)
+        return ProviderResult(result, receipt, prompt.version)
 
     def _complete(
         self,
@@ -515,13 +532,15 @@ class LiteLlmGenerationProvider(GenerationProvider):
         from litellm import completion
 
         output_limit = _output_limit(schema)
+        prompt = prompt_for(feature)
         request = _request_contract(
-            model, context, schema, knowledge, options, feature, output_limit, memory
+            model, context, schema, knowledge, options, feature, output_limit, memory, prompt
         )
+        cache = self._prompt_cache_plan(request, prompt, feature.value)
         response = completion(
             model=model,
             api_key=self.settings.openai_api_key.get_secret_value(),
-            messages=request["messages"],
+            messages=cache.messages,
             response_format=request["response_format"],
             reasoning_effort="none" if model == self.settings.model_fast else "low",
             store=False,
@@ -529,8 +548,9 @@ class LiteLlmGenerationProvider(GenerationProvider):
             timeout=min(45, self.settings.job_timeout_seconds),
             max_completion_tokens=output_limit,
             service_tier="default",
+            **cache.transport_options,
         )
-        receipt = _litellm_receipt(call_id, model, response)
+        receipt = _litellm_receipt(call_id, model, response, cache)
         envelope = ProviderResponseEnvelope(
             raw_structured_output=getattr(response.choices[0].message, "content", None),
             receipt=receipt,
@@ -542,12 +562,27 @@ class LiteLlmGenerationProvider(GenerationProvider):
             result = schema.model_validate_json(envelope.raw_structured_output)
         except (ValidationError, ValueError, TypeError) as exception:
             raise InvalidProviderOutputError("provider structured output is invalid") from exception
-        return ProviderResult(result, receipt, prompt_for(feature).version)
+        return ProviderResult(result, receipt, prompt.version)
+
+    def _prompt_cache_plan(
+        self,
+        request: dict[str, Any],
+        prompt: FeaturePrompt,
+        feature: str,
+    ) -> PromptCachePlan:
+        return prepare_prompt_cache_request(
+            mode=self.settings.prompt_cache_mode,
+            pricing=self.pricing,
+            model=request["model"],
+            feature=feature,
+            prompt=prompt,
+            request=request,
+        )
 
 
-def provider_for(settings: Settings) -> GenerationProvider:
+def provider_for(settings: Settings, pricing_path: Path) -> GenerationProvider:
     if settings.provider_mode == "litellm":
-        return LiteLlmGenerationProvider(settings)
+        return LiteLlmGenerationProvider(settings, PricingCatalog(pricing_path))
     return FakeGenerationProvider(settings)
 
 
@@ -606,8 +641,9 @@ def _request_contract(
     feature: Feature,
     output_limit: int,
     memory: ContextMemoryPayload | None = None,
+    prompt: FeaturePrompt | None = None,
 ) -> dict[str, Any]:
-    prompt = prompt_for(feature)
+    prompt = prompt or prompt_for(feature)
     public_messages = [
         {
             "commentRef": f"C{comment.sequence if memory is not None and comment.sequence is not None else index}",
@@ -656,8 +692,9 @@ def _context_memory_request(
     model: str,
     context: SourceContext,
     previous: ContextMemoryPayload | None,
+    prompt: FeaturePrompt | None = None,
 ) -> dict[str, Any]:
-    prompt = context_memory_prompt()
+    prompt = prompt or context_memory_prompt()
     comments = [
         {
             "commentRef": f"C{comment.sequence or index}",
@@ -703,8 +740,9 @@ def _rewrite_request(
     model: str,
     source: ReplyDraftResult,
     options: Mapping[str, str],
+    prompt: FeaturePrompt | None = None,
 ) -> dict[str, Any]:
-    prompt = prompt_for(Feature.REPLY_REWRITE)
+    prompt = prompt or prompt_for(Feature.REPLY_REWRITE)
     payload = {
         "options": dict(options),
         "approvedPublicDraft": source.answer,
@@ -741,8 +779,9 @@ def _rewrite_validation_request(
     model: str,
     source: ReplyDraftResult,
     candidate: ReplyRewriteProviderOutput,
+    prompt: FeaturePrompt | None = None,
 ) -> dict[str, Any]:
-    prompt = rewrite_validation_prompt()
+    prompt = prompt or rewrite_validation_prompt()
     payload = {
         "original": source.answer,
         "candidate": candidate.answer,
@@ -767,7 +806,12 @@ def _rewrite_validation_request(
     }
 
 
-def _litellm_receipt(call_id: UUID, requested_alias: str, response: object) -> ProviderCallReceipt:
+def _litellm_receipt(
+    call_id: UUID,
+    requested_alias: str,
+    response: object,
+    cache: PromptCachePlan,
+) -> ProviderCallReceipt:
     status, usage, issue = normalize_litellm_usage(value(response, "usage"))
     service_tier = bounded_text(value(response, "service_tier"), 24)
     if service_tier in {None, "default"}:
@@ -783,4 +827,7 @@ def _litellm_receipt(call_id: UUID, requested_alias: str, response: object) -> P
         usage_issue_code=issue,
         service_tier=service_tier,
         context_price_band="short",
+        prompt_cache_status=cache.status,
+        prompt_cache_prefix_tokens=cache.prefix_tokens,
+        prompt_cache_key_version=cache.key_version,
     )

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from deskseed_ai.call_receipts import ProviderCallReceipt, UsageStatus
+from deskseed_ai.call_receipts import PromptCacheStatus, ProviderCallReceipt, UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.observability import CallTraceAttributes, TraceAdapter, TraceAttributes
 from deskseed_ai.pricing import Usage
@@ -80,6 +80,9 @@ def receipt(call_id) -> ProviderCallReceipt:
         usage_issue_code=None,
         service_tier="standard",
         context_price_band="short",
+        prompt_cache_status=PromptCacheStatus.REQUESTED,
+        prompt_cache_prefix_tokens=1024,
+        prompt_cache_key_version="ds-pc-v1",
     )
 
 
@@ -138,6 +141,10 @@ def test_provider_observation_exports_only_receipt_allowlist() -> None:
     }
     assert exported["cost_details"] == {"total": 0.001234}
     assert exported["metadata"]["observationId"] == call_id.hex
+    assert exported["metadata"]["promptCacheStatus"] == "REQUESTED"
+    assert exported["metadata"]["promptCachePrefixTokens"] == 1024
+    assert exported["metadata"]["promptCacheKeyVersion"] == "ds-pc-v1"
+    assert "promptCacheKey" not in exported["metadata"]
     assert "provider-sensitive-request-id" not in repr(exported)
     assert "input" not in exported or exported["input"] is None
     assert "output" not in exported or exported["output"] is None

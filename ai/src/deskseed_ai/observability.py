@@ -165,6 +165,9 @@ class TraceAdapter:
                     "usageSchemaVersion": receipt.usage_schema_version,
                     "usageStatus": receipt.usage_status.value,
                     "usageIssueCode": receipt.usage_issue_code,
+                    "promptCacheStatus": receipt.prompt_cache_status.value,
+                    "promptCachePrefixTokens": receipt.prompt_cache_prefix_tokens,
+                    "promptCacheKeyVersion": receipt.prompt_cache_key_version,
                     "costMicrousd": attributes.known_cost_microusd,
                 },
             )
