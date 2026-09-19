@@ -4,6 +4,9 @@ import dev.deskseed.foundation.CommandContext
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.ticketing.AgentCommentDraft
+import dev.deskseed.ticketing.AiCommentAttribution
+import dev.deskseed.ticketing.AiCommentAttributionSource
+import dev.deskseed.ticketing.AiCommentLineageState
 import dev.deskseed.ticketing.CanonicalCommentContentCodec
 import dev.deskseed.ticketing.InvalidCommentContentException
 import dev.deskseed.ticketing.CommentVisibility
@@ -224,8 +227,27 @@ internal class AgentTicketCommandController(
             attachmentIds = attachmentIds.toSet(),
             contentFormat = canonical.format,
             contentDocument = canonical.document,
+            aiAttribution = aiAttribution?.toModel(),
         )
     }
+}
+
+internal data class AiCommentAttributionSourceRequest(
+    val jobId: UUID,
+    val candidateId: UUID,
+    @field:NotBlank @field:Size(max = 6_000) val originalAnswer: String,
+)
+
+internal data class AiCommentAttributionRequest(
+    @field:NotBlank @field:Size(max = 32) val contractVersion: String,
+    val state: AiCommentLineageState,
+    @field:Valid @field:Size(max = 4) val sources: List<AiCommentAttributionSourceRequest> = emptyList(),
+) {
+    fun toModel() = AiCommentAttribution(
+        contractVersion = contractVersion,
+        state = state,
+        sources = sources.map { AiCommentAttributionSource(it.jobId, it.candidateId, it.originalAnswer) },
+    )
 }
 
 internal data class AgentRequesterRequest(
@@ -252,6 +274,7 @@ internal data class CommentDraftRequest(
     @field:Size(max = 20_000) val body: String? = null,
     val content: JsonNode? = null,
     @field:Size(max = 5) val attachmentIds: List<UUID> = emptyList(),
+    @field:Valid val aiAttribution: AiCommentAttributionRequest? = null,
 )
 
 internal data class CreateAgentTicketRequest(

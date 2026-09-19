@@ -97,6 +97,7 @@ internal class AiExecutionStatusClient(
             },
             costMicrousd = node.get("costMicrousd")?.takeUnless(JsonNode::isNull)?.longValue(),
             generationMode = node.nullableText("generationMode"),
+            candidateId = node.nullableText("candidateId")?.let(UUID::fromString),
             candidateSequence = node.get("candidateSequence")?.takeUnless(JsonNode::isNull)?.intValue(),
             reuseKind = node.nullableText("reuseKind"),
             providerDispatched = node.get("providerDispatched")?.booleanValue() ?: false,

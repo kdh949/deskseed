@@ -180,6 +180,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /internal/v1/usage/reply-sent:
+    post:
+      summary: PUBLIC 답변 전송 사용 기록
+      description: Backend가 comment와 함께 commit한 body-free reply/rewrite 귀속을 수신합니다. event ID와 comment/candidate 쌍은 정확 멱등으로
+        처리합니다.
+      operationId: reply_sent_usage_internal_v1_usage_reply_sent_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      - name: X-Deskseed-AI-Key-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Deskseed-Ai-Key-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplySentRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /internal/v1/index-events:
     post:
       summary: Index Event
@@ -759,6 +801,7 @@ components:
             format: uuid
           - type: 'null'
           title: Candidateid
+          description: 삽입 가능한 reply/rewrite 성공 결과의 서버 소유 origin 후보 ID입니다. exact cache와 coalesced 결과는 같은 값을 공유합니다.
         candidateSequence:
           anyOf:
           - type: integer
@@ -939,6 +982,12 @@ components:
           anyOf:
           - $ref: '#/components/schemas/GenerationMode'
           - type: 'null'
+        candidateId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Candidateid
         candidateSequence:
           anyOf:
           - type: integer
@@ -1107,6 +1156,147 @@ components:
       - tone
       - length
       title: ReplyRewriteResult
+    ReplySentRequest:
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+          title: Schemaversion
+          description: body-free 전송 사용 envelope 버전입니다.
+        eventId:
+          type: string
+          format: uuid
+          title: Eventid
+          description: dispatcher 재전송을 dedupe하는 안정적인 event ID입니다.
+        jobId:
+          type: string
+          format: uuid
+          title: Jobid
+          description: 귀속 대상 reply/rewrite logical job입니다.
+        workspaceKey:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Workspacekey
+          description: job이 속한 Backend workspace key입니다.
+        requesterId:
+          type: string
+          format: uuid
+          title: Requesterid
+          description: 결과를 읽고 PUBLIC 댓글을 보낸 staff ID입니다.
+        commentId:
+          type: string
+          format: uuid
+          title: Commentid
+          description: 성공 commit된 PUBLIC comment ID입니다.
+        candidateId:
+          type: string
+          format: uuid
+          title: Candidateid
+          description: job 결과의 서버 소유 origin candidate ID입니다.
+        attributionKind:
+          type: string
+          enum:
+          - SINGLE_SOURCE
+          - MULTI_SOURCE
+          title: Attributionkind
+          description: 단일 후보 편집량 또는 복수 후보 lineage 분류입니다.
+        sourceCount:
+          type: integer
+          maximum: 4.0
+          minimum: 1.0
+          title: Sourcecount
+          description: 최종 답변에 귀속된 후보 수입니다.
+        originalLength:
+          anyOf:
+          - type: integer
+            maximum: 6000.0
+            minimum: 1.0
+          - type: 'null'
+          title: Originallength
+          description: 단일 원 답변의 정규화된 Unicode code-point 길이입니다.
+        finalLength:
+          anyOf:
+          - type: integer
+            maximum: 20000.0
+            minimum: 0.0
+          - type: 'null'
+          title: Finallength
+          description: 최종 PUBLIC body의 정규화된 Unicode code-point 길이입니다.
+        editDistance:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Editdistance
+          description: 단일 source에서 최종 body까지의 code-point Levenshtein 거리입니다.
+        insertedLength:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Insertedlength
+          description: 선택된 최소 편집 경로의 삽입 수입니다.
+        deletedLength:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Deletedlength
+          description: 선택된 최소 편집 경로의 삭제 수입니다.
+        editRatio:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: string
+            pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,1}|(?=[\d.]{1,10}0*$)\d{0,1}\.\d{0,8}0*$)
+          - type: 'null'
+          title: Editratio
+          description: editDistance를 두 길이의 최댓값으로 나눈 0~1 비율입니다.
+        requestRevision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Requestrevision
+          description: Backend AI request의 단조 증가 revision입니다.
+        sentAt:
+          type: string
+          format: date-time
+          title: Sentat
+          description: 댓글 transaction이 commit한 전송 시각입니다.
+      additionalProperties: false
+      type: object
+      required:
+      - schemaVersion
+      - eventId
+      - jobId
+      - workspaceKey
+      - requesterId
+      - commentId
+      - candidateId
+      - attributionKind
+      - sourceCount
+      - requestRevision
+      - sentAt
+      title: ReplySentRequest
+      example:
+        attributionKind: SINGLE_SOURCE
+        candidateId: 52222222-2222-4222-8222-222222222222
+        commentId: 55555555-5555-4555-8555-555555555555
+        deletedLength: 0
+        editDistance: 3
+        editRatio: '0.06666667'
+        eventId: 53333333-3333-4333-8333-333333333333
+        finalLength: 45
+        insertedLength: 3
+        jobId: 51111111-1111-4111-8111-111111111111
+        originalLength: 42
+        requestRevision: 1
+        requesterId: 54444444-4444-4444-8444-444444444444
+        schemaVersion: 1
+        sentAt: '2026-09-19T00:00:00Z'
+        sourceCount: 1
+        workspaceKey: default
     ServiceStatus:
       properties:
         ready:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
@@ -75,7 +76,15 @@ class JobEnvelope(StrictModel):
         "summary-input-v1", "triage-input-v1", "reply-input-v1", "rewrite-input-v1"
     ] | None = None
     generationMode: GenerationMode | None = None
-    candidateId: UUID | None = None
+    candidateId: Annotated[
+        UUID | None,
+        Field(
+            description=(
+                "삽입 가능한 reply/rewrite 성공 결과의 서버 소유 origin 후보 ID입니다. "
+                "exact cache와 coalesced 결과는 같은 값을 공유합니다."
+            )
+        ),
+    ] = None
     candidateSequence: Annotated[int | None, Field(gt=0)] = None
     sourceJobId: UUID | None = None
     dataClass: Literal["PUBLIC_ONLY", "PUBLIC_DRAFT_ONLY"]
@@ -399,6 +408,7 @@ class JobReceipt(StrictModel):
     provenance: GenerationProvenance | None = None
     costMicrousd: int | None = None
     generationMode: GenerationMode | None = None
+    candidateId: UUID | None = None
     candidateSequence: int | None = None
     reuseKind: Literal["GENERATED", "CACHE_HIT", "COALESCED"] | None = None
     providerDispatched: bool = False
@@ -415,6 +425,91 @@ class FeedbackRequest(StrictModel):
     sourceRevision: Annotated[int, Field(gt=0)]
     requestRevision: Annotated[int, Field(gt=1)]
     createdAt: datetime
+
+
+class ReplySentRequest(StrictModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "schemaVersion": 1,
+                "eventId": "53333333-3333-4333-8333-333333333333",
+                "jobId": "51111111-1111-4111-8111-111111111111",
+                "workspaceKey": "default",
+                "requesterId": "54444444-4444-4444-8444-444444444444",
+                "commentId": "55555555-5555-4555-8555-555555555555",
+                "candidateId": "52222222-2222-4222-8222-222222222222",
+                "attributionKind": "SINGLE_SOURCE",
+                "sourceCount": 1,
+                "originalLength": 42,
+                "finalLength": 45,
+                "editDistance": 3,
+                "insertedLength": 3,
+                "deletedLength": 0,
+                "editRatio": "0.06666667",
+                "requestRevision": 1,
+                "sentAt": "2026-09-19T00:00:00Z",
+            }
+        },
+    )
+    schemaVersion: Annotated[Literal[1], Field(description="body-free 전송 사용 envelope 버전입니다.")]
+    eventId: Annotated[UUID, Field(description="dispatcher 재전송을 dedupe하는 안정적인 event ID입니다.")]
+    jobId: Annotated[UUID, Field(description="귀속 대상 reply/rewrite logical job입니다.")]
+    workspaceKey: Annotated[
+        str,
+        Field(min_length=1, max_length=80, description="job이 속한 Backend workspace key입니다."),
+    ]
+    requesterId: Annotated[UUID, Field(description="결과를 읽고 PUBLIC 댓글을 보낸 staff ID입니다.")]
+    commentId: Annotated[UUID, Field(description="성공 commit된 PUBLIC comment ID입니다.")]
+    candidateId: Annotated[UUID, Field(description="job 결과의 서버 소유 origin candidate ID입니다.")]
+    attributionKind: Annotated[
+        Literal["SINGLE_SOURCE", "MULTI_SOURCE"],
+        Field(description="단일 후보 편집량 또는 복수 후보 lineage 분류입니다."),
+    ]
+    sourceCount: Annotated[int, Field(ge=1, le=4, description="최종 답변에 귀속된 후보 수입니다.")]
+    originalLength: Annotated[
+        int | None,
+        Field(ge=1, le=6000, description="단일 원 답변의 정규화된 Unicode code-point 길이입니다."),
+    ] = None
+    finalLength: Annotated[
+        int | None,
+        Field(ge=0, le=20000, description="최종 PUBLIC body의 정규화된 Unicode code-point 길이입니다."),
+    ] = None
+    editDistance: Annotated[
+        int | None,
+        Field(ge=0, description="단일 source에서 최종 body까지의 code-point Levenshtein 거리입니다."),
+    ] = None
+    insertedLength: Annotated[int | None, Field(ge=0, description="선택된 최소 편집 경로의 삽입 수입니다.")] = None
+    deletedLength: Annotated[int | None, Field(ge=0, description="선택된 최소 편집 경로의 삭제 수입니다.")] = None
+    editRatio: Annotated[
+        Decimal | None,
+        Field(
+            ge=0,
+            le=1,
+            max_digits=9,
+            decimal_places=8,
+            description="editDistance를 두 길이의 최댓값으로 나눈 0~1 비율입니다.",
+        ),
+    ] = None
+    requestRevision: Annotated[int, Field(gt=0, description="Backend AI request의 단조 증가 revision입니다.")]
+    sentAt: Annotated[datetime, Field(description="댓글 transaction이 commit한 전송 시각입니다.")]
+
+    @model_validator(mode="after")
+    def edit_metric_shape(self) -> "ReplySentRequest":
+        metrics = (
+            self.originalLength,
+            self.finalLength,
+            self.editDistance,
+            self.insertedLength,
+            self.deletedLength,
+            self.editRatio,
+        )
+        if self.attributionKind == "SINGLE_SOURCE":
+            if self.sourceCount != 1 or any(value is None for value in metrics):
+                raise ValueError("single-source sent usage requires complete edit metrics")
+        elif self.sourceCount < 2 or any(value is not None for value in metrics):
+            raise ValueError("multi-source sent usage excludes single-source edit metrics")
+        return self
 
 
 class IndexEvent(StrictModel):

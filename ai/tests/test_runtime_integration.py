@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -63,6 +64,7 @@ from deskseed_ai.schemas import (
     ReplyProviderOutput,
     ReplyRewritePreservationVerdict,
     ReplyRewriteProviderOutput,
+    ReplySentRequest,
     SourceContext,
 )
 
@@ -342,6 +344,45 @@ def test_embedding_artifact_migration_preserves_pre_s14_chunk_rows(
         "chunk_id": existing_chunk_id,
         "embedding_artifact_key": None,
     }
+
+
+@pytest.mark.integration
+def test_reply_sent_migration_preserves_pre_s03b_jobs(repository: Repository) -> None:
+    existing_job_id = uuid4()
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "019_reply_sent_attribution.sql"
+    ).read_text(encoding="utf-8")
+    with repository.database.transaction() as connection:
+        connection.execute("drop schema if exists migration_019_probe cascade")
+        connection.execute("create schema migration_019_probe")
+        connection.execute("set local search_path = migration_019_probe, public")
+        connection.execute(
+            "create table ai_jobs (job_id uuid primary key, completed_at timestamptz null)"
+        )
+        connection.execute(
+            "insert into ai_jobs (job_id, completed_at) values (%s, clock_timestamp())",
+            (existing_job_id,),
+        )
+        connection.execute(migration)
+        preserved = connection.execute(
+            "select job_id, result_candidate_id from ai_jobs where job_id = %s",
+            (existing_job_id,),
+        ).fetchone()
+        usage_columns = {
+            row["column_name"]
+            for row in connection.execute(
+                """
+                select column_name from information_schema.columns
+                where table_schema = 'migration_019_probe'
+                  and table_name in ('ai_reply_sent_inbox', 'ai_reply_sent_usage')
+                """
+            ).fetchall()
+        }
+        connection.execute("drop schema migration_019_probe cascade")
+    assert preserved == {"job_id": existing_job_id, "result_candidate_id": None}
+    assert not {"body", "answer", "original_answer", "final_answer"} & usage_columns
 
 
 @pytest.mark.integration
@@ -913,6 +954,7 @@ def test_new_candidate_and_legacy_omit_bypass_intent_cache_and_shared_execution(
 
     receipts = [repository.get_job(item.jobId) for item in candidates]
     assert [receipt.reuseKind for receipt in receipts] == ["GENERATED", "GENERATED", None, None]
+    assert all(receipt.candidateId is None for receipt in receipts)
     with repository.database.connection() as connection:
         calls = connection.execute("select count(*) as count from ai_provider_calls").fetchone()
         shared = connection.execute("select count(*) as count from ai_shared_executions").fetchone()
@@ -1039,7 +1081,9 @@ def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_fol
         jobs = connection.execute(
             """
             select count(*) as count, count(distinct result_ciphertext) as ciphertexts,
-                   count(*) filter (where cost_microusd = 0) as zero_cost
+                   count(*) filter (where cost_microusd = 0) as zero_cost,
+                   count(distinct result_candidate_id) as candidates,
+                   count(*) filter (where result_candidate_id is null) as missing_candidates
             from ai_jobs where feature = 'ticket.reply_draft' and status = 'SUCCEEDED'
             """
         ).fetchone()
@@ -1047,7 +1091,13 @@ def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_fol
         {"stage": "GENERATION_LOW_COST", "count": 1},
         {"stage": "QUERY_EMBEDDING", "count": 1},
     ]
-    assert jobs == {"count": 20, "ciphertexts": 20, "zero_cost": 19}
+    assert jobs == {
+        "count": 20,
+        "ciphertexts": 20,
+        "zero_cost": 19,
+        "candidates": 1,
+        "missing_candidates": 0,
+    }
 
 
 @pytest.mark.integration
@@ -1368,6 +1418,8 @@ def test_reply_result_cache_requires_matching_published_index_and_reauthorizes_c
     consumer_receipt = repository.get_job(consumer.jobId)
     assert origin_receipt.status == JobStatus.SUCCEEDED
     assert consumer_receipt.status == JobStatus.SUCCEEDED
+    assert origin_receipt.candidateId is not None
+    assert consumer_receipt.candidateId == origin_receipt.candidateId
     assert consumer_receipt.result == origin_receipt.result
     assert consumer_receipt.costMicrousd == 0
     assert origin_backend.authorization_count == 2
@@ -2262,6 +2314,122 @@ def test_feedback_is_monotonic_and_exact_idempotent(repository: Repository, sett
     assert repository.accept_feedback(feedback).replayed is True
     with pytest.raises(ConflictError):
         repository.accept_feedback(feedback.model_copy(update={"reasonCode": "other"}))
+
+
+@pytest.mark.integration
+def test_reply_sent_usage_is_candidate_bound_body_free_and_exact_idempotent(
+    repository: Repository,
+) -> None:
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    complete_reply_source(repository, item)
+    receipt = repository.get_job(item.jobId)
+    assert receipt.candidateId is not None
+    sent_at = datetime.now(UTC)
+    usage = ReplySentRequest(
+        schemaVersion=1,
+        eventId=uuid4(),
+        jobId=item.jobId,
+        workspaceKey=item.workspaceKey,
+        requesterId=item.requesterId,
+        commentId=uuid4(),
+        candidateId=receipt.candidateId,
+        attributionKind="SINGLE_SOURCE",
+        sourceCount=1,
+        originalLength=20,
+        finalLength=22,
+        editDistance=2,
+        insertedLength=2,
+        deletedLength=0,
+        editRatio=Decimal("0.09090909"),
+        requestRevision=1,
+        sentAt=sent_at,
+    )
+
+    assert repository.accept_reply_sent(usage).replayed is False
+    assert repository.accept_reply_sent(usage).replayed is True
+    assert repository.accept_reply_sent(usage.model_copy(update={"eventId": uuid4()})).replayed is True
+    with pytest.raises(ConflictError):
+        repository.accept_reply_sent(usage.model_copy(update={"editDistance": 3}))
+    with pytest.raises(NotFoundError):
+        repository.accept_reply_sent(
+            usage.model_copy(update={"eventId": uuid4(), "candidateId": uuid4()})
+        )
+    with pytest.raises(ConflictError):
+        repository.accept_reply_sent(
+            usage.model_copy(update={"eventId": uuid4(), "requestRevision": 2})
+        )
+
+    with repository.database.connection() as connection:
+        stored = connection.execute(
+            """
+            select attribution_kind, source_count, original_length, final_length,
+                   edit_distance, inserted_length, deleted_length, edit_ratio
+            from ai_reply_sent_usage where comment_id = %s and candidate_id = %s
+            """,
+            (usage.commentId, usage.candidateId),
+        ).fetchone()
+        inbox_count = connection.execute(
+            "select count(*) as count from ai_reply_sent_inbox where job_id = %s",
+            (usage.jobId,),
+        ).fetchone()["count"]
+        columns = {
+            row["column_name"]
+            for row in connection.execute(
+                """
+                select column_name from information_schema.columns
+                where table_schema = 'public'
+                  and table_name in ('ai_reply_sent_inbox', 'ai_reply_sent_usage')
+                """
+            ).fetchall()
+        }
+    assert stored == {
+        "attribution_kind": "SINGLE_SOURCE",
+        "source_count": 1,
+        "original_length": 20,
+        "final_length": 22,
+        "edit_distance": 2,
+        "inserted_length": 2,
+        "deleted_length": 0,
+        "edit_ratio": Decimal("0.09090909"),
+    }
+    assert inbox_count == 2
+    assert not any("answer" in column or "body" in column for column in columns)
+
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set result_expires_at = clock_timestamp() - interval '1 second' where job_id = %s",
+            (usage.jobId,),
+        )
+    assert repository.purge_expired_results() == 1
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set completed_at = clock_timestamp() - interval '31 days' where job_id = %s",
+            (usage.jobId,),
+        )
+    assert repository.purge_expired_metadata() == 0
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_reply_sent_usage set received_at = clock_timestamp() - interval '31 days' where job_id = %s",
+            (usage.jobId,),
+        )
+    assert repository.purge_expired_metadata() == 1
+
+
+@pytest.mark.integration
+def test_only_successful_reply_results_receive_candidate_identity(
+    repository: Repository,
+    settings: Settings,
+) -> None:
+    reply = envelope_v2(Feature.REPLY_DRAFT)
+    summary = envelope_v2(Feature.SUMMARY)
+    complete_reply_source(repository, reply)
+    repository.accept_job(summary)
+    runtime = runtime_for(repository, settings, StaticBackend(summary))
+    assert runtime.dispatch_once() == 2
+    assert runtime.consume_once(block_ms=1, count=2) == 2
+
+    assert repository.get_job(reply.jobId).candidateId is not None
+    assert repository.get_job(summary.jobId).candidateId is None
 
 
 @pytest.mark.integration

@@ -35,6 +35,7 @@ from .schemas import (
     JobEnvelope,
     JobReceipt,
     OperationRequest,
+    ReplySentRequest,
     ServiceStatus,
 )
 from .security import EnvelopeCipher, authenticate_machine
@@ -224,6 +225,24 @@ def feedback(
     service: Annotated[Runtime, Depends(runtime)],
 ) -> Accepted:
     return service.repository.accept_feedback(payload)
+
+
+@app.post(
+    "/internal/v1/usage/reply-sent",
+    response_model=Accepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="PUBLIC 답변 전송 사용 기록",
+    description=(
+        "Backend가 comment와 함께 commit한 body-free reply/rewrite 귀속을 수신합니다. "
+        "event ID와 comment/candidate 쌍은 정확 멱등으로 처리합니다."
+    ),
+)
+def reply_sent_usage(
+    payload: ReplySentRequest,
+    _: Protected,
+    service: Annotated[Runtime, Depends(runtime)],
+) -> Accepted:
+    return service.repository.accept_reply_sent(payload)
 
 
 @app.post("/internal/v1/index-events", response_model=Accepted, status_code=status.HTTP_202_ACCEPTED)

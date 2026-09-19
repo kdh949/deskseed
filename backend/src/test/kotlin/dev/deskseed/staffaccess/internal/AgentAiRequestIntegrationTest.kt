@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.aiassistance.AiBackendRequestStatus
+import dev.deskseed.aiassistance.AiCitation
 import dev.deskseed.aiassistance.AiExecutionStatusReader
 import dev.deskseed.aiassistance.AiGenerationProvenance
 import dev.deskseed.aiassistance.AiFeature
@@ -9,10 +10,12 @@ import dev.deskseed.aiassistance.AiJobReceipt
 import dev.deskseed.aiassistance.AiRequestMetadata
 import dev.deskseed.aiassistance.AiRequestRateLimitedException
 import dev.deskseed.aiassistance.AiRequestService
+import dev.deskseed.aiassistance.AiReplyDraftResult
 import dev.deskseed.aiassistance.AiStaffActor
 import dev.deskseed.aiassistance.AiSummaryResult
 import dev.deskseed.aiassistance.CreateAiRequestCommand
 import dev.deskseed.aiassistance.internal.LEGACY_AI_CONTEXT_POLICY_VERSION
+import dev.deskseed.aiassistance.internal.AiReplyAttributionRetentionStore
 import dev.deskseed.aiassistance.internal.computeAiInputRevision
 import dev.deskseed.aiassistance.internal.computeAiContextRevision
 import dev.deskseed.aiassistance.internal.inputPolicyVersion
@@ -60,6 +63,7 @@ class AgentAiRequestIntegrationTest {
     @Autowired private lateinit var ticketStore: StaffTicketReadStore
     @Autowired private lateinit var requestService: AiRequestService
     @Autowired private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
+    @Autowired private lateinit var attributionRetentionStore: AiReplyAttributionRetentionStore
     @MockitoBean private lateinit var executionStatusReader: AiExecutionStatusReader
 
     @BeforeEach
@@ -831,6 +835,302 @@ class AgentAiRequestIntegrationTest {
     }
 
     @Test
+    fun `authorized PUBLIC reply records candidate sent usage and edit metrics exactly once`() {
+        val fixture = fixture(9120)
+        makeWritable(fixture)
+        val session = login(fixture.email, PASSWORD)
+        val created = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-reply-sent-source-0001",
+            requestBody("ticket.reply_draft"),
+        ).andExpect(status().isAccepted).andReturn().response.contentAsString
+        val jobId = uuidField(created, "jobId")
+        val contextRevision = stringField(created, "contextRevision")
+        val candidateId = UUID.randomUUID()
+        val originalAnswer = "환불 가능"
+        val finalAnswer = "환불 가능해요"
+        val now = Instant.now()
+        Mockito.`when`(executionStatusReader.read(jobId, true)).thenReturn(
+            AiJobReceipt(
+                jobId = jobId,
+                feature = "ticket.reply_draft",
+                status = AiBackendRequestStatus.SUCCEEDED,
+                requestRevision = 1,
+                createdAt = now.minusSeconds(1),
+                deadlineAt = now.plusSeconds(60),
+                pollAfterMs = 750,
+                cancelRequested = false,
+                contextRevision = contextRevision,
+                contextPolicyVersion = "public-comments-v2",
+                phase = "COMPLETE",
+                completedAt = now,
+                resultExpiresAt = now.plusSeconds(3_600),
+                result = AiReplyDraftResult(answer = originalAnswer, citations = emptyList<AiCitation>()),
+                provenance = AiGenerationProvenance(
+                    modelAlias = "openai/gpt-5.6-terra",
+                    actualModel = "openai/gpt-5.6-terra",
+                    promptVersion = "reply-v1",
+                    configVersion = "2026-09-19",
+                    generatedAt = now,
+                    publicCommentIds = emptyList(),
+                    contextRevision = contextRevision,
+                ),
+                costMicrousd = 10,
+                candidateId = candidateId,
+            ),
+        )
+        mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}?includeResult=true", fixture.number, jobId)
+                .session(session),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.canInsert").value(true))
+            .andExpect(jsonPath("$.candidateId").value(candidateId.toString()))
+            .andExpect(jsonPath("$.result.answer").value(originalAnswer))
+        assertThat(count("select count(*) from ai_reply_candidate_bindings where job_id = '$jobId'"))
+            .isEqualTo(1)
+
+        val commandId = UUID.randomUUID()
+        val body =
+            """
+            {
+              "expectedVersion": 0,
+              "changedFields": [],
+              "comment": {
+                "visibility": "PUBLIC",
+                "body": "$finalAnswer",
+                "aiAttribution": {
+                  "contractVersion": "AI_SENT_V1",
+                  "state": "LINEAGE_PRESENT",
+                  "sources": [{
+                    "jobId": "$jobId",
+                    "candidateId": "$candidateId",
+                    "originalAnswer": "$originalAnswer"
+                  }]
+                }
+              },
+              "clientCommandId": "$commandId"
+            }
+            """.trimIndent()
+        val firstResponse = mockMvc.perform(ticketCommand(session, fixture.number, "ai-reply-sent-0", body))
+            .andExpect(status().isOk)
+            .andReturn().response.contentAsString
+        val replayResponse = mockMvc.perform(ticketCommand(session, fixture.number, "ai-reply-sent-1", body))
+            .andExpect(status().isOk)
+            .andReturn().response.contentAsString
+        assertThat(replayResponse).isEqualTo(firstResponse)
+
+        assertThat(count("select count(*) from ticket_comments where ticket_id = '${fixture.ticketId}' and body = '$finalAnswer'"))
+            .isEqualTo(1)
+        assertThat(count("select count(*) from ai_reply_attribution_attempts"))
+            .isEqualTo(1)
+        assertThat(count("select count(*) from ai_reply_sent_attributions"))
+            .isEqualTo(1)
+        assertThat(count("select count(*) from ai_integration_outbox where event_type = 'REPLY_SENT'"))
+            .isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForMap(
+                """
+                select attribution_kind, source_count, original_length, final_length,
+                       edit_distance, inserted_length, deleted_length, edit_ratio
+                from ai_reply_sent_attributions
+                """.trimIndent(),
+            ),
+        ).containsEntry("attribution_kind", "SINGLE_SOURCE")
+            .containsEntry("source_count", 1)
+            .containsEntry("original_length", 5)
+            .containsEntry("final_length", 7)
+            .containsEntry("edit_distance", 2)
+            .containsEntry("inserted_length", 2)
+            .containsEntry("deleted_length", 0)
+        val persisted = jdbcTemplate.queryForObject(
+            """
+            select coalesce(string_agg(value, ' '), '') from (
+                select payload_json::text as value from ai_integration_outbox where event_type = 'REPLY_SENT'
+                union all
+                select metadata_json as value from ticket_audit_events
+            ) persisted_values
+            """.trimIndent(),
+            String::class.java,
+        )!!
+        assertThat(persisted)
+            .contains(candidateId.toString(), "ATTRIBUTED_SINGLE", "originalAnswerSha256")
+            .doesNotContain(originalAnswer, finalAnswer)
+
+        jdbcTemplate.update(
+            "update ai_reply_candidate_bindings set last_authorized_at = clock_timestamp() - interval '31 days'",
+        )
+        jdbcTemplate.update(
+            "update ai_reply_attribution_attempts set created_at = clock_timestamp() - interval '31 days'",
+        )
+        val pending = attributionRetentionStore.purge(Instant.now())
+        assertThat(pending.bindings).isEqualTo(1)
+        assertThat(pending.attempts).isZero()
+        assertThat(count("select count(*) from ai_reply_attribution_attempts")).isEqualTo(1)
+        assertThat(count("select count(*) from ai_integration_outbox where event_type = 'REPLY_SENT' and status = 'PENDING'"))
+            .isEqualTo(1)
+
+        jdbcTemplate.update(
+            """
+            update ai_integration_outbox
+            set status = 'DELIVERED', delivered_at = clock_timestamp(),
+                lease_owner = null, lease_expires_at = null
+            where event_type = 'REPLY_SENT'
+            """.trimIndent(),
+        )
+        val delivered = attributionRetentionStore.purge(Instant.now())
+        assertThat(delivered.bindings).isZero()
+        assertThat(delivered.attempts).isEqualTo(1)
+        assertThat(count("select count(*) from ai_reply_attribution_attempts")).isZero()
+        assertThat(count("select count(*) from ai_reply_sent_attributions")).isZero()
+        assertThat(count("select count(*) from ai_integration_outbox where event_type = 'REPLY_SENT'")).isZero()
+    }
+
+    @Test
+    fun `invalid PUBLIC binding and INTERNAL lineage do not block comments or emit sent usage`() {
+        val fixture = fixture(9121)
+        makeWritable(fixture)
+        val session = login(fixture.email, PASSWORD)
+        val jobId = uuidField(
+            create(
+                session,
+                fixture.staffId,
+                fixture.number,
+                "ai-reply-sent-invalid-0001",
+                requestBody("ticket.reply_draft"),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+        val candidateId = UUID.randomUUID()
+        fun body(version: Int, visibility: String, commandId: UUID) =
+            """
+            {
+              "expectedVersion": $version,
+              "changedFields": [],
+              "comment": {
+                "visibility": "$visibility",
+                "body": "귀속 검증 실패와 무관하게 저장",
+                "aiAttribution": {
+                  "contractVersion": "AI_SENT_V1",
+                  "state": "LINEAGE_PRESENT",
+                  "sources": [{
+                    "jobId": "$jobId",
+                    "candidateId": "$candidateId",
+                    "originalAnswer": "존재하지 않는 후보"
+                  }]
+                }
+              },
+              "clientCommandId": "$commandId"
+            }
+            """.trimIndent()
+
+        mockMvc.perform(ticketCommand(session, fixture.number, "invalid-public-binding", body(0, "PUBLIC", UUID.randomUUID())))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.version").value(1))
+        mockMvc.perform(ticketCommand(session, fixture.number, "ignored-internal-lineage", body(1, "INTERNAL", UUID.randomUUID())))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.version").value(2))
+
+        assertThat(
+            jdbcTemplate.queryForList(
+                "select outcome from ai_reply_attribution_attempts order by created_at, comment_id",
+                String::class.java,
+            ).filterNotNull(),
+        ).containsExactlyInAnyOrder("UNATTRIBUTED_VALIDATION_FAILED", "IGNORED_INTERNAL")
+        assertThat(count("select count(*) from ai_reply_sent_attributions")).isZero()
+        assertThat(count("select count(*) from ai_integration_outbox where event_type = 'REPLY_SENT'")).isZero()
+        assertThat(count("select count(*) from ticket_comments where ticket_id = '${fixture.ticketId}'"))
+            .isEqualTo(4)
+    }
+
+    @Test
+    fun `attribution persistence failure rolls back comment audit and sent intent`() {
+        val fixture = fixture(9122)
+        makeWritable(fixture)
+        val session = login(fixture.email, PASSWORD)
+        val jobId = uuidField(
+            create(
+                session,
+                fixture.staffId,
+                fixture.number,
+                "ai-reply-sent-rollback-0001",
+                requestBody("ticket.reply_draft"),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+        jdbcTemplate.execute(
+            """
+            create function fail_ai_reply_attribution_for_test()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                raise exception 'forced AI reply attribution failure';
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create trigger fail_ai_reply_attribution_for_test
+            before insert on ai_reply_attribution_attempts
+            for each row execute function fail_ai_reply_attribution_for_test()
+            """.trimIndent(),
+        )
+        try {
+            mockMvc.perform(
+                ticketCommand(
+                    session,
+                    fixture.number,
+                    "ai-reply-sent-rollback",
+                    """
+                    {
+                      "expectedVersion": 0,
+                      "changedFields": [],
+                      "comment": {
+                        "visibility": "PUBLIC",
+                        "body": "함께 롤백될 공개 답변",
+                        "aiAttribution": {
+                          "contractVersion": "AI_SENT_V1",
+                          "state": "LINEAGE_PRESENT",
+                          "sources": [{
+                            "jobId": "$jobId",
+                            "candidateId": "${UUID.randomUUID()}",
+                            "originalAnswer": "검증용 후보"
+                          }]
+                        }
+                      },
+                      "clientCommandId": "${UUID.randomUUID()}"
+                    }
+                    """.trimIndent(),
+                ),
+            )
+                .andExpect(status().isServiceUnavailable)
+                .andExpect(jsonPath("$.type").value("/problems/audit-write-unavailable"))
+        } finally {
+            jdbcTemplate.execute(
+                "drop trigger if exists fail_ai_reply_attribution_for_test on ai_reply_attribution_attempts",
+            )
+            jdbcTemplate.execute("drop function if exists fail_ai_reply_attribution_for_test()")
+        }
+
+        assertThat(count("select count(*) from ticket_comments where ticket_id = '${fixture.ticketId}'"))
+            .isEqualTo(2)
+        assertThat(count("select count(*) from ticket_audits where ticket_id = '${fixture.ticketId}'"))
+            .isZero()
+        assertThat(count("select count(*) from ai_reply_attribution_attempts")).isZero()
+        assertThat(count("select count(*) from ai_reply_sent_attributions")).isZero()
+        assertThat(count("select count(*) from ai_integration_outbox where event_type = 'REPLY_SENT'")).isZero()
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select version from tickets where id = ?",
+                Long::class.java,
+                fixture.ticketId,
+            ),
+        ).isZero()
+    }
+
+    @Test
     fun `result body is audited and hidden when PUBLIC context becomes stale`() {
         val fixture = fixture(9107)
         val session = login(fixture.email, PASSWORD)
@@ -918,6 +1218,67 @@ class AgentAiRequestIntegrationTest {
             .isEqualTo(1)
     }
 
+    @Test
+    fun `summary new candidate remains usable without reply attribution candidate id`() {
+        val fixture = fixture(9126)
+        val session = login(fixture.email, PASSWORD)
+        val created = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-summary-candidate-result-0001",
+            requestBody("ticket.summary", generationMode = "NEW_CANDIDATE"),
+        ).andExpect(status().isAccepted).andReturn().response.contentAsString
+        val jobId = uuidField(created, "jobId")
+        val contextRevision = stringField(created, "contextRevision")
+        val now = Instant.now()
+        Mockito.`when`(executionStatusReader.read(jobId, true)).thenReturn(
+            AiJobReceipt(
+                jobId = jobId,
+                feature = "ticket.summary",
+                status = AiBackendRequestStatus.SUCCEEDED,
+                requestRevision = 1,
+                createdAt = now.minusSeconds(1),
+                deadlineAt = now.plusSeconds(60),
+                pollAfterMs = 750,
+                cancelRequested = false,
+                contextRevision = contextRevision,
+                contextPolicyVersion = "public-comments-v2",
+                phase = "COMPLETE",
+                completedAt = now,
+                resultExpiresAt = now.plusSeconds(3600),
+                result = AiSummaryResult(
+                    problem = "공개 문의",
+                    attemptedActions = emptyList(),
+                    unresolvedItems = emptyList(),
+                    nextChecks = emptyList(),
+                ),
+                provenance = AiGenerationProvenance(
+                    modelAlias = "openai/gpt-5.6-luna",
+                    actualModel = "openai/gpt-5.6-luna",
+                    promptVersion = "ai-v1.2-p1",
+                    configVersion = "2026-09-16",
+                    generatedAt = now,
+                    publicCommentIds = emptyList(),
+                    contextRevision = contextRevision,
+                ),
+                costMicrousd = 10,
+                generationMode = "NEW_CANDIDATE",
+                candidateSequence = 1,
+                candidateId = null,
+            ),
+        )
+
+        mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}?includeResult=true", fixture.number, jobId)
+                .session(session),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.result.problem").value("공개 문의"))
+            .andExpect(jsonPath("$.candidateId").doesNotExist())
+            .andExpect(jsonPath("$.canInsert").value(false))
+    }
+
     private fun create(
         session: MockHttpSession,
         actorId: UUID,
@@ -933,6 +1294,19 @@ class AgentAiRequestIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content(body),
     )
+
+    private fun ticketCommand(
+        session: MockHttpSession,
+        ticketNumber: Long,
+        requestId: String,
+        body: String,
+    ) = post("/api/v1/agent/tickets/{ticketNumber}/commands", ticketNumber)
+        .session(session)
+        .header("X-CSRF-TOKEN", csrf(session))
+        .header("X-Request-Id", requestId)
+        .header("X-Correlation-Id", "ai-reply-sent-attribution")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(body)
 
     private fun source(jobId: UUID, secret: String = "test-ai-source-secret") = mockMvc.perform(
         get("/api/v1/internal/ai/requests/{jobId}/context", jobId)
@@ -1055,6 +1429,33 @@ class AgentAiRequestIntegrationTest {
             values (?, ?, 'CUSTOMER', ?, ?, ?, clock_timestamp())
             """.trimIndent(),
             UUID.randomUUID(), ticketId, customerId, visibility, body,
+        )
+    }
+
+    private fun makeWritable(fixture: Fixture) {
+        val groupId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into support_groups (id, name, status, created_at, updated_at, version)
+            values (?, ?, 'ACTIVE', now(), now(), 0)
+            """.trimIndent(),
+            groupId,
+            "AI 귀속 테스트 ${fixture.number}",
+        )
+        jdbcTemplate.update(
+            """
+            insert into group_memberships (id, group_id, staff_id, status, created_at, updated_at, version)
+            values (?, ?, ?, 'ACTIVE', now(), now(), 0)
+            """.trimIndent(),
+            UUID.randomUUID(),
+            groupId,
+            fixture.staffId,
+        )
+        jdbcTemplate.update(
+            "update tickets set group_id = ?, assignee_id = ? where id = ?",
+            groupId,
+            fixture.staffId,
+            fixture.ticketId,
         )
     }
 
