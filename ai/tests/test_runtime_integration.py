@@ -40,6 +40,7 @@ from deskseed_ai.schemas import (
     CancellationEnvelope,
     Feature,
     FeedbackRequest,
+    GenerationMode,
     IndexEvent,
     JobEnvelope,
     JobStatus,
@@ -113,6 +114,23 @@ def matching_v2_job(origin: JobEnvelope) -> JobEnvelope:
     )
 
 
+def intent_job(origin: JobEnvelope, mode: GenerationMode, sequence: int | None = None) -> JobEnvelope:
+    payload = origin.model_dump()
+    payload.update(
+        {
+            "schemaVersion": 3,
+            "eventId": uuid4(),
+            "jobId": uuid4(),
+            "generationMode": mode,
+            "candidateId": uuid4() if mode == GenerationMode.NEW_CANDIDATE else None,
+            "candidateSequence": sequence if mode == GenerationMode.NEW_CANDIDATE else None,
+            "createdAt": datetime.now(UTC),
+            "deadlineAt": datetime.now(UTC) + timedelta(minutes=2),
+        }
+    )
+    return JobEnvelope.model_validate(payload)
+
+
 def cache_enabled(settings: Settings) -> Settings:
     return Settings.model_validate(
         settings.model_dump()
@@ -129,6 +147,17 @@ def shared_execution_enabled(settings: Settings) -> Settings:
         | {
             "exact_result_cache_mode": "test",
             "shared_execution_mode": "test",
+            "result_cache_key_secret": "synthetic-cache-key-secret-at-least-32-bytes",
+        }
+    )
+
+
+def intent_reuse_enabled(settings: Settings) -> Settings:
+    return Settings.model_validate(
+        settings.model_dump()
+        | {
+            "exact_result_cache_mode": "intent",
+            "shared_execution_mode": "intent",
             "result_cache_key_secret": "synthetic-cache-key-secret-at-least-32-bytes",
         }
     )
@@ -342,12 +371,69 @@ def test_exact_result_cache_reencrypts_completed_result_without_second_provider_
 
 
 @pytest.mark.integration
+def test_explicit_reuse_intent_reports_generated_then_cache_hit(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = intent_reuse_enabled(settings)
+    template = envelope_v2(Feature.SUMMARY)
+    origin = intent_job(template, GenerationMode.REUSE_OR_CREATE)
+    consumer = intent_job(template, GenerationMode.REUSE_OR_CREATE)
+    for item in (origin, consumer):
+        repository.accept_job(item)
+        runtime = runtime_for(repository, enabled, StaticBackend(item))
+        assert runtime.dispatch_once() == 1
+        assert runtime.consume_once(block_ms=1) == 1
+
+    origin_receipt = repository.get_job(origin.jobId)
+    consumer_receipt = repository.get_job(consumer.jobId)
+    assert origin_receipt.reuseKind == "GENERATED"
+    assert consumer_receipt.reuseKind == "CACHE_HIT"
+    assert consumer_receipt.costMicrousd == 0
+    with repository.database.connection() as connection:
+        calls = connection.execute("select count(*) as count from ai_provider_calls").fetchone()
+    assert calls["count"] == 1
+
+
+@pytest.mark.integration
+def test_new_candidate_and_legacy_omit_bypass_intent_cache_and_shared_execution(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = intent_reuse_enabled(settings)
+    template = envelope_v2(Feature.SUMMARY)
+    candidates = [
+        intent_job(template, GenerationMode.NEW_CANDIDATE, 1),
+        intent_job(template, GenerationMode.NEW_CANDIDATE, 2),
+        matching_v2_job(template),
+        matching_v2_job(template),
+    ]
+    for item in candidates:
+        repository.accept_job(item)
+        runtime = runtime_for(repository, enabled, StaticBackend(item))
+        assert runtime.dispatch_once() == 1
+        assert runtime.consume_once(block_ms=1) == 1
+
+    receipts = [repository.get_job(item.jobId) for item in candidates]
+    assert [receipt.reuseKind for receipt in receipts] == ["GENERATED", "GENERATED", None, None]
+    with repository.database.connection() as connection:
+        calls = connection.execute("select count(*) as count from ai_provider_calls").fetchone()
+        shared = connection.execute("select count(*) as count from ai_shared_executions").fetchone()
+        cached = connection.execute("select count(*) as count from ai_result_cache").fetchone()
+    assert calls["count"] == 4
+    assert shared["count"] == 0
+    assert cached["count"] == 0
+
+
+@pytest.mark.integration
 def test_shared_execution_joins_twenty_jobs_and_runs_provider_once(
     repository: Repository, settings: Settings
 ) -> None:
-    enabled = shared_execution_enabled(settings)
-    origin = envelope_v2(Feature.SUMMARY)
-    items = [origin, *(matching_v2_job(origin) for _ in range(19))]
+    enabled = intent_reuse_enabled(settings)
+    template = envelope_v2(Feature.SUMMARY)
+    origin = intent_job(template, GenerationMode.REUSE_OR_CREATE)
+    items = [
+        origin,
+        *(intent_job(template, GenerationMode.REUSE_OR_CREATE) for _ in range(19)),
+    ]
     for item in items:
         repository.accept_job(item)
     claims = [
@@ -384,6 +470,8 @@ def test_shared_execution_joins_twenty_jobs_and_runs_provider_once(
     receipts = [repository.get_job(item.jobId) for item in items]
     assert all(receipt.status == JobStatus.SUCCEEDED for receipt in receipts)
     assert sum(receipt.costMicrousd == 0 for receipt in receipts) == 19
+    assert [receipt.reuseKind for receipt in receipts].count("GENERATED") == 1
+    assert [receipt.reuseKind for receipt in receipts].count("COALESCED") == 19
     with repository.database.connection() as connection:
         execution = connection.execute(
             "select status, phase from ai_shared_executions"
@@ -1373,7 +1461,9 @@ def test_provider_receipt_settles_overrun_idempotently_and_flags_conflict(
         "standard",
         "short",
     )
+    assert repository.get_job(item.jobId).providerDispatched is False
     repository.mark_provider_call_dispatching(call_id)
+    assert repository.get_job(item.jobId).providerDispatched is True
     receipt = provider_receipt(call_id)
 
     assert repository.record_provider_response(receipt, 25) == 25

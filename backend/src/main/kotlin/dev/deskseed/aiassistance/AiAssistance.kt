@@ -27,6 +27,11 @@ enum class AiBackendRequestStatus {
     EXPIRED,
 }
 
+enum class AiGenerationMode {
+    REUSE_OR_CREATE,
+    NEW_CANDIDATE,
+}
+
 data class AiStaffActor(
     val id: UUID,
     val displayName: String,
@@ -47,6 +52,7 @@ data class CreateAiRequestCommand(
     val feature: AiFeature,
     val expectedTicketVersion: Long,
     val options: Map<String, String>,
+    val generationMode: AiGenerationMode? = null,
     val idempotencyKey: String,
     val actor: AiStaffActor,
     val metadata: AiRequestMetadata,
@@ -74,6 +80,10 @@ data class AiJobReceipt(
     val result: AiTypedResult? = null,
     val provenance: AiGenerationProvenance? = null,
     val costMicrousd: Long? = null,
+    val generationMode: String? = null,
+    val candidateSequence: Int? = null,
+    val reuseKind: String? = null,
+    val providerDispatched: Boolean = false,
 )
 
 data class AiGenerationProvenance(

@@ -18,6 +18,11 @@ class Feature(StrEnum):
     REPLY_DRAFT = "ticket.reply_draft"
 
 
+class GenerationMode(StrEnum):
+    REUSE_OR_CREATE = "REUSE_OR_CREATE"
+    NEW_CANDIDATE = "NEW_CANDIDATE"
+
+
 class JobStatus(StrEnum):
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
@@ -53,7 +58,7 @@ class AuthorRole(StrEnum):
 
 
 class JobEnvelope(StrictModel):
-    schemaVersion: Literal[1, 2]
+    schemaVersion: Literal[1, 2, 3]
     eventId: UUID
     jobId: UUID
     workspaceKey: Annotated[str, Field(min_length=1, max_length=80)]
@@ -65,6 +70,9 @@ class JobEnvelope(StrictModel):
     contextPolicyVersion: Literal["public-comments-v1", "public-comments-v2"]
     aiInputRevision: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
     inputPolicyVersion: Literal["summary-input-v1", "triage-input-v1", "reply-input-v1"] | None = None
+    generationMode: GenerationMode | None = None
+    candidateId: UUID | None = None
+    candidateSequence: Annotated[int | None, Field(gt=0)] = None
     dataClass: Literal["PUBLIC_ONLY"]
     requestRevision: Annotated[int, Field(gt=0)]
     options: dict[str, Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=dict, max_length=2)
@@ -92,14 +100,42 @@ class JobEnvelope(StrictModel):
             Feature.REPLY_DRAFT: "reply-input-v1",
         }[self.feature]
         if self.schemaVersion == 1:
-            if self.aiInputRevision is not None or self.inputPolicyVersion is not None:
+            if any(
+                value is not None
+                for value in (
+                    self.aiInputRevision,
+                    self.inputPolicyVersion,
+                    self.generationMode,
+                    self.candidateId,
+                    self.candidateSequence,
+                )
+            ):
                 raise ValueError("v1 jobs cannot contain v2 input revision metadata")
-        elif (
+        elif self.schemaVersion == 2 and (
             self.contextPolicyVersion != "public-comments-v2"
             or self.aiInputRevision is None
             or self.inputPolicyVersion != expected_input_policy
+            or self.generationMode is not None
+            or self.candidateId is not None
+            or self.candidateSequence is not None
         ):
             raise ValueError("v2 jobs require matching input revision metadata")
+        elif self.schemaVersion == 3:
+            if (
+                self.contextPolicyVersion != "public-comments-v2"
+                or self.aiInputRevision is None
+                or self.inputPolicyVersion != expected_input_policy
+                or self.generationMode is None
+            ):
+                raise ValueError("v3 jobs require input revision and generation intent")
+            if self.generationMode == GenerationMode.NEW_CANDIDATE and (
+                self.candidateId is None or self.candidateSequence is None
+            ):
+                raise ValueError("NEW_CANDIDATE requires server candidate identity")
+            if self.generationMode == GenerationMode.REUSE_OR_CREATE and (
+                self.candidateId is not None or self.candidateSequence is not None
+            ):
+                raise ValueError("REUSE_OR_CREATE cannot contain candidate identity")
         return self
 
 
@@ -248,6 +284,10 @@ class JobReceipt(StrictModel):
     result: TypedResult | None = Field(default=None, discriminator="type")
     provenance: GenerationProvenance | None = None
     costMicrousd: int | None = None
+    generationMode: GenerationMode | None = None
+    candidateSequence: int | None = None
+    reuseKind: Literal["GENERATED", "CACHE_HIT", "COALESCED"] | None = None
+    providerDispatched: bool = False
 
 
 class FeedbackRequest(StrictModel):

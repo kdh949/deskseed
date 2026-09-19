@@ -6,6 +6,7 @@ import dev.deskseed.aiassistance.AiActivityAuditWriter
 import dev.deskseed.aiassistance.AiBackendRequestStatus
 import dev.deskseed.aiassistance.AiFeedbackReceipt
 import dev.deskseed.aiassistance.AiFeature
+import dev.deskseed.aiassistance.AiGenerationMode
 import dev.deskseed.aiassistance.AiFeatureDisabledException
 import dev.deskseed.aiassistance.AiExecutionStatusReader
 import dev.deskseed.aiassistance.AiJobReceipt
@@ -84,6 +85,7 @@ internal class JdbcAiRequestService(
                 command.feature.value,
                 command.expectedTicketVersion,
                 optionsJson,
+                command.generationMode?.name.orEmpty(),
             ).joinToString("\u001f"),
         )
         acquireIdempotencyLock(command.actor.id, idempotencyFingerprint)
@@ -97,6 +99,11 @@ internal class JdbcAiRequestService(
         val now = Instant.now(clock)
         val deadline = now.plus(requestDeadline)
         val jobId = UUID.randomUUID()
+        val candidate = if (command.generationMode == AiGenerationMode.NEW_CANDIDATE) {
+            claimCandidate(command, context.ticketId, aiInputRevision, now)
+        } else {
+            null
+        }
         appendStaffReadAudit(command, context, jobId, now)
         jdbcTemplate.update(
             """
@@ -104,9 +111,9 @@ internal class JdbcAiRequestService(
                 job_id, workspace_key, requester_staff_id, ticket_id, ticket_number,
                 feature, status, expected_ticket_version, options_json, request_fingerprint,
                 idempotency_key_fingerprint, context_policy_version, context_revision,
-                ai_input_revision, input_policy_version,
+                ai_input_revision, input_policy_version, generation_mode, candidate_id, candidate_sequence,
                 request_revision, cancellation_requested, created_at, updated_at, deadline_at
-            ) values (?, ?, ?, ?, ?, ?, 'ACCEPTED', ?, ?::jsonb, ?, ?, ?, ?, ?, ?, 1, false, ?, ?, ?)
+            ) values (?, ?, ?, ?, ?, ?, 'ACCEPTED', ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, false, ?, ?, ?)
             """.trimIndent(),
             jobId,
             workspaceKey,
@@ -122,12 +129,15 @@ internal class JdbcAiRequestService(
             contextRevision,
             aiInputRevision,
             inputPolicyVersion,
+            command.generationMode?.name,
+            candidate?.id,
+            candidate?.sequence,
             Timestamp.from(now),
             Timestamp.from(now),
             Timestamp.from(deadline),
         )
         val envelope = linkedMapOf<String, Any?>(
-            "schemaVersion" to JOB_REQUEST_OUTBOX_SCHEMA_VERSION,
+            "schemaVersion" to if (command.generationMode == null) JOB_REQUEST_OUTBOX_SCHEMA_VERSION else INTENT_JOB_SCHEMA_VERSION,
             "eventId" to UUID.randomUUID().toString(),
             "jobId" to jobId.toString(),
             "workspaceKey" to workspaceKey,
@@ -147,6 +157,11 @@ internal class JdbcAiRequestService(
             "traceparent" to command.metadata.traceparent,
             "tracestate" to command.metadata.tracestate,
         )
+        if (command.generationMode != null) {
+            envelope["generationMode"] = command.generationMode.name
+            envelope["candidateId"] = candidate?.id?.toString()
+            envelope["candidateSequence"] = candidate?.sequence
+        }
         appendOutbox(jobId, "JOB_REQUESTED", 1, envelope, now)
         activityAuditWriter.append(
             AiActivityAudit(
@@ -158,11 +173,25 @@ internal class JdbcAiRequestService(
                 ticketId = context.ticketId,
                 ticketNumber = context.ticketNumber,
                 requestRevision = 1,
-                details = mapOf("feature" to command.feature.value),
+                details = buildMap {
+                    put("feature", command.feature.value)
+                    command.generationMode?.let { put("generationMode", it.name) }
+                },
                 occurredAt = now,
             ),
         )
-        return receipt(jobId, command.feature.value, AiBackendRequestStatus.ACCEPTED, 1, now, deadline, false, contextRevision)
+        return receipt(
+            jobId,
+            command.feature.value,
+            AiBackendRequestStatus.ACCEPTED,
+            1,
+            now,
+            deadline,
+            false,
+            contextRevision,
+            generationMode = command.generationMode?.name,
+            candidateSequence = candidate?.sequence,
+        )
     }
 
     @Transactional
@@ -245,7 +274,8 @@ internal class JdbcAiRequestService(
         val backendReceipt = jdbcTemplate.query(
             """
             select job_id, feature, status, request_revision, created_at, deadline_at,
-                   cancellation_requested, context_revision, context_policy_version, request_fingerprint
+                   cancellation_requested, context_revision, context_policy_version, request_fingerprint,
+                   generation_mode, candidate_sequence
             from ai_requests
             where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_number = ?
             """.trimIndent(),
@@ -266,7 +296,25 @@ internal class JdbcAiRequestService(
             if (delivered) throw AiStatusUnavailableException()
             return backendReceipt
         }
-        if (remote.jobId != jobId || remote.feature != backendReceipt.feature) throw AiStatusUnavailableException()
+        if (
+            remote.jobId != jobId || remote.feature != backendReceipt.feature ||
+            remote.generationMode != backendReceipt.generationMode ||
+            remote.candidateSequence != backendReceipt.candidateSequence
+        ) throw AiStatusUnavailableException()
+        if (
+            backendReceipt.generationMode == AiGenerationMode.NEW_CANDIDATE.name &&
+            remote.status in setOf(AiBackendRequestStatus.FAILED, AiBackendRequestStatus.SUPERSEDED) &&
+            !remote.providerDispatched
+        ) {
+            jdbcTemplate.update(
+                """
+                update ai_requests set candidate_quota_refunded_at = coalesce(candidate_quota_refunded_at, ?)
+                where job_id = ? and generation_mode = 'NEW_CANDIDATE'
+                """.trimIndent(),
+                Timestamp.from(Instant.now(clock)),
+                jobId,
+            )
+        }
         return resultAuthorizer.authorize(ticketNumber, jobId, actor, metadata, remote)
     }
 
@@ -412,7 +460,8 @@ internal class JdbcAiRequestService(
         return jdbcTemplate.query(
             """
             select job_id, feature, status, request_revision, created_at, deadline_at,
-                   cancellation_requested, context_revision, context_policy_version, request_fingerprint
+                   cancellation_requested, context_revision, context_policy_version, request_fingerprint,
+                   generation_mode, candidate_sequence
             from ai_requests
             where workspace_key = ? and requester_staff_id = ? and ticket_number = ?
             order by created_at desc, job_id desc
@@ -683,10 +732,74 @@ internal class JdbcAiRequestService(
         if (outstanding >= MAX_OUTSTANDING_REQUESTS) throw AiRequestRateLimitedException(5)
     }
 
+    private fun claimCandidate(
+        command: CreateAiRequestCommand,
+        ticketId: UUID,
+        aiInputRevision: String,
+        now: Instant,
+    ): CandidateIdentity {
+        val scope = "${command.actor.id}:$ticketId:${command.feature.value}:$aiInputRevision"
+        jdbcTemplate.queryForObject(
+            "select pg_advisory_xact_lock(hashtext('ai-new-candidate'), hashtext(?))",
+            Any::class.java,
+            scope,
+        )
+        val since = now.minus(CANDIDATE_WINDOW)
+        val active = jdbcTemplate.queryForObject(
+            """
+            select count(*) from ai_requests
+            where workspace_key = ? and requester_staff_id = ? and ticket_id = ? and feature = ?
+              and ai_input_revision = ? and generation_mode = 'NEW_CANDIDATE'
+              and candidate_quota_refunded_at is null and created_at >= ?
+            """.trimIndent(),
+            Long::class.java,
+            workspaceKey,
+            command.actor.id,
+            ticketId,
+            command.feature.value,
+            aiInputRevision,
+            Timestamp.from(since),
+        ) ?: 0L
+        if (active >= NEW_CANDIDATE_LIMIT) {
+            val earliest = jdbcTemplate.queryForObject(
+                """
+                select min(created_at) from ai_requests
+                where workspace_key = ? and requester_staff_id = ? and ticket_id = ? and feature = ?
+                  and ai_input_revision = ? and generation_mode = 'NEW_CANDIDATE'
+                  and candidate_quota_refunded_at is null and created_at >= ?
+                """.trimIndent(),
+                Timestamp::class.java,
+                workspaceKey,
+                command.actor.id,
+                ticketId,
+                command.feature.value,
+                aiInputRevision,
+                Timestamp.from(since),
+            )?.toInstant() ?: now
+            val retryAfter = Duration.between(now, earliest.plus(CANDIDATE_WINDOW)).seconds.coerceIn(1, 86_400)
+            throw AiRequestRateLimitedException(retryAfter)
+        }
+        val sequence = jdbcTemplate.queryForObject(
+            """
+            select coalesce(max(candidate_sequence), 0) + 1 from ai_requests
+            where workspace_key = ? and requester_staff_id = ? and ticket_id = ? and feature = ?
+              and ai_input_revision = ? and generation_mode = 'NEW_CANDIDATE'
+            """.trimIndent(),
+            Int::class.java,
+            workspaceKey,
+            command.actor.id,
+            ticketId,
+            command.feature.value,
+            aiInputRevision,
+        ) ?: 1
+        return CandidateIdentity(UUID.randomUUID(), sequence)
+    }
+
     private fun findByIdempotency(actorId: UUID, fingerprint: String): Binding? = jdbcTemplate.query(
         """
         select job_id, feature, status, request_revision, created_at, deadline_at,
-               cancellation_requested, context_revision, context_policy_version, request_fingerprint
+               cancellation_requested, context_revision, context_policy_version, request_fingerprint,
+               generation_mode, candidate_sequence
         from ai_requests
         where workspace_key = ? and requester_staff_id = ? and idempotency_key_fingerprint = ?
         """.trimIndent(),
@@ -699,7 +812,8 @@ internal class JdbcAiRequestService(
     private fun findForUpdate(jobId: UUID, actorId: UUID, ticketNumber: Long): Binding? = jdbcTemplate.query(
         """
         select job_id, feature, status, request_revision, created_at, deadline_at,
-               cancellation_requested, context_revision, context_policy_version, request_fingerprint
+               cancellation_requested, context_revision, context_policy_version, request_fingerprint,
+               generation_mode, candidate_sequence
         from ai_requests
         where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_number = ?
         for update
@@ -722,6 +836,8 @@ internal class JdbcAiRequestService(
             cancelRequested = result.getBoolean("cancellation_requested"),
             contextRevision = result.getString("context_revision"),
             contextPolicyVersion = result.getString("context_policy_version"),
+            generationMode = result.getString("generation_mode"),
+            candidateSequence = (result.getObject("candidate_sequence") as? Number)?.toInt(),
         ),
         requestFingerprint = result.getString("request_fingerprint"),
     )
@@ -798,6 +914,8 @@ internal class JdbcAiRequestService(
         cancelRequested: Boolean,
         contextRevision: String,
         contextPolicyVersion: String = AI_CONTEXT_POLICY_VERSION,
+        generationMode: String? = null,
+        candidateSequence: Int? = null,
     ) = AiJobReceipt(
         jobId = jobId,
         feature = feature,
@@ -809,6 +927,8 @@ internal class JdbcAiRequestService(
         cancelRequested = cancelRequested,
         contextRevision = contextRevision,
         contextPolicyVersion = contextPolicyVersion,
+        generationMode = generationMode,
+        candidateSequence = candidateSequence,
     )
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
@@ -819,6 +939,8 @@ internal class JdbcAiRequestService(
         val receipt: AiJobReceipt,
         val requestFingerprint: String,
     )
+
+    private data class CandidateIdentity(val id: UUID, val sequence: Int)
 
     private data class SourceBinding(
         val jobId: UUID,
@@ -862,9 +984,12 @@ internal class JdbcAiRequestService(
         const val INPUT_SCOPE = "PUBLIC_ONLY"
         const val OUTBOX_SCHEMA_VERSION = 1
         const val JOB_REQUEST_OUTBOX_SCHEMA_VERSION = 2
+        const val INTENT_JOB_SCHEMA_VERSION = 3
         const val POLL_AFTER_MS = 750L
         const val ACTOR_REQUESTS_PER_MINUTE = 5L
         const val WORKSPACE_REQUESTS_PER_MINUTE = 30L
         const val MAX_OUTSTANDING_REQUESTS = 300L
+        const val NEW_CANDIDATE_LIMIT = 2L
+        val CANDIDATE_WINDOW: Duration = Duration.ofHours(24)
     }
 }
