@@ -1605,6 +1605,9 @@ class Repository:
             "usageIssueCode": receipt.usage_issue_code,
             "serviceTier": receipt.service_tier,
             "contextPriceBand": receipt.context_price_band,
+            "promptCacheStatus": receipt.prompt_cache_status.value,
+            "promptCachePrefixTokens": receipt.prompt_cache_prefix_tokens,
+            "promptCacheKeyVersion": receipt.prompt_cache_key_version,
         }
         fingerprint = sha256_text(json.dumps(canonical, sort_keys=True, separators=(",", ":")))
         now = datetime.now(UTC)
@@ -1667,6 +1670,8 @@ class Repository:
                     usage_schema_version = %s, usage_status = %s, usage_issue_code = %s,
                     input_uncached_tokens = %s, input_cache_read_tokens = %s,
                     input_cache_write_tokens = %s, output_billed_tokens = %s,
+                    prompt_cache_status = %s, prompt_cache_prefix_tokens = %s,
+                    prompt_cache_key_version = %s,
                     known_cost_microusd = %s, overrun_microusd = %s,
                     receipt_fingerprint = %s, responded_at = %s, updated_at = %s
                 where call_id = %s
@@ -1682,6 +1687,9 @@ class Repository:
                     usage.input_cache_read_tokens if usage else None,
                     usage.input_cache_write_tokens if usage else None,
                     usage.output_billed_tokens if usage else None,
+                    receipt.prompt_cache_status.value,
+                    receipt.prompt_cache_prefix_tokens,
+                    receipt.prompt_cache_key_version,
                     known_cost_microusd,
                     overrun,
                     fingerprint,

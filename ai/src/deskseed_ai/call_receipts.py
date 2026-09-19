@@ -14,6 +14,12 @@ class UsageStatus(StrEnum):
     INCONSISTENT = "INCONSISTENT"
 
 
+class PromptCacheStatus(StrEnum):
+    OFF = "OFF"
+    INELIGIBLE = "INELIGIBLE"
+    REQUESTED = "REQUESTED"
+
+
 @dataclass(frozen=True)
 class ProviderCallReceipt:
     call_id: UUID
@@ -26,6 +32,9 @@ class ProviderCallReceipt:
     usage_issue_code: str | None
     service_tier: str
     context_price_band: str
+    prompt_cache_status: PromptCacheStatus = PromptCacheStatus.OFF
+    prompt_cache_prefix_tokens: int | None = None
+    prompt_cache_key_version: str | None = None
 
 
 ReceiptRecorder = Callable[[ProviderCallReceipt], None]

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     context_memory_expected_reuses: int = Field(2, ge=1, le=20)
     context_memory_ttl_hours: int = Field(24, ge=1, le=168)
     reply_routing_bucket_secret: SecretStr = SecretStr("")
+    prompt_cache_mode: Literal["off", "test", "intent"] = "off"
 
     workspace_daily_budget_microusd: int = 3_000_000
     actor_daily_budget_microusd: int = 500_000
@@ -112,6 +113,8 @@ class Settings(BaseSettings):
                 raise ValueError("shared execution requires the exact result cache in the matching mode")
         if self.environment == "production" and self.context_memory_mode == "test":
             raise ValueError("production context memory requires measured intent activation")
+        if self.environment == "production" and self.prompt_cache_mode == "test":
+            raise ValueError("production prompt cache requires measured intent activation")
         if self.workspace_daily_budget_microusd <= 0 or self.actor_daily_budget_microusd <= 0:
             raise ValueError("daily budgets must be positive")
         if self.job_budget_microusd <= 0:

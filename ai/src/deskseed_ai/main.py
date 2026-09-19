@@ -70,7 +70,7 @@ class Runtime:
             settings,
             self.repository,
             self.backend,
-            provider_for(settings),
+            provider_for(settings, pricing_path),
             self.knowledge,
             self.traces,
             pricing_path,

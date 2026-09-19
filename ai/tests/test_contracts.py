@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -10,10 +11,20 @@ import pytest
 from pydantic import ValidationError
 
 from deskseed_ai.backend_client import AiPolicy, BackendAuthorizationError, BackendClient
-from deskseed_ai.call_receipts import UsageStatus
+from deskseed_ai.call_receipts import PromptCacheStatus, UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.pricing import PricingCatalog, Usage
-from deskseed_ai.prompting import context_memory_prompt, prompt_for
+from deskseed_ai.prompt_cache import (
+    PROMPT_CACHE_KEY_VERSION,
+    PROMPT_CACHE_MIN_PREFIX_TOKENS,
+    prepare_prompt_cache_request,
+)
+from deskseed_ai.prompting import (
+    FeaturePrompt,
+    context_memory_prompt,
+    prompt_for,
+    rewrite_validation_prompt,
+)
 from deskseed_ai.providers import LiteLlmGenerationProvider
 from deskseed_ai.queue import InputTooLongError, _bounded_context
 from deskseed_ai.repository import ClaimedJob, PublishedIndexGeneration
@@ -110,6 +121,20 @@ def test_context_memory_is_off_by_default_and_test_mode_is_not_production() -> N
         Settings(
             environment="production", process_role="migration", context_memory_mode="test"
         )
+
+
+def test_prompt_cache_is_off_by_default_and_test_mode_is_not_production() -> None:
+    assert Settings(environment="test").prompt_cache_mode == "off"
+    with pytest.raises(ValueError, match="measured intent activation"):
+        Settings(
+            environment="production", process_role="migration", prompt_cache_mode="test"
+        )
+    assert (
+        Settings(
+            environment="production", process_role="migration", prompt_cache_mode="intent"
+        ).prompt_cache_mode
+        == "intent"
+    )
 
 
 def test_shared_execution_is_test_only_and_requires_exact_cache() -> None:
@@ -679,6 +704,250 @@ def test_usage_normalization_rejects_unreliable_provider_facts(
     assert (status, usage, issue) == (expected_status, None, expected_issue)
 
 
+def _pricing_catalog() -> PricingCatalog:
+    return PricingCatalog(Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json")
+
+
+def _synthetic_prompt(name: str, content: str) -> FeaturePrompt:
+    return FeaturePrompt(
+        name=name,
+        content=content,
+        digest=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    )
+
+
+def _prompt_cache_request(prompt: FeaturePrompt, variable: str = "customer-variable") -> dict:
+    return {
+        "model": "openai/gpt-5.6-luna",
+        "messages": [
+            {"role": "system", "content": prompt.content},
+            {"role": "user", "content": variable},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "SyntheticOutput",
+                "strict": True,
+                "schema": {"type": "object", "properties": {"answer": {"type": "string"}}},
+            },
+        },
+        "reasoning_effort": "none",
+        "service_tier": "default",
+    }
+
+
+def test_prompt_cache_off_and_ineligible_preserve_original_transport_shape() -> None:
+    prompt = _synthetic_prompt("short-v1", "Repository-owned instruction only.")
+    request = _prompt_cache_request(prompt)
+
+    off = prepare_prompt_cache_request(
+        mode="off",
+        pricing=_pricing_catalog(),
+        model=request["model"],
+        feature="ticket.summary",
+        prompt=prompt,
+        request=request,
+    )
+    assert off.status == PromptCacheStatus.OFF
+    assert off.prefix_tokens is None
+    assert off.messages is request["messages"]
+    assert off.transport_options == {}
+
+    ineligible = prepare_prompt_cache_request(
+        mode="test",
+        pricing=_pricing_catalog(),
+        model=request["model"],
+        feature="ticket.summary",
+        prompt=prompt,
+        request=request,
+    )
+    assert ineligible.status == PromptCacheStatus.INELIGIBLE
+    assert ineligible.prefix_tokens is not None
+    assert ineligible.prefix_tokens < PROMPT_CACHE_MIN_PREFIX_TOKENS
+    assert ineligible.messages is request["messages"]
+    assert ineligible.transport_options == {}
+
+
+def test_prompt_cache_plan_is_static_deterministic_and_content_free() -> None:
+    content = "Repository-owned static instruction.\n" * 1200
+    prompt = _synthetic_prompt("synthetic-long-v1", content)
+    first_request = _prompt_cache_request(prompt, "private-ticket-value-one")
+    second_request = _prompt_cache_request(prompt, "private-ticket-value-two")
+
+    def plan(request: dict):
+        return prepare_prompt_cache_request(
+            mode="test",
+            pricing=_pricing_catalog(),
+            model=request["model"],
+            feature="ticket.summary",
+            prompt=prompt,
+            request=request,
+        )
+
+    first = plan(first_request)
+    second = plan(second_request)
+    assert first.status == PromptCacheStatus.REQUESTED
+    assert first.prefix_tokens is not None
+    assert first.prefix_tokens >= PROMPT_CACHE_MIN_PREFIX_TOKENS
+    assert first.key_version == PROMPT_CACHE_KEY_VERSION
+    assert first.cache_key == second.cache_key
+    assert first.cache_key is not None and len(first.cache_key) <= 64
+    assert "private-ticket" not in first.cache_key
+    assert first.messages[0] == {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": content,
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }
+        ],
+    }
+    assert first.messages[1] == first_request["messages"][1]
+    assert first.transport_options == {
+        "prompt_cache_key": first.cache_key,
+        "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
+        "allowed_openai_params": ["prompt_cache_options"],
+    }
+
+    changed_schema = _prompt_cache_request(prompt)
+    changed_schema["response_format"]["json_schema"]["name"] = "ChangedOutput"
+    assert plan(changed_schema).cache_key != first.cache_key
+    changed_service_tier = _prompt_cache_request(prompt)
+    changed_service_tier["service_tier"] = "priority"
+    assert plan(changed_service_tier).cache_key != first.cache_key
+    changed_reasoning = _prompt_cache_request(prompt)
+    changed_reasoning["reasoning_effort"] = "low"
+    assert plan(changed_reasoning).cache_key != first.cache_key
+    changed_model = _prompt_cache_request(prompt)
+    changed_model["model"] = "openai/gpt-5.6-terra"
+    assert (
+        prepare_prompt_cache_request(
+            mode="test",
+            pricing=_pricing_catalog(),
+            model=changed_model["model"],
+            feature="ticket.summary",
+            prompt=prompt,
+            request=changed_model,
+        ).cache_key
+        != first.cache_key
+    )
+    changed_prompt = _synthetic_prompt("synthetic-long-v2", content + "New rule.")
+    changed_prompt_request = _prompt_cache_request(changed_prompt)
+    assert (
+        prepare_prompt_cache_request(
+            mode="test",
+            pricing=_pricing_catalog(),
+            model=changed_prompt_request["model"],
+            feature="ticket.summary",
+            prompt=changed_prompt,
+            request=changed_prompt_request,
+        ).cache_key
+        != first.cache_key
+    )
+
+    mismatched_request = _prompt_cache_request(prompt)
+    mismatched_request["messages"][0]["content"] = "unreviewed system content"
+    with pytest.raises(ValueError, match="repository-owned"):
+        plan(mismatched_request)
+    with pytest.raises(ValueError, match="model must match"):
+        prepare_prompt_cache_request(
+            mode="test",
+            pricing=_pricing_catalog(),
+            model="openai/gpt-5.6-terra",
+            feature="ticket.summary",
+            prompt=prompt,
+            request=first_request,
+        )
+
+
+def test_current_repository_prompts_remain_below_prompt_cache_minimum() -> None:
+    prompts = [
+        *(prompt_for(feature) for feature in Feature),
+        context_memory_prompt(),
+        rewrite_validation_prompt(),
+    ]
+    for prompt in prompts:
+        request = _prompt_cache_request(prompt)
+        plan = prepare_prompt_cache_request(
+            mode="test",
+            pricing=_pricing_catalog(),
+            model=request["model"],
+            feature=prompt.name,
+            prompt=prompt,
+            request=request,
+        )
+        assert plan.status == PromptCacheStatus.INELIGIBLE
+        assert plan.prefix_tokens is not None
+        assert plan.prefix_tokens < PROMPT_CACHE_MIN_PREFIX_TOKENS
+
+
+def test_pinned_litellm_forwards_explicit_prompt_cache_to_openai_body(monkeypatch) -> None:
+    import litellm
+    import litellm.main
+    from openai.types.chat import ChatCompletion, ChatCompletionMessage
+    from openai.types.chat.chat_completion import Choice
+    from openai.types.completion_usage import CompletionUsage
+
+    prompt = _synthetic_prompt(
+        "synthetic-transport-v1", "Repository-owned static instruction.\n" * 1200
+    )
+    request = _prompt_cache_request(prompt, "sensitive-variable-suffix")
+    plan = prepare_prompt_cache_request(
+        mode="test",
+        pricing=_pricing_catalog(),
+        model=request["model"],
+        feature="ticket.summary",
+        prompt=prompt,
+        request=request,
+    )
+    captured: dict[str, object] = {}
+    attempts = 0
+
+    def fake_openai_request(*, openai_client, data, timeout, logging_obj):
+        nonlocal attempts
+        attempts += 1
+        captured.update(data)
+        return {}, ChatCompletion(
+            id="chatcmpl-prompt-cache-fixture",
+            created=0,
+            model="gpt-5.6-luna",
+            object="chat.completion",
+            choices=[
+                Choice(
+                    index=0,
+                    finish_reason="stop",
+                    message=ChatCompletionMessage(role="assistant", content="{}"),
+                )
+            ],
+            usage=CompletionUsage(prompt_tokens=1200, completion_tokens=1, total_tokens=1201),
+        )
+
+    monkeypatch.setattr(
+        litellm.main.openai_chat_completions,
+        "make_sync_openai_chat_completion_request",
+        fake_openai_request,
+    )
+    litellm.completion(
+        model=request["model"],
+        api_key="test-only-key",
+        messages=plan.messages,
+        response_format=request["response_format"],
+        store=False,
+        num_retries=0,
+        **plan.transport_options,
+    )
+
+    assert captured["messages"] == plan.messages
+    assert captured["prompt_cache_key"] == plan.cache_key
+    assert captured["extra_body"] == {
+        "prompt_cache_options": {"mode": "explicit", "ttl": "30m"}
+    }
+    assert "prompt_cache_options" not in captured
+    assert "sensitive-variable-suffix" not in str(captured["prompt_cache_key"])
+    assert attempts == 1
+
+
 def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     from types import SimpleNamespace
 
@@ -711,7 +980,9 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
 
     monkeypatch.setattr(litellm, "completion", fake_completion)
     monkeypatch.setattr(litellm, "embedding", fake_embedding)
-    settings = Settings(environment="test", openai_api_key="test-only-key")
+    settings = Settings(
+        environment="test", openai_api_key="test-only-key", prompt_cache_mode="test"
+    )
     first_id = uuid4()
     second_id = uuid4()
     context = SourceContext(
@@ -743,7 +1014,7 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     )
 
     receipts = []
-    generated = LiteLlmGenerationProvider(settings).summary(
+    generated = LiteLlmGenerationProvider(settings, _pricing_catalog()).summary(
         context, {"language": "ko"}, uuid4(), receipts.append
     )
     LiteLlmEmbeddingProvider("openai/text-embedding-3-small", "test-only-key", 30).embed(
@@ -753,6 +1024,8 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     assert len(calls) == 2
     assert all(call["num_retries"] == 0 for call in calls)
     assert calls[0]["store"] is False
+    assert "prompt_cache_key" not in calls[0]
+    assert "prompt_cache_options" not in calls[0]
     prompt_payload = json.loads(calls[0]["messages"][1]["content"])
     assert prompt_payload["options"] == {"language": "ko"}
     assert prompt_payload["publicConversation"] == [
@@ -774,6 +1047,8 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     assert str(first_id) not in calls[0]["messages"][1]["content"]
     assert str(second_id) not in calls[0]["messages"][1]["content"]
     assert generated.prompt_version == prompt_for(Feature.SUMMARY).version
+    assert generated.receipt.prompt_cache_status == PromptCacheStatus.INELIGIBLE
+    assert generated.receipt.prompt_cache_prefix_tokens is not None
     assert len(receipts) == 2
 
 
@@ -812,7 +1087,7 @@ def test_reply_provider_receives_only_request_local_source_refs(monkeypatch) -> 
         )
     ]
 
-    generated = LiteLlmGenerationProvider(settings).reply(
+    generated = LiteLlmGenerationProvider(settings, _pricing_catalog()).reply(
         context,
         knowledge,
         {"language": "ko", "tone": "calm"},
@@ -875,7 +1150,7 @@ def test_context_memory_transport_is_bounded_and_uses_only_local_comment_refs(mo
     )
     receipts = []
 
-    generated = LiteLlmGenerationProvider(settings).context_memory(
+    generated = LiteLlmGenerationProvider(settings, _pricing_catalog()).context_memory(
         delta, previous, uuid4(), receipts.append
     )
 

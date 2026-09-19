@@ -16,7 +16,7 @@ from deskseed_ai.backend_client import (
     BackendAuthorizationError,
     PublicKnowledgeArticle,
 )
-from deskseed_ai.call_receipts import ProviderCallReceipt, UsageStatus
+from deskseed_ai.call_receipts import PromptCacheStatus, ProviderCallReceipt, UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.indexing import IndexingService
 from deskseed_ai.main import app
@@ -246,6 +246,38 @@ def provider_receipt(call_id, alias="openai/gpt-5.6-luna", request_id="provider-
         service_tier="standard",
         context_price_band="short",
     )
+
+
+@pytest.mark.integration
+def test_prompt_cache_migration_preserves_pre_s13_provider_calls(
+    repository: Repository,
+) -> None:
+    existing_call_id = uuid4()
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "016_provider_prompt_cache_receipts.sql"
+    ).read_text(encoding="utf-8")
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "create temporary table ai_provider_calls (call_id uuid primary key) on commit drop"
+        )
+        connection.execute(
+            "insert into ai_provider_calls (call_id) values (%s)", (existing_call_id,)
+        )
+        connection.execute(migration)
+        row = connection.execute(
+            """
+            select prompt_cache_status, prompt_cache_prefix_tokens, prompt_cache_key_version
+            from ai_provider_calls where call_id = %s
+            """,
+            (existing_call_id,),
+        ).fetchone()
+    assert row == {
+        "prompt_cache_status": None,
+        "prompt_cache_prefix_tokens": None,
+        "prompt_cache_key_version": None,
+    }
 
 
 @pytest.mark.integration
@@ -1873,6 +1905,14 @@ def test_provider_receipt_settles_overrun_idempotently_and_flags_conflict(
     repository.mark_provider_call_dispatching(call_id)
     assert repository.get_job(item.jobId).providerDispatched is True
     receipt = provider_receipt(call_id)
+    receipt = receipt.__class__(
+        **{
+            **receipt.__dict__,
+            "prompt_cache_status": PromptCacheStatus.REQUESTED,
+            "prompt_cache_prefix_tokens": 1024,
+            "prompt_cache_key_version": "ds-pc-v1",
+        }
+    )
 
     assert repository.record_provider_response(receipt, 25) == 25
     assert repository.record_provider_response(receipt, 25) == 25
@@ -1891,8 +1931,26 @@ def test_provider_receipt_settles_overrun_idempotently_and_flags_conflict(
         ).fetchone()
         provider_call = connection.execute(
             """
-            select lifecycle_status, settlement_status, known_cost_microusd, overrun_microusd
+            select lifecycle_status, settlement_status, known_cost_microusd, overrun_microusd,
+                   prompt_cache_status, prompt_cache_prefix_tokens, prompt_cache_key_version
             from ai_provider_calls where call_id = %s
+            """,
+            (call_id,),
+        ).fetchone()
+        cache_cost_report = connection.execute(
+            """
+            select prompt_cache_status, count(*) as call_count,
+                   coalesce(sum(input_uncached_tokens), 0) as uncached_tokens,
+                   coalesce(sum(input_cache_read_tokens), 0) as cache_read_tokens,
+                   coalesce(sum(input_cache_write_tokens), 0) as cache_write_tokens,
+                   coalesce(sum(output_billed_tokens), 0) as output_tokens,
+                   count(*) filter (where usage_status <> 'KNOWN') as unknown_calls,
+                   coalesce(sum(known_cost_microusd), 0) as known_cost_microusd,
+                   max(extract(epoch from (responded_at - dispatching_at)) * 1000)::bigint
+                       as max_latency_millis
+            from ai_provider_calls
+            where call_id = %s
+            group by prompt_cache_status
             """,
             (call_id,),
         ).fetchone()
@@ -1902,7 +1960,43 @@ def test_provider_receipt_settles_overrun_idempotently_and_flags_conflict(
         "settlement_status": "CONFLICT",
         "known_cost_microusd": 25,
         "overrun_microusd": 15,
+        "prompt_cache_status": "REQUESTED",
+        "prompt_cache_prefix_tokens": 1024,
+        "prompt_cache_key_version": "ds-pc-v1",
     }
+    assert cache_cost_report == {
+        "prompt_cache_status": "REQUESTED",
+        "call_count": 1,
+        "uncached_tokens": 10,
+        "cache_read_tokens": 2,
+        "cache_write_tokens": 1,
+        "output_tokens": 5,
+        "unknown_calls": 0,
+        "known_cost_microusd": 25,
+        "max_latency_millis": cache_cost_report["max_latency_millis"],
+    }
+    assert cache_cost_report["max_latency_millis"] >= 0
+
+    with pytest.raises(CheckViolation), repository.database.transaction() as connection:
+        connection.execute(
+            """
+            update ai_provider_calls
+            set prompt_cache_status = 'REQUESTED', prompt_cache_prefix_tokens = 1023,
+                prompt_cache_key_version = 'ds-pc-v1'
+            where call_id = %s
+            """,
+            (call_id,),
+        )
+    with pytest.raises(CheckViolation), repository.database.transaction() as connection:
+        connection.execute(
+            """
+            update ai_provider_calls
+            set prompt_cache_status = 'REQUESTED', prompt_cache_prefix_tokens = 1024,
+                prompt_cache_key_version = null
+            where call_id = %s
+            """,
+            (call_id,),
+        )
 
 
 @pytest.mark.integration
