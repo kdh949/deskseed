@@ -35,7 +35,13 @@ from deskseed_ai.repository import (
     StaleLeaseError,
 )
 from deskseed_ai.result_cache import exact_result_cache_key
-from deskseed_ai.retrieval import FakeEmbeddingProvider, KnowledgeRepository, chunk_public_article
+from deskseed_ai.retrieval import (
+    EmbeddingResult,
+    FakeEmbeddingProvider,
+    KnowledgeRepository,
+    build_retrieval_query,
+    chunk_public_article,
+)
 from deskseed_ai.schemas import (
     CancellationEnvelope,
     Feature,
@@ -1814,6 +1820,114 @@ def test_public_kb_revision_replacement_and_vector_retrieval(repository: Reposit
 
 
 @pytest.mark.integration
+def test_public_kb_retrieval_fuses_vector_keyword_and_exact_error_candidates(
+    repository: Repository,
+) -> None:
+    query_vector = [1.0] + [0.0] * 1535
+    opposite_vector = [-1.0] + [0.0] * 1535
+    provider = FakeEmbeddingProvider()
+
+    class FixedQueryEmbedding(FakeEmbeddingProvider):
+        def embed(self, text, call_id, record_receipt):
+            result = super().embed(text, call_id, record_receipt)
+            return EmbeddingResult(query_vector, result.receipt)
+
+    knowledge = KnowledgeRepository(repository.database, FixedQueryEmbedding())
+
+    def index_article(title: str, content: str, vector: list[float]) -> None:
+        article_id = uuid4()
+        revision_id = uuid4()
+        event = IndexEvent(
+            schemaVersion=1,
+            eventId=uuid4(),
+            workspaceKey="rrf",
+            articleId=article_id,
+            revisionId=revision_id,
+            action="UPSERT",
+            sourceVersion=1,
+            publicRevision=hashlib.sha256(title.encode()).hexdigest(),
+            createdAt=datetime.now(UTC),
+        )
+        repository.accept_index_event(event)
+        receipt = provider.embed(content, uuid4(), lambda _receipt: None).receipt
+        _, applied = knowledge.replace_public_revision_with_vectors(
+            "rrf",
+            article_id,
+            revision_id,
+            1,
+            event.eventId,
+            title.lower().replace(" ", "-"),
+            title,
+            event.publicRevision,
+            [(content, vector, receipt)],
+        )
+        assert applied
+
+    index_article("양쪽 후보", "로그인 ERR-42 해결 절차", query_vector)
+    index_article("벡터 후보", "계정 접근 일반 안내", query_vector)
+    index_article("키워드 후보", "ERR-42 전용 복구 안내", opposite_vector)
+
+    matches = knowledge.retrieve("rrf", build_retrieval_query("로그인 ERR-42"), limit=5)
+
+    assert matches[0].title == "양쪽 후보"
+    assert {item.title for item in matches} >= {"벡터 후보", "키워드 후보"}
+    assert matches[0].score > matches[1].score
+
+
+@pytest.mark.integration
+def test_public_kb_retrieval_suppresses_adjacent_overlapping_chunks(repository: Repository) -> None:
+    query_vector = [1.0] + [0.0] * 1535
+    provider = FakeEmbeddingProvider()
+
+    class FixedQueryEmbedding(FakeEmbeddingProvider):
+        def embed(self, text, call_id, record_receipt):
+            result = super().embed(text, call_id, record_receipt)
+            return EmbeddingResult(query_vector, result.receipt)
+
+    knowledge = KnowledgeRepository(repository.database, FixedQueryEmbedding())
+    article_id = uuid4()
+    revision_id = uuid4()
+    event = IndexEvent(
+        schemaVersion=1,
+        eventId=uuid4(),
+        workspaceKey="overlap",
+        articleId=article_id,
+        revisionId=revision_id,
+        action="UPSERT",
+        sourceVersion=1,
+        publicRevision="e" * 64,
+        createdAt=datetime.now(UTC),
+    )
+    repository.accept_index_event(event)
+    embedded = []
+    for ordinal in range(5):
+        content = f"ERR-77 중복 구간 {ordinal}"
+        receipt = provider.embed(content, uuid4(), lambda _receipt: None).receipt
+        embedded.append((content, query_vector, receipt))
+    _, applied = knowledge.replace_public_revision_with_vectors(
+        "overlap",
+        article_id,
+        revision_id,
+        1,
+        event.eventId,
+        "overlap",
+        "중복 구간",
+        event.publicRevision,
+        embedded,
+    )
+    assert applied
+
+    matches = knowledge.retrieve("overlap", build_retrieval_query("ERR-77"), limit=5)
+
+    assert 1 < len(matches) <= 3
+    assert all(
+        abs(left.ordinal - right.ordinal) > 1
+        for index, left in enumerate(matches)
+        for right in matches[index + 1 :]
+    )
+
+
+@pytest.mark.integration
 def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
     repository: Repository, settings: Settings
 ) -> None:
@@ -2002,6 +2116,49 @@ def test_reply_skips_generation_when_all_retrieved_candidates_are_withdrawn(
             (item.jobId,),
         ).fetchall()
     assert calls == [{"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"}]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("body", "expected_status", "expected_error"),
+    [
+        ("x " * 2_100, JobStatus.FAILED, "INPUT_TOO_LONG"),
+        ("   \n  ", JobStatus.NEEDS_REVIEW, "NO_APPROVED_KNOWLEDGE"),
+    ],
+)
+def test_reply_rejects_unsearchable_current_problem_before_provider_calls(
+    repository: Repository,
+    settings: Settings,
+    body: str,
+    expected_status: JobStatus,
+    expected_error: str,
+) -> None:
+    item = envelope(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+
+    class CurrentProblemBackend(StaticBackend):
+        def read_context(self, job_id, traceparent=None):
+            context = super().read_context(job_id, traceparent)
+            return context.model_copy(
+                update={
+                    "comments": [context.comments[0].model_copy(update={"body": body})],
+                }
+            )
+
+    runtime = runtime_for(repository, settings, CurrentProblemBackend(item))
+    claim = repository.claim_job(item.jobId, 1, settings.consumer_name)
+    assert claim is not None
+
+    runtime._execute(claim, None)
+
+    job = repository.get_job(item.jobId)
+    assert job.status == expected_status
+    assert job.errorCode == expected_error
+    with repository.database.connection() as connection:
+        assert connection.execute(
+            "select count(*) as count from ai_provider_calls where job_id = %s",
+            (item.jobId,),
+        ).fetchone()["count"] == 0
 
 
 @pytest.mark.integration
