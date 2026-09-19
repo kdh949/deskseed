@@ -161,6 +161,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-AI-004 | 공개 KB의 현재 revision·audience·상위 공개성을 재검증한 generation index와 hybrid retrieval만 reply 근거로 사용한다 | IN_PROGRESS | AI V1 E/F | 21, 23, 32, 33, 34, ADR 0025, ADR 0049 | exact PUBLIC revision 색인·stable snapshot/cursor reconciliation·완전 scan 후 철회·citation 재인가 구현; production corpus recall은 NOT ESTABLISHED, AI-KB-001/AI-REPLY-001 |
 | REQ-AI-005 | 관리자는 typed enable/stop/status/reindex 정책을 감사 가능하게 관리하고 feedback·보존·관측·평가·복구 근거를 운영한다 | IN_PROGRESS | AI V1 G | 19, 21, 23, 36, 52, ADR 0049 | 서버 운영 API·retention·metadata-only 관측·합성 평가 구현; external receipt/deploy는 미검증, AI-OPS-001/AI-OBS-001/AI-RET-001 |
 | REQ-AI-006 | 상담사는 같은 티켓의 아직 유효한 서버 생성 PUBLIC 답변 초안을 닫힌 한국어 문체·길이 옵션으로 재작성하고, 사실·부정 의미·인용 보존이 확인되지 않으면 원 답변을 유지한다 | IMPLEMENTATION_READY | AI V1 S12 | 21, 23, 26, 33, 34, 39, ADR 0049/0050 | `ticket.reply_rewrite` sourceJob binding, required source-result access audit, no ticket/KB re-retrieval, exact citation map, two-call upper bound와 preservation failure fallback; AI-API-001, AI-COST-001, AI-REPLY-001, AI-REWRITE-001 |
+| REQ-AI-007 | AI provider prompt cache는 고객/티켓/KB 내용을 제외한 명시적 static prefix만 사용하고, 최소 길이·쓰기/read/일반 입력/출력 비용과 UNKNOWN을 함께 계측해 독립적으로 활성화한다 | IMPLEMENTATION_READY | AI V1 S13 | 21, 23, 26, ADR 0049/0051 | `off | test | intent` mode, 1,024-token eligibility without padding, pinned LiteLLM transport fixture, content-free receipt metadata와 total-cost comparison; AI-COST-001, AI-PROMPT-CACHE-001, AI-OBS-001 |
 
 ## 9. 프론트엔드 경험
 
@@ -218,3 +219,4 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 - 2026-09-16~17 REQ-AI-001~005: [AI V1 A 계약·PUBLIC source](tasks/2026-09-16-ai-v1-a-contract-source.md), [AI V1 B~G 격리 실행·운영](tasks/2026-09-16-ai-v1-b-g-runtime.md), [AI V1 상담사 어시스턴트 UI](tasks/2026-09-17-ai-v1-frontend-assistant.md). UI는 current Core contract의 summary/triage/reply와 safe insertion을 연결하며 chat/workflow/auto-apply는 제외한다. live provider/Langfuse/실데이터/배포·사람 평가는 별도 외부 검증이다.
 - 2026-09-19 REQ-AI-006: [S12 PUBLIC 답변 초안 재작성](tasks/2026-09-19-ai-cost-s12-public-draft-rewrite.md). 서버 생성 원 답변 job reference만 입력으로 허용하고 사실·citation 보존 실패 시 원 답변 UI로 복귀한다. staff-edited 입력, 영어, live 품질 증거는 별도 결정이다.
+- 2026-09-19 REQ-AI-007: [S13 provider prompt cache](tasks/2026-09-19-ai-cost-s13-provider-prompt-cache.md). explicit static prefix와 1,024-token eligibility를 동결하며 현재 짧은 prompt는 padding 없이 bypass한다. live hit/cost evidence와 production activation은 별도다.

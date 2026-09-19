@@ -46,6 +46,7 @@ release-state column prevents architecture intent from being mistaken for shippe
 | [0038](../adr/0038-shared-organization-ticket-consistency-guard.md) | Shared organization and ticket consistency guard | Implemented by organization/ticket concurrency regression |
 | [0049](../adr/0049-ai-v1-isolated-execution-boundary.md) | AI V1 uses an isolated execution boundary with Backend-owned authorization and audit | Implemented server/runtime boundary; live quality evidence pending |
 | [0050](../adr/0050-ai-public-draft-rewrite-provenance.md) | PUBLIC reply rewrite uses an immutable server-generated source job and fails closed on preservation drift | Contract accepted; implementation pending |
+| [0051](../adr/0051-ai-provider-prompt-cache-static-prefix.md) | Provider prompt cache uses an explicit content-free static prefix and conservative total-cost accounting | Contract accepted; implementation pending |
 
 The concise `D-*` decision register remains in
 [`docs/25-implementation-decision-register.md`](../25-implementation-decision-register.md).

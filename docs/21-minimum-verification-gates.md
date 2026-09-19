@@ -1122,6 +1122,15 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - unknown delivery, midnight rollover, duplicate/late settlement가 예약을 낙관적으로 해제하거나 이중 정산하지 않는다.
 - fake transport는 LiteLLM/provider hidden retry off와 interactive 2회/indexing 3회 최대 HTTP 시도를 검증한다.
 
+### AI-PROMPT-CACHE-001 — Explicit static-prefix provider cache
+
+- provider cache는 exact result cache와 별도 `off | test | intent` mode이며 기본값은 `off`다. production은 `test`를 거부한다.
+- explicit breakpoint 이전에는 repository-owned instruction만 있다. ticket/customer/PUBLIC conversation/query/KB/result/citation/memory/rewrite content와 actor/workspace/job 식별자는 breakpoint 뒤에 남는다.
+- reviewed tokenizer로 표시된 visible prefix가 1,024 token 미만이면 cache option, breakpoint, key를 모두 보내지 않는다. 길이를 맞추기 위한 padding이나 무의미한 예시는 금지한다.
+- pinned LiteLLM transport fixture는 OpenAI Chat Completions body에 `prompt_cache_breakpoint`, explicit `prompt_cache_options`와 bounded content-free key가 전달되고 hidden retry가 0임을 검증한다.
+- receipt는 `OFF | INELIGIBLE | REQUESTED`, prefix token count, key version과 provider usage bucket만 저장한다. raw key/prompt/content digest는 log, metric, trace, Langfuse, audit, DB에 없다.
+- 비교는 uncached input, cache write/read, output, UNKNOWN과 latency를 모두 포함한다. fake/intercepted transport나 hit rate만으로 비용 절감을 주장하지 않는다.
+
 ### AI-KB-001 — Public revision indexing and retrieval
 
 - category/section active, PUBLISHED, PUBLIC, current revision/audienceVersion을 후보 SQL 전에 적용하고 LLM 전·result commit·Backend GET에서 재검증한다.

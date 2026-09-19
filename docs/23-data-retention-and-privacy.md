@@ -136,6 +136,15 @@ copied into routine authentication audit or customer ticket-list projections.
   operator/legal-owner decisions. Repository fixtures must be synthetic and must not be presented as
   production legal policy.
 
+## 6.2 AI provider prompt cache
+
+- provider prompt cache breakpoint 이전에는 repository-owned static instruction만 허용한다;
+- ticket/customer text, PUBLIC conversation, query, KB title/body, result/citation, context memory, rewrite source/candidate와 모든 actor/workspace/job identifier는 cacheable prefix 밖에 둔다;
+- GPT-5.6 cache는 explicit mode와 `30m` TTL만 사용하며 implicit suffix caching과 `24h` retention은 사용하지 않는다;
+- cache key는 static contract metadata의 bounded digest이고 raw prompt, tenant identifier, secret 또는 content digest를 포함하지 않으며 자체를 저장·log/export하지 않는다;
+- provider cache state는 Deskseed DB, audit, backup, Langfuse로 복제하지 않는다. call receipt에는 bounded plan status/token count/key version과 provider usage bucket만 남긴다;
+- provider TTL은 물리 삭제 시각 보장이 아니므로 즉시 삭제를 주장하지 않는다. data residency 또는 zero-retention 요구와 충돌하면 prompt cache를 `off`로 유지한다.
+
 Platform idempotency rows store a SHA-256 key representation and canonical request hash, never the raw `Idempotency-Key` or Authorization
 value. Exact replay requires a bounded response copy, which can contain ticket subject or an INTERNAL comment response; it receives the
 7-day default expiry and is not exposed through a retrieval/list endpoint. An expiry-indexed cleanup job deletes at most 500 rows per run by
