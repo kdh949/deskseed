@@ -474,4 +474,6 @@ Backend ACCEPTED
 - Metadata polling omits result content. Explicit result retrieval rechecks current Backend authorization, feature policy, PUBLIC context revision, expiry, and PUBLIC KB citations, then requires `AI_RESULT_READ` persistence before returning content.
 - Feedback uses a separate exact-idempotency ledger and monotonically increasing source revision. Langfuse export is a retryable projection and never changes canonical feedback.
 
+`ticket.reply_rewrite`는 별도 source-linked job이다. create는 같은 requester/ticket/workspace의 `ticket.reply_draft` source job을 immutable하게 결합하며 임의 본문을 받지 않는다. worker는 body-free source-use capability와 required `AI_RESULT_READ` audit 성공 뒤에만 AI DB의 unexpired source ciphertext를 사용한다. rewrite와 preservation validation은 각각 최대 한 번 실행하며 canonical citation map과 fact/condition/negation guard가 모두 유지될 때만 `SUCCEEDED` body를 commit한다. 실패·UNKNOWN·stale이면 rewrite는 `NEEDS_REVIEW` 또는 typed failure로 끝나고 source reply는 바뀌지 않는다.
+
 PUBLIC knowledge index events are body-free and exact-revision keyed. Publish/unpublish/audience changes and their Backend outbox intent share the knowledge transaction. The indexer fetches content only through its direction-specific `INTEGRATION_CLIENT` credential; source disappearance cannot be treated as a successful stale index refresh.

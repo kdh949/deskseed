@@ -1141,6 +1141,14 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - no evidence/refusal/invalid schema는 usable answer 없이 typed `NEEDS_REVIEW`를 반환한다.
 - ticket/context/source/policy 변경·취소·권한 철회는 result body와 use capability를 차단한다.
 
+### AI-REWRITE-001 — PUBLIC draft provenance and preservation
+
+- rewrite source는 같은 workspace/requester/ticket의 아직 유효한 `ticket.reply_draft` 성공 job뿐이며 client가 answer, citation 또는 INTERNAL/composer 본문을 제출할 수 없다.
+- source ciphertext 사용 전 Backend의 current authorization, context/source binding과 required `AI_RESULT_READ` audit를 통과하며 전체 ticket/KB 원문을 다시 가져오지 않는다.
+- language/tone/length는 versioned closed catalog로 정규화되고 original canonical citation source refs는 같은 순서와 membership으로 유지된다.
+- 이름·정책·금액·날짜·조건·부정 표현의 deterministic guard와 strict preservation verdict가 모두 통과해야 usable body를 저장한다. 실패·UNKNOWN·stale·budget denial은 원 reply job을 유지하고 rewrite body를 노출하지 않는다.
+- rewrite/validation은 서로 다른 예약·receipt를 가지며 합계 2회 이하이고 body/prompt/protected span은 log, metric, trace, Langfuse에 없다.
+
 ### AI-OBS-001 — Content-free telemetry
 
 - logs, metrics, OTel, Langfuse exporter에 comment/KB/result body, prompt, email/phone, Authorization/API keys와 unbounded error text가 없다.

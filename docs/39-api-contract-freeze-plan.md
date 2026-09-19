@@ -140,7 +140,7 @@ POST     /api/v1/admin/integration-clients/{clientId}/rotate
 
 Integration client create/rotate responses are `no-store` one-time secret envelopes. The I1 freeze adds management endpoints only; `/api/v1/platform/**` remains unexposed until the Platform Ticket API slice.
 
-AI source and execution APIs are separate machine-only documents: `api/ai-source-api-v1.yaml` and `api/ai-internal-api-v1.yaml`. They are not browser or SDK surfaces. Core result polling defaults to metadata-only; `includeResult=true` is the explicit, audited content read.
+AI source and execution APIs are separate machine-only documents: `api/ai-source-api-v1.yaml` and `api/ai-internal-api-v1.yaml`. They are not browser or SDK surfaces. Core result polling defaults to metadata-only; `includeResult=true` is the explicit, audited content read. `ticket.reply_rewrite` create는 body 대신 같은 requester/ticket의 `sourceJobId`와 닫힌 style options를 요구하고, machine source-use authorization은 required result-read audit 뒤에 body-free capability만 반환한다.
 
 ### Audit v1
 
