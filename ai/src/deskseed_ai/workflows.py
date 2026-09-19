@@ -17,7 +17,15 @@ from .retrieval import (
     RetrievalQuery,
     build_retrieval_query,
 )
-from .schemas import AuthorRole, Citation, Feature, ReplyDraftResult, ReplyProviderOutput, SourceContext
+from .schemas import (
+    AuthorRole,
+    Citation,
+    ContextMemoryPayload,
+    Feature,
+    ReplyDraftResult,
+    ReplyProviderOutput,
+    SourceContext,
+)
 
 
 class InvalidReplyOutputError(RuntimeError):
@@ -43,7 +51,10 @@ class ReplyState(TypedDict, total=False):
     query_call_id: UUID
     query_receipt_recorder: ReceiptRecorder
     retrieval_query: RetrievalQuery
-    prepare_generation: Callable[[SourceContext, list[KnowledgeChunk]], tuple[UUID, ReceiptRecorder]]
+    prepare_generation: Callable[
+        [SourceContext, list[KnowledgeChunk]], PreparedReplyGeneration
+    ]
+    prepared_source_comment_ids: tuple[UUID, ...]
     no_evidence: bool
     validated: bool
 
@@ -54,6 +65,16 @@ class ReplyExecution:
     no_evidence: bool
     source_map_digest: str | None
     source_chunk_ids: tuple[UUID, ...]
+    source_comment_ids: tuple[UUID, ...]
+
+
+@dataclass(frozen=True)
+class PreparedReplyGeneration:
+    context: SourceContext
+    memory: ContextMemoryPayload | None
+    call_id: UUID
+    receipt_recorder: ReceiptRecorder
+    source_comment_ids: tuple[UUID, ...]
 
 
 class ReplyWorkflow:
@@ -92,7 +113,7 @@ class ReplyWorkflow:
         query_call_id: UUID,
         query_receipt_recorder: ReceiptRecorder,
         prepare_generation: Callable[
-            [SourceContext, list[KnowledgeChunk]], tuple[UUID, ReceiptRecorder]
+            [SourceContext, list[KnowledgeChunk]], PreparedReplyGeneration
         ],
     ) -> ReplyExecution:
         state = self._graph.invoke(
@@ -109,7 +130,7 @@ class ReplyWorkflow:
             config={"recursion_limit": 8},
         )
         if state.get("no_evidence"):
-            return ReplyExecution(None, True, None, ())
+            return ReplyExecution(None, True, None, (), ())
         if not state.get("validated"):
             raise ValueError("reply validation did not complete")
         return ReplyExecution(
@@ -117,6 +138,7 @@ class ReplyWorkflow:
             False,
             state["source_map_digest"],
             state["source_chunk_ids"],
+            state["prepared_source_comment_ids"],
         )
 
     def _authorize(self, state: ReplyState) -> dict[str, Any]:
@@ -194,11 +216,20 @@ class ReplyWorkflow:
 
     def _generate(self, state: ReplyState) -> dict[str, Any]:
         knowledge = state["approved_knowledge"]
-        call_id, recorder = state["prepare_generation"](state["context"], knowledge)
+        prepared = state["prepare_generation"](state["context"], knowledge)
+        memory_argument = (
+            {"memory": prepared.memory} if prepared.memory is not None else {}
+        )
         return {
             "generation": self.provider.reply(
-                state["context"], knowledge, state["options"], call_id, recorder
+                prepared.context,
+                knowledge,
+                state["options"],
+                prepared.call_id,
+                prepared.receipt_recorder,
+                **memory_argument,
             ),
+            "prepared_source_comment_ids": prepared.source_comment_ids,
         }
 
     def _validate(self, state: ReplyState) -> dict[str, Any]:

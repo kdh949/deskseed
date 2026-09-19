@@ -15,6 +15,7 @@ from .db import Database
 from .schemas import (
     Accepted,
     CancellationEnvelope,
+    ContextMemoryPayload,
     Feature,
     FeedbackRequest,
     GenerationMode,
@@ -106,6 +107,25 @@ class ReplyCacheCandidate:
 
 
 @dataclass(frozen=True)
+class ContextMemoryRecord:
+    memory_id: UUID
+    workspace_key: str
+    requester_id: UUID
+    ticket_id: UUID
+    memory_version: int
+    covered_through_sequence: int
+    source_prefix_digest: str
+    schema_version: str
+    policy_version: str
+    prompt_version: str
+    model_alias: str
+    update_count: int
+    payload: ContextMemoryPayload
+    created_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
 class SharedExecutionClaim:
     execution_id: UUID
     execution_key: str
@@ -158,11 +178,181 @@ class FeedbackExport:
     lease_owner: str
 
 
+def _context_memory_aad(row) -> bytes:
+    return (
+        f"{row['memory_id']}:{row['workspace_key']}:{row['requester_id']}:"
+        f"{row['ticket_id']}:{row['memory_version']}:{row['schema_version']}:"
+        f"{row['policy_version']}"
+    ).encode()
+
+
 class Repository:
     def __init__(self, database: Database, settings: Settings, cipher: EnvelopeCipher):
         self.database = database
         self.settings = settings
         self.cipher = cipher
+
+    def read_context_memory(
+        self,
+        workspace_key: str,
+        requester_id: UUID,
+        ticket_id: UUID,
+    ) -> ContextMemoryRecord | None:
+        with self.database.transaction() as connection:
+            connection.execute(
+                """
+                update ai_context_memories set status = 'INVALIDATED',
+                    invalidated_at = clock_timestamp(), invalidation_reason = 'EXPIRED',
+                    updated_at = clock_timestamp()
+                where workspace_key = %s and requester_id = %s and ticket_id = %s
+                  and status = 'ACTIVE' and expires_at <= clock_timestamp()
+                """,
+                (workspace_key, requester_id, ticket_id),
+            )
+            row = connection.execute(
+                """
+                select * from ai_context_memories
+                where workspace_key = %s and requester_id = %s and ticket_id = %s
+                  and status = 'ACTIVE' and expires_at > clock_timestamp()
+                """,
+                (workspace_key, requester_id, ticket_id),
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                plaintext = self.cipher.decrypt(
+                    bytes(row["payload_ciphertext"]),
+                    bytes(row["payload_nonce"]),
+                    _context_memory_aad(row),
+                )
+                payload = ContextMemoryPayload.model_validate_json(plaintext)
+            except (InvalidTag, ValidationError, ValueError, TypeError):
+                connection.execute(
+                    """
+                    update ai_context_memories set status = 'INVALIDATED',
+                        invalidated_at = clock_timestamp(), invalidation_reason = 'PAYLOAD_INVALID',
+                        updated_at = clock_timestamp()
+                    where memory_id = %s and status = 'ACTIVE'
+                    """,
+                    (row["memory_id"],),
+                )
+                return None
+            return ContextMemoryRecord(
+                memory_id=row["memory_id"],
+                workspace_key=row["workspace_key"],
+                requester_id=row["requester_id"],
+                ticket_id=row["ticket_id"],
+                memory_version=row["memory_version"],
+                covered_through_sequence=row["covered_through_sequence"],
+                source_prefix_digest=row["source_prefix_digest"],
+                schema_version=row["schema_version"],
+                policy_version=row["policy_version"],
+                prompt_version=row["prompt_version"],
+                model_alias=row["model_alias"],
+                update_count=row["update_count"],
+                payload=payload,
+                created_at=row["created_at"],
+                expires_at=row["expires_at"],
+            )
+
+    def save_context_memory(
+        self,
+        workspace_key: str,
+        requester_id: UUID,
+        ticket_id: UUID,
+        covered_through_sequence: int,
+        source_prefix_digest: str,
+        payload: ContextMemoryPayload,
+        prompt_version: str,
+        model_alias: str,
+        existing: ContextMemoryRecord | None,
+        full_rebuild: bool,
+    ) -> ContextMemoryRecord:
+        now = datetime.now(UTC)
+        memory_id = existing.memory_id if existing is not None else uuid4()
+        memory_version = existing.memory_version + 1 if existing is not None else 1
+        created_at = existing.created_at if existing is not None else now
+        expires_at = (
+            existing.expires_at
+            if existing is not None
+            else now + timedelta(hours=self.settings.context_memory_ttl_hours)
+        )
+        update_count = 0 if existing is None or full_rebuild else existing.update_count + 1
+        aad_row = {
+            "memory_id": memory_id,
+            "workspace_key": workspace_key,
+            "requester_id": requester_id,
+            "ticket_id": ticket_id,
+            "memory_version": memory_version,
+            "schema_version": "context-memory-v1",
+            "policy_version": "context-memory-policy-v1",
+        }
+        ciphertext, nonce = self.cipher.encrypt(
+            payload.model_dump_json().encode(), _context_memory_aad(aad_row)
+        )
+        with self.database.transaction() as connection:
+            if existing is None:
+                inserted = connection.execute(
+                    """
+                    insert into ai_context_memories (
+                        memory_id, workspace_key, requester_id, ticket_id, memory_version, status,
+                        covered_through_sequence, source_prefix_digest, schema_version,
+                        policy_version, prompt_version, model_alias, update_count,
+                        payload_ciphertext, payload_nonce, created_at, updated_at, expires_at
+                    ) values (
+                        %s, %s, %s, %s, %s, 'ACTIVE', %s, %s, 'context-memory-v1',
+                        'context-memory-policy-v1', %s, %s, %s, %s, %s, %s, %s, %s
+                    ) on conflict do nothing
+                    """,
+                    (
+                        memory_id, workspace_key, requester_id, ticket_id, memory_version,
+                        covered_through_sequence, source_prefix_digest, prompt_version, model_alias,
+                        update_count, ciphertext, nonce, created_at, now, expires_at,
+                    ),
+                ).rowcount
+                if not inserted:
+                    raise ConflictError("active context memory already exists")
+            else:
+                updated = connection.execute(
+                    """
+                    update ai_context_memories set memory_version = %s,
+                        covered_through_sequence = %s, source_prefix_digest = %s,
+                        prompt_version = %s, model_alias = %s, update_count = %s,
+                        payload_ciphertext = %s, payload_nonce = %s, updated_at = %s
+                    where memory_id = %s and memory_version = %s and status = 'ACTIVE'
+                      and expires_at > clock_timestamp()
+                    """,
+                    (
+                        memory_version, covered_through_sequence, source_prefix_digest,
+                        prompt_version, model_alias, update_count, ciphertext, nonce, now,
+                        memory_id, existing.memory_version,
+                    ),
+                ).rowcount
+                if not updated:
+                    raise ConflictError("context memory version changed")
+        record = self.read_context_memory(workspace_key, requester_id, ticket_id)
+        if record is None:
+            raise ConflictError("context memory was not readable after save")
+        return record
+
+    def invalidate_context_memory(
+        self,
+        memory_id: UUID,
+        memory_version: int,
+        reason: str,
+    ) -> bool:
+        with self.database.transaction() as connection:
+            return bool(
+                connection.execute(
+                    """
+                    update ai_context_memories set status = 'INVALIDATED',
+                        invalidated_at = clock_timestamp(), invalidation_reason = %s,
+                        updated_at = clock_timestamp()
+                    where memory_id = %s and memory_version = %s and status = 'ACTIVE'
+                    """,
+                    (reason[:40], memory_id, memory_version),
+                ).rowcount
+            )
 
     def accept_job(self, envelope: JobEnvelope) -> Accepted:
         canonical = envelope.model_dump_json(by_alias=True, exclude_none=False)
@@ -720,7 +910,7 @@ class Repository:
         shared: SharedExecutionClaim,
         phase: str,
     ) -> None:
-        if phase not in {"QUERY_EMBEDDING", "GENERATION"}:
+        if phase not in {"QUERY_EMBEDDING", "CONTEXT_MEMORY", "GENERATION"}:
             raise ValueError("unsupported shared provider phase")
         with self.database.transaction() as connection:
             updated = connection.execute(
@@ -3025,6 +3215,24 @@ class Repository:
             ).fetchall()
             for row in rows:
                 connection.execute("delete from ai_result_cache where cache_key = %s", (row["cache_key"],))
+        return len(rows)
+
+    def purge_expired_context_memories(self, limit: int = 1000) -> int:
+        with self.database.transaction() as connection:
+            rows = connection.execute(
+                """
+                select memory_id from ai_context_memories
+                where expires_at <= clock_timestamp() or status = 'INVALIDATED'
+                order by coalesce(invalidated_at, expires_at), memory_id
+                for update skip locked limit %s
+                """,
+                (limit,),
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    "delete from ai_context_memories where memory_id = %s",
+                    (row["memory_id"],),
+                )
         return len(rows)
 
     def purge_expired_shared_executions(self, limit: int = 1000) -> int:

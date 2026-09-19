@@ -48,6 +48,8 @@ from deskseed_ai.retrieval import (
 )
 from deskseed_ai.schemas import (
     CancellationEnvelope,
+    ContextMemoryItem,
+    ContextMemoryPayload,
     Feature,
     FeedbackRequest,
     GenerationMode,
@@ -2275,6 +2277,221 @@ def test_reply_source_authorization_failure_is_not_reported_as_no_evidence(
     job = repository.get_job(item.jobId)
     assert job.status == JobStatus.FAILED
     assert job.errorCode == "SOURCE_AUTHORIZATION_FAILED"
+
+
+@pytest.mark.integration
+def test_context_memory_is_encrypted_cas_scoped_and_purged(
+    repository: Repository,
+) -> None:
+    requester_id = uuid4()
+    ticket_id = uuid4()
+    payload = ContextMemoryPayload(
+        confirmedFacts=[
+            ContextMemoryItem(text="MEMORY_BODY_SENTINEL", sourceRefs=["C1"])
+        ],
+        attemptsAndOutcomes=[],
+        openQuestions=[],
+    )
+    first = repository.save_context_memory(
+        "default",
+        requester_id,
+        ticket_id,
+        1,
+        "a" * 64,
+        payload,
+        "context-memory-v1:test",
+        "openai/gpt-5.6-luna",
+        None,
+        True,
+    )
+
+    assert repository.read_context_memory("default", requester_id, ticket_id) == first
+    with repository.database.connection() as connection:
+        row = connection.execute(
+            "select payload_ciphertext, payload_nonce from ai_context_memories where memory_id = %s",
+            (first.memory_id,),
+        ).fetchone()
+    assert b"MEMORY_BODY_SENTINEL" not in bytes(row["payload_ciphertext"])
+
+    second = repository.save_context_memory(
+        "default",
+        requester_id,
+        ticket_id,
+        2,
+        "b" * 64,
+        payload,
+        "context-memory-v1:test2",
+        "openai/gpt-5.6-luna",
+        first,
+        False,
+    )
+    assert second.memory_version == 2
+    assert second.expires_at == first.expires_at
+    with pytest.raises(ConflictError):
+        repository.save_context_memory(
+            "default",
+            requester_id,
+            ticket_id,
+            2,
+            "b" * 64,
+            payload,
+            "context-memory-v1:stale",
+            "openai/gpt-5.6-luna",
+            first,
+            False,
+        )
+
+    assert repository.invalidate_context_memory(
+        second.memory_id, second.memory_version, "SOURCE_CHANGED"
+    )
+    assert repository.read_context_memory("default", requester_id, ticket_id) is None
+    assert repository.purge_expired_context_memories() == 1
+
+
+@pytest.mark.integration
+def test_context_memory_corrupt_ciphertext_fails_closed(repository: Repository) -> None:
+    requester_id = uuid4()
+    ticket_id = uuid4()
+    payload = ContextMemoryPayload(
+        confirmedFacts=[ContextMemoryItem(text="공개 사실", sourceRefs=["C1"])],
+        attemptsAndOutcomes=[],
+        openQuestions=[],
+    )
+    saved = repository.save_context_memory(
+        "default", requester_id, ticket_id, 1, "a" * 64, payload,
+        "context-memory-v1:test", "openai/gpt-5.6-luna", None, True,
+    )
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_context_memories set payload_ciphertext = decode(repeat('00', 32), 'hex') where memory_id = %s",
+            (saved.memory_id,),
+        )
+
+    assert repository.read_context_memory("default", requester_id, ticket_id) is None
+    with repository.database.connection() as connection:
+        row = connection.execute(
+            "select status, invalidation_reason from ai_context_memories where memory_id = %s",
+            (saved.memory_id,),
+        ).fetchone()
+    assert row == {"status": "INVALIDATED", "invalidation_reason": "PAYLOAD_INVALID"}
+
+
+@pytest.mark.integration
+def test_long_reply_builds_memory_after_evidence_and_keeps_latest_customer_raw(
+    repository: Repository,
+    settings: Settings,
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+
+    class LongConversationBackend(StaticBackend):
+        def read_context(self, job_id, traceparent=None):
+            context = super().read_context(job_id, traceparent)
+            roles_and_bodies = [
+                ("CUSTOMER", "첫 공개 문의 " + "가" * 8_000),
+                ("STAFF", "첫 조치 실패 " + "나" * 8_000),
+                ("CUSTOMER", "두 번째 공개 문의 " + "다" * 8_000),
+                ("STAFF", "두 번째 조치 실패 " + "라" * 8_000),
+                ("CUSTOMER", "최신 고객 질문 ERR-42"),
+                ("STAFF", "최신 후속 상태"),
+            ]
+            comments = [
+                PublicComment(
+                    id=uuid4(),
+                    sequence=sequence,
+                    authorRole=role,
+                    body=body,
+                    createdAt=datetime(2026, 9, 19, 1, sequence, tzinfo=UTC),
+                )
+                for sequence, (role, body) in enumerate(roles_and_bodies, start=1)
+            ]
+            return context.model_copy(update={"comments": comments})
+
+    enabled = Settings.model_validate(
+        shared_execution_enabled(settings).model_dump()
+        | {"context_memory_mode": "test", "context_memory_expected_reuses": 20}
+    )
+    runtime = runtime_for(repository, enabled, LongConversationBackend(item))
+    captured: dict[str, object] = {}
+    original_reply = runtime.provider.reply
+
+    def reply(context, chunks, options, call_id, record_receipt, memory=None):
+        captured["sequences"] = [comment.sequence for comment in context.comments]
+        captured["memory"] = memory
+        return original_reply(
+            context, chunks, options, call_id, record_receipt, memory=memory
+        )
+
+    runtime.provider.reply = reply
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    assert captured["sequences"] == [5, 6]
+    assert isinstance(captured["memory"], ContextMemoryPayload)
+    memory = repository.read_context_memory("default", item.requesterId, item.ticketId)
+    assert memory is not None
+    assert memory.covered_through_sequence == 4
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select stage, settlement_status from ai_provider_calls where job_id = %s order by created_at",
+            (item.jobId,),
+        ).fetchall()
+        source_ids = connection.execute(
+            "select source_comment_ids from ai_jobs where job_id = %s", (item.jobId,)
+        ).fetchone()["source_comment_ids"]
+    assert calls == [
+        {"stage": "QUERY_EMBEDDING", "settlement_status": "SETTLED"},
+        {"stage": "CONTEXT_MEMORY", "settlement_status": "SETTLED"},
+        {"stage": "GENERATION", "settlement_status": "SETTLED"},
+    ]
+    assert len(source_ids) == 6
+
+
+@pytest.mark.integration
+def test_no_evidence_does_not_build_context_memory(
+    repository: Repository,
+    settings: Settings,
+) -> None:
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+
+    class LongNoEvidenceBackend(StaticBackend):
+        def read_context(self, job_id, traceparent=None):
+            context = super().read_context(job_id, traceparent)
+            return context.model_copy(
+                update={
+                    "comments": [
+                        PublicComment(
+                            id=uuid4(), sequence=1, authorRole="STAFF",
+                            body="과거 공개 기록 " + "가" * 20_000,
+                            createdAt=datetime(2026, 9, 19, 1, 1, tzinfo=UTC),
+                        ),
+                        PublicComment(
+                            id=uuid4(), sequence=2, authorRole="CUSTOMER",
+                            body="최신 질문",
+                            createdAt=datetime(2026, 9, 19, 1, 2, tzinfo=UTC),
+                        ),
+                    ]
+                }
+            )
+
+    enabled = Settings.model_validate(
+        settings.model_dump()
+        | {"context_memory_mode": "test", "context_memory_expected_reuses": 20}
+    )
+    runtime = runtime_for(repository, enabled, LongNoEvidenceBackend(item))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    assert repository.get_job(item.jobId).errorCode == "NO_APPROVED_KNOWLEDGE"
+    assert repository.read_context_memory("default", item.requesterId, item.ticketId) is None
+    with repository.database.connection() as connection:
+        stages = connection.execute(
+            "select stage from ai_provider_calls where job_id = %s order by created_at",
+            (item.jobId,),
+        ).fetchall()
+    assert stages == [{"stage": "QUERY_EMBEDDING"}]
     with repository.database.connection() as connection:
         calls = connection.execute(
             "select stage, settlement_status from ai_provider_calls where job_id = %s order by created_at",

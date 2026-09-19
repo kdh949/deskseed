@@ -248,7 +248,38 @@ class ReplyProviderOutput(StrictModel):
         return self
 
 
-ProviderOutput = SummaryResult | TriageResult | ReplyProviderOutput
+class ContextMemoryItem(StrictModel):
+    text: Annotated[str, Field(min_length=1, max_length=1000)]
+    sourceRefs: list[Annotated[str, Field(pattern=r"^C[1-9][0-9]{0,5}$")]] = Field(
+        min_length=1, max_length=20
+    )
+
+    @model_validator(mode="after")
+    def source_refs_are_unique(self) -> "ContextMemoryItem":
+        if len(set(self.sourceRefs)) != len(self.sourceRefs):
+            raise ValueError("context memory source refs must be unique")
+        return self
+
+
+class ContextMemoryPayload(StrictModel):
+    confirmedFacts: list[ContextMemoryItem] = Field(max_length=30)
+    attemptsAndOutcomes: list[ContextMemoryItem] = Field(max_length=30)
+    openQuestions: list[ContextMemoryItem] = Field(max_length=30)
+
+
+class ContextMemoryProviderOutput(ContextMemoryPayload):
+    conflictSourceRefs: list[
+        Annotated[str, Field(pattern=r"^C[1-9][0-9]{0,5}$")]
+    ] = Field(max_length=20)
+
+    @model_validator(mode="after")
+    def conflict_refs_are_unique(self) -> "ContextMemoryProviderOutput":
+        if len(set(self.conflictSourceRefs)) != len(self.conflictSourceRefs):
+            raise ValueError("context memory conflict refs must be unique")
+        return self
+
+
+ProviderOutput = SummaryResult | TriageResult | ReplyProviderOutput | ContextMemoryProviderOutput
 
 
 class GenerationProvenance(StrictModel):

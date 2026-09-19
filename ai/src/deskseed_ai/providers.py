@@ -11,11 +11,14 @@ from pydantic import ValidationError
 from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
 from .pricing import PricingCatalog, Usage
-from .prompting import prompt_for
+from .prompting import context_memory_prompt, prompt_for
 from .retrieval import KnowledgeChunk
 from .schemas import (
+    ContextMemoryPayload,
+    ContextMemoryProviderOutput,
     Feature,
     ProviderOutput,
+    ReplyDraftResult,
     ReplyProviderOutput,
     SourceContext,
     SummaryResult,
@@ -26,7 +29,7 @@ from .usage_normalization import bounded_text, normalize_litellm_usage, value
 
 @dataclass(frozen=True)
 class ProviderResult:
-    result: ProviderOutput
+    result: ProviderOutput | ReplyDraftResult
     receipt: ProviderCallReceipt
     prompt_version: str
 
@@ -42,6 +45,16 @@ class InvalidProviderOutputError(RuntimeError):
 
 
 class GenerationProvider:
+    settings: Settings
+    def context_memory(
+        self,
+        context: SourceContext,
+        previous: ContextMemoryPayload | None,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        raise NotImplementedError
+
     def summary(
         self,
         context: SourceContext,
@@ -67,6 +80,7 @@ class GenerationProvider:
         options: Mapping[str, str],
         call_id: UUID,
         record_receipt: ReceiptRecorder,
+        memory: ContextMemoryPayload | None = None,
     ) -> ProviderResult:
         raise NotImplementedError
 
@@ -77,15 +91,64 @@ class GenerationProvider:
         context: SourceContext,
         knowledge: list[KnowledgeChunk],
         options: Mapping[str, str],
+        memory: ContextMemoryPayload | None = None,
     ) -> int:
         model, schema, output_limit = _feature_config(self.settings, feature)
-        request = _request_contract(model, context, schema, knowledge, options, feature, output_limit)
+        request = _request_contract(
+            model, context, schema, knowledge, options, feature, output_limit, memory
+        )
         return pricing.count_json_tokens(model, request)
+
+    def estimate_context_memory_input_tokens(
+        self,
+        pricing: PricingCatalog,
+        context: SourceContext,
+        previous: ContextMemoryPayload | None,
+    ) -> int:
+        request = _context_memory_request(self.settings.model_fast, context, previous)
+        return pricing.count_json_tokens(self.settings.model_fast, request)
 
 
 class FakeGenerationProvider(GenerationProvider):
     def __init__(self, settings: Settings):
         self.settings = settings
+
+    def context_memory(
+        self,
+        context: SourceContext,
+        previous: ContextMemoryPayload | None,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        prior = list(previous.confirmedFacts) if previous is not None else []
+        items = prior + [
+            {
+                "text": comment.body[:1000],
+                "sourceRefs": [f"C{comment.sequence or index}"],
+            }
+            for index, comment in enumerate(context.comments, start=1)
+        ]
+        conflict_refs = [
+            f"C{comment.sequence or index}"
+            for index, comment in enumerate(context.comments, start=1)
+            if "[CONFLICT]" in comment.body
+        ]
+        result = ContextMemoryProviderOutput(
+            confirmedFacts=items[-30:],
+            attemptsAndOutcomes=(
+                list(previous.attemptsAndOutcomes) if previous is not None else []
+            ),
+            openQuestions=list(previous.openQuestions) if previous is not None else [],
+            conflictSourceRefs=conflict_refs,
+        )
+        request = _context_memory_request(self.settings.model_fast, context, previous)
+        receipt = _fake_receipt(
+            call_id,
+            self.settings.model_fast,
+            _fake_usage(json.dumps(request, ensure_ascii=False), result.model_dump_json()),
+        )
+        record_receipt(receipt)
+        return ProviderResult(result, receipt, context_memory_prompt().version)
 
     def summary(
         self,
@@ -153,6 +216,7 @@ class FakeGenerationProvider(GenerationProvider):
         options: Mapping[str, str],
         call_id: UUID,
         record_receipt: ReceiptRecorder,
+        memory: ContextMemoryPayload | None = None,
     ) -> ProviderResult:
         if not knowledge:
             raise ValueError("reply provider requires approved knowledge")
@@ -161,7 +225,9 @@ class FakeGenerationProvider(GenerationProvider):
         result = ReplyProviderOutput(answer=answer, sourceRefs=["S1"])
         prompt = prompt_for(Feature.REPLY_DRAFT)
         usage = _fake_usage(
-            _conversation(context) + json.dumps(dict(options), sort_keys=True),
+            _conversation(context)
+            + (memory.model_dump_json() if memory is not None else "")
+            + json.dumps(dict(options), sort_keys=True),
             result.model_dump_json(),
         )
         receipt = _fake_receipt(call_id, self.settings.model_standard, usage)
@@ -176,6 +242,39 @@ class FakeGenerationProvider(GenerationProvider):
 class LiteLlmGenerationProvider(GenerationProvider):
     def __init__(self, settings: Settings):
         self.settings = settings
+
+    def context_memory(
+        self,
+        context: SourceContext,
+        previous: ContextMemoryPayload | None,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        from litellm import completion
+
+        request = _context_memory_request(self.settings.model_fast, context, previous)
+        response = completion(
+            model=self.settings.model_fast,
+            api_key=self.settings.openai_api_key.get_secret_value(),
+            messages=request["messages"],
+            response_format=request["response_format"],
+            reasoning_effort="none",
+            store=False,
+            num_retries=0,
+            timeout=min(45, self.settings.job_timeout_seconds),
+            max_completion_tokens=1024,
+            service_tier="default",
+        )
+        receipt = _litellm_receipt(call_id, self.settings.model_fast, response)
+        record_receipt(receipt)
+        raw = getattr(response.choices[0].message, "content", None)
+        if raw is None:
+            raise InvalidProviderOutputError("provider response has no context memory output")
+        try:
+            result = ContextMemoryProviderOutput.model_validate_json(raw)
+        except (ValidationError, ValueError, TypeError) as exception:
+            raise InvalidProviderOutputError("provider context memory output is invalid") from exception
+        return ProviderResult(result, receipt, context_memory_prompt().version)
 
     def summary(
         self,
@@ -220,6 +319,7 @@ class LiteLlmGenerationProvider(GenerationProvider):
         options: Mapping[str, str],
         call_id: UUID,
         record_receipt: ReceiptRecorder,
+        memory: ContextMemoryPayload | None = None,
     ) -> ProviderResult:
         return self._complete(
             self.settings.model_standard,
@@ -230,6 +330,7 @@ class LiteLlmGenerationProvider(GenerationProvider):
             Feature.REPLY_DRAFT,
             call_id,
             record_receipt,
+            memory,
         )
 
     def _complete(
@@ -242,11 +343,14 @@ class LiteLlmGenerationProvider(GenerationProvider):
         feature: Feature,
         call_id: UUID,
         record_receipt: ReceiptRecorder,
+        memory: ContextMemoryPayload | None = None,
     ) -> ProviderResult:
         from litellm import completion
 
         output_limit = _output_limit(schema)
-        request = _request_contract(model, context, schema, knowledge, options, feature, output_limit)
+        request = _request_contract(
+            model, context, schema, knowledge, options, feature, output_limit, memory
+        )
         response = completion(
             model=model,
             api_key=self.settings.openai_api_key.get_secret_value(),
@@ -330,11 +434,12 @@ def _request_contract(
     options: Mapping[str, str],
     feature: Feature,
     output_limit: int,
+    memory: ContextMemoryPayload | None = None,
 ) -> dict[str, Any]:
     prompt = prompt_for(feature)
     public_messages = [
         {
-            "commentRef": f"C{index}",
+            "commentRef": f"C{comment.sequence if memory is not None and comment.sequence is not None else index}",
             "authorRole": comment.authorRole.value if comment.authorRole is not None else "UNKNOWN",
             "sequence": comment.sequence if comment.sequence is not None else index,
             "createdAt": comment.createdAt.isoformat(),
@@ -350,20 +455,20 @@ def _request_contract(
         }
         for index, item in enumerate(knowledge, start=1)
     ]
+    user_payload: dict[str, Any] = {
+        "options": dict(options),
+        "publicConversation": public_messages,
+        "approvedPublicKnowledge": public_knowledge,
+    }
+    if memory is not None:
+        user_payload["publicConversationMemory"] = memory.model_dump(mode="json")
     return {
         "model": model,
         "messages": [
             {"role": "system", "content": prompt.content},
             {
                 "role": "user",
-                "content": json.dumps(
-                    {
-                        "options": dict(options),
-                        "publicConversation": public_messages,
-                        "approvedPublicKnowledge": public_knowledge,
-                    },
-                    ensure_ascii=False,
-                ),
+                "content": json.dumps(user_payload, ensure_ascii=False),
             },
         ],
         "response_format": {
@@ -372,6 +477,53 @@ def _request_contract(
         },
         "max_completion_tokens": output_limit,
         "reasoning_effort": "none" if schema is not ReplyProviderOutput else "low",
+        "service_tier": "default",
+    }
+
+
+def _context_memory_request(
+    model: str,
+    context: SourceContext,
+    previous: ContextMemoryPayload | None,
+) -> dict[str, Any]:
+    prompt = context_memory_prompt()
+    comments = [
+        {
+            "commentRef": f"C{comment.sequence or index}",
+            "authorRole": comment.authorRole.value if comment.authorRole is not None else "UNKNOWN",
+            "sequence": comment.sequence if comment.sequence is not None else index,
+            "createdAt": comment.createdAt.isoformat(),
+            "body": comment.body,
+        }
+        for index, comment in enumerate(context.comments, start=1)
+    ]
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt.content},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "previousMemory": (
+                            previous.model_dump(mode="json") if previous is not None else None
+                        ),
+                        "publicConversationDelta": comments,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": ContextMemoryProviderOutput.__name__,
+                "strict": True,
+                "schema": ContextMemoryProviderOutput.model_json_schema(),
+            },
+        },
+        "max_completion_tokens": 1024,
+        "reasoning_effort": "none",
         "service_tier": "default",
     }
 

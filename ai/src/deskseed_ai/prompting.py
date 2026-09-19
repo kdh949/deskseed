@@ -24,9 +24,22 @@ _PROMPT_NAMES = {
     Feature.REPLY_DRAFT: "reply-v2",
 }
 
+_CONTEXT_MEMORY_PROMPT_NAME = "context-memory-v1"
+
 
 def prompt_for(feature: Feature) -> FeaturePrompt:
     name = _PROMPT_NAMES[feature]
     content = files("deskseed_ai.prompts").joinpath(f"{name}.txt").read_text(encoding="utf-8").strip()
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     return FeaturePrompt(name=name, content=content, digest=digest)
+
+
+def context_memory_prompt() -> FeaturePrompt:
+    content = (
+        files("deskseed_ai.prompts")
+        .joinpath(f"{_CONTEXT_MEMORY_PROMPT_NAME}.txt")
+        .read_text(encoding="utf-8")
+        .strip()
+    )
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return FeaturePrompt(name=_CONTEXT_MEMORY_PROMPT_NAME, content=content, digest=digest)

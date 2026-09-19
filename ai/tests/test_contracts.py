@@ -13,7 +13,7 @@ from deskseed_ai.backend_client import AiPolicy, BackendAuthorizationError, Back
 from deskseed_ai.call_receipts import UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.pricing import PricingCatalog, Usage
-from deskseed_ai.prompting import prompt_for
+from deskseed_ai.prompting import context_memory_prompt, prompt_for
 from deskseed_ai.providers import LiteLlmGenerationProvider
 from deskseed_ai.queue import InputTooLongError, _bounded_context
 from deskseed_ai.repository import ClaimedJob, PublishedIndexGeneration
@@ -30,6 +30,9 @@ from deskseed_ai.retrieval import (
 from deskseed_ai.schemas import (
     AuthorRole,
     Citation,
+    ContextMemoryItem,
+    ContextMemoryPayload,
+    ContextMemoryProviderOutput,
     Feature,
     GenerationMode,
     JobEnvelope,
@@ -96,6 +99,14 @@ def test_exact_result_cache_is_test_only_until_reuse_intent_is_contractual() -> 
         result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
     )
     assert settings.exact_result_cache_mode == "test"
+
+
+def test_context_memory_is_off_by_default_and_test_mode_is_not_production() -> None:
+    assert Settings(environment="test").context_memory_mode == "off"
+    with pytest.raises(ValueError, match="measured intent activation"):
+        Settings(
+            environment="production", process_role="migration", context_memory_mode="test"
+        )
 
 
 def test_shared_execution_is_test_only_and_requires_exact_cache() -> None:
@@ -235,6 +246,16 @@ def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
         settings.model_standard,
         settings,
         PublishedIndexGeneration(generation=5, canonical_corpus_revision=9, artifact_generation=3),
+    ) != reply_key
+    memory_settings = settings.model_copy(
+        update={"context_memory_mode": "test", "context_memory_expected_reuses": 3}
+    )
+    assert exact_result_cache_key(
+        reply_claim,
+        reply_policy,
+        memory_settings.model_standard,
+        memory_settings,
+        published_index,
     ) != reply_key
 
 
@@ -673,6 +694,59 @@ def test_reply_provider_receives_only_request_local_source_refs(monkeypatch) -> 
     assert "login-help" not in serialized
     schema = calls[0]["response_format"]["json_schema"]["schema"]
     assert set(schema["properties"]) == {"answer", "sourceRefs"}
+
+
+def test_context_memory_transport_is_bounded_and_uses_only_local_comment_refs(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import litellm
+
+    settings = Settings(environment="test", openai_api_key="test-only-key")
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=(
+                '{"confirmedFacts":[{"text":"로그인 실패","sourceRefs":["C1","C2"]}],'
+                '"attemptsAndOutcomes":[],"openQuestions":[],"conflictSourceRefs":[]}'
+            )))],
+            usage=SimpleNamespace(prompt_tokens=20, completion_tokens=10),
+            id="response-memory-1",
+            model=settings.model_fast,
+            service_tier="default",
+        )
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    full = _v2_context(
+        Feature.REPLY_DRAFT,
+        [
+            (AuthorRole.CUSTOMER, "로그인되지 않습니다."),
+            (AuthorRole.STAFF, "재설정도 실패했습니다."),
+        ],
+    )
+    delta = full.model_copy(update={"comments": [full.comments[1]]})
+    previous = ContextMemoryPayload(
+        confirmedFacts=[ContextMemoryItem(text="로그인 실패", sourceRefs=["C1"])],
+        attemptsAndOutcomes=[],
+        openQuestions=[],
+    )
+    receipts = []
+
+    generated = LiteLlmGenerationProvider(settings).context_memory(
+        delta, previous, uuid4(), receipts.append
+    )
+
+    assert isinstance(generated.result, ContextMemoryProviderOutput)
+    assert generated.prompt_version == context_memory_prompt().version
+    assert len(receipts) == 1
+    assert calls[0]["num_retries"] == 0
+    assert calls[0]["store"] is False
+    assert calls[0]["max_completion_tokens"] == 1024
+    payload = json.loads(calls[0]["messages"][1]["content"])
+    assert payload["previousMemory"]["confirmedFacts"][0]["sourceRefs"] == ["C1"]
+    assert payload["publicConversationDelta"][0]["commentRef"] == "C2"
+    assert str(full.comments[1].id) not in calls[0]["messages"][1]["content"]
 
 
 def test_reply_provider_output_rejects_duplicate_and_nonlocal_source_refs() -> None:
