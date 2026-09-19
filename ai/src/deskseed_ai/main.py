@@ -219,6 +219,7 @@ def operation(
     if payload.action in {"CANCEL", "RETRY"} and job_id is None:
         raise ConflictError("jobId is required for this operation")
     if payload.action == "RETENTION":
+        service.repository.purge_expired_cache_entries()
         service.repository.purge_expired_results()
         service.repository.purge_expired_metadata()
         accepted = service.repository.operate(job_id, payload)

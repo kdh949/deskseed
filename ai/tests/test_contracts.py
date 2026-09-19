@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -8,13 +9,15 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from deskseed_ai.backend_client import BackendAuthorizationError, BackendClient
+from deskseed_ai.backend_client import AiPolicy, BackendAuthorizationError, BackendClient
 from deskseed_ai.call_receipts import UsageStatus
 from deskseed_ai.config import Settings
 from deskseed_ai.pricing import PricingCatalog, Usage
 from deskseed_ai.prompting import prompt_for
 from deskseed_ai.providers import LiteLlmGenerationProvider
 from deskseed_ai.queue import InputTooLongError, _bounded_context
+from deskseed_ai.repository import ClaimedJob
+from deskseed_ai.result_cache import exact_result_cache_key
 from deskseed_ai.retrieval import KnowledgeChunk, LiteLlmEmbeddingProvider
 from deskseed_ai.schemas import (
     AuthorRole,
@@ -65,6 +68,73 @@ def test_production_credentials_are_scoped_to_the_process_role() -> None:
         Settings(environment="production", process_role="worker")
     with pytest.raises(ValidationError):
         Settings(environment="production", process_role="indexer")
+
+
+def test_exact_result_cache_is_test_only_until_reuse_intent_is_contractual() -> None:
+    with pytest.raises(ValidationError, match="S08 reuse-intent"):
+        Settings(
+            environment="production",
+            process_role="migration",
+            exact_result_cache_mode="test",
+            result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
+        )
+    with pytest.raises(ValidationError, match="at least 32"):
+        Settings(environment="test", exact_result_cache_mode="test", result_cache_key_secret="short")
+
+    settings = Settings(
+        environment="test",
+        exact_result_cache_mode="test",
+        result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
+    )
+    assert settings.exact_result_cache_mode == "test"
+
+
+def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
+    settings = Settings(
+        environment="test",
+        exact_result_cache_mode="test",
+        result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
+    )
+    now = datetime.now(UTC)
+    claim = ClaimedJob(
+        job_id=uuid4(),
+        generation=1,
+        lease_epoch=1,
+        feature=Feature.SUMMARY,
+        workspace_key="default",
+        requester_id=uuid4(),
+        ticket_id=uuid4(),
+        context_revision="a" * 64,
+        context_policy_version="public-comments-v2",
+        ai_input_revision="b" * 64,
+        input_policy_version="summary-input-v1",
+        traceparent=None,
+        deadline_at=now + timedelta(minutes=2),
+        options={"language": "ko"},
+    )
+    policy = AiPolicy(
+        enabled=True,
+        features={Feature.SUMMARY.value: True},
+        fastModelAlias=settings.model_fast,
+        standardModelAlias=settings.model_standard,
+        version=3,
+        updatedAt=now,
+        dataAsOf=now,
+    )
+    original = exact_result_cache_key(claim, policy, settings.model_fast, settings)
+    assert original is not None
+    assert len(original.digest) == 64
+    assert exact_result_cache_key(replace(claim, job_id=uuid4()), policy, settings.model_fast, settings) == original
+    assert exact_result_cache_key(replace(claim, requester_id=uuid4()), policy, settings.model_fast, settings) != original
+    assert exact_result_cache_key(replace(claim, ticket_id=uuid4()), policy, settings.model_fast, settings) != original
+    assert exact_result_cache_key(claim, policy.model_copy(update={"version": 4}), settings.model_fast, settings) != original
+    assert exact_result_cache_key(replace(claim, ai_input_revision=None), policy, settings.model_fast, settings) is None
+    assert exact_result_cache_key(
+        replace(claim, feature=Feature.REPLY_DRAFT, input_policy_version="reply-input-v1"),
+        policy,
+        settings.model_standard,
+        settings,
+    ) is None
 
 
 def test_machine_auth_requires_key_id_and_constant_digest_match() -> None:

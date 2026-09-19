@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from cryptography.exceptions import InvalidTag
 from fastapi.testclient import TestClient
 from psycopg.errors import CheckViolation
 
@@ -96,6 +97,28 @@ def envelope_v2(feature: Feature = Feature.SUMMARY) -> JobEnvelope:
         options=options,
         createdAt=now,
         deadlineAt=now + timedelta(minutes=2),
+    )
+
+
+def matching_v2_job(origin: JobEnvelope) -> JobEnvelope:
+    now = datetime.now(UTC)
+    return origin.model_copy(
+        update={
+            "eventId": uuid4(),
+            "jobId": uuid4(),
+            "createdAt": now,
+            "deadlineAt": now + timedelta(minutes=2),
+        }
+    )
+
+
+def cache_enabled(settings: Settings) -> Settings:
+    return Settings.model_validate(
+        settings.model_dump()
+        | {
+            "exact_result_cache_mode": "test",
+            "result_cache_key_secret": "synthetic-cache-key-secret-at-least-32-bytes",
+        }
     )
 
 
@@ -242,6 +265,228 @@ def test_schema_v2_job_persists_and_executes_with_bound_input_revision(
     assert runtime.dispatch_once() == 1
     assert runtime.consume_once(block_ms=1) == 1
     assert repository.get_job(item.jobId).status == JobStatus.SUCCEEDED
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("feature", [Feature.SUMMARY, Feature.TRIAGE])
+def test_exact_result_cache_reencrypts_completed_result_without_second_provider_call(
+    repository: Repository, settings: Settings, feature: Feature
+) -> None:
+    enabled = cache_enabled(settings)
+    origin = envelope_v2(feature)
+    consumer = matching_v2_job(origin)
+
+    repository.accept_job(origin)
+    origin_runtime = runtime_for(repository, enabled, StaticBackend(origin))
+    assert origin_runtime.dispatch_once() == 1
+    assert origin_runtime.consume_once(block_ms=1) == 1
+
+    repository.accept_job(consumer)
+    consumer_runtime = runtime_for(repository, enabled, StaticBackend(consumer))
+    assert consumer_runtime.dispatch_once() == 1
+    assert consumer_runtime.consume_once(block_ms=1) == 1
+
+    origin_receipt = repository.get_job(origin.jobId)
+    consumer_receipt = repository.get_job(consumer.jobId)
+    assert consumer_receipt.status == JobStatus.SUCCEEDED
+    assert consumer_receipt.result == origin_receipt.result
+    assert consumer_receipt.costMicrousd == 0
+    assert consumer_receipt.provenance is not None
+    assert origin_receipt.provenance is not None
+    assert consumer_receipt.provenance.generatedAt == origin_receipt.provenance.generatedAt
+    assert consumer_receipt.resultExpiresAt < origin_receipt.resultExpiresAt
+
+    with repository.database.connection() as connection:
+        rows = connection.execute(
+            """
+            select job_id, result_ciphertext, result_nonce, result_origin_job_id, reuse_kind
+            from ai_jobs where job_id in (%s, %s) order by job_id
+            """,
+            (origin.jobId, consumer.jobId),
+        ).fetchall()
+        calls = connection.execute(
+            "select job_id from ai_provider_calls where job_id in (%s, %s)",
+            (origin.jobId, consumer.jobId),
+        ).fetchall()
+        cached = connection.execute(
+            "select origin_job_id, expires_at, invalidated_at from ai_result_cache"
+        ).fetchone()
+    by_job = {row["job_id"]: row for row in rows}
+    assert len(calls) == 1
+    assert calls[0]["job_id"] == origin.jobId
+    assert by_job[consumer.jobId]["result_origin_job_id"] == origin.jobId
+    assert by_job[consumer.jobId]["reuse_kind"] == "EXACT_CACHE_HIT"
+    assert by_job[consumer.jobId]["result_ciphertext"] != by_job[origin.jobId]["result_ciphertext"]
+    assert by_job[consumer.jobId]["result_nonce"] != by_job[origin.jobId]["result_nonce"]
+    assert cached["origin_job_id"] == origin.jobId
+    assert cached["invalidated_at"] is None
+    assert cached["expires_at"] == consumer_receipt.resultExpiresAt
+    with pytest.raises(InvalidTag):
+        repository.cipher.decrypt(
+            bytes(by_job[consumer.jobId]["result_ciphertext"]),
+            bytes(by_job[consumer.jobId]["result_nonce"]),
+            str(origin.jobId).encode(),
+        )
+
+
+@pytest.mark.integration
+def test_default_off_and_legacy_jobs_never_use_exact_result_cache(
+    repository: Repository, settings: Settings
+) -> None:
+    first = envelope_v2(Feature.SUMMARY)
+    second = matching_v2_job(first)
+    for item in (first, second):
+        repository.accept_job(item)
+        runtime = runtime_for(repository, settings, StaticBackend(item))
+        assert runtime.dispatch_once() == 1
+        assert runtime.consume_once(block_ms=1) == 1
+
+    legacy = envelope(Feature.SUMMARY)
+    repository.accept_job(legacy)
+    legacy_runtime = runtime_for(repository, cache_enabled(settings), StaticBackend(legacy))
+    assert legacy_runtime.dispatch_once() == 1
+    assert legacy_runtime.consume_once(block_ms=1) == 1
+
+    with repository.database.connection() as connection:
+        assert connection.execute("select count(*) as count from ai_result_cache").fetchone()["count"] == 0
+        assert connection.execute("select count(*) as count from ai_provider_calls").fetchone()["count"] == 3
+
+
+@pytest.mark.integration
+def test_origin_cancel_and_invalid_ciphertext_force_cache_miss(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = cache_enabled(settings)
+    origin = envelope_v2(Feature.SUMMARY)
+    repository.accept_job(origin)
+    runtime = runtime_for(repository, enabled, StaticBackend(origin))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    repository.cancel(
+        CancellationEnvelope(
+            schemaVersion=1,
+            eventId=uuid4(),
+            jobId=origin.jobId,
+            workspaceKey=origin.workspaceKey,
+            requestRevision=2,
+            createdAt=datetime.now(UTC),
+        )
+    )
+    replacement = matching_v2_job(origin)
+    repository.accept_job(replacement)
+    replacement_runtime = runtime_for(repository, enabled, StaticBackend(replacement))
+    assert replacement_runtime.dispatch_once() == 1
+    assert replacement_runtime.consume_once(block_ms=1) == 1
+
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set result_ciphertext = decode(repeat('00', 32), 'hex') where job_id = %s",
+            (replacement.jobId,),
+        )
+    after_tamper = matching_v2_job(origin)
+    repository.accept_job(after_tamper)
+    tamper_runtime = runtime_for(repository, enabled, StaticBackend(after_tamper))
+    assert tamper_runtime.dispatch_once() == 1
+    assert tamper_runtime.consume_once(block_ms=1) == 1
+
+    with repository.database.connection() as connection:
+        calls = connection.execute("select count(*) as count from ai_provider_calls").fetchone()["count"]
+        row = connection.execute(
+            "select result_origin_job_id, reuse_kind from ai_jobs where job_id = %s", (after_tamper.jobId,)
+        ).fetchone()
+    assert calls == 3
+    assert row == {"result_origin_job_id": None, "reuse_kind": None}
+
+
+@pytest.mark.integration
+def test_concurrent_completed_cache_consumers_keep_independent_ciphertexts(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = cache_enabled(settings)
+    origin = envelope_v2(Feature.SUMMARY)
+    repository.accept_job(origin)
+    runtime = runtime_for(repository, enabled, StaticBackend(origin))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+    with repository.database.connection() as connection:
+        cache_key = connection.execute("select cache_key from ai_result_cache").fetchone()["cache_key"]
+
+    consumers = [matching_v2_job(origin) for _ in range(8)]
+    claims = []
+    for consumer in consumers:
+        repository.accept_job(consumer)
+        claim = repository.claim_job(consumer.jobId, 1, settings.consumer_name)
+        assert claim is not None
+        claims.append(claim)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        hits = list(pool.map(lambda claim: repository.complete_from_cache(claim, cache_key), claims))
+    assert hits == [True] * 8
+
+    with repository.database.connection() as connection:
+        rows = connection.execute(
+            """
+            select job_id, result_nonce, result_origin_job_id, cost_microusd
+            from ai_jobs where result_origin_job_id = %s
+            """,
+            (origin.jobId,),
+        ).fetchall()
+        call_count = connection.execute(
+            "select count(*) as count from ai_provider_calls where job_id = %s", (origin.jobId,)
+        ).fetchone()["count"]
+    assert len(rows) == 8
+    assert len({bytes(row["result_nonce"]) for row in rows}) == 8
+    assert all(row["cost_microusd"] == 0 for row in rows)
+    assert call_count == 1
+
+
+@pytest.mark.integration
+def test_cache_retention_is_bounded_and_idempotent(repository: Repository, settings: Settings) -> None:
+    enabled = cache_enabled(settings)
+    origin = envelope_v2(Feature.TRIAGE)
+    repository.accept_job(origin)
+    runtime = runtime_for(repository, enabled, StaticBackend(origin))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+    with repository.database.transaction() as connection:
+        connection.execute(
+            """
+            update ai_result_cache set
+                created_at = clock_timestamp() - interval '25 hours',
+                expires_at = clock_timestamp() - interval '1 hour'
+            """
+        )
+
+    assert repository.purge_expired_cache_entries(limit=1) == 1
+    assert repository.purge_expired_cache_entries(limit=1) == 0
+
+
+@pytest.mark.integration
+def test_result_cache_database_rejects_unpaired_reuse_and_reply_entries(
+    repository: Repository,
+) -> None:
+    item = envelope_v2(Feature.SUMMARY)
+    repository.accept_job(item)
+    with pytest.raises(CheckViolation):
+        with repository.database.transaction() as connection:
+            connection.execute(
+                "update ai_jobs set reuse_kind = 'EXACT_CACHE_HIT' where job_id = %s",
+                (item.jobId,),
+            )
+    with pytest.raises(CheckViolation):
+        with repository.database.transaction() as connection:
+            connection.execute(
+                """
+                insert into ai_result_cache (
+                    cache_key, key_version, workspace_key, requester_id, ticket_id, feature,
+                    origin_job_id, created_at, expires_at
+                ) values (
+                    %s, 'result-cache-summary-triage-v1', %s, %s, %s, 'ticket.reply_draft',
+                    %s, clock_timestamp(), clock_timestamp() + interval '1 hour'
+                )
+                """,
+                ("a" * 64, item.workspaceKey, item.requesterId, item.ticketId, item.jobId),
+            )
 
 
 @pytest.mark.integration
@@ -1392,11 +1637,11 @@ class StaticBackend:
             inputScope="PUBLIC_ONLY",
             comments=[
                 PublicComment(
-                    id=uuid4(),
+                    id=self.item.ticketId,
                     sequence=1 if is_v2 else None,
                     authorRole="CUSTOMER" if is_v2 else None,
                     body="공개 결제 문의입니다.",
-                    createdAt=datetime.now(UTC),
+                    createdAt=datetime(2026, 1, 1, tzinfo=UTC),
                 )
             ],
         )
@@ -1407,6 +1652,7 @@ class StaticBackend:
             features={feature: True},
             fastModelAlias="openai/gpt-5.6-luna",
             standardModelAlias="openai/gpt-5.6-terra",
+            version=1,
         )
 
     def read_context_revision(self, job_id):
