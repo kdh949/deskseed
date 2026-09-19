@@ -14,7 +14,7 @@
 
 ## 검증 및 배포
 
-`SearchDiagnosticsTest`, `LoadObservabilityConfigurationTest`, `PersonalStagingObservabilityConfigurationTest`, `AgentTicketSearchIntegrationTest`, personal staging deployment/production Compose contract를 실행한다. 현재 SHA 기반 전용 브랜치의 GitHub Actions workflow_dispatch로 SHA-tagged backend/frontend 이미지를 게시한다. 서버 deployer의 clean checkout 및 OCI revision 일치 검증을 유지한다.
+실제 서버 기준 버전의 관련 테스트 17개가 통과했다. `SearchDiagnosticsTest`, `LoadObservabilityConfigurationTest`, `PersonalStagingObservabilityConfigurationTest`, `AgentTicketSearchIntegrationTest`, personal staging deployment/production Compose contract를 실행한다. file-backed secret 소유 UID:GID를 `DESKSEED_RUNTIME_USER`로 명시하고 실제 backend user와 대조한다. 미지정 기본값은 이미지 사용자 `deskseed`다. 현재 SHA 기반 전용 브랜치의 GitHub Actions workflow_dispatch로 SHA-tagged backend/frontend 이미지를 게시한다. 서버 deployer의 clean checkout 및 OCI revision 일치 검증을 유지한다.
 
 실제 검색 1회 수준의 smoke에서 같은 HTTP trace의 count/page/audit와 Loki trace_id 연결을 확인한다. 임시 sampling 1.0은 기존 0.05로 복원한다. 본 부하와 성능 개선은 수행하지 않는다. 새로운 migration/OpenAPI/retention 변경은 없다.
 

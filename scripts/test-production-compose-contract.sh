@@ -27,6 +27,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+unset DESKSEED_RUNTIME_USER
 export POSTGRES_DB=deskseed
 export DATABASE_BOOTSTRAP_USERNAME=deskseed_bootstrap
 export DATABASE_BOOTSTRAP_PASSWORD=contract-bootstrap-password
@@ -173,6 +174,7 @@ assert services["frontend"]["image"] == (
 )
 assert "build" not in services["backend"], services["backend"].get("build")
 assert "build" not in services["frontend"], services["frontend"].get("build")
+assert services["backend"]["user"] == "deskseed"
 assert "alloy" not in services, services.keys()
 assert not services["backend"].get("ports"), services["backend"].get("ports")
 assert "SPRING_PROFILES_INCLUDE" not in services["backend"]["environment"]
@@ -187,6 +189,7 @@ PY
 DESKSEED_FRONTEND_BIND_ADDRESS=192.0.2.10 \
 DESKSEED_FRONTEND_ORIGIN_PORT=18080 \
 DESKSEED_OBSERVABILITY_BIND_ADDRESS=192.0.2.11 \
+DESKSEED_RUNTIME_USER=1001:1001 \
 DESKSEED_LOKI_OTLP_HTTP_ENDPOINT=https://loki.internal/otlp \
 DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT=https://tempo.internal \
   docker compose \
@@ -210,6 +213,7 @@ assert set(services) == {
 }, services.keys()
 
 backend = services["backend"]
+assert backend["user"] == "1001:1001"
 backend_environment = backend["environment"]
 assert backend_environment["SPRING_PROFILES_ACTIVE"] == "production"
 assert backend_environment["SPRING_PROFILES_INCLUDE"] == "personal-staging-observability"
