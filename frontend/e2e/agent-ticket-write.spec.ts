@@ -208,6 +208,11 @@ test('agent PUBLIC reply sends one expected-version command and refreshes the ti
       priority: 'URGENT',
       comment: {
         visibility: 'PUBLIC',
+        aiAttribution: {
+          contractVersion: 'AI_SENT_V1',
+          state: 'NO_AI_LINEAGE',
+          sources: [],
+        },
         content: {
           format: 'RICH_TEXT_V1',
           document: {

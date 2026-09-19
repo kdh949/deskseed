@@ -4,6 +4,7 @@ import { ApiError, updateAgentTicket } from '../../../api/client'
 import { plainTextDocument } from '../../../api/types'
 import type {
   AgentTicketDetail,
+  AiReplyAttributionSource,
   RichTextDocumentV1,
   TicketFieldName,
   TicketCommandWarning,
@@ -28,6 +29,13 @@ import {
   type TicketCommentDrafts,
   type TicketRichTextDrafts,
 } from './ticketEditorModel'
+import {
+  aiReplyAttributionForPublicComment,
+  noAiReplyLineage,
+  updateAiReplyLineageAfterEdit,
+  updateAiReplyLineageAfterInsert,
+  type AiReplyInsertStrategy,
+} from './aiReplyLineage'
 
 export interface TicketConflictState {
   fields: Set<TicketFieldName>
@@ -83,6 +91,8 @@ export function useTicketEditor({
   >(() =>
     initialAttachmentStates(initial.pendingCommand, initial.attachmentIds),
   )
+  const aiReplyLineageRef = useRef(noAiReplyLineage())
+  const editorIdentityRef = useRef(`${staffId}:${detail.ticket.ticketNumber}`)
   const composerDrafts = useMemo(
     () => ({
       PUBLIC: {
@@ -182,6 +192,9 @@ export function useTicketEditor({
       removeTicketDraft(localStorage, storageKey)
       return
     }
+    const persistPendingCommand =
+      pendingCommand !== null &&
+      isBrowserPersistablePendingCommand(pendingCommand)
     writeEditorState({
       mode,
       comments,
@@ -190,8 +203,10 @@ export function useTicketEditor({
       serverFields,
       baseVersion,
       attachmentIds: persistedAttachmentIds(attachmentStates),
-      ...(pendingCommandId ? { pendingCommandId } : {}),
-      ...(pendingCommand ? { pendingCommand } : {}),
+      ...(pendingCommandId && persistPendingCommand
+        ? { pendingCommandId }
+        : {}),
+      ...(pendingCommand && persistPendingCommand ? { pendingCommand } : {}),
     })
   }, [
     baseVersion,
@@ -212,8 +227,24 @@ export function useTicketEditor({
     conflictRef.current?.focus()
   }, [conflict?.currentVersion])
 
+  useEffect(() => {
+    const nextIdentity = `${staffId}:${detail.ticket.ticketNumber}`
+    if (editorIdentityRef.current === nextIdentity) return
+    editorIdentityRef.current = nextIdentity
+    aiReplyLineageRef.current = noAiReplyLineage()
+    setPendingCommandId(null)
+    setPendingCommand(null)
+  }, [detail.ticket.ticketNumber, staffId])
+
   const updateDraft = (visibility: TicketVisibility, value: string) => {
     if (submitting) return
+    if (visibility === 'PUBLIC') {
+      aiReplyLineageRef.current = updateAiReplyLineageAfterEdit({
+        current: aiReplyLineageRef.current,
+        previousText: comments.PUBLIC,
+        nextText: value,
+      })
+    }
     const nextComments = { ...comments, [visibility]: value }
     invalidatePendingCommand({ comments: nextComments })
     setComments(nextComments)
@@ -232,6 +263,13 @@ export function useTicketEditor({
       JSON.stringify(documents[visibility]) === JSON.stringify(document)
     )
       return
+    if (visibility === 'PUBLIC') {
+      aiReplyLineageRef.current = updateAiReplyLineageAfterEdit({
+        current: aiReplyLineageRef.current,
+        previousText: comments.PUBLIC,
+        nextText: plainText,
+      })
+    }
     const nextComments = { ...comments, [visibility]: plainText }
     const nextDocuments = { ...documents, [visibility]: document }
     invalidatePendingCommand({
@@ -242,6 +280,31 @@ export function useTicketEditor({
     setDocuments(nextDocuments)
     setError(null)
     setSuccess(null)
+  }
+
+  const insertAiReply = (
+    document: RichTextDocumentV1,
+    plainText: string,
+    source: AiReplyAttributionSource,
+    strategy: AiReplyInsertStrategy,
+  ) => {
+    if (submitting) return false
+    const nextComments = { ...comments, PUBLIC: plainText }
+    const nextDocuments = { ...documents, PUBLIC: document }
+    invalidatePendingCommand({
+      comments: nextComments,
+      documents: nextDocuments,
+    })
+    aiReplyLineageRef.current = updateAiReplyLineageAfterInsert({
+      current: aiReplyLineageRef.current,
+      source,
+      strategy,
+    })
+    setComments(nextComments)
+    setDocuments(nextDocuments)
+    setError(null)
+    setSuccess(null)
+    return true
   }
 
   const updateField = (
@@ -445,6 +508,13 @@ export function useTicketEditor({
             format: 'RICH_TEXT_V1',
             document: documents[submittedMode],
           },
+          ...(submittedMode === 'PUBLIC' && submittedComment
+            ? {
+                aiAttribution: aiReplyAttributionForPublicComment(
+                  aiReplyLineageRef.current,
+                ),
+              }
+            : {}),
         },
         attachmentIds,
         clientCommandId,
@@ -452,6 +522,7 @@ export function useTicketEditor({
     if (pendingCommandId === null) {
       setPendingCommandId(clientCommandId)
       setPendingCommand(command)
+      const persistPendingCommand = isBrowserPersistablePendingCommand(command)
       writeEditorState({
         mode,
         comments,
@@ -460,8 +531,8 @@ export function useTicketEditor({
         serverFields,
         baseVersion,
         attachmentIds: persistedAttachmentIds(attachmentStates),
-        pendingCommandId: clientCommandId,
-        pendingCommand: command,
+        ...(persistPendingCommand ? { pendingCommandId: clientCommandId } : {}),
+        ...(persistPendingCommand ? { pendingCommand: command } : {}),
       })
     }
     try {
@@ -484,6 +555,9 @@ export function useTicketEditor({
       })
       setPendingCommandId(null)
       setPendingCommand(null)
+      if (submittedMode === 'PUBLIC') {
+        aiReplyLineageRef.current = noAiReplyLineage()
+      }
       setAttachmentStates((current) => ({
         ...current,
         [submittedMode]: emptyAttachmentState(),
@@ -574,6 +648,7 @@ export function useTicketEditor({
     },
     updateDraft,
     updateRichDraft,
+    insertAiReply,
     serverFields,
     localFields,
     dirtyFields,
@@ -654,6 +729,10 @@ export function useTicketEditor({
         : undefined,
     })
   }
+}
+
+function isBrowserPersistablePendingCommand(command: UpdateTicketCommand) {
+  return (command.comment?.aiAttribution?.sources.length ?? 0) === 0
 }
 
 function initialEditorState(detail: AgentTicketDetail, staffId: string) {

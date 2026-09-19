@@ -3,6 +3,7 @@ import { http, HttpResponse, type HttpHandler } from 'msw'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { mswHandlers } from '../../../.storybook/msw-handlers'
 import type { AgentTicketDetail } from '../../api/types'
+import type { AiJobReceipt } from '../ai-assistance/api'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
 import {
   article as knowledgeArticle,
@@ -10,6 +11,33 @@ import {
 } from '../../extensions/knowledge-workflow/fixtures'
 
 const staffId = '11111111-1111-4111-8111-111111111111'
+const attributedReplyAnswer =
+  '결제 승인 기록을 확인한 뒤 공개 결과를 안내드리겠습니다.'
+const attributedReplyJob = {
+  jobId: '51111111-1111-4111-8111-111111111111',
+  candidateId: '52222222-2222-4222-8222-222222222222',
+  feature: 'ticket.reply_draft',
+  status: 'SUCCEEDED',
+  phase: 'COMPLETE',
+  requestRevision: 3,
+  createdAt: '2026-09-19T00:00:00Z',
+  deadlineAt: '2026-09-19T00:05:00Z',
+  completedAt: '2026-09-19T00:00:04Z',
+  resultExpiresAt: '2026-09-26T00:00:04Z',
+  pollAfterMs: 1000,
+  cancelRequested: false,
+  contextRevision: 'a'.repeat(64),
+  contextPolicyVersion: 'public-comments-v1',
+  inputScope: 'PUBLIC_ONLY',
+  stale: false,
+  canInsert: true,
+  errorCode: null,
+  result: {
+    type: 'ticket.reply_draft',
+    answer: attributedReplyAnswer,
+    citations: [],
+  },
+} satisfies AiJobReceipt
 
 const detail: AgentTicketDetail = {
   ticket: {
@@ -379,6 +407,87 @@ export const Writable: Story = {
     await expect(
       canvas.getByRole('combobox', { name: '그룹' }),
     ).toHaveTextContent('결제 지원')
+  },
+}
+
+export const AiReplyAttributionSend: Story = {
+  parameters: {
+    msw: {
+      handlers: workspaceHandlers(
+        http.get('/api/v1/agent/tickets/3001/ai/jobs', () =>
+          HttpResponse.json({ items: [attributedReplyJob] }),
+        ),
+        http.get(
+          `/api/v1/agent/tickets/3001/ai/jobs/${attributedReplyJob.jobId}`,
+          () => HttpResponse.json(attributedReplyJob),
+        ),
+        http.post(
+          `/api/v1/agent/tickets/3001/ai/jobs/${attributedReplyJob.jobId}/feedback`,
+          () =>
+            HttpResponse.json({
+              jobId: attributedReplyJob.jobId,
+              type: 'inserted',
+              replayed: false,
+              recordedAt: '2026-09-19T00:00:05Z',
+            }),
+        ),
+        http.post(
+          '/api/v1/agent/tickets/3001/commands',
+          async ({ request }) => {
+            const command = (await request.json()) as {
+              comment?: {
+                aiAttribution?: {
+                  contractVersion?: string
+                  state?: string
+                  sources?: Array<{
+                    jobId?: string
+                    candidateId?: string
+                    originalAnswer?: string
+                  }>
+                }
+              }
+            }
+            const attribution = command.comment?.aiAttribution
+            const source = attribution?.sources?.[0]
+            if (
+              attribution?.contractVersion !== 'AI_SENT_V1' ||
+              attribution.state !== 'LINEAGE_PRESENT' ||
+              attribution.sources?.length !== 1 ||
+              source?.jobId !== attributedReplyJob.jobId ||
+              source.candidateId !== attributedReplyJob.candidateId ||
+              source.originalAnswer !== attributedReplyAnswer
+            ) {
+              return HttpResponse.json(
+                { title: 'Invalid AI attribution', status: 400 },
+                { status: 400 },
+              )
+            }
+            return HttpResponse.json({
+              ticketNumber: 3001,
+              version: 4,
+              auditId: '22222222-2222-4222-8222-222222222222',
+              warnings: [],
+            })
+          },
+        ),
+      ),
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    const editor = await canvas.findByRole('textbox', {
+      name: '공개 답변 내용',
+    })
+    await userEvent.click(
+      canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
+    )
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'PUBLIC 작성기에 사용' }),
+    )
+    await waitFor(() => expect(editor).toHaveTextContent(attributedReplyAnswer))
+    await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
+    await expect(
+      await canvas.findByText('공개 답변과 변경사항을 저장했습니다.'),
+    ).toBeVisible()
   },
 }
 
