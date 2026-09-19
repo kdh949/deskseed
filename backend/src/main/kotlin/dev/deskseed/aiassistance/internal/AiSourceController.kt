@@ -98,8 +98,11 @@ internal class AiPolicyController(private val jdbcTemplate: JdbcTemplate, privat
         val policy = jdbcTemplate.query(
             """
             select enabled, summary_enabled, triage_enabled, reply_draft_enabled,
-                   fast_model_alias, standard_model_alias, version, updated_at
-            from ai_settings where singleton = true
+                   fast_model_alias, standard_model_alias, settings.version, settings.updated_at,
+                   corpus.revision as canonical_public_corpus_revision
+            from ai_settings settings
+            cross join ai_public_knowledge_corpus_state corpus
+            where settings.singleton = true and corpus.singleton = true
             """.trimIndent(),
             { result, _ -> AiPolicyResponse(
                 enabled = result.getBoolean("enabled"),
@@ -113,6 +116,7 @@ internal class AiPolicyController(private val jdbcTemplate: JdbcTemplate, privat
                 version = result.getLong("version"),
                 updatedAt = result.getTimestamp("updated_at").toInstant(),
                 dataAsOf = Instant.now(clock),
+                canonicalPublicCorpusRevision = result.getLong("canonical_public_corpus_revision"),
             ) },
         ).single()
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(policy)
@@ -127,6 +131,7 @@ internal data class AiPolicyResponse(
     val version: Long,
     val updatedAt: Instant,
     val dataAsOf: Instant,
+    val canonicalPublicCorpusRevision: Long,
 )
 
 @JsonInclude(JsonInclude.Include.NON_NULL)

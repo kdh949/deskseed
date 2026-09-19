@@ -45,6 +45,9 @@ class AdminKnowledgeIntegrationTest {
     @BeforeEach
     fun clearState() {
         jdbc.execute("truncate table ai_knowledge_manifest_snapshots cascade")
+        jdbc.update(
+            "update ai_public_knowledge_corpus_state set revision = 1, updated_at = clock_timestamp() where singleton = true",
+        )
         jdbc.execute("truncate table ai_knowledge_access_audit_details, access_audit_events cascade")
         // Revisions and access rows are append-only in the production application role.
         // Test isolation therefore uses one PostgreSQL TRUNCATE over the FK-connected tables.
@@ -73,6 +76,10 @@ class AdminKnowledgeIntegrationTest {
     fun `admin creates hierarchy and immutable draft with audit and durable event intent`() {
         val adminId = insertStaff("knowledge-admin@example.com", "Knowledge admin password 42")
         val browser = login("knowledge-admin@example.com", "Knowledge admin password 42")
+        val initialCorpusRevision = jdbc.queryForObject(
+            "select revision from ai_public_knowledge_corpus_state where singleton = true",
+            Long::class.java,
+        )!!
 
         mockMvc.perform(get("/api/v1/admin/knowledge/categories").session(browser.session))
             .andExpect(status().isBadRequest)
@@ -87,6 +94,7 @@ class AdminKnowledgeIntegrationTest {
         ).andExpect(status().isCreated)
             .andExpect(jsonPath("$.slug").value("billing"))
             .andReturn().response.contentAsString.uuidField("id")
+        assertThat(corpusRevision()).isEqualTo(initialCorpusRevision + 1)
 
         mockMvc.perform(
             patch("/api/v1/admin/knowledge/categories/{categoryId}", categoryId)
@@ -98,6 +106,7 @@ class AdminKnowledgeIntegrationTest {
                 .content("""{"slug":"billing","title":"결제와 청구","description":"결제 도움말","displayOrder":10,"active":true}"""),
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.version").value(1))
+        assertThat(corpusRevision()).isEqualTo(initialCorpusRevision + 2)
 
         mockMvc.perform(
             patch("/api/v1/admin/knowledge/categories/{categoryId}", categoryId)
@@ -108,6 +117,7 @@ class AdminKnowledgeIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"slug":"billing","title":"stale","description":"","displayOrder":10,"active":true}"""),
         ).andExpect(status().isPreconditionFailed)
+        assertThat(corpusRevision()).isEqualTo(initialCorpusRevision + 2)
 
         val sectionId = postJson(
             browser,
@@ -117,6 +127,7 @@ class AdminKnowledgeIntegrationTest {
         ).andExpect(status().isCreated)
             .andExpect(jsonPath("$.categoryId").value(categoryId.toString()))
             .andReturn().response.contentAsString.uuidField("id")
+        assertThat(corpusRevision()).isEqualTo(initialCorpusRevision + 3)
 
         mockMvc.perform(get("/api/v1/admin/knowledge/sections").session(browser.session)
             .header("X-Deskseed-Expected-Staff-Id", adminId.toString()))
@@ -148,6 +159,7 @@ class AdminKnowledgeIntegrationTest {
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.lifecycle").value("IN_REVIEW"))
             .andExpect(jsonPath("$.version").value(1))
+        assertThat(corpusRevision()).isEqualTo(initialCorpusRevision + 3)
 
         mockMvc.perform(
             post("/api/v1/admin/knowledge/articles/{articleId}/publish", articleId)
@@ -159,6 +171,13 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.lifecycle").value("PUBLISHED"))
             .andExpect(jsonPath("$.currentPublishedRevision.revisionNumber").value(1))
             .andExpect(jsonPath("$.version").value(2))
+        assertThat(corpusRevision()).isEqualTo(initialCorpusRevision + 4)
+        mockMvc.perform(
+            get("/api/v1/internal/ai/policy")
+                .header("Authorization", "Bearer test-ai-source-secret")
+                .header("X-Deskseed-AI-Key-Id", "test-ai-key"),
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.canonicalPublicCorpusRevision").value(initialCorpusRevision + 4))
 
         val publishedRevisionId = jdbc.queryForObject(
             "select current_published_revision_id from knowledge_articles where id = ?",
@@ -174,6 +193,7 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.items[0].articleId").value(articleId.toString()))
             .andExpect(jsonPath("$.items[0].revisionId").value(publishedRevisionId.toString()))
             .andExpect(jsonPath("$.items[0].sourceVersion").value(2))
+            .andExpect(jsonPath("$.canonicalPublicCorpusRevision").value(initialCorpusRevision + 4))
             .andExpect(jsonPath("$.snapshotToken").isString)
             .andExpect(jsonPath("$.expiresAt").isString)
             .andExpect(jsonPath("$.nextCursor").doesNotExist())
@@ -214,6 +234,7 @@ class AdminKnowledgeIntegrationTest {
             .andExpect(jsonPath("$.audience.type").value("STAFF"))
             .andExpect(jsonPath("$.audienceVersion").value(2))
             .andExpect(jsonPath("$.version").value(3))
+        assertThat(corpusRevision()).isEqualTo(initialCorpusRevision + 5)
 
         mockMvc.perform(
             get("/api/v1/internal/ai/kb/manifest")
@@ -224,12 +245,14 @@ class AdminKnowledgeIntegrationTest {
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.items[0].articleId").value(articleId.toString()))
             .andExpect(jsonPath("$.items[0].sourceVersion").value(2))
+            .andExpect(jsonPath("$.canonicalPublicCorpusRevision").value(initialCorpusRevision + 4))
         mockMvc.perform(
             get("/api/v1/internal/ai/kb/manifest")
                 .header("Authorization", "Bearer test-ai-index-secret")
                 .header("X-Deskseed-AI-Key-Id", "test-ai-index-key"),
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.items").isEmpty)
+            .andExpect(jsonPath("$.canonicalPublicCorpusRevision").value(initialCorpusRevision + 5))
 
         assertThat(
             jdbc.queryForList(
@@ -470,6 +493,7 @@ class AdminKnowledgeIntegrationTest {
 
         assertThat(jdbc.queryForObject("select count(*) from knowledge_categories", Long::class.java)).isZero()
         assertThat(jdbc.queryForObject("select count(*) from domain_event_outbox", Long::class.java)).isZero()
+        assertThat(corpusRevision()).isEqualTo(1)
     }
 
     @Test
@@ -650,6 +674,11 @@ class AdminKnowledgeIntegrationTest {
     private fun String.uuidField(name: String): UUID = UUID.fromString(
         Regex("\\\"$name\\\":\\\"([^\\\"]+)\\\"").find(this)!!.groupValues[1],
     )
+
+    private fun corpusRevision(): Long = jdbc.queryForObject(
+        "select revision from ai_public_knowledge_corpus_state where singleton = true",
+        Long::class.java,
+    )!!
 
     private data class Browser(val session: MockHttpSession, val csrfToken: String)
 

@@ -175,7 +175,8 @@ class KnowledgeRepository:
                 (article_id, revision_id, workspace_key, slug, title, public_revision, now),
             )
             connection.execute(
-                "delete from ai_kb_chunks where article_id = %s and revision_id = %s", (article_id, revision_id)
+                "delete from ai_kb_chunks where workspace_key = %s and article_id = %s",
+                (workspace_key, article_id),
             )
             for ordinal, (content, vector, _) in enumerate(embedded):
                 connection.execute(

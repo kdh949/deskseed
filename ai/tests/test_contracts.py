@@ -16,7 +16,7 @@ from deskseed_ai.pricing import PricingCatalog, Usage
 from deskseed_ai.prompting import prompt_for
 from deskseed_ai.providers import LiteLlmGenerationProvider
 from deskseed_ai.queue import InputTooLongError, _bounded_context
-from deskseed_ai.repository import ClaimedJob
+from deskseed_ai.repository import ClaimedJob, PublishedIndexGeneration
 from deskseed_ai.result_cache import exact_result_cache_key
 from deskseed_ai.retrieval import KnowledgeChunk, LiteLlmEmbeddingProvider
 from deskseed_ai.schemas import (
@@ -129,12 +129,33 @@ def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
     assert exact_result_cache_key(replace(claim, ticket_id=uuid4()), policy, settings.model_fast, settings) != original
     assert exact_result_cache_key(claim, policy.model_copy(update={"version": 4}), settings.model_fast, settings) != original
     assert exact_result_cache_key(replace(claim, ai_input_revision=None), policy, settings.model_fast, settings) is None
-    assert exact_result_cache_key(
-        replace(claim, feature=Feature.REPLY_DRAFT, input_policy_version="reply-input-v1"),
-        policy,
+    reply_claim = replace(claim, feature=Feature.REPLY_DRAFT, input_policy_version="reply-input-v1")
+    assert exact_result_cache_key(reply_claim, policy, settings.model_standard, settings) is None
+    reply_policy = policy.model_copy(update={"canonicalPublicCorpusRevision": 9})
+    published_index = PublishedIndexGeneration(generation=4, canonical_corpus_revision=9)
+    reply_key = exact_result_cache_key(
+        reply_claim,
+        reply_policy,
         settings.model_standard,
         settings,
+        published_index,
+    )
+    assert reply_key is not None
+    assert reply_key.version == "result-cache-reply-v1"
+    assert exact_result_cache_key(
+        reply_claim,
+        reply_policy,
+        settings.model_standard,
+        settings,
+        PublishedIndexGeneration(generation=4, canonical_corpus_revision=8),
     ) is None
+    assert exact_result_cache_key(
+        reply_claim,
+        reply_policy,
+        settings.model_standard,
+        settings,
+        PublishedIndexGeneration(generation=5, canonical_corpus_revision=9),
+    ) != reply_key
 
 
 def test_machine_auth_requires_key_id_and_constant_digest_match() -> None:

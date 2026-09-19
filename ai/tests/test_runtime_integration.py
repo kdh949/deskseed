@@ -330,6 +330,150 @@ def test_exact_result_cache_reencrypts_completed_result_without_second_provider_
 
 
 @pytest.mark.integration
+def test_reply_result_cache_requires_matching_published_index_and_reauthorizes_citations(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = cache_enabled(settings)
+    index_public_chunks(repository, 1)
+    publish_current_index_generation(repository, canonical_corpus_revision=7)
+    origin = envelope_v2(Feature.REPLY_DRAFT)
+    consumer = matching_v2_job(origin)
+
+    class CountingBackend(StaticBackend):
+        def __init__(self, item):
+            super().__init__(item)
+            self.authorization_count = 0
+
+        def authorize_citations(self, job_id, citations):
+            self.authorization_count += 1
+            return super().authorize_citations(job_id, citations)
+
+    repository.accept_job(origin)
+    origin_backend = CountingBackend(origin)
+    origin_runtime = runtime_for(repository, enabled, origin_backend)
+    assert origin_runtime.dispatch_once() == 1
+    assert origin_runtime.consume_once(block_ms=1) == 1
+
+    repository.accept_job(consumer)
+    consumer_backend = CountingBackend(consumer)
+    consumer_runtime = runtime_for(repository, enabled, consumer_backend)
+    assert consumer_runtime.dispatch_once() == 1
+    assert consumer_runtime.consume_once(block_ms=1) == 1
+
+    origin_receipt = repository.get_job(origin.jobId)
+    consumer_receipt = repository.get_job(consumer.jobId)
+    assert origin_receipt.status == JobStatus.SUCCEEDED
+    assert consumer_receipt.status == JobStatus.SUCCEEDED
+    assert consumer_receipt.result == origin_receipt.result
+    assert consumer_receipt.costMicrousd == 0
+    assert origin_backend.authorization_count == 2
+    assert consumer_backend.authorization_count == 1
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select job_id, stage from ai_provider_calls order by created_at"
+        ).fetchall()
+        cache = connection.execute(
+            "select key_version, feature, origin_job_id from ai_result_cache"
+        ).fetchone()
+        jobs = connection.execute(
+            """
+            select job_id, result_ciphertext, result_nonce, result_origin_job_id, reuse_kind
+            from ai_jobs where job_id in (%s, %s)
+            """,
+            (origin.jobId, consumer.jobId),
+        ).fetchall()
+    assert calls == [
+        {"job_id": origin.jobId, "stage": "QUERY_EMBEDDING"},
+        {"job_id": origin.jobId, "stage": "GENERATION"},
+    ]
+    assert cache == {
+        "key_version": "result-cache-reply-v1",
+        "feature": Feature.REPLY_DRAFT.value,
+        "origin_job_id": origin.jobId,
+    }
+    by_job = {row["job_id"]: row for row in jobs}
+    assert by_job[consumer.jobId]["result_origin_job_id"] == origin.jobId
+    assert by_job[consumer.jobId]["reuse_kind"] == "EXACT_CACHE_HIT"
+    assert by_job[consumer.jobId]["result_ciphertext"] != by_job[origin.jobId]["result_ciphertext"]
+    assert by_job[consumer.jobId]["result_nonce"] != by_job[origin.jobId]["result_nonce"]
+
+
+@pytest.mark.integration
+def test_reply_cache_misses_when_corpus_changes_or_cached_citation_is_withdrawn(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = cache_enabled(settings)
+    index_public_chunks(repository, 1)
+    publish_current_index_generation(repository, canonical_corpus_revision=7)
+    origin = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(origin)
+    origin_runtime = runtime_for(repository, enabled, StaticBackend(origin))
+    assert origin_runtime.dispatch_once() == 1
+    assert origin_runtime.consume_once(block_ms=1) == 1
+
+    corpus_changed = matching_v2_job(origin)
+
+    class CorpusChangedBackend(StaticBackend):
+        def read_policy(self, feature):
+            return SimpleNamespace(
+                enabled=True,
+                features={feature: True},
+                fastModelAlias="openai/gpt-5.6-luna",
+                standardModelAlias="openai/gpt-5.6-terra",
+                version=1,
+                canonicalPublicCorpusRevision=8,
+            )
+
+    repository.accept_job(corpus_changed)
+    changed_backend = CorpusChangedBackend(corpus_changed)
+    changed_runtime = runtime_for(repository, enabled, changed_backend)
+    assert changed_runtime.dispatch_once() == 1
+    assert changed_runtime.consume_once(block_ms=1) == 1
+
+    withdrawn = matching_v2_job(origin)
+
+    class WithdrawOnceBackend(StaticBackend):
+        def __init__(self, item):
+            super().__init__(item)
+            self.authorization_count = 0
+
+        def authorize_citations(self, job_id, citations):
+            self.authorization_count += 1
+            if self.authorization_count == 1:
+                return []
+            return super().authorize_citations(job_id, citations)
+
+    repository.accept_job(withdrawn)
+    withdrawn_backend = WithdrawOnceBackend(withdrawn)
+    withdrawn_runtime = runtime_for(repository, enabled, withdrawn_backend)
+    assert withdrawn_runtime.dispatch_once() == 1
+    assert withdrawn_runtime.consume_once(block_ms=1) == 1
+
+    with repository.database.connection() as connection:
+        calls_by_job = connection.execute(
+            """
+            select job_id, count(*) as count from ai_provider_calls
+            where job_id in (%s, %s, %s) group by job_id
+            """,
+            (origin.jobId, corpus_changed.jobId, withdrawn.jobId),
+        ).fetchall()
+        jobs = connection.execute(
+            """
+            select job_id, result_origin_job_id, reuse_kind
+            from ai_jobs where job_id in (%s, %s)
+            """,
+            (corpus_changed.jobId, withdrawn.jobId),
+        ).fetchall()
+    assert {row["job_id"]: row["count"] for row in calls_by_job} == {
+        origin.jobId: 2,
+        corpus_changed.jobId: 2,
+        withdrawn.jobId: 2,
+    }
+    assert all(row["result_origin_job_id"] is None and row["reuse_kind"] is None for row in jobs)
+    assert withdrawn_backend.authorization_count == 3
+
+
+@pytest.mark.integration
 def test_default_off_and_legacy_jobs_never_use_exact_result_cache(
     repository: Repository, settings: Settings
 ) -> None:
@@ -1561,6 +1705,7 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
                 return SimpleNamespace(
                     snapshotToken=snapshot_token_value,
                     expiresAt=published_at + timedelta(hours=1),
+                    canonicalPublicCorpusRevision=7,
                     nextCursor=first_article_id,
                     items=[SimpleNamespace(
                         articleId=first_article_id,
@@ -1575,6 +1720,7 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
             return SimpleNamespace(
                 snapshotToken=snapshot_token_value,
                 expiresAt=published_at + timedelta(hours=1),
+                canonicalPublicCorpusRevision=7,
                 nextCursor=None,
                 items=[SimpleNamespace(
                     articleId=second_article_id,
@@ -1612,8 +1758,9 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
             "select status, page_count, item_count from ai_kb_reconciliation_runs where snapshot_token = %s",
             (snapshot_token,),
         ).fetchone()
-        assert run == {"status": "SUCCEEDED", "page_count": 2, "item_count": 2}
+        assert run == {"status": "INDEXING", "page_count": 2, "item_count": 2}
         assert connection.execute("select count(*) as count from ai_kb_index_jobs").fetchone()["count"] == 3
+    assert repository.try_publish_index_generation("default") is False
 
 
 class StaticBackend:
@@ -1653,6 +1800,7 @@ class StaticBackend:
             fastModelAlias="openai/gpt-5.6-luna",
             standardModelAlias="openai/gpt-5.6-terra",
             version=1,
+            canonicalPublicCorpusRevision=7,
         )
 
     def read_context_revision(self, job_id):
@@ -1708,6 +1856,62 @@ def index_public_chunks(repository: Repository, count: int) -> list:
             "where ai_kb_chunks.workspace_key = 'default' order by chunk_id"
         ).fetchall()
     return [SimpleNamespace(**row) for row in indexed]
+
+
+def publish_current_index_generation(
+    repository: Repository,
+    canonical_corpus_revision: int,
+) -> None:
+    owner = "test-index-generation-publisher"
+    events = repository.claim_index_events(owner, 100)
+    for event in events:
+        repository.mark_index_event_succeeded(event.eventId, owner)
+    with repository.database.connection() as connection:
+        items = connection.execute(
+            """
+            select revision.article_id, revision.revision_id, state.source_version,
+                   revision.public_revision
+            from ai_kb_revisions revision
+            join ai_kb_article_state state
+              on state.workspace_key = revision.workspace_key and state.article_id = revision.article_id
+            where revision.workspace_key = 'default' and revision.status = 'PUBLIC'
+            order by revision.article_id
+            """
+        ).fetchall()
+    now = datetime.now(UTC)
+    assert repository.begin_reconciliation(
+        uuid4(),
+        "default",
+        uuid4(),
+        now + timedelta(hours=1),
+        canonical_corpus_revision,
+    )
+    run = repository.current_reconciliation("default")
+    assert run is not None
+    assert repository.record_reconciliation_page(
+        run,
+        [
+            (
+                row["article_id"],
+                row["revision_id"],
+                row["source_version"],
+                row["public_revision"],
+            )
+            for row in items
+        ],
+        None,
+    )
+    assert not repository.begin_reconciliation(
+        uuid4(),
+        "default",
+        uuid4(),
+        now + timedelta(hours=1),
+        canonical_corpus_revision,
+    )
+    assert repository.try_publish_index_generation("default") is True
+    published = repository.current_published_index_generation("default")
+    assert published is not None
+    assert published.canonical_corpus_revision == canonical_corpus_revision
 
 
 def runtime_for(

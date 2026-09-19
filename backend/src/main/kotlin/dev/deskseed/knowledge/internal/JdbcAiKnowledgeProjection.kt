@@ -18,11 +18,21 @@ internal class JdbcAiKnowledgeProjection(
         require(expiresAt > now) { "manifest snapshot must expire after creation" }
         jdbcTemplate.update("delete from ai_knowledge_manifest_snapshots where expires_at <= ?", Timestamp.from(now))
         val snapshotToken = UUID.randomUUID()
+        val corpusRevision = jdbcTemplate.queryForObject(
+            "select revision from ai_public_knowledge_corpus_state where singleton = true for share",
+            Long::class.java,
+        ) ?: error("PUBLIC knowledge corpus revision is unavailable")
         jdbcTemplate.update(
-            "insert into ai_knowledge_manifest_snapshots (snapshot_token, created_at, expires_at) values (?, ?, ?)",
+            """
+            insert into ai_knowledge_manifest_snapshots (
+                snapshot_token, created_at, expires_at, canonical_public_corpus_revision
+            )
+            values (?, ?, ?, ?)
+            """.trimIndent(),
             snapshotToken,
             Timestamp.from(now),
             Timestamp.from(expiresAt),
+            corpusRevision,
         )
         jdbcTemplate.update(
             """
@@ -48,9 +58,15 @@ internal class JdbcAiKnowledgeProjection(
         now: Instant,
     ): AiPublicKnowledgeManifestPage? {
         require(limit in 1..1_000) { "manifest limit must be between 1 and 1000" }
-        val expiresAt = jdbcTemplate.query(
-            "select expires_at from ai_knowledge_manifest_snapshots where snapshot_token = ? and expires_at > ?",
-            { result, _ -> result.getTimestamp("expires_at").toInstant() },
+        val snapshot = jdbcTemplate.query(
+            """
+            select expires_at, canonical_public_corpus_revision
+            from ai_knowledge_manifest_snapshots where snapshot_token = ? and expires_at > ?
+            """.trimIndent(),
+            { result, _ ->
+                result.getTimestamp("expires_at").toInstant() to
+                    result.getLong("canonical_public_corpus_revision")
+            },
             snapshotToken,
             Timestamp.from(now),
         ).singleOrNull() ?: return null
@@ -80,7 +96,8 @@ internal class JdbcAiKnowledgeProjection(
         val items = if (hasMore) rows.take(limit) else rows
         return AiPublicKnowledgeManifestPage(
             snapshotToken = snapshotToken,
-            expiresAt = expiresAt,
+            expiresAt = snapshot.first,
+            canonicalPublicCorpusRevision = snapshot.second,
             items = items,
             nextCursor = if (hasMore) items.last().articleId else null,
         )

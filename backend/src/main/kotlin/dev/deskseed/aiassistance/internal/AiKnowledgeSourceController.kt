@@ -54,6 +54,7 @@ internal class AiKnowledgeSourceController(
                 AiKnowledgeManifestResponse(
                     snapshotToken = page.snapshotToken,
                     expiresAt = page.expiresAt,
+                    canonicalPublicCorpusRevision = page.canonicalPublicCorpusRevision,
                     nextCursor = page.nextCursor,
                     items = page.items.map {
                         AiKnowledgeManifestItemResponse(
@@ -171,6 +172,7 @@ internal data class AiKnowledgeManifestItemResponse(
 internal data class AiKnowledgeManifestResponse(
     val snapshotToken: UUID,
     val expiresAt: Instant,
+    val canonicalPublicCorpusRevision: Long,
     val nextCursor: UUID?,
     val items: List<AiKnowledgeManifestItemResponse>,
 )

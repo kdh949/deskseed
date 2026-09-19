@@ -196,6 +196,7 @@ class KnowledgeManifestPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     snapshotToken: UUID
     expiresAt: datetime
+    canonicalPublicCorpusRevision: int | None = Field(default=None, ge=1)
     nextCursor: UUID | None
     items: list[KnowledgeManifestItem]
 
@@ -227,6 +228,7 @@ class AiPolicy(BaseModel):
     version: int
     updatedAt: datetime
     dataAsOf: datetime
+    canonicalPublicCorpusRevision: int | None = Field(default=None, ge=1)
 
 
 class AuthorizedKnowledgeCandidate(BaseModel):
