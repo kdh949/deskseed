@@ -474,6 +474,19 @@ Backend ACCEPTED
 - Metadata polling omits result content. Explicit result retrieval rechecks current Backend authorization, feature policy, PUBLIC context revision, expiry, and PUBLIC KB citations, then requires `AI_RESULT_READ` persistence before returning content.
 - Feedback uses a separate exact-idempotency ledger and monotonically increasing source revision. Langfuse export is a retryable projection and never changes canonical feedback.
 
+AI reply use는 `displayed/inserted/edited` UI signal과 Backend-confirmed `sent`를 분리한다. authorized result read가 server-owned origin candidate, requester, ticket, job, answer digest/length와 expiry의 body-free binding을 만들 수 있다. PUBLIC `UpdateTicket` command의 optional lineage가 이 binding과 모두 일치하면 comment, TicketAudit, `(commentId, candidateId)` unique sent attribution과 AI outbox가 같은 transaction에 기록된다. exact command replay는 새 sent를 만들지 않는다. INTERNAL, lineage-lost, legacy omission, stale/expired/mismatched binding은 sent 0이며 정상 comment는 기존 규칙으로 계속 저장된다.
+
+```text
+authorized result read -> CANDIDATE_BOUND
+  -> PUBLIC command + valid single source -> ATTRIBUTED_SINGLE -> outbox PENDING -> DELIVERED
+  -> PUBLIC command + valid 2..4 sources -> ATTRIBUTED_MULTI  -> outbox PENDING -> DELIVERED
+  -> PUBLIC command + stale/mismatch/lost -> UNATTRIBUTED (no sent outbox)
+  -> INTERNAL command                    -> IGNORED_INTERNAL (no sent outbox)
+  -> result expiry/source invalidation   -> binding unusable
+```
+
+Outbox timeout/dead delivery와 Langfuse projection failure는 committed comment를 되돌리지 않는다. AI receiver는 같은 `(commentId, candidateId)`를 멱등 반영한다. single-source만 normalized code-point edit distance를 가지며 multi-source는 하나의 가짜 edit ratio를 만들지 않는다. 답변·최종 댓글 복제·diff는 binding, outbox, usage telemetry에 저장하지 않는다.
+
 `ticket.reply_rewrite`는 별도 source-linked job이다. create는 같은 requester/ticket/workspace의 `ticket.reply_draft` source job을 immutable하게 결합하며 임의 본문을 받지 않는다. worker는 body-free source-use capability와 required `AI_RESULT_READ` audit 성공 뒤에만 AI DB의 unexpired source ciphertext를 사용한다. rewrite와 preservation validation은 각각 최대 한 번 실행하며 canonical citation map과 fact/condition/negation guard가 모두 유지될 때만 `SUCCEEDED` body를 commit한다. 실패·UNKNOWN·stale이면 rewrite는 `NEEDS_REVIEW` 또는 typed failure로 끝나고 source reply는 바뀌지 않는다.
 
 Provider prompt cache는 AI job state나 결과 cache가 아니다. 실제 generation call의 repository-owned static instruction prefix만 explicit breakpoint로 표시하며 1,024 reviewed tokens 미만이면 transport option을 보내지 않는다. cache write/read도 같은 provider call receipt와 reservation/settlement에 포함되고, miss·UNKNOWN은 별도 retry나 job lifecycle 전이를 만들지 않는다.

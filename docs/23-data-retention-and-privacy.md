@@ -154,6 +154,14 @@ copied into routine authentication audit or customer ticket-list projections.
 - provider delete acknowledgement는 physical media, abuse-monitoring copy 또는 backup의 즉시 삭제 증거가 아니다. reviewed provider project/data-control policy가 없으면 offline Batch production `intent`를 허용하지 않는다;
 - mutable model alias만 있는 경우 reusable vector production `intent`를 허용하지 않는다. test artifact namespace는 production과 분리하고 normal retention/cleanup 대상이다.
 
+## 6.4 AI PUBLIC reply sent attribution
+
+- authorized result-read binding은 requester/ticket/job/server-owned candidate, normalized answer SHA-256, code-point length, result expiry와 contract version만 저장한다. answer, citation, prompt와 customer identity를 복제하지 않는다;
+- PUBLIC comment command가 보내는 original candidate answer는 binding digest와 edit metric을 검증하는 transient input이다. request descriptor에는 digest만 포함하고 DB, TicketAudit, outbox, application log, trace와 Langfuse에는 원문이나 diff를 저장하지 않는다;
+- sent usage는 comment/job/candidate reference, bounded attribution class, source count, length/edit count/ratio와 시간만 저장한다. customer response, webhook, notification, Platform API와 audit projection은 이를 노출하지 않는다;
+- binding과 delivered sent usage metadata의 기본 보존은 30일이다. unresolved pending/dead outbox는 전달·조사 완료 전 제거하지 않고, canonical comment/TicketAudit은 기존 support/audit retention을 따른다;
+- legacy/untrackable copy, lineage loss, expiry와 binding mismatch는 비용 0 또는 미사용으로 추정하지 않고 unattributed cohort로 남긴다. INTERNAL comment는 AI PUBLIC sent usage를 만들지 않는다.
+
 Platform idempotency rows store a SHA-256 key representation and canonical request hash, never the raw `Idempotency-Key` or Authorization
 value. Exact replay requires a bounded response copy, which can contain ticket subject or an INTERNAL comment response; it receives the
 7-day default expiry and is not exposed through a retrieval/list endpoint. An expiry-indexed cleanup job deletes at most 500 rows per run by
