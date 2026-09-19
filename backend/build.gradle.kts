@@ -42,6 +42,11 @@ version = "0.1.0-SNAPSHOT"
 
 description = "Deskseed self-hosted support ticketing backend"
 
+springBoot {
+    // The plan-capture CLI has its own main entrypoint; keep the executable application jar deterministic.
+    mainClass.set("dev.deskseed.DeskseedApplicationKt")
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
