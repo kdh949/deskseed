@@ -44,6 +44,8 @@ release-state column prevents architecture intent from being mistaken for shippe
 | [0036](../adr/0036-content-free-routine-search-audit.md) | Content-free routine search audit representation | Implemented by V13 migration and regressions |
 | [0037](../adr/0037-stable-audit-origin-and-projection-snapshots.md) | Stable search origin key and immutable projection snapshots | Implemented by V15 migration and regressions |
 | [0038](../adr/0038-shared-organization-ticket-consistency-guard.md) | Shared organization and ticket consistency guard | Implemented by organization/ticket concurrency regression |
+| [0049](../adr/0049-ai-v1-isolated-execution-boundary.md) | AI V1 uses an isolated execution boundary with Backend-owned authorization and audit | Implemented server/runtime boundary; live quality evidence pending |
+| [0050](../adr/0050-ai-public-draft-rewrite-provenance.md) | PUBLIC reply rewrite uses an immutable server-generated source job and fails closed on preservation drift | Contract accepted; implementation pending |
 
 The concise `D-*` decision register remains in
 [`docs/25-implementation-decision-register.md`](../25-implementation-decision-register.md).
