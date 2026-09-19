@@ -147,7 +147,7 @@ function WritableWorkspace({
         aiAssistant={
           <AiAssistantPanel
             composerMode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
-            onInsertReply={(answer, strategy, expectedDraft) => {
+            onInsertReply={(answer, strategy, expectedDraft, source) => {
               if (
                 draftFingerprint(publicDraftRef.current) !==
                 draftFingerprint(expectedDraft)
@@ -170,8 +170,12 @@ function WritableWorkspace({
                       ],
                     }
                   : answerDocument
-              editor.updateRichDraft('PUBLIC', nextDocument, nextText)
-              return true
+              return editor.insertAiReply(
+                nextDocument,
+                nextText,
+                source,
+                strategy,
+              )
             }}
             publicDraft={publicDraft}
             ticketNumber={detail.ticket.ticketNumber}

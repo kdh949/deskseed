@@ -3,11 +3,40 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentTicketDetail } from '../../api/types'
+import type { AiJobReceipt } from '../ai-assistance/api'
 import { SeedThemeProvider } from '../../design-system/canonical'
 import { STAFF_DRAFT_SESSION_OWNER_KEY } from './model/ticketEditorModel'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
 
 const staffId = '11111111-1111-4111-8111-111111111111'
+const AI_REPLY_ANSWER =
+  '결제 승인 기록을 확인한 뒤 공개 결과를 안내드리겠습니다.'
+
+const aiReplyJob: AiJobReceipt = {
+  jobId: '51111111-1111-4111-8111-111111111111',
+  candidateId: '52222222-2222-4222-8222-222222222222',
+  feature: 'ticket.reply_draft',
+  status: 'SUCCEEDED',
+  phase: 'COMPLETE',
+  requestRevision: 3,
+  createdAt: '2026-09-19T00:00:00Z',
+  deadlineAt: '2026-09-19T00:05:00Z',
+  completedAt: '2026-09-19T00:00:04Z',
+  resultExpiresAt: '2026-09-26T00:00:04Z',
+  pollAfterMs: 1000,
+  cancelRequested: false,
+  contextRevision: 'a'.repeat(64),
+  contextPolicyVersion: 'public-comments-v1',
+  inputScope: 'PUBLIC_ONLY',
+  stale: false,
+  canInsert: true,
+  errorCode: null,
+  result: {
+    type: 'ticket.reply_draft',
+    answer: AI_REPLY_ANSWER,
+    citations: [],
+  },
+}
 
 function backgroundFixture(url: string): Response | null {
   if (
@@ -170,6 +199,7 @@ async function typePublicReply(
 
 function installMutationFetch(
   commandResponses: Array<Response | Error | Promise<Response>>,
+  aiJob?: AiJobReceipt,
 ) {
   const commands: Array<Record<string, unknown>> = []
   let uploadCount = 0
@@ -178,6 +208,42 @@ function installMutationFetch(
       const url = String(input)
       const fixture = backgroundFixture(url)
       if (fixture) return fixture
+      if (
+        aiJob &&
+        url.endsWith('/api/v1/agent/tickets/1042/ai/jobs?limit=20')
+      ) {
+        return new Response(JSON.stringify({ items: [aiJob] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (
+        aiJob &&
+        url.endsWith(
+          `/api/v1/agent/tickets/1042/ai/jobs/${aiJob.jobId}?includeResult=true`,
+        )
+      ) {
+        return new Response(JSON.stringify(aiJob), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (
+        aiJob &&
+        url.endsWith(
+          `/api/v1/agent/tickets/1042/ai/jobs/${aiJob.jobId}/feedback`,
+        )
+      ) {
+        return new Response(
+          JSON.stringify({
+            jobId: aiJob.jobId,
+            type: 'inserted',
+            replayed: false,
+            recordedAt: '2026-09-19T00:00:05Z',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
       if (url.endsWith('/api/v1/agent/tickets/1042/external-references')) {
         return new Response(
           JSON.stringify({
@@ -300,6 +366,11 @@ describe('AgentTicketEditorWorkspace', () => {
         priority: 'HIGH',
         comment: {
           visibility: 'PUBLIC',
+          aiAttribution: {
+            contractVersion: 'AI_SENT_V1',
+            state: 'NO_AI_LINEAGE',
+            sources: [],
+          },
           content: {
             format: 'RICH_TEXT_V1',
             document: {
@@ -355,6 +426,114 @@ describe('AgentTicketEditorWorkspace', () => {
     await waitFor(() => expect(commands).toHaveLength(2))
     expect(commands[1]?.clientCommandId).toBe(commands[0]?.clientCommandId)
     expect(commands[1]?.comment).toEqual(commands[0]?.comment)
+  })
+
+  it('sends a validated AI candidate and retries the exact in-session attribution without browser persistence', async () => {
+    const user = userEvent.setup()
+    const { commands } = installMutationFetch(
+      [
+        new Error('network interrupted'),
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 4,
+            auditId: '22222222-2222-4222-8222-222222222222',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 5,
+            auditId: '22222222-2222-4222-8222-222222222222',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      ],
+      aiReplyJob,
+    )
+    renderWorkspace()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'PUBLIC 작성기에 사용' }),
+    )
+    const editor = screen.getByRole('textbox', { name: '공개 답변 내용' })
+    await waitFor(() => expect(editor).toHaveTextContent(AI_REPLY_ANSWER))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    expect(
+      await screen.findByText(/저장 결과를 확인할 수 없습니다/),
+    ).toBeVisible()
+
+    const attribution = {
+      contractVersion: 'AI_SENT_V1',
+      state: 'LINEAGE_PRESENT',
+      sources: [
+        {
+          jobId: aiReplyJob.jobId,
+          candidateId: aiReplyJob.candidateId,
+          originalAnswer: AI_REPLY_ANSWER,
+        },
+      ],
+    }
+    expect(
+      (commands[0]?.comment as { aiAttribution: unknown }).aiAttribution,
+    ).toEqual(attribution)
+    const storedValues = Array.from(
+      { length: localStorage.length },
+      (_, index) => localStorage.getItem(localStorage.key(index) ?? ''),
+    ).join('\n')
+    expect(storedValues).not.toContain(AI_REPLY_ANSWER)
+
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await waitFor(() => expect(commands).toHaveLength(2))
+    expect(commands[1]).toEqual(commands[0])
+
+    await screen.findByText('공개 답변과 변경사항을 저장했습니다.')
+    await typePublicReply(user, '성공 뒤 작성한 수동 답변입니다.')
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await waitFor(() => expect(commands).toHaveLength(3))
+    expect(
+      (commands[2]?.comment as { aiAttribution: unknown }).aiAttribution,
+    ).toEqual({
+      contractVersion: 'AI_SENT_V1',
+      state: 'NO_AI_LINEAGE',
+      sources: [],
+    })
+  })
+
+  it('never attaches AI attribution to an INTERNAL comment', async () => {
+    const user = userEvent.setup()
+    const { commands } = installMutationFetch([
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          version: 4,
+          auditId: '22222222-2222-4222-8222-222222222222',
+          warnings: [],
+        }),
+        { status: 200 },
+      ),
+    ])
+    renderWorkspace({
+      detail: createDetail({
+        ticket: { ...createDetail().ticket, isChild: true },
+      }),
+    })
+
+    const editor = await screen.findByRole('textbox', {
+      name: '내부 메모 내용',
+    })
+    await user.click(editor)
+    await user.paste('내부 확인용 합성 메모입니다.')
+    await user.click(screen.getByRole('button', { name: '내부 메모 저장' }))
+    await waitFor(() => expect(commands).toHaveLength(1))
+
+    expect(commands[0]?.comment).toEqual(
+      expect.objectContaining({ visibility: 'INTERNAL' }),
+    )
+    expect(commands[0]?.comment).not.toHaveProperty('aiAttribution')
   })
 
   it('rotates the complete command when attachments change after an ambiguous failure', async () => {
@@ -592,6 +771,63 @@ describe('AgentTicketEditorWorkspace', () => {
     expect(screen.getByRole('combobox', { name: '상태' })).toHaveTextContent(
       '해결됨',
     )
+  })
+
+  it('preserves AI lineage while resolving a ticket version conflict', async () => {
+    const user = userEvent.setup()
+    const { commands } = installMutationFetch(
+      [
+        new Response(
+          JSON.stringify({
+            type: '/problems/ticket-field-conflict',
+            title: 'Ticket fields changed concurrently',
+            status: 409,
+            detail: 'Some fields were changed by another actor.',
+            requestId: 'request-conflict-ai',
+            currentVersion: 4,
+            conflictingFields: ['status'],
+          }),
+          {
+            status: 409,
+            headers: { 'Content-Type': 'application/problem+json' },
+          },
+        ),
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 5,
+            auditId: '22222222-2222-4222-8222-222222222222',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      ],
+      aiReplyJob,
+    )
+    const latest = createDetail({
+      ticket: { ...createDetail().ticket, status: 'PENDING', version: 4 },
+    })
+    renderWorkspace({ refreshLatest: vi.fn().mockResolvedValue(latest) })
+
+    await user.click(
+      await screen.findByRole('button', { name: 'PUBLIC 작성기에 사용' }),
+    )
+    await selectChoice(user, '상태', '해결됨')
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await screen.findByRole('alert', { name: '저장 충돌' })
+    await user.click(screen.getByRole('button', { name: '내 초안 유지' }))
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await waitFor(() => expect(commands).toHaveLength(2))
+
+    const firstAttribution = (
+      commands[0]?.comment as { aiAttribution: unknown }
+    ).aiAttribution
+    const retriedAttribution = (
+      commands[1]?.comment as { aiAttribution: unknown }
+    ).aiAttribution
+    expect(retriedAttribution).toEqual(firstAttribution)
+    expect(commands[1]?.clientCommandId).not.toBe(commands[0]?.clientCommandId)
+    expect(commands[1]?.expectedVersion).toBe(4)
   })
 
   it('keeps a read-only ticket visible when an explicit refresh fails', async () => {

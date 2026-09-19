@@ -65,6 +65,9 @@ function receipt(
     canInsert: feature === 'ticket.reply_draft',
     errorCode: null,
     result: results[feature],
+    ...(feature === 'ticket.reply_draft'
+      ? { candidateId: '77777777-7777-4777-8777-777777777777' }
+      : {}),
     ...overrides,
   }
 }
@@ -192,6 +195,11 @@ export const ExistingDraftChoice: Story = {
         expect.objectContaining({
           body: '기존에 작성하던 고객 답변입니다.',
         }),
+        {
+          jobId: JOB_IDS['ticket.reply_draft'],
+          candidateId: '77777777-7777-4777-8777-777777777777',
+          originalAnswer: expect.stringContaining('결제 승인 기록'),
+        },
       ),
     )
     await expect(

@@ -54,6 +54,9 @@ function receipt(
     canInsert: feature === 'ticket.reply_draft',
     errorCode: null,
     result: feature === 'ticket.reply_draft' ? reply : summary,
+    ...(feature === 'ticket.reply_draft'
+      ? { candidateId: '44444444-4444-4444-8444-444444444444' }
+      : {}),
     ...overrides,
   }
 }
@@ -227,5 +230,31 @@ describe('AiAssistantPanel', () => {
         '검증 중 티켓이나 작성기가 변경되었습니다. 다시 시도해 주세요.',
       ),
     ).toBeVisible()
+  })
+
+  it('rejects a legacy reply that has no server-owned candidate identity', async () => {
+    const legacy = receipt('ticket.reply_draft', { candidateId: undefined })
+    const onInsertReply = vi.fn()
+    render(
+      panel(
+        client({
+          list: vi.fn(async () => ({ items: [legacy] })),
+          get: vi.fn(async () => legacy),
+        }),
+        emptyDraft,
+        onInsertReply,
+      ),
+    )
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'PUBLIC 작성기에 사용' }),
+    )
+
+    expect(
+      await screen.findByText(
+        '현재 티켓과 일치하는 사용 가능한 초안이 아닙니다. 새로 생성해 주세요.',
+      ),
+    ).toBeVisible()
+    expect(onInsertReply).not.toHaveBeenCalled()
   })
 })

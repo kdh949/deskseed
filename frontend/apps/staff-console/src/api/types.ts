@@ -831,6 +831,19 @@ export interface TicketAssignmentOptions {
 interface TicketCommentDraftBase {
   visibility: TicketVisibility
   attachmentIds?: string[]
+  aiAttribution?: AiReplyAttribution
+}
+
+export interface AiReplyAttributionSource {
+  jobId: string
+  candidateId: string
+  originalAnswer: string
+}
+
+export interface AiReplyAttribution {
+  contractVersion: 'AI_SENT_V1'
+  state: 'NO_AI_LINEAGE' | 'LINEAGE_PRESENT' | 'LINEAGE_LOST'
+  sources: AiReplyAttributionSource[]
 }
 
 export type TicketCommentDraft = TicketCommentDraftBase &

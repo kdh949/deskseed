@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
-import type { RichTextDocumentV1, TicketVisibility } from '../../api/types'
+import type {
+  AiReplyAttributionSource,
+  RichTextDocumentV1,
+  TicketVisibility,
+} from '../../api/types'
 import { SeedButton, SeedIcon, SeedNotice } from '../../design-system/canonical'
 import {
   cancelAiJob,
@@ -106,6 +110,7 @@ export function AiAssistantPanel({
     answer: string,
     strategy: InsertStrategy,
     expectedDraft: AiPublicDraftSnapshot,
+    source: AiReplyAttributionSource,
   ) => boolean | void
 }) {
   const [jobs, setJobs] = useState<JobMap>({})
@@ -297,14 +302,23 @@ export function AiAssistantPanel({
       latest.status !== 'SUCCEEDED' ||
       latest.stale ||
       !latest.canInsert ||
-      latest.result?.type !== 'ticket.reply_draft'
+      latest.result?.type !== 'ticket.reply_draft' ||
+      !latest.candidateId
     ) {
       setInsertMessage(
         '현재 티켓과 일치하는 사용 가능한 초안이 아닙니다. 새로 생성해 주세요.',
       )
       return null
     }
-    return { result: latest.result, publicDraft: snapshot.publicDraft }
+    return {
+      result: latest.result,
+      publicDraft: snapshot.publicDraft,
+      source: {
+        jobId: latest.jobId,
+        candidateId: latest.candidateId,
+        originalAnswer: latest.result.answer,
+      },
+    }
   }
 
   const beginInsert = async (job: AiJobReceipt) => {
@@ -332,6 +346,7 @@ export function AiAssistantPanel({
           validated.result.answer,
           'replace',
           validated.publicDraft,
+          validated.source,
         ) === false
       ) {
         setInsertMessage(
@@ -378,6 +393,7 @@ export function AiAssistantPanel({
           validated.result.answer,
           strategy,
           validated.publicDraft,
+          validated.source,
         ) === false
       ) {
         setChoiceJobId(null)

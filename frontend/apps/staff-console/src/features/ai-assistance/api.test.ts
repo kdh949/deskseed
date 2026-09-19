@@ -25,6 +25,7 @@ const receipt = {
   stale: false,
   canInsert: true,
   errorCode: null,
+  candidateId: '55555555-5555-4555-8555-555555555555',
   result: {
     type: 'ticket.reply_draft',
     answer: '공개 답변 초안',
@@ -48,6 +49,15 @@ afterEach(() => {
 })
 
 describe('AI assistance API', () => {
+  it('accepts a server candidate ID and rejects a malformed one', () => {
+    expect(decodeAiJobReceipt(receipt)?.candidateId).toBe(
+      '55555555-5555-4555-8555-555555555555',
+    )
+    expect(
+      decodeAiJobReceipt({ ...receipt, candidateId: 'browser-created' }),
+    ).toBeUndefined()
+  })
+
   it('rejects an unsafe citation URL at the browser boundary', () => {
     expect(
       decodeAiJobReceipt({

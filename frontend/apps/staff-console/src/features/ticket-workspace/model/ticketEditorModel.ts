@@ -1,6 +1,7 @@
 import type {
   AgentTicketStatus,
   AgentTicketSummary,
+  AiReplyAttribution,
   TicketFieldName,
   TicketPriority,
   RichTextDocumentV1,
@@ -106,6 +107,7 @@ export function buildUpdateTicketCommand({
     visibility: TicketVisibility
     body: string
     content?: { format: 'RICH_TEXT_V1'; document: RichTextDocumentV1 }
+    aiAttribution?: AiReplyAttribution
   }
   attachmentIds?: string[]
   clientCommandId: string
@@ -122,6 +124,9 @@ export function buildUpdateTicketCommand({
             ? { content: comment.content }
             : { body: trimmedComment }),
           ...(attachmentIds.length ? { attachmentIds } : {}),
+          ...(comment.aiAttribution
+            ? { aiAttribution: comment.aiAttribution }
+            : {}),
         }
       : null,
     clientCommandId,
@@ -417,8 +422,24 @@ function isUpdateTicketCommand(value: unknown): value is UpdateTicketCommand {
             isRichTextDocument(command.comment.content.document))) &&
         (command.comment.visibility === 'PUBLIC' ||
           command.comment.visibility === 'INTERNAL') &&
+        (command.comment.visibility !== 'INTERNAL' ||
+          command.comment.aiAttribution === undefined) &&
         (command.comment.attachmentIds === undefined ||
-          Array.isArray(command.comment.attachmentIds))))
+          Array.isArray(command.comment.attachmentIds)) &&
+        isPersistedAiAttribution(command.comment.aiAttribution)))
+  )
+}
+
+function isPersistedAiAttribution(value: unknown) {
+  if (value === undefined) return true
+  if (!value || typeof value !== 'object') return false
+  const attribution = value as Record<string, unknown>
+  return (
+    attribution.contractVersion === 'AI_SENT_V1' &&
+    (attribution.state === 'NO_AI_LINEAGE' ||
+      attribution.state === 'LINEAGE_LOST') &&
+    Array.isArray(attribution.sources) &&
+    attribution.sources.length === 0
   )
 }
 

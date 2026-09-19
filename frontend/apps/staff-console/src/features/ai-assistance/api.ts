@@ -72,12 +72,13 @@ export interface AiJobReceipt {
   pollAfterMs: number
   cancelRequested: boolean
   contextRevision: string
-  contextPolicyVersion: 'public-comments-v1'
-  inputScope: 'PUBLIC_ONLY'
+  contextPolicyVersion: 'public-comments-v1' | 'public-comments-v2'
+  inputScope: 'PUBLIC_ONLY' | 'PUBLIC_DRAFT_ONLY'
   stale: boolean
   canInsert: boolean
   errorCode: string | null
   result: AiResult | null
+  candidateId?: string
 }
 
 export interface AiJobPage {
@@ -211,8 +212,12 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
     typeof value.cancelRequested !== 'boolean' ||
     !text(value.contextRevision) ||
     !REVISION.test(value.contextRevision) ||
-    value.contextPolicyVersion !== 'public-comments-v1' ||
-    value.inputScope !== 'PUBLIC_ONLY' ||
+    !['public-comments-v1', 'public-comments-v2'].includes(
+      String(value.contextPolicyVersion),
+    ) ||
+    !['PUBLIC_ONLY', 'PUBLIC_DRAFT_ONLY'].includes(String(value.inputScope)) ||
+    (value.candidateId !== undefined &&
+      (!text(value.candidateId) || !UUID.test(value.candidateId))) ||
     typeof value.stale !== 'boolean' ||
     typeof value.canInsert !== 'boolean' ||
     !nullableText(value.errorCode) ||
@@ -233,12 +238,14 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
     pollAfterMs: value.pollAfterMs,
     cancelRequested: value.cancelRequested,
     contextRevision: value.contextRevision,
-    contextPolicyVersion: 'public-comments-v1',
-    inputScope: 'PUBLIC_ONLY',
+    contextPolicyVersion:
+      value.contextPolicyVersion as AiJobReceipt['contextPolicyVersion'],
+    inputScope: value.inputScope as AiJobReceipt['inputScope'],
     stale: value.stale,
     canInsert: value.canInsert,
     errorCode: value.errorCode,
     result,
+    ...(value.candidateId ? { candidateId: value.candidateId } : {}),
   }
 }
 
