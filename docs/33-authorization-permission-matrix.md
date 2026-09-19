@@ -74,6 +74,8 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | manage external system registry | D | D | D | explicit capability C | D | D |
 | manage customer consent policy | D | D | D | explicit capability C | D | D |
 
+AI PUBLIC reply attribution은 `add PUBLIC comment`의 권한을 확장하지 않는다. Staff UI의 optional lineage는 현재 STAFF actor, ticket write policy와 server-owned requester/ticket/job/candidate binding을 모두 만족할 때만 sent로 집계된다. 다른 actor/ticket, stale/expired result, legacy unknown candidate와 INTERNAL comment는 AI usage 권한을 얻지 않으며 customer 또는 Integration client surface에 attribution 필드를 추가하지 않는다.
+
 ## 4. Agent ticket scope
 
 Initial policy:

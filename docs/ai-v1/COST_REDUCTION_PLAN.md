@@ -232,6 +232,8 @@ D-049의 exact command replay descriptor에는 AI 본문을 중복 저장하지 
 
 Acceptance: 삽입만 하고 취소=sent 0, 수정 후 전송=1, timeout 후 같은 command 재전송=1, ticket transaction rollback=0, outbox 재전달=1, INTERNAL 전송=AI public-use 0, telemetry 장애에도 댓글 전송 성공, 다른 actor/job 삽입 귀속 거부.
 
+2026-09-19 계약 확정: D-070/ADR 0053은 cache/coalesced가 공유하는 server-owned origin candidate, authorized result-read body-free binding, PUBLIC comment transaction의 optional lineage와 `(commentId, candidateId)` dedupe를 사용한다. single-source만 exact edit ratio를 계산하고 multi-source/untrackable/expired/invalid lineage를 별도 cohort로 둔다. 서버 구현과 Staff UI lineage는 각각 독립 수직 슬라이스·PR로 진행한다.
+
 ### 6.3 평가 데이터와 판정
 
 기존 fake 130건은 계약·실패 회귀로 유지한다. live 품질용으로 **현재 서버의 실제 원문 사례 300건**을 시작 목표로 제안한다: 요약 60, 분류 40, 검색/답변 200. 이는 현재 그런 분포/수량의 데이터가 있다는 뜻은 아니다. 1차 구현 착수 시 데이터 inventory를 확인하고, 부족한 층과 전체 건수는 있는 그대로 보고한다.

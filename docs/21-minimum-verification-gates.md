@@ -1185,6 +1185,15 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - Langfuse failure/drop은 canonical audit, budget settlement와 result commit을 실패시키지 않으며 손실 count를 노출한다.
 - metric labels are bounded and exclude job/ticket/actor/request identifiers.
 
+### AI-USE-001 — Backend-confirmed PUBLIC sent attribution
+
+- insert 가능한 reply/rewrite result는 server-owned origin candidate ID를 가지며 exact cache/coalesced consumer는 같은 candidate를 공유한다. legacy unknown candidate를 추정하지 않는다.
+- result-read use binding은 required `AI_RESULT_READ` audit과 current requester/ticket/job/source/expiry 검증 뒤에만 생성되고 answer digest/length만 저장한다.
+- PUBLIC comment, TicketAudit, body-free attribution과 sent outbox는 한 transaction으로 commit/rollback하며 exact command replay와 dispatcher/receiver redelivery는 `(commentId, candidateId)` 한 건으로 수렴한다.
+- structurally valid하지만 stale/expired/actor·ticket·job mismatch인 attribution은 comment를 막거나 resource 존재를 누출하지 않고 unattributed가 된다. INTERNAL comment는 AI PUBLIC sent 0건이다.
+- single-source edit ratio는 `AI_USAGE_TEXT_V1`의 bounded code-point Levenshtein으로 계산하고 multi-source는 별도 분류한다. answer, final body duplicate, diff와 digest는 outbox/usage/log/trace/Langfuse에 없다.
+- AI service/Langfuse 장애는 committed comment를 rollback하지 않으며 pending/dead delivery는 content-free backlog로 남는다. inserted/edited feedback은 sent의 대체 지표가 아니다.
+
 ### AI-OPS-001 — Typed stop, status and recovery operations
 
 - `ai.enabled=false`가 기본이며 allowlisted staff/feature와 stop policy는 expectedVersion+CSRF+ADMIN 권한으로만 변경된다.
