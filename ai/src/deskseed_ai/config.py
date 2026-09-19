@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     embedding_optimization_mode: Literal["off", "test", "intent"] = "off"
     embedding_model_snapshot: str = ""
     embedding_array_size: int = Field(8, ge=1, le=8)
+    embedding_batch_mode: Literal["off", "test", "intent"] = "off"
+    embedding_batch_max_requests: int = Field(512, ge=1, le=512)
+    embedding_batch_max_inputs: int = Field(2048, ge=1, le=2048)
+    embedding_batch_max_bytes: int = Field(20_971_520, ge=1024, le=20_971_520)
+    embedding_batch_data_controls_reviewed: bool = False
+    embedding_batch_file_cleanup_enabled: bool = True
 
     workspace_daily_budget_microusd: int = 3_000_000
     actor_daily_budget_microusd: int = 500_000
@@ -120,6 +126,15 @@ class Settings(BaseSettings):
             raise ValueError("production prompt cache requires measured intent activation")
         if self.environment == "production" and self.embedding_optimization_mode == "test":
             raise ValueError("production embedding optimization requires measured intent activation")
+        if self.environment == "production" and self.embedding_batch_mode == "test":
+            raise ValueError("production embedding batch requires measured intent activation")
+        if self.embedding_batch_mode != "off" and self.embedding_optimization_mode != self.embedding_batch_mode:
+            raise ValueError("embedding batch requires embedding reuse in the matching mode")
+        if self.embedding_batch_mode == "intent" and (
+            not self.embedding_batch_data_controls_reviewed
+            or not self.embedding_batch_file_cleanup_enabled
+        ):
+            raise ValueError("embedding batch intent requires reviewed data controls and file cleanup")
         if self.embedding_optimization_mode == "intent":
             snapshot = self.embedding_model_snapshot.strip()
             if (

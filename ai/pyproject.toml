@@ -10,6 +10,7 @@ dependencies = [
   "langfuse>=4,<5",
   "langgraph>=1.1,<2",
   "litellm>=1.82,<2",
+  "openai>=2.54,<3",
   "psycopg[binary,pool]>=3.3,<4",
   "pydantic-settings>=2.13,<3",
   "redis>=7.4,<8",
@@ -46,6 +47,7 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 files = [
+  "src/deskseed_ai/embedding_batch.py",
   "src/deskseed_ai/config.py",
   "src/deskseed_ai/evaluation.py",
   "src/deskseed_ai/observability.py",

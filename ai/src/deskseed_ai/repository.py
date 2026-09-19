@@ -2632,6 +2632,46 @@ class Repository:
                 (self.settings.max_attempts, error_code[:80], event_id, owner),
             )
 
+    def defer_index_event_for_batch(self, event_id: UUID, owner: str, hours: int) -> None:
+        if hours < 1 or hours > 48:
+            raise ValueError("embedding batch defer interval is invalid")
+        with self.database.transaction() as connection:
+            updated = connection.execute(
+                """
+                update ai_kb_index_jobs
+                set status = 'PENDING', attempts = greatest(0, attempts - 1),
+                    available_at = clock_timestamp() + make_interval(hours => %s),
+                    lease_owner = null, lease_expires_at = null,
+                    last_error_code = 'BATCH_PENDING'
+                where event_id = %s and status = 'LEASED' and lease_owner = %s
+                """,
+                (hours, event_id, owner),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("index event lease lost before batch defer")
+
+    def wake_index_event_after_batch(self, event_id: UUID) -> None:
+        with self.database.transaction() as connection:
+            connection.execute(
+                """
+                update ai_kb_index_jobs set available_at = clock_timestamp(), last_error_code = null
+                where event_id = %s and status = 'PENDING' and last_error_code = 'BATCH_PENDING'
+                """,
+                (event_id,),
+            )
+
+    def fail_index_event_after_batch(self, event_id: UUID, error_code: str) -> None:
+        with self.database.transaction() as connection:
+            connection.execute(
+                """
+                update ai_kb_index_jobs set status = 'DEAD', completed_at = clock_timestamp(),
+                    available_at = clock_timestamp(), lease_owner = null, lease_expires_at = null,
+                    last_error_code = %s
+                where event_id = %s and status = 'PENDING' and last_error_code = 'BATCH_PENDING'
+                """,
+                (error_code[:80], event_id),
+            )
+
     def current_reconciliation(self, workspace_key: str) -> ReconciliationRun | None:
         with self.database.connection() as connection:
             row = connection.execute(
@@ -3413,6 +3453,34 @@ class Repository:
                 )
         return len(rows)
 
+    def purge_expired_embedding_batches(self, limit: int = 1000) -> int:
+        with self.database.transaction() as connection:
+            rows = connection.execute(
+                """
+                select batch.batch_job_id
+                from ai_embedding_batch_jobs batch
+                left join ai_cost_ledger cost on cost.reservation_id = batch.reservation_id
+                where batch.status in ('COMPLETED', 'CANCELLED', 'FAILED', 'EXPIRED')
+                  and batch.completed_at <= clock_timestamp() - interval '30 days'
+                  and not exists (
+                      select 1 from ai_embedding_batch_files file
+                      where file.batch_job_id = batch.batch_job_id
+                        and file.cleanup_status <> 'DELETED'
+                  )
+                  and coalesce(cost.status, 'SETTLED') not in ('RESERVED', 'UNKNOWN')
+                order by batch.completed_at, batch.batch_job_id
+                for update of batch skip locked
+                limit %s
+                """,
+                (limit,),
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    "delete from ai_embedding_batch_jobs where batch_job_id = %s",
+                    (row["batch_job_id"],),
+                )
+        return len(rows)
+
     def purge_expired_metadata(self, limit: int = 1000) -> int:
         with self.database.transaction() as connection:
             rows = connection.execute(
@@ -3501,6 +3569,17 @@ class Repository:
             last_reconciled_at = connection.execute(
                 "select max(completed_at) as value from ai_kb_reconciliation_runs where status = 'SUCCEEDED'"
             ).fetchone()["value"]
+            batch_rows = connection.execute(
+                "select status, count(*) as count from ai_embedding_batch_jobs group by status"
+            ).fetchall()
+            batch_counts = {row["status"]: int(row["count"]) for row in batch_rows}
+            cleanup = connection.execute(
+                """
+                select count(*) as count,
+                       min(coalesce(finalized_at, provider_terminal_at, created_at)) as oldest
+                from ai_embedding_batch_jobs where status = 'CLEANUP_PENDING'
+                """
+            ).fetchone()
         return {
             "budget": {
                 "reservedMicrousd": budgets.get("RESERVED", 0),
@@ -3510,6 +3589,11 @@ class Repository:
             "index": {
                 "publicRevisions": int(public_revisions),
                 "lastReconciledAt": last_reconciled_at.isoformat() if last_reconciled_at else None,
+            },
+            "embeddingBatches": {
+                "counts": batch_counts,
+                "cleanupPendingCount": int(cleanup["count"]),
+                "oldestCleanupPendingAt": cleanup["oldest"].isoformat() if cleanup["oldest"] else None,
             },
             "deadLetterCount": int(dead_letters),
         }

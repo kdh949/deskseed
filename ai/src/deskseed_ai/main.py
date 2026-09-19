@@ -15,6 +15,11 @@ from fastapi.responses import JSONResponse
 from .backend_client import BackendClient
 from .config import Settings, get_settings
 from .db import Database, apply_migrations
+from .embedding_batch import (
+    EmbeddingBatchService,
+    FakeEmbeddingBatchAdapter,
+    OpenAIEmbeddingBatchAdapter,
+)
 from .feedback import FeedbackExporter
 from .indexing import IndexingService
 from .observability import TraceAdapter
@@ -58,6 +63,22 @@ class Runtime:
         self.feedback = FeedbackExporter(self.repository, self.traces)
         self.backend = BackendClient(settings)
         pricing_path = ROOT / "config" / "pricing-v2.json"
+        batch_pricing_path = ROOT / "config" / "pricing-batch-v1.json"
+        batch_adapter = (
+            OpenAIEmbeddingBatchAdapter(
+                settings.openai_api_key.get_secret_value(), settings.job_timeout_seconds
+            )
+            if settings.provider_mode == "litellm"
+            else FakeEmbeddingBatchAdapter()
+        )
+        self.embedding_batches = EmbeddingBatchService(
+            self.backend,
+            self.knowledge,
+            self.repository,
+            settings,
+            batch_pricing_path,
+            batch_adapter,
+        )
         self.indexing = IndexingService(
             self.backend,
             self.knowledge,
@@ -65,6 +86,7 @@ class Runtime:
             settings,
             pricing_path,
             self.traces,
+            self.embedding_batches,
         )
         self.stream = StreamRuntime(
             settings,
@@ -222,6 +244,7 @@ def operation(
         service.repository.purge_expired_cache_entries()
         service.repository.purge_expired_results()
         service.repository.purge_expired_shared_executions()
+        service.repository.purge_expired_embedding_batches()
         service.repository.purge_expired_metadata()
         accepted = service.repository.operate(job_id, payload)
         return accepted

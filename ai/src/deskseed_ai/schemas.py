@@ -478,6 +478,12 @@ class KnowledgeIndexStatus(StrictModel):
     lastReconciledAt: datetime | None
 
 
+class EmbeddingBatchStatus(StrictModel):
+    counts: dict[str, Annotated[int, Field(ge=0)]]
+    cleanupPendingCount: Annotated[int, Field(ge=0)]
+    oldestCleanupPendingAt: datetime | None
+
+
 class ServiceStatus(StrictModel):
     ready: bool
     dataAsOf: datetime
@@ -490,4 +496,5 @@ class ServiceStatus(StrictModel):
     sharedExecutionCounts: dict[str, Annotated[int, Field(ge=0)]]
     budget: BudgetStatus
     index: KnowledgeIndexStatus
+    embeddingBatches: EmbeddingBatchStatus
     deadLetterCount: Annotated[int, Field(ge=0)]

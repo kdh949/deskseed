@@ -1,0 +1,22 @@
+{
+  "version": "2026-09-19-openai-batch-v1",
+  "effectiveAt": "2026-09-19T00:00:00Z",
+  "currency": "USD",
+  "unit": "microusd_per_million_tokens",
+  "serviceTier": "batch",
+  "contextPriceBand": "short",
+  "models": {
+    "openai/text-embedding-3-small": {
+      "actualModels": ["openai/text-embedding-3-small", "text-embedding-3-small"],
+      "tokenizer": "cl100k_base",
+      "maxInputTokensForBand": 1048576,
+      "input": 10000,
+      "cachedInput": 10000,
+      "cacheWrite": 10000,
+      "output": 0
+    }
+  },
+  "source": "https://platform.openai.com/docs/guides/batch",
+  "reviewedAt": "2026-09-19",
+  "limitations": ["batch-tier", "embeddings-only", "24h-window", "non-regional"]
+}
