@@ -98,8 +98,13 @@ internal class AiPolicyController(private val jdbcTemplate: JdbcTemplate, privat
         val policy = jdbcTemplate.query(
             """
             select enabled, summary_enabled, triage_enabled, reply_draft_enabled,
-                   fast_model_alias, standard_model_alias, settings.version, settings.updated_at,
-                   corpus.revision as canonical_public_corpus_revision
+                   fast_model_alias, standard_model_alias, reply_routing_mode,
+                   reply_routing_rollout_percent, reply_routing_evaluation_approval_version,
+                   settings.version, settings.updated_at,
+                   corpus.revision as canonical_public_corpus_revision,
+                   array(
+                       select cohort_key from ai_reply_routing_cohorts order by cohort_key
+                   ) as reply_routing_cohorts
             from ai_settings settings
             cross join ai_public_knowledge_corpus_state corpus
             where settings.singleton = true and corpus.singleton = true
@@ -113,6 +118,13 @@ internal class AiPolicyController(private val jdbcTemplate: JdbcTemplate, privat
                 ),
                 fastModelAlias = result.getString("fast_model_alias"),
                 standardModelAlias = result.getString("standard_model_alias"),
+                replyRoutingMode = result.getString("reply_routing_mode"),
+                replyRoutingCohorts =
+                    (result.getArray("reply_routing_cohorts").array as Array<*>)
+                        .map { it.toString() },
+                replyRoutingRolloutPercent = result.getInt("reply_routing_rollout_percent"),
+                replyRoutingEvaluationApprovalVersion =
+                    result.getString("reply_routing_evaluation_approval_version"),
                 version = result.getLong("version"),
                 updatedAt = result.getTimestamp("updated_at").toInstant(),
                 dataAsOf = Instant.now(clock),
@@ -128,6 +140,10 @@ internal data class AiPolicyResponse(
     val features: Map<String, Boolean>,
     val fastModelAlias: String,
     val standardModelAlias: String,
+    val replyRoutingMode: String,
+    val replyRoutingCohorts: List<String>,
+    val replyRoutingRolloutPercent: Int,
+    val replyRoutingEvaluationApprovalVersion: String?,
     val version: Long,
     val updatedAt: Instant,
     val dataAsOf: Instant,

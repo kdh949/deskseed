@@ -3,6 +3,7 @@ package dev.deskseed.aiassistance.internal
 import dev.deskseed.aiassistance.AiAdministrationService
 import dev.deskseed.aiassistance.AiReindexReceipt
 import dev.deskseed.aiassistance.AiRequestMetadata
+import dev.deskseed.aiassistance.AiReplyRoutingMode
 import dev.deskseed.aiassistance.AiOperationsStatusReader
 import dev.deskseed.aiassistance.AiSettingsConflictException
 import dev.deskseed.aiassistance.AiSettingsView
@@ -40,7 +41,16 @@ internal class JdbcAiAdministrationService(
     @Transactional(readOnly = true)
     override fun settings(): AiSettingsView {
         val allowed = allowedStaffIds()
-        return jdbcTemplate.query("select * from ai_settings where singleton = true", { result, _ -> mapSettings(result, allowed) })
+        return jdbcTemplate.query(
+            """
+            select settings.*,
+                   array(
+                       select cohort_key from ai_reply_routing_cohorts order by cohort_key
+                   ) as reply_routing_cohorts
+            from ai_settings settings where singleton = true
+            """.trimIndent(),
+            { result, _ -> mapSettings(result, allowed) },
+        )
             .single()
     }
 
@@ -49,6 +59,7 @@ internal class JdbcAiAdministrationService(
         require(command.expectedVersion >= 0) { "expectedVersion must be nonnegative" }
         require(command.fastModelAlias == FAST_MODEL_ALIAS) { "Unsupported fast model alias" }
         require(command.standardModelAlias == STANDARD_MODEL_ALIAS) { "Unsupported standard model alias" }
+        validateReplyRouting(command)
         val current = jdbcTemplate.queryForObject(
             "select version from ai_settings where singleton = true for update",
             Long::class.java,
@@ -77,11 +88,25 @@ internal class JdbcAiAdministrationService(
                 Timestamp.from(now),
             )
         }
+        jdbcTemplate.update("delete from ai_reply_routing_cohorts")
+        command.replyRoutingCohorts.sorted().forEach { cohort ->
+            jdbcTemplate.update(
+                """
+                insert into ai_reply_routing_cohorts (cohort_key, added_by_staff_id, added_at)
+                values (?, ?, ?)
+                """.trimIndent(),
+                cohort,
+                command.actorId,
+                Timestamp.from(now),
+            )
+        }
         jdbcTemplate.update(
             """
             update ai_settings
             set enabled = ?, summary_enabled = ?, triage_enabled = ?, reply_draft_enabled = ?,
-                fast_model_alias = ?, standard_model_alias = ?, version = version + 1,
+                fast_model_alias = ?, standard_model_alias = ?, reply_routing_mode = ?,
+                reply_routing_rollout_percent = ?, reply_routing_evaluation_approval_version = ?,
+                version = version + 1,
                 updated_by_staff_id = ?, updated_at = ?
             where singleton = true and version = ?
             """.trimIndent(),
@@ -91,6 +116,9 @@ internal class JdbcAiAdministrationService(
             command.replyDraftEnabled,
             command.fastModelAlias,
             command.standardModelAlias,
+            command.replyRoutingMode.name,
+            command.replyRoutingRolloutPercent,
+            command.replyRoutingEvaluationApprovalVersion,
             command.actorId,
             Timestamp.from(now),
             command.expectedVersion,
@@ -105,6 +133,11 @@ internal class JdbcAiAdministrationService(
                 "version" to (current + 1).toString(),
                 "enabled" to command.enabled.toString(),
                 "allowlistCount" to command.allowedStaffIds.size.toString(),
+                "replyRoutingMode" to command.replyRoutingMode.name,
+                "replyRoutingCohortCount" to command.replyRoutingCohorts.size.toString(),
+                "replyRoutingRolloutPercent" to command.replyRoutingRolloutPercent.toString(),
+                "replyRoutingEvaluationApprovalVersion" to
+                    (command.replyRoutingEvaluationApprovalVersion ?: "NONE"),
             ),
         )
         return settings()
@@ -207,6 +240,7 @@ internal class JdbcAiAdministrationService(
     private companion object {
         const val FAST_MODEL_ALIAS = "openai/gpt-5.6-luna"
         const val STANDARD_MODEL_ALIAS = "openai/gpt-5.6-terra"
+        const val REPLY_ROUTING_COHORT = "reply-single-public-article-short-v1"
         const val MANIFEST_PAGE_SIZE = 500
         const val MAX_REINDEX_ITEMS = 10_000
         const val MANIFEST_SNAPSHOT_TTL_SECONDS = 24 * 60 * 60L
@@ -217,17 +251,59 @@ internal class JdbcAiAdministrationService(
         UUID::class.java,
     ).filterNotNull()
 
-    private fun mapSettings(result: ResultSet, allowed: List<UUID>) = AiSettingsView(
+    private fun mapSettings(
+        result: ResultSet,
+        allowed: List<UUID>,
+    ) = AiSettingsView(
         enabled = result.getBoolean("enabled"),
         summaryEnabled = result.getBoolean("summary_enabled"),
         triageEnabled = result.getBoolean("triage_enabled"),
         replyDraftEnabled = result.getBoolean("reply_draft_enabled"),
         fastModelAlias = result.getString("fast_model_alias"),
         standardModelAlias = result.getString("standard_model_alias"),
+        replyRoutingMode = AiReplyRoutingMode.valueOf(result.getString("reply_routing_mode")),
+        replyRoutingCohorts =
+            (result.getArray("reply_routing_cohorts").array as Array<*>)
+                .map { it.toString() },
+        replyRoutingRolloutPercent = result.getInt("reply_routing_rollout_percent"),
+        replyRoutingEvaluationApprovalVersion =
+            result.getString("reply_routing_evaluation_approval_version"),
         allowedStaffIds = allowed,
         version = result.getLong("version"),
         updatedAt = result.getTimestamp("updated_at").toInstant(),
     )
+
+    private fun validateReplyRouting(command: UpdateAiSettingsCommand) {
+        require(command.replyRoutingCohorts.all { it == REPLY_ROUTING_COHORT }) {
+            "Unsupported reply routing cohort"
+        }
+        when (command.replyRoutingMode) {
+            AiReplyRoutingMode.STANDARD_ONLY -> {
+                require(command.replyRoutingCohorts.isEmpty()) {
+                    "STANDARD_ONLY cannot approve reply routing cohorts"
+                }
+                require(command.replyRoutingRolloutPercent == 0) {
+                    "STANDARD_ONLY requires zero rollout"
+                }
+                require(command.replyRoutingEvaluationApprovalVersion == null) {
+                    "STANDARD_ONLY cannot have an evaluation approval"
+                }
+            }
+            AiReplyRoutingMode.EVALUATED_COHORT -> {
+                require(command.replyRoutingCohorts == setOf(REPLY_ROUTING_COHORT)) {
+                    "EVALUATED_COHORT requires the approved reply cohort"
+                }
+                require(command.replyRoutingRolloutPercent in setOf(10, 50, 100)) {
+                    "EVALUATED_COHORT rollout must be 10, 50, or 100"
+                }
+                require(
+                    command.replyRoutingEvaluationApprovalVersion?.matches(
+                        Regex("^[a-z0-9][a-z0-9._-]{0,79}$"),
+                    ) == true,
+                ) { "EVALUATED_COHORT requires a bounded evaluation approval version" }
+            }
+        }
+    }
 
     private fun appendAudit(
         eventType: String,

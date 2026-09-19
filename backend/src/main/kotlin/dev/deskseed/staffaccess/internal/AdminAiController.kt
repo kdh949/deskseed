@@ -2,6 +2,7 @@ package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.aiassistance.AiAdministrationService
 import dev.deskseed.aiassistance.AiRequestMetadata
+import dev.deskseed.aiassistance.AiReplyRoutingMode
 import dev.deskseed.aiassistance.AiSettingsView
 import dev.deskseed.aiassistance.AiStatusView
 import dev.deskseed.aiassistance.UpdateAiSettingsCommand
@@ -9,6 +10,7 @@ import dev.deskseed.foundation.RequestIdFilter
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.PositiveOrZero
 import jakarta.validation.constraints.Size
 import org.springframework.http.CacheControl
@@ -52,6 +54,11 @@ internal class AdminAiController(private val service: AiAdministrationService) {
                     replyDraftEnabled = body.replyDraftEnabled,
                     fastModelAlias = body.fastModelAlias,
                     standardModelAlias = body.standardModelAlias,
+                    replyRoutingMode = body.replyRoutingMode,
+                    replyRoutingCohorts = body.replyRoutingCohorts,
+                    replyRoutingRolloutPercent = body.replyRoutingRolloutPercent,
+                    replyRoutingEvaluationApprovalVersion =
+                        body.replyRoutingEvaluationApprovalVersion,
                     allowedStaffIds = body.allowedStaffIds,
                     expectedVersion = body.expectedVersion,
                     actorId = principal.id,
@@ -87,6 +94,13 @@ internal data class UpdateAiSettingsRequest(
     val fastModelAlias: String,
     @field:NotBlank @field:Size(max = 100)
     val standardModelAlias: String,
+    val replyRoutingMode: AiReplyRoutingMode,
+    @field:Size(max = 1)
+    val replyRoutingCohorts: Set<String>,
+    val replyRoutingRolloutPercent: Int,
+    @field:Size(max = 80)
+    @field:Pattern(regexp = "^[a-z0-9][a-z0-9._-]*$")
+    val replyRoutingEvaluationApprovalVersion: String?,
     @field:Size(max = 1000)
     val allowedStaffIds: Set<UUID>,
     @field:PositiveOrZero

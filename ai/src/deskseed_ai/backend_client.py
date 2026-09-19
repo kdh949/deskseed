@@ -227,10 +227,35 @@ class AiPolicy(BaseModel):
     features: dict[str, bool]
     fastModelAlias: str
     standardModelAlias: str
+    replyRoutingMode: Literal["STANDARD_ONLY", "EVALUATED_COHORT"]
+    replyRoutingCohorts: list[Literal["reply-single-public-article-short-v1"]] = Field(
+        max_length=1
+    )
+    replyRoutingRolloutPercent: Literal[0, 10, 50, 100]
+    replyRoutingEvaluationApprovalVersion: Annotated[
+        str | None, Field(min_length=1, max_length=80, pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    ] = None
     version: int
     updatedAt: datetime
     dataAsOf: datetime
     canonicalPublicCorpusRevision: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def reply_routing_shape_is_consistent(self) -> "AiPolicy":
+        if self.replyRoutingMode == "STANDARD_ONLY":
+            if (
+                self.replyRoutingCohorts
+                or self.replyRoutingRolloutPercent != 0
+                or self.replyRoutingEvaluationApprovalVersion is not None
+            ):
+                raise ValueError("STANDARD_ONLY reply routing policy is inconsistent")
+        elif (
+            self.replyRoutingCohorts != ["reply-single-public-article-short-v1"]
+            or self.replyRoutingRolloutPercent not in {10, 50, 100}
+            or self.replyRoutingEvaluationApprovalVersion is None
+        ):
+            raise ValueError("EVALUATED_COHORT reply routing policy is incomplete")
+        return self
 
 
 class AuthorizedKnowledgeCandidate(BaseModel):

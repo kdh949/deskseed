@@ -206,6 +206,9 @@ def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
         features={Feature.SUMMARY.value: True},
         fastModelAlias=settings.model_fast,
         standardModelAlias=settings.model_standard,
+        replyRoutingMode="STANDARD_ONLY",
+        replyRoutingCohorts=[],
+        replyRoutingRolloutPercent=0,
         version=3,
         updatedAt=now,
         dataAsOf=now,
@@ -257,6 +260,75 @@ def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
         memory_settings,
         published_index,
     ) != reply_key
+    routed_policy = reply_policy.model_copy(
+        update={
+            "replyRoutingMode": "EVALUATED_COHORT",
+            "replyRoutingCohorts": ["reply-single-public-article-short-v1"],
+            "replyRoutingRolloutPercent": 10,
+            "replyRoutingEvaluationApprovalVersion": "holdout-v1",
+        }
+    )
+    assert exact_result_cache_key(
+        reply_claim,
+        routed_policy,
+        settings.model_standard,
+        settings,
+        published_index,
+    ) != reply_key
+    routed_settings = Settings.model_validate(
+        settings.model_dump()
+        | {
+            "reply_routing_bucket_secret":
+                "rotated-routing-secret-at-least-32-bytes",
+        }
+    )
+    assert exact_result_cache_key(
+        reply_claim,
+        routed_policy,
+        routed_settings.model_standard,
+        routed_settings,
+        published_index,
+    ) != exact_result_cache_key(
+        reply_claim,
+        routed_policy,
+        settings.model_standard,
+        settings,
+        published_index,
+    )
+
+
+def test_ai_policy_rejects_incomplete_or_inconsistent_reply_routing() -> None:
+    now = datetime.now(UTC)
+    base = {
+        "enabled": True,
+        "features": {Feature.REPLY_DRAFT.value: True},
+        "fastModelAlias": "openai/gpt-5.6-luna",
+        "standardModelAlias": "openai/gpt-5.6-terra",
+        "replyRoutingMode": "STANDARD_ONLY",
+        "replyRoutingCohorts": [],
+        "replyRoutingRolloutPercent": 0,
+        "replyRoutingEvaluationApprovalVersion": None,
+        "version": 1,
+        "updatedAt": now,
+        "dataAsOf": now,
+        "canonicalPublicCorpusRevision": 7,
+    }
+    assert AiPolicy.model_validate(base).replyRoutingMode == "STANDARD_ONLY"
+    with pytest.raises(ValidationError):
+        AiPolicy.model_validate(
+            base
+            | {
+                "replyRoutingMode": "EVALUATED_COHORT",
+                "replyRoutingCohorts": ["reply-single-public-article-short-v1"],
+                "replyRoutingRolloutPercent": 10,
+            }
+        )
+    with pytest.raises(ValidationError):
+        AiPolicy.model_validate(base | {"replyRoutingRolloutPercent": 10})
+    missing = dict(base)
+    missing.pop("replyRoutingMode")
+    with pytest.raises(ValidationError):
+        AiPolicy.model_validate(missing)
 
 
 def test_machine_auth_requires_key_id_and_constant_digest_match() -> None:

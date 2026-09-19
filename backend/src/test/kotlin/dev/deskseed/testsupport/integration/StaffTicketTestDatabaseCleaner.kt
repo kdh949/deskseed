@@ -17,6 +17,7 @@ class StaffTicketTestDatabaseCleaner(
             truncate table
                 ai_knowledge_manifest_snapshots,
                 ai_admin_operations,
+                ai_reply_routing_cohorts,
                 ai_feature_staff_allowlist,
                 ai_activity_events,
                 ai_feedback_idempotency,
@@ -50,7 +51,9 @@ class StaffTicketTestDatabaseCleaner(
             update ai_settings
             set enabled = false, summary_enabled = false, triage_enabled = false,
                 reply_draft_enabled = false, fast_model_alias = 'openai/gpt-5.6-luna',
-                standard_model_alias = 'openai/gpt-5.6-terra', version = 0,
+                standard_model_alias = 'openai/gpt-5.6-terra',
+                reply_routing_mode = 'STANDARD_ONLY', reply_routing_rollout_percent = 0,
+                reply_routing_evaluation_approval_version = null, version = 0,
                 updated_by_staff_id = null, updated_at = clock_timestamp()
             where singleton = true
             """.trimIndent(),

@@ -46,6 +46,7 @@ class InvalidProviderOutputError(RuntimeError):
 
 class GenerationProvider:
     settings: Settings
+
     def context_memory(
         self,
         context: SourceContext,
@@ -81,6 +82,8 @@ class GenerationProvider:
         call_id: UUID,
         record_receipt: ReceiptRecorder,
         memory: ContextMemoryPayload | None = None,
+        *,
+        requested_alias: str | None = None,
     ) -> ProviderResult:
         raise NotImplementedError
 
@@ -92,8 +95,17 @@ class GenerationProvider:
         knowledge: list[KnowledgeChunk],
         options: Mapping[str, str],
         memory: ContextMemoryPayload | None = None,
+        *,
+        requested_alias: str | None = None,
     ) -> int:
         model, schema, output_limit = _feature_config(self.settings, feature)
+        if requested_alias is not None:
+            if feature != Feature.REPLY_DRAFT or requested_alias not in {
+                self.settings.model_fast,
+                self.settings.model_standard,
+            }:
+                raise ValueError("unsupported explicit generation model")
+            model = requested_alias
         request = _request_contract(
             model, context, schema, knowledge, options, feature, output_limit, memory
         )
@@ -217,6 +229,8 @@ class FakeGenerationProvider(GenerationProvider):
         call_id: UUID,
         record_receipt: ReceiptRecorder,
         memory: ContextMemoryPayload | None = None,
+        *,
+        requested_alias: str | None = None,
     ) -> ProviderResult:
         if not knowledge:
             raise ValueError("reply provider requires approved knowledge")
@@ -230,7 +244,10 @@ class FakeGenerationProvider(GenerationProvider):
             + json.dumps(dict(options), sort_keys=True),
             result.model_dump_json(),
         )
-        receipt = _fake_receipt(call_id, self.settings.model_standard, usage)
+        model = requested_alias or self.settings.model_standard
+        if model not in {self.settings.model_fast, self.settings.model_standard}:
+            raise ValueError("unsupported reply model alias")
+        receipt = _fake_receipt(call_id, model, usage)
         record_receipt(receipt)
         return ProviderResult(
             result,
@@ -320,9 +337,14 @@ class LiteLlmGenerationProvider(GenerationProvider):
         call_id: UUID,
         record_receipt: ReceiptRecorder,
         memory: ContextMemoryPayload | None = None,
+        *,
+        requested_alias: str | None = None,
     ) -> ProviderResult:
+        model = requested_alias or self.settings.model_standard
+        if model not in {self.settings.model_fast, self.settings.model_standard}:
+            raise ValueError("unsupported reply model alias")
         return self._complete(
-            self.settings.model_standard,
+            model,
             context,
             ReplyProviderOutput,
             knowledge,

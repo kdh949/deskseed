@@ -503,7 +503,10 @@ def test_shared_execution_joins_twenty_jobs_and_runs_provider_once(
 def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_followers(
     repository: Repository, settings: Settings
 ) -> None:
-    enabled = shared_execution_enabled(settings)
+    enabled = Settings.model_validate(
+        shared_execution_enabled(settings).model_dump()
+        | {"reply_routing_bucket_secret": "reply-routing-test-secret-at-least-32-bytes"}
+    )
     index_public_chunks(repository, 1)
     publish_current_index_generation(repository, canonical_corpus_revision=7)
     origin = envelope_v2(Feature.REPLY_DRAFT)
@@ -519,7 +522,7 @@ def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_fol
     published = repository.current_published_index_generation(origin.workspaceKey)
     cache_key = exact_result_cache_key(
         typed_claims[0],
-        StaticBackend(origin).read_policy(Feature.REPLY_DRAFT.value),
+        RoutingBackend(origin).read_policy(Feature.REPLY_DRAFT.value),
         enabled.model_standard,
         enabled,
         published,
@@ -532,7 +535,7 @@ def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_fol
     with ThreadPoolExecutor(max_workers=20) as executor:
         joined = list(executor.map(join, typed_claims))
     leader_index = next(index for index, item in enumerate(joined) if item.disposition == "LEADER")
-    runtime_for(repository, enabled, StaticBackend(items[leader_index]))._execute(
+    runtime_for(repository, enabled, RoutingBackend(items[leader_index]))._execute(
         typed_claims[leader_index], None
     )
     for index, item in enumerate(items):
@@ -540,7 +543,7 @@ def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_fol
             continue
         follower = repository.claim_job(item.jobId, 2, f"reply-wake-{index}")
         assert follower is not None
-        runtime_for(repository, enabled, StaticBackend(item))._execute(follower, None)
+        runtime_for(repository, enabled, RoutingBackend(item))._execute(follower, None)
 
     with repository.database.connection() as connection:
         stages = connection.execute(
@@ -554,7 +557,7 @@ def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_fol
             """
         ).fetchone()
     assert stages == [
-        {"stage": "GENERATION", "count": 1},
+        {"stage": "GENERATION_LOW_COST", "count": 1},
         {"stage": "QUERY_EMBEDDING", "count": 1},
     ]
     assert jobs == {"count": 20, "ciphertexts": 20, "zero_cost": 19}
@@ -2579,6 +2582,399 @@ def test_reply_rejects_unknown_duplicate_or_empty_source_refs_after_known_genera
 
 
 @pytest.mark.integration
+def test_approved_reply_route_uses_fast_model_and_persists_bounded_metadata(
+    repository: Repository, settings: Settings
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+    routed = Settings.model_validate(
+        settings.model_dump()
+        | {"reply_routing_bucket_secret": "reply-routing-test-secret-at-least-32-bytes"}
+    )
+    runtime = runtime_for(repository, routed, RoutingBackend(item))
+
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.SUCCEEDED
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, requested_alias, settlement_status from ai_provider_calls
+            where job_id = %s order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+        route = connection.execute(
+            """
+            select reply_route_decision, reply_route_cohort,
+                   reply_route_policy_version, reply_route_marker_version,
+                   reply_route_rollout_percent, reply_route_requested_alias,
+                   reply_route_escalation_reason
+            from ai_jobs where job_id = %s
+            """,
+            (item.jobId,),
+        ).fetchone()
+    assert calls == [
+        {
+            "stage": "QUERY_EMBEDDING",
+            "requested_alias": routed.embedding_model,
+            "settlement_status": "SETTLED",
+        },
+        {
+            "stage": "GENERATION_LOW_COST",
+            "requested_alias": routed.model_fast,
+            "settlement_status": "SETTLED",
+        },
+    ]
+    assert route == {
+        "reply_route_decision": "LOW_COST",
+        "reply_route_cohort": "reply-single-public-article-short-v1",
+        "reply_route_policy_version": "reply-route-v1",
+        "reply_route_marker_version": "route-risk-markers-v1",
+        "reply_route_rollout_percent": 100,
+        "reply_route_requested_alias": routed.model_fast,
+        "reply_route_escalation_reason": None,
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("failure", "reason"),
+    [
+        ("provider", "PROVIDER_OUTPUT_INVALID"),
+        ("citation", "REPLY_VALIDATION_FAILED"),
+    ],
+)
+def test_known_fast_reply_validation_failure_escalates_once(
+    repository: Repository,
+    settings: Settings,
+    failure: str,
+    reason: str,
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+    routed = Settings.model_validate(
+        settings.model_dump()
+        | {"reply_routing_bucket_secret": "reply-routing-test-secret-at-least-32-bytes"}
+    )
+    runtime = runtime_for(repository, routed, RoutingBackend(item))
+
+    class KnownInvalidFastProvider(FakeGenerationProvider):
+        def reply(
+            self,
+            context,
+            knowledge,
+            options,
+            call_id,
+            record_receipt,
+            memory=None,
+            *,
+            requested_alias=None,
+        ):
+            generated = super().reply(
+                context,
+                knowledge,
+                options,
+                call_id,
+                record_receipt,
+                memory,
+                requested_alias=requested_alias,
+            )
+            if requested_alias == self.settings.model_fast:
+                if failure == "provider":
+                    raise InvalidProviderOutputError("synthetic known invalid output")
+                return ProviderResult(
+                    ReplyProviderOutput.model_construct(
+                        answer="합성 답변", sourceRefs=["S99"]
+                    ),
+                    generated.receipt,
+                    generated.prompt_version,
+                )
+            return generated
+
+    provider = KnownInvalidFastProvider(routed)
+    runtime.provider = provider
+    runtime.reply_workflow.provider = provider
+
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+
+    assert repository.get_job(item.jobId).status == JobStatus.SUCCEEDED
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, requested_alias, settlement_status from ai_provider_calls
+            where job_id = %s and stage like 'GENERATION%%' order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+        route = connection.execute(
+            """
+            select reply_route_decision, reply_route_requested_alias,
+                   reply_route_escalation_reason
+            from ai_jobs where job_id = %s
+            """,
+            (item.jobId,),
+        ).fetchone()
+    assert calls == [
+        {
+            "stage": "GENERATION_LOW_COST",
+            "requested_alias": routed.model_fast,
+            "settlement_status": "SETTLED",
+        },
+        {
+            "stage": "GENERATION_ESCALATION",
+            "requested_alias": routed.model_standard,
+            "settlement_status": "SETTLED",
+        },
+    ]
+    assert route == {
+        "reply_route_decision": "ESCALATED",
+        "reply_route_requested_alias": routed.model_standard,
+        "reply_route_escalation_reason": reason,
+    }
+
+
+@pytest.mark.integration
+def test_unknown_fast_reply_call_never_escalates(
+    repository: Repository, settings: Settings
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+    routed = Settings.model_validate(
+        settings.model_dump()
+        | {"reply_routing_bucket_secret": "reply-routing-test-secret-at-least-32-bytes"}
+    )
+    runtime = runtime_for(repository, routed, RoutingBackend(item))
+
+    class UnknownFastProvider(FakeGenerationProvider):
+        def reply(
+            self,
+            context,
+            knowledge,
+            options,
+            call_id,
+            record_receipt,
+            memory=None,
+            *,
+            requested_alias=None,
+        ):
+            if requested_alias == self.settings.model_fast:
+                raise TimeoutError("synthetic ambiguous delivery")
+            return super().reply(
+                context,
+                knowledge,
+                options,
+                call_id,
+                record_receipt,
+                memory,
+                requested_alias=requested_alias,
+            )
+
+    provider = UnknownFastProvider(routed)
+    runtime.provider = provider
+    runtime.reply_workflow.provider = provider
+    claim = repository.claim_job(item.jobId, 1, routed.consumer_name)
+    assert claim is not None
+
+    with pytest.raises(TimeoutError, match="ambiguous delivery"):
+        runtime._execute(claim, None)
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.FAILED
+    assert job.errorCode == "PROVIDER_OUTCOME_UNKNOWN"
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, settlement_status from ai_provider_calls
+            where job_id = %s and stage like 'GENERATION%%' order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+        route = connection.execute(
+            """
+            select reply_route_decision, reply_route_escalation_reason
+            from ai_jobs where job_id = %s
+            """,
+            (item.jobId,),
+        ).fetchone()
+    assert calls == [
+        {"stage": "GENERATION_LOW_COST", "settlement_status": "UNKNOWN"}
+    ]
+    assert route == {
+        "reply_route_decision": "LOW_COST",
+        "reply_route_escalation_reason": None,
+    }
+
+
+@pytest.mark.integration
+def test_fast_reply_escalation_stops_on_policy_drift(
+    repository: Repository, settings: Settings
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+    routed = Settings.model_validate(
+        settings.model_dump()
+        | {"reply_routing_bucket_secret": "reply-routing-test-secret-at-least-32-bytes"}
+    )
+
+    class DriftBackend(RoutingBackend):
+        policy_reads = 0
+
+        def read_policy(self, feature):
+            self.policy_reads += 1
+            if self.policy_reads == 1:
+                return super().read_policy(feature)
+            return StaticBackend.read_policy(self, feature)
+
+    runtime = runtime_for(repository, routed, DriftBackend(item))
+
+    class KnownInvalidFastProvider(FakeGenerationProvider):
+        def reply(
+            self,
+            context,
+            knowledge,
+            options,
+            call_id,
+            record_receipt,
+            memory=None,
+            *,
+            requested_alias=None,
+        ):
+            generated = super().reply(
+                context,
+                knowledge,
+                options,
+                call_id,
+                record_receipt,
+                memory,
+                requested_alias=requested_alias,
+            )
+            if requested_alias == self.settings.model_fast:
+                raise InvalidProviderOutputError("synthetic known invalid output")
+            return generated
+
+    provider = KnownInvalidFastProvider(routed)
+    runtime.provider = provider
+    runtime.reply_workflow.provider = provider
+    claim = repository.claim_job(item.jobId, 1, routed.consumer_name)
+    assert claim is not None
+    runtime._execute(claim, None)
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.FAILED
+    assert job.errorCode == "AI_POLICY_DISABLED"
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, settlement_status from ai_provider_calls
+            where job_id = %s and stage like 'GENERATION%%' order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+    assert calls == [
+        {"stage": "GENERATION_LOW_COST", "settlement_status": "SETTLED"}
+    ]
+
+
+@pytest.mark.integration
+def test_fast_reply_escalation_stops_when_remaining_budget_is_insufficient(
+    repository: Repository, settings: Settings
+) -> None:
+    index_public_chunks(repository, 1)
+    item = envelope_v2(Feature.REPLY_DRAFT)
+    repository.accept_job(item)
+    routed = Settings.model_validate(
+        settings.model_dump()
+        | {"reply_routing_bucket_secret": "reply-routing-test-secret-at-least-32-bytes"}
+    )
+    runtime = runtime_for(repository, routed, RoutingBackend(item))
+
+    class SpendBudgetAfterFastProvider(FakeGenerationProvider):
+        def reply(
+            self,
+            context,
+            knowledge,
+            options,
+            call_id,
+            record_receipt,
+            memory=None,
+            *,
+            requested_alias=None,
+        ):
+            generated = super().reply(
+                context,
+                knowledge,
+                options,
+                call_id,
+                record_receipt,
+                memory,
+                requested_alias=requested_alias,
+            )
+            if requested_alias == self.settings.model_fast:
+                escalation_tokens = self.estimate_input_tokens(
+                    runtime.pricing,
+                    Feature.REPLY_DRAFT,
+                    context,
+                    knowledge,
+                    options,
+                    memory,
+                    requested_alias=self.settings.model_standard,
+                )
+                escalation_reserve = runtime.pricing.upper_bound_microusd(
+                    self.settings.model_standard,
+                    escalation_tokens,
+                    2048,
+                    runtime.pricing.service_tier,
+                    runtime.pricing.context_price_band,
+                )
+                repository.settings = repository.settings.model_copy(
+                    update={"job_budget_microusd": escalation_reserve}
+                )
+                raise InvalidProviderOutputError("synthetic known invalid output")
+            return generated
+
+    provider = SpendBudgetAfterFastProvider(routed)
+    runtime.provider = provider
+    runtime.reply_workflow.provider = provider
+    claim = repository.claim_job(item.jobId, 1, routed.consumer_name)
+    assert claim is not None
+    runtime._execute(claim, None)
+
+    job = repository.get_job(item.jobId)
+    assert job.status == JobStatus.FAILED
+    assert job.errorCode == "BUDGET_EXCEEDED"
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, settlement_status from ai_provider_calls
+            where job_id = %s and stage like 'GENERATION%%' order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+        route = connection.execute(
+            """
+            select reply_route_decision, reply_route_escalation_reason
+            from ai_jobs where job_id = %s
+            """,
+            (item.jobId,),
+        ).fetchone()
+    assert calls == [
+        {"stage": "GENERATION_LOW_COST", "settlement_status": "SETTLED"}
+    ]
+    assert route == {
+        "reply_route_decision": "LOW_COST",
+        "reply_route_escalation_reason": None,
+    }
+
+
+@pytest.mark.integration
 def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_scan(
     repository: Repository, settings: Settings
 ) -> None:
@@ -2881,6 +3277,10 @@ class StaticBackend:
             features={feature: True},
             fastModelAlias="openai/gpt-5.6-luna",
             standardModelAlias="openai/gpt-5.6-terra",
+            replyRoutingMode="STANDARD_ONLY",
+            replyRoutingCohorts=[],
+            replyRoutingRolloutPercent=0,
+            replyRoutingEvaluationApprovalVersion=None,
             version=1,
             canonicalPublicCorpusRevision=7,
         )
@@ -2899,6 +3299,29 @@ class StaticBackend:
     def authorize_citations(self, job_id, citations):
         assert job_id == self.item.jobId
         return citations
+
+
+class RoutingBackend(StaticBackend):
+    def read_context(self, job_id, traceparent=None):
+        context = super().read_context(job_id, traceparent)
+        return context.model_copy(
+            update={
+                "comments": [
+                    context.comments[0].model_copy(
+                        update={"body": "도움이 필요해요"}
+                    )
+                ]
+            }
+        )
+
+    def read_policy(self, feature):
+        policy = super().read_policy(feature)
+        policy.replyRoutingMode = "EVALUATED_COHORT"
+        policy.replyRoutingCohorts = ["reply-single-public-article-short-v1"]
+        policy.replyRoutingRolloutPercent = 100
+        policy.replyRoutingEvaluationApprovalVersion = "holdout-v1"
+        policy.version = 2
+        return policy
 
 
 def index_public_chunks(repository: Repository, count: int) -> list:
