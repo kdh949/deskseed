@@ -30,6 +30,7 @@ from deskseed_ai.queue import InputTooLongError, _bounded_context
 from deskseed_ai.repository import ClaimedJob, PublishedIndexGeneration
 from deskseed_ai.result_cache import exact_result_cache_key
 from deskseed_ai.retrieval import (
+    EMBEDDING_DIMENSION,
     EMBEDDING_QUERY_TOKEN_LIMIT,
     KnowledgeChunk,
     LiteLlmEmbeddingProvider,
@@ -37,6 +38,7 @@ from deskseed_ai.retrieval import (
     RetrievalQueryTooLongError,
     build_public_article_chunks,
     build_retrieval_query,
+    embedding_artifact_spec,
 )
 from deskseed_ai.rewrite import preservation_markers, preserves_deterministic_markers
 from deskseed_ai.schemas import (
@@ -135,6 +137,81 @@ def test_prompt_cache_is_off_by_default_and_test_mode_is_not_production() -> Non
         ).prompt_cache_mode
         == "intent"
     )
+
+
+def test_embedding_optimization_requires_separate_reviewed_snapshot() -> None:
+    assert Settings(environment="test").embedding_optimization_mode == "off"
+    test_settings = Settings(environment="test", embedding_optimization_mode="test")
+    assert test_settings.resolved_embedding_model_snapshot.startswith("test:")
+    assert Settings(
+        environment="test",
+        embedding_optimization_mode="test",
+        embedding_model_snapshot="reviewed-looking-v1",
+    ).resolved_embedding_model_snapshot == "test:reviewed-looking-v1"
+    with pytest.raises(ValueError, match="measured intent activation"):
+        Settings(
+            environment="production",
+            process_role="migration",
+            embedding_optimization_mode="test",
+        )
+    with pytest.raises(ValueError, match="immutable model snapshot"):
+        Settings(
+            environment="production",
+            process_role="migration",
+            embedding_optimization_mode="intent",
+        )
+    with pytest.raises(ValueError, match="immutable model snapshot"):
+        Settings(
+            environment="production",
+            process_role="migration",
+            embedding_optimization_mode="intent",
+            embedding_model_snapshot="openai/text-embedding-3-small",
+        )
+    settings = Settings(
+        environment="production",
+        process_role="migration",
+        embedding_optimization_mode="intent",
+        embedding_model_snapshot="openai/text-embedding-3-small@reviewed-immutable-v1",
+    )
+    assert settings.embedding_array_size == 8
+
+
+def test_embedding_artifact_key_covers_exact_contract_and_final_input() -> None:
+    baseline = embedding_artifact_spec(
+        "test:embedding-v1",
+        EMBEDDING_DIMENSION,
+        "public-text-nfkc-v2",
+        "Document title: 공개 도움말\nCategory: 지원\nSection: 시작\nBody:\n본문",
+    )
+    variants = {
+        embedding_artifact_spec(
+            "test:embedding-v1",
+            3072,
+            "public-text-nfkc-v2",
+            "Document title: 공개 도움말\nCategory: 지원\nSection: 시작\nBody:\n본문",
+        ).artifact_key,
+        embedding_artifact_spec(
+            "test:embedding-v2",
+            EMBEDDING_DIMENSION,
+            "public-text-nfkc-v2",
+            "Document title: 공개 도움말\nCategory: 지원\nSection: 시작\nBody:\n본문",
+        ).artifact_key,
+        embedding_artifact_spec(
+            "test:embedding-v1",
+            EMBEDDING_DIMENSION,
+            "public-text-nfkc-v3",
+            "Document title: 공개 도움말\nCategory: 지원\nSection: 시작\nBody:\n본문",
+        ).artifact_key,
+        embedding_artifact_spec(
+            "test:embedding-v1",
+            EMBEDDING_DIMENSION,
+            "public-text-nfkc-v2",
+            "Document title: 다른 도움말\nCategory: 지원\nSection: 시작\nBody:\n본문",
+        ).artifact_key,
+    }
+    assert len(baseline.artifact_key) == 64
+    assert baseline.artifact_key not in variants
+    assert "본문" not in baseline.artifact_key
 
 
 def test_shared_execution_is_test_only_and_requires_exact_cache() -> None:
@@ -971,7 +1048,7 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     def fake_embedding(**kwargs):
         calls.append(kwargs)
         return SimpleNamespace(
-            data=[{"embedding": [0.0] * 1536}],
+            data=[{"index": 0, "embedding": [0.0] * 1536}],
             usage=SimpleNamespace(total_tokens=3),
             id="embedding-1",
             model="openai/text-embedding-3-small",
@@ -1050,6 +1127,119 @@ def test_litellm_adapters_disable_hidden_retries(monkeypatch) -> None:
     assert generated.receipt.prompt_cache_status == PromptCacheStatus.INELIGIBLE
     assert generated.receipt.prompt_cache_prefix_tokens is not None
     assert len(receipts) == 2
+
+
+def test_litellm_embedding_array_maps_indices_and_records_usage_before_validation(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    import litellm
+
+    calls: list[dict[str, object]] = []
+
+    def valid_embedding(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            data=[
+                {"index": 1, "embedding": [1.0] * EMBEDDING_DIMENSION},
+                {"index": 0, "embedding": [0.0] * EMBEDDING_DIMENSION},
+            ],
+            usage=SimpleNamespace(total_tokens=7),
+            id="embedding-array-1",
+            model="text-embedding-3-small",
+            service_tier="default",
+        )
+
+    monkeypatch.setattr(litellm, "embedding", valid_embedding)
+    provider = LiteLlmEmbeddingProvider(
+        "openai/text-embedding-3-small", "test-only-key", 30
+    )
+    receipts = []
+    result = provider.embed_many(["첫 입력", "둘째 입력"], uuid4(), receipts.append)
+
+    assert calls[0]["input"] == ["첫 입력", "둘째 입력"]
+    assert calls[0]["num_retries"] == 0
+    assert result.vectors[0][0] == 0.0
+    assert result.vectors[1][0] == 1.0
+    assert result.receipt.usage == Usage(7, 0, 0, 0)
+    assert len(receipts) == 1
+
+    def duplicate_embedding(**_kwargs):
+        return SimpleNamespace(
+            data=[
+                {"index": 0, "embedding": [0.0] * EMBEDDING_DIMENSION},
+                {"index": 0, "embedding": [1.0] * EMBEDDING_DIMENSION},
+            ],
+            usage=SimpleNamespace(total_tokens=9),
+            id="embedding-array-invalid",
+            model="text-embedding-3-small",
+            service_tier="default",
+        )
+
+    monkeypatch.setattr(litellm, "embedding", duplicate_embedding)
+    with pytest.raises(ValueError, match="index mapping"):
+        provider.embed_many(["첫 입력", "둘째 입력"], uuid4(), receipts.append)
+    assert len(receipts) == 2
+    assert receipts[-1].usage == Usage(9, 0, 0, 0)
+
+
+def test_pinned_litellm_forwards_embedding_array_to_final_openai_body(monkeypatch) -> None:
+    import litellm
+
+    captured: dict[str, object] = {}
+    attempts = 0
+
+    class RawEmbeddingResponse:
+        headers: dict[str, str] = {}
+
+        @staticmethod
+        def parse():
+            class ParsedEmbeddingResponse:
+                @staticmethod
+                def model_dump():
+                    return {
+                        "object": "list",
+                        "data": [
+                            {
+                                "object": "embedding",
+                                "index": 0,
+                                "embedding": [0.0] * EMBEDDING_DIMENSION,
+                            },
+                            {
+                                "object": "embedding",
+                                "index": 1,
+                                "embedding": [1.0] * EMBEDDING_DIMENSION,
+                            },
+                        ],
+                        "model": "text-embedding-3-small",
+                        "usage": {"prompt_tokens": 8, "total_tokens": 8},
+                    }
+
+            return ParsedEmbeddingResponse()
+
+    def fake_openai_request(*, openai_client, data, timeout, logging_obj):
+        nonlocal attempts
+        attempts += 1
+        captured.update(data)
+        return RawEmbeddingResponse()
+
+    monkeypatch.setattr(
+        litellm.main.openai_chat_completions,
+        "make_sync_openai_embedding_request",
+        fake_openai_request,
+    )
+    provider = LiteLlmEmbeddingProvider(
+        "openai/text-embedding-3-small", "test-only-key", 30
+    )
+    result = provider.embed_many(["첫 입력", "둘째 입력"], uuid4(), lambda _receipt: None)
+
+    assert captured == {
+        "model": "text-embedding-3-small",
+        "input": ["첫 입력", "둘째 입력"],
+    }
+    assert [vector[0] for vector in result.vectors] == [0.0, 1.0]
+    assert attempts == 1
 
 
 def test_reply_provider_receives_only_request_local_source_refs(monkeypatch) -> None:

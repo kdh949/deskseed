@@ -53,7 +53,7 @@ def repository(settings: Settings) -> Iterator[Repository]:
             """
             truncate table ai_dead_letters, ai_operations, ai_feedback, ai_context_memories,
                 ai_kb_reconciliation_runs,
-                ai_kb_chunks, ai_kb_revisions, ai_kb_article_state,
+                ai_kb_chunks, ai_embedding_artifacts, ai_kb_revisions, ai_kb_article_state,
                 ai_kb_index_inbox, ai_cost_ledger, ai_dispatch_outbox, ai_jobs, ai_job_inbox cascade
             """
         )
