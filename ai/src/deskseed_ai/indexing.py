@@ -55,6 +55,9 @@ class IndexingService:
         return processed
 
     def reconcile_once(self, workspace_key: str = "default") -> bool:
+        publication = self.repository.try_publish_index_generation(workspace_key)
+        if publication is not None:
+            return publication
         run = self.repository.current_reconciliation(workspace_key)
         if run is None:
             if not self.repository.reconciliation_due(workspace_key):
@@ -92,7 +95,10 @@ class IndexingService:
                 self.repository.accept_index_event(event)
             return self.repository.record_reconciliation_page(
                 run,
-                [(item.articleId, item.revisionId) for item in page.items],
+                [
+                    (item.articleId, item.revisionId, item.sourceVersion, item.publicRevision)
+                    for item in page.items
+                ],
                 page.nextCursor,
             )
         except Exception as exception:
@@ -109,6 +115,7 @@ class IndexingService:
             workspace_key,
             page.snapshotToken,
             page.expiresAt,
+            getattr(page, "canonicalPublicCorpusRevision", None),
         ):
             return None
         return self.repository.current_reconciliation(workspace_key)

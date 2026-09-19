@@ -123,6 +123,7 @@ internal class JdbcKnowledgeAdministration(
             data = mapOf("categoryId" to id.toString()),
             occurredAt = now,
         )
+        bumpPublicCorpusRevision(now)
         return category(id)
     }
 
@@ -174,6 +175,7 @@ internal class JdbcKnowledgeAdministration(
             mapOf("categoryId" to categoryId.toString(), "active" to active.toString()),
             now,
         )
+        bumpPublicCorpusRevision(now)
         return category(categoryId)
     }
 
@@ -228,6 +230,7 @@ internal class JdbcKnowledgeAdministration(
             data = mapOf("sectionId" to id.toString(), "categoryId" to normalized.categoryId.toString()),
             occurredAt = now,
         )
+        bumpPublicCorpusRevision(now)
         return section(id)
     }
 
@@ -281,6 +284,7 @@ internal class JdbcKnowledgeAdministration(
             mapOf("sectionId" to sectionId.toString(), "active" to active.toString()),
             now,
         )
+        bumpPublicCorpusRevision(now)
         return section(sectionId)
     }
 
@@ -687,6 +691,13 @@ internal class JdbcKnowledgeAdministration(
                     occurredAt = now,
                 )
         }
+        if (
+            nextLifecycle == KnowledgeArticleLifecycle.PUBLISHED ||
+            root.lifecycle == KnowledgeArticleLifecycle.PUBLISHED &&
+            nextLifecycle in setOf(KnowledgeArticleLifecycle.UNPUBLISHED, KnowledgeArticleLifecycle.ARCHIVED)
+        ) {
+            bumpPublicCorpusRevision(now)
+        }
         return article(articleId)
     }
 
@@ -754,6 +765,7 @@ internal class JdbcKnowledgeAdministration(
                 },
                 occurredAt = now,
             )
+            bumpPublicCorpusRevision(now)
         }
         return article(articleId)
     }
@@ -1064,6 +1076,18 @@ internal class JdbcKnowledgeAdministration(
                 visibility = DomainEventVisibility.INTERNAL,
             ),
         )
+    }
+
+    private fun bumpPublicCorpusRevision(now: Instant) {
+        val changed = jdbc.update(
+            """
+            update ai_public_knowledge_corpus_state
+               set revision = revision + 1, updated_at = ?
+             where singleton = true
+            """.trimIndent(),
+            Timestamp.from(now),
+        )
+        check(changed == 1) { "PUBLIC knowledge corpus revision is unavailable" }
     }
 
     private fun KnowledgeCategoryInput.validated(): KnowledgeCategoryInput = copy(

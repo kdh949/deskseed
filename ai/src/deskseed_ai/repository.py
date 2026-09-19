@@ -24,6 +24,7 @@ from .schemas import (
     JobReceipt,
     JobStatus,
     OperationRequest,
+    ReplyDraftResult,
     SummaryResult,
     TriageResult,
     TypedResult,
@@ -66,6 +67,20 @@ class ReconciliationRun:
     snapshot_token: UUID
     snapshot_expires_at: datetime
     next_cursor: UUID | None
+    canonical_corpus_revision: int | None
+
+
+@dataclass(frozen=True)
+class PublishedIndexGeneration:
+    generation: int
+    canonical_corpus_revision: int
+
+
+@dataclass(frozen=True)
+class ReplyCacheCandidate:
+    origin_job_id: UUID
+    result: ReplyDraftResult
+    fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -988,14 +1003,17 @@ class Repository:
                 raise StaleLeaseError("job completion lease lost")
             if cache_key is not None and status == JobStatus.SUCCEEDED and cost_microusd is not None:
                 cache_expires_at = min(now + timedelta(hours=24), result_expires_at)
+                key_version = (
+                    "result-cache-reply-v1"
+                    if claim.feature == Feature.REPLY_DRAFT
+                    else "result-cache-summary-triage-v1"
+                )
                 connection.execute(
                     """
                     insert into ai_result_cache (
                         cache_key, key_version, workspace_key, requester_id, ticket_id, feature,
                         origin_job_id, created_at, expires_at
-                    ) values (
-                        %s, 'result-cache-summary-triage-v1', %s, %s, %s, %s, %s, %s, %s
-                    )
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     on conflict (cache_key) do update set
                         origin_job_id = excluded.origin_job_id,
                         created_at = excluded.created_at,
@@ -1007,6 +1025,7 @@ class Repository:
                     """,
                     (
                         cache_key,
+                        key_version,
                         claim.workspace_key,
                         claim.requester_id,
                         claim.ticket_id,
@@ -1147,6 +1166,219 @@ class Repository:
             if updated != 1:
                 raise StaleLeaseError("cache completion lease lost")
             return True
+
+    def read_reply_cache_candidate(self, claim: ClaimedJob, cache_key: str) -> ReplyCacheCandidate | None:
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            entry_ref = connection.execute(
+                "select origin_job_id from ai_result_cache where cache_key = %s",
+                (cache_key,),
+            ).fetchone()
+            if not entry_ref:
+                return None
+            origin = connection.execute(
+                """
+                select job_id, status, cancel_requested, result_ciphertext, result_nonce,
+                       result_expires_at, source_map_digest, source_chunk_ids, cost_microusd,
+                       exists (
+                           select 1 from ai_provider_calls call
+                           where call.job_id = ai_jobs.job_id and call.settlement_status <> 'SETTLED'
+                       ) as has_unsettled_call
+                from ai_jobs where job_id = %s for update
+                """,
+                (entry_ref["origin_job_id"],),
+            ).fetchone()
+            cached = connection.execute(
+                """
+                select key_version, workspace_key, requester_id, ticket_id, feature, origin_job_id,
+                       expires_at as cache_expires_at, invalidated_at
+                from ai_result_cache where cache_key = %s for update
+                """,
+                (cache_key,),
+            ).fetchone()
+            if not origin or not cached or cached["origin_job_id"] != origin["job_id"]:
+                return None
+            scope_matches = (
+                cached["key_version"] == "result-cache-reply-v1"
+                and cached["workspace_key"] == claim.workspace_key
+                and cached["requester_id"] == claim.requester_id
+                and cached["ticket_id"] == claim.ticket_id
+                and cached["feature"] == Feature.REPLY_DRAFT.value
+                and claim.feature == Feature.REPLY_DRAFT
+            )
+            origin_valid = (
+                scope_matches
+                and cached["invalidated_at"] is None
+                and cached["cache_expires_at"] > now
+                and origin["status"] == "SUCCEEDED"
+                and not origin["cancel_requested"]
+                and origin["result_ciphertext"] is not None
+                and origin["result_nonce"] is not None
+                and origin["result_expires_at"] is not None
+                and origin["result_expires_at"] > now
+                and origin["source_map_digest"] is not None
+                and origin["source_chunk_ids"]
+                and origin["cost_microusd"] is not None
+                and not origin["has_unsettled_call"]
+            )
+            if not origin_valid:
+                self._invalidate_cache_entry(connection, cache_key, now, "ORIGIN_INELIGIBLE")
+                return None
+            try:
+                plaintext = self.cipher.decrypt(
+                    bytes(origin["result_ciphertext"]),
+                    bytes(origin["result_nonce"]),
+                    str(origin["job_id"]).encode(),
+                )
+                result = ReplyDraftResult.model_validate(json.loads(plaintext))
+                if not result.citations or any(
+                    citation.chunkId not in origin["source_chunk_ids"] for citation in result.citations
+                ):
+                    raise ValueError("reply cache provenance mismatch")
+                fingerprint = self._reply_cache_fingerprint(origin, result)
+            except (InvalidTag, UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError):
+                self._invalidate_cache_entry(connection, cache_key, now, "ORIGIN_INVALID")
+                return None
+            return ReplyCacheCandidate(origin["job_id"], result, fingerprint)
+
+    def complete_reply_from_cache(
+        self,
+        claim: ClaimedJob,
+        cache_key: str,
+        candidate: ReplyCacheCandidate,
+    ) -> bool:
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            origin = connection.execute(
+                """
+                select job_id, status, cancel_requested, result_schema_version, result_ciphertext,
+                       result_nonce, result_expires_at, model_alias, actual_model, prompt_version,
+                       config_version, source_comment_ids, generated_at, source_map_digest,
+                       source_chunk_ids, cost_microusd,
+                       exists (
+                           select 1 from ai_provider_calls call
+                           where call.job_id = ai_jobs.job_id and call.settlement_status <> 'SETTLED'
+                       ) as has_unsettled_call
+                from ai_jobs where job_id = %s for update
+                """,
+                (candidate.origin_job_id,),
+            ).fetchone()
+            cached = connection.execute(
+                """
+                select key_version, workspace_key, requester_id, ticket_id, feature, origin_job_id,
+                       expires_at as cache_expires_at, invalidated_at
+                from ai_result_cache where cache_key = %s for update
+                """,
+                (cache_key,),
+            ).fetchone()
+            if not origin or not cached or cached["origin_job_id"] != candidate.origin_job_id:
+                return False
+            origin_valid = (
+                cached["key_version"] == "result-cache-reply-v1"
+                and cached["workspace_key"] == claim.workspace_key
+                and cached["requester_id"] == claim.requester_id
+                and cached["ticket_id"] == claim.ticket_id
+                and cached["feature"] == Feature.REPLY_DRAFT.value
+                and claim.feature == Feature.REPLY_DRAFT
+                and cached["invalidated_at"] is None
+                and cached["cache_expires_at"] > now
+                and origin["status"] == "SUCCEEDED"
+                and not origin["cancel_requested"]
+                and origin["result_ciphertext"] is not None
+                and origin["result_nonce"] is not None
+                and origin["result_expires_at"] is not None
+                and origin["result_expires_at"] > now
+                and origin["source_map_digest"] is not None
+                and origin["source_chunk_ids"]
+                and origin["cost_microusd"] is not None
+                and not origin["has_unsettled_call"]
+            )
+            if not origin_valid:
+                self._invalidate_cache_entry(connection, cache_key, now, "ORIGIN_INELIGIBLE")
+                return False
+            try:
+                plaintext = self.cipher.decrypt(
+                    bytes(origin["result_ciphertext"]),
+                    bytes(origin["result_nonce"]),
+                    str(origin["job_id"]).encode(),
+                )
+                result = ReplyDraftResult.model_validate(json.loads(plaintext))
+                if (
+                    result != candidate.result
+                    or self._reply_cache_fingerprint(origin, result) != candidate.fingerprint
+                ):
+                    raise ValueError("reply cache candidate changed")
+                ciphertext, nonce = self.cipher.encrypt(
+                    result.model_dump_json().encode(), str(claim.job_id).encode()
+                )
+            except (InvalidTag, UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError):
+                self._invalidate_cache_entry(connection, cache_key, now, "ORIGIN_INVALID")
+                return False
+            updated = connection.execute(
+                """
+                update ai_jobs set status = 'SUCCEEDED', phase = 'COMPLETE',
+                    result_schema_version = %s, result_ciphertext = %s, result_nonce = %s,
+                    result_expires_at = %s, model_alias = %s, actual_model = %s,
+                    prompt_version = %s, config_version = %s, source_comment_ids = %s,
+                    generated_at = %s, source_map_digest = %s, source_chunk_ids = %s,
+                    cost_microusd = 0, completed_at = %s, updated_at = %s,
+                    lease_owner = null, lease_expires_at = null, error_code = null,
+                    result_origin_job_id = %s, reuse_kind = 'EXACT_CACHE_HIT'
+                where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
+                """,
+                (
+                    origin["result_schema_version"],
+                    ciphertext,
+                    nonce,
+                    min(cached["cache_expires_at"], origin["result_expires_at"]),
+                    origin["model_alias"],
+                    origin["actual_model"],
+                    origin["prompt_version"],
+                    origin["config_version"],
+                    origin["source_comment_ids"],
+                    origin["generated_at"],
+                    origin["source_map_digest"],
+                    origin["source_chunk_ids"],
+                    now,
+                    now,
+                    origin["job_id"],
+                    claim.job_id,
+                    claim.generation,
+                    claim.lease_epoch,
+                ),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("reply cache completion lease lost")
+            return True
+
+    def invalidate_result_cache(self, cache_key: str, reason: str) -> None:
+        with self.database.transaction() as connection:
+            self._invalidate_cache_entry(connection, cache_key, datetime.now(UTC), reason[:40])
+
+    @staticmethod
+    def _invalidate_cache_entry(connection, cache_key: str, now: datetime, reason: str) -> None:
+        connection.execute(
+            """
+            update ai_result_cache set invalidated_at = coalesce(invalidated_at, %s),
+                invalidation_reason = coalesce(invalidation_reason, %s)
+            where cache_key = %s
+            """,
+            (now, reason, cache_key),
+        )
+
+    @staticmethod
+    def _reply_cache_fingerprint(origin, result: ReplyDraftResult) -> str:
+        chunk_ids = ",".join(str(item) for item in origin["source_chunk_ids"])
+        return sha256_text(
+            "\u001f".join(
+                (
+                    str(origin["job_id"]),
+                    result.model_dump_json(),
+                    origin["source_map_digest"],
+                    chunk_ids,
+                )
+            )
+        )
 
     def complete_needs_review(self, claim: ClaimedJob, error_code: str, cost_microusd: int | None) -> None:
         now = datetime.now(UTC)
@@ -1395,6 +1627,10 @@ class Repository:
             )
             if event.action == "DELETE":
                 connection.execute(
+                    "delete from ai_kb_chunks where workspace_key = %s and article_id = %s",
+                    (event.workspaceKey, event.articleId),
+                )
+                connection.execute(
                     """
                     update ai_kb_revisions set status = 'DELETED', deleted_at = clock_timestamp()
                     where workspace_key = %s and article_id = %s
@@ -1473,7 +1709,8 @@ class Repository:
         with self.database.connection() as connection:
             row = connection.execute(
                 """
-                select run_id, workspace_key, snapshot_token, snapshot_expires_at, next_cursor
+                select run_id, workspace_key, snapshot_token, snapshot_expires_at, next_cursor,
+                       canonical_corpus_revision
                 from ai_kb_reconciliation_runs
                 where workspace_key = %s and status = 'RUNNING'
                 """,
@@ -1507,11 +1744,15 @@ class Repository:
         workspace_key: str,
         snapshot_token: UUID,
         snapshot_expires_at: datetime,
+        canonical_corpus_revision: int | None,
     ) -> bool:
         with self.database.transaction() as connection:
             connection.execute("select pg_advisory_xact_lock(hashtext('ai-kb-reconciliation'), hashtext(%s))", (workspace_key,))
             running = connection.execute(
-                "select 1 from ai_kb_reconciliation_runs where workspace_key = %s and status = 'RUNNING'",
+                """
+                select 1 from ai_kb_reconciliation_runs
+                where workspace_key = %s and status in ('RUNNING', 'INDEXING')
+                """,
                 (workspace_key,),
             ).fetchone()
             if running:
@@ -1519,17 +1760,18 @@ class Repository:
             connection.execute(
                 """
                 insert into ai_kb_reconciliation_runs (
-                    run_id, workspace_key, snapshot_token, snapshot_expires_at, status, started_at
-                ) values (%s, %s, %s, %s, 'RUNNING', clock_timestamp())
+                    run_id, workspace_key, snapshot_token, snapshot_expires_at,
+                    canonical_corpus_revision, status, started_at
+                ) values (%s, %s, %s, %s, %s, 'RUNNING', clock_timestamp())
                 """,
-                (run_id, workspace_key, snapshot_token, snapshot_expires_at),
+                (run_id, workspace_key, snapshot_token, snapshot_expires_at, canonical_corpus_revision),
             )
         return True
 
     def record_reconciliation_page(
         self,
         run: ReconciliationRun,
-        items: list[tuple[UUID, UUID]],
+        items: list[tuple[UUID, UUID, int, str]],
         next_cursor: UUID | None,
     ) -> bool:
         with self.database.transaction() as connection:
@@ -1542,14 +1784,18 @@ class Repository:
             ).fetchone()
             if row is None or row["next_cursor"] != run.next_cursor:
                 return False
-            for article_id, revision_id in items:
+            for article_id, revision_id, source_version, public_revision in items:
                 connection.execute(
                     """
-                    insert into ai_kb_reconciliation_seen (run_id, article_id, revision_id)
-                    values (%s, %s, %s)
-                    on conflict (run_id, article_id) do update set revision_id = excluded.revision_id
+                    insert into ai_kb_reconciliation_seen (
+                        run_id, article_id, revision_id, source_version, public_revision
+                    ) values (%s, %s, %s, %s, %s)
+                    on conflict (run_id, article_id) do update set
+                        revision_id = excluded.revision_id,
+                        source_version = excluded.source_version,
+                        public_revision = excluded.public_revision
                     """,
-                    (run.run_id, article_id, revision_id),
+                    (run.run_id, article_id, revision_id, source_version, public_revision),
                 )
             connection.execute(
                 """
@@ -1560,6 +1806,20 @@ class Repository:
                 (next_cursor, len(items), run.run_id),
             )
             if next_cursor is None:
+                connection.execute(
+                    """
+                    delete from ai_kb_chunks chunk
+                    using ai_kb_revisions revision
+                    where revision.workspace_key = %s and revision.status = 'PUBLIC'
+                      and chunk.article_id = revision.article_id and chunk.revision_id = revision.revision_id
+                      and not exists (
+                          select 1 from ai_kb_reconciliation_seen seen
+                          where seen.run_id = %s and seen.article_id = revision.article_id
+                            and seen.revision_id = revision.revision_id
+                      )
+                    """,
+                    (run.workspace_key, run.run_id),
+                )
                 connection.execute(
                     """
                     update ai_kb_revisions revision
@@ -1576,12 +1836,176 @@ class Repository:
                 connection.execute(
                     """
                     update ai_kb_reconciliation_runs
-                    set status = 'SUCCEEDED', completed_at = clock_timestamp(), last_error_code = null
+                    set status = 'INDEXING', completed_at = clock_timestamp(), last_error_code = null
                     where run_id = %s
                     """,
                     (run.run_id,),
                 )
         return True
+
+    def try_publish_index_generation(self, workspace_key: str) -> bool | None:
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "select pg_advisory_xact_lock(hashtext('ai-kb-generation'), hashtext(%s))",
+                (workspace_key,),
+            )
+            run = connection.execute(
+                """
+                select run_id, snapshot_token, snapshot_expires_at, canonical_corpus_revision, item_count
+                from ai_kb_reconciliation_runs
+                where workspace_key = %s and status = 'INDEXING'
+                order by started_at desc, run_id desc limit 1
+                for update
+                """,
+                (workspace_key,),
+            ).fetchone()
+            if run is None:
+                return None
+            if run["snapshot_expires_at"] <= now or run["canonical_corpus_revision"] is None:
+                error_code = (
+                    "CORPUS_REVISION_UNKNOWN"
+                    if run["canonical_corpus_revision"] is None
+                    else "SNAPSHOT_EXPIRED"
+                )
+                connection.execute(
+                    """
+                    update ai_kb_reconciliation_runs
+                    set status = 'FAILED', last_error_code = %s
+                    where run_id = %s
+                    """,
+                    (error_code, run["run_id"]),
+                )
+                return False
+            job_counts = connection.execute(
+                """
+                select
+                    count(*) filter (where job.status in ('PENDING', 'LEASED')) as pending,
+                    count(*) filter (where job.status = 'DEAD') as dead
+                from ai_kb_article_state state
+                join ai_kb_index_jobs job on job.event_id = state.event_id
+                where state.workspace_key = %s
+                """,
+                (workspace_key,),
+            ).fetchone()
+            if job_counts["dead"]:
+                connection.execute(
+                    """
+                    update ai_kb_reconciliation_runs
+                    set status = 'FAILED', last_error_code = 'INDEX_JOB_DEAD'
+                    where run_id = %s
+                    """,
+                    (run["run_id"],),
+                )
+                return False
+            if job_counts["pending"]:
+                return False
+            seen_count = connection.execute(
+                "select count(*) as count from ai_kb_reconciliation_seen where run_id = %s",
+                (run["run_id"],),
+            ).fetchone()["count"]
+            mismatch = seen_count != run["item_count"] or connection.execute(
+                """
+                select exists (
+                    select 1
+                    from ai_kb_reconciliation_seen seen
+                    left join ai_kb_article_state state
+                      on state.workspace_key = %s and state.article_id = seen.article_id
+                    left join ai_kb_index_jobs job on job.event_id = state.event_id
+                    left join ai_kb_revisions revision
+                      on revision.workspace_key = %s and revision.article_id = seen.article_id
+                     and revision.revision_id = seen.revision_id
+                    where seen.run_id = %s and (
+                        seen.source_version is null or seen.public_revision is null
+                        or state.action is distinct from 'UPSERT'
+                        or state.source_version is distinct from seen.source_version
+                        or job.status is distinct from 'SUCCEEDED'
+                        or job.revision_id is distinct from seen.revision_id
+                        or job.public_revision is distinct from seen.public_revision
+                        or revision.status is distinct from 'PUBLIC'
+                        or revision.public_revision is distinct from seen.public_revision
+                        or not exists (
+                            select 1 from ai_kb_chunks chunk
+                            where chunk.workspace_key = %s and chunk.article_id = seen.article_id
+                              and chunk.revision_id = seen.revision_id
+                        )
+                    )
+                ) or exists (
+                    select 1 from ai_kb_revisions revision
+                    where revision.workspace_key = %s and revision.status = 'PUBLIC'
+                      and not exists (
+                          select 1 from ai_kb_reconciliation_seen seen
+                          where seen.run_id = %s and seen.article_id = revision.article_id
+                            and seen.revision_id = revision.revision_id
+                      )
+                ) as mismatch
+                """,
+                (
+                    workspace_key,
+                    workspace_key,
+                    run["run_id"],
+                    workspace_key,
+                    workspace_key,
+                    run["run_id"],
+                ),
+            ).fetchone()["mismatch"]
+            if mismatch:
+                connection.execute(
+                    """
+                    update ai_kb_reconciliation_runs
+                    set status = 'FAILED', last_error_code = 'INDEX_STATE_MISMATCH'
+                    where run_id = %s
+                    """,
+                    (run["run_id"],),
+                )
+                return False
+            current = connection.execute(
+                "select generation from ai_kb_published_generations where workspace_key = %s for update",
+                (workspace_key,),
+            ).fetchone()
+            generation = (current["generation"] if current else 0) + 1
+            connection.execute(
+                """
+                insert into ai_kb_published_generations (
+                    workspace_key, generation, canonical_corpus_revision,
+                    reconciliation_run_id, snapshot_token, published_at
+                ) values (%s, %s, %s, %s, %s, %s)
+                on conflict (workspace_key) do update set
+                    generation = excluded.generation,
+                    canonical_corpus_revision = excluded.canonical_corpus_revision,
+                    reconciliation_run_id = excluded.reconciliation_run_id,
+                    snapshot_token = excluded.snapshot_token,
+                    published_at = excluded.published_at
+                """,
+                (
+                    workspace_key,
+                    generation,
+                    run["canonical_corpus_revision"],
+                    run["run_id"],
+                    run["snapshot_token"],
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                update ai_kb_reconciliation_runs
+                set status = 'SUCCEEDED', published_generation = %s, last_error_code = null
+                where run_id = %s
+                """,
+                (generation, run["run_id"]),
+            )
+            return True
+
+    def current_published_index_generation(self, workspace_key: str) -> PublishedIndexGeneration | None:
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """
+                select generation, canonical_corpus_revision
+                from ai_kb_published_generations where workspace_key = %s
+                """,
+                (workspace_key,),
+            ).fetchone()
+        return PublishedIndexGeneration(**row) if row else None
 
     def fail_reconciliation(self, run_id: UUID, error_code: str) -> None:
         with self.database.transaction() as connection:

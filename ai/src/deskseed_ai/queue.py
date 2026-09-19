@@ -209,7 +209,8 @@ class StreamRuntime:
                 model = self.settings.model_standard if claim.feature == Feature.REPLY_DRAFT else self.settings.model_fast
                 if model not in {policy.fastModelAlias, policy.standardModelAlias}:
                     raise BackendPolicyDisabledError("configured model alias differs from backend policy")
-                cache_key = exact_result_cache_key(claim, policy, model, self.settings)
+                published_index = self.repository.current_published_index_generation(claim.workspace_key)
+                cache_key = exact_result_cache_key(claim, policy, model, self.settings, published_index)
                 if cache_key is not None:
                     current = self.backend.read_context_revision(claim.job_id)
                     if (
@@ -219,9 +220,42 @@ class StreamRuntime:
                     ):
                         raise BackendSupersededError("context changed before cache lookup")
                     current_policy = self.backend.read_policy(claim.feature.value)
-                    current_cache_key = exact_result_cache_key(claim, current_policy, model, self.settings)
-                    if current_cache_key == cache_key and self.repository.complete_from_cache(claim, cache_key.digest):
-                        return
+                    current_index = self.repository.current_published_index_generation(claim.workspace_key)
+                    current_cache_key = exact_result_cache_key(
+                        claim, current_policy, model, self.settings, current_index
+                    )
+                    if current_cache_key == cache_key:
+                        if claim.feature == Feature.REPLY_DRAFT:
+                            candidate = self.repository.read_reply_cache_candidate(claim, cache_key.digest)
+                            if candidate is not None:
+                                authorized = self.backend.authorize_citations(
+                                    claim.job_id, candidate.result.citations
+                                )
+                                if authorized != candidate.result.citations:
+                                    self.repository.invalidate_result_cache(
+                                        cache_key.digest, "CITATION_STALE"
+                                    )
+                                else:
+                                    final_revision = self.backend.read_context_revision(claim.job_id)
+                                    final_policy = self.backend.read_policy(claim.feature.value)
+                                    final_index = self.repository.current_published_index_generation(
+                                        claim.workspace_key
+                                    )
+                                    final_cache_key = exact_result_cache_key(
+                                        claim, final_policy, model, self.settings, final_index
+                                    )
+                                    if (
+                                        final_revision.contextRevision == claim.context_revision
+                                        and final_revision.aiInputRevision == claim.ai_input_revision
+                                        and final_revision.inputPolicyVersion == claim.input_policy_version
+                                        and final_cache_key == cache_key
+                                        and self.repository.complete_reply_from_cache(
+                                            claim, cache_key.digest, candidate
+                                        )
+                                    ):
+                                        return
+                        elif self.repository.complete_from_cache(claim, cache_key.digest):
+                            return
                 context = _bounded_context(context, claim.feature)
                 if claim.feature == Feature.REPLY_DRAFT:
                     query = reply_query(context)
@@ -301,7 +335,10 @@ class StreamRuntime:
                 ):
                     raise BackendSupersededError("context changed before result commit")
                 final_policy = self.backend.read_policy(claim.feature.value)
-                final_cache_key = exact_result_cache_key(claim, final_policy, model, self.settings)
+                final_index = self.repository.current_published_index_generation(claim.workspace_key)
+                final_cache_key = exact_result_cache_key(
+                    claim, final_policy, model, self.settings, final_index
+                )
                 if generated is None:
                     self.repository.complete_needs_review(claim, "NO_APPROVED_KNOWLEDGE", cost)
                     return

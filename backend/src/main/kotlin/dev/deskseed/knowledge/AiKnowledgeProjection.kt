@@ -14,6 +14,7 @@ data class AiPublicKnowledgeManifestItem(
 data class AiPublicKnowledgeManifestPage(
     val snapshotToken: UUID,
     val expiresAt: Instant,
+    val canonicalPublicCorpusRevision: Long,
     val items: List<AiPublicKnowledgeManifestItem>,
     val nextCursor: UUID?,
 )

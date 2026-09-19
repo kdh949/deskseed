@@ -102,10 +102,15 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [snapshotToken, expiresAt, nextCursor, items]
+                required: [snapshotToken, expiresAt, canonicalPublicCorpusRevision, nextCursor, items]
                 properties:
                   snapshotToken: {type: string, format: uuid}
                   expiresAt: {type: string, format: date-time}
+                  canonicalPublicCorpusRevision:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                    description: 이 immutable manifest snapshot이 대표하는 Backend 전체 PUBLIC KB 코퍼스 리비전입니다.
                   nextCursor: {type: [string, 'null'], format: uuid}
                   items:
                     type: array
@@ -298,7 +303,7 @@ components:
     AiPolicy:
       type: object
       additionalProperties: false
-      required: [enabled, features, fastModelAlias, standardModelAlias, version, updatedAt, dataAsOf]
+      required: [enabled, features, fastModelAlias, standardModelAlias, version, updatedAt, dataAsOf, canonicalPublicCorpusRevision]
       properties:
         enabled: {type: boolean}
         features:
@@ -309,3 +314,8 @@ components:
         version: {type: integer, format: int64, minimum: 0}
         updatedAt: {type: string, format: date-time}
         dataAsOf: {type: string, format: date-time}
+        canonicalPublicCorpusRevision:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 현재 Backend 전체 PUBLIC KB 코퍼스 리비전이며 reply 결과 재사용 전 published AI index와 exact match해야 합니다.
