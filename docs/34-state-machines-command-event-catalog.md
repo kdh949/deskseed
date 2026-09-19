@@ -478,4 +478,17 @@ Backend ACCEPTED
 
 Provider prompt cache는 AI job state나 결과 cache가 아니다. 실제 generation call의 repository-owned static instruction prefix만 explicit breakpoint로 표시하며 1,024 reviewed tokens 미만이면 transport option을 보내지 않는다. cache write/read도 같은 provider call receipt와 reservation/settlement에 포함되고, miss·UNKNOWN은 별도 retry나 job lifecycle 전이를 만들지 않는다.
 
+PUBLIC KB embedding artifact는 article/revision binding과 분리된 immutable derived vector다. exact model snapshot·dimension·normalization·final input key만 hit이며 mutable model alias는 production snapshot으로 쓰지 않는다. synchronous array 하나는 provider call/receipt 하나이고 response index의 complete unique mapping 후에만 vector artifact를 bind한다. 이미 정산된 earlier array cost는 later failure나 source withdrawal로 지우지 않는다.
+
+```text
+Offline embedding Batch
+  PREPARING -> UPLOADING -> SUBMITTING -> IN_PROGRESS -> FINALIZING
+     -> COMPLETED
+     -> CLEANUP_PENDING -> COMPLETED
+     -> CANCELLING -> CANCELLED | FINALIZING
+     -> FAILED | EXPIRED
+```
+
+Offline Batch는 initial/full PUBLIC KB build, selected historical reindex와 evaluation 전용이다. upload/submit/poll/download/finalize/delete intent와 provider identity를 durable하게 기록한다. cancel은 terminal acknowledgement가 아니며 late/partial output의 usage를 계속 정산한다. every expected custom ID가 success/failed/unknown으로 분류되고 file deletion이 acknowledgement 또는 durable cleanup retry로 넘어가야 lifecycle이 수렴한다. stale/withdrawn PUBLIC source result는 current index에 bind하지 않는다.
+
 PUBLIC knowledge index events are body-free and exact-revision keyed. Publish/unpublish/audience changes and their Backend outbox intent share the knowledge transaction. The indexer fetches content only through its direction-specific `INTEGRATION_CLIENT` credential; source disappearance cannot be treated as a successful stale index refresh.

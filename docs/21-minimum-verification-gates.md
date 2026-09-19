@@ -1131,6 +1131,27 @@ Ticket, update, interval, SLA, automation and integration facts reconcile to det
 - receipt는 `OFF | INELIGIBLE | REQUESTED`, prefix token count, key version과 provider usage bucket만 저장한다. raw key/prompt/content digest는 log, metric, trace, Langfuse, audit, DB에 없다.
 - 비교는 uncached input, cache write/read, output, UNKNOWN과 latency를 모두 포함한다. fake/intercepted transport나 hit rate만으로 비용 절감을 주장하지 않는다.
 
+### AI-EMBED-001 — Exact embedding artifact reuse and bounded arrays
+
+- reusable key는 immutable model snapshot, dimension, normalization version과 title/category/section/body를 포함한 exact final embedding input의 canonical encoding으로 계산하며 raw input은 저장하지 않는다.
+- mutable model alias, test namespace, 다른 dimension/normalization/input digest와 malformed vector는 production hit가 아니다. production `intent`는 reviewed immutable snapshot 없이는 시작하지 않는다.
+- missing input만 provider보다 작은 typed bound의 배열로 보내고, response index는 `0..n-1`을 unique/complete하게 덮으며 모든 vector dimension이 일치한다.
+- 한 배열은 하나의 reservation/call/receipt/total usage로 정산한다. 청크별 추정 allocation을 canonical actual cost로 사용하거나 같은 call ID를 중복 합산하지 않는다.
+- successful earlier call cost는 later array failure, source withdrawal, lease loss 또는 publication failure에도 남는다. delivery ambiguity는 `UNKNOWN`이다.
+- artifact insert/bind는 exact current PUBLIC source와 index build fencing을 다시 확인하고 concurrent insert는 immutable canonical vector에 수렴한다.
+- query embedding, customer conversation, raw input/vector/key/digest/identifier는 reusable cache나 log/metric/trace/Langfuse metadata에 들어가지 않는다.
+
+### AI-BATCH-001 — Durable offline embedding Batch
+
+- provider Batch는 initial/full PUBLIC KB build, selected historical reindex와 offline evaluation만 허용하고 interactive query/reply/rewrite/context-memory 경로에서는 upload/submit 0회다.
+- mode는 별도 `off | test | intent`, 기본 `off`, production `test` 금지이며 provider data-control/file cleanup과 paid budget 승인이 없는 production `intent`는 fail closed다.
+- immutable manifest와 bounded unique content-free custom ID가 every expected result를 식별하며 provider batch/file IDs, status timestamps, request counts와 cleanup intent가 durable하다.
+- upload/submit/poll/download/finalize/delete crash와 duplicate delivery가 하나의 manifest에 수렴하고 partial/cancel/late output의 success, failure와 UNKNOWN 비용을 0원 또는 optimistic release로 처리하지 않는다.
+- result mapping은 expected custom ID를 exact-once로 분류한다. vector bind 직전에 build lease/model snapshot/current PUBLIC source를 재검증하고 stale/withdrawn result는 비용만 보존한다.
+- input/output/error file은 terminal reconciliation 뒤 delete acknowledgement까지 bounded retry와 `CLEANUP_PENDING` backlog로 추적하며 즉시 물리 삭제를 주장하지 않는다.
+- Batch 가격은 standard sync catalog와 분리된 immutable version이며 unsupported endpoint/model/tier/window와 provider보다 작은 typed request/input/byte limit 위반은 upload 전에 거부한다.
+- fake/intercepted SDK는 lifecycle/shape/accounting 증거일 뿐 live discount, completion time, quality 또는 savings 증거가 아니다.
+
 ### AI-KB-001 — Public revision indexing and retrieval
 
 - category/section active, PUBLISHED, PUBLIC, current revision/audienceVersion을 후보 SQL 전에 적용하고 LLM 전·result commit·Backend GET에서 재검증한다.

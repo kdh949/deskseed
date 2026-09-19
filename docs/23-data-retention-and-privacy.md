@@ -145,6 +145,15 @@ copied into routine authentication audit or customer ticket-list projections.
 - provider cache state는 Deskseed DB, audit, backup, Langfuse로 복제하지 않는다. call receipt에는 bounded plan status/token count/key version과 provider usage bucket만 남긴다;
 - provider TTL은 물리 삭제 시각 보장이 아니므로 즉시 삭제를 주장하지 않는다. data residency 또는 zero-retention 요구와 충돌하면 prompt cache를 `off`로 유지한다.
 
+## 6.3 AI PUBLIC KB embedding artifacts and provider Batch files
+
+- reusable embedding artifact는 PUBLIC KB final input의 derived vector와 content-free contract metadata만 저장한다. raw title/body/final input은 artifact table, receipt, ordinary log, trace, Langfuse와 audit evidence에 저장하지 않는다;
+- source withdrawal은 current publication/chunk query binding을 즉시 끊는다. vector artifact와 immutable index history는 기존 PUBLIC KB index retention을 따르며 primary DB page와 backup에서 즉시 물리 삭제됐다고 주장하지 않는다;
+- provider Batch input/output/error file bytes는 Deskseed DB나 backup에 복제하지 않는다. manifest/custom ID/lifecycle/cost/cleanup metadata만 durable하게 저장한다;
+- terminal reconciliation은 모든 provider file의 delete intent를 만들고 acknowledgement까지 bounded retry한다. delete failure는 content-free `CLEANUP_PENDING` backlog count/age로 운영자에게 보이며 result cost settlement를 지우지 않는다;
+- provider delete acknowledgement는 physical media, abuse-monitoring copy 또는 backup의 즉시 삭제 증거가 아니다. reviewed provider project/data-control policy가 없으면 offline Batch production `intent`를 허용하지 않는다;
+- mutable model alias만 있는 경우 reusable vector production `intent`를 허용하지 않는다. test artifact namespace는 production과 분리하고 normal retention/cleanup 대상이다.
+
 Platform idempotency rows store a SHA-256 key representation and canonical request hash, never the raw `Idempotency-Key` or Authorization
 value. Exact replay requires a bounded response copy, which can contain ticket subject or an INTERNAL comment response; it receives the
 7-day default expiry and is not exposed through a retrieval/list endpoint. An expiry-indexed cleanup job deletes at most 500 rows per run by
