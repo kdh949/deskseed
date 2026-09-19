@@ -536,6 +536,12 @@ components:
       - requestRevision
       - createdAt
       title: FeedbackRequest
+    GenerationMode:
+      type: string
+      enum:
+      - REUSE_OR_CREATE
+      - NEW_CANDIDATE
+      title: GenerationMode
     GenerationProvenance:
       properties:
         modelAlias:
@@ -660,6 +666,7 @@ components:
           enum:
           - 1
           - 2
+          - 3
           title: Schemaversion
         eventId:
           type: string
@@ -713,6 +720,22 @@ components:
             - reply-input-v1
           - type: 'null'
           title: Inputpolicyversion
+        generationMode:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationMode'
+          - type: 'null'
+        candidateId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Candidateid
+        candidateSequence:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Candidatesequence
         dataClass:
           type: string
           const: PUBLIC_ONLY
@@ -867,6 +890,28 @@ components:
           - type: integer
           - type: 'null'
           title: Costmicrousd
+        generationMode:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationMode'
+          - type: 'null'
+        candidateSequence:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Candidatesequence
+        reuseKind:
+          anyOf:
+          - type: string
+            enum:
+            - GENERATED
+            - CACHE_HIT
+            - COALESCED
+          - type: 'null'
+          title: Reusekind
+        providerDispatched:
+          type: boolean
+          title: Providerdispatched
+          default: false
       additionalProperties: false
       type: object
       required:

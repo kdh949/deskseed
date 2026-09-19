@@ -8199,7 +8199,9 @@ paths:
       summary: 티켓 AI 작업 접수
       description: 현재 staffSession actor와 티켓 읽기 권한을 확인하고, feature별 PUBLIC comment projection의 revision을 계산한 뒤 ai_request·본문
         없는 integration outbox·필수 API_RESOURCE_READ access audit를 한 transaction으로 저장합니다. Idempotency-Key namespace는 workspace와
-        현재 staff actor에 귀속되며 같은 canonical request는 기존 job을 반환하고 다른 request는 409입니다. 성공은 AI 실행 완료가 아니라 Backend ACCEPTED를 뜻합니다.
+        현재 staff actor에 귀속되며 같은 canonical request는 기존 job을 반환하고 다른 request는 409입니다. generationMode를 생략하면 기존처럼 새 작업을 생성하고,
+        REUSE_OR_CREATE는 같은 입력의 완료 결과나 진행 실행을 재사용하며, NEW_CANDIDATE는 cache/shared execution을 우회하는 서버 발급 후보를 만듭니다. 같은 입력의 NEW_CANDIDATE는
+        24시간에 2개까지이며 초과하면 Retry-After를 포함한 429입니다. 성공은 AI 실행 완료가 아니라 Backend ACCEPTED를 뜻합니다.
       x-deskseed-contract-status: FROZEN
       x-deskseed-phase: AI_V1_A
       x-deskseed-requirements:
@@ -8227,6 +8229,7 @@ paths:
             example:
               feature: ticket.reply_draft
               expectedTicketVersion: 7
+              generationMode: REUSE_OR_CREATE
               options:
                 language: ko
                 tone: calm
@@ -19440,6 +19443,8 @@ components:
           format: int64
           minimum: 0
           description: 상담사가 보고 있는 티켓 version입니다. PUBLIC contextRevision은 댓글 변경을 별도로 탐지합니다.
+        generationMode:
+          $ref: '#/components/schemas/AiGenerationMode'
         options:
           type: object
           additionalProperties: false
@@ -19462,9 +19467,17 @@ components:
       example:
         feature: ticket.reply_draft
         expectedTicketVersion: 7
+        generationMode: REUSE_OR_CREATE
         options:
           language: ko
           tone: calm
+    AiGenerationMode:
+      type: string
+      enum:
+      - REUSE_OR_CREATE
+      - NEW_CANDIDATE
+      description: REUSE_OR_CREATE는 현재 권한과 입력이 같은 완료 결과 또는 진행 실행을 재사용하고 없으면 생성합니다. NEW_CANDIDATE는 서버가 새 candidate identity를
+        발급해 이전 cache와 진행 실행을 우회합니다. 필드 생략은 기존 클라이언트의 신규 생성 의미를 유지합니다.
     AiJobReceipt:
       type: object
       additionalProperties: false
@@ -19591,6 +19604,19 @@ components:
           - 'null'
           format: int64
           minimum: 0
+          description: 현재 logical job에 새로 귀속된 비용입니다. cache hit와 coalesced follower는 0입니다.
+        generationMode:
+          $ref: '#/components/schemas/AiGenerationMode'
+        candidateSequence:
+          type: integer
+          minimum: 1
+        reuseKind:
+          type: string
+          enum:
+          - GENERATED
+          - CACHE_HIT
+          - COALESCED
+          description: 생성, 완료 cache 재사용, 진행 shared execution 결합 중 현재 job의 결과 경로입니다.
     AiSummaryResult:
       type: object
       additionalProperties: false

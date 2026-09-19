@@ -3,8 +3,15 @@ package dev.deskseed.staffaccess.internal
 import dev.deskseed.aiassistance.AiBackendRequestStatus
 import dev.deskseed.aiassistance.AiExecutionStatusReader
 import dev.deskseed.aiassistance.AiGenerationProvenance
+import dev.deskseed.aiassistance.AiFeature
+import dev.deskseed.aiassistance.AiGenerationMode
 import dev.deskseed.aiassistance.AiJobReceipt
+import dev.deskseed.aiassistance.AiRequestMetadata
+import dev.deskseed.aiassistance.AiRequestRateLimitedException
+import dev.deskseed.aiassistance.AiRequestService
+import dev.deskseed.aiassistance.AiStaffActor
 import dev.deskseed.aiassistance.AiSummaryResult
+import dev.deskseed.aiassistance.CreateAiRequestCommand
 import dev.deskseed.aiassistance.internal.LEGACY_AI_CONTEXT_POLICY_VERSION
 import dev.deskseed.aiassistance.internal.computeAiInputRevision
 import dev.deskseed.aiassistance.internal.computeAiContextRevision
@@ -33,6 +40,8 @@ import org.mockito.Mockito
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 @DeskseedSpringIntegrationTest(
     properties = [
@@ -49,6 +58,7 @@ class AgentAiRequestIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbcTemplate: JdbcTemplate
     @Autowired private lateinit var ticketStore: StaffTicketReadStore
+    @Autowired private lateinit var requestService: AiRequestService
     @Autowired private lateinit var databaseCleaner: dev.deskseed.testsupport.integration.StaffTicketTestDatabaseCleaner
     @MockitoBean private lateinit var executionStatusReader: AiExecutionStatusReader
 
@@ -100,6 +110,188 @@ class AgentAiRequestIntegrationTest {
             .isZero()
         assertThat(count("select count(*) from access_audit_events where action = 'API_RESOURCE_READ' and actor_type = 'STAFF'"))
             .isEqualTo(1)
+    }
+
+    @Test
+    fun `generation intent keeps legacy shape and emits strict v3 candidate identities`() {
+        val fixture = fixture(9112)
+        val session = login(fixture.email, PASSWORD)
+
+        val legacy = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-generation-legacy-0001",
+            requestBody("ticket.summary"),
+        ).andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.generationMode").doesNotExist())
+            .andExpect(jsonPath("$.candidateSequence").doesNotExist())
+            .andReturn().response.contentAsString
+
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-generation-reuse-0001",
+            requestBody("ticket.summary", generationMode = "REUSE_OR_CREATE"),
+        ).andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.generationMode").value("REUSE_OR_CREATE"))
+            .andExpect(jsonPath("$.candidateSequence").doesNotExist())
+
+        val candidate = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-generation-candidate-0001",
+            requestBody("ticket.summary", generationMode = "NEW_CANDIDATE"),
+        ).andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.generationMode").value("NEW_CANDIDATE"))
+            .andExpect(jsonPath("$.candidateSequence").value(1))
+            .andReturn().response.contentAsString
+        val repeated = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-generation-candidate-0001",
+            requestBody("ticket.summary", generationMode = "NEW_CANDIDATE"),
+        ).andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.candidateSequence").value(1))
+            .andReturn().response.contentAsString
+
+        assertThat(uuidField(repeated, "jobId")).isEqualTo(uuidField(candidate, "jobId"))
+        assertThat(count("select count(*) from ai_requests")).isEqualTo(3)
+        val payloads = jdbcTemplate.queryForList(
+            "select payload_json::text from ai_integration_outbox where event_type = 'JOB_REQUESTED' order by created_at",
+            String::class.java,
+        ).filterNotNull()
+        assertThat(payloads.single { it.contains(uuidField(legacy, "jobId").toString()) })
+            .contains("\"schemaVersion\": 2")
+            .doesNotContain("generationMode", "candidateId", "candidateSequence")
+        assertThat(payloads.single { it.contains(uuidField(candidate, "jobId").toString()) })
+            .contains("\"schemaVersion\": 3")
+            .contains("\"generationMode\": \"NEW_CANDIDATE\"")
+            .contains("\"candidateSequence\": 1")
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select generation_mode, candidate_id, candidate_sequence from ai_requests where job_id = ?",
+                uuidField(candidate, "jobId"),
+            ),
+        ).containsEntry("generation_mode", "NEW_CANDIDATE")
+            .containsEntry("candidate_sequence", 1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select candidate_id is not null from ai_requests where job_id = ?",
+                Boolean::class.java,
+                uuidField(candidate, "jobId"),
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun `new candidate quota refunds only a definitive pre-dispatch failure`() {
+        val fixture = fixture(9113)
+        val session = login(fixture.email, PASSWORD)
+        val first = createCandidate(session, fixture, "ai-candidate-quota-0001")
+        val second = createCandidate(session, fixture, "ai-candidate-quota-0002")
+
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-candidate-quota-0003",
+            requestBody("ticket.summary", generationMode = "NEW_CANDIDATE"),
+        ).andExpect(status().isTooManyRequests)
+            .andExpect(header().exists("Retry-After"))
+
+        Mockito.`when`(executionStatusReader.read(first.jobId, false)).thenReturn(
+            failedCandidateReceipt(first, providerDispatched = true),
+        )
+        mockMvc.perform(
+            get("/api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}", fixture.number, first.jobId).session(session),
+        ).andExpect(status().isOk)
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-candidate-quota-0004",
+            requestBody("ticket.summary", generationMode = "NEW_CANDIDATE"),
+        ).andExpect(status().isTooManyRequests)
+
+        Mockito.`when`(executionStatusReader.read(second.jobId, false)).thenReturn(
+            failedCandidateReceipt(second, providerDispatched = false),
+        )
+        repeat(2) {
+            mockMvc.perform(
+                get("/api/v1/agent/tickets/{ticketNumber}/ai/jobs/{jobId}", fixture.number, second.jobId).session(session),
+            ).andExpect(status().isOk)
+        }
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-candidate-quota-0005",
+            requestBody("ticket.summary", generationMode = "NEW_CANDIDATE"),
+        ).andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.candidateSequence").value(3))
+
+        assertThat(count("select count(*) from ai_requests where candidate_quota_refunded_at is not null"))
+            .isEqualTo(1)
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select candidate_quota_refunded_at is null from ai_requests where job_id = ?",
+                Boolean::class.java,
+                first.jobId,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun `twenty concurrent new candidate requests atomically admit only two`() {
+        val fixture = fixture(9114)
+        val executor = Executors.newFixedThreadPool(20)
+        val outcomes = try {
+            executor.invokeAll(
+                (1..20).map { index ->
+                    Callable {
+                        try {
+                            requestService.create(
+                                CreateAiRequestCommand(
+                                    ticketNumber = fixture.number,
+                                    feature = AiFeature.TICKET_SUMMARY,
+                                    expectedTicketVersion = 0,
+                                    options = emptyMap(),
+                                    generationMode = AiGenerationMode.NEW_CANDIDATE,
+                                    idempotencyKey = "ai-concurrent-candidate-${index.toString().padStart(4, '0')}",
+                                    actor = AiStaffActor(fixture.staffId, "AI 상담사", "v1:${"a".repeat(43)}"),
+                                    metadata = AiRequestMetadata(
+                                        requestId = "concurrent-request-$index",
+                                        correlationId = "concurrent-correlation-$index",
+                                        ipAddress = "127.0.0.1",
+                                        userAgent = "integration-test",
+                                    ),
+                                ),
+                            )
+                            "ACCEPTED"
+                        } catch (_: AiRequestRateLimitedException) {
+                            "RATE_LIMITED"
+                        }
+                    }
+                },
+            ).map { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        assertThat(outcomes.count { it == "ACCEPTED" }).isEqualTo(2)
+        assertThat(outcomes.count { it == "RATE_LIMITED" }).isEqualTo(18)
+        assertThat(count("select count(*) from ai_requests where generation_mode = 'NEW_CANDIDATE'"))
+            .isEqualTo(2)
+        assertThat(
+            jdbcTemplate.queryForList(
+                "select candidate_sequence from ai_requests order by candidate_sequence",
+                Int::class.java,
+            ).filterNotNull(),
+        ).containsExactly(1, 2)
     }
 
     @Test
@@ -528,8 +720,45 @@ class AgentAiRequestIntegrationTest {
             .header("X-Deskseed-AI-Key-Id", "test-ai-key"),
     )
 
-    private fun requestBody(feature: String, options: String = "{}") =
-        """{"feature":"$feature","expectedTicketVersion":0,"options":$options}"""
+    private fun requestBody(feature: String, options: String = "{}", generationMode: String? = null): String {
+        val intent = generationMode?.let { ",\"generationMode\":\"$it\"" }.orEmpty()
+        return """{"feature":"$feature","expectedTicketVersion":0,"options":$options$intent}"""
+    }
+
+    private fun createCandidate(session: MockHttpSession, fixture: Fixture, key: String): CandidateReceipt {
+        val response = create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            key,
+            requestBody("ticket.summary", generationMode = "NEW_CANDIDATE"),
+        ).andExpect(status().isAccepted).andReturn().response.contentAsString
+        return CandidateReceipt(
+            jobId = uuidField(response, "jobId"),
+            contextRevision = stringField(response, "contextRevision"),
+            sequence = Regex("\"candidateSequence\":(\\d+)").find(response)!!.groupValues[1].toInt(),
+        )
+    }
+
+    private fun failedCandidateReceipt(candidate: CandidateReceipt, providerDispatched: Boolean): AiJobReceipt {
+        val now = Instant.now()
+        return AiJobReceipt(
+            jobId = candidate.jobId,
+            feature = "ticket.summary",
+            status = AiBackendRequestStatus.FAILED,
+            requestRevision = 1,
+            createdAt = now.minusSeconds(1),
+            deadlineAt = now.plusSeconds(60),
+            pollAfterMs = 750,
+            cancelRequested = false,
+            contextRevision = candidate.contextRevision,
+            contextPolicyVersion = "public-comments-v2",
+            errorCode = "PROVIDER_REJECTED",
+            generationMode = "NEW_CANDIDATE",
+            candidateSequence = candidate.sequence,
+            providerDispatched = providerDispatched,
+        )
+    }
 
     private fun fixture(number: Long): Fixture {
         val email = "ai-agent-$number@example.com"
@@ -638,6 +867,12 @@ class AgentAiRequestIntegrationTest {
         val number: Long,
         val email: String,
         val subject: String,
+    )
+
+    private data class CandidateReceipt(
+        val jobId: UUID,
+        val contextRevision: String,
+        val sequence: Int,
     )
 
     private companion object {

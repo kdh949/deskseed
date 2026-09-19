@@ -17,6 +17,7 @@ from .schemas import (
     CancellationEnvelope,
     Feature,
     FeedbackRequest,
+    GenerationMode,
     GenerationProvenance,
     IndexEvent,
     JobEnvelope,
@@ -110,6 +111,9 @@ class ClaimedJob:
     traceparent: str | None
     deadline_at: datetime
     options: dict[str, str]
+    generation_mode: GenerationMode | None = None
+    candidate_id: UUID | None = None
+    candidate_sequence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -200,10 +204,11 @@ class Repository:
                     status, phase, generation, lease_epoch, request_revision, cancel_requested,
                     context_revision, context_policy_version, input_scope, options_json,
                     ai_input_revision, input_policy_version,
+                    generation_mode, candidate_id, candidate_sequence,
                     request_fingerprint, traceparent, tracestate, created_at, deadline_at, updated_at
                 ) values (
                     %s, %s, %s, %s, %s, %s, %s, %s, 1, 0, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
                 (
@@ -223,6 +228,9 @@ class Repository:
                     Jsonb(envelope.options),
                     envelope.aiInputRevision,
                     envelope.inputPolicyVersion,
+                    envelope.generationMode.value if envelope.generationMode else None,
+                    envelope.candidateId,
+                    envelope.candidateSequence,
                     fingerprint,
                     envelope.traceparent,
                     envelope.tracestate,
@@ -329,7 +337,18 @@ class Repository:
     def get_job(self, job_id: UUID, include_result: bool = True) -> JobReceipt:
         now = datetime.now(UTC)
         with self.database.connection() as connection:
-            row = connection.execute("select * from ai_jobs where job_id = %s", (job_id,)).fetchone()
+            row = connection.execute(
+                """
+                select job.*,
+                       exists (
+                           select 1 from ai_provider_calls call
+                           where call.job_id = job.job_id
+                             and call.lifecycle_status in ('DISPATCHING', 'RESPONDED', 'UNKNOWN')
+                       ) as provider_dispatched
+                from ai_jobs job where job.job_id = %s
+                """,
+                (job_id,),
+            ).fetchone()
         if not row:
             raise NotFoundError("job not found")
         result = None
@@ -383,6 +402,12 @@ class Repository:
                 else None
             ),
             costMicrousd=row["cost_microusd"],
+            generationMode=(GenerationMode(row["generation_mode"]) if row["generation_mode"] else None),
+            candidateSequence=row["candidate_sequence"],
+            reuseKind=(
+                "CACHE_HIT" if row["reuse_kind"] == "EXACT_CACHE_HIT" else row["reuse_kind"]
+            ),
+            providerDispatched=row["provider_dispatched"],
         )
 
     def claim_dispatch(self, owner: str, limit: int = 20) -> list[DispatchEvent]:
@@ -524,6 +549,9 @@ class Repository:
             context_policy_version=row["context_policy_version"],
             ai_input_revision=row["ai_input_revision"],
             input_policy_version=row["input_policy_version"],
+            generation_mode=(GenerationMode(row["generation_mode"]) if row["generation_mode"] else None),
+            candidate_id=row["candidate_id"],
+            candidate_sequence=row["candidate_sequence"],
             traceparent=row["traceparent"],
             deadline_at=row["deadline_at"],
             options=row["options_json"],
@@ -1441,7 +1469,8 @@ class Repository:
                     config_version = %s, source_comment_ids = %s, generated_at = %s,
                     source_map_digest = %s, source_chunk_ids = %s,
                     cost_microusd = %s, completed_at = %s, updated_at = %s,
-                    lease_owner = null, lease_expires_at = null, error_code = null
+                    lease_owner = null, lease_expires_at = null, error_code = null,
+                    reuse_kind = case when generation_mode is not null then 'GENERATED' else reuse_kind end
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                 """,
                 (
@@ -1608,7 +1637,8 @@ class Repository:
                     generated_at = %s, source_map_digest = %s, source_chunk_ids = %s,
                     cost_microusd = 0, completed_at = %s, updated_at = %s,
                     lease_owner = null, lease_expires_at = null, error_code = null,
-                    result_origin_job_id = %s, reuse_kind = 'EXACT_CACHE_HIT'
+                    result_origin_job_id = %s,
+                    reuse_kind = case when shared_execution_id is null then 'EXACT_CACHE_HIT' else 'COALESCED' end
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                 """,
                 (
@@ -1795,7 +1825,8 @@ class Repository:
                     generated_at = %s, source_map_digest = %s, source_chunk_ids = %s,
                     cost_microusd = 0, completed_at = %s, updated_at = %s,
                     lease_owner = null, lease_expires_at = null, error_code = null,
-                    result_origin_job_id = %s, reuse_kind = 'EXACT_CACHE_HIT'
+                    result_origin_job_id = %s,
+                    reuse_kind = case when shared_execution_id is null then 'EXACT_CACHE_HIT' else 'COALESCED' end
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                 """,
                 (

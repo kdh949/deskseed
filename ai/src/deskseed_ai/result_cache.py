@@ -8,7 +8,7 @@ from .backend_client import AiPolicy
 from .config import Settings
 from .prompting import prompt_for
 from .repository import ClaimedJob, PublishedIndexGeneration
-from .schemas import Feature
+from .schemas import Feature, GenerationMode
 
 SUMMARY_TRIAGE_CACHE_KEY_VERSION = "result-cache-summary-triage-v1"
 REPLY_CACHE_KEY_VERSION = "result-cache-reply-v1"
@@ -33,10 +33,12 @@ def exact_result_cache_key(
     published_index: PublishedIndexGeneration | None = None,
 ) -> ExactResultCacheKey | None:
     if (
-        settings.exact_result_cache_mode != "test"
+        settings.exact_result_cache_mode == "off"
         or claim.ai_input_revision is None
         or claim.input_policy_version is None
     ):
+        return None
+    if settings.exact_result_cache_mode == "intent" and claim.generation_mode != GenerationMode.REUSE_OR_CREATE:
         return None
     if claim.feature in {Feature.SUMMARY, Feature.TRIAGE}:
         key_version = SUMMARY_TRIAGE_CACHE_KEY_VERSION

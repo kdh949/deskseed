@@ -1,6 +1,8 @@
 package dev.deskseed.staffaccess.internal
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import dev.deskseed.aiassistance.AiFeature
+import dev.deskseed.aiassistance.AiGenerationMode
 import dev.deskseed.aiassistance.AiFeedbackType
 import dev.deskseed.aiassistance.AiFeedbackReceipt
 import dev.deskseed.aiassistance.AiJobReceipt
@@ -55,6 +57,7 @@ internal class AgentAiRequestController(
                 feature = AiFeature.fromValue(body.feature),
                 expectedTicketVersion = body.expectedTicketVersion,
                 options = body.options,
+                generationMode = body.generationMode,
                 idempotencyKey = idempotencyKey,
                 actor = request.actor(principal),
                 metadata = request.metadata(),
@@ -142,6 +145,7 @@ internal data class CreateAgentAiJobRequest(
     val expectedTicketVersion: Long,
     @field:Size(max = 2)
     val options: Map<@NotBlank @Size(max = 40) String, @NotBlank @Size(max = 40) String> = emptyMap(),
+    val generationMode: AiGenerationMode? = null,
 )
 
 internal data class RecordAgentAiFeedbackRequest(
@@ -174,6 +178,12 @@ internal data class AgentAiJobResponse(
     val result: dev.deskseed.aiassistance.AiTypedResult?,
     val provenance: dev.deskseed.aiassistance.AiGenerationProvenance?,
     val costMicrousd: Long?,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val generationMode: String?,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val candidateSequence: Int?,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val reuseKind: String?,
 )
 
 internal data class AgentAiJobPageResponse(val items: List<AgentAiJobResponse>)
@@ -201,4 +211,7 @@ private fun AiJobReceipt.toResponse() = AgentAiJobResponse(
     result = result,
     provenance = provenance,
     costMicrousd = costMicrousd,
+    generationMode = generationMode,
+    candidateSequence = candidateSequence,
+    reuseKind = reuseKind,
 )

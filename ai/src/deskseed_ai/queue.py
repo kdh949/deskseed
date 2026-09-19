@@ -258,7 +258,7 @@ class StreamRuntime:
                                         return
                         elif self.repository.complete_from_cache(claim, cache_key.digest):
                             return
-                if self.settings.shared_execution_mode == "test" and cache_key is not None:
+                if self.settings.shared_execution_mode != "off" and cache_key is not None:
                     shared = self.repository.claim_shared_execution(
                         claim, cache_key.digest, cache_key.version
                     )

@@ -23,6 +23,7 @@ from deskseed_ai.schemas import (
     AuthorRole,
     Citation,
     Feature,
+    GenerationMode,
     JobEnvelope,
     PublicComment,
     ReplyProviderOutput,
@@ -108,6 +109,54 @@ def test_shared_execution_is_test_only_and_requires_exact_cache() -> None:
         result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
     )
     assert settings.shared_execution_mode == "test"
+
+    production = Settings(
+        environment="production",
+        process_role="migration",
+        exact_result_cache_mode="intent",
+        shared_execution_mode="intent",
+        result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
+    )
+    assert production.shared_execution_mode == "intent"
+
+
+def test_schema_v3_generation_intent_shape_is_strict() -> None:
+    base = {
+        "schemaVersion": 3,
+        "eventId": uuid4(),
+        "jobId": uuid4(),
+        "workspaceKey": "default",
+        "requesterId": uuid4(),
+        "ticketId": uuid4(),
+        "ticketNumber": 1,
+        "feature": Feature.SUMMARY,
+        "contextRevision": "a" * 64,
+        "contextPolicyVersion": "public-comments-v2",
+        "aiInputRevision": "b" * 64,
+        "inputPolicyVersion": "summary-input-v1",
+        "dataClass": "PUBLIC_ONLY",
+        "requestRevision": 1,
+        "options": {"language": "ko"},
+        "createdAt": datetime.now(UTC),
+        "deadlineAt": datetime.now(UTC) + timedelta(minutes=1),
+    }
+    reuse = JobEnvelope.model_validate(base | {"generationMode": GenerationMode.REUSE_OR_CREATE})
+    assert reuse.candidateId is None
+    with pytest.raises(ValidationError, match="cannot contain candidate identity"):
+        JobEnvelope.model_validate(
+            base | {"generationMode": GenerationMode.REUSE_OR_CREATE, "candidateId": uuid4()}
+        )
+    with pytest.raises(ValidationError, match="server candidate identity"):
+        JobEnvelope.model_validate(base | {"generationMode": GenerationMode.NEW_CANDIDATE})
+    candidate = JobEnvelope.model_validate(
+        base
+        | {
+            "generationMode": GenerationMode.NEW_CANDIDATE,
+            "candidateId": uuid4(),
+            "candidateSequence": 1,
+        }
+    )
+    assert candidate.candidateSequence == 1
 
 
 def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
