@@ -214,6 +214,16 @@ Provider secrets are named connections/credential records.
 
 Per-agent panel width/draft/tab state is user preference, not organization setting.
 
+### 13.1 AI generation intent policy
+
+| Policy | Type | Default | Phase | Notes |
+|---|---|---|---|---|
+| `ai.generationMode` | request enum | omitted = legacy new generation | AI V1 S08a | explicit values are `REUSE_OR_CREATE` and `NEW_CANDIDATE`; caller cannot supply cache/candidate identity |
+| `ai.newCandidateLimit` | bounded integer constant | 2 per 24h | AI V1 S08a | scope is workspace/actor/ticket/feature/input revision; first reuse-or-create generation is excluded |
+| `ai.newCandidateRefund` | enum policy | `PRE_DISPATCH_FINAL_FAILURE_ONLY` | AI V1 S08a | cancel, timeout, provider-dispatch possibility and UNKNOWN do not refund |
+
+초기 S08a 값은 generic runtime setting이 아니라 versioned product contract다. 한도나 window를 변경할 때는 Core/OpenAPI, AI envelope, 관측 비교 window, 429 UI 문구를 함께 갱신한다. feature flag나 관리자 설정은 authorization, required audit, idempotency, budget을 우회할 수 없다.
+
 ## 14. Feature flags
 
 Feature flag is rollout control, not permanent business configuration.
