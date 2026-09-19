@@ -3,6 +3,10 @@ spring:
     activate:
       on-profile: personal-staging-observability
 
+deskseed:
+  search-diagnostics:
+    enabled: ${DESKSEED_SEARCH_DIAGNOSTICS_ENABLED:false}
+
 management:
   server:
     port: 9090
@@ -22,6 +26,7 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        hikaricp.connections.acquire: true
       minimum-expected-value:
         http.server.requests: 5ms
       maximum-expected-value:

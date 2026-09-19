@@ -2,6 +2,8 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.TicketAttachmentReadProjection
+import dev.deskseed.foundation.SearchDiagnostics
+import dev.deskseed.foundation.SearchPhase
 import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.CommentContentFormat
 import dev.deskseed.ticketing.DefaultStaffView
@@ -50,6 +52,7 @@ internal class StaffTicketQueryRepository(
     private val clock: Clock,
     private val objectMapper: ObjectMapper,
     private val configurationPredicates: SavedViewConfigurationPredicates,
+    private val searchDiagnostics: SearchDiagnostics,
 ) : StaffTicketReadStore {
     override fun list(
         view: DefaultStaffView,
@@ -247,11 +250,13 @@ internal class StaffTicketQueryRepository(
 
         // Keep the exact count on the same authorization/search predicate, but do not
         // make PostgreSQL evaluate detail-only summary projections for every matching row.
-        val resultCount = jdbcTemplate.queryForObject(
-            "select count(*) $fromClause",
-            parameters,
-            Long::class.java,
-        ) ?: 0L
+        val resultCount = searchDiagnostics.measure(SearchPhase.COUNT) {
+            jdbcTemplate.queryForObject(
+                "select count(*) $fromClause",
+                parameters,
+                Long::class.java,
+            ) ?: 0L
+        }
         val cursorPredicate = when (sort) {
             SCORE_SORT -> cursor?.let {
                 parameters.addValue("cursorScore", checkNotNull(it.lastScore))
@@ -270,22 +275,24 @@ internal class StaffTicketQueryRepository(
         } else {
             "updated_at desc, ticket_number desc"
         }
-        val items = jdbcTemplate.query(
-            """
-            with ranked as (
-                $ranked
-            )
-            select * from ranked
-            $cursorPredicate
-            order by $orderBy
-            limit :limit
-            """.trimIndent(),
-            parameters,
-        ) { result, _ ->
-            StaffTicketSearchHit(
-                ticket = ticketSummary(result, now, riskAt),
-                score = result.getInt("search_score"),
-            )
+        val items = searchDiagnostics.measure(SearchPhase.PAGE) {
+            jdbcTemplate.query(
+                """
+                with ranked as (
+                    $ranked
+                )
+                select * from ranked
+                $cursorPredicate
+                order by $orderBy
+                limit :limit
+                """.trimIndent(),
+                parameters,
+            ) { result, _ ->
+                StaffTicketSearchHit(
+                    ticket = ticketSummary(result, now, riskAt),
+                    score = result.getInt("search_score"),
+                )
+            }
         }
         return StaffTicketSearchResult(hits = items, resultCount = resultCount)
     }
