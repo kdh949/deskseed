@@ -29,8 +29,15 @@ internal class JpaAccessAuditWriter(
 ) : AccessAuditWriter {
     @Transactional(propagation = Propagation.MANDATORY)
     override fun appendAiResultAccess(event: AiResultAccessAudit) {
-        validateStaffContext(event.context)
-        require(event.feature in setOf("ticket.summary", "ticket.triage", "ticket.reply_draft"))
+        when (event.context.actorType) {
+            ActorType.STAFF -> validateStaffContext(event.context)
+            ActorType.INTEGRATION_CLIENT -> {
+                validateAiContext(event.context)
+                require(event.feature == "ticket.reply_draft")
+            }
+            else -> error("AI result access actor is unsupported")
+        }
+        require(event.feature in setOf("ticket.summary", "ticket.triage", "ticket.reply_draft", "ticket.reply_rewrite"))
         require(event.requestRevision > 0)
         require(event.outcome == AccessAuditOutcome.SUCCEEDED)
         jdbcTemplate.update(

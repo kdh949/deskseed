@@ -155,6 +155,7 @@ class ClaimedJob:
     generation_mode: GenerationMode | None = None
     candidate_id: UUID | None = None
     candidate_sequence: int | None = None
+    source_job_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -415,11 +416,11 @@ class Repository:
                     status, phase, generation, lease_epoch, request_revision, cancel_requested,
                     context_revision, context_policy_version, input_scope, options_json,
                     ai_input_revision, input_policy_version,
-                    generation_mode, candidate_id, candidate_sequence,
+                    generation_mode, candidate_id, candidate_sequence, source_job_id,
                     request_fingerprint, traceparent, tracestate, created_at, deadline_at, updated_at
                 ) values (
                     %s, %s, %s, %s, %s, %s, %s, %s, 1, 0, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
                 (
@@ -442,6 +443,7 @@ class Repository:
                     envelope.generationMode.value if envelope.generationMode else None,
                     envelope.candidateId,
                     envelope.candidateSequence,
+                    envelope.sourceJobId,
                     fingerprint,
                     envelope.traceparent,
                     envelope.tracestate,
@@ -588,6 +590,7 @@ class Repository:
             completedAt=row["completed_at"],
             resultExpiresAt=row["result_expires_at"],
             cancelRequested=row["cancel_requested"],
+            sourceJobId=row["source_job_id"],
             contextRevision=row["context_revision"],
             contextPolicyVersion=row["context_policy_version"],
             inputScope=row["input_scope"],
@@ -595,7 +598,7 @@ class Repository:
             canInsert=(
                 result_available
                 and row["status"] == "SUCCEEDED"
-                and row["feature"] == Feature.REPLY_DRAFT.value
+                and row["feature"] in {Feature.REPLY_DRAFT.value, Feature.REPLY_REWRITE.value}
             ),
             errorCode=row["error_code"],
             result=result,
@@ -763,10 +766,52 @@ class Repository:
             generation_mode=(GenerationMode(row["generation_mode"]) if row["generation_mode"] else None),
             candidate_id=row["candidate_id"],
             candidate_sequence=row["candidate_sequence"],
+            source_job_id=row["source_job_id"],
             traceparent=row["traceparent"],
             deadline_at=row["deadline_at"],
             options=row["options_json"],
         )
+
+    def read_rewrite_source(self, claim: ClaimedJob) -> tuple[ReplyDraftResult, list[UUID]]:
+        source_job_id = claim.source_job_id
+        if claim.feature != Feature.REPLY_REWRITE or source_job_id is None:
+            raise ConflictError("rewrite source binding is unavailable")
+        now = datetime.now(UTC)
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """
+                select job_id, workspace_key, requester_id, ticket_id, feature, status,
+                       cancel_requested, result_ciphertext, result_nonce, result_expires_at,
+                       source_job_id, source_comment_ids
+                from ai_jobs where job_id = %s
+                """,
+                (source_job_id,),
+            ).fetchone()
+        if (
+            row is None
+            or row["workspace_key"] != claim.workspace_key
+            or row["requester_id"] != claim.requester_id
+            or row["ticket_id"] != claim.ticket_id
+            or row["feature"] != Feature.REPLY_DRAFT.value
+            or row["source_job_id"] is not None
+            or row["status"] != JobStatus.SUCCEEDED.value
+            or row["cancel_requested"]
+            or row["result_ciphertext"] is None
+            or row["result_nonce"] is None
+            or row["result_expires_at"] is None
+            or row["result_expires_at"] <= now
+        ):
+            raise ConflictError("rewrite source result is unavailable")
+        try:
+            plaintext = self.cipher.decrypt(
+                bytes(row["result_ciphertext"]),
+                bytes(row["result_nonce"]),
+                str(source_job_id).encode(),
+            )
+            result = ReplyDraftResult.model_validate_json(plaintext)
+        except (InvalidTag, UnicodeDecodeError, ValidationError, ValueError, TypeError) as exception:
+            raise ConflictError("rewrite source result is invalid") from exception
+        return result, list(row["source_comment_ids"] or [])
 
     def set_phase(self, claim: ClaimedJob, phase: JobPhase) -> None:
         with self.database.transaction() as connection:

@@ -13,6 +13,7 @@ internal fun inputPolicyVersion(feature: AiFeature): String = when (feature) {
     AiFeature.TICKET_SUMMARY -> "summary-input-v1"
     AiFeature.TICKET_TRIAGE -> "triage-input-v1"
     AiFeature.TICKET_REPLY_DRAFT -> "reply-input-v1"
+    AiFeature.TICKET_REPLY_REWRITE -> "rewrite-input-v1"
 }
 
 internal fun computeAiInputRevision(
@@ -20,6 +21,7 @@ internal fun computeAiInputRevision(
     feature: AiFeature,
     policyVersion: String = inputPolicyVersion(feature),
 ): String {
+    require(feature != AiFeature.TICKET_REPLY_REWRITE) { "Rewrite input requires source job binding" }
     require(policyVersion == inputPolicyVersion(feature)) { "Unsupported AI input policy version" }
     val digest = MessageDigest.getInstance("SHA-256")
     digest.updateCanonicalField("deskseed-ai-input-revision-v1")
@@ -33,6 +35,25 @@ internal fun computeAiInputRevision(
         digest.updateCanonicalField(sha256(comment.body))
     }
     return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+}
+
+internal fun computeRewriteInputRevision(
+    context: AiPublicTicketContext,
+    sourceJobId: java.util.UUID,
+    sourceInputRevision: String,
+    policyVersion: String = "rewrite-input-v1",
+): String {
+    require(policyVersion == "rewrite-input-v1") { "Unsupported rewrite input policy version" }
+    require(sourceInputRevision.matches(Regex("^[0-9a-f]{64}$"))) { "Invalid source input revision" }
+    return sha256(
+        listOf(
+            "deskseed-ai-rewrite-input-revision-v1",
+            computeAiContextRevision(context),
+            sourceJobId,
+            sourceInputRevision,
+            policyVersion,
+        ).joinToString("\u001f"),
+    )
 }
 
 internal fun computeAiContextRevision(

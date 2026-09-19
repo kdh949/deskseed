@@ -1,9 +1,12 @@
 package dev.deskseed.aiassistance.internal
 
 import dev.deskseed.aiassistance.AiAuditUnavailableException
+import dev.deskseed.aiassistance.AiBackendRequestStatus
+import dev.deskseed.aiassistance.AiExecutionStatusReader
 import dev.deskseed.aiassistance.AiFeature
 import dev.deskseed.aiassistance.AiJobReceipt
 import dev.deskseed.aiassistance.AiReplyDraftResult
+import dev.deskseed.aiassistance.AiReplyRewriteResult
 import dev.deskseed.aiassistance.AiRequestMetadata
 import dev.deskseed.aiassistance.AiRequestNotFoundException
 import dev.deskseed.aiassistance.AiStaffActor
@@ -30,6 +33,7 @@ internal class AiResultAuthorizer(
     private val ticketStore: StaffTicketReadStore,
     private val knowledgeProjection: AiKnowledgeProjection,
     private val auditWriter: AccessAuditWriter,
+    private val executionStatusReader: AiExecutionStatusReader,
     private val clock: Clock,
 ) {
     @Transactional
@@ -43,7 +47,7 @@ internal class AiResultAuthorizer(
         val binding = jdbcTemplate.query(
             """
             select ticket_id, feature, request_revision, context_revision, context_policy_version,
-                   ai_input_revision, input_policy_version, cancellation_requested
+                   ai_input_revision, input_policy_version, cancellation_requested, source_job_id
             from ai_requests
             where job_id = ? and requester_staff_id = ? and ticket_number = ?
             for share
@@ -58,6 +62,7 @@ internal class AiResultAuthorizer(
                     aiInputRevision = result.getString("ai_input_revision"),
                     inputPolicyVersion = result.getString("input_policy_version"),
                     cancelled = result.getBoolean("cancellation_requested"),
+                    sourceJobId = result.getObject("source_job_id", UUID::class.java),
                 )
             },
             jobId,
@@ -68,25 +73,62 @@ internal class AiResultAuthorizer(
             ?: throw AiRequestNotFoundException()
         val featureEnabled = isFeatureEnabled(AiFeature.fromValue(binding.feature), actor.id)
         val inputFresh = binding.inputPolicyVersion?.let { policyVersion ->
-            computeAiInputRevision(context, AiFeature.fromValue(binding.feature), policyVersion) == binding.aiInputRevision
+            val feature = AiFeature.fromValue(binding.feature)
+            if (feature == AiFeature.TICKET_REPLY_REWRITE) {
+                val sourceJobId = binding.sourceJobId ?: return@let false
+                val sourceInput = jdbcTemplate.query(
+                    """
+                    select ai_input_revision from ai_requests
+                    where job_id = ? and requester_staff_id = ? and ticket_id = ?
+                      and feature = 'ticket.reply_draft' and source_job_id is null
+                    """.trimIndent(),
+                    { result, _ -> result.getString("ai_input_revision") },
+                    sourceJobId,
+                    actor.id,
+                    binding.ticketId,
+                ).singleOrNull() ?: return@let false
+                computeRewriteInputRevision(context, sourceJobId, sourceInput, policyVersion) == binding.aiInputRevision
+            } else {
+                computeAiInputRevision(context, feature, policyVersion) == binding.aiInputRevision
+            }
         } ?: (binding.aiInputRevision == null)
         val contextFresh = remote.contextPolicyVersion == binding.contextPolicyVersion &&
             computeAiContextRevision(context, binding.contextPolicyVersion) == binding.contextRevision &&
             remote.contextRevision == binding.contextRevision && inputFresh
         val resultUnexpired = remote.result == null || remote.resultExpiresAt?.isAfter(Instant.now(clock)) == true
+        val sourceUsable = if (binding.feature == AiFeature.TICKET_REPLY_REWRITE.value) {
+            binding.sourceJobId?.let { sourceJobId ->
+                executionStatusReader.read(sourceJobId, false)?.let { source ->
+                    source.jobId == sourceJobId &&
+                        source.feature == AiFeature.TICKET_REPLY_DRAFT.value &&
+                        source.status == AiBackendRequestStatus.SUCCEEDED &&
+                        !source.cancelRequested && source.sourceJobId == null &&
+                        source.inputScope == "PUBLIC_ONLY" &&
+                        source.resultExpiresAt?.isAfter(Instant.now(clock)) == true
+                } == true
+            } == true
+        } else {
+            true
+        }
         val provenanceFresh = remote.result == null || remote.provenance?.let { provenance ->
             provenance.contextRevision == binding.contextRevision &&
                 provenance.publicCommentIds.all { expected -> context.comments.any { it.id == expected } }
         } == true
-        val citationsFresh = (remote.result as? AiReplyDraftResult)?.citations?.all { citation ->
+        val citations = when (val result = remote.result) {
+            is AiReplyDraftResult -> result.citations
+            is AiReplyRewriteResult -> result.citations
+            else -> null
+        }
+        val citationsFresh = citations?.all { citation ->
             knowledgeProjection.findCurrentPublic(citation.articleId, citation.revisionId) != null
         } ?: true
-        val usable = featureEnabled && !binding.cancelled && contextFresh && resultUnexpired && citationsFresh && provenanceFresh
+        val usable = featureEnabled && !binding.cancelled && contextFresh && resultUnexpired &&
+            sourceUsable && citationsFresh && provenanceFresh
         if (!usable || remote.result == null) {
             return remote.copy(
                 requestRevision = binding.requestRevision,
                 cancelRequested = binding.cancelled || remote.cancelRequested,
-                stale = !contextFresh || !citationsFresh || !provenanceFresh,
+                stale = !contextFresh || !sourceUsable || !citationsFresh || !provenanceFresh,
                 canInsert = false,
                 result = null,
                 provenance = null,
@@ -126,7 +168,10 @@ internal class AiResultAuthorizer(
             requestRevision = binding.requestRevision,
             cancelRequested = false,
             stale = false,
-            canInsert = remote.status.name == "SUCCEEDED" && binding.feature == AiFeature.TICKET_REPLY_DRAFT.value,
+            canInsert = remote.status.name == "SUCCEEDED" && binding.feature in setOf(
+                AiFeature.TICKET_REPLY_DRAFT.value,
+                AiFeature.TICKET_REPLY_REWRITE.value,
+            ),
         )
     }
 
@@ -135,6 +180,7 @@ internal class AiResultAuthorizer(
             AiFeature.TICKET_SUMMARY -> "summary_enabled"
             AiFeature.TICKET_TRIAGE -> "triage_enabled"
             AiFeature.TICKET_REPLY_DRAFT -> "reply_draft_enabled"
+            AiFeature.TICKET_REPLY_REWRITE -> "reply_rewrite_enabled"
         }
         return jdbcTemplate.queryForObject(
             """
@@ -159,5 +205,6 @@ internal class AiResultAuthorizer(
         val aiInputRevision: String?,
         val inputPolicyVersion: String?,
         val cancelled: Boolean,
+        val sourceJobId: UUID?,
     )
 }

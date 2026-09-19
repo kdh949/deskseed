@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
 from .pricing import PricingCatalog, Usage
-from .prompting import context_memory_prompt, prompt_for
+from .prompting import context_memory_prompt, prompt_for, rewrite_validation_prompt
 from .retrieval import KnowledgeChunk
 from .schemas import (
     ContextMemoryPayload,
@@ -20,6 +20,8 @@ from .schemas import (
     ProviderOutput,
     ReplyDraftResult,
     ReplyProviderOutput,
+    ReplyRewritePreservationVerdict,
+    ReplyRewriteProviderOutput,
     SourceContext,
     SummaryResult,
     TriageResult,
@@ -87,6 +89,24 @@ class GenerationProvider:
     ) -> ProviderResult:
         raise NotImplementedError
 
+    def rewrite(
+        self,
+        source: ReplyDraftResult,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        raise NotImplementedError
+
+    def validate_rewrite(
+        self,
+        source: ReplyDraftResult,
+        candidate: ReplyRewriteProviderOutput,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        raise NotImplementedError
+
     def estimate_input_tokens(
         self,
         pricing: PricingCatalog,
@@ -119,6 +139,23 @@ class GenerationProvider:
     ) -> int:
         request = _context_memory_request(self.settings.model_fast, context, previous)
         return pricing.count_json_tokens(self.settings.model_fast, request)
+
+    def estimate_rewrite_input_tokens(
+        self,
+        pricing: PricingCatalog,
+        source: ReplyDraftResult,
+        options: Mapping[str, str],
+        *,
+        validation_candidate: ReplyRewriteProviderOutput | None = None,
+    ) -> int:
+        request = (
+            _rewrite_request(self.settings.model_standard, source, options)
+            if validation_candidate is None
+            else _rewrite_validation_request(
+                self.settings.model_standard, source, validation_candidate
+            )
+        )
+        return pricing.count_json_tokens(self.settings.model_standard, request)
 
 
 class FakeGenerationProvider(GenerationProvider):
@@ -185,6 +222,48 @@ class FakeGenerationProvider(GenerationProvider):
             receipt,
             prompt.version,
         )
+
+    def rewrite(
+        self,
+        source: ReplyDraftResult,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        result = ReplyRewriteProviderOutput(
+            answer=source.answer,
+            sourceRefs=[f"S{index}" for index, _ in enumerate(source.citations, start=1)],
+        )
+        request = _rewrite_request(self.settings.model_standard, source, options)
+        receipt = _fake_receipt(
+            call_id,
+            self.settings.model_standard,
+            _fake_usage(json.dumps(request, ensure_ascii=False), result.model_dump_json()),
+        )
+        record_receipt(receipt)
+        return ProviderResult(result, receipt, prompt_for(Feature.REPLY_REWRITE).version)
+
+    def validate_rewrite(
+        self,
+        source: ReplyDraftResult,
+        candidate: ReplyRewriteProviderOutput,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        verdict = ReplyRewritePreservationVerdict(
+            preserved=source.answer == candidate.answer,
+            changedCategories=[] if source.answer == candidate.answer else ["POLICY"],
+        )
+        request = _rewrite_validation_request(
+            self.settings.model_standard, source, candidate
+        )
+        receipt = _fake_receipt(
+            call_id,
+            self.settings.model_standard,
+            _fake_usage(json.dumps(request, ensure_ascii=False), verdict.model_dump_json()),
+        )
+        record_receipt(receipt)
+        return ProviderResult(verdict, receipt, rewrite_validation_prompt().version)
 
     def triage(
         self,
@@ -355,6 +434,72 @@ class LiteLlmGenerationProvider(GenerationProvider):
             memory,
         )
 
+    def rewrite(
+        self,
+        source: ReplyDraftResult,
+        options: Mapping[str, str],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        return self._complete_rewrite_payload(
+            _rewrite_request(self.settings.model_standard, source, options),
+            ReplyRewriteProviderOutput,
+            call_id,
+            record_receipt,
+            prompt_for(Feature.REPLY_REWRITE).version,
+        )
+
+    def validate_rewrite(
+        self,
+        source: ReplyDraftResult,
+        candidate: ReplyRewriteProviderOutput,
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+    ) -> ProviderResult:
+        return self._complete_rewrite_payload(
+            _rewrite_validation_request(
+                self.settings.model_standard, source, candidate
+            ),
+            ReplyRewritePreservationVerdict,
+            call_id,
+            record_receipt,
+            rewrite_validation_prompt().version,
+        )
+
+    def _complete_rewrite_payload(
+        self,
+        request: dict[str, Any],
+        schema: type[ProviderOutput],
+        call_id: UUID,
+        record_receipt: ReceiptRecorder,
+        prompt_version: str,
+    ) -> ProviderResult:
+        from litellm import completion
+
+        model = self.settings.model_standard
+        response = completion(
+            model=model,
+            api_key=self.settings.openai_api_key.get_secret_value(),
+            messages=request["messages"],
+            response_format=request["response_format"],
+            reasoning_effort="low",
+            store=False,
+            num_retries=0,
+            timeout=min(45, self.settings.job_timeout_seconds),
+            max_completion_tokens=request["max_completion_tokens"],
+            service_tier="default",
+        )
+        receipt = _litellm_receipt(call_id, model, response)
+        record_receipt(receipt)
+        raw = getattr(response.choices[0].message, "content", None)
+        if raw is None:
+            raise InvalidProviderOutputError("provider response has no rewrite output")
+        try:
+            result = schema.model_validate_json(raw)
+        except (ValidationError, ValueError, TypeError) as exception:
+            raise InvalidProviderOutputError("provider rewrite output is invalid") from exception
+        return ProviderResult(result, receipt, prompt_version)
+
     def _complete(
         self,
         model: str,
@@ -435,14 +580,18 @@ def _feature_config(
 ) -> tuple[str, type[ProviderOutput], int]:
     if feature == Feature.REPLY_DRAFT:
         return settings.model_standard, ReplyProviderOutput, 2048
+    if feature == Feature.REPLY_REWRITE:
+        return settings.model_standard, ReplyRewriteProviderOutput, 2048
     if feature == Feature.SUMMARY:
         return settings.model_fast, SummaryResult, 1024
     return settings.model_fast, TriageResult, 768
 
 
 def _output_limit(schema: type[ProviderOutput]) -> int:
-    if schema is ReplyProviderOutput:
+    if schema in {ReplyProviderOutput, ReplyRewriteProviderOutput}:
         return 2048
+    if schema is ReplyRewritePreservationVerdict:
+        return 256
     if schema is SummaryResult:
         return 1024
     return 768
@@ -546,6 +695,74 @@ def _context_memory_request(
         },
         "max_completion_tokens": 1024,
         "reasoning_effort": "none",
+        "service_tier": "default",
+    }
+
+
+def _rewrite_request(
+    model: str,
+    source: ReplyDraftResult,
+    options: Mapping[str, str],
+) -> dict[str, Any]:
+    prompt = prompt_for(Feature.REPLY_REWRITE)
+    payload = {
+        "options": dict(options),
+        "approvedPublicDraft": source.answer,
+        "citationMap": [
+            {
+                "sourceRef": f"S{index}",
+                "title": citation.title,
+                "url": citation.url,
+            }
+            for index, citation in enumerate(source.citations, start=1)
+        ],
+    }
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt.content},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": ReplyRewriteProviderOutput.__name__,
+                "strict": True,
+                "schema": ReplyRewriteProviderOutput.model_json_schema(),
+            },
+        },
+        "max_completion_tokens": 2048,
+        "reasoning_effort": "low",
+        "service_tier": "default",
+    }
+
+
+def _rewrite_validation_request(
+    model: str,
+    source: ReplyDraftResult,
+    candidate: ReplyRewriteProviderOutput,
+) -> dict[str, Any]:
+    prompt = rewrite_validation_prompt()
+    payload = {
+        "original": source.answer,
+        "candidate": candidate.answer,
+    }
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt.content},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": ReplyRewritePreservationVerdict.__name__,
+                "strict": True,
+                "schema": ReplyRewritePreservationVerdict.model_json_schema(),
+            },
+        },
+        "max_completion_tokens": 256,
+        "reasoning_effort": "low",
         "service_tier": "default",
     }
 

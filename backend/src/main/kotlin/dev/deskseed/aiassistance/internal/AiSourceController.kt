@@ -88,6 +88,36 @@ internal class AiSourceController(private val contextService: AiSourceContextSer
             ),
         )
     }
+
+    @GetMapping("/{jobId}/rewrite-source")
+    fun rewriteSource(
+        @AuthenticationPrincipal principal: AiSourcePrincipal,
+        @PathVariable jobId: UUID,
+        request: HttpServletRequest,
+    ): ResponseEntity<AiRewriteSourceAuthorizationResponse> {
+        val authorization = contextService.authorizeRewriteSource(
+            jobId,
+            principal.toIdentity(),
+            AiRequestMetadata(
+                requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE).toString(),
+                correlationId = request.getAttribute(RequestIdFilter.CORRELATION_ID_ATTRIBUTE).toString(),
+                ipAddress = null,
+                userAgent = null,
+                traceparent = request.getHeader("traceparent")?.take(512),
+                tracestate = request.getHeader("tracestate")?.take(512),
+            ),
+        )
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+            AiRewriteSourceAuthorizationResponse(
+                rewriteJobId = authorization.rewriteJobId,
+                sourceJobId = authorization.sourceJobId,
+                contextRevision = authorization.contextRevision,
+                aiInputRevision = authorization.aiInputRevision,
+                inputPolicyVersion = authorization.inputPolicyVersion,
+                authorizedAt = authorization.authorizedAt,
+            ),
+        )
+    }
 }
 
 @RestController
@@ -97,7 +127,7 @@ internal class AiPolicyController(private val jdbcTemplate: JdbcTemplate, privat
     fun policy(): ResponseEntity<AiPolicyResponse> {
         val policy = jdbcTemplate.query(
             """
-            select enabled, summary_enabled, triage_enabled, reply_draft_enabled,
+            select enabled, summary_enabled, triage_enabled, reply_draft_enabled, reply_rewrite_enabled,
                    fast_model_alias, standard_model_alias, reply_routing_mode,
                    reply_routing_rollout_percent, reply_routing_evaluation_approval_version,
                    settings.version, settings.updated_at,
@@ -115,6 +145,7 @@ internal class AiPolicyController(private val jdbcTemplate: JdbcTemplate, privat
                     "ticket.summary" to result.getBoolean("summary_enabled"),
                     "ticket.triage" to result.getBoolean("triage_enabled"),
                     "ticket.reply_draft" to result.getBoolean("reply_draft_enabled"),
+                    "ticket.reply_rewrite" to result.getBoolean("reply_rewrite_enabled"),
                 ),
                 fastModelAlias = result.getString("fast_model_alias"),
                 standardModelAlias = result.getString("standard_model_alias"),
@@ -185,6 +216,15 @@ internal data class AiSourceRevisionResponse(
     val authorized: Boolean,
     val cancelRequested: Boolean,
     val featureEnabled: Boolean,
+)
+
+internal data class AiRewriteSourceAuthorizationResponse(
+    val rewriteJobId: UUID,
+    val sourceJobId: UUID,
+    val contextRevision: String,
+    val aiInputRevision: String,
+    val inputPolicyVersion: String,
+    val authorizedAt: Instant,
 )
 
 @RestControllerAdvice(

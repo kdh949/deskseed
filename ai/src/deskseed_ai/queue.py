@@ -12,6 +12,7 @@ from redis import Redis
 from redis.exceptions import ResponseError
 
 from .backend_client import (
+    AiPolicy,
     BackendAuthorizationError,
     BackendClient,
     BackendPolicyDisabledError,
@@ -29,7 +30,7 @@ from .context_memory import (
 )
 from .observability import CallTraceAttributes, TraceAdapter, TraceAttributes
 from .pricing import PricingCatalog
-from .prompting import context_memory_prompt, prompt_for
+from .prompting import context_memory_prompt, prompt_for, rewrite_validation_prompt
 from .providers import GenerationProvider, InvalidProviderOutputError
 from .repository import (
     ActiveLeaseError,
@@ -47,6 +48,7 @@ from .retrieval import (
     MissingCurrentProblemError,
     RetrievalQueryTooLongError,
 )
+from .rewrite import preserves_deterministic_markers
 from .routing import reply_routing_policy_fingerprint, select_reply_route
 from .schemas import (
     AuthorRole,
@@ -57,6 +59,9 @@ from .schemas import (
     JobPhase,
     JobStatus,
     ReplyDraftResult,
+    ReplyRewritePreservationVerdict,
+    ReplyRewriteProviderOutput,
+    ReplyRewriteResult,
     SourceContext,
     TriageResult,
 )
@@ -66,6 +71,7 @@ from .workflows import (
     PreparedReplyGeneration,
     ReplyWorkflow,
     reply_query,
+    source_map_digest,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -225,6 +231,9 @@ class StreamRuntime:
         )
         with self.traces.job(attributes), self._heartbeat(claim):
             try:
+                if claim.feature == Feature.REPLY_REWRITE:
+                    self._execute_rewrite(claim, calls)
+                    return
                 source_map_digest: str | None = None
                 source_chunk_ids: list[UUID] | None = None
                 context = self.backend.read_context(claim.job_id, traceparent)
@@ -619,6 +628,136 @@ class StreamRuntime:
                     self.repository.fail_job(claim, type(exception).__name__.upper()[:80], retryable=True)
                 raise
 
+    def _execute_rewrite(self, claim: ClaimedJob, calls: list[UUID]) -> None:
+        authorization = self.backend.authorize_rewrite_source(claim.job_id)
+        if (
+            authorization.rewriteJobId != claim.job_id
+            or authorization.sourceJobId != claim.source_job_id
+            or authorization.contextRevision != claim.context_revision
+            or authorization.aiInputRevision != claim.ai_input_revision
+            or authorization.inputPolicyVersion != claim.input_policy_version
+        ):
+            raise BackendSupersededError("rewrite source binding changed")
+        policy = self.backend.read_policy(claim.feature.value)
+        if (
+            self.settings.model_fast != policy.fastModelAlias
+            or self.settings.model_standard != policy.standardModelAlias
+        ):
+            raise BackendPolicyDisabledError("configured model alias differs from backend policy")
+        source, source_comment_ids = self.repository.read_rewrite_source(claim)
+        if not source.citations:
+            self.repository.complete_needs_review(claim, "REWRITE_SOURCE_INVALID", 0)
+            return
+        authorized = self.backend.authorize_citations(claim.job_id, source.citations)
+        if authorized != source.citations:
+            raise BackendSupersededError("rewrite source citations changed")
+        self.repository.set_phase(claim, JobPhase.GENERATE)
+        rewrite_call_id, rewrite_recorder = self._prepare_call(
+            claim,
+            self.settings.model_standard,
+            self.provider.estimate_rewrite_input_tokens(
+                self.pricing, source, claim.options
+            ),
+            2048,
+            "GENERATION_REWRITE",
+        )
+        calls.append(rewrite_call_id)
+        generated = self.provider.rewrite(
+            source, claim.options, rewrite_call_id, rewrite_recorder
+        )
+        candidate = generated.result
+        if not isinstance(candidate, ReplyRewriteProviderOutput):
+            raise InvalidModelOutputError("rewrite provider returned an invalid result type")
+        expected_refs = [f"S{index}" for index, _ in enumerate(source.citations, start=1)]
+        if candidate.sourceRefs != expected_refs:
+            self.repository.complete_needs_review(
+                claim,
+                "REWRITE_CITATION_CHANGED",
+                self.repository.job_cost_microusd(claim.job_id),
+            )
+            return
+        if not preserves_deterministic_markers(source.answer, candidate.answer):
+            self.repository.complete_needs_review(
+                claim,
+                "REWRITE_FACTS_CHANGED",
+                self.repository.job_cost_microusd(claim.job_id),
+            )
+            return
+        self._recheck_rewrite(claim, policy, source.citations)
+        self.repository.set_phase(claim, JobPhase.VALIDATE)
+        validation_call_id, validation_recorder = self._prepare_call(
+            claim,
+            self.settings.model_standard,
+            self.provider.estimate_rewrite_input_tokens(
+                self.pricing,
+                source,
+                claim.options,
+                validation_candidate=candidate,
+            ),
+            256,
+            "GENERATION_REWRITE_VALIDATION",
+        )
+        calls.append(validation_call_id)
+        validation = self.provider.validate_rewrite(
+            source, candidate, validation_call_id, validation_recorder
+        )
+        verdict = validation.result
+        if not isinstance(verdict, ReplyRewritePreservationVerdict) or not verdict.preserved:
+            self.repository.complete_needs_review(
+                claim,
+                "REWRITE_FACTS_CHANGED",
+                self.repository.job_cost_microusd(claim.job_id),
+            )
+            return
+        self._recheck_rewrite(claim, policy, source.citations)
+        result = ReplyRewriteResult(
+            answer=candidate.answer,
+            citations=source.citations,
+            language=claim.options["language"],
+            tone=claim.options["tone"],
+            length=claim.options["length"],
+        )
+        citation_map = {
+            f"S{index}": citation
+            for index, citation in enumerate(source.citations, start=1)
+        }
+        self.repository.complete_job(
+            claim,
+            result,
+            JobStatus.SUCCEEDED,
+            self.repository.job_cost_microusd(claim.job_id),
+            generated.receipt.actual_model or generated.receipt.requested_alias,
+            source_comment_ids,
+            generated.prompt_version,
+            source_map_digest(citation_map),
+            [citation.chunkId for citation in source.citations],
+        )
+
+    def _recheck_rewrite(
+        self,
+        claim: ClaimedJob,
+        original_policy: AiPolicy,
+        citations: list[Citation],
+    ) -> None:
+        if datetime.now(UTC) >= claim.deadline_at:
+            raise BackendSupersededError("rewrite deadline expired")
+        current = self.backend.read_context_revision(claim.job_id)
+        if (
+            current.contextRevision != claim.context_revision
+            or current.aiInputRevision != claim.ai_input_revision
+            or current.inputPolicyVersion != claim.input_policy_version
+        ):
+            raise BackendSupersededError("rewrite input changed")
+        current_policy = self.backend.read_policy(claim.feature.value)
+        if (
+            current_policy.version != original_policy.version
+            or current_policy.standardModelAlias != original_policy.standardModelAlias
+            or current_policy.fastModelAlias != original_policy.fastModelAlias
+        ):
+            raise BackendPolicyDisabledError("rewrite policy changed")
+        if self.backend.authorize_citations(claim.job_id, citations) != citations:
+            raise BackendSupersededError("rewrite citations changed")
+
     def _prepare_context_memory(
         self,
         claim: ClaimedJob,
@@ -801,6 +940,8 @@ class StreamRuntime:
         operation_version = None
         if call_type == "CONTEXT_MEMORY":
             operation_version = context_memory_prompt().version
+        elif call_type == "GENERATION_REWRITE_VALIDATION":
+            operation_version = rewrite_validation_prompt().version
         elif call_type.startswith("GENERATION"):
             operation_version = prompt_for(claim.feature).version
         return call_id, self._receipt_recorder(

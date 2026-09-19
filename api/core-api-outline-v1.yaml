@@ -19428,6 +19428,7 @@ components:
       - ticket.summary
       - ticket.triage
       - ticket.reply_draft
+      - ticket.reply_rewrite
     CreateAgentAiJob:
       type: object
       additionalProperties: false
@@ -19443,12 +19444,17 @@ components:
           format: int64
           minimum: 0
           description: 상담사가 보고 있는 티켓 version입니다. PUBLIC contextRevision은 댓글 변경을 별도로 탐지합니다.
+        sourceJobId:
+          type: string
+          format: uuid
+          description: ticket.reply_rewrite에서만 요구하는 같은 requester·ticket의 아직 유효한 서버 생성 ticket.reply_draft 작업입니다. client는 원
+            답변 본문이나 citation을 제출하지 않습니다.
         generationMode:
           $ref: '#/components/schemas/AiGenerationMode'
         options:
           type: object
           additionalProperties: false
-          maxProperties: 2
+          maxProperties: 3
           properties:
             language:
               type: string
@@ -19460,8 +19466,16 @@ components:
               type: string
               enum:
               - calm
+              - formal
               default: calm
-              description: 답변 초안에서만 허용하는 현재 검증된 문체입니다. 생략하면 Backend가 `calm`으로 정규화합니다.
+              description: '`calm`은 답변 초안과 재작성에서, `formal`은 재작성에서만 허용합니다. 생략하면 Backend가 `calm`으로 정규화합니다.'
+            length:
+              type: string
+              enum:
+              - concise
+              - standard
+              default: standard
+              description: 재작성에서만 허용하는 닫힌 길이 목표입니다. 생략하면 Backend가 `standard`로 정규화합니다.
           default: {}
       x-deskseed-documentation-review: MANUAL
       example:
@@ -19568,15 +19582,25 @@ components:
           maximum: 10000
         cancelRequested:
           type: boolean
+        sourceJobId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: reply rewrite가 참조하는 immutable 원 reply job이며 다른 feature에서는 null입니다.
         contextRevision:
           type: string
           pattern: ^[0-9a-f]{64}$
         contextPolicyVersion:
           type: string
-          const: public-comments-v1
+          enum:
+          - public-comments-v1
+          - public-comments-v2
         inputScope:
           type: string
-          const: PUBLIC_ONLY
+          enum:
+          - PUBLIC_ONLY
+          - PUBLIC_DRAFT_ONLY
         stale:
           type: boolean
         canInsert:
@@ -19591,6 +19615,7 @@ components:
           - $ref: '#/components/schemas/AiSummaryResult'
           - $ref: '#/components/schemas/AiTriageResult'
           - $ref: '#/components/schemas/AiReplyDraftResult'
+          - $ref: '#/components/schemas/AiReplyRewriteResult'
           - type: 'null'
           discriminator:
             propertyName: type
@@ -19747,6 +19772,43 @@ components:
           maxItems: 8
           items:
             $ref: '#/components/schemas/AiCitation'
+    AiReplyRewriteResult:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - answer
+      - citations
+      - language
+      - tone
+      - length
+      properties:
+        type:
+          type: string
+          const: ticket.reply_rewrite
+        answer:
+          type: string
+          minLength: 1
+          maxLength: 6000
+        citations:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/AiCitation'
+        language:
+          type: string
+          const: ko
+        tone:
+          type: string
+          enum:
+          - calm
+          - formal
+        length:
+          type: string
+          enum:
+          - concise
+          - standard
     AiGenerationProvenance:
       type: object
       additionalProperties: false
@@ -19860,6 +19922,7 @@ components:
       - summaryEnabled
       - triageEnabled
       - replyDraftEnabled
+      - replyRewriteEnabled
       - fastModelAlias
       - standardModelAlias
       - replyRoutingMode
@@ -19876,6 +19939,8 @@ components:
         triageEnabled:
           type: boolean
         replyDraftEnabled:
+          type: boolean
+        replyRewriteEnabled:
           type: boolean
         fastModelAlias:
           type: string
@@ -19937,6 +20002,7 @@ components:
       - summaryEnabled
       - triageEnabled
       - replyDraftEnabled
+      - replyRewriteEnabled
       - fastModelAlias
       - standardModelAlias
       - replyRoutingMode
@@ -19953,6 +20019,8 @@ components:
         triageEnabled:
           type: boolean
         replyDraftEnabled:
+          type: boolean
+        replyRewriteEnabled:
           type: boolean
         fastModelAlias:
           type: string
@@ -20004,6 +20072,7 @@ components:
         summaryEnabled: true
         triageEnabled: true
         replyDraftEnabled: false
+        replyRewriteEnabled: false
         fastModelAlias: openai/gpt-5.6-luna
         standardModelAlias: openai/gpt-5.6-terra
         replyRoutingMode: STANDARD_ONLY

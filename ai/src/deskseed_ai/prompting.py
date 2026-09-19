@@ -22,9 +22,11 @@ _PROMPT_NAMES = {
     Feature.SUMMARY: "summary-v2",
     Feature.TRIAGE: "triage-v2",
     Feature.REPLY_DRAFT: "reply-v2",
+    Feature.REPLY_REWRITE: "rewrite-v1",
 }
 
 _CONTEXT_MEMORY_PROMPT_NAME = "context-memory-v1"
+_REWRITE_VALIDATION_PROMPT_NAME = "rewrite-validation-v1"
 
 
 def prompt_for(feature: Feature) -> FeaturePrompt:
@@ -43,3 +45,14 @@ def context_memory_prompt() -> FeaturePrompt:
     )
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     return FeaturePrompt(name=_CONTEXT_MEMORY_PROMPT_NAME, content=content, digest=digest)
+
+
+def rewrite_validation_prompt() -> FeaturePrompt:
+    content = (
+        files("deskseed_ai.prompts")
+        .joinpath(f"{_REWRITE_VALIDATION_PROMPT_NAME}.txt")
+        .read_text(encoding="utf-8")
+        .strip()
+    )
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return FeaturePrompt(name=_REWRITE_VALIDATION_PROMPT_NAME, content=content, digest=digest)

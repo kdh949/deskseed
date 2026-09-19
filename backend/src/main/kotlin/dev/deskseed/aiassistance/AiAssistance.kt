@@ -6,7 +6,8 @@ import java.util.UUID
 enum class AiFeature(val value: String) {
     TICKET_SUMMARY("ticket.summary"),
     TICKET_TRIAGE("ticket.triage"),
-    TICKET_REPLY_DRAFT("ticket.reply_draft");
+    TICKET_REPLY_DRAFT("ticket.reply_draft"),
+    TICKET_REPLY_REWRITE("ticket.reply_rewrite");
 
     companion object {
         fun fromValue(value: String): AiFeature = entries.firstOrNull { it.value == value }
@@ -51,6 +52,7 @@ data class CreateAiRequestCommand(
     val ticketNumber: Long,
     val feature: AiFeature,
     val expectedTicketVersion: Long,
+    val sourceJobId: UUID? = null,
     val options: Map<String, String>,
     val generationMode: AiGenerationMode? = null,
     val idempotencyKey: String,
@@ -67,6 +69,8 @@ data class AiJobReceipt(
     val deadlineAt: Instant,
     val pollAfterMs: Long,
     val cancelRequested: Boolean,
+    val sourceJobId: UUID? = null,
+    val inputScope: String = "PUBLIC_ONLY",
     val contextRevision: String,
     val contextPolicyVersion: String,
     val phase: String = "QUEUED",
@@ -128,6 +132,15 @@ data class AiReplyDraftResult(
     override val type: String = "ticket.reply_draft",
     val answer: String,
     val citations: List<AiCitation>,
+) : AiTypedResult
+
+data class AiReplyRewriteResult(
+    override val type: String = "ticket.reply_rewrite",
+    val answer: String,
+    val citations: List<AiCitation>,
+    val language: String,
+    val tone: String,
+    val length: String,
 ) : AiTypedResult
 
 fun interface AiExecutionStatusReader {
@@ -241,7 +254,22 @@ interface AiSourceContextService {
     ): AiSourceContext
 
     fun revision(jobId: UUID): AiSourceRevision
+
+    fun authorizeRewriteSource(
+        jobId: UUID,
+        serviceIdentity: AiServiceIdentity,
+        metadata: AiRequestMetadata,
+    ): AiRewriteSourceAuthorization
 }
+
+data class AiRewriteSourceAuthorization(
+    val rewriteJobId: UUID,
+    val sourceJobId: UUID,
+    val contextRevision: String,
+    val aiInputRevision: String,
+    val inputPolicyVersion: String,
+    val authorizedAt: Instant,
+)
 
 data class AiSourceRevision(
     val jobId: UUID,
@@ -270,6 +298,7 @@ data class AiSettingsView(
     val summaryEnabled: Boolean,
     val triageEnabled: Boolean,
     val replyDraftEnabled: Boolean,
+    val replyRewriteEnabled: Boolean,
     val fastModelAlias: String,
     val standardModelAlias: String,
     val replyRoutingMode: AiReplyRoutingMode,
@@ -286,6 +315,7 @@ data class UpdateAiSettingsCommand(
     val summaryEnabled: Boolean,
     val triageEnabled: Boolean,
     val replyDraftEnabled: Boolean,
+    val replyRewriteEnabled: Boolean,
     val fastModelAlias: String,
     val standardModelAlias: String,
     val replyRoutingMode: AiReplyRoutingMode,
