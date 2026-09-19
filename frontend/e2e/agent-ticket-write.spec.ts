@@ -238,6 +238,149 @@ test('agent PUBLIC reply sends one expected-version command and refreshes the ti
   )
 })
 
+test('agent rewrites a current AI reply with closed options and keeps explicit insertion', async ({
+  page,
+}) => {
+  const sourceJobId = '51111111-1111-4111-8111-111111111111'
+  const rewriteJobId = '58888888-8888-4888-8888-888888888888'
+  const sourceAnswer = '결제 승인 기록을 확인한 뒤 안내드리겠습니다.'
+  const rewrittenAnswer =
+    '결제 승인 기록을 확인한 뒤 정식으로 안내드리겠습니다.'
+  const citation = {
+    articleId: '53333333-3333-4333-8333-333333333333',
+    revisionId: '54444444-4444-4444-8444-444444444444',
+    chunkId: '55555555-5555-4555-8555-555555555555',
+    title: '결제 승인 상태 확인 안내',
+    url: '/help/articles/payment-approval-status',
+  }
+  const baseReceipt = {
+    status: 'SUCCEEDED',
+    phase: 'COMPLETE',
+    requestRevision: 3,
+    createdAt: '2026-09-19T00:00:00Z',
+    deadlineAt: '2026-09-19T00:05:00Z',
+    completedAt: '2026-09-19T00:00:04Z',
+    resultExpiresAt: '2026-09-26T00:00:04Z',
+    pollAfterMs: 1000,
+    cancelRequested: false,
+    contextRevision: 'a'.repeat(64),
+    contextPolicyVersion: 'public-comments-v1',
+    stale: false,
+    canInsert: true,
+    errorCode: null,
+    generationMode: 'REUSE_OR_CREATE',
+    reuseKind: 'GENERATED',
+  }
+  const sourceJob = {
+    ...baseReceipt,
+    jobId: sourceJobId,
+    candidateId: '52222222-2222-4222-8222-222222222222',
+    feature: 'ticket.reply_draft',
+    inputScope: 'PUBLIC_ONLY',
+    result: {
+      type: 'ticket.reply_draft',
+      answer: sourceAnswer,
+      citations: [citation],
+    },
+  }
+  const rewriteJob = {
+    ...baseReceipt,
+    jobId: rewriteJobId,
+    candidateId: '59999999-9999-4999-8999-999999999999',
+    feature: 'ticket.reply_rewrite',
+    sourceJobId,
+    inputScope: 'PUBLIC_DRAFT_ONLY',
+    result: {
+      type: 'ticket.reply_rewrite',
+      answer: rewrittenAnswer,
+      citations: [citation],
+      language: 'ko',
+      tone: 'formal',
+      length: 'concise',
+    },
+  }
+  const rewriteRequests: Array<Record<string, unknown>> = []
+
+  await mockWritableTicket(page, async ({ route }) => {
+    await route.fulfill({
+      status: 200,
+      json: { ticketNumber: 3001, version: 4, auditId, warnings: [] },
+    })
+  })
+  await page.route('**/api/v1/agent/tickets/3001/ai/jobs**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname === '/api/v1/agent/tickets/3001/ai/jobs') {
+      if (request.method() === 'GET') {
+        return route.fulfill({ status: 200, json: { items: [sourceJob] } })
+      }
+      if (request.method() === 'POST') {
+        rewriteRequests.push(request.postDataJSON() as Record<string, unknown>)
+        return route.fulfill({ status: 202, json: rewriteJob })
+      }
+    }
+    if (
+      request.method() === 'GET' &&
+      url.pathname === `/api/v1/agent/tickets/3001/ai/jobs/${sourceJobId}`
+    ) {
+      return route.fulfill({ status: 200, json: sourceJob })
+    }
+    if (
+      request.method() === 'GET' &&
+      url.pathname === `/api/v1/agent/tickets/3001/ai/jobs/${rewriteJobId}`
+    ) {
+      return route.fulfill({ status: 200, json: rewriteJob })
+    }
+    if (
+      request.method() === 'POST' &&
+      url.pathname ===
+        `/api/v1/agent/tickets/3001/ai/jobs/${rewriteJobId}/feedback`
+    ) {
+      return route.fulfill({
+        status: 201,
+        json: {
+          jobId: rewriteJobId,
+          type: 'inserted',
+          replayed: false,
+          recordedAt: '2026-09-19T00:00:05Z',
+        },
+      })
+    }
+    return route.fallback()
+  })
+  await openWorkspace(page)
+
+  await page.getByRole('button', { name: '티켓 컨텍스트 열기' }).click()
+  const context = page.getByLabel('티켓 컨텍스트', { exact: true })
+  await expect(context.getByText(sourceAnswer)).toBeVisible()
+  await context
+    .getByRole('combobox', { name: '재작성 문체' })
+    .selectOption('formal')
+  await context
+    .getByRole('combobox', { name: '재작성 길이' })
+    .selectOption('concise')
+  await context.getByRole('button', { name: '문체·길이 재작성' }).click()
+
+  await expect(context.getByText('재작성 결과', { exact: true })).toBeVisible()
+  await expect(context.getByText('격식 있게 · 간결하게')).toBeVisible()
+  expect(rewriteRequests).toEqual([
+    {
+      feature: 'ticket.reply_rewrite',
+      expectedTicketVersion: 3,
+      generationMode: 'REUSE_OR_CREATE',
+      sourceJobId,
+      options: { language: 'ko', tone: 'formal', length: 'concise' },
+    },
+  ])
+
+  await context
+    .getByRole('button', { name: '재작성 결과를 PUBLIC 작성기에 사용' })
+    .click()
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }),
+  ).toHaveText(rewrittenAnswer)
+})
+
 test('agent INTERNAL note sends an internal command without a public fallback', async ({
   page,
 }) => {

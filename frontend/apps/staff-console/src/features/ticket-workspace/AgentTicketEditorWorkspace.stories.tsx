@@ -4,7 +4,9 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { mswHandlers } from '../../../.storybook/msw-handlers'
 import type { AgentTicketDetail } from '../../api/types'
 import type { AiJobReceipt } from '../ai-assistance/api'
+import { removeLocalTicketDraft } from '../collaboration/draftRecovery'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
+import { ticketDraftStorageKey } from './model/ticketEditorModel'
 import {
   article as knowledgeArticle,
   revision as knowledgeRevision,
@@ -411,6 +413,13 @@ export const Writable: Story = {
 }
 
 export const AiReplyAttributionSend: Story = {
+  beforeEach: async () => {
+    localStorage.removeItem(ticketDraftStorageKey(staffId, 3001))
+    await Promise.all([
+      removeLocalTicketDraft(staffId, 3001, 'PUBLIC_REPLY'),
+      removeLocalTicketDraft(staffId, 3001, 'INTERNAL_NOTE'),
+    ])
+  },
   parameters: {
     msw: {
       handlers: workspaceHandlers(
@@ -484,7 +493,7 @@ export const AiReplyAttributionSend: Story = {
       await canvas.findByRole('button', { name: 'PUBLIC 작성기에 사용' }),
     )
     await waitFor(() => expect(editor).toHaveTextContent(attributedReplyAnswer))
-    await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
+    await userEvent.click(canvas.getByRole('button', { name: /^답변 보내기$/ }))
     await expect(
       await canvas.findByText('공개 답변과 변경사항을 저장했습니다.'),
     ).toBeVisible()
