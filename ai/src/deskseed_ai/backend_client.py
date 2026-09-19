@@ -57,6 +57,20 @@ class BackendClient:
             raise BackendPolicyDisabledError("AI feature is disabled")
         return revision
 
+    def authorize_rewrite_source(self, job_id: UUID) -> "RewriteSourceAuthorization":
+        with httpx.Client(base_url=self.settings.backend_base_url, timeout=10.0) as client:
+            response = client.get(
+                f"/api/v1/internal/ai/requests/{job_id}/rewrite-source",
+                headers=self._source_headers(),
+            )
+        if response.status_code == 409:
+            raise BackendSupersededError("rewrite source authorization changed")
+        if response.status_code != 200:
+            raise BackendAuthorizationError(
+                f"backend rewrite source rejected request with status {response.status_code}"
+            )
+        return RewriteSourceAuthorization.model_validate(response.json())
+
     def read_policy(self, feature: str) -> "AiPolicy":
         with httpx.Client(base_url=self.settings.backend_base_url, timeout=10.0) as client:
             response = client.get("/api/v1/internal/ai/policy", headers=self._source_headers())
@@ -209,7 +223,9 @@ class ContextRevision(BaseModel):
     requestRevision: int
     contextRevision: str
     aiInputRevision: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
-    inputPolicyVersion: Literal["summary-input-v1", "triage-input-v1", "reply-input-v1"] | None = None
+    inputPolicyVersion: Literal[
+        "summary-input-v1", "triage-input-v1", "reply-input-v1", "rewrite-input-v1"
+    ] | None = None
     authorized: bool
     cancelRequested: bool
     featureEnabled: bool
@@ -219,6 +235,16 @@ class ContextRevision(BaseModel):
         if (self.aiInputRevision is None) != (self.inputPolicyVersion is None):
             raise ValueError("input revision metadata must be paired")
         return self
+
+
+class RewriteSourceAuthorization(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    rewriteJobId: UUID
+    sourceJobId: UUID
+    contextRevision: str
+    aiInputRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    inputPolicyVersion: Literal["rewrite-input-v1"]
+    authorizedAt: datetime
 
 
 class AiPolicy(BaseModel):

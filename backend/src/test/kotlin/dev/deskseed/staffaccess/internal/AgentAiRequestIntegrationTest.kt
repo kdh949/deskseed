@@ -188,6 +188,232 @@ class AgentAiRequestIntegrationTest {
     }
 
     @Test
+    fun `reply rewrite is source-bound normalized exact-idempotent and body-free`() {
+        val fixture = fixture(9115)
+        val session = login(fixture.email, PASSWORD)
+        val sourceJobId = uuidField(
+            create(
+                session,
+                fixture.staffId,
+                fixture.number,
+                "ai-rewrite-source-0001",
+                requestBody("ticket.reply_draft"),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+        val body = requestBody(
+            "ticket.reply_rewrite",
+            sourceJobId = sourceJobId,
+        )
+        val first = create(session, fixture.staffId, fixture.number, "ai-rewrite-request-0001", body)
+            .andExpect(status().isAccepted)
+            .andExpect(jsonPath("$.feature").value("ticket.reply_rewrite"))
+            .andExpect(jsonPath("$.sourceJobId").value(sourceJobId.toString()))
+            .andExpect(jsonPath("$.inputScope").value("PUBLIC_DRAFT_ONLY"))
+            .andExpect(jsonPath("$.generationMode").value("REUSE_OR_CREATE"))
+            .andReturn().response.contentAsString
+        val replay = create(session, fixture.staffId, fixture.number, "ai-rewrite-request-0001", body)
+            .andExpect(status().isAccepted)
+            .andReturn().response.contentAsString
+        assertThat(uuidField(replay, "jobId")).isEqualTo(uuidField(first, "jobId"))
+
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-rewrite-request-0001",
+            requestBody(
+                "ticket.reply_rewrite",
+                options = """{"tone":"formal"}""",
+                sourceJobId = sourceJobId,
+            ),
+        ).andExpect(status().isConflict)
+
+        val payload = jdbcTemplate.queryForObject(
+            "select payload_json::text from ai_integration_outbox where job_id = ? and event_type = 'JOB_REQUESTED'",
+            String::class.java,
+            uuidField(first, "jobId"),
+        )!!
+        assertThat(payload)
+            .contains("\"schemaVersion\": 4")
+            .contains("\"sourceJobId\": \"$sourceJobId\"")
+            .contains("\"generationMode\": \"REUSE_OR_CREATE\"")
+            .contains("\"dataClass\": \"PUBLIC_DRAFT_ONLY\"")
+            .contains("\"language\": \"ko\"")
+            .contains("\"length\": \"standard\"")
+            .contains("\"tone\": \"calm\"")
+            .doesNotContain(PUBLIC_BODY, INTERNAL_BODY, fixture.subject, fixture.email)
+        assertThat(
+            jdbcTemplate.queryForMap(
+                "select source_job_id, input_policy_version, generation_mode from ai_requests where job_id = ?",
+                uuidField(first, "jobId"),
+            ),
+        ).containsEntry("source_job_id", sourceJobId)
+            .containsEntry("input_policy_version", "rewrite-input-v1")
+            .containsEntry("generation_mode", "REUSE_OR_CREATE")
+    }
+
+    @Test
+    fun `reply rewrite rejects arbitrary sources candidate mode and cross-owner binding`() {
+        val fixture = fixture(9116)
+        val other = fixture(9117)
+        val session = login(fixture.email, PASSWORD)
+        val otherSession = login(other.email, PASSWORD)
+        val sourceJobId = uuidField(
+            create(
+                otherSession,
+                other.staffId,
+                other.number,
+                "ai-rewrite-other-source-0001",
+                requestBody("ticket.reply_draft"),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-rewrite-cross-owner-0001",
+            requestBody("ticket.reply_rewrite", sourceJobId = sourceJobId),
+        ).andExpect(status().isBadRequest)
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-rewrite-candidate-0001",
+            requestBody(
+                "ticket.reply_rewrite",
+                generationMode = "NEW_CANDIDATE",
+                sourceJobId = UUID.randomUUID(),
+            ),
+        ).andExpect(status().isBadRequest)
+        create(
+            session,
+            fixture.staffId,
+            fixture.number,
+            "ai-rewrite-arbitrary-source-0001",
+            requestBody("ticket.summary", sourceJobId = UUID.randomUUID()),
+        ).andExpect(status().isBadRequest)
+
+        assertThat(count("select count(*) from ai_requests where requester_staff_id = '${fixture.staffId}'"))
+            .isZero()
+    }
+
+    @Test
+    fun `rewrite source capability audits the bound source and fails closed after context drift`() {
+        val fixture = fixture(9118)
+        val session = login(fixture.email, PASSWORD)
+        val sourceJobId = uuidField(
+            create(
+                session,
+                fixture.staffId,
+                fixture.number,
+                "ai-rewrite-cap-source-0001",
+                requestBody("ticket.reply_draft"),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+        val rewriteJobId = uuidField(
+            create(
+                session,
+                fixture.staffId,
+                fixture.number,
+                "ai-rewrite-cap-request-0001",
+                requestBody("ticket.reply_rewrite", sourceJobId = sourceJobId),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+
+        rewriteSource(rewriteJobId)
+            .andExpect(status().isOk)
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.rewriteJobId").value(rewriteJobId.toString()))
+            .andExpect(jsonPath("$.sourceJobId").value(sourceJobId.toString()))
+            .andExpect(jsonPath("$.answer").doesNotExist())
+            .andExpect(jsonPath("$.citations").doesNotExist())
+        assertThat(
+            count(
+                """
+                select count(*) from ai_result_access_audit_details detail
+                join access_audit_events event on event.id = detail.access_event_id
+                where detail.job_id = '$sourceJobId'
+                  and detail.requester_staff_id = '${fixture.staffId}'
+                  and detail.feature = 'ticket.reply_draft'
+                  and event.actor_type = 'INTEGRATION_CLIENT'
+                  and event.source = 'AI_SERVICE'
+                """.trimIndent(),
+            ),
+        ).isEqualTo(1)
+
+        insertComment(fixture.ticketId, "PUBLIC", fixture.customerId, "새 공개 메시지")
+        rewriteSource(rewriteJobId).andExpect(status().isConflict)
+        assertThat(count("select count(*) from ai_result_access_audit_details where job_id = '$sourceJobId'"))
+            .isEqualTo(1)
+    }
+
+    @Test
+    fun `rewrite source capability returns unavailable when required result audit fails`() {
+        val fixture = fixture(9119)
+        val session = login(fixture.email, PASSWORD)
+        val sourceJobId = uuidField(
+            create(
+                session,
+                fixture.staffId,
+                fixture.number,
+                "ai-rewrite-audit-source-0001",
+                requestBody("ticket.reply_draft"),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+        val rewriteJobId = uuidField(
+            create(
+                session,
+                fixture.staffId,
+                fixture.number,
+                "ai-rewrite-audit-request-0001",
+                requestBody("ticket.reply_rewrite", sourceJobId = sourceJobId),
+            ).andExpect(status().isAccepted).andReturn().response.contentAsString,
+            "jobId",
+        )
+        jdbcTemplate.execute(
+            """
+            create function fail_ai_result_access_audit_for_test()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+                raise exception 'forced AI result access audit failure';
+            end;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create trigger fail_ai_result_access_audit_for_test
+            before insert on ai_result_access_audit_details
+            for each row execute function fail_ai_result_access_audit_for_test()
+            """.trimIndent(),
+        )
+        try {
+            rewriteSource(rewriteJobId).andExpect(status().isServiceUnavailable)
+            assertThat(count("select count(*) from ai_result_access_audit_details where job_id = '$sourceJobId'"))
+                .isZero()
+            assertThat(
+                count(
+                    """
+                    select count(*) from access_audit_events
+                    where actor_type = 'INTEGRATION_CLIENT' and source = 'AI_SERVICE'
+                    """.trimIndent(),
+                ),
+            ).isZero()
+        } finally {
+            jdbcTemplate.execute(
+                "drop trigger if exists fail_ai_result_access_audit_for_test on ai_result_access_audit_details",
+            )
+            jdbcTemplate.execute("drop function if exists fail_ai_result_access_audit_for_test()")
+        }
+    }
+
+    @Test
     fun `new candidate quota refunds only a definitive pre-dispatch failure`() {
         val fixture = fixture(9113)
         val session = login(fixture.email, PASSWORD)
@@ -720,9 +946,21 @@ class AgentAiRequestIntegrationTest {
             .header("X-Deskseed-AI-Key-Id", "test-ai-key"),
     )
 
-    private fun requestBody(feature: String, options: String = "{}", generationMode: String? = null): String {
+    private fun rewriteSource(jobId: UUID) = mockMvc.perform(
+        get("/api/v1/internal/ai/requests/{jobId}/rewrite-source", jobId)
+            .header("Authorization", "Bearer test-ai-source-secret")
+            .header("X-Deskseed-AI-Key-Id", "test-ai-key"),
+    )
+
+    private fun requestBody(
+        feature: String,
+        options: String = "{}",
+        generationMode: String? = null,
+        sourceJobId: UUID? = null,
+    ): String {
         val intent = generationMode?.let { ",\"generationMode\":\"$it\"" }.orEmpty()
-        return """{"feature":"$feature","expectedTicketVersion":0,"options":$options$intent}"""
+        val source = sourceJobId?.let { ",\"sourceJobId\":\"$it\"" }.orEmpty()
+        return """{"feature":"$feature","expectedTicketVersion":0,"options":$options$intent$source}"""
     }
 
     private fun createCandidate(session: MockHttpSession, fixture: Fixture, key: String): CandidateReceipt {
@@ -766,7 +1004,7 @@ class AgentAiRequestIntegrationTest {
         jdbcTemplate.update(
             """
             update ai_settings set enabled = true, summary_enabled = true, triage_enabled = true,
-                reply_draft_enabled = true, updated_at = clock_timestamp()
+                reply_draft_enabled = true, reply_rewrite_enabled = true, updated_at = clock_timestamp()
             where singleton = true
             """.trimIndent(),
         )

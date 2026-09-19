@@ -56,6 +56,7 @@ internal class AgentAiRequestController(
                 ticketNumber = ticketNumber,
                 feature = AiFeature.fromValue(body.feature),
                 expectedTicketVersion = body.expectedTicketVersion,
+                sourceJobId = body.sourceJobId,
                 options = body.options,
                 generationMode = body.generationMode,
                 idempotencyKey = idempotencyKey,
@@ -143,7 +144,8 @@ internal data class CreateAgentAiJobRequest(
     val feature: String,
     @field:PositiveOrZero
     val expectedTicketVersion: Long,
-    @field:Size(max = 2)
+    val sourceJobId: UUID? = null,
+    @field:Size(max = 3)
     val options: Map<@NotBlank @Size(max = 40) String, @NotBlank @Size(max = 40) String> = emptyMap(),
     val generationMode: AiGenerationMode? = null,
 )
@@ -164,6 +166,7 @@ internal data class AgentAiJobResponse(
     val deadlineAt: Instant,
     val pollAfterMs: Long,
     val cancelRequested: Boolean,
+    val sourceJobId: UUID?,
     val contextRevision: String,
     val contextPolicyVersion: String,
     val inputScope: String,
@@ -197,9 +200,10 @@ private fun AiJobReceipt.toResponse() = AgentAiJobResponse(
     deadlineAt = deadlineAt,
     pollAfterMs = pollAfterMs,
     cancelRequested = cancelRequested,
+    sourceJobId = sourceJobId,
     contextRevision = contextRevision,
     contextPolicyVersion = contextPolicyVersion,
-    inputScope = "PUBLIC_ONLY",
+    inputScope = inputScope,
     phase = phase,
     generation = generation,
     leaseEpoch = leaseEpoch,

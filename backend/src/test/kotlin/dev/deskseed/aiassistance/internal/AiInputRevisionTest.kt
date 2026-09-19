@@ -44,14 +44,27 @@ class AiInputRevisionTest {
     @Test
     fun `feature policy domains are distinct and mismatches fail closed`() {
         val context = context()
-        val revisions = AiFeature.entries.associateWith { computeAiInputRevision(context, it) }
+        val revisions = AiFeature.entries
+            .filterNot { it == AiFeature.TICKET_REPLY_REWRITE }
+            .associateWith { computeAiInputRevision(context, it) }
 
         assertThat(revisions.values).doesNotHaveDuplicates()
         assertThat(inputPolicyVersion(AiFeature.TICKET_SUMMARY)).isEqualTo("summary-input-v1")
         assertThat(inputPolicyVersion(AiFeature.TICKET_TRIAGE)).isEqualTo("triage-input-v1")
         assertThat(inputPolicyVersion(AiFeature.TICKET_REPLY_DRAFT)).isEqualTo("reply-input-v1")
+        assertThat(inputPolicyVersion(AiFeature.TICKET_REPLY_REWRITE)).isEqualTo("rewrite-input-v1")
+        assertThat(
+            computeRewriteInputRevision(
+                context,
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "a".repeat(64),
+            ),
+        ).matches("^[0-9a-f]{64}$")
         assertThatThrownBy {
             computeAiInputRevision(context, AiFeature.TICKET_SUMMARY, "reply-input-v1")
+        }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy {
+            computeAiInputRevision(context, AiFeature.TICKET_REPLY_REWRITE)
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 

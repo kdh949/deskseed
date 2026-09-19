@@ -6,6 +6,7 @@ import dev.deskseed.aiassistance.AiExecutionStatusReader
 import dev.deskseed.aiassistance.AiGenerationProvenance
 import dev.deskseed.aiassistance.AiJobReceipt
 import dev.deskseed.aiassistance.AiReplyDraftResult
+import dev.deskseed.aiassistance.AiReplyRewriteResult
 import dev.deskseed.aiassistance.AiSummaryResult
 import dev.deskseed.aiassistance.AiTriageResult
 import dev.deskseed.aiassistance.AiTypedResult
@@ -68,6 +69,8 @@ internal class AiExecutionStatusClient(
             deadlineAt = node.instant("deadlineAt"),
             pollAfterMs = node.long("pollAfterMs"),
             cancelRequested = node.boolean("cancelRequested"),
+            sourceJobId = node.nullableText("sourceJobId")?.let(UUID::fromString),
+            inputScope = node.text("inputScope"),
             contextRevision = node.text("contextRevision"),
             contextPolicyVersion = node.text("contextPolicyVersion"),
             phase = node.text("phase"),
@@ -125,6 +128,21 @@ internal class AiExecutionStatusClient(
                     url = citation.text("url"),
                 )
             } ?: error("Missing citations"),
+        )
+        "ticket.reply_rewrite" -> AiReplyRewriteResult(
+            answer = node.text("answer"),
+            citations = node.get("citations")?.takeIf(JsonNode::isArray)?.values()?.map { citation ->
+                AiCitation(
+                    articleId = citation.uuid("articleId"),
+                    revisionId = citation.uuid("revisionId"),
+                    chunkId = citation.uuid("chunkId"),
+                    title = citation.text("title"),
+                    url = citation.text("url"),
+                )
+            } ?: error("Missing citations"),
+            language = node.text("language"),
+            tone = node.text("tone"),
+            length = node.text("length"),
         )
         else -> error("Unsupported typed AI result")
     }

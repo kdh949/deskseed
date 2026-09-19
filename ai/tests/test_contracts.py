@@ -27,6 +27,7 @@ from deskseed_ai.retrieval import (
     build_public_article_chunks,
     build_retrieval_query,
 )
+from deskseed_ai.rewrite import preservation_markers, preserves_deterministic_markers
 from deskseed_ai.schemas import (
     AuthorRole,
     Citation,
@@ -38,6 +39,8 @@ from deskseed_ai.schemas import (
     JobEnvelope,
     PublicComment,
     ReplyProviderOutput,
+    ReplyRewritePreservationVerdict,
+    ReplyRewriteProviderOutput,
     SourceContext,
 )
 from deskseed_ai.security import authenticate_machine
@@ -176,6 +179,73 @@ def test_schema_v3_generation_intent_shape_is_strict() -> None:
         }
     )
     assert candidate.candidateSequence == 1
+
+
+def test_schema_v4_reply_rewrite_is_source_bound_and_uses_closed_options() -> None:
+    now = datetime.now(UTC)
+    source_job_id = uuid4()
+    base = {
+        "schemaVersion": 4,
+        "eventId": uuid4(),
+        "jobId": uuid4(),
+        "workspaceKey": "default",
+        "requesterId": uuid4(),
+        "ticketId": uuid4(),
+        "ticketNumber": 1,
+        "feature": Feature.REPLY_REWRITE,
+        "contextRevision": "a" * 64,
+        "contextPolicyVersion": "public-comments-v2",
+        "aiInputRevision": "b" * 64,
+        "inputPolicyVersion": "rewrite-input-v1",
+        "generationMode": GenerationMode.REUSE_OR_CREATE,
+        "sourceJobId": source_job_id,
+        "dataClass": "PUBLIC_DRAFT_ONLY",
+        "requestRevision": 1,
+        "options": {"language": "ko", "length": "standard", "tone": "calm"},
+        "createdAt": now,
+        "deadlineAt": now + timedelta(minutes=1),
+    }
+
+    parsed = JobEnvelope.model_validate(base)
+    assert parsed.sourceJobId == source_job_id
+    for invalid in (
+        {"sourceJobId": None},
+        {"feature": Feature.REPLY_DRAFT},
+        {"generationMode": GenerationMode.NEW_CANDIDATE},
+        {"dataClass": "PUBLIC_ONLY"},
+        {"options": {"language": "ko", "length": "long", "tone": "calm"}},
+        {"options": {"language": "ko", "length": "standard", "tone": "friendly"}},
+    ):
+        with pytest.raises(ValidationError):
+            JobEnvelope.model_validate(base | invalid)
+    with pytest.raises(ValidationError):
+        JobEnvelope.model_validate(base | {"answer": "client text must not enter the envelope"})
+
+
+def test_reply_rewrite_contract_requires_exact_refs_and_consistent_verdict() -> None:
+    output = ReplyRewriteProviderOutput(answer="안내입니다.", sourceRefs=["S1", "S2"])
+    assert output.sourceRefs == ["S1", "S2"]
+    with pytest.raises(ValidationError, match="unique"):
+        ReplyRewriteProviderOutput(answer="안내입니다.", sourceRefs=["S1", "S1"])
+    assert ReplyRewritePreservationVerdict(preserved=True, changedCategories=[]).preserved
+    with pytest.raises(ValidationError, match="inconsistent"):
+        ReplyRewritePreservationVerdict(preserved=True, changedCategories=["POLICY"])
+
+
+def test_reply_rewrite_deterministic_markers_preserve_facts_conditions_and_negation() -> None:
+    original = (
+        "Deskseed 환불 정책상 2026-09-30까지 12,000원 결제는 취소할 수 없으며 "
+        "support@example.com 또는 https://example.com/help 를 확인해야 합니다."
+    )
+    reordered = (
+        "support@example.com 또는 https://example.com/help 를 확인해야 합니다. "
+        "Deskseed 환불 정책상 12,000원 결제는 2026-09-30까지 취소할 수 없습니다."
+    )
+    assert preservation_markers(original)
+    assert preserves_deterministic_markers(original, reordered)
+    assert not preserves_deterministic_markers(original, reordered.replace("12,000원", "13,000원"))
+    assert not preserves_deterministic_markers(original, reordered.replace("없습니다", "있습니다"))
+    assert not preserves_deterministic_markers(original, reordered.replace("2026-09-30", "2026-10-01"))
 
 
 def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:

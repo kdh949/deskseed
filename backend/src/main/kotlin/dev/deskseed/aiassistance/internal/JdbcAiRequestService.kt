@@ -16,6 +16,7 @@ import dev.deskseed.aiassistance.AiRequestInvalidException
 import dev.deskseed.aiassistance.AiRequestMetadata
 import dev.deskseed.aiassistance.AiRequestNotFoundException
 import dev.deskseed.aiassistance.AiRequestRateLimitedException
+import dev.deskseed.aiassistance.AiRewriteSourceAuthorization
 import dev.deskseed.aiassistance.AiRequestService
 import dev.deskseed.aiassistance.AiServiceIdentity
 import dev.deskseed.aiassistance.AiSourceComment
@@ -32,6 +33,7 @@ import dev.deskseed.audit.AccessAuditContext
 import dev.deskseed.audit.AccessAuditOutcome
 import dev.deskseed.audit.AccessAuditWriter
 import dev.deskseed.audit.AiContextAccessAudit
+import dev.deskseed.audit.AiResultAccessAudit
 import dev.deskseed.audit.TicketResourceReadAccessAudit
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
@@ -77,7 +79,19 @@ internal class JdbcAiRequestService(
         val idempotencyFingerprint = sha256(command.idempotencyKey)
         val contextRevision = computeAiContextRevision(context)
         val inputPolicyVersion = inputPolicyVersion(command.feature)
-        val aiInputRevision = computeAiInputRevision(context, command.feature, inputPolicyVersion)
+        val rewriteSource = if (command.feature == AiFeature.TICKET_REPLY_REWRITE) {
+            findRewriteSource(command, context.ticketId, contextRevision)
+        } else {
+            null
+        }
+        val generationMode = if (command.feature == AiFeature.TICKET_REPLY_REWRITE) {
+            AiGenerationMode.REUSE_OR_CREATE
+        } else {
+            command.generationMode
+        }
+        val aiInputRevision = rewriteSource?.let {
+            computeRewriteInputRevision(context, it.jobId, it.aiInputRevision, inputPolicyVersion)
+        } ?: computeAiInputRevision(context, command.feature, inputPolicyVersion)
         val requestFingerprint = sha256(
             listOf(
                 context.ticketId,
@@ -85,7 +99,8 @@ internal class JdbcAiRequestService(
                 command.feature.value,
                 command.expectedTicketVersion,
                 optionsJson,
-                command.generationMode?.name.orEmpty(),
+                generationMode?.name.orEmpty(),
+                rewriteSource?.jobId?.toString().orEmpty(),
             ).joinToString("\u001f"),
         )
         acquireIdempotencyLock(command.actor.id, idempotencyFingerprint)
@@ -99,7 +114,7 @@ internal class JdbcAiRequestService(
         val now = Instant.now(clock)
         val deadline = now.plus(requestDeadline)
         val jobId = UUID.randomUUID()
-        val candidate = if (command.generationMode == AiGenerationMode.NEW_CANDIDATE) {
+        val candidate = if (generationMode == AiGenerationMode.NEW_CANDIDATE) {
             claimCandidate(command, context.ticketId, aiInputRevision, now)
         } else {
             null
@@ -112,8 +127,9 @@ internal class JdbcAiRequestService(
                 feature, status, expected_ticket_version, options_json, request_fingerprint,
                 idempotency_key_fingerprint, context_policy_version, context_revision,
                 ai_input_revision, input_policy_version, generation_mode, candidate_id, candidate_sequence,
+                source_job_id,
                 request_revision, cancellation_requested, created_at, updated_at, deadline_at
-            ) values (?, ?, ?, ?, ?, ?, 'ACCEPTED', ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, false, ?, ?, ?)
+            ) values (?, ?, ?, ?, ?, ?, 'ACCEPTED', ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, false, ?, ?, ?)
             """.trimIndent(),
             jobId,
             workspaceKey,
@@ -129,15 +145,16 @@ internal class JdbcAiRequestService(
             contextRevision,
             aiInputRevision,
             inputPolicyVersion,
-            command.generationMode?.name,
+            generationMode?.name,
             candidate?.id,
             candidate?.sequence,
+            rewriteSource?.jobId,
             Timestamp.from(now),
             Timestamp.from(now),
             Timestamp.from(deadline),
         )
         val envelope = linkedMapOf<String, Any?>(
-            "schemaVersion" to if (command.generationMode == null) JOB_REQUEST_OUTBOX_SCHEMA_VERSION else INTENT_JOB_SCHEMA_VERSION,
+            "schemaVersion" to if (rewriteSource != null) REWRITE_JOB_SCHEMA_VERSION else if (generationMode == null) JOB_REQUEST_OUTBOX_SCHEMA_VERSION else INTENT_JOB_SCHEMA_VERSION,
             "eventId" to UUID.randomUUID().toString(),
             "jobId" to jobId.toString(),
             "workspaceKey" to workspaceKey,
@@ -149,7 +166,7 @@ internal class JdbcAiRequestService(
             "contextPolicyVersion" to CONTEXT_POLICY_VERSION,
             "aiInputRevision" to aiInputRevision,
             "inputPolicyVersion" to inputPolicyVersion,
-            "dataClass" to INPUT_SCOPE,
+            "dataClass" to if (rewriteSource != null) REWRITE_INPUT_SCOPE else INPUT_SCOPE,
             "requestRevision" to 1,
             "options" to normalizedOptions,
             "createdAt" to now.toString(),
@@ -157,11 +174,12 @@ internal class JdbcAiRequestService(
             "traceparent" to command.metadata.traceparent,
             "tracestate" to command.metadata.tracestate,
         )
-        if (command.generationMode != null) {
-            envelope["generationMode"] = command.generationMode.name
+        if (generationMode != null) {
+            envelope["generationMode"] = generationMode.name
             envelope["candidateId"] = candidate?.id?.toString()
             envelope["candidateSequence"] = candidate?.sequence
         }
+        rewriteSource?.let { envelope["sourceJobId"] = it.jobId.toString() }
         appendOutbox(jobId, "JOB_REQUESTED", 1, envelope, now)
         activityAuditWriter.append(
             AiActivityAudit(
@@ -175,7 +193,7 @@ internal class JdbcAiRequestService(
                 requestRevision = 1,
                 details = buildMap {
                     put("feature", command.feature.value)
-                    command.generationMode?.let { put("generationMode", it.name) }
+                    generationMode?.let { put("generationMode", it.name) }
                 },
                 occurredAt = now,
             ),
@@ -189,7 +207,9 @@ internal class JdbcAiRequestService(
             deadline,
             false,
             contextRevision,
-            generationMode = command.generationMode?.name,
+            sourceJobId = rewriteSource?.jobId,
+            inputScope = if (rewriteSource != null) REWRITE_INPUT_SCOPE else INPUT_SCOPE,
+            generationMode = generationMode?.name,
             candidateSequence = candidate?.sequence,
         )
     }
@@ -275,7 +295,7 @@ internal class JdbcAiRequestService(
             """
             select job_id, feature, status, request_revision, created_at, deadline_at,
                    cancellation_requested, context_revision, context_policy_version, request_fingerprint,
-                   generation_mode, candidate_sequence
+                   generation_mode, candidate_sequence, source_job_id
             from ai_requests
             where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_number = ?
             """.trimIndent(),
@@ -298,6 +318,8 @@ internal class JdbcAiRequestService(
         }
         if (
             remote.jobId != jobId || remote.feature != backendReceipt.feature ||
+            remote.sourceJobId != backendReceipt.sourceJobId ||
+            remote.inputScope != backendReceipt.inputScope ||
             remote.generationMode != backendReceipt.generationMode ||
             remote.candidateSequence != backendReceipt.candidateSequence
         ) throw AiStatusUnavailableException()
@@ -461,7 +483,7 @@ internal class JdbcAiRequestService(
             """
             select job_id, feature, status, request_revision, created_at, deadline_at,
                    cancellation_requested, context_revision, context_policy_version, request_fingerprint,
-                   generation_mode, candidate_sequence
+                   generation_mode, candidate_sequence, source_job_id
             from ai_requests
             where workspace_key = ? and requester_staff_id = ? and ticket_number = ?
             order by created_at desc, job_id desc
@@ -510,6 +532,9 @@ internal class JdbcAiRequestService(
         ).singleOrNull() ?: throw AiSourceRequestUnavailableException()
         val now = Instant.now(clock)
         if (binding.status != AiBackendRequestStatus.ACCEPTED || !binding.deadlineAt.isAfter(now)) {
+            throw AiSourceRequestUnavailableException()
+        }
+        if (binding.feature == AiFeature.TICKET_REPLY_REWRITE.value) {
             throw AiSourceRequestUnavailableException()
         }
         val context = ticketStore.findAiPublicContext(binding.ticketNumber, binding.requesterStaffId)
@@ -581,7 +606,7 @@ internal class JdbcAiRequestService(
             """
             select requester_staff_id, ticket_number, feature, status, request_revision,
                    context_revision, context_policy_version, ai_input_revision, input_policy_version,
-                   cancellation_requested, deadline_at
+                   cancellation_requested, deadline_at, source_job_id
             from ai_requests where job_id = ? and workspace_key = ?
             """.trimIndent(),
             { result, _ -> RevisionBinding(
@@ -596,6 +621,7 @@ internal class JdbcAiRequestService(
                 inputPolicyVersion = result.getString("input_policy_version"),
                 cancelRequested = result.getBoolean("cancellation_requested"),
                 deadlineAt = result.getTimestamp("deadline_at").toInstant(),
+                sourceJobId = result.getObject("source_job_id", UUID::class.java),
             ) },
             jobId,
             workspaceKey,
@@ -605,7 +631,16 @@ internal class JdbcAiRequestService(
             computeAiContextRevision(it, binding.contextPolicyVersion)
         } ?: binding.contextRevision
         val currentAiInputRevision = binding.inputPolicyVersion?.let { policyVersion ->
-            context?.let { computeAiInputRevision(it, binding.feature, policyVersion) }
+            context?.let {
+                if (binding.feature == AiFeature.TICKET_REPLY_REWRITE) {
+                    val source = findRewriteSourceInput(binding.sourceJobId, binding.requesterId, it.ticketId)
+                    source?.let { value ->
+                        computeRewriteInputRevision(it, binding.sourceJobId!!, value, policyVersion)
+                    }
+                } else {
+                    computeAiInputRevision(it, binding.feature, policyVersion)
+                }
+            }
         } ?: binding.aiInputRevision
         val featureEnabled = isFeatureEnabled(binding.feature, binding.requesterId)
         val authorized = context != null && context.comments.isNotEmpty() &&
@@ -624,6 +659,122 @@ internal class JdbcAiRequestService(
         )
     }
 
+    @Transactional
+    override fun authorizeRewriteSource(
+        jobId: UUID,
+        serviceIdentity: AiServiceIdentity,
+        metadata: AiRequestMetadata,
+    ): AiRewriteSourceAuthorization {
+        val binding = jdbcTemplate.query(
+            """
+            select rewrite.requester_staff_id, rewrite.ticket_id, rewrite.ticket_number,
+                   rewrite.status, rewrite.request_revision, rewrite.deadline_at,
+                   rewrite.context_revision, rewrite.ai_input_revision, rewrite.input_policy_version,
+                   rewrite.cancellation_requested, rewrite.source_job_id,
+                   source.request_revision as source_request_revision,
+                   source.ai_input_revision as source_ai_input_revision
+            from ai_requests rewrite
+            join ai_requests source on source.job_id = rewrite.source_job_id
+            where rewrite.job_id = ? and rewrite.workspace_key = ?
+              and rewrite.feature = 'ticket.reply_rewrite'
+              and source.workspace_key = rewrite.workspace_key
+              and source.requester_staff_id = rewrite.requester_staff_id
+              and source.ticket_id = rewrite.ticket_id
+              and source.feature = 'ticket.reply_draft'
+              and source.source_job_id is null
+            for update of rewrite
+            """.trimIndent(),
+            { result, _ -> RewriteAuthorizationBinding(
+                requesterId = result.getObject("requester_staff_id", UUID::class.java),
+                ticketId = result.getObject("ticket_id", UUID::class.java),
+                ticketNumber = result.getLong("ticket_number"),
+                status = AiBackendRequestStatus.valueOf(result.getString("status")),
+                requestRevision = result.getLong("request_revision"),
+                deadlineAt = result.getTimestamp("deadline_at").toInstant(),
+                contextRevision = result.getString("context_revision"),
+                aiInputRevision = result.getString("ai_input_revision"),
+                inputPolicyVersion = result.getString("input_policy_version"),
+                cancelled = result.getBoolean("cancellation_requested"),
+                sourceJobId = result.getObject("source_job_id", UUID::class.java),
+                sourceRequestRevision = result.getLong("source_request_revision"),
+                sourceAiInputRevision = result.getString("source_ai_input_revision"),
+            ) },
+            jobId,
+            workspaceKey,
+        ).singleOrNull() ?: throw AiSourceRequestUnavailableException()
+        val now = Instant.now(clock)
+        val context = ticketStore.findAiPublicContext(binding.ticketNumber, binding.requesterId)
+            ?: throw AiSourceRequestUnavailableException()
+        val currentContextRevision = computeAiContextRevision(context)
+        val currentInputRevision = computeRewriteInputRevision(
+            context,
+            binding.sourceJobId,
+            binding.sourceAiInputRevision,
+            binding.inputPolicyVersion,
+        )
+        if (
+            binding.status != AiBackendRequestStatus.ACCEPTED || binding.cancelled ||
+            !binding.deadlineAt.isAfter(now) || !isFeatureEnabled(AiFeature.TICKET_REPLY_REWRITE, binding.requesterId) ||
+            currentContextRevision != binding.contextRevision || currentInputRevision != binding.aiInputRevision
+        ) {
+            throw AiSourceRequestSupersededException()
+        }
+        try {
+            auditWriter.appendAiResultAccess(
+                AiResultAccessAudit(
+                    eventId = UUID.randomUUID(),
+                    context = AccessAuditContext(
+                        actorType = ActorType.INTEGRATION_CLIENT,
+                        actorId = serviceIdentity.id,
+                        actorDisplaySnapshot = serviceIdentity.displayName,
+                        source = RequestSource.AI_SERVICE,
+                        sessionFingerprint = null,
+                        authType = AccessAuditAuthType.API_KEY,
+                        requestId = metadata.requestId,
+                        correlationId = metadata.correlationId,
+                        ipAddress = null,
+                        userAgent = null,
+                    ),
+                    jobId = binding.sourceJobId,
+                    requesterStaffId = binding.requesterId,
+                    ticketId = binding.ticketId,
+                    ticketNumber = binding.ticketNumber,
+                    feature = AiFeature.TICKET_REPLY_DRAFT.value,
+                    requestRevision = binding.sourceRequestRevision,
+                    outcome = AccessAuditOutcome.SUCCEEDED,
+                    httpStatus = 200,
+                    occurredAt = now,
+                ),
+            )
+        } catch (exception: DataAccessException) {
+            throw AiAuditUnavailableException(exception)
+        }
+        return AiRewriteSourceAuthorization(
+            rewriteJobId = jobId,
+            sourceJobId = binding.sourceJobId,
+            contextRevision = binding.contextRevision,
+            aiInputRevision = binding.aiInputRevision,
+            inputPolicyVersion = binding.inputPolicyVersion,
+            authorizedAt = now,
+        )
+    }
+
+    private fun findRewriteSourceInput(sourceJobId: UUID?, requesterId: UUID, ticketId: UUID): String? {
+        if (sourceJobId == null) return null
+        return jdbcTemplate.query(
+            """
+            select ai_input_revision from ai_requests
+            where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_id = ?
+              and feature = 'ticket.reply_draft' and source_job_id is null
+            """.trimIndent(),
+            { result, _ -> result.getString("ai_input_revision") },
+            sourceJobId,
+            workspaceKey,
+            requesterId,
+            ticketId,
+        ).singleOrNull()
+    }
+
     private fun validateCommand(command: CreateAiRequestCommand) {
         if (command.ticketNumber <= 0) throw AiRequestInvalidException("ticketNumber must be positive")
         if (command.expectedTicketVersion < 0) throw AiRequestInvalidException("expectedTicketVersion must be nonnegative")
@@ -633,6 +784,13 @@ internal class JdbcAiRequestService(
         }
         if (requestDeadline.isZero || requestDeadline.isNegative || requestDeadline > Duration.ofMinutes(10)) {
             throw IllegalStateException("AI request deadline configuration is invalid")
+        }
+        if (command.feature == AiFeature.TICKET_REPLY_REWRITE) {
+            if (command.sourceJobId == null || command.generationMode == AiGenerationMode.NEW_CANDIDATE) {
+                throw AiRequestInvalidException("Reply rewrite requires a source reply and REUSE_OR_CREATE intent")
+            }
+        } else if (command.sourceJobId != null) {
+            throw AiRequestInvalidException("Source job is only supported for reply rewrite")
         }
     }
 
@@ -651,6 +809,7 @@ internal class JdbcAiRequestService(
             AiFeature.TICKET_SUMMARY -> "summary_enabled"
             AiFeature.TICKET_TRIAGE -> "triage_enabled"
             AiFeature.TICKET_REPLY_DRAFT -> "reply_draft_enabled"
+            AiFeature.TICKET_REPLY_REWRITE -> "reply_rewrite_enabled"
         }
         val enabled = jdbcTemplate.queryForObject(
             """
@@ -673,6 +832,11 @@ internal class JdbcAiRequestService(
     private fun normalizeOptions(feature: AiFeature, options: Map<String, String>): Map<String, String> {
         val defaults = when (feature) {
             AiFeature.TICKET_REPLY_DRAFT -> sortedMapOf("language" to "ko", "tone" to "calm")
+            AiFeature.TICKET_REPLY_REWRITE -> sortedMapOf(
+                "language" to "ko",
+                "length" to "standard",
+                "tone" to "calm",
+            )
             AiFeature.TICKET_SUMMARY, AiFeature.TICKET_TRIAGE -> sortedMapOf("language" to "ko")
         }
         if (options.keys.any { it !in defaults.keys }) throw AiRequestInvalidException("Unsupported AI request option")
@@ -686,10 +850,41 @@ internal class JdbcAiRequestService(
         if (normalized["language"]?.let { it != "ko" } == true) {
             throw AiRequestInvalidException("Unsupported AI language option")
         }
-        if (normalized["tone"]?.let { it != "calm" } == true) {
+        val allowedTones = if (feature == AiFeature.TICKET_REPLY_REWRITE) setOf("calm", "formal") else setOf("calm")
+        if (normalized["tone"]?.let { it !in allowedTones } == true) {
             throw AiRequestInvalidException("Unsupported AI tone option")
         }
+        if (normalized["length"]?.let { it !in setOf("concise", "standard") } == true) {
+            throw AiRequestInvalidException("Unsupported AI length option")
+        }
         return (defaults + normalized).toSortedMap()
+    }
+
+    private fun findRewriteSource(
+        command: CreateAiRequestCommand,
+        ticketId: UUID,
+        contextRevision: String,
+    ): RewriteSourceBinding {
+        val sourceJobId = command.sourceJobId ?: throw AiRequestInvalidException("Reply rewrite source is required")
+        return jdbcTemplate.query(
+            """
+            select job_id, ai_input_revision
+            from ai_requests
+            where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_id = ?
+              and feature = 'ticket.reply_draft' and source_job_id is null
+              and context_revision = ? and ai_input_revision is not null
+            for share
+            """.trimIndent(),
+            { result, _ -> RewriteSourceBinding(
+                jobId = result.getObject("job_id", UUID::class.java),
+                aiInputRevision = result.getString("ai_input_revision"),
+            ) },
+            sourceJobId,
+            workspaceKey,
+            command.actor.id,
+            ticketId,
+            contextRevision,
+        ).singleOrNull() ?: throw AiRequestInvalidException("Reply rewrite source is unavailable")
     }
 
     private fun acquireIdempotencyLock(actorId: UUID, idempotencyFingerprint: String) {
@@ -799,7 +994,7 @@ internal class JdbcAiRequestService(
         """
         select job_id, feature, status, request_revision, created_at, deadline_at,
                cancellation_requested, context_revision, context_policy_version, request_fingerprint,
-               generation_mode, candidate_sequence
+               generation_mode, candidate_sequence, source_job_id
         from ai_requests
         where workspace_key = ? and requester_staff_id = ? and idempotency_key_fingerprint = ?
         """.trimIndent(),
@@ -813,7 +1008,7 @@ internal class JdbcAiRequestService(
         """
         select job_id, feature, status, request_revision, created_at, deadline_at,
                cancellation_requested, context_revision, context_policy_version, request_fingerprint,
-               generation_mode, candidate_sequence
+               generation_mode, candidate_sequence, source_job_id
         from ai_requests
         where job_id = ? and workspace_key = ? and requester_staff_id = ? and ticket_number = ?
         for update
@@ -836,6 +1031,12 @@ internal class JdbcAiRequestService(
             cancelRequested = result.getBoolean("cancellation_requested"),
             contextRevision = result.getString("context_revision"),
             contextPolicyVersion = result.getString("context_policy_version"),
+            sourceJobId = result.getObject("source_job_id", UUID::class.java),
+            inputScope = if (result.getString("feature") == AiFeature.TICKET_REPLY_REWRITE.value) {
+                REWRITE_INPUT_SCOPE
+            } else {
+                INPUT_SCOPE
+            },
             generationMode = result.getString("generation_mode"),
             candidateSequence = (result.getObject("candidate_sequence") as? Number)?.toInt(),
         ),
@@ -914,6 +1115,8 @@ internal class JdbcAiRequestService(
         cancelRequested: Boolean,
         contextRevision: String,
         contextPolicyVersion: String = AI_CONTEXT_POLICY_VERSION,
+        sourceJobId: UUID? = null,
+        inputScope: String = INPUT_SCOPE,
         generationMode: String? = null,
         candidateSequence: Int? = null,
     ) = AiJobReceipt(
@@ -925,6 +1128,8 @@ internal class JdbcAiRequestService(
         deadlineAt = deadlineAt,
         pollAfterMs = POLL_AFTER_MS,
         cancelRequested = cancelRequested,
+        sourceJobId = sourceJobId,
+        inputScope = inputScope,
         contextRevision = contextRevision,
         contextPolicyVersion = contextPolicyVersion,
         generationMode = generationMode,
@@ -941,6 +1146,8 @@ internal class JdbcAiRequestService(
     )
 
     private data class CandidateIdentity(val id: UUID, val sequence: Int)
+
+    private data class RewriteSourceBinding(val jobId: UUID, val aiInputRevision: String)
 
     private data class SourceBinding(
         val jobId: UUID,
@@ -968,6 +1175,23 @@ internal class JdbcAiRequestService(
         val inputPolicyVersion: String?,
         val cancelRequested: Boolean,
         val deadlineAt: Instant,
+        val sourceJobId: UUID?,
+    )
+
+    private data class RewriteAuthorizationBinding(
+        val requesterId: UUID,
+        val ticketId: UUID,
+        val ticketNumber: Long,
+        val status: AiBackendRequestStatus,
+        val requestRevision: Long,
+        val deadlineAt: Instant,
+        val contextRevision: String,
+        val aiInputRevision: String,
+        val inputPolicyVersion: String,
+        val cancelled: Boolean,
+        val sourceJobId: UUID,
+        val sourceRequestRevision: Long,
+        val sourceAiInputRevision: String,
     )
 
     private data class FeedbackBinding(val ticketId: UUID, val feature: AiFeature, val requestRevision: Long)
@@ -982,9 +1206,11 @@ internal class JdbcAiRequestService(
     private companion object {
         const val CONTEXT_POLICY_VERSION = AI_CONTEXT_POLICY_VERSION
         const val INPUT_SCOPE = "PUBLIC_ONLY"
+        const val REWRITE_INPUT_SCOPE = "PUBLIC_DRAFT_ONLY"
         const val OUTBOX_SCHEMA_VERSION = 1
         const val JOB_REQUEST_OUTBOX_SCHEMA_VERSION = 2
         const val INTENT_JOB_SCHEMA_VERSION = 3
+        const val REWRITE_JOB_SCHEMA_VERSION = 4
         const val POLL_AFTER_MS = 750L
         const val ACTOR_REQUESTS_PER_MINUTE = 5L
         const val WORKSPACE_REQUESTS_PER_MINUTE = 30L

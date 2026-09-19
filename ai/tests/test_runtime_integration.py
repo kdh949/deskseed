@@ -48,6 +48,7 @@ from deskseed_ai.retrieval import (
 )
 from deskseed_ai.schemas import (
     CancellationEnvelope,
+    Citation,
     ContextMemoryItem,
     ContextMemoryPayload,
     Feature,
@@ -57,7 +58,10 @@ from deskseed_ai.schemas import (
     JobEnvelope,
     JobStatus,
     PublicComment,
+    ReplyDraftResult,
     ReplyProviderOutput,
+    ReplyRewritePreservationVerdict,
+    ReplyRewriteProviderOutput,
     SourceContext,
 )
 
@@ -141,6 +145,60 @@ def intent_job(origin: JobEnvelope, mode: GenerationMode, sequence: int | None =
         }
     )
     return JobEnvelope.model_validate(payload)
+
+
+def rewrite_job(source: JobEnvelope) -> JobEnvelope:
+    now = datetime.now(UTC)
+    return JobEnvelope(
+        schemaVersion=4,
+        eventId=uuid4(),
+        jobId=uuid4(),
+        workspaceKey=source.workspaceKey,
+        requesterId=source.requesterId,
+        ticketId=source.ticketId,
+        ticketNumber=source.ticketNumber,
+        feature=Feature.REPLY_REWRITE,
+        contextRevision=source.contextRevision,
+        contextPolicyVersion="public-comments-v2",
+        aiInputRevision="c" * 64,
+        inputPolicyVersion="rewrite-input-v1",
+        generationMode=GenerationMode.REUSE_OR_CREATE,
+        sourceJobId=source.jobId,
+        dataClass="PUBLIC_DRAFT_ONLY",
+        requestRevision=1,
+        options={"language": "ko", "length": "standard", "tone": "calm"},
+        createdAt=now,
+        deadlineAt=now + timedelta(minutes=2),
+    )
+
+
+def complete_reply_source(repository: Repository, source: JobEnvelope) -> ReplyDraftResult:
+    repository.accept_job(source)
+    claim = repository.claim_job(source.jobId, 1, "rewrite-source-fixture")
+    assert claim is not None
+    citation = Citation(
+        articleId=uuid4(),
+        revisionId=uuid4(),
+        chunkId=uuid4(),
+        title="공개 환불 도움말",
+        url="/help/articles/refund-policy",
+    )
+    result = ReplyDraftResult(
+        answer="환불 정책상 2026-09-30까지 12,000원 결제는 취소할 수 없습니다.",
+        citations=[citation],
+    )
+    repository.complete_job(
+        claim,
+        result,
+        JobStatus.SUCCEEDED,
+        0,
+        "openai/gpt-5.6-terra",
+        [source.ticketId],
+        "reply-v1",
+        "d" * 64,
+        [citation.chunkId],
+    )
+    return result
 
 
 def cache_enabled(settings: Settings) -> Settings:
@@ -318,6 +376,339 @@ def test_schema_v2_job_persists_and_executes_with_bound_input_revision(
     assert runtime.dispatch_once() == 1
     assert runtime.consume_once(block_ms=1) == 1
     assert repository.get_job(item.jobId).status == JobStatus.SUCCEEDED
+
+
+@pytest.mark.integration
+def test_reply_rewrite_uses_only_encrypted_source_and_records_two_distinct_calls(
+    repository: Repository, settings: Settings
+) -> None:
+    source = envelope_v2(Feature.REPLY_DRAFT)
+    expected = complete_reply_source(repository, source)
+    item = rewrite_job(source)
+    repository.accept_job(item)
+
+    class NoRetrievalBackend(StaticBackend):
+        def read_context(self, job_id, traceparent=None):
+            raise AssertionError("rewrite must not read PUBLIC conversation context")
+
+        def read_public_article(self, *args, **kwargs):
+            raise AssertionError("rewrite must not read PUBLIC knowledge bodies")
+
+    runtime = runtime_for(repository, settings, NoRetrievalBackend(item))
+    assert runtime.dispatch_once() == 2
+    assert runtime.consume_once(block_ms=1, count=2) == 2
+
+    receipt = repository.get_job(item.jobId)
+    assert receipt.status == JobStatus.SUCCEEDED
+    assert receipt.sourceJobId == source.jobId
+    assert receipt.result is not None
+    assert receipt.result.type == Feature.REPLY_REWRITE.value
+    assert receipt.result.answer == expected.answer
+    assert receipt.result.citations == expected.citations
+    assert receipt.result.tone == "calm"
+    assert receipt.result.length == "standard"
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, requested_alias, settlement_status
+            from ai_provider_calls where job_id = %s order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+        stored = connection.execute(
+            """
+            select source_job_id, input_scope, result_ciphertext, result_nonce
+            from ai_jobs where job_id = %s
+            """,
+            (item.jobId,),
+        ).fetchone()
+    assert calls == [
+        {
+            "stage": "GENERATION_REWRITE",
+            "requested_alias": settings.model_standard,
+            "settlement_status": "SETTLED",
+        },
+        {
+            "stage": "GENERATION_REWRITE_VALIDATION",
+            "requested_alias": settings.model_standard,
+            "settlement_status": "SETTLED",
+        },
+    ]
+    assert stored["source_job_id"] == source.jobId
+    assert stored["input_scope"] == "PUBLIC_DRAFT_ONLY"
+    assert bytes(stored["result_ciphertext"]).find(expected.answer.encode()) == -1
+    assert stored["result_nonce"] is not None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "failure", ["citation", "marker", "verdict", "invalid", "validation_invalid"]
+)
+def test_reply_rewrite_failures_withhold_usable_body_and_never_retry_generation(
+    repository: Repository,
+    settings: Settings,
+    failure: str,
+) -> None:
+    source = envelope_v2(Feature.REPLY_DRAFT)
+    complete_reply_source(repository, source)
+    item = rewrite_job(source)
+    repository.accept_job(item)
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+
+    class FailingRewriteProvider(FakeGenerationProvider):
+        def rewrite(self, source, options, call_id, record_receipt):
+            generated = super().rewrite(source, options, call_id, record_receipt)
+            if failure == "invalid":
+                raise InvalidProviderOutputError("synthetic invalid rewrite")
+            candidate = generated.result
+            assert isinstance(candidate, ReplyRewriteProviderOutput)
+            if failure == "citation":
+                candidate = ReplyRewriteProviderOutput.model_construct(
+                    answer=candidate.answer,
+                    sourceRefs=[],
+                )
+            elif failure == "marker":
+                candidate = candidate.model_copy(
+                    update={"answer": candidate.answer.replace("12,000원", "13,000원")}
+                )
+            return ProviderResult(candidate, generated.receipt, generated.prompt_version)
+
+        def validate_rewrite(self, source, candidate, call_id, record_receipt):
+            validated = super().validate_rewrite(
+                source, candidate, call_id, record_receipt
+            )
+            if failure == "validation_invalid":
+                raise InvalidProviderOutputError("synthetic invalid preservation verdict")
+            if failure == "verdict":
+                return ProviderResult(
+                    ReplyRewritePreservationVerdict(
+                        preserved=False,
+                        changedCategories=["POLICY"],
+                    ),
+                    validated.receipt,
+                    validated.prompt_version,
+                )
+            return validated
+
+    runtime.provider = FailingRewriteProvider(settings)
+    assert runtime.dispatch_once() == 2
+    assert runtime.consume_once(block_ms=1, count=2) == 2
+
+    receipt = repository.get_job(item.jobId)
+    assert receipt.status == JobStatus.NEEDS_REVIEW
+    assert receipt.result is None
+    assert receipt.sourceJobId == source.jobId
+    with repository.database.connection() as connection:
+        stages = connection.execute(
+            "select stage from ai_provider_calls where job_id = %s order by created_at",
+            (item.jobId,),
+        ).fetchall()
+        stored = connection.execute(
+            "select result_ciphertext, result_nonce from ai_jobs where job_id = %s",
+            (item.jobId,),
+        ).fetchone()
+    expected_stages = (
+        ["GENERATION_REWRITE", "GENERATION_REWRITE_VALIDATION"]
+        if failure in {"verdict", "validation_invalid"}
+        else ["GENERATION_REWRITE"]
+    )
+    assert [row["stage"] for row in stages] == expected_stages
+    assert stored == {"result_ciphertext": None, "result_nonce": None}
+
+
+@pytest.mark.integration
+def test_reply_rewrite_authorization_failure_precedes_source_decrypt_and_provider(
+    repository: Repository, settings: Settings
+) -> None:
+    source = envelope_v2(Feature.REPLY_DRAFT)
+    complete_reply_source(repository, source)
+    item = rewrite_job(source)
+    repository.accept_job(item)
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set result_ciphertext = %s where job_id = %s",
+            (b"corrupt-source-ciphertext", source.jobId),
+        )
+
+    class DeniedBackend(StaticBackend):
+        def authorize_rewrite_source(self, job_id):
+            raise BackendAuthorizationError("synthetic required audit failure")
+
+    runtime = runtime_for(repository, settings, DeniedBackend(item))
+    assert runtime.dispatch_once() == 2
+    assert runtime.consume_once(block_ms=1, count=2) == 2
+
+    receipt = repository.get_job(item.jobId)
+    assert receipt.status == JobStatus.FAILED
+    assert receipt.errorCode == "SOURCE_AUTHORIZATION_FAILED"
+    assert receipt.result is None
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select count(*) as count from ai_provider_calls where job_id = %s",
+            (item.jobId,),
+        ).fetchone()
+    assert calls["count"] == 0
+
+
+@pytest.mark.integration
+def test_reply_rewrite_expired_source_is_superseded_before_provider(
+    repository: Repository, settings: Settings
+) -> None:
+    source = envelope_v2(Feature.REPLY_DRAFT)
+    complete_reply_source(repository, source)
+    item = rewrite_job(source)
+    repository.accept_job(item)
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set result_expires_at = %s where job_id = %s",
+            (datetime.now(UTC) - timedelta(seconds=1), source.jobId),
+        )
+
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+    assert runtime.dispatch_once() == 2
+    assert runtime.consume_once(block_ms=1, count=2) == 2
+
+    receipt = repository.get_job(item.jobId)
+    assert receipt.status == JobStatus.SUPERSEDED
+    assert receipt.result is None
+    assert receipt.sourceJobId == source.jobId
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select count(*) as count from ai_provider_calls where job_id = %s",
+            (item.jobId,),
+        ).fetchone()
+    assert calls["count"] == 0
+
+
+@pytest.mark.integration
+def test_reply_rewrite_unknown_generation_is_not_retried_or_validated(
+    repository: Repository, settings: Settings
+) -> None:
+    source = envelope_v2(Feature.REPLY_DRAFT)
+    complete_reply_source(repository, source)
+    item = rewrite_job(source)
+    repository.accept_job(item)
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+
+    class UnknownRewriteProvider(FakeGenerationProvider):
+        def rewrite(self, source, options, call_id, record_receipt):
+            raise TimeoutError("synthetic ambiguous rewrite delivery")
+
+    runtime.provider = UnknownRewriteProvider(settings)
+    assert runtime.dispatch_once() == 2
+    assert runtime.consume_once(block_ms=1, count=2) == 1
+
+    receipt = repository.get_job(item.jobId)
+    assert receipt.status == JobStatus.FAILED
+    assert receipt.errorCode == "PROVIDER_OUTCOME_UNKNOWN"
+    assert receipt.result is None
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, settlement_status from ai_provider_calls
+            where job_id = %s order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+    assert calls == [
+        {"stage": "GENERATION_REWRITE", "settlement_status": "UNKNOWN"}
+    ]
+
+
+@pytest.mark.integration
+def test_reply_rewrite_unknown_validation_preserves_known_generation_cost_without_retry(
+    repository: Repository, settings: Settings
+) -> None:
+    source = envelope_v2(Feature.REPLY_DRAFT)
+    complete_reply_source(repository, source)
+    item = rewrite_job(source)
+    repository.accept_job(item)
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+
+    class UnknownValidationProvider(FakeGenerationProvider):
+        def validate_rewrite(self, source, candidate, call_id, record_receipt):
+            raise TimeoutError("synthetic ambiguous validation delivery")
+
+    runtime.provider = UnknownValidationProvider(settings)
+    assert runtime.dispatch_once() == 2
+    assert runtime.consume_once(block_ms=1, count=2) == 1
+
+    receipt = repository.get_job(item.jobId)
+    assert receipt.status == JobStatus.FAILED
+    assert receipt.errorCode == "PROVIDER_OUTCOME_UNKNOWN"
+    assert receipt.result is None
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, settlement_status from ai_provider_calls
+            where job_id = %s order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+    assert calls == [
+        {"stage": "GENERATION_REWRITE", "settlement_status": "SETTLED"},
+        {
+            "stage": "GENERATION_REWRITE_VALIDATION",
+            "settlement_status": "UNKNOWN",
+        },
+    ]
+
+
+@pytest.mark.integration
+def test_reply_rewrite_rechecks_budget_before_validation(
+    repository: Repository, settings: Settings
+) -> None:
+    source = envelope_v2(Feature.REPLY_DRAFT)
+    source_result = complete_reply_source(repository, source)
+    item = rewrite_job(source)
+    repository.accept_job(item)
+    runtime = runtime_for(repository, settings, StaticBackend(item))
+
+    class SpendBudgetAfterRewriteProvider(FakeGenerationProvider):
+        def rewrite(self, source, options, call_id, record_receipt):
+            generated = super().rewrite(source, options, call_id, record_receipt)
+            candidate = generated.result
+            assert isinstance(candidate, ReplyRewriteProviderOutput)
+            validation_tokens = self.estimate_rewrite_input_tokens(
+                runtime.pricing,
+                source,
+                options,
+                validation_candidate=candidate,
+            )
+            validation_reserve = runtime.pricing.upper_bound_microusd(
+                self.settings.model_standard,
+                validation_tokens,
+                256,
+                runtime.pricing.service_tier,
+                runtime.pricing.context_price_band,
+            )
+            repository.settings = repository.settings.model_copy(
+                update={"job_budget_microusd": validation_reserve}
+            )
+            return generated
+
+    runtime.provider = SpendBudgetAfterRewriteProvider(settings)
+    claim = repository.claim_job(item.jobId, 1, settings.consumer_name)
+    assert claim is not None
+    runtime._execute(claim, None)
+
+    receipt = repository.get_job(item.jobId)
+    assert receipt.status == JobStatus.FAILED
+    assert receipt.errorCode == "BUDGET_EXCEEDED"
+    assert receipt.result is None
+    assert receipt.sourceJobId == source.jobId
+    assert source_result.answer
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            """
+            select stage, settlement_status from ai_provider_calls
+            where job_id = %s order by created_at
+            """,
+            (item.jobId,),
+        ).fetchall()
+    assert calls == [
+        {"stage": "GENERATION_REWRITE", "settlement_status": "SETTLED"}
+    ]
 
 
 @pytest.mark.integration
@@ -3294,6 +3685,17 @@ class StaticBackend:
             authorized=True,
             cancelRequested=False,
             featureEnabled=True,
+        )
+
+    def authorize_rewrite_source(self, job_id):
+        assert job_id == self.item.jobId
+        assert self.item.sourceJobId is not None
+        return SimpleNamespace(
+            rewriteJobId=self.item.jobId,
+            sourceJobId=self.item.sourceJobId,
+            contextRevision=self.item.contextRevision,
+            aiInputRevision=self.item.aiInputRevision,
+            inputPolicyVersion=self.item.inputPolicyVersion,
         )
 
     def authorize_citations(self, job_id, citations):

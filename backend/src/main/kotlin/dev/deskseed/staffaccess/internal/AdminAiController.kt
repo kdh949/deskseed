@@ -52,6 +52,7 @@ internal class AdminAiController(private val service: AiAdministrationService) {
                     summaryEnabled = body.summaryEnabled,
                     triageEnabled = body.triageEnabled,
                     replyDraftEnabled = body.replyDraftEnabled,
+                    replyRewriteEnabled = body.replyRewriteEnabled,
                     fastModelAlias = body.fastModelAlias,
                     standardModelAlias = body.standardModelAlias,
                     replyRoutingMode = body.replyRoutingMode,
@@ -90,6 +91,7 @@ internal data class UpdateAiSettingsRequest(
     val summaryEnabled: Boolean,
     val triageEnabled: Boolean,
     val replyDraftEnabled: Boolean,
+    val replyRewriteEnabled: Boolean,
     @field:NotBlank @field:Size(max = 100)
     val fastModelAlias: String,
     @field:NotBlank @field:Size(max = 100)

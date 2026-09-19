@@ -472,6 +472,7 @@ components:
       - ticket.summary
       - ticket.triage
       - ticket.reply_draft
+      - ticket.reply_rewrite
       title: Feature
     FeedbackRequest:
       properties:
@@ -657,6 +658,7 @@ components:
       type: string
       enum:
       - PUBLIC_ONLY
+      - PUBLIC_DRAFT_ONLY
       - PUBLIC_KB_ONLY
       title: InputScope
     JobEnvelope:
@@ -667,6 +669,7 @@ components:
           - 1
           - 2
           - 3
+          - 4
           title: Schemaversion
         eventId:
           type: string
@@ -718,6 +721,7 @@ components:
             - summary-input-v1
             - triage-input-v1
             - reply-input-v1
+            - rewrite-input-v1
           - type: 'null'
           title: Inputpolicyversion
         generationMode:
@@ -736,9 +740,17 @@ components:
             exclusiveMinimum: 0.0
           - type: 'null'
           title: Candidatesequence
+        sourceJobId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Sourcejobid
         dataClass:
           type: string
-          const: PUBLIC_ONLY
+          enum:
+          - PUBLIC_ONLY
+          - PUBLIC_DRAFT_ONLY
           title: Dataclass
         requestRevision:
           type: integer
@@ -750,7 +762,7 @@ components:
             maxLength: 40
             minLength: 1
           type: object
-          maxProperties: 2
+          maxProperties: 3
           title: Options
         createdAt:
           type: string
@@ -848,6 +860,12 @@ components:
         cancelRequested:
           type: boolean
           title: Cancelrequested
+        sourceJobId:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Sourcejobid
         contextRevision:
           type: string
           title: Contextrevision
@@ -873,10 +891,12 @@ components:
             - $ref: '#/components/schemas/SummaryResult'
             - $ref: '#/components/schemas/TriageResult'
             - $ref: '#/components/schemas/ReplyDraftResult'
+            - $ref: '#/components/schemas/ReplyRewriteResult'
             discriminator:
               propertyName: type
               mapping:
                 ticket.reply_draft: '#/components/schemas/ReplyDraftResult'
+                ticket.reply_rewrite: '#/components/schemas/ReplyRewriteResult'
                 ticket.summary: '#/components/schemas/SummaryResult'
                 ticket.triage: '#/components/schemas/TriageResult'
           - type: 'null'
@@ -1018,6 +1038,50 @@ components:
       - answer
       - citations
       title: ReplyDraftResult
+    ReplyRewriteResult:
+      properties:
+        type:
+          type: string
+          const: ticket.reply_rewrite
+          title: Type
+          default: ticket.reply_rewrite
+        answer:
+          type: string
+          maxLength: 6000
+          minLength: 1
+          title: Answer
+        citations:
+          items:
+            $ref: '#/components/schemas/Citation'
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Citations
+        language:
+          type: string
+          const: ko
+          title: Language
+          default: ko
+        tone:
+          type: string
+          enum:
+          - calm
+          - formal
+          title: Tone
+        length:
+          type: string
+          enum:
+          - concise
+          - standard
+          title: Length
+      additionalProperties: false
+      type: object
+      required:
+      - answer
+      - citations
+      - tone
+      - length
+      title: ReplyRewriteResult
     ServiceStatus:
       properties:
         ready:

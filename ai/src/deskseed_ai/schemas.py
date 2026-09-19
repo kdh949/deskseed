@@ -16,6 +16,7 @@ class Feature(StrEnum):
     SUMMARY = "ticket.summary"
     TRIAGE = "ticket.triage"
     REPLY_DRAFT = "ticket.reply_draft"
+    REPLY_REWRITE = "ticket.reply_rewrite"
 
 
 class GenerationMode(StrEnum):
@@ -46,6 +47,7 @@ class JobPhase(StrEnum):
 
 class InputScope(StrEnum):
     PUBLIC_ONLY = "PUBLIC_ONLY"
+    PUBLIC_DRAFT_ONLY = "PUBLIC_DRAFT_ONLY"
     PUBLIC_KB_ONLY = "PUBLIC_KB_ONLY"
 
 
@@ -58,7 +60,7 @@ class AuthorRole(StrEnum):
 
 
 class JobEnvelope(StrictModel):
-    schemaVersion: Literal[1, 2, 3]
+    schemaVersion: Literal[1, 2, 3, 4]
     eventId: UUID
     jobId: UUID
     workspaceKey: Annotated[str, Field(min_length=1, max_length=80)]
@@ -69,13 +71,16 @@ class JobEnvelope(StrictModel):
     contextRevision: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     contextPolicyVersion: Literal["public-comments-v1", "public-comments-v2"]
     aiInputRevision: Annotated[str | None, Field(pattern=r"^[0-9a-f]{64}$")] = None
-    inputPolicyVersion: Literal["summary-input-v1", "triage-input-v1", "reply-input-v1"] | None = None
+    inputPolicyVersion: Literal[
+        "summary-input-v1", "triage-input-v1", "reply-input-v1", "rewrite-input-v1"
+    ] | None = None
     generationMode: GenerationMode | None = None
     candidateId: UUID | None = None
     candidateSequence: Annotated[int | None, Field(gt=0)] = None
-    dataClass: Literal["PUBLIC_ONLY"]
+    sourceJobId: UUID | None = None
+    dataClass: Literal["PUBLIC_ONLY", "PUBLIC_DRAFT_ONLY"]
     requestRevision: Annotated[int, Field(gt=0)]
-    options: dict[str, Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=dict, max_length=2)
+    options: dict[str, Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=dict, max_length=3)
     createdAt: datetime
     deadlineAt: datetime
     traceparent: Annotated[str | None, Field(max_length=512)] = None
@@ -85,19 +90,32 @@ class JobEnvelope(StrictModel):
     def deadline_after_creation(self) -> "JobEnvelope":
         if self.deadlineAt <= self.createdAt:
             raise ValueError("deadlineAt must be after createdAt")
-        allowed = {"language"} if self.feature != Feature.REPLY_DRAFT else {"language", "tone"}
+        allowed = {
+            Feature.SUMMARY: {"language"},
+            Feature.TRIAGE: {"language"},
+            Feature.REPLY_DRAFT: {"language", "tone"},
+            Feature.REPLY_REWRITE: {"language", "tone", "length"},
+        }[self.feature]
         if self.options.keys() - allowed:
             raise ValueError("unsupported feature option")
         if self.contextPolicyVersion == "public-comments-v2":
             expected = {"language": "ko"}
             if self.feature == Feature.REPLY_DRAFT:
                 expected["tone"] = "calm"
+            elif self.feature == Feature.REPLY_REWRITE:
+                expected |= {
+                    "length": self.options.get("length", ""),
+                    "tone": self.options.get("tone", ""),
+                }
+                if expected["length"] not in {"concise", "standard"} or expected["tone"] not in {"calm", "formal"}:
+                    raise ValueError("rewrite options are outside the closed catalog")
             if self.options != expected:
                 raise ValueError("v2 feature options must be normalized by the Backend")
         expected_input_policy = {
             Feature.SUMMARY: "summary-input-v1",
             Feature.TRIAGE: "triage-input-v1",
             Feature.REPLY_DRAFT: "reply-input-v1",
+            Feature.REPLY_REWRITE: "rewrite-input-v1",
         }[self.feature]
         if self.schemaVersion == 1:
             if any(
@@ -108,6 +126,7 @@ class JobEnvelope(StrictModel):
                     self.generationMode,
                     self.candidateId,
                     self.candidateSequence,
+                    self.sourceJobId,
                 )
             ):
                 raise ValueError("v1 jobs cannot contain v2 input revision metadata")
@@ -136,6 +155,25 @@ class JobEnvelope(StrictModel):
                 self.candidateId is not None or self.candidateSequence is not None
             ):
                 raise ValueError("REUSE_OR_CREATE cannot contain candidate identity")
+        elif self.schemaVersion == 4:
+            if (
+                self.feature != Feature.REPLY_REWRITE
+                or self.contextPolicyVersion != "public-comments-v2"
+                or self.aiInputRevision is None
+                or self.inputPolicyVersion != "rewrite-input-v1"
+                or self.generationMode != GenerationMode.REUSE_OR_CREATE
+                or self.sourceJobId is None
+                or self.candidateId is not None
+                or self.candidateSequence is not None
+                or self.dataClass != "PUBLIC_DRAFT_ONLY"
+            ):
+                raise ValueError("v4 jobs require a server-bound PUBLIC reply source")
+        if self.schemaVersion != 4 and (
+            self.feature == Feature.REPLY_REWRITE
+            or self.sourceJobId is not None
+            or self.dataClass != "PUBLIC_ONLY"
+        ):
+            raise ValueError("reply rewrite requires a v4 envelope")
         return self
 
 
@@ -174,6 +212,8 @@ class SourceContext(StrictModel):
 
     @model_validator(mode="after")
     def validate_policy_shape(self) -> "SourceContext":
+        if self.feature == Feature.REPLY_REWRITE:
+            raise ValueError("reply rewrite must not read PUBLIC conversation bodies")
         if self.contextPolicyVersion == "public-comments-v1":
             if (
                 self.aiInputRevision is not None
@@ -234,7 +274,16 @@ class ReplyDraftResult(StrictModel):
     citations: list[Citation] = Field(max_length=8)
 
 
-TypedResult = SummaryResult | TriageResult | ReplyDraftResult
+class ReplyRewriteResult(StrictModel):
+    type: Literal["ticket.reply_rewrite"] = "ticket.reply_rewrite"
+    answer: Annotated[str, Field(min_length=1, max_length=6000)]
+    citations: list[Citation] = Field(min_length=1, max_length=8)
+    language: Literal["ko"] = "ko"
+    tone: Literal["calm", "formal"]
+    length: Literal["concise", "standard"]
+
+
+TypedResult = SummaryResult | TriageResult | ReplyDraftResult | ReplyRewriteResult
 
 
 class ReplyProviderOutput(StrictModel):
@@ -245,6 +294,32 @@ class ReplyProviderOutput(StrictModel):
     def source_refs_are_unique(self) -> "ReplyProviderOutput":
         if len(set(self.sourceRefs)) != len(self.sourceRefs):
             raise ValueError("sourceRefs must be unique")
+        return self
+
+
+class ReplyRewriteProviderOutput(StrictModel):
+    answer: Annotated[str, Field(min_length=1, max_length=6000)]
+    sourceRefs: list[Annotated[str, Field(pattern=r"^S[1-8]$")]] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def source_refs_are_unique(self) -> "ReplyRewriteProviderOutput":
+        if len(set(self.sourceRefs)) != len(self.sourceRefs):
+            raise ValueError("rewrite sourceRefs must be unique")
+        return self
+
+
+class ReplyRewritePreservationVerdict(StrictModel):
+    preserved: bool
+    changedCategories: list[
+        Literal["NAME", "POLICY", "AMOUNT", "DATE", "CONDITION", "NEGATION"]
+    ] = Field(max_length=6)
+
+    @model_validator(mode="after")
+    def verdict_shape_is_consistent(self) -> "ReplyRewritePreservationVerdict":
+        if self.preserved != (not self.changedCategories):
+            raise ValueError("preservation verdict is inconsistent")
+        if len(set(self.changedCategories)) != len(self.changedCategories):
+            raise ValueError("preservation categories must be unique")
         return self
 
 
@@ -279,7 +354,14 @@ class ContextMemoryProviderOutput(ContextMemoryPayload):
         return self
 
 
-ProviderOutput = SummaryResult | TriageResult | ReplyProviderOutput | ContextMemoryProviderOutput
+ProviderOutput = (
+    SummaryResult
+    | TriageResult
+    | ReplyProviderOutput
+    | ReplyRewriteProviderOutput
+    | ReplyRewritePreservationVerdict
+    | ContextMemoryProviderOutput
+)
 
 
 class GenerationProvenance(StrictModel):
@@ -306,6 +388,7 @@ class JobReceipt(StrictModel):
     resultExpiresAt: datetime | None = None
     pollAfterMs: int = 750
     cancelRequested: bool
+    sourceJobId: UUID | None = None
     contextRevision: str
     contextPolicyVersion: str
     inputScope: InputScope

@@ -40,6 +40,7 @@ class AdminAiIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.enabled").value(false))
+            .andExpect(jsonPath("$.replyRewriteEnabled").value(false))
             .andExpect(jsonPath("$.replyRoutingMode").value("STANDARD_ONLY"))
             .andExpect(jsonPath("$.replyRoutingCohorts").isEmpty)
             .andExpect(jsonPath("$.replyRoutingRolloutPercent").value(0))
@@ -52,6 +53,7 @@ class AdminAiIntegrationTest {
               "summaryEnabled": true,
               "triageEnabled": true,
               "replyDraftEnabled": false,
+              "replyRewriteEnabled": true,
               "fastModelAlias": "openai/gpt-5.6-luna",
               "standardModelAlias": "openai/gpt-5.6-terra",
               "replyRoutingMode": "STANDARD_ONLY",
@@ -72,6 +74,7 @@ class AdminAiIntegrationTest {
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.enabled").value(true))
+            .andExpect(jsonPath("$.replyRewriteEnabled").value(true))
             .andExpect(jsonPath("$.version").value(1))
             .andExpect(jsonPath("$.allowedStaffIds[0]").value(agent.toString()))
             .andExpect(jsonPath("$.secret").doesNotExist())
@@ -102,6 +105,7 @@ class AdminAiIntegrationTest {
               "summaryEnabled": true,
               "triageEnabled": true,
               "replyDraftEnabled": true,
+              "replyRewriteEnabled": true,
               "fastModelAlias": "openai/gpt-5.6-luna",
               "standardModelAlias": "openai/gpt-5.6-terra",
               "replyRoutingMode": "EVALUATED_COHORT",

@@ -104,6 +104,7 @@ internal class JdbcAiAdministrationService(
             """
             update ai_settings
             set enabled = ?, summary_enabled = ?, triage_enabled = ?, reply_draft_enabled = ?,
+                reply_rewrite_enabled = ?,
                 fast_model_alias = ?, standard_model_alias = ?, reply_routing_mode = ?,
                 reply_routing_rollout_percent = ?, reply_routing_evaluation_approval_version = ?,
                 version = version + 1,
@@ -114,6 +115,7 @@ internal class JdbcAiAdministrationService(
             command.summaryEnabled,
             command.triageEnabled,
             command.replyDraftEnabled,
+            command.replyRewriteEnabled,
             command.fastModelAlias,
             command.standardModelAlias,
             command.replyRoutingMode.name,
@@ -259,6 +261,7 @@ internal class JdbcAiAdministrationService(
         summaryEnabled = result.getBoolean("summary_enabled"),
         triageEnabled = result.getBoolean("triage_enabled"),
         replyDraftEnabled = result.getBoolean("reply_draft_enabled"),
+        replyRewriteEnabled = result.getBoolean("reply_rewrite_enabled"),
         fastModelAlias = result.getString("fast_model_alias"),
         standardModelAlias = result.getString("standard_model_alias"),
         replyRoutingMode = AiReplyRoutingMode.valueOf(result.getString("reply_routing_mode")),
