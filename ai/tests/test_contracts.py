@@ -89,6 +89,27 @@ def test_exact_result_cache_is_test_only_until_reuse_intent_is_contractual() -> 
     assert settings.exact_result_cache_mode == "test"
 
 
+def test_shared_execution_is_test_only_and_requires_exact_cache() -> None:
+    with pytest.raises(ValidationError, match="S08 reuse-intent"):
+        Settings(
+            environment="production",
+            process_role="migration",
+            exact_result_cache_mode="test",
+            shared_execution_mode="test",
+            result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
+        )
+    with pytest.raises(ValidationError, match="requires the exact result cache"):
+        Settings(environment="test", shared_execution_mode="test")
+
+    settings = Settings(
+        environment="test",
+        exact_result_cache_mode="test",
+        shared_execution_mode="test",
+        result_cache_key_secret="synthetic-cache-key-secret-at-least-32-bytes",
+    )
+    assert settings.shared_execution_mode == "test"
+
+
 def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
     settings = Settings(
         environment="test",

@@ -84,6 +84,17 @@ class ReplyCacheCandidate:
 
 
 @dataclass(frozen=True)
+class SharedExecutionClaim:
+    execution_id: UUID
+    execution_key: str
+    key_version: str
+    execution_generation: int
+    disposition: str
+    status: str
+    terminal_reason: str | None
+
+
+@dataclass(frozen=True)
 class ClaimedJob:
     job_id: UUID
     generation: int
@@ -249,7 +260,10 @@ class Repository:
                     raise ConflictError("cancellation event conflict")
                 return Accepted(replayed=True, jobId=envelope.jobId)
             job = connection.execute(
-                "select workspace_key, request_revision, status from ai_jobs where job_id = %s for update",
+                """
+                select workspace_key, request_revision, status, shared_execution_id
+                from ai_jobs where job_id = %s for update
+                """,
                 (envelope.jobId,),
             ).fetchone()
             if job and job["workspace_key"] != envelope.workspaceKey:
@@ -301,6 +315,15 @@ class Repository:
                     """,
                     (now, envelope.jobId),
                 )
+                if job["shared_execution_id"] is not None:
+                    self._end_shared_consumer(
+                        connection,
+                        envelope.jobId,
+                        job["shared_execution_id"],
+                        now,
+                        "CANCELLED",
+                        "ALL_CONSUMERS_CANCELLED",
+                    )
         return Accepted(replayed=False, jobId=envelope.jobId)
 
     def get_job(self, job_id: UUID, include_result: bool = True) -> JobReceipt:
@@ -467,6 +490,15 @@ class Repository:
                     "update ai_jobs set status = 'EXPIRED', phase = 'COMPLETE', completed_at = %s, updated_at = %s where job_id = %s",
                     (now, now, job_id),
                 )
+                if row["shared_execution_id"] is not None:
+                    self._end_shared_consumer(
+                        connection,
+                        job_id,
+                        row["shared_execution_id"],
+                        now,
+                        "FAILED",
+                        "ALL_CONSUMERS_EXPIRED",
+                    )
                 return None
             if row["status"] == "RUNNING" and row["lease_expires_at"] and row["lease_expires_at"] > now:
                 raise ActiveLeaseError("job is still owned by an active worker")
@@ -509,6 +541,419 @@ class Repository:
             if updated != 1:
                 raise StaleLeaseError("job lease lost")
 
+    def claim_shared_execution(
+        self,
+        claim: ClaimedJob,
+        execution_key: str,
+        key_version: str,
+    ) -> SharedExecutionClaim:
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "select pg_advisory_xact_lock(hashtext('ai-shared-execution'), hashtext(%s))",
+                (execution_key,),
+            )
+            job = connection.execute(
+                """
+                select shared_execution_id, status from ai_jobs
+                where job_id = %s and generation = %s and lease_epoch = %s for update
+                """,
+                (claim.job_id, claim.generation, claim.lease_epoch),
+            ).fetchone()
+            if not job or job["status"] != "RUNNING":
+                raise StaleLeaseError("job lease lost before shared execution claim")
+            if job["shared_execution_id"] is not None:
+                existing = connection.execute(
+                    "select * from ai_shared_executions where execution_id = %s for update",
+                    (job["shared_execution_id"],),
+                ).fetchone()
+                if existing is None:
+                    raise ConflictError("shared execution binding is missing")
+                if existing["execution_key"] != execution_key or existing["key_version"] != key_version:
+                    return self._shared_claim(existing, "KEY_MISMATCH")
+                if existing["status"] != "RUNNING":
+                    return self._shared_claim(existing, "TERMINAL")
+                if existing["representative_job_id"] == claim.job_id:
+                    connection.execute(
+                        """
+                        update ai_shared_executions set lease_epoch = %s, updated_at = %s
+                        where execution_id = %s and status = 'RUNNING'
+                        """,
+                        (claim.lease_epoch, now, existing["execution_id"]),
+                    )
+                    existing["lease_epoch"] = claim.lease_epoch
+                    return self._shared_claim(existing, "LEADER")
+                self._defer_shared_waiter(connection, claim, existing["execution_id"], now)
+                return self._shared_claim(existing, "WAITING")
+            existing = connection.execute(
+                """
+                select * from ai_shared_executions
+                where execution_key = %s and status = 'RUNNING' for update
+                """,
+                (execution_key,),
+            ).fetchone()
+            if existing is None:
+                execution_id = uuid4()
+                connection.execute(
+                    """
+                    insert into ai_shared_executions (
+                        execution_id, execution_key, key_version, workspace_key, requester_id,
+                        ticket_id, feature, representative_job_id, status, phase,
+                        execution_generation, lease_epoch, provider_dispatched,
+                        created_at, updated_at
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s,
+                        'RUNNING', 'READY', 1, %s, false, %s, %s
+                    )
+                    """,
+                    (
+                        execution_id,
+                        execution_key,
+                        key_version,
+                        claim.workspace_key,
+                        claim.requester_id,
+                        claim.ticket_id,
+                        claim.feature.value,
+                        claim.job_id,
+                        claim.lease_epoch,
+                        now,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    """
+                    insert into ai_execution_consumers (
+                        execution_id, job_id, state, joined_at
+                    ) values (%s, %s, 'REPRESENTATIVE', %s)
+                    """,
+                    (execution_id, claim.job_id, now),
+                )
+                connection.execute(
+                    "update ai_jobs set shared_execution_id = %s, updated_at = %s where job_id = %s",
+                    (execution_id, now, claim.job_id),
+                )
+                return SharedExecutionClaim(
+                    execution_id,
+                    execution_key,
+                    key_version,
+                    1,
+                    "LEADER",
+                    "RUNNING",
+                    None,
+                )
+            scope_matches = (
+                existing["key_version"] == key_version
+                and existing["workspace_key"] == claim.workspace_key
+                and existing["requester_id"] == claim.requester_id
+                and existing["ticket_id"] == claim.ticket_id
+                and existing["feature"] == claim.feature.value
+            )
+            if not scope_matches:
+                raise ConflictError("shared execution scope mismatch")
+            connection.execute(
+                """
+                insert into ai_execution_consumers (execution_id, job_id, state, joined_at)
+                values (%s, %s, 'WAITING', %s)
+                on conflict (job_id) do nothing
+                """,
+                (existing["execution_id"], claim.job_id, now),
+            )
+            connection.execute(
+                "update ai_jobs set shared_execution_id = %s where job_id = %s",
+                (existing["execution_id"], claim.job_id),
+            )
+            self._defer_shared_waiter(connection, claim, existing["execution_id"], now)
+            return self._shared_claim(existing, "WAITING")
+
+    def mark_shared_provider_stage(
+        self,
+        claim: ClaimedJob,
+        shared: SharedExecutionClaim,
+        phase: str,
+    ) -> None:
+        if phase not in {"QUERY_EMBEDDING", "GENERATION"}:
+            raise ValueError("unsupported shared provider phase")
+        with self.database.transaction() as connection:
+            updated = connection.execute(
+                """
+                update ai_shared_executions execution
+                set phase = %s, provider_dispatched = true, updated_at = clock_timestamp()
+                where execution.execution_id = %s and execution.status = 'RUNNING'
+                  and execution.representative_job_id = %s
+                  and execution.execution_generation = %s and execution.lease_epoch = %s
+                  and exists (
+                      select 1 from ai_jobs job
+                      where job.job_id = %s and job.generation = %s and job.lease_epoch = %s
+                        and job.status = 'RUNNING'
+                  )
+                """,
+                (
+                    phase,
+                    shared.execution_id,
+                    claim.job_id,
+                    shared.execution_generation,
+                    claim.lease_epoch,
+                    claim.job_id,
+                    claim.generation,
+                    claim.lease_epoch,
+                ),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("shared execution lease lost before provider dispatch")
+
+    def finish_shared_terminal_consumer(
+        self,
+        claim: ClaimedJob,
+        shared: SharedExecutionClaim,
+    ) -> None:
+        if shared.disposition == "KEY_MISMATCH":
+            self.terminate_job(claim, JobStatus.SUPERSEDED, "SHARED_EXECUTION_SUPERSEDED")
+            return
+        if shared.status == "NEEDS_REVIEW":
+            self.complete_needs_review(claim, shared.terminal_reason or "SHARED_NEEDS_REVIEW", 0)
+            return
+        reason = shared.terminal_reason or (
+            "PROVIDER_OUTCOME_UNKNOWN" if shared.status == "UNKNOWN" else "SHARED_EXECUTION_UNAVAILABLE"
+        )
+        self.terminate_job(claim, JobStatus.FAILED, reason)
+
+    @staticmethod
+    def _shared_claim(row, disposition: str) -> SharedExecutionClaim:
+        return SharedExecutionClaim(
+            execution_id=row["execution_id"],
+            execution_key=row["execution_key"],
+            key_version=row["key_version"],
+            execution_generation=row["execution_generation"],
+            disposition=disposition,
+            status=row["status"],
+            terminal_reason=row["terminal_reason"],
+        )
+
+    @staticmethod
+    def _defer_shared_waiter(connection, claim: ClaimedJob, execution_id: UUID, now: datetime) -> None:
+        updated = connection.execute(
+            """
+            update ai_jobs set status = 'RETRY_WAIT', phase = 'QUEUED', generation = generation + 1,
+                lease_owner = null, lease_expires_at = null, updated_at = %s
+            where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
+              and shared_execution_id = %s
+            """,
+            (now, claim.job_id, claim.generation, claim.lease_epoch, execution_id),
+        ).rowcount
+        if updated != 1:
+            raise StaleLeaseError("shared execution waiter lease lost")
+
+    def _end_shared_consumer(
+        self,
+        connection,
+        job_id: UUID,
+        execution_id: UUID,
+        now: datetime,
+        consumer_state: str,
+        empty_reason: str,
+    ) -> None:
+        if consumer_state not in {"CANCELLED", "FAILED"}:
+            raise ValueError("unsupported shared consumer terminal state")
+        connection.execute(
+            """
+            update ai_execution_consumers set state = %s, completed_at = %s
+            where execution_id = %s and job_id = %s
+              and state in ('REPRESENTATIVE', 'WAITING')
+            """,
+            (consumer_state, now, execution_id, job_id),
+        )
+        execution = connection.execute(
+            "select * from ai_shared_executions where execution_id = %s for update",
+            (execution_id,),
+        ).fetchone()
+        if (
+            execution is None
+            or execution["status"] != "RUNNING"
+            or execution["representative_job_id"] != job_id
+        ):
+            return
+        if execution["provider_dispatched"]:
+            connection.execute(
+                """
+                update ai_provider_calls set lifecycle_status = 'UNKNOWN',
+                    settlement_status = case
+                        when settlement_status = 'CONFLICT' then 'CONFLICT' else 'UNKNOWN'
+                    end, updated_at = %s
+                where execution_id = %s and receipt_fingerprint is null
+                  and lifecycle_status in ('RESERVED', 'DISPATCHING')
+                """,
+                (now, execution_id),
+            )
+            connection.execute(
+                """
+                update ai_cost_ledger set status = 'UNKNOWN', unknown_since = coalesce(unknown_since, %s)
+                where execution_id = %s and status = 'RESERVED'
+                """,
+                (now, execution_id),
+            )
+            connection.execute(
+                """
+                update ai_shared_executions set status = 'UNKNOWN', phase = 'COMPLETE',
+                    terminal_reason = 'PROVIDER_OUTCOME_UNKNOWN', completed_at = %s, updated_at = %s
+                where execution_id = %s and status = 'RUNNING'
+                """,
+                (now, now, execution_id),
+            )
+            self._wake_shared_waiters(connection, execution_id, now)
+            return
+        successor = connection.execute(
+            """
+            select consumer.job_id, job.generation
+            from ai_execution_consumers consumer
+            join ai_jobs job on job.job_id = consumer.job_id
+            where consumer.execution_id = %s and consumer.state = 'WAITING'
+              and job.status = 'RETRY_WAIT' and not job.cancel_requested and job.deadline_at > %s
+            order by consumer.joined_at, consumer.job_id
+            for update of consumer, job skip locked
+            limit 1
+            """,
+            (execution_id, now),
+        ).fetchone()
+        if successor is None:
+            connection.execute(
+                """
+                update ai_shared_executions set status = 'CANCELLED', phase = 'COMPLETE',
+                    terminal_reason = %s, completed_at = %s, updated_at = %s
+                where execution_id = %s and status = 'RUNNING'
+                """,
+                (empty_reason, now, now, execution_id),
+            )
+            return
+        connection.execute(
+            """
+            update ai_execution_consumers set state = 'REPRESENTATIVE', woken_at = %s
+            where execution_id = %s and job_id = %s and state = 'WAITING'
+            """,
+            (now, execution_id, successor["job_id"]),
+        )
+        connection.execute(
+            """
+            update ai_shared_executions set representative_job_id = %s,
+                execution_generation = execution_generation + 1, lease_epoch = 0,
+                phase = 'READY', provider_dispatched = false, updated_at = %s
+            where execution_id = %s and status = 'RUNNING' and representative_job_id = %s
+            """,
+            (successor["job_id"], now, execution_id, job_id),
+        )
+        self._enqueue_job_dispatch(connection, successor["job_id"], successor["generation"], now)
+
+    @staticmethod
+    def _enqueue_job_dispatch(connection, job_id: UUID, generation: int, now: datetime) -> None:
+        connection.execute(
+            """
+            insert into ai_dispatch_outbox (
+                event_id, job_id, generation, status, attempts, available_at, created_at
+            ) values (%s, %s, %s, 'PENDING', 0, %s, %s)
+            on conflict (job_id, generation) do nothing
+            """,
+            (uuid4(), job_id, generation, now, now),
+        )
+
+    def _wake_shared_waiters(self, connection, execution_id: UUID, now: datetime) -> None:
+        expired = connection.execute(
+            """
+            update ai_jobs job set status = 'EXPIRED', phase = 'COMPLETE',
+                error_code = 'DEADLINE_EXCEEDED', completed_at = %s, updated_at = %s
+            from ai_execution_consumers consumer
+            where consumer.execution_id = %s and consumer.job_id = job.job_id
+              and consumer.state = 'WAITING' and job.status = 'RETRY_WAIT'
+              and job.deadline_at <= %s
+            returning job.job_id
+            """,
+            (now, now, execution_id, now),
+        ).fetchall()
+        if expired:
+            connection.execute(
+                """
+                update ai_execution_consumers set state = 'FAILED', completed_at = %s
+                where execution_id = %s and job_id = any(%s)
+                """,
+                (now, execution_id, [row["job_id"] for row in expired]),
+            )
+        waiters = connection.execute(
+            """
+            select consumer.job_id, job.generation
+            from ai_execution_consumers consumer
+            join ai_jobs job on job.job_id = consumer.job_id
+            where consumer.execution_id = %s and consumer.state = 'WAITING'
+              and job.status = 'RETRY_WAIT' and not job.cancel_requested and job.deadline_at > %s
+            order by consumer.joined_at, consumer.job_id
+            for update of consumer, job
+            """,
+            (execution_id, now),
+        ).fetchall()
+        for waiter in waiters:
+            self._enqueue_job_dispatch(connection, waiter["job_id"], waiter["generation"], now)
+        if waiters:
+            connection.execute(
+                """
+                update ai_execution_consumers set woken_at = coalesce(woken_at, %s)
+                where execution_id = %s and state = 'WAITING'
+                """,
+                (now, execution_id),
+            )
+
+    def _finish_shared_execution(
+        self,
+        connection,
+        claim: ClaimedJob,
+        execution_status: str,
+        terminal_reason: str | None,
+        consumer_state: str,
+        now: datetime,
+    ) -> None:
+        job = connection.execute(
+            "select shared_execution_id from ai_jobs where job_id = %s",
+            (claim.job_id,),
+        ).fetchone()
+        if job is None or job["shared_execution_id"] is None:
+            return
+        execution_id = job["shared_execution_id"]
+        execution = connection.execute(
+            "select * from ai_shared_executions where execution_id = %s for update",
+            (execution_id,),
+        ).fetchone()
+        if execution is None:
+            raise ConflictError("shared execution binding is missing")
+        if execution["status"] == "RUNNING":
+            if execution["representative_job_id"] != claim.job_id:
+                raise ConflictError("only the representative may finish a shared execution")
+            updated = connection.execute(
+                """
+                update ai_shared_executions set status = %s, phase = 'COMPLETE',
+                    terminal_reason = %s, completed_at = %s, updated_at = %s
+                where execution_id = %s and status = 'RUNNING'
+                  and representative_job_id = %s and execution_generation = %s
+                  and lease_epoch = %s
+                """,
+                (
+                    execution_status,
+                    terminal_reason,
+                    now,
+                    now,
+                    execution_id,
+                    claim.job_id,
+                    execution["execution_generation"],
+                    claim.lease_epoch,
+                ),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("shared execution completion lease lost")
+            self._wake_shared_waiters(connection, execution_id, now)
+        connection.execute(
+            """
+            update ai_execution_consumers set state = %s, completed_at = coalesce(completed_at, %s)
+            where execution_id = %s and job_id = %s
+              and state in ('REPRESENTATIVE', 'WAITING')
+            """,
+            (consumer_state, now, execution_id, claim.job_id),
+        )
+
     def reserve_budget(
         self,
         claim: ClaimedJob,
@@ -516,12 +961,19 @@ class Repository:
         pricing_version: str,
         reserve_microusd: int,
         call_type: str,
+        shared: SharedExecutionClaim | None = None,
     ) -> UUID:
+        operation_key = (
+            f"{shared.execution_id}:{shared.execution_generation}:{call_type}"
+            if shared is not None
+            else f"{claim.job_id}:{claim.generation}:{call_type}"
+        )
         reservation = self._reserve_budget(
             workspace_key=claim.workspace_key,
             requester_id=claim.requester_id,
             job_id=claim.job_id,
-            operation_key=f"{claim.job_id}:{claim.generation}:{call_type}",
+            execution_id=shared.execution_id if shared is not None else None,
+            operation_key=operation_key,
             budget_bucket="ACTOR",
             model_alias=model_alias,
             pricing_version=pricing_version,
@@ -546,6 +998,7 @@ class Repository:
             workspace_key=workspace_key,
             requester_id=None,
             job_id=None,
+            execution_id=None,
             operation_key=operation_key,
             budget_bucket="SYSTEM",
             model_alias=model_alias,
@@ -565,6 +1018,7 @@ class Repository:
         workspace_key: str,
         requester_id: UUID | None,
         job_id: UUID | None,
+        execution_id: UUID | None,
         operation_key: str,
         budget_bucket: str,
         model_alias: str,
@@ -646,15 +1100,16 @@ class Repository:
             connection.execute(
                 """
                 insert into ai_cost_ledger (
-                    reservation_id, operation_key, job_id, workspace_key, requester_id,
+                    reservation_id, operation_key, job_id, execution_id, workspace_key, requester_id,
                     budget_bucket, call_type, budget_date, status, reserved_microusd,
                     pricing_version, model_alias, created_at
-                ) values (%s, %s, %s, %s, %s, %s, %s, %s, 'RESERVED', %s, %s, %s, %s)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'RESERVED', %s, %s, %s, %s)
                 """,
                 (
                     reservation_id,
                     operation_key,
                     job_id,
+                    execution_id,
                     workspace_key,
                     requester_id,
                     budget_bucket,
@@ -702,7 +1157,7 @@ class Repository:
         with self.database.transaction() as connection:
             reservation = connection.execute(
                 """
-                select operation_key, job_id, call_type, model_alias, pricing_version, status
+                select operation_key, job_id, execution_id, call_type, model_alias, pricing_version, status
                 from ai_cost_ledger where reservation_id = %s for update
                 """,
                 (reservation_id,),
@@ -729,16 +1184,17 @@ class Repository:
             connection.execute(
                 """
                 insert into ai_provider_calls (
-                    call_id, reservation_id, operation_key, job_id, stage,
+                    call_id, reservation_id, operation_key, job_id, execution_id, stage,
                     lifecycle_status, settlement_status, requested_alias, pricing_version,
                     service_tier, context_price_band, created_at, updated_at
-                ) values (%s, %s, %s, %s, %s, 'RESERVED', 'PENDING', %s, %s, %s, %s, %s, %s)
+                ) values (%s, %s, %s, %s, %s, %s, 'RESERVED', 'PENDING', %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     call_id,
                     reservation_id,
                     reservation["operation_key"],
                     reservation["job_id"],
+                    reservation["execution_id"],
                     reservation["call_type"],
                     requested_alias,
                     pricing_version,
@@ -967,6 +1423,16 @@ class Repository:
         )
         result_expires_at = now + timedelta(days=7)
         with self.database.transaction() as connection:
+            shared_binding = connection.execute(
+                "select shared_execution_id from ai_jobs where job_id = %s",
+                (claim.job_id,),
+            ).fetchone()
+            if (
+                shared_binding
+                and shared_binding["shared_execution_id"] is not None
+                and (cache_key is None or cost_microusd is None)
+            ):
+                raise ConflictError("shared success requires an exact settled cache result")
             updated = connection.execute(
                 """
                 update ai_jobs set status = %s, phase = 'COMPLETE', result_schema_version = 1,
@@ -1036,6 +1502,9 @@ class Repository:
                         now,
                     ),
                 )
+            self._finish_shared_execution(
+                connection, claim, "SUCCEEDED", None, "COMPLETED", now
+            )
 
     def complete_from_cache(self, claim: ClaimedJob, cache_key: str) -> bool:
         now = datetime.now(UTC)
@@ -1165,6 +1634,9 @@ class Repository:
             ).rowcount
             if updated != 1:
                 raise StaleLeaseError("cache completion lease lost")
+            self._finish_shared_execution(
+                connection, claim, "SUCCEEDED", None, "COMPLETED", now
+            )
             return True
 
     def read_reply_cache_candidate(self, claim: ClaimedJob, cache_key: str) -> ReplyCacheCandidate | None:
@@ -1349,6 +1821,9 @@ class Repository:
             ).rowcount
             if updated != 1:
                 raise StaleLeaseError("reply cache completion lease lost")
+            self._finish_shared_execution(
+                connection, claim, "SUCCEEDED", None, "COMPLETED", now
+            )
             return True
 
     def invalidate_result_cache(self, cache_key: str, reason: str) -> None:
@@ -1406,6 +1881,14 @@ class Repository:
             ).rowcount
             if updated != 1:
                 raise StaleLeaseError("job completion lease lost")
+            self._finish_shared_execution(
+                connection,
+                claim,
+                "NEEDS_REVIEW",
+                error_code[:80],
+                "COMPLETED",
+                now,
+            )
 
     def fail_job(self, claim: ClaimedJob, error_code: str, retryable: bool) -> None:
         now = datetime.now(UTC)
@@ -1467,19 +1950,39 @@ class Repository:
                 ).rowcount
                 if updated != 1:
                     raise StaleLeaseError("job failure lease lost")
+                execution_status = "UNKNOWN" if error_code == "PROVIDER_OUTCOME_UNKNOWN" else "FAILED"
+                self._finish_shared_execution(
+                    connection,
+                    claim,
+                    execution_status,
+                    error_code[:80],
+                    "FAILED",
+                    now,
+                )
 
     def terminate_job(self, claim: ClaimedJob, status: JobStatus, error_code: str) -> None:
         if status not in {JobStatus.SUPERSEDED, JobStatus.CANCELLED, JobStatus.EXPIRED, JobStatus.FAILED}:
             raise ValueError("unsupported terminal status")
         now = datetime.now(UTC)
         with self.database.transaction() as connection:
-            connection.execute(
+            updated = connection.execute(
                 """
                 update ai_jobs set status = %s, phase = 'COMPLETE', error_code = %s,
                     completed_at = %s, updated_at = %s, lease_owner = null, lease_expires_at = null
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                 """,
                 (status.value, error_code[:80], now, now, claim.job_id, claim.generation, claim.lease_epoch),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("job termination lease lost")
+            execution_status = "UNKNOWN" if error_code == "PROVIDER_OUTCOME_UNKNOWN" else "FAILED"
+            self._finish_shared_execution(
+                connection,
+                claim,
+                execution_status,
+                error_code[:80],
+                "FAILED",
+                now,
             )
 
     def accept_feedback(self, feedback: FeedbackRequest) -> Accepted:
@@ -2157,6 +2660,54 @@ class Repository:
                 connection.execute("delete from ai_result_cache where cache_key = %s", (row["cache_key"],))
         return len(rows)
 
+    def purge_expired_shared_executions(self, limit: int = 1000) -> int:
+        with self.database.transaction() as connection:
+            rows = connection.execute(
+                """
+                select execution.execution_id
+                from ai_shared_executions execution
+                where execution.status <> 'RUNNING'
+                  and execution.completed_at <= clock_timestamp() - interval '30 days'
+                  and not exists (
+                      select 1 from ai_jobs job
+                      where job.shared_execution_id = execution.execution_id
+                        and (
+                            job.completed_at is null
+                            or job.completed_at > clock_timestamp() - interval '30 days'
+                            or job.result_ciphertext is not null
+                        )
+                  )
+                  and not exists (
+                      select 1 from ai_cost_ledger cost
+                      where cost.execution_id = execution.execution_id
+                        and cost.status in ('RESERVED', 'UNKNOWN')
+                  )
+                order by execution.completed_at, execution.execution_id
+                for update skip locked
+                limit %s
+                """,
+                (limit,),
+            ).fetchall()
+            for row in rows:
+                execution_id = row["execution_id"]
+                connection.execute(
+                    "update ai_provider_calls set execution_id = null where execution_id = %s",
+                    (execution_id,),
+                )
+                connection.execute(
+                    "update ai_cost_ledger set execution_id = null where execution_id = %s",
+                    (execution_id,),
+                )
+                connection.execute(
+                    "update ai_jobs set shared_execution_id = null where shared_execution_id = %s",
+                    (execution_id,),
+                )
+                connection.execute(
+                    "delete from ai_shared_executions where execution_id = %s",
+                    (execution_id,),
+                )
+        return len(rows)
+
     def purge_expired_metadata(self, limit: int = 1000) -> int:
         with self.database.transaction() as connection:
             rows = connection.execute(
@@ -2192,6 +2743,13 @@ class Repository:
     def status_counts(self) -> dict[str, int]:
         with self.database.connection() as connection:
             rows = connection.execute("select status, count(*) as count from ai_jobs group by status").fetchall()
+            return {row["status"]: row["count"] for row in rows}
+
+    def shared_execution_status_counts(self) -> dict[str, int]:
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "select status, count(*) as count from ai_shared_executions group by status"
+            ).fetchall()
             return {row["status"]: row["count"] for row in rows}
 
     def increment_telemetry_counter(self, counter_key: str) -> None:

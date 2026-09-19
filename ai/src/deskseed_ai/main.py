@@ -221,6 +221,7 @@ def operation(
     if payload.action == "RETENTION":
         service.repository.purge_expired_cache_entries()
         service.repository.purge_expired_results()
+        service.repository.purge_expired_shared_executions()
         service.repository.purge_expired_metadata()
         accepted = service.repository.operate(job_id, payload)
         return accepted
@@ -241,6 +242,7 @@ def service_status(_: Protected, service: Annotated[Runtime, Depends(runtime)]) 
             "langfuseEnabled": service.settings.langfuse_enabled,
             "telemetry": service.repository.telemetry_status(service.traces.enabled),
             "jobCounts": service.repository.status_counts(),
+            "sharedExecutionCounts": service.repository.shared_execution_status_counts(),
         }
         | service.repository.operational_status()
     )

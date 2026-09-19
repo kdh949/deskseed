@@ -54,6 +54,7 @@ def run_role(role: str) -> None:
             lambda: (
                 runtime.repository.purge_expired_cache_entries()
                 + runtime.repository.purge_expired_results()
+                + runtime.repository.purge_expired_shared_executions()
                 + runtime.repository.purge_expired_metadata()
             ),
             3600.0,

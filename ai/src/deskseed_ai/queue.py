@@ -28,6 +28,7 @@ from .repository import (
     ClaimedJob,
     ProviderCallStateUnknownError,
     Repository,
+    SharedExecutionClaim,
     StaleLeaseError,
 )
 from .result_cache import exact_result_cache_key
@@ -183,6 +184,7 @@ class StreamRuntime:
 
     def _execute(self, claim: ClaimedJob, traceparent: str | None) -> None:
         calls: list[UUID] = []
+        shared: SharedExecutionClaim | None = None
         attributes = TraceAttributes(
             job_id=claim.job_id,
             feature=claim.feature.value,
@@ -256,6 +258,15 @@ class StreamRuntime:
                                         return
                         elif self.repository.complete_from_cache(claim, cache_key.digest):
                             return
+                if self.settings.shared_execution_mode == "test" and cache_key is not None:
+                    shared = self.repository.claim_shared_execution(
+                        claim, cache_key.digest, cache_key.version
+                    )
+                    if shared.disposition == "WAITING":
+                        return
+                    if shared.disposition != "LEADER":
+                        self.repository.finish_shared_terminal_consumer(claim, shared)
+                        return
                 context = _bounded_context(context, claim.feature)
                 if claim.feature == Feature.REPLY_DRAFT:
                     query = reply_query(context)
@@ -265,6 +276,7 @@ class StreamRuntime:
                         self.pricing.count_text_tokens(self.settings.embedding_model, query),
                         0,
                         "QUERY_EMBEDDING",
+                        shared,
                     )
                     calls.append(query_call_id)
                     self.repository.set_phase(claim, JobPhase.RETRIEVE)
@@ -282,6 +294,7 @@ class StreamRuntime:
                             ),
                             2048,
                             "GENERATION",
+                            shared,
                         )
                         calls.append(call_id)
                         self.repository.set_phase(claim, JobPhase.GENERATE)
@@ -308,6 +321,7 @@ class StreamRuntime:
                         ),
                         1024,
                         "GENERATION",
+                        shared,
                     )
                     calls.append(call_id)
                     self.repository.set_phase(claim, JobPhase.GENERATE)
@@ -321,6 +335,7 @@ class StreamRuntime:
                         ),
                         768,
                         "GENERATION",
+                        shared,
                     )
                     calls.append(call_id)
                     self.repository.set_phase(claim, JobPhase.GENERATE)
@@ -420,6 +435,7 @@ class StreamRuntime:
         input_tokens: int,
         output_tokens: int,
         call_type: str,
+        shared: SharedExecutionClaim | None = None,
     ) -> tuple[UUID, ReceiptRecorder]:
         reserve = self.pricing.upper_bound_microusd(
             requested_alias,
@@ -428,12 +444,15 @@ class StreamRuntime:
             self.pricing.service_tier,
             self.pricing.context_price_band,
         )
+        if shared is not None:
+            self.repository.mark_shared_provider_stage(claim, shared, call_type)
         reservation_id = self.repository.reserve_budget(
             claim,
             requested_alias,
             self.pricing.version,
             reserve,
             call_type,
+            shared,
         )
         call_id = uuid4()
         self.repository.create_provider_call(
