@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
+import { createOpaqueUuid } from '../../api/uuid'
 import type {
   AiReplyAttributionSource,
   RichTextDocumentV1,
@@ -14,6 +15,7 @@ import {
   recordAiFeedback,
   type AiFeature,
   type AiFeedbackType,
+  type AiGenerationMode,
   type AiJobReceipt,
   type AiResult,
 } from './api'
@@ -84,6 +86,11 @@ const defaultClient: AiAssistantClient = {
 type JobMap = Partial<Record<AiFeature, AiJobReceipt>>
 type ErrorMap = Partial<Record<AiFeature, string>>
 type InsertStrategy = 'append' | 'replace'
+type PendingCreateCommand = {
+  expectedTicketVersion: number
+  generationMode: AiGenerationMode
+  idempotencyKey: string
+}
 
 export interface AiPublicDraftSnapshot {
   body: string
@@ -124,6 +131,9 @@ export function AiAssistantPanel({
   const [generatingFeatures, setGeneratingFeatures] = useState<Set<AiFeature>>(
     () => new Set(),
   )
+  const [ambiguousCreateFeatures, setAmbiguousCreateFeatures] = useState<
+    Set<AiFeature>
+  >(() => new Set())
   const [feedbackByJob, setFeedbackByJob] = useState<
     Record<string, AiFeedbackType | undefined>
   >({})
@@ -137,6 +147,9 @@ export function AiAssistantPanel({
   const generateInFlightRef = useRef(new Set<AiFeature>())
   const pollFailuresRef = useRef(new Map<string, number>())
   const usedReplyJobsRef = useRef(new Set<string>())
+  const pendingCreateCommandsRef = useRef(
+    new Map<AiFeature, PendingCreateCommand>(),
+  )
 
   latestRef.current = {
     composerMode,
@@ -160,6 +173,14 @@ export function AiAssistantPanel({
     },
     [client, ticketNumber],
   )
+
+  useEffect(() => {
+    pendingCreateCommandsRef.current.clear()
+    generateInFlightRef.current.clear()
+    pollFailuresRef.current.clear()
+    usedReplyJobsRef.current.clear()
+    setAmbiguousCreateFeatures(new Set())
+  }, [ticketNumber])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -236,19 +257,51 @@ export function AiAssistantPanel({
     return () => timers.forEach(window.clearTimeout)
   }, [client, hydrateResult, jobs, replaceJob, ticketNumber])
 
-  const generate = async (feature: AiFeature) => {
+  const generate = async (
+    feature: AiFeature,
+    generationMode: AiGenerationMode,
+    retryAmbiguous = false,
+  ) => {
     if (loading || generateInFlightRef.current.has(feature)) return
+    const pending = pendingCreateCommandsRef.current.get(feature)
+    const command = retryAmbiguous
+      ? pending
+      : {
+          expectedTicketVersion: ticketVersion,
+          generationMode,
+          idempotencyKey: createOpaqueUuid(),
+        }
+    if (!command) return
+    if (!retryAmbiguous) pendingCreateCommandsRef.current.set(feature, command)
     generateInFlightRef.current.add(feature)
     setGeneratingFeatures((current) => new Set(current).add(feature))
     setErrors((current) => ({ ...current, [feature]: undefined }))
     setChoiceJobId(null)
     setInsertMessage('')
     try {
-      replaceJob(await client.create(ticketNumber, ticketVersion, feature))
+      replaceJob(
+        await client.create(
+          ticketNumber,
+          command.expectedTicketVersion,
+          feature,
+          command.generationMode,
+          command.idempotencyKey,
+        ),
+      )
+      pendingCreateCommandsRef.current.delete(feature)
+      setAmbiguousCreateFeatures((current) => withoutFeature(current, feature))
     } catch (cause) {
+      if (isAmbiguousCreateOutcome(cause)) {
+        setAmbiguousCreateFeatures((current) => new Set(current).add(feature))
+      } else {
+        pendingCreateCommandsRef.current.delete(feature)
+        setAmbiguousCreateFeatures((current) =>
+          withoutFeature(current, feature),
+        )
+      }
       setErrors((current) => ({
         ...current,
-        [feature]: messageForError(cause),
+        [feature]: messageForCreateError(cause, command.generationMode),
       }))
     } finally {
       generateInFlightRef.current.delete(feature)
@@ -481,6 +534,10 @@ export function AiAssistantPanel({
                 onGenerate={generate}
                 onInsert={beginInsert}
                 onInsertChoice={completeInsert}
+                onRetryGenerate={() =>
+                  generate(definition.feature, 'REUSE_OR_CREATE', true)
+                }
+                retryAvailable={ambiguousCreateFeatures.has(definition.feature)}
               />
             )
           })}
@@ -512,6 +569,8 @@ function AiFeatureCard({
   onGenerate,
   onInsert,
   onInsertChoice,
+  onRetryGenerate,
+  retryAvailable,
 }: {
   choiceOpen: boolean
   definition: (typeof FEATURES)[number]
@@ -523,12 +582,18 @@ function AiFeatureCard({
   onCancelChoice: () => void
   onCancelJob: (job: AiJobReceipt) => Promise<void>
   onFeedback: (job: AiJobReceipt, type: AiFeedbackType) => Promise<void>
-  onGenerate: (feature: AiFeature) => Promise<void>
+  onGenerate: (
+    feature: AiFeature,
+    generationMode: AiGenerationMode,
+  ) => Promise<void>
   onInsert: (job: AiJobReceipt) => Promise<void>
   onInsertChoice: (job: AiJobReceipt, strategy: InsertStrategy) => Promise<void>
+  onRetryGenerate: () => Promise<void>
+  retryAvailable: boolean
 }) {
   const active = job ? ACTIVE_STATUSES.has(job.status) : false
   const ready = job?.status === 'SUCCEEDED' && job.result !== null
+  const routeDescription = job ? generationRouteDescription(job) : null
   return (
     <article className="ai-assistant-card">
       <div className="ai-assistant-card__heading">
@@ -555,6 +620,10 @@ function AiFeatureCard({
         </div>
       )}
 
+      {routeDescription && (
+        <p className="ai-assistant-card__reuse-status">{routeDescription}</p>
+      )}
+
       {job?.status === 'NEEDS_REVIEW' && (
         <SeedNotice title="검토가 필요한 결과" tone="warning">
           근거 또는 형식 검증을 통과하지 못했습니다. 새로 생성해 주세요.
@@ -576,7 +645,16 @@ function AiFeatureCard({
       )}
       {error && (
         <SeedNotice title="요청을 완료하지 못했습니다" tone="danger">
-          {error}
+          <p>{error}</p>
+          {retryAvailable && (
+            <SeedButton
+              disabled={generationDisabled}
+              onClick={() => void onRetryGenerate()}
+              size="compact"
+            >
+              같은 요청 다시 시도
+            </SeedButton>
+          )}
         </SeedNotice>
       )}
 
@@ -617,13 +695,23 @@ function AiFeatureCard({
 
       <div className="ai-assistant-card__actions">
         <SeedButton
-          disabled={active || generationDisabled}
-          onClick={() => void onGenerate(definition.feature)}
+          disabled={active || generationDisabled || retryAvailable}
+          onClick={() => void onGenerate(definition.feature, 'REUSE_OR_CREATE')}
           size="compact"
           variant={job ? 'quiet' : 'primary'}
         >
-          {job ? '새로 생성' : '생성하기'}
+          {job ? '최근 결과 확인' : '결과 확인/생성'}
         </SeedButton>
+        {ready && !job.stale && (
+          <SeedButton
+            disabled={active || generationDisabled || retryAvailable}
+            onClick={() => void onGenerate(definition.feature, 'NEW_CANDIDATE')}
+            size="compact"
+            variant="quiet"
+          >
+            다른 초안 생성
+          </SeedButton>
+        )}
         {ready &&
           job.result?.type === 'ticket.reply_draft' &&
           !job.stale &&
@@ -638,6 +726,12 @@ function AiFeatureCard({
             </SeedButton>
           )}
       </div>
+
+      {ready && !job.stale && (
+        <p className="ai-assistant-card__candidate-limit">
+          다른 초안은 같은 입력에서 24시간 동안 최대 2회 요청할 수 있습니다.
+        </p>
+      )}
 
       {ready && job && (
         <div
@@ -796,6 +890,69 @@ function messageForError(cause: unknown) {
       : cause.message
   }
   return 'AI 요청을 처리하지 못했습니다. 다시 시도해 주세요.'
+}
+
+function messageForCreateError(
+  cause: unknown,
+  generationMode: AiGenerationMode,
+) {
+  if (isAmbiguousCreateOutcome(cause)) {
+    return '요청 결과를 확인할 수 없습니다. 같은 요청 다시 시도로 중복 없이 확인해 주세요.'
+  }
+  if (cause instanceof ApiError && cause.status === 429) {
+    const subject =
+      generationMode === 'NEW_CANDIDATE'
+        ? '다른 초안 요청 한도 또는 AI 사용 한도'
+        : 'AI 요청 한도'
+    return `${subject}에 도달했습니다.${retryAfterMessage(cause.retryAfter)}`
+  }
+  return messageForError(cause)
+}
+
+function isAmbiguousCreateOutcome(cause: unknown) {
+  if (!(cause instanceof ApiError)) return true
+  return cause.status >= 500 || (cause.status >= 200 && cause.status < 300)
+}
+
+function retryAfterMessage(value: string | undefined) {
+  if (!value || !/^\d+$/.test(value)) return ' 잠시 후 다시 시도해 주세요.'
+  const seconds = Number(value)
+  if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 86_400) {
+    return ' 잠시 후 다시 시도해 주세요.'
+  }
+  if (seconds >= 3_600)
+    return ` 약 ${Math.ceil(seconds / 3_600)}시간 후 다시 시도해 주세요.`
+  if (seconds >= 60)
+    return ` 약 ${Math.ceil(seconds / 60)}분 후 다시 시도해 주세요.`
+  return ` ${seconds}초 후 다시 시도해 주세요.`
+}
+
+function generationRouteDescription(job: AiJobReceipt) {
+  if (
+    job.generationMode === 'REUSE_OR_CREATE' &&
+    ACTIVE_STATUSES.has(job.status)
+  ) {
+    return '최근 결과를 확인하거나 같은 입력의 진행 중인 작업을 기다리고 있습니다.'
+  }
+  if (job.reuseKind === 'CACHE_HIT')
+    return '현재 입력과 일치하는 최근 결과를 사용했습니다.'
+  if (job.reuseKind === 'COALESCED') {
+    return ACTIVE_STATUSES.has(job.status)
+      ? '같은 입력의 진행 중인 작업을 기다리고 있습니다.'
+      : '같은 입력의 진행 중인 작업 결과를 사용했습니다.'
+  }
+  if (job.reuseKind === 'GENERATED') {
+    return job.generationMode === 'NEW_CANDIDATE'
+      ? '다른 초안을 새 후보로 생성했습니다.'
+      : '현재 입력에 맞는 새 결과를 생성했습니다.'
+  }
+  return null
+}
+
+function withoutFeature(current: Set<AiFeature>, feature: AiFeature) {
+  const next = new Set(current)
+  next.delete(feature)
+  return next
 }
 
 function latestSnapshot(current: {

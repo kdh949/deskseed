@@ -5,6 +5,10 @@ import type { TicketPriority } from '../../api/types'
 export type AiFeature =
   'ticket.summary' | 'ticket.triage' | 'ticket.reply_draft'
 
+export type AiGenerationMode = 'REUSE_OR_CREATE' | 'NEW_CANDIDATE'
+
+export type AiReuseKind = 'GENERATED' | 'CACHE_HIT' | 'COALESCED'
+
 export type AiJobStatus =
   | 'ACCEPTED'
   | 'QUEUED'
@@ -78,7 +82,10 @@ export interface AiJobReceipt {
   canInsert: boolean
   errorCode: string | null
   result: AiResult | null
+  generationMode?: AiGenerationMode
   candidateId?: string
+  candidateSequence?: number
+  reuseKind?: AiReuseKind
 }
 
 export interface AiJobPage {
@@ -111,6 +118,15 @@ const PHASES = new Set<AiJobPhase>([
   'GENERATE',
   'VALIDATE',
   'COMPLETE',
+])
+const GENERATION_MODES = new Set<AiGenerationMode>([
+  'REUSE_OR_CREATE',
+  'NEW_CANDIDATE',
+])
+const REUSE_KINDS = new Set<AiReuseKind>([
+  'GENERATED',
+  'CACHE_HIT',
+  'COALESCED',
 ])
 const TOPICS = new Set<AiTriageResult['topicCode']>([
   'ACCOUNT_ACCESS',
@@ -193,6 +209,9 @@ function decodeResult(value: unknown): AiResult | null | undefined {
 export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
   if (!record(value)) return undefined
   const result = decodeResult(value.result)
+  const generationMode = value.generationMode as AiGenerationMode | undefined
+  const candidateSequence = value.candidateSequence
+  const reuseKind = value.reuseKind as AiReuseKind | undefined
   if (
     !text(value.jobId) ||
     !UUID.test(value.jobId) ||
@@ -216,8 +235,16 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
       String(value.contextPolicyVersion),
     ) ||
     !['PUBLIC_ONLY', 'PUBLIC_DRAFT_ONLY'].includes(String(value.inputScope)) ||
+    (generationMode !== undefined &&
+      (!text(generationMode) || !GENERATION_MODES.has(generationMode))) ||
     (value.candidateId !== undefined &&
       (!text(value.candidateId) || !UUID.test(value.candidateId))) ||
+    (candidateSequence !== undefined && !integer(candidateSequence, 1)) ||
+    (reuseKind !== undefined &&
+      (!text(reuseKind) || !REUSE_KINDS.has(reuseKind))) ||
+    (generationMode === 'NEW_CANDIDATE' && candidateSequence === undefined) ||
+    (generationMode !== 'NEW_CANDIDATE' && candidateSequence !== undefined) ||
+    (generationMode === undefined && reuseKind !== undefined) ||
     typeof value.stale !== 'boolean' ||
     typeof value.canInsert !== 'boolean' ||
     !nullableText(value.errorCode) ||
@@ -245,7 +272,10 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
     canInsert: value.canInsert,
     errorCode: value.errorCode,
     result,
+    ...(generationMode ? { generationMode } : {}),
     ...(value.candidateId ? { candidateId: value.candidateId } : {}),
+    ...(candidateSequence ? { candidateSequence } : {}),
+    ...(reuseKind ? { reuseKind } : {}),
   }
 }
 
@@ -281,16 +311,19 @@ export const createAiJob = (
   ticketNumber: number,
   expectedTicketVersion: number,
   feature: AiFeature,
+  generationMode: AiGenerationMode,
+  idempotencyKey: string,
 ) =>
   requestStaffResource(
     `/api/v1/agent/tickets/${ticketNumber}/ai/jobs`,
     decodeAiJobReceipt,
     {
       method: 'POST',
-      headers: { 'Idempotency-Key': createOpaqueUuid() },
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: {
         feature,
         expectedTicketVersion,
+        generationMode,
         options:
           feature === 'ticket.reply_draft'
             ? { language: 'ko', tone: 'calm' }
