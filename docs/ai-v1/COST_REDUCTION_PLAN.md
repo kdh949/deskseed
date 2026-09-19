@@ -413,6 +413,10 @@ INTERNAL 작성기의 임의 텍스트를 새 AI 입력 통로로 만들지 않�
 
 공급자 Batch는 offline 평가·초기 KB 색인·선별된 과거 작업만 대상으로 한다. 일반 embedding 배열 요청과 Batch 할인은 별개다. [OpenAI Batch](https://developers.openai.com/api/docs/guides/batch)는 동기 대비 50% 할인 및 24시간 처리 창을 안내하므로 상담사가 기다리는 reply에는 쓰지 않는다. batchId/customId·부분 완료·cancel·늦은 결과·철회된 source·usage 정산을 durable하게 관리한다. SYSTEM/index/eval budget은 interactive actor budget과 구분하되 workspace 총한도에 포함한다.
 
+S14a와 S14b를 별도 수직 slice로 구현한다. S14a의 재사용 key는 mutable model alias가 아니라 검토된 immutable `modelSnapshot`을 요구하며, provider가 snapshot을 제공하지 않으면 production `intent`는 fail closed다. 배열 response는 provider index가 요청 전체를 unique/complete하게 덮는지 검증하고 한 call의 total usage를 청크별 실제 비용처럼 중복 배분하지 않는다. [S14a task brief](../tasks/2026-09-19-ai-cost-s14a-embedding-reuse-batching.md)
+
+S14b는 manifest, provider batch/file ID, custom ID, request count, partial/cancel/late result와 file delete intent를 별도 durable state로 관리한다. terminal 뒤 input/output/error file 삭제를 재시도하되 provider의 즉시 물리 삭제를 주장하지 않는다. production activation은 reviewed provider data-control 설정과 유료 예산 승인을 필요로 하며 fake/intercepted transport를 할인·품질·절감 증거로 사용하지 않는다. [S14b task brief](../tasks/2026-09-19-ai-cost-s14b-offline-embedding-batch.md)
+
 ## 11. 계약·마이그레이션·배포·롤백
 
 ### 계약 변경 목록
