@@ -24,7 +24,18 @@ AI V1에만 다음의 좁은 예외를 허용한다.
 - LiteLLM Python SDK adapter는 server-owned model alias만 허용하고 hidden retry, provider fallback, cache를 기본으로 끈다. fake provider와 live provider 실행은 명시적으로 분리한다.
 - Langfuse Cloud는 body-free 관측·평가 exporter일 뿐 job DB, canonical audit, budget enforcement가 아니다. 장애는 결과 commit을 실패시키지 않는다.
 
-모든 생성 기능은 Backend가 만든 PUBLIC comment projection만 사용한다. INTERNAL comment, collaboration note, child relation, customer profile, protected audit content와 비공개 KB는 source response, prompt, cache, result provenance와 trace에 들어가지 않는다. reply는 summary/triage 결과를 context로 재사용하지 않고 별도 PUBLIC projection을 읽는다.
+모든 생성 기능은 Backend가 만든 PUBLIC comment projection만 사용한다. INTERNAL comment, collaboration note, child relation, customer profile, protected audit content와 비공개 KB는 source response, prompt, cache, result provenance와 trace에 들어가지 않는다. 화면용 summary/triage 결과는 reply context로 재사용하지 않는다. 다만 S10부터 아래 조건을 모두 만족하는 별도 `PUBLIC_ONLY` context memory를 reply input의 과거 대화 압축으로 사용할 수 있다.
+
+### Source-backed context memory
+
+- context memory는 화면용 summary 결과나 ticket의 canonical state가 아니다. AI DB의 파생 데이터이며 같은 workspace, requester staff, ticket에만 결합한다.
+- memory에는 확정 사실, 시도와 결과, 열린 질문, 각 항목의 PUBLIC comment source ref, 포함한 마지막 PUBLIC sequence, source-prefix digest, memory policy/prompt/model version을 둔다. 본문 파생 payload 전체는 authenticated encryption으로 저장하고 결과 보존 상한보다 오래 보존하지 않는다.
+- worker는 매 사용과 갱신 전에 Backend의 전체 current PUBLIC projection을 다시 읽고 current staff/ticket 권한과 required access audit를 통과한다. caller가 memory, source ref, coverage sequence 또는 digest를 제출하거나 선택하지 않는다.
+- 저장한 source-prefix의 comment ID, sequence, role, time, body digest가 current projection과 정확히 일치할 때만 memory를 사용한다. 수정, 삭제, visibility 철회, 순서 변경, unknown ref, digest 불일치는 memory를 원자적으로 무효화하며 stale body를 reply에 넣지 않는다.
+- 최신 CUSTOMER 발화와 그 뒤 PUBLIC suffix는 항상 원문으로 남긴다. 이 보호 구간이 입력 상한에 들지 않으면 memory로 숨기지 않고 기존 `INPUT_TOO_LONG`으로 종료한다.
+- memory 생성 또는 갱신은 승인된 공개 근거가 있는 현재 reply 요청 안에서만 on demand로 수행한다. 선제 batch 생성은 하지 않는다. 기존 memory 이후 delta만 갱신 입력으로 사용할 수 있지만, bounded 횟수마다 current 원문 prefix 전체에서 재구성한다. memory output이 동일 항목의 모순 source를 보고하면 저장·reply 사용을 중단하고 검토 필요로 종료한다.
+- server가 같은 가격표와 tokenizer로 계산한 예상 반복 reply 입력 절감액이 memory 생성, 갱신, 정기 재검증 upper bound보다 클 때만 provider call을 허용한다. 손익을 계산할 수 없거나 0 이하이면 기존 원문 선택 경로를 사용한다. fake 실행은 품질 또는 실제 비용 절감 증거가 아니다.
+- context memory call은 interactive 생성 호출 상한과 기존 workspace/actor/job 예산, receipt, UNKNOWN, cancellation, lease fencing을 그대로 적용한다. memory 생성 응답이 invalid, source-unknown, stale 또는 UNKNOWN이면 해당 memory를 저장하거나 reply에 사용하지 않는다.
 
 ## Authorization and audit
 
@@ -40,10 +51,11 @@ AI V1에만 다음의 좁은 예외를 허용한다.
 - job/dispatch idempotency, monotonic request revision/generation, lease epoch/fencing, heartbeat, terminal commit 후 ACK, stranded recovery와 cancellation tombstone을 유지한다.
 - HTTP relay retry와 실제 model retry는 별개다. interactive는 최초 포함 최대 2회, indexing은 최대 3회이며 deadline과 Retry-After를 존중한다.
 - 모든 model/embedding call은 workspace -> actor 또는 SYSTEM -> job 순서로 고정 소수점 upper bound를 먼저 예약한다. 도달 여부가 불확실하면 `UNKNOWN`으로 보존하고 자정 rollover로 해제하지 않는다.
+- reply의 context memory 생성/갱신과 최종 답변 생성은 합쳐서 interactive generation 최대 2회를 넘지 않는다. query embedding은 별도 call ledger로 정산하되 memory 준비 실패를 자동 재호출하지 않는다.
 
 ## Consequences
 
-장점은 ticket transaction과 모델 장애를 격리하고 Python 기반 retrieval/workflow를 사용할 수 있으며, public-source authorization을 Kotlin Backend에 남긴다는 점이다. 단점은 별도 DB·Redis·프로세스·migration·backup·health·secret rotation·복구 절차가 추가된다는 점이다.
+장점은 ticket transaction과 모델 장애를 격리하고 Python 기반 retrieval/workflow를 사용할 수 있으며, public-source authorization을 Kotlin Backend에 남긴다는 점이다. source-backed context memory는 반복되는 긴 PUBLIC 대화의 입력을 줄일 수 있지만, 요약 변형과 추가 호출 비용을 만들므로 기본 reply 경로의 필수 구성 요소가 아니다. 단점은 별도 DB·Redis·프로세스·migration·backup·health·secret rotation·복구 절차와 암호화 memory의 무효화·재검증 운영이 추가된다는 점이다.
 
 Redis/pgvector/서비스 분리는 AI V1의 승인이지 기존 backend bounded context를 microservice로 분해하거나 다른 기능에 queue/vector store를 도입하는 일반 승인 아니다. 단일 설치가 한 조직이라는 D-009도 유지하며 `workspaceKey`는 AI 배포 단위 구분용 server-owned 값일 뿐 customer organization 또는 SaaS tenant ID가 아니다.
 
