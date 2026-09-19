@@ -172,6 +172,7 @@ internal class HttpAiIntegrationTransport(
             "JOB_REQUESTED" -> "/internal/v1/jobs"
             "JOB_CANCELLED" -> "/internal/v1/jobs/${event.jobId}/cancel"
             "JOB_FEEDBACK" -> "/internal/v1/feedback"
+            "REPLY_SENT" -> "/internal/v1/usage/reply-sent"
             else -> error("Unsupported AI integration event type")
         }
         val request = HttpRequest.newBuilder(URI.create(properties.baseUrl.trimEnd('/') + path))

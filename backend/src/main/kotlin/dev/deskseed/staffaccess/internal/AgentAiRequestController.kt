@@ -184,6 +184,8 @@ internal data class AgentAiJobResponse(
     @get:JsonInclude(JsonInclude.Include.NON_NULL)
     val generationMode: String?,
     @get:JsonInclude(JsonInclude.Include.NON_NULL)
+    val candidateId: UUID?,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
     val candidateSequence: Int?,
     @get:JsonInclude(JsonInclude.Include.NON_NULL)
     val reuseKind: String?,
@@ -216,6 +218,7 @@ private fun AiJobReceipt.toResponse() = AgentAiJobResponse(
     provenance = provenance,
     costMicrousd = costMicrousd,
     generationMode = generationMode,
+    candidateId = candidateId,
     candidateSequence = candidateSequence,
     reuseKind = reuseKind,
 )

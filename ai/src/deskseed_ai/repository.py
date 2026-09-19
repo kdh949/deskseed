@@ -27,6 +27,7 @@ from .schemas import (
     JobStatus,
     OperationRequest,
     ReplyDraftResult,
+    ReplySentRequest,
     SummaryResult,
     TriageResult,
     TypedResult,
@@ -617,6 +618,7 @@ class Repository:
             ),
             costMicrousd=row["cost_microusd"],
             generationMode=(GenerationMode(row["generation_mode"]) if row["generation_mode"] else None),
+            candidateId=row["result_candidate_id"],
             candidateSequence=row["candidate_sequence"],
             reuseKind=(
                 "CACHE_HIT" if row["reuse_kind"] == "EXACT_CACHE_HIT" else row["reuse_kind"]
@@ -1791,6 +1793,12 @@ class Repository:
             result.model_dump_json().encode(), str(claim.job_id).encode()
         )
         result_expires_at = now + timedelta(days=7)
+        generated_candidate_id: UUID | None = None
+        if status == JobStatus.SUCCEEDED and claim.feature in {
+            Feature.REPLY_DRAFT,
+            Feature.REPLY_REWRITE,
+        }:
+            generated_candidate_id = claim.candidate_id or uuid4()
         with self.database.transaction() as connection:
             shared_binding = connection.execute(
                 "select shared_execution_id from ai_jobs where job_id = %s",
@@ -1811,6 +1819,7 @@ class Repository:
                     source_map_digest = %s, source_chunk_ids = %s,
                     cost_microusd = %s, completed_at = %s, updated_at = %s,
                     lease_owner = null, lease_expires_at = null, error_code = null,
+                    result_candidate_id = %s,
                     reuse_kind = case when generation_mode is not null then 'GENERATED' else reuse_kind end
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                 """,
@@ -1830,6 +1839,7 @@ class Repository:
                     cost_microusd,
                     now,
                     now,
+                    generated_candidate_id,
                     claim.job_id,
                     claim.generation,
                     claim.lease_epoch,
@@ -1890,7 +1900,7 @@ class Repository:
                 select job_id, status, cancel_requested, result_schema_version, result_ciphertext,
                        result_nonce, result_expires_at, model_alias, actual_model, prompt_version,
                        config_version, source_comment_ids, generated_at, source_map_digest,
-                       source_chunk_ids, cost_microusd,
+                       source_chunk_ids, cost_microusd, result_candidate_id,
                        exists (
                            select 1 from ai_provider_calls call
                            where call.job_id = ai_jobs.job_id and call.settlement_status <> 'SETTLED'
@@ -1979,6 +1989,7 @@ class Repository:
                     cost_microusd = 0, completed_at = %s, updated_at = %s,
                     lease_owner = null, lease_expires_at = null, error_code = null,
                     result_origin_job_id = %s,
+                    result_candidate_id = %s,
                     reuse_kind = case when shared_execution_id is null then 'EXACT_CACHE_HIT' else 'COALESCED' end
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                 """,
@@ -1998,6 +2009,7 @@ class Repository:
                     now,
                     now,
                     origin["job_id"],
+                    origin["result_candidate_id"],
                     claim.job_id,
                     claim.generation,
                     claim.lease_epoch,
@@ -2023,6 +2035,7 @@ class Repository:
                 """
                 select job_id, status, cancel_requested, result_ciphertext, result_nonce,
                        result_expires_at, source_map_digest, source_chunk_ids, cost_microusd,
+                       result_candidate_id,
                        exists (
                            select 1 from ai_provider_calls call
                            where call.job_id = ai_jobs.job_id and call.settlement_status <> 'SETTLED'
@@ -2097,7 +2110,7 @@ class Repository:
                 select job_id, status, cancel_requested, result_schema_version, result_ciphertext,
                        result_nonce, result_expires_at, model_alias, actual_model, prompt_version,
                        config_version, source_comment_ids, generated_at, source_map_digest,
-                       source_chunk_ids, cost_microusd,
+                       source_chunk_ids, cost_microusd, result_candidate_id,
                        exists (
                            select 1 from ai_provider_calls call
                            where call.job_id = ai_jobs.job_id and call.settlement_status <> 'SETTLED'
@@ -2167,6 +2180,7 @@ class Repository:
                     cost_microusd = 0, completed_at = %s, updated_at = %s,
                     lease_owner = null, lease_expires_at = null, error_code = null,
                     result_origin_job_id = %s,
+                    result_candidate_id = %s,
                     reuse_kind = case when shared_execution_id is null then 'EXACT_CACHE_HIT' else 'COALESCED' end
                 where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
                 """,
@@ -2186,6 +2200,7 @@ class Repository:
                     now,
                     now,
                     origin["job_id"],
+                    origin["result_candidate_id"],
                     claim.job_id,
                     claim.generation,
                     claim.lease_epoch,
@@ -2432,6 +2447,120 @@ class Repository:
                 (feedback.requestRevision, now, feedback.jobId),
             )
         return Accepted(replayed=False, jobId=feedback.jobId)
+
+    def accept_reply_sent(self, usage: ReplySentRequest) -> Accepted:
+        fingerprint = sha256_text(usage.model_dump_json(exclude_none=False))
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            seen = connection.execute(
+                "select job_id, event_fingerprint from ai_reply_sent_inbox where event_id = %s for update",
+                (usage.eventId,),
+            ).fetchone()
+            if seen:
+                if seen["job_id"] != usage.jobId or seen["event_fingerprint"] != fingerprint:
+                    raise ConflictError("reply sent event ID reused with different content")
+                return Accepted(replayed=True, jobId=usage.jobId)
+            job = connection.execute(
+                """
+                select requester_id, workspace_key, status, feature, request_revision, result_candidate_id
+                from ai_jobs where job_id = %s for update
+                """,
+                (usage.jobId,),
+            ).fetchone()
+            if (
+                not job
+                or job["requester_id"] != usage.requesterId
+                or job["workspace_key"] != usage.workspaceKey
+                or job["status"] != "SUCCEEDED"
+                or job["feature"] not in {Feature.REPLY_DRAFT.value, Feature.REPLY_REWRITE.value}
+                or job["result_candidate_id"] != usage.candidateId
+            ):
+                raise NotFoundError("reply candidate not found")
+            if usage.requestRevision != job["request_revision"]:
+                raise ConflictError("reply sent request revision mismatch")
+            existing = connection.execute(
+                """
+                select job_id, requester_id, attribution_kind, source_count, original_length,
+                       final_length, edit_distance, inserted_length, deleted_length, edit_ratio, sent_at
+                from ai_reply_sent_usage
+                where comment_id = %s and candidate_id = %s
+                for update
+                """,
+                (usage.commentId, usage.candidateId),
+            ).fetchone()
+            expected = (
+                usage.jobId,
+                usage.requesterId,
+                usage.attributionKind,
+                usage.sourceCount,
+                usage.originalLength,
+                usage.finalLength,
+                usage.editDistance,
+                usage.insertedLength,
+                usage.deletedLength,
+                usage.editRatio,
+                usage.sentAt,
+            )
+            if existing:
+                actual = tuple(existing[key] for key in (
+                    "job_id",
+                    "requester_id",
+                    "attribution_kind",
+                    "source_count",
+                    "original_length",
+                    "final_length",
+                    "edit_distance",
+                    "inserted_length",
+                    "deleted_length",
+                    "edit_ratio",
+                    "sent_at",
+                ))
+                if actual != expected:
+                    raise ConflictError("reply sent candidate already recorded with different content")
+                connection.execute(
+                    """
+                    insert into ai_reply_sent_inbox (
+                        event_id, job_id, comment_id, candidate_id, event_fingerprint, received_at
+                    ) values (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (usage.eventId, usage.jobId, usage.commentId, usage.candidateId, fingerprint, now),
+                )
+                return Accepted(replayed=True, jobId=usage.jobId)
+            connection.execute(
+                """
+                insert into ai_reply_sent_inbox (
+                    event_id, job_id, comment_id, candidate_id, event_fingerprint, received_at
+                ) values (%s, %s, %s, %s, %s, %s)
+                """,
+                (usage.eventId, usage.jobId, usage.commentId, usage.candidateId, fingerprint, now),
+            )
+            connection.execute(
+                """
+                insert into ai_reply_sent_usage (
+                    comment_id, candidate_id, job_id, requester_id, attribution_kind, source_count,
+                    original_length, final_length, edit_distance, inserted_length, deleted_length,
+                    edit_ratio, first_event_id, sent_at, received_at
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    usage.commentId,
+                    usage.candidateId,
+                    usage.jobId,
+                    usage.requesterId,
+                    usage.attributionKind,
+                    usage.sourceCount,
+                    usage.originalLength,
+                    usage.finalLength,
+                    usage.editDistance,
+                    usage.insertedLength,
+                    usage.deletedLength,
+                    usage.editRatio,
+                    usage.eventId,
+                    usage.sentAt,
+                    now,
+                ),
+            )
+        return Accepted(replayed=False, jobId=usage.jobId)
 
     def accept_index_event(self, event: IndexEvent) -> Accepted:
         fingerprint = sha256_text(event.model_dump_json())
@@ -3497,6 +3626,11 @@ class Repository:
                       select 1 from ai_feedback feedback
                       where feedback.job_id = job.job_id and feedback.exported_revision < feedback.source_revision
                   )
+                  and not exists (
+                      select 1 from ai_reply_sent_usage usage
+                      where usage.job_id = job.job_id
+                        and usage.received_at > clock_timestamp() - interval '30 days'
+                  )
                 order by job.completed_at, job.job_id
                 for update skip locked
                 limit %s
@@ -3507,6 +3641,8 @@ class Repository:
                 job_id = row["job_id"]
                 connection.execute("delete from ai_feedback where job_id = %s", (job_id,))
                 connection.execute("delete from ai_feedback_inbox where job_id = %s", (job_id,))
+                connection.execute("delete from ai_reply_sent_usage where job_id = %s", (job_id,))
+                connection.execute("delete from ai_reply_sent_inbox where job_id = %s", (job_id,))
                 connection.execute("delete from ai_dispatch_outbox where job_id = %s", (job_id,))
                 connection.execute("delete from ai_operations where job_id = %s", (job_id,))
                 connection.execute("update ai_dead_letters set job_id = null where job_id = %s", (job_id,))

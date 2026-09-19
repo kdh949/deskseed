@@ -87,6 +87,86 @@ class AiReplyRewriteMigrationTest {
         }
     }
 
+    @Test
+    fun `V100 adds body-free reply sent attribution and split outbox uniqueness`() {
+        migrateTo("99")
+        migrateTo("100")
+
+        connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                statement.executeQuery(
+                    """
+                    select table_name
+                    from information_schema.tables
+                    where table_schema = 'public'
+                      and table_name in (
+                        'ai_reply_candidate_bindings',
+                        'ai_reply_attribution_attempts',
+                        'ai_reply_sent_attributions'
+                      )
+                    order by table_name
+                    """.trimIndent(),
+                ).use { result ->
+                    val names = buildList {
+                        while (result.next()) add(result.getString("table_name"))
+                    }
+                    assertThat(names).containsExactly(
+                        "ai_reply_attribution_attempts",
+                        "ai_reply_candidate_bindings",
+                        "ai_reply_sent_attributions",
+                    )
+                }
+                statement.executeQuery(
+                    """
+                    select column_name
+                    from information_schema.columns
+                    where table_schema = 'public'
+                      and table_name = 'ai_integration_outbox'
+                      and column_name in ('usage_comment_id', 'usage_candidate_id')
+                    order by column_name
+                    """.trimIndent(),
+                ).use { result ->
+                    val names = buildList {
+                        while (result.next()) add(result.getString("column_name"))
+                    }
+                    assertThat(names).containsExactly("usage_candidate_id", "usage_comment_id")
+                }
+                statement.executeQuery(
+                    """
+                    select indexname
+                    from pg_indexes
+                    where schemaname = 'public'
+                      and indexname in ('ai_outbox_job_event_revision_unique', 'ai_outbox_reply_sent_unique')
+                    order by indexname
+                    """.trimIndent(),
+                ).use { result ->
+                    val names = buildList {
+                        while (result.next()) add(result.getString("indexname"))
+                    }
+                    assertThat(names).containsExactly(
+                        "ai_outbox_job_event_revision_unique",
+                        "ai_outbox_reply_sent_unique",
+                    )
+                }
+                statement.executeQuery(
+                    """
+                    select column_name
+                    from information_schema.columns
+                    where table_schema = 'public'
+                      and table_name in (
+                        'ai_reply_candidate_bindings',
+                        'ai_reply_attribution_attempts',
+                        'ai_reply_sent_attributions'
+                      )
+                      and column_name in ('body', 'original_answer', 'final_answer')
+                    """.trimIndent(),
+                ).use { result ->
+                    assertThat(result.next()).isFalse()
+                }
+            }
+        }
+    }
+
     private fun migrateTo(version: String) {
         Flyway.configure()
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)

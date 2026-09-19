@@ -422,6 +422,10 @@ components:
           minimum: 0
           description: 현재 logical job에 새로 귀속된 비용입니다. cache hit와 coalesced follower는 0입니다.
         generationMode: {$ref: '#/components/schemas/AiGenerationMode'}
+        candidateId:
+          type: string
+          format: uuid
+          description: includeResult로 현재 권한·source·expiry 검증을 통과한 insert 가능한 답변에만 제공하는 server-owned origin candidate입니다. cache/coalesced job은 origin 값을 공유하고 legacy unknown은 생략합니다.
         candidateSequence: {type: integer, minimum: 1}
         reuseKind:
           type: string

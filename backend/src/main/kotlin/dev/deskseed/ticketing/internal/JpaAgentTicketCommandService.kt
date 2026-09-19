@@ -12,6 +12,9 @@ import dev.deskseed.integration.CreateExternalReference
 import dev.deskseed.integration.ExternalReferenceMutation
 import dev.deskseed.integration.ExternalReferenceStore
 import dev.deskseed.ticketing.AgentCommentDraft
+import dev.deskseed.ticketing.AiCommentLineageState
+import dev.deskseed.ticketing.AiPublicReplyAttributionOutcome
+import dev.deskseed.ticketing.AiPublicReplyAttributionRecorder
 import dev.deskseed.ticketing.AgentTicketCommandService
 import dev.deskseed.ticketing.AgentTicketNotFoundException
 import dev.deskseed.ticketing.ApplyMacroTicketCommand
@@ -45,6 +48,7 @@ import dev.deskseed.ticketing.TicketMacroActivationGuard
 import dev.deskseed.ticketing.TicketOrganizationConsistencyGuard
 import dev.deskseed.ticketing.PublicAgentReplyRecorded
 import dev.deskseed.ticketing.RecordTicketCollaborationNoteCommand
+import dev.deskseed.ticketing.RecordAiPublicReplyAttribution
 import dev.deskseed.ticketing.TicketCollaborationAuditResult
 import dev.deskseed.ticketing.TicketRelationInvalidException
 import dev.deskseed.ticketing.TicketCollaborationUpdated
@@ -181,6 +185,7 @@ internal class AgentTicketCommandTransaction(
     private val ticketIntegrationEvents: TicketIntegrationEventPublisher,
     private val configurationMutationHandler: TicketConfigurationMutationHandler,
     private val macroActivationGuard: TicketMacroActivationGuard,
+    private val aiAttributionRecorder: AiPublicReplyAttributionRecorder,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
 ) {
@@ -227,6 +232,9 @@ internal class AgentTicketCommandTransaction(
         validateStaffContext(command.actor.id, command.context.source)
         validateText(command.subject, "subject", 200)
         validateComment(command.firstComment)
+        if (command.firstComment.aiAttribution != null) {
+            throw TicketCommandInvalidException("AI attribution is only supported for existing ticket comments")
+        }
         organizationConsistencyGuard.acquire()
         validateAssignment(command.groupId, command.assigneeId)
         commandReplayStore.lock(command.actor.id, command.context.commandId)
@@ -433,7 +441,21 @@ internal class AgentTicketCommandTransaction(
                     contentDocument = draft.contentDocument?.let(objectMapper::writeValueAsString),
                 ),
             )
-            events += commentAuditEvent(commentId, draft, now)
+            val attributionOutcome = draft.aiAttribution?.let { attribution ->
+                aiAttributionRecorder.record(
+                    RecordAiPublicReplyAttribution(
+                        ticketId = ticket.id,
+                        ticketNumber = ticket.ticketNumber,
+                        commentId = commentId,
+                        visibility = draft.visibility,
+                        finalBody = draft.body.trim(),
+                        attribution = attribution,
+                        actorId = command.actor.id,
+                        occurredAt = now,
+                    ),
+                )
+            }
+            events += commentAuditEvent(commentId, draft, now, attributionOutcome)
             events += linkAttachments(ticket, commentId, draft, command.actor.id, now)
             createdComment = CreatedComment(commentId, draft.visibility)
             if (draft.visibility == CommentVisibility.PUBLIC) {
@@ -1502,6 +1524,19 @@ internal class AgentTicketCommandTransaction(
                 "visibility" to it.visibility.name,
                 "contentSha256" to sha256(it.body.trim()),
                 "attachmentIds" to it.attachmentIds.map(UUID::toString).sorted(),
+                "aiAttribution" to it.aiAttribution?.let { attribution ->
+                    linkedMapOf(
+                        "contractVersion" to attribution.contractVersion,
+                        "state" to attribution.state.name,
+                        "sources" to attribution.sources.map { source ->
+                            linkedMapOf(
+                                "jobId" to source.jobId.toString(),
+                                "candidateId" to source.candidateId.toString(),
+                                "originalAnswerSha256" to sha256(source.originalAnswer),
+                            )
+                        },
+                    )
+                },
             )
         }
         return objectMapper.writeValueAsString(
@@ -1652,6 +1687,30 @@ internal class AgentTicketCommandTransaction(
         if (comment.attachmentIds.size > MAX_ATTACHMENTS) {
             throw TicketCommandInvalidException("A comment can link at most five attachments")
         }
+        comment.aiAttribution?.let { attribution ->
+            if (attribution.contractVersion != "AI_SENT_V1") {
+                throw TicketCommandInvalidException("AI attribution contract version is unsupported")
+            }
+            val expectedSourceRange = when (attribution.state) {
+                AiCommentLineageState.LINEAGE_PRESENT -> 1..4
+                AiCommentLineageState.NO_AI_LINEAGE, AiCommentLineageState.LINEAGE_LOST -> 0..0
+            }
+            if (attribution.sources.size !in expectedSourceRange) {
+                throw TicketCommandInvalidException("AI attribution lineage shape is invalid")
+            }
+            if (
+                attribution.sources.map { it.jobId }.toSet().size != attribution.sources.size ||
+                attribution.sources.map { it.candidateId }.toSet().size != attribution.sources.size
+            ) {
+                throw TicketCommandInvalidException("AI attribution sources must be unique")
+            }
+            attribution.sources.forEach { source ->
+                val length = source.originalAnswer.codePointCount(0, source.originalAnswer.length)
+                if (source.originalAnswer.isBlank() || length !in 1..6_000) {
+                    throw TicketCommandInvalidException("AI attribution original answer is invalid")
+                }
+            }
+        }
     }
 
     private fun validateStatusChange(old: TicketStatus, new: TicketStatus, requested: Boolean) {
@@ -1747,23 +1806,32 @@ internal class AgentTicketCommandTransaction(
         return auditId
     }
 
-    private fun commentAuditEvent(commentId: UUID, draft: AgentCommentDraft, now: Instant): NewAuditEvent =
+    private fun commentAuditEvent(
+        commentId: UUID,
+        draft: AgentCommentDraft,
+        now: Instant,
+        attributionOutcome: AiPublicReplyAttributionOutcome? = null,
+    ): NewAuditEvent =
         NewAuditEvent(
             type = "COMMENT_CREATED",
             after = objectMapper.writeValueAsString(mapOf("id" to commentId.toString())),
-            metadata = mapOf(
-                "visibility" to draft.visibility.name,
-                "authorType" to "STAFF",
-                "contentFormat" to draft.contentFormat.name,
-                "contentLength" to draft.body.trim().length,
-                "contentSha256" to sha256(
-                    if (draft.contentFormat == CommentContentFormat.RICH_TEXT_V1) {
-                        objectMapper.writeValueAsString(checkNotNull(draft.contentDocument))
-                    } else {
-                        draft.body.trim()
-                    },
-                ),
-            ),
+            metadata = buildMap {
+                put("visibility", draft.visibility.name)
+                put("authorType", "STAFF")
+                put("contentFormat", draft.contentFormat.name)
+                put("contentLength", draft.body.trim().length)
+                put(
+                    "contentSha256",
+                    sha256(
+                        if (draft.contentFormat == CommentContentFormat.RICH_TEXT_V1) {
+                            objectMapper.writeValueAsString(checkNotNull(draft.contentDocument))
+                        } else {
+                            draft.body.trim()
+                        },
+                    ),
+                )
+                attributionOutcome?.let { put("aiAttributionOutcome", it.name) }
+            },
             occurredAt = now,
         )
 

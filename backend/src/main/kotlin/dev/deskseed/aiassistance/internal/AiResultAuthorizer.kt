@@ -9,6 +9,7 @@ import dev.deskseed.aiassistance.AiReplyDraftResult
 import dev.deskseed.aiassistance.AiReplyRewriteResult
 import dev.deskseed.aiassistance.AiRequestMetadata
 import dev.deskseed.aiassistance.AiRequestNotFoundException
+import dev.deskseed.aiassistance.AiStatusUnavailableException
 import dev.deskseed.aiassistance.AiStaffActor
 import dev.deskseed.audit.AccessAuditAuthType
 import dev.deskseed.audit.AccessAuditContext
@@ -23,6 +24,7 @@ import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
@@ -47,7 +49,8 @@ internal class AiResultAuthorizer(
         val binding = jdbcTemplate.query(
             """
             select ticket_id, feature, request_revision, context_revision, context_policy_version,
-                   ai_input_revision, input_policy_version, cancellation_requested, source_job_id
+                   ai_input_revision, input_policy_version, cancellation_requested, source_job_id,
+                   generation_mode, candidate_id
             from ai_requests
             where job_id = ? and requester_staff_id = ? and ticket_number = ?
             for share
@@ -63,6 +66,8 @@ internal class AiResultAuthorizer(
                     inputPolicyVersion = result.getString("input_policy_version"),
                     cancelled = result.getBoolean("cancellation_requested"),
                     sourceJobId = result.getObject("source_job_id", UUID::class.java),
+                    generationMode = result.getString("generation_mode"),
+                    requestedCandidateId = result.getObject("candidate_id", UUID::class.java),
                 )
             },
             jobId,
@@ -122,8 +127,20 @@ internal class AiResultAuthorizer(
         val citationsFresh = citations?.all { citation ->
             knowledgeProjection.findCurrentPublic(citation.articleId, citation.revisionId) != null
         } ?: true
+        val candidateFresh = binding.feature !in setOf(
+            AiFeature.TICKET_REPLY_DRAFT.value,
+            AiFeature.TICKET_REPLY_REWRITE.value,
+        ) || binding.requestedCandidateId == null || binding.generationMode != "NEW_CANDIDATE" ||
+            remote.candidateId == binding.requestedCandidateId
+        val answer = when (val result = remote.result) {
+            is AiReplyDraftResult -> result.answer
+            is AiReplyRewriteResult -> result.answer
+            else -> null
+        }
+        val normalizedAnswer = answer?.let(::normalizeAiUsageText)
+        val answerBounded = normalizedAnswer == null || aiUsageCodePointLength(normalizedAnswer) in 1..6_000
         val usable = featureEnabled && !binding.cancelled && contextFresh && resultUnexpired &&
-            sourceUsable && citationsFresh && provenanceFresh
+            sourceUsable && citationsFresh && provenanceFresh && candidateFresh && answerBounded
         if (!usable || remote.result == null) {
             return remote.copy(
                 requestRevision = binding.requestRevision,
@@ -132,6 +149,7 @@ internal class AiResultAuthorizer(
                 canInsert = false,
                 result = null,
                 provenance = null,
+                candidateId = null,
             )
         }
         try {
@@ -164,6 +182,16 @@ internal class AiResultAuthorizer(
         } catch (exception: DataAccessException) {
             throw AiAuditUnavailableException(exception)
         }
+        if (normalizedAnswer != null && remote.candidateId != null) {
+            persistUseBinding(
+                binding = binding,
+                actorId = actor.id,
+                jobId = jobId,
+                candidateId = remote.candidateId,
+                normalizedAnswer = normalizedAnswer,
+                expiresAt = checkNotNull(remote.resultExpiresAt),
+            )
+        }
         return remote.copy(
             requestRevision = binding.requestRevision,
             cancelRequested = false,
@@ -173,6 +201,47 @@ internal class AiResultAuthorizer(
                 AiFeature.TICKET_REPLY_REWRITE.value,
             ),
         )
+    }
+
+    private fun persistUseBinding(
+        binding: ResultBinding,
+        actorId: UUID,
+        jobId: UUID,
+        candidateId: UUID,
+        normalizedAnswer: String,
+        expiresAt: Instant,
+    ) {
+        val now = Instant.now(clock)
+        val answerLength = aiUsageCodePointLength(normalizedAnswer)
+        val updated = jdbcTemplate.update(
+            """
+            insert into ai_reply_candidate_bindings (
+                job_id, candidate_id, requester_staff_id, ticket_id, feature,
+                answer_sha256, answer_code_point_length, contract_version,
+                result_expires_at, bound_at, last_authorized_at
+            ) values (?, ?, ?, ?, ?, ?, ?, 'AI_USAGE_TEXT_V1', ?, ?, ?)
+            on conflict (job_id, candidate_id) do update set
+                result_expires_at = least(ai_reply_candidate_bindings.result_expires_at, excluded.result_expires_at),
+                last_authorized_at = excluded.last_authorized_at
+            where ai_reply_candidate_bindings.requester_staff_id = excluded.requester_staff_id
+              and ai_reply_candidate_bindings.ticket_id = excluded.ticket_id
+              and ai_reply_candidate_bindings.feature = excluded.feature
+              and ai_reply_candidate_bindings.answer_sha256 = excluded.answer_sha256
+              and ai_reply_candidate_bindings.answer_code_point_length = excluded.answer_code_point_length
+              and ai_reply_candidate_bindings.contract_version = excluded.contract_version
+            """.trimIndent(),
+            jobId,
+            candidateId,
+            actorId,
+            binding.ticketId,
+            binding.feature,
+            aiUsageSha256(normalizedAnswer),
+            answerLength,
+            Timestamp.from(expiresAt),
+            Timestamp.from(now),
+            Timestamp.from(now),
+        )
+        if (updated != 1) throw AiStatusUnavailableException()
     }
 
     private fun isFeatureEnabled(feature: AiFeature, actorId: UUID): Boolean {
@@ -206,5 +275,7 @@ internal class AiResultAuthorizer(
         val inputPolicyVersion: String?,
         val cancelled: Boolean,
         val sourceJobId: UUID?,
+        val generationMode: String?,
+        val requestedCandidateId: UUID?,
     )
 }

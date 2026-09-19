@@ -50,7 +50,50 @@ data class AgentCommentDraft(
     val attachmentIds: Set<UUID> = emptySet(),
     val contentFormat: CommentContentFormat = CommentContentFormat.PLAIN_TEXT,
     val contentDocument: JsonNode? = null,
+    val aiAttribution: AiCommentAttribution? = null,
 )
+
+enum class AiCommentLineageState {
+    NO_AI_LINEAGE,
+    LINEAGE_PRESENT,
+    LINEAGE_LOST,
+}
+
+data class AiCommentAttributionSource(
+    val jobId: UUID,
+    val candidateId: UUID,
+    val originalAnswer: String,
+)
+
+data class AiCommentAttribution(
+    val contractVersion: String,
+    val state: AiCommentLineageState,
+    val sources: List<AiCommentAttributionSource>,
+)
+
+enum class AiPublicReplyAttributionOutcome {
+    NO_AI_LINEAGE,
+    ATTRIBUTED_SINGLE,
+    ATTRIBUTED_MULTI,
+    UNATTRIBUTED_LINEAGE_LOST,
+    UNATTRIBUTED_VALIDATION_FAILED,
+    IGNORED_INTERNAL,
+}
+
+data class RecordAiPublicReplyAttribution(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val commentId: UUID,
+    val visibility: CommentVisibility,
+    val finalBody: String,
+    val attribution: AiCommentAttribution,
+    val actorId: UUID,
+    val occurredAt: Instant,
+)
+
+fun interface AiPublicReplyAttributionRecorder {
+    fun record(command: RecordAiPublicReplyAttribution): AiPublicReplyAttributionOutcome
+}
 
 data class CreateAgentTicketCommand(
     val requesterId: UUID,

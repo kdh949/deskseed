@@ -85,6 +85,7 @@ data class AiJobReceipt(
     val provenance: AiGenerationProvenance? = null,
     val costMicrousd: Long? = null,
     val generationMode: String? = null,
+    val candidateId: UUID? = null,
     val candidateSequence: Int? = null,
     val reuseKind: String? = null,
     val providerDispatched: Boolean = false,
