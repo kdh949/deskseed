@@ -69,12 +69,33 @@ class ReconciliationRun:
     snapshot_expires_at: datetime
     next_cursor: UUID | None
     canonical_corpus_revision: int | None
+    target_artifact_generation: int
+    index_contract_version: str
+    chunker_version: str
+    normalization_version: str
+    embedding_model: str
+    embedding_dimension: int
 
 
 @dataclass(frozen=True)
 class PublishedIndexGeneration:
     generation: int
     canonical_corpus_revision: int
+    artifact_generation: int
+
+
+@dataclass(frozen=True)
+class IndexWorkItem:
+    event_id: UUID
+    workspace_key: str
+    article_id: UUID
+    revision_id: UUID
+    action: str
+    source_version: int
+    public_revision: str
+    created_at: datetime
+    artifact_generation: int
+    reconciliation_run_id: UUID
 
 
 @dataclass(frozen=True)
@@ -2111,16 +2132,22 @@ class Repository:
             )
             current = connection.execute(
                 """
-                select source_version, action from ai_kb_article_state
-                where workspace_key = %s and article_id = %s for update
+                select state.source_version, state.action, job.revision_id, job.public_revision
+                from ai_kb_article_state state
+                join ai_kb_index_jobs job on job.event_id = state.event_id
+                where state.workspace_key = %s and state.article_id = %s for update of state
                 """,
                 (event.workspaceKey, event.articleId),
             ).fetchone()
             if current and event.sourceVersion < current["source_version"]:
                 return Accepted(replayed=False)
             if current and event.sourceVersion == current["source_version"]:
-                if event.action != current["action"]:
-                    raise ConflictError("index event source version has conflicting actions")
+                if (
+                    event.action != current["action"]
+                    or event.revisionId != current["revision_id"]
+                    or event.publicRevision != current["public_revision"]
+                ):
+                    raise ConflictError("index event source version has conflicting payload")
                 return Accepted(replayed=False)
             connection.execute(
                 """
@@ -2145,8 +2172,9 @@ class Repository:
                 """
                 insert into ai_kb_index_jobs (
                     event_id, workspace_key, article_id, revision_id, action, source_version, public_revision,
-                    status, attempts, available_at, created_at
-                ) values (%s, %s, %s, %s, %s, %s, %s, 'PENDING', 0, clock_timestamp(), %s)
+                    status, attempts, available_at, created_at, completed_at
+                ) values (%s, %s, %s, %s, %s, %s, %s, 'SUCCEEDED', 0,
+                          clock_timestamp(), %s, clock_timestamp())
                 """,
                 (
                     event.eventId,
@@ -2159,31 +2187,75 @@ class Repository:
                     event.createdAt,
                 ),
             )
-            if event.action == "DELETE":
-                connection.execute(
-                    "delete from ai_kb_chunks where workspace_key = %s and article_id = %s",
-                    (event.workspaceKey, event.articleId),
-                )
-                connection.execute(
-                    """
-                    update ai_kb_revisions set status = 'DELETED', deleted_at = clock_timestamp()
-                    where workspace_key = %s and article_id = %s
-                    """,
-                    (event.workspaceKey, event.articleId),
-                )
         return Accepted(replayed=False)
 
-    def claim_index_events(self, owner: str, limit: int = 10) -> list[IndexEvent]:
+    def accept_reconciliation_index_event(self, run: ReconciliationRun, event: IndexEvent) -> Accepted:
+        fingerprint = sha256_text(
+            f"{event.model_dump_json()}:{run.run_id}:{run.target_artifact_generation}:"
+            f"{run.index_contract_version}"
+        )
+        with self.database.transaction() as connection:
+            current = connection.execute(
+                "select status, target_artifact_generation from ai_kb_reconciliation_runs where run_id = %s for update",
+                (run.run_id,),
+            ).fetchone()
+            if (
+                current is None
+                or current["status"] not in {"RUNNING", "INDEXING"}
+                or current["target_artifact_generation"] != run.target_artifact_generation
+            ):
+                raise ConflictError("reconciliation build is not active")
+            seen = connection.execute(
+                "select event_fingerprint from ai_kb_index_inbox where event_id = %s for update",
+                (event.eventId,),
+            ).fetchone()
+            if seen:
+                if seen["event_fingerprint"] != fingerprint:
+                    raise ConflictError("index build event conflict")
+                return Accepted(replayed=True)
+            connection.execute(
+                """
+                insert into ai_kb_index_inbox (event_id, article_id, revision_id, event_fingerprint, received_at)
+                values (%s, %s, %s, %s, clock_timestamp())
+                """,
+                (event.eventId, event.articleId, event.revisionId, fingerprint),
+            )
+            connection.execute(
+                """
+                insert into ai_kb_index_jobs (
+                    event_id, workspace_key, article_id, revision_id, action, source_version,
+                    public_revision, status, attempts, available_at, created_at,
+                    artifact_generation, reconciliation_run_id
+                ) values (%s, %s, %s, %s, 'UPSERT', %s, %s, 'PENDING', 0,
+                          clock_timestamp(), %s, %s, %s)
+                """,
+                (
+                    event.eventId,
+                    event.workspaceKey,
+                    event.articleId,
+                    event.revisionId,
+                    event.sourceVersion,
+                    event.publicRevision,
+                    event.createdAt,
+                    run.target_artifact_generation,
+                    run.run_id,
+                ),
+            )
+        return Accepted(replayed=False)
+
+    def claim_index_events(self, owner: str, limit: int = 10) -> list[IndexWorkItem]:
         now = datetime.now(UTC)
         lease_until = now + timedelta(seconds=self.settings.lease_seconds)
         with self.database.transaction() as connection:
             rows = connection.execute(
                 """
                 select event_id, workspace_key, article_id, revision_id, action, source_version,
-                       public_revision, created_at
+                       public_revision, created_at, artifact_generation, reconciliation_run_id
                 from ai_kb_index_jobs
-                where (status = 'PENDING' and available_at <= %s)
-                   or (status = 'LEASED' and lease_expires_at <= %s)
+                where artifact_generation is not null and (
+                    (status = 'PENDING' and available_at <= %s)
+                    or (status = 'LEASED' and lease_expires_at <= %s)
+                )
                 order by available_at, created_at, event_id
                 for update skip locked limit %s
                 """,
@@ -2199,16 +2271,17 @@ class Repository:
                     (owner, lease_until, row["event_id"]),
                 )
         return [
-            IndexEvent(
-                schemaVersion=1,
-                eventId=row["event_id"],
-                workspaceKey=row["workspace_key"],
-                articleId=row["article_id"],
-                revisionId=row["revision_id"],
+            IndexWorkItem(
+                event_id=row["event_id"],
+                workspace_key=row["workspace_key"],
+                article_id=row["article_id"],
+                revision_id=row["revision_id"],
                 action=row["action"],
-                sourceVersion=row["source_version"],
-                publicRevision=row["public_revision"],
-                createdAt=row["created_at"],
+                source_version=row["source_version"],
+                public_revision=row["public_revision"],
+                created_at=row["created_at"],
+                artifact_generation=row["artifact_generation"],
+                reconciliation_run_id=row["reconciliation_run_id"],
             )
             for row in rows
         ]
@@ -2244,7 +2317,9 @@ class Repository:
             row = connection.execute(
                 """
                 select run_id, workspace_key, snapshot_token, snapshot_expires_at, next_cursor,
-                       canonical_corpus_revision
+                       canonical_corpus_revision, target_artifact_generation,
+                       index_contract_version, chunker_version, normalization_version,
+                       embedding_model, embedding_dimension
                 from ai_kb_reconciliation_runs
                 where workspace_key = %s and status = 'RUNNING'
                 """,
@@ -2258,14 +2333,22 @@ class Repository:
                 """
                 select
                     max(started_at) as last_started_at,
-                    max(completed_at) filter (where status = 'SUCCEEDED') as last_succeeded_at
+                    max(completed_at) filter (where status = 'SUCCEEDED') as last_succeeded_at,
+                    (select max(state.updated_at) from ai_kb_article_state state
+                     where state.workspace_key = %s) as last_source_event_at,
+                    (select published_at from ai_kb_published_generations
+                     where workspace_key = %s) as published_at
                 from ai_kb_reconciliation_runs where workspace_key = %s
                 """,
-                (workspace_key,),
+                (workspace_key, workspace_key, workspace_key),
             ).fetchone()
         now = datetime.now(UTC)
         last_started = row["last_started_at"]
         last_succeeded = row["last_succeeded_at"]
+        if row["last_source_event_at"] is not None and (
+            row["published_at"] is None or row["last_source_event_at"] > row["published_at"]
+        ):
+            return True
         if last_started is not None and last_started > now - timedelta(seconds=self.settings.reconciliation_retry_seconds):
             return False
         return last_succeeded is None or last_succeeded <= now - timedelta(
@@ -2279,6 +2362,11 @@ class Repository:
         snapshot_token: UUID,
         snapshot_expires_at: datetime,
         canonical_corpus_revision: int | None,
+        index_contract_version: str,
+        chunker_version: str,
+        normalization_version: str,
+        embedding_model: str,
+        embedding_dimension: int,
     ) -> bool:
         with self.database.transaction() as connection:
             connection.execute("select pg_advisory_xact_lock(hashtext('ai-kb-reconciliation'), hashtext(%s))", (workspace_key,))
@@ -2291,14 +2379,89 @@ class Repository:
             ).fetchone()
             if running:
                 return False
+            if canonical_corpus_revision is None:
+                return False
+            published = connection.execute(
+                """
+                select published.canonical_corpus_revision, artifact.index_contract_version,
+                       artifact.chunker_version, artifact.normalization_version,
+                       artifact.embedding_model, artifact.embedding_dimension
+                from ai_kb_published_generations published
+                join ai_kb_index_artifacts artifact
+                  on artifact.workspace_key = published.workspace_key
+                 and artifact.artifact_generation = published.artifact_generation
+                where published.workspace_key = %s
+                """,
+                (workspace_key,),
+            ).fetchone()
+            expected_spec = (
+                index_contract_version,
+                chunker_version,
+                normalization_version,
+                embedding_model,
+                embedding_dimension,
+            )
+            if published is not None and (
+                published["canonical_corpus_revision"] == canonical_corpus_revision
+                and (
+                    published["index_contract_version"],
+                    published["chunker_version"],
+                    published["normalization_version"],
+                    published["embedding_model"],
+                    published["embedding_dimension"],
+                ) == expected_spec
+            ):
+                return False
+            target_artifact_generation = connection.execute(
+                """
+                select coalesce(max(artifact_generation), 0) + 1 as generation
+                from ai_kb_index_artifacts where workspace_key = %s
+                """,
+                (workspace_key,),
+            ).fetchone()["generation"]
             connection.execute(
                 """
                 insert into ai_kb_reconciliation_runs (
                     run_id, workspace_key, snapshot_token, snapshot_expires_at,
-                    canonical_corpus_revision, status, started_at
-                ) values (%s, %s, %s, %s, %s, 'RUNNING', clock_timestamp())
+                    canonical_corpus_revision, status, started_at, target_artifact_generation,
+                    index_contract_version, chunker_version, normalization_version,
+                    embedding_model, embedding_dimension
+                ) values (%s, %s, %s, %s, %s, 'RUNNING', clock_timestamp(),
+                          %s, %s, %s, %s, %s, %s)
                 """,
-                (run_id, workspace_key, snapshot_token, snapshot_expires_at, canonical_corpus_revision),
+                (
+                    run_id,
+                    workspace_key,
+                    snapshot_token,
+                    snapshot_expires_at,
+                    canonical_corpus_revision,
+                    target_artifact_generation,
+                    index_contract_version,
+                    chunker_version,
+                    normalization_version,
+                    embedding_model,
+                    embedding_dimension,
+                ),
+            )
+            connection.execute(
+                """
+                insert into ai_kb_index_artifacts (
+                    workspace_key, artifact_generation, canonical_corpus_revision,
+                    reconciliation_run_id, state, index_contract_version, chunker_version,
+                    normalization_version, embedding_model, embedding_dimension, created_at
+                ) values (%s, %s, %s, %s, 'BUILDING', %s, %s, %s, %s, %s, clock_timestamp())
+                """,
+                (
+                    workspace_key,
+                    target_artifact_generation,
+                    canonical_corpus_revision,
+                    run_id,
+                    index_contract_version,
+                    chunker_version,
+                    normalization_version,
+                    embedding_model,
+                    embedding_dimension,
+                ),
             )
         return True
 
@@ -2342,33 +2505,6 @@ class Repository:
             if next_cursor is None:
                 connection.execute(
                     """
-                    delete from ai_kb_chunks chunk
-                    using ai_kb_revisions revision
-                    where revision.workspace_key = %s and revision.status = 'PUBLIC'
-                      and chunk.article_id = revision.article_id and chunk.revision_id = revision.revision_id
-                      and not exists (
-                          select 1 from ai_kb_reconciliation_seen seen
-                          where seen.run_id = %s and seen.article_id = revision.article_id
-                            and seen.revision_id = revision.revision_id
-                      )
-                    """,
-                    (run.workspace_key, run.run_id),
-                )
-                connection.execute(
-                    """
-                    update ai_kb_revisions revision
-                    set status = 'DELETED', deleted_at = clock_timestamp()
-                    where revision.workspace_key = %s and revision.status = 'PUBLIC'
-                      and not exists (
-                          select 1 from ai_kb_reconciliation_seen seen
-                          where seen.run_id = %s and seen.article_id = revision.article_id
-                            and seen.revision_id = revision.revision_id
-                      )
-                    """,
-                    (run.workspace_key, run.run_id),
-                )
-                connection.execute(
-                    """
                     update ai_kb_reconciliation_runs
                     set status = 'INDEXING', completed_at = clock_timestamp(), last_error_code = null
                     where run_id = %s
@@ -2386,7 +2522,9 @@ class Repository:
             )
             run = connection.execute(
                 """
-                select run_id, snapshot_token, snapshot_expires_at, canonical_corpus_revision, item_count
+                select run_id, snapshot_token, snapshot_expires_at, canonical_corpus_revision,
+                       item_count, target_artifact_generation, index_contract_version,
+                       chunker_version, normalization_version, embedding_model, embedding_dimension
                 from ai_kb_reconciliation_runs
                 where workspace_key = %s and status = 'INDEXING'
                 order by started_at desc, run_id desc limit 1
@@ -2410,17 +2548,25 @@ class Repository:
                     """,
                     (error_code, run["run_id"]),
                 )
+                connection.execute(
+                    """
+                    update ai_kb_index_artifacts
+                    set state = 'FAILED', completed_at = %s, failure_code = %s
+                    where workspace_key = %s and artifact_generation = %s and state = 'BUILDING'
+                    """,
+                    (now, error_code, workspace_key, run["target_artifact_generation"]),
+                )
                 return False
             job_counts = connection.execute(
                 """
                 select
                     count(*) filter (where job.status in ('PENDING', 'LEASED')) as pending,
                     count(*) filter (where job.status = 'DEAD') as dead
-                from ai_kb_article_state state
-                join ai_kb_index_jobs job on job.event_id = state.event_id
-                where state.workspace_key = %s
+                from ai_kb_index_jobs job
+                where job.reconciliation_run_id = %s
+                  and job.artifact_generation = %s
                 """,
-                (workspace_key,),
+                (run["run_id"], run["target_artifact_generation"]),
             ).fetchone()
             if job_counts["dead"]:
                 connection.execute(
@@ -2430,6 +2576,14 @@ class Repository:
                     where run_id = %s
                     """,
                     (run["run_id"],),
+                )
+                connection.execute(
+                    """
+                    update ai_kb_index_artifacts
+                    set state = 'FAILED', completed_at = %s, failure_code = 'INDEX_JOB_DEAD'
+                    where workspace_key = %s and artifact_generation = %s and state = 'BUILDING'
+                    """,
+                    (now, workspace_key, run["target_artifact_generation"]),
                 )
                 return False
             if job_counts["pending"]:
@@ -2445,28 +2599,43 @@ class Repository:
                     from ai_kb_reconciliation_seen seen
                     left join ai_kb_article_state state
                       on state.workspace_key = %s and state.article_id = seen.article_id
-                    left join ai_kb_index_jobs job on job.event_id = state.event_id
+                    left join ai_kb_index_jobs job
+                      on job.reconciliation_run_id = seen.run_id
+                     and job.article_id = seen.article_id
+                     and job.revision_id = seen.revision_id
                     left join ai_kb_revisions revision
-                      on revision.workspace_key = %s and revision.article_id = seen.article_id
+                      on revision.workspace_key = %s
+                     and revision.artifact_generation = %s
+                     and revision.article_id = seen.article_id
                      and revision.revision_id = seen.revision_id
                     where seen.run_id = %s and (
                         seen.source_version is null or seen.public_revision is null
-                        or state.action is distinct from 'UPSERT'
-                        or state.source_version is distinct from seen.source_version
+                        or (state.source_version is not null and (
+                            state.source_version > seen.source_version
+                            or (
+                                state.source_version = seen.source_version
+                                and state.action is distinct from 'UPSERT'
+                            )
+                        ))
                         or job.status is distinct from 'SUCCEEDED'
+                        or job.source_version is distinct from seen.source_version
                         or job.revision_id is distinct from seen.revision_id
                         or job.public_revision is distinct from seen.public_revision
                         or revision.status is distinct from 'PUBLIC'
                         or revision.public_revision is distinct from seen.public_revision
                         or not exists (
                             select 1 from ai_kb_chunks chunk
-                            where chunk.workspace_key = %s and chunk.article_id = seen.article_id
+                            where chunk.workspace_key = %s
+                              and chunk.artifact_generation = %s
+                              and chunk.article_id = seen.article_id
                               and chunk.revision_id = seen.revision_id
                         )
                     )
                 ) or exists (
                     select 1 from ai_kb_revisions revision
-                    where revision.workspace_key = %s and revision.status = 'PUBLIC'
+                    where revision.workspace_key = %s
+                      and revision.artifact_generation = %s
+                      and revision.status = 'PUBLIC'
                       and not exists (
                           select 1 from ai_kb_reconciliation_seen seen
                           where seen.run_id = %s and seen.article_id = revision.article_id
@@ -2477,9 +2646,12 @@ class Repository:
                 (
                     workspace_key,
                     workspace_key,
+                    run["target_artifact_generation"],
                     run["run_id"],
                     workspace_key,
+                    run["target_artifact_generation"],
                     workspace_key,
+                    run["target_artifact_generation"],
                     run["run_id"],
                 ),
             ).fetchone()["mismatch"]
@@ -2492,24 +2664,51 @@ class Repository:
                     """,
                     (run["run_id"],),
                 )
+                connection.execute(
+                    """
+                    update ai_kb_index_artifacts
+                    set state = 'FAILED', completed_at = %s, failure_code = 'INDEX_STATE_MISMATCH'
+                    where workspace_key = %s and artifact_generation = %s and state = 'BUILDING'
+                    """,
+                    (now, workspace_key, run["target_artifact_generation"]),
+                )
                 return False
             current = connection.execute(
                 "select generation from ai_kb_published_generations where workspace_key = %s for update",
                 (workspace_key,),
             ).fetchone()
             generation = (current["generation"] if current else 0) + 1
+            artifact_updated = connection.execute(
+                """
+                update ai_kb_index_artifacts
+                set state = 'COMPLETE', completed_at = %s, failure_code = null
+                where workspace_key = %s and artifact_generation = %s and state = 'BUILDING'
+                """,
+                (now, workspace_key, run["target_artifact_generation"]),
+            ).rowcount
+            if artifact_updated != 1:
+                connection.execute(
+                    """
+                    update ai_kb_reconciliation_runs
+                    set status = 'FAILED', last_error_code = 'INDEX_ARTIFACT_UNAVAILABLE'
+                    where run_id = %s
+                    """,
+                    (run["run_id"],),
+                )
+                return False
             connection.execute(
                 """
                 insert into ai_kb_published_generations (
                     workspace_key, generation, canonical_corpus_revision,
-                    reconciliation_run_id, snapshot_token, published_at
-                ) values (%s, %s, %s, %s, %s, %s)
+                    reconciliation_run_id, snapshot_token, published_at, artifact_generation
+                ) values (%s, %s, %s, %s, %s, %s, %s)
                 on conflict (workspace_key) do update set
                     generation = excluded.generation,
                     canonical_corpus_revision = excluded.canonical_corpus_revision,
                     reconciliation_run_id = excluded.reconciliation_run_id,
                     snapshot_token = excluded.snapshot_token,
-                    published_at = excluded.published_at
+                    published_at = excluded.published_at,
+                    artifact_generation = excluded.artifact_generation
                 """,
                 (
                     workspace_key,
@@ -2517,6 +2716,22 @@ class Repository:
                     run["canonical_corpus_revision"],
                     run["run_id"],
                     run["snapshot_token"],
+                    now,
+                    run["target_artifact_generation"],
+                ),
+            )
+            connection.execute(
+                """
+                insert into ai_kb_index_publication_history (
+                    workspace_key, publication_epoch, artifact_generation,
+                    canonical_corpus_revision, action, reason, published_at
+                ) values (%s, %s, %s, %s, 'PUBLISH', null, %s)
+                """,
+                (
+                    workspace_key,
+                    generation,
+                    run["target_artifact_generation"],
+                    run["canonical_corpus_revision"],
                     now,
                 ),
             )
@@ -2534,15 +2749,127 @@ class Repository:
         with self.database.connection() as connection:
             row = connection.execute(
                 """
-                select generation, canonical_corpus_revision
+                select generation, canonical_corpus_revision, artifact_generation
                 from ai_kb_published_generations where workspace_key = %s
                 """,
                 (workspace_key,),
             ).fetchone()
         return PublishedIndexGeneration(**row) if row else None
 
+    def restore_index_artifact(
+        self,
+        workspace_key: str,
+        artifact_generation: int,
+        expected_publication_epoch: int,
+        expected_canonical_corpus_revision: int,
+        reason: str,
+    ) -> PublishedIndexGeneration:
+        normalized_reason = reason.strip()
+        if not normalized_reason or len(normalized_reason) > 500 or any(
+            ord(character) < 32 or ord(character) == 127 for character in normalized_reason
+        ):
+            raise ValueError("restore reason must be bounded printable text")
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            connection.execute(
+                "select pg_advisory_xact_lock(hashtext('ai-kb-generation'), hashtext(%s))",
+                (workspace_key,),
+            )
+            current = connection.execute(
+                """
+                select generation, artifact_generation, canonical_corpus_revision
+                from ai_kb_published_generations where workspace_key = %s for update
+                """,
+                (workspace_key,),
+            ).fetchone()
+            if current is None:
+                raise ConflictError("published index is unavailable")
+            if (
+                current["generation"] != expected_publication_epoch
+                or current["canonical_corpus_revision"] != expected_canonical_corpus_revision
+            ):
+                raise ConflictError("published index restore precondition failed")
+            if current["artifact_generation"] == artifact_generation:
+                raise ConflictError("target artifact is already active")
+            active_spec = connection.execute(
+                """
+                select index_contract_version, chunker_version, normalization_version,
+                       embedding_model, embedding_dimension
+                from ai_kb_index_artifacts
+                where workspace_key = %s and artifact_generation = %s and state = 'COMPLETE'
+                """,
+                (workspace_key, current["artifact_generation"]),
+            ).fetchone()
+            target = connection.execute(
+                """
+                select artifact.canonical_corpus_revision, artifact.index_contract_version,
+                       artifact.chunker_version, artifact.normalization_version,
+                       artifact.embedding_model, artifact.embedding_dimension,
+                       artifact.reconciliation_run_id, run.snapshot_token
+                from ai_kb_index_artifacts artifact
+                join ai_kb_reconciliation_runs run
+                  on run.run_id = artifact.reconciliation_run_id
+                where artifact.workspace_key = %s and artifact.artifact_generation = %s
+                  and artifact.state = 'COMPLETE' and run.status = 'SUCCEEDED'
+                """,
+                (workspace_key, artifact_generation),
+            ).fetchone()
+            if target is None or active_spec is None:
+                raise ConflictError("restore artifact is incomplete")
+            if target["canonical_corpus_revision"] != expected_canonical_corpus_revision:
+                raise ConflictError("restore artifact corpus revision differs")
+            spec_fields = (
+                "index_contract_version",
+                "embedding_model",
+                "embedding_dimension",
+            )
+            if any(target[field] != active_spec[field] for field in spec_fields):
+                raise ConflictError("restore artifact index contract differs")
+            generation = current["generation"] + 1
+            connection.execute(
+                """
+                update ai_kb_published_generations
+                set generation = %s, artifact_generation = %s,
+                    reconciliation_run_id = %s, snapshot_token = %s, published_at = %s
+                where workspace_key = %s
+                """,
+                (
+                    generation,
+                    artifact_generation,
+                    target["reconciliation_run_id"],
+                    target["snapshot_token"],
+                    now,
+                    workspace_key,
+                ),
+            )
+            connection.execute(
+                """
+                insert into ai_kb_index_publication_history (
+                    workspace_key, publication_epoch, artifact_generation,
+                    canonical_corpus_revision, action, reason, published_at
+                ) values (%s, %s, %s, %s, 'RESTORE', %s, %s)
+                """,
+                (
+                    workspace_key,
+                    generation,
+                    artifact_generation,
+                    expected_canonical_corpus_revision,
+                    normalized_reason,
+                    now,
+                ),
+            )
+        return PublishedIndexGeneration(
+            generation=generation,
+            canonical_corpus_revision=expected_canonical_corpus_revision,
+            artifact_generation=artifact_generation,
+        )
+
     def fail_reconciliation(self, run_id: UUID, error_code: str) -> None:
         with self.database.transaction() as connection:
+            row = connection.execute(
+                "select workspace_key, target_artifact_generation from ai_kb_reconciliation_runs where run_id = %s",
+                (run_id,),
+            ).fetchone()
             connection.execute(
                 """
                 update ai_kb_reconciliation_runs
@@ -2551,6 +2878,15 @@ class Repository:
                 """,
                 (error_code[:80], run_id),
             )
+            if row is not None and row["target_artifact_generation"] is not None:
+                connection.execute(
+                    """
+                    update ai_kb_index_artifacts
+                    set state = 'FAILED', completed_at = clock_timestamp(), failure_code = %s
+                    where workspace_key = %s and artifact_generation = %s and state = 'BUILDING'
+                    """,
+                    (error_code[:80], row["workspace_key"], row["target_artifact_generation"]),
+                )
 
     def claim_feedback_exports(self, owner: str, limit: int = 20) -> list[FeedbackExport]:
         now = datetime.now(UTC)

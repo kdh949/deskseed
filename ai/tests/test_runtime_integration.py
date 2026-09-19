@@ -36,6 +36,10 @@ from deskseed_ai.repository import (
 )
 from deskseed_ai.result_cache import exact_result_cache_key
 from deskseed_ai.retrieval import (
+    CHUNKER_VERSION,
+    EMBEDDING_DIMENSION,
+    INDEX_CONTRACT_VERSION,
+    NORMALIZATION_VERSION,
     EmbeddingResult,
     FakeEmbeddingProvider,
     KnowledgeRepository,
@@ -967,17 +971,19 @@ def test_reply_cache_misses_when_corpus_changes_or_cached_citation_is_withdrawn(
         ).fetchall()
         jobs = connection.execute(
             """
-            select job_id, result_origin_job_id, reuse_kind
+            select job_id, status, error_code, result_origin_job_id, reuse_kind
             from ai_jobs where job_id in (%s, %s)
             """,
             (corpus_changed.jobId, withdrawn.jobId),
         ).fetchall()
     assert {row["job_id"]: row["count"] for row in calls_by_job} == {
         origin.jobId: 2,
-        corpus_changed.jobId: 2,
         withdrawn.jobId: 2,
     }
     assert all(row["result_origin_job_id"] is None and row["reuse_kind"] is None for row in jobs)
+    changed_row = next(row for row in jobs if row["job_id"] == corpus_changed.jobId)
+    assert changed_row["status"] == "NEEDS_REVIEW"
+    assert changed_row["error_code"] == "KNOWLEDGE_INDEX_NOT_READY"
     assert withdrawn_backend.authorization_count == 3
 
 
@@ -1797,6 +1803,7 @@ def test_public_kb_revision_replacement_and_vector_retrieval(repository: Reposit
         "refund-policy", "환불 정책", "c" * 64, chunks
     )
     assert token_count > 0 and applied
+    publish_test_artifact(repository, "default", 7)
     matches = knowledge.retrieve("default", "환불 요청 기간", limit=3)
     assert matches and matches[0].revision_id == first_revision
 
@@ -1866,6 +1873,7 @@ def test_public_kb_retrieval_fuses_vector_keyword_and_exact_error_candidates(
     index_article("양쪽 후보", "로그인 ERR-42 해결 절차", query_vector)
     index_article("벡터 후보", "계정 접근 일반 안내", query_vector)
     index_article("키워드 후보", "ERR-42 전용 복구 안내", opposite_vector)
+    publish_test_artifact(repository, "rrf", 7)
 
     matches = knowledge.retrieve("rrf", build_retrieval_query("로그인 ERR-42"), limit=5)
 
@@ -1916,6 +1924,7 @@ def test_public_kb_retrieval_suppresses_adjacent_overlapping_chunks(repository: 
         embedded,
     )
     assert applied
+    publish_test_artifact(repository, "overlap", 7)
 
     matches = knowledge.retrieve("overlap", build_retrieval_query("ERR-77"), limit=5)
 
@@ -1953,6 +1962,8 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
                 revisionId=revision_id,
                 slug="public-refund",
                 title="공개 환불 도움말",
+                categoryTitle="결제",
+                sectionTitle="환불",
                 body="공개 도움말 본문입니다.",
                 sourceVersion=1,
                 publicRevision="e" * 64,
@@ -1968,7 +1979,7 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
         Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
         TraceAdapter(settings),
     )
-    assert repository.accept_index_event(event).replayed is False
+    run = begin_test_index_build(repository, event)
     assert service.process_once() == 1
     with repository.database.connection() as connection:
         row = connection.execute(
@@ -1979,13 +1990,33 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
             join ai_provider_calls provider on provider.reservation_id = cost.reservation_id
             where cost.operation_key = %s
             """,
-            (f"index:{event.eventId}:0",),
+            (f"index:{run.target_artifact_generation}:{event.eventId}:0",),
+        ).fetchone()
+        indexed = connection.execute(
+            """
+            select revision.category_title, revision.section_title, chunk.content,
+                   chunk.search_text, chunk.content_sha256, chunk.embedding_input_sha256
+            from ai_kb_revisions revision
+            join ai_kb_chunks chunk
+              on chunk.workspace_key = revision.workspace_key
+             and chunk.artifact_generation = revision.artifact_generation
+             and chunk.article_id = revision.article_id
+             and chunk.revision_id = revision.revision_id
+            where revision.workspace_key = 'default'
+              and revision.artifact_generation = %s
+            """,
+            (run.target_artifact_generation,),
         ).fetchone()
     assert row["budget_bucket"] == "SYSTEM"
     assert row["call_type"] == "INDEX_EMBEDDING"
     assert row["status"] == "SETTLED"
     assert row["trace_id"] == row["reservation_id"].hex
     assert row["observation_id"] == row["call_id"].hex
+    assert indexed["category_title"] == "결제"
+    assert indexed["section_title"] == "환불"
+    assert indexed["content"] == "공개 도움말 본문입니다."
+    assert "공개 환불 도움말\n결제\n환불" in indexed["search_text"]
+    assert indexed["embedding_input_sha256"] != indexed["content_sha256"]
 
 
 @pytest.mark.integration
@@ -2008,7 +2039,7 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
     deleted = upsert.model_copy(
         update={"eventId": uuid4(), "action": "DELETE", "sourceVersion": 2}
     )
-    repository.accept_index_event(upsert)
+    run = begin_test_index_build(repository, upsert)
 
     class DeleteDuringEmbedding(FakeEmbeddingProvider):
         accepted = False
@@ -2026,6 +2057,8 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
                 revisionId=requested_revision,
                 slug="withdrawn-article",
                 title="철회 문서",
+                categoryTitle="지원",
+                sectionTitle="철회",
                 body="철회되기 전 공개 본문",
                 sourceVersion=1,
                 publicRevision="a" * 64,
@@ -2044,9 +2077,14 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
     assert service.process_once(limit=1) == 1
     with repository.database.connection() as connection:
         assert connection.execute(
-            "select count(*) as count from ai_kb_revisions where article_id = %s and status = 'PUBLIC'",
-            (article_id,),
-        ).fetchone()["count"] == 0
+            """
+            select count(*) as count from ai_kb_revisions
+            where article_id = %s and artifact_generation = %s and status = 'PUBLIC'
+            """,
+            (article_id, run.target_artifact_generation),
+        ).fetchone()["count"] == 1
+    assert repository.try_publish_index_generation("default") is False
+    assert repository.current_published_index_generation("default") is None
 
 
 @pytest.mark.integration
@@ -2353,6 +2391,18 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
         "a" * 64,
         ["이 문서는 manifest에서 사라졌습니다."],
     )
+    publish_test_artifact(repository, "default", 6)
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_kb_published_generations set published_at = clock_timestamp() - interval '1 day' where workspace_key = 'default'"
+        )
+        connection.execute(
+            """
+            update ai_kb_reconciliation_runs
+            set started_at = started_at - interval '1 day', completed_at = completed_at - interval '1 day'
+            where workspace_key = 'default'
+            """
+        )
     first_article_id, second_article_id = sorted([uuid4(), uuid4()], key=str)
     first_revision_id = uuid4()
     second_revision_id = uuid4()
@@ -2392,6 +2442,30 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
                 )],
             )
 
+        def read_public_article(self, article_id, revision_id, request_ref):
+            if article_id == first_article_id:
+                expected_revision = first_revision_id
+                public_revision = "b" * 64
+                title = "첫 공개 문서"
+            else:
+                expected_revision = second_revision_id
+                public_revision = "c" * 64
+                title = "둘째 공개 문서"
+            assert revision_id == expected_revision
+            return PublicKnowledgeArticle(
+                articleId=article_id,
+                revisionId=revision_id,
+                slug=f"article-{article_id}",
+                title=title,
+                categoryTitle="고객 지원",
+                sectionTitle="결제",
+                body=f"{title}의 공개 본문입니다.",
+                sourceVersion=1,
+                publicRevision=public_revision,
+                publishedAt=published_at,
+                dataClass="PUBLIC_KB_ONLY",
+            )
+
     snapshot_token_value = snapshot_token
     service = IndexingService(
         PagedManifestBackend(),
@@ -2412,16 +2486,146 @@ def test_manifest_reconciliation_deletes_absent_revisions_only_after_complete_sc
     assert service.reconcile_once() is True
     with repository.database.connection() as connection:
         assert connection.execute(
-            "select status from ai_kb_revisions where article_id = %s and revision_id = %s",
+            "select status from ai_kb_revisions where article_id = %s and revision_id = %s and artifact_generation = 1",
             (stale_article_id, stale_revision_id),
-        ).fetchone()["status"] == "DELETED"
+        ).fetchone()["status"] == "PUBLIC"
         run = connection.execute(
-            "select status, page_count, item_count from ai_kb_reconciliation_runs where snapshot_token = %s",
+            "select status, page_count, item_count, target_artifact_generation from ai_kb_reconciliation_runs where snapshot_token = %s",
             (snapshot_token,),
         ).fetchone()
-        assert run == {"status": "INDEXING", "page_count": 2, "item_count": 2}
-        assert connection.execute("select count(*) as count from ai_kb_index_jobs").fetchone()["count"] == 3
+        assert run == {
+            "status": "INDEXING",
+            "page_count": 2,
+            "item_count": 2,
+            "target_artifact_generation": 2,
+        }
+        assert connection.execute(
+            "select count(*) as count from ai_kb_index_jobs where reconciliation_run_id is not null"
+        ).fetchone()["count"] == 2
     assert repository.try_publish_index_generation("default") is False
+    assert service.process_once(limit=10) == 2
+    assert repository.try_publish_index_generation("default") is True
+    published = repository.current_published_index_generation("default")
+    assert published is not None
+    assert published.artifact_generation == 2
+    with repository.database.connection() as connection:
+        assert connection.execute(
+            "select count(*) as count from ai_kb_revisions where workspace_key = 'default' and artifact_generation = 2"
+        ).fetchone()["count"] == 2
+
+
+@pytest.mark.integration
+def test_complete_same_corpus_artifact_restore_creates_new_publication_epoch(
+    repository: Repository,
+) -> None:
+    publish_test_artifact(repository, "default", 7, artifact_generation=1)
+    now = datetime.now(UTC)
+    run_id = uuid4()
+    snapshot_token = uuid4()
+    with repository.database.transaction() as connection:
+        connection.execute(
+            """
+            update ai_kb_index_artifacts
+            set chunker_version = 'public-kb-fixed-1800-v1', normalization_version = 'legacy-text-v1'
+            where workspace_key = 'default' and artifact_generation = 1
+            """
+        )
+        connection.execute(
+            """
+            insert into ai_kb_reconciliation_runs (
+                run_id, workspace_key, snapshot_token, snapshot_expires_at, status,
+                started_at, completed_at, canonical_corpus_revision, published_generation,
+                target_artifact_generation, index_contract_version, chunker_version,
+                normalization_version, embedding_model, embedding_dimension
+            ) values (%s, 'default', %s, %s, 'SUCCEEDED', %s, %s, 7, 2, 2,
+                      %s, %s, %s, %s, %s)
+            """,
+            (
+                run_id,
+                snapshot_token,
+                now + timedelta(hours=1),
+                now,
+                now,
+                INDEX_CONTRACT_VERSION,
+                CHUNKER_VERSION,
+                NORMALIZATION_VERSION,
+                "openai/text-embedding-3-small",
+                EMBEDDING_DIMENSION,
+            ),
+        )
+        connection.execute(
+            """
+            insert into ai_kb_index_artifacts (
+                workspace_key, artifact_generation, canonical_corpus_revision,
+                reconciliation_run_id, state, index_contract_version, chunker_version,
+                normalization_version, embedding_model, embedding_dimension,
+                created_at, completed_at
+            ) values ('default', 2, 7, %s, 'COMPLETE', %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                run_id,
+                INDEX_CONTRACT_VERSION,
+                CHUNKER_VERSION,
+                NORMALIZATION_VERSION,
+                "openai/text-embedding-3-small",
+                EMBEDDING_DIMENSION,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            update ai_kb_published_generations
+            set generation = 2, artifact_generation = 2,
+                reconciliation_run_id = %s, snapshot_token = %s, published_at = %s
+            where workspace_key = 'default'
+            """,
+            (run_id, snapshot_token, now),
+        )
+        connection.execute(
+            """
+            insert into ai_kb_index_publication_history (
+                workspace_key, publication_epoch, artifact_generation,
+                canonical_corpus_revision, action, published_at
+            ) values ('default', 2, 2, 7, 'PUBLISH', %s)
+            """,
+            (now,),
+        )
+
+    restored = repository.restore_index_artifact(
+        "default", 1, expected_publication_epoch=2,
+        expected_canonical_corpus_revision=7, reason="section chunker rollback",
+    )
+
+    assert restored.generation == 3
+    assert restored.artifact_generation == 1
+    with repository.database.connection() as connection:
+        current = connection.execute(
+            """
+            select generation, artifact_generation, reconciliation_run_id
+            from ai_kb_published_generations where workspace_key = 'default'
+            """
+        ).fetchone()
+        history = connection.execute(
+            """
+            select publication_epoch, artifact_generation, action, reason
+            from ai_kb_index_publication_history
+            where workspace_key = 'default' order by publication_epoch
+            """
+        ).fetchall()
+    assert current["generation"] == 3
+    assert current["artifact_generation"] == 1
+    assert history[-1] == {
+        "publication_epoch": 3,
+        "artifact_generation": 1,
+        "action": "RESTORE",
+        "reason": "section chunker rollback",
+    }
+    with pytest.raises(ConflictError):
+        repository.restore_index_artifact(
+            "default", 2, expected_publication_epoch=2,
+            expected_canonical_corpus_revision=7, reason="stale restore",
+        )
 
 
 class StaticBackend:
@@ -2523,56 +2727,129 @@ def publish_current_index_generation(
     repository: Repository,
     canonical_corpus_revision: int,
 ) -> None:
-    owner = "test-index-generation-publisher"
-    events = repository.claim_index_events(owner, 100)
-    for event in events:
-        repository.mark_index_event_succeeded(event.eventId, owner)
-    with repository.database.connection() as connection:
-        items = connection.execute(
-            """
-            select revision.article_id, revision.revision_id, state.source_version,
-                   revision.public_revision
-            from ai_kb_revisions revision
-            join ai_kb_article_state state
-              on state.workspace_key = revision.workspace_key and state.article_id = revision.article_id
-            where revision.workspace_key = 'default' and revision.status = 'PUBLIC'
-            order by revision.article_id
-            """
-        ).fetchall()
-    now = datetime.now(UTC)
-    assert repository.begin_reconciliation(
-        uuid4(),
-        "default",
-        uuid4(),
-        now + timedelta(hours=1),
-        canonical_corpus_revision,
-    )
-    run = repository.current_reconciliation("default")
-    assert run is not None
-    assert repository.record_reconciliation_page(
-        run,
-        [
-            (
-                row["article_id"],
-                row["revision_id"],
-                row["source_version"],
-                row["public_revision"],
-            )
-            for row in items
-        ],
-        None,
-    )
-    assert not repository.begin_reconciliation(
-        uuid4(),
-        "default",
-        uuid4(),
-        now + timedelta(hours=1),
-        canonical_corpus_revision,
-    )
-    assert repository.try_publish_index_generation("default") is True
+    publish_test_artifact(repository, "default", canonical_corpus_revision)
     published = repository.current_published_index_generation("default")
     assert published is not None
     assert published.canonical_corpus_revision == canonical_corpus_revision
+
+
+def publish_test_artifact(
+    repository: Repository,
+    workspace_key: str,
+    canonical_corpus_revision: int,
+    artifact_generation: int = 1,
+) -> None:
+    now = datetime.now(UTC)
+    with repository.database.transaction() as connection:
+        if connection.execute(
+            "select 1 from ai_kb_published_generations where workspace_key = %s",
+            (workspace_key,),
+        ).fetchone():
+            return
+        run_id = uuid4()
+        snapshot_token = uuid4()
+        connection.execute(
+            """
+            insert into ai_kb_reconciliation_runs (
+                run_id, workspace_key, snapshot_token, snapshot_expires_at, status,
+                started_at, completed_at, canonical_corpus_revision, published_generation,
+                target_artifact_generation, index_contract_version, chunker_version,
+                normalization_version, embedding_model, embedding_dimension
+            ) values (%s, %s, %s, %s, 'SUCCEEDED', %s, %s, %s, 1, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                run_id,
+                workspace_key,
+                snapshot_token,
+                now + timedelta(hours=1),
+                now,
+                now,
+                canonical_corpus_revision,
+                artifact_generation,
+                INDEX_CONTRACT_VERSION,
+                CHUNKER_VERSION,
+                NORMALIZATION_VERSION,
+                "openai/text-embedding-3-small",
+                EMBEDDING_DIMENSION,
+            ),
+        )
+        connection.execute(
+            """
+            insert into ai_kb_index_artifacts (
+                workspace_key, artifact_generation, canonical_corpus_revision,
+                reconciliation_run_id, state, index_contract_version, chunker_version,
+                normalization_version, embedding_model, embedding_dimension,
+                created_at, completed_at
+            ) values (%s, %s, %s, %s, 'COMPLETE', %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                workspace_key,
+                artifact_generation,
+                canonical_corpus_revision,
+                run_id,
+                INDEX_CONTRACT_VERSION,
+                CHUNKER_VERSION,
+                NORMALIZATION_VERSION,
+                "openai/text-embedding-3-small",
+                EMBEDDING_DIMENSION,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            insert into ai_kb_published_generations (
+                workspace_key, generation, canonical_corpus_revision,
+                reconciliation_run_id, snapshot_token, published_at, artifact_generation
+            ) values (%s, 1, %s, %s, %s, %s, %s)
+            """,
+            (
+                workspace_key,
+                canonical_corpus_revision,
+                run_id,
+                snapshot_token,
+                now,
+                artifact_generation,
+            ),
+        )
+        connection.execute(
+            """
+            insert into ai_kb_index_publication_history (
+                workspace_key, publication_epoch, artifact_generation,
+                canonical_corpus_revision, action, published_at
+            ) values (%s, 1, %s, %s, 'INITIAL', %s)
+            """,
+            (workspace_key, artifact_generation, canonical_corpus_revision, now),
+        )
+
+
+def begin_test_index_build(
+    repository: Repository,
+    event: IndexEvent,
+    canonical_corpus_revision: int = 7,
+):
+    now = datetime.now(UTC)
+    assert repository.begin_reconciliation(
+        uuid4(),
+        event.workspaceKey,
+        uuid4(),
+        now + timedelta(hours=1),
+        canonical_corpus_revision,
+        INDEX_CONTRACT_VERSION,
+        CHUNKER_VERSION,
+        NORMALIZATION_VERSION,
+        "openai/text-embedding-3-small",
+        EMBEDDING_DIMENSION,
+    )
+    run = repository.current_reconciliation(event.workspaceKey)
+    assert run is not None
+    repository.accept_reconciliation_index_event(run, event)
+    assert repository.record_reconciliation_page(
+        run,
+        [(event.articleId, event.revisionId, event.sourceVersion, event.publicRevision)],
+        None,
+    )
+    return run
 
 
 def runtime_for(
@@ -2581,6 +2858,8 @@ def runtime_for(
     backend: StaticBackend,
     traces: TraceAdapter | None = None,
 ) -> StreamRuntime:
+    if backend.item.feature == Feature.REPLY_DRAFT:
+        publish_test_artifact(repository, backend.item.workspaceKey, 7)
     knowledge = KnowledgeRepository(repository.database, FakeEmbeddingProvider())
     return StreamRuntime(
         settings,

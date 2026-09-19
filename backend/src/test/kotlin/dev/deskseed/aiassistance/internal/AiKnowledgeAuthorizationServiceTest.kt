@@ -75,6 +75,8 @@ class AiKnowledgeAuthorizationServiceTest {
         revisionId = candidate.revisionId,
         slug = slug,
         title = "공개 도움말",
+        categoryTitle = "고객 지원",
+        sectionTitle = "결제",
         body = "공개 본문",
         sourceVersion = 1,
         publicRevision = "a".repeat(64),

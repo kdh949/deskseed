@@ -21,8 +21,14 @@ def main() -> None:
             "run-indexer",
             "run-feedback",
             "run-retention",
+            "restore-index-artifact",
         ],
     )
+    parser.add_argument("--workspace-key", default="default")
+    parser.add_argument("--artifact-generation", type=int)
+    parser.add_argument("--expected-publication-epoch", type=int)
+    parser.add_argument("--expected-corpus-revision", type=int)
+    parser.add_argument("--reason")
     args = parser.parse_args()
     if args.command.startswith("run-"):
         run_role(args.command.removeprefix("run-"))
@@ -33,6 +39,35 @@ def main() -> None:
     try:
         if args.command == "migrate":
             apply_migrations(database, Path(__file__).resolve().parents[2] / "migrations")
+        elif args.command == "restore-index-artifact":
+            if any(
+                value is None
+                for value in (
+                    args.artifact_generation,
+                    args.expected_publication_epoch,
+                    args.expected_corpus_revision,
+                    args.reason,
+                )
+            ):
+                parser.error(
+                    "restore-index-artifact requires --artifact-generation, "
+                    "--expected-publication-epoch, --expected-corpus-revision and --reason"
+                )
+            from .repository import Repository
+            from .security import EnvelopeCipher
+
+            restored = Repository(database, settings, EnvelopeCipher(settings)).restore_index_artifact(
+                args.workspace_key,
+                args.artifact_generation,
+                args.expected_publication_epoch,
+                args.expected_corpus_revision,
+                args.reason,
+            )
+            print(
+                f"publication_epoch={restored.generation} "
+                f"artifact_generation={restored.artifact_generation} "
+                f"canonical_corpus_revision={restored.canonical_corpus_revision}"
+            )
         elif not database.ping():
             raise SystemExit("AI database check failed")
     finally:

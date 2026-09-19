@@ -289,12 +289,22 @@ components:
     PublicKnowledgeArticle:
       type: object
       additionalProperties: false
-      required: [articleId, revisionId, slug, title, body, sourceVersion, publicRevision, publishedAt, dataClass]
+      required: [articleId, revisionId, slug, title, categoryTitle, sectionTitle, body, sourceVersion, publicRevision, publishedAt, dataClass]
       properties:
         articleId: {type: string, format: uuid}
         revisionId: {type: string, format: uuid}
         slug: {type: string, minLength: 1, maxLength: 180}
         title: {type: string, minLength: 1, maxLength: 300}
+        categoryTitle:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 현재 PUBLIC article이 속한 active knowledge category의 공개 제목이며 embedding 구조 문맥에만 사용합니다.
+        sectionTitle:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 현재 PUBLIC article이 속한 active knowledge section의 공개 제목이며 embedding 구조 문맥에만 사용합니다.
         body: {type: string, minLength: 1}
         sourceVersion: {type: integer, format: int64, minimum: 1}
         publicRevision: {type: string, pattern: '^[0-9a-f]{64}$'}

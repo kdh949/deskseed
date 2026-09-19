@@ -106,7 +106,8 @@ internal class JdbcAiKnowledgeProjection(
     override fun findCurrentPublic(articleId: UUID, revisionId: UUID): AiPublicKnowledgeArticle? = jdbcTemplate.query(
         """
         select article.id as article_id, revision.id as revision_id, article.slug,
-               revision.title, revision.plain_text, article.version as source_version,
+               revision.title, category.title as category_title, section.title as section_title,
+               revision.plain_text, article.version as source_version,
                revision.content_checksum as public_revision,
                article.published_at
         from knowledge_articles article
@@ -122,6 +123,8 @@ internal class JdbcAiKnowledgeProjection(
                 revisionId = result.getObject("revision_id", UUID::class.java),
                 slug = result.getString("slug"),
                 title = result.getString("title"),
+                categoryTitle = result.getString("category_title"),
+                sectionTitle = result.getString("section_title"),
                 body = result.getString("plain_text"),
                 sourceVersion = result.getLong("source_version"),
                 publicRevision = result.getString("public_revision"),
