@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     prompt_version: str = "ai-v1.2-p1"
     graph_version: str = "reply-v1"
     config_version: str = "2026-09-16"
+    exact_result_cache_mode: Literal["off", "test"] = "off"
+    result_cache_key_secret: SecretStr = SecretStr("")
 
     workspace_daily_budget_microusd: int = 3_000_000
     actor_daily_budget_microusd: int = 500_000
@@ -93,6 +95,11 @@ class Settings(BaseSettings):
             not self.langfuse_public_key or not self.langfuse_secret_key.get_secret_value()
         ):
             raise ValueError("Langfuse export requires both keys")
+        if self.exact_result_cache_mode == "test":
+            if self.environment == "production":
+                raise ValueError("production result-cache activation requires the S08 reuse-intent contract")
+            if len(self.result_cache_key_secret.get_secret_value()) < 32:
+                raise ValueError("test result cache requires a key secret of at least 32 characters")
         if self.workspace_daily_budget_microusd <= 0 or self.actor_daily_budget_microusd <= 0:
             raise ValueError("daily budgets must be positive")
         if self.job_budget_microusd <= 0:

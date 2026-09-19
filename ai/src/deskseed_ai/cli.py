@@ -51,7 +51,11 @@ def run_role(role: str) -> None:
         "indexer": (runtime.indexing.cycle_once, 0.5),
         "feedback": (runtime.feedback.export_once, 5.0),
         "retention": (
-            lambda: runtime.repository.purge_expired_results() + runtime.repository.purge_expired_metadata(),
+            lambda: (
+                runtime.repository.purge_expired_cache_entries()
+                + runtime.repository.purge_expired_results()
+                + runtime.repository.purge_expired_metadata()
+            ),
             3600.0,
         ),
     }

@@ -30,6 +30,7 @@ from .repository import (
     Repository,
     StaleLeaseError,
 )
+from .result_cache import exact_result_cache_key
 from .retrieval import KnowledgeRepository
 from .schemas import AuthorRole, Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
 from .workflows import (
@@ -208,6 +209,19 @@ class StreamRuntime:
                 model = self.settings.model_standard if claim.feature == Feature.REPLY_DRAFT else self.settings.model_fast
                 if model not in {policy.fastModelAlias, policy.standardModelAlias}:
                     raise BackendPolicyDisabledError("configured model alias differs from backend policy")
+                cache_key = exact_result_cache_key(claim, policy, model, self.settings)
+                if cache_key is not None:
+                    current = self.backend.read_context_revision(claim.job_id)
+                    if (
+                        current.contextRevision != claim.context_revision
+                        or current.aiInputRevision != claim.ai_input_revision
+                        or current.inputPolicyVersion != claim.input_policy_version
+                    ):
+                        raise BackendSupersededError("context changed before cache lookup")
+                    current_policy = self.backend.read_policy(claim.feature.value)
+                    current_cache_key = exact_result_cache_key(claim, current_policy, model, self.settings)
+                    if current_cache_key == cache_key and self.repository.complete_from_cache(claim, cache_key.digest):
+                        return
                 context = _bounded_context(context, claim.feature)
                 if claim.feature == Feature.REPLY_DRAFT:
                     query = reply_query(context)
@@ -286,7 +300,8 @@ class StreamRuntime:
                     or current.inputPolicyVersion != claim.input_policy_version
                 ):
                     raise BackendSupersededError("context changed before result commit")
-                self.backend.read_policy(claim.feature.value)
+                final_policy = self.backend.read_policy(claim.feature.value)
+                final_cache_key = exact_result_cache_key(claim, final_policy, model, self.settings)
                 if generated is None:
                     self.repository.complete_needs_review(claim, "NO_APPROVED_KNOWLEDGE", cost)
                     return
@@ -312,6 +327,11 @@ class StreamRuntime:
                         generated.prompt_version,
                         source_map_digest,
                         source_chunk_ids,
+                        cache_key=(
+                            cache_key.digest
+                            if cache_key is not None and final_cache_key == cache_key
+                            else None
+                        ),
                     )
             except BackendSupersededError:
                 self.repository.terminate_job(claim, JobStatus.SUPERSEDED, "CONTEXT_SUPERSEDED")

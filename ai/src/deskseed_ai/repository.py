@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+from cryptography.exceptions import InvalidTag
 from psycopg.types.json import Jsonb
+from pydantic import ValidationError
 
 from .call_receipts import ProviderCallReceipt, UsageStatus
 from .config import Settings
@@ -22,6 +24,8 @@ from .schemas import (
     JobReceipt,
     JobStatus,
     OperationRequest,
+    SummaryResult,
+    TriageResult,
     TypedResult,
 )
 from .security import EnvelopeCipher, sha256_text
@@ -72,6 +76,7 @@ class ClaimedJob:
     feature: Feature
     workspace_key: str
     requester_id: UUID
+    ticket_id: UUID
     context_revision: str
     context_policy_version: str
     ai_input_revision: str | None
@@ -272,6 +277,15 @@ class Repository:
                     """,
                     (envelope.requestRevision, now, envelope.jobId),
                 )
+            if job:
+                connection.execute(
+                    """
+                    update ai_result_cache set invalidated_at = coalesce(invalidated_at, %s),
+                        invalidation_reason = coalesce(invalidation_reason, 'ORIGIN_CANCELLED')
+                    where origin_job_id = %s
+                    """,
+                    (now, envelope.jobId),
+                )
         return Accepted(replayed=False, jobId=envelope.jobId)
 
     def get_job(self, job_id: UUID, include_result: bool = True) -> JobReceipt:
@@ -458,6 +472,7 @@ class Repository:
             feature=Feature(row["feature"]),
             workspace_key=row["workspace_key"],
             requester_id=row["requester_id"],
+            ticket_id=row["ticket_id"],
             context_revision=row["context_revision"],
             context_policy_version=row["context_policy_version"],
             ai_input_revision=row["ai_input_revision"],
@@ -927,6 +942,7 @@ class Repository:
         prompt_version: str,
         source_map_digest: str | None = None,
         source_chunk_ids: list[UUID] | None = None,
+        cache_key: str | None = None,
     ) -> None:
         if (source_map_digest is None) != (source_chunk_ids is None):
             raise ValueError("source map digest and chunk IDs must be stored together")
@@ -934,6 +950,7 @@ class Repository:
         ciphertext, nonce = self.cipher.encrypt(
             result.model_dump_json().encode(), str(claim.job_id).encode()
         )
+        result_expires_at = now + timedelta(days=7)
         with self.database.transaction() as connection:
             updated = connection.execute(
                 """
@@ -950,7 +967,7 @@ class Repository:
                     status.value,
                     ciphertext,
                     nonce,
-                    now + timedelta(days=7),
+                    result_expires_at,
                     actual_model,
                     actual_model,
                     prompt_version,
@@ -969,6 +986,167 @@ class Repository:
             ).rowcount
             if updated != 1:
                 raise StaleLeaseError("job completion lease lost")
+            if cache_key is not None and status == JobStatus.SUCCEEDED and cost_microusd is not None:
+                cache_expires_at = min(now + timedelta(hours=24), result_expires_at)
+                connection.execute(
+                    """
+                    insert into ai_result_cache (
+                        cache_key, key_version, workspace_key, requester_id, ticket_id, feature,
+                        origin_job_id, created_at, expires_at
+                    ) values (
+                        %s, 'result-cache-summary-triage-v1', %s, %s, %s, %s, %s, %s, %s
+                    )
+                    on conflict (cache_key) do update set
+                        origin_job_id = excluded.origin_job_id,
+                        created_at = excluded.created_at,
+                        expires_at = excluded.expires_at,
+                        invalidated_at = null,
+                        invalidation_reason = null
+                    where ai_result_cache.invalidated_at is not null
+                       or ai_result_cache.expires_at <= %s
+                    """,
+                    (
+                        cache_key,
+                        claim.workspace_key,
+                        claim.requester_id,
+                        claim.ticket_id,
+                        claim.feature.value,
+                        claim.job_id,
+                        now,
+                        cache_expires_at,
+                        now,
+                    ),
+                )
+
+    def complete_from_cache(self, claim: ClaimedJob, cache_key: str) -> bool:
+        now = datetime.now(UTC)
+        with self.database.transaction() as connection:
+            entry_ref = connection.execute(
+                "select origin_job_id from ai_result_cache where cache_key = %s",
+                (cache_key,),
+            ).fetchone()
+            if not entry_ref:
+                return False
+            origin = connection.execute(
+                """
+                select job_id, status, cancel_requested, result_schema_version, result_ciphertext,
+                       result_nonce, result_expires_at, model_alias, actual_model, prompt_version,
+                       config_version, source_comment_ids, generated_at, source_map_digest,
+                       source_chunk_ids, cost_microusd,
+                       exists (
+                           select 1 from ai_provider_calls call
+                           where call.job_id = ai_jobs.job_id and call.settlement_status <> 'SETTLED'
+                       ) as has_unsettled_call
+                from ai_jobs where job_id = %s
+                for update
+                """,
+                (entry_ref["origin_job_id"],),
+            ).fetchone()
+            if not origin:
+                return False
+            cached = connection.execute(
+                """
+                select workspace_key, requester_id, ticket_id, feature, origin_job_id,
+                       expires_at as cache_expires_at, invalidated_at
+                from ai_result_cache where cache_key = %s
+                for update
+                """,
+                (cache_key,),
+            ).fetchone()
+            if not cached or cached["origin_job_id"] != origin["job_id"]:
+                return False
+            scope_matches = (
+                cached["workspace_key"] == claim.workspace_key
+                and cached["requester_id"] == claim.requester_id
+                and cached["ticket_id"] == claim.ticket_id
+                and cached["feature"] == claim.feature.value
+            )
+            origin_valid = (
+                scope_matches
+                and cached["invalidated_at"] is None
+                and cached["cache_expires_at"] > now
+                and origin["status"] == "SUCCEEDED"
+                and not origin["cancel_requested"]
+                and origin["result_ciphertext"] is not None
+                and origin["result_nonce"] is not None
+                and origin["result_expires_at"] is not None
+                and origin["result_expires_at"] > now
+                and origin["cost_microusd"] is not None
+                and not origin["has_unsettled_call"]
+            )
+            if not origin_valid:
+                connection.execute(
+                    """
+                    update ai_result_cache set invalidated_at = coalesce(invalidated_at, %s),
+                        invalidation_reason = coalesce(invalidation_reason, 'ORIGIN_INELIGIBLE')
+                    where cache_key = %s
+                    """,
+                    (now, cache_key),
+                )
+                return False
+            try:
+                plaintext = self.cipher.decrypt(
+                    bytes(origin["result_ciphertext"]),
+                    bytes(origin["result_nonce"]),
+                    str(origin["job_id"]).encode(),
+                )
+                payload = json.loads(plaintext)
+                result: TypedResult
+                if claim.feature == Feature.SUMMARY:
+                    result = SummaryResult.model_validate(payload)
+                elif claim.feature == Feature.TRIAGE:
+                    result = TriageResult.model_validate(payload)
+                else:
+                    return False
+                ciphertext, nonce = self.cipher.encrypt(
+                    result.model_dump_json().encode(), str(claim.job_id).encode()
+                )
+            except (InvalidTag, UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError):
+                connection.execute(
+                    """
+                    update ai_result_cache set invalidated_at = coalesce(invalidated_at, %s),
+                        invalidation_reason = coalesce(invalidation_reason, 'ORIGIN_INVALID')
+                    where cache_key = %s
+                    """,
+                    (now, cache_key),
+                )
+                return False
+            updated = connection.execute(
+                """
+                update ai_jobs set status = 'SUCCEEDED', phase = 'COMPLETE',
+                    result_schema_version = %s, result_ciphertext = %s, result_nonce = %s,
+                    result_expires_at = %s, model_alias = %s, actual_model = %s,
+                    prompt_version = %s, config_version = %s, source_comment_ids = %s,
+                    generated_at = %s, source_map_digest = %s, source_chunk_ids = %s,
+                    cost_microusd = 0, completed_at = %s, updated_at = %s,
+                    lease_owner = null, lease_expires_at = null, error_code = null,
+                    result_origin_job_id = %s, reuse_kind = 'EXACT_CACHE_HIT'
+                where job_id = %s and generation = %s and lease_epoch = %s and status = 'RUNNING'
+                """,
+                (
+                    origin["result_schema_version"],
+                    ciphertext,
+                    nonce,
+                    min(cached["cache_expires_at"], origin["result_expires_at"]),
+                    origin["model_alias"],
+                    origin["actual_model"],
+                    origin["prompt_version"],
+                    origin["config_version"],
+                    origin["source_comment_ids"],
+                    origin["generated_at"],
+                    origin["source_map_digest"],
+                    origin["source_chunk_ids"],
+                    now,
+                    now,
+                    origin["job_id"],
+                    claim.job_id,
+                    claim.generation,
+                    claim.lease_epoch,
+                ),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("cache completion lease lost")
+            return True
 
     def complete_needs_review(self, claim: ClaimedJob, error_code: str, cost_microusd: int | None) -> None:
         now = datetime.now(UTC)
@@ -1521,6 +1699,14 @@ class Repository:
             for row in rows:
                 connection.execute(
                     """
+                    update ai_result_cache set invalidated_at = coalesce(invalidated_at, clock_timestamp()),
+                        invalidation_reason = coalesce(invalidation_reason, 'ORIGIN_RESULT_EXPIRED')
+                    where origin_job_id = %s
+                    """,
+                    (row["job_id"],),
+                )
+                connection.execute(
+                    """
                     update ai_jobs set result_ciphertext = null, result_nonce = null,
                         result_schema_version = null, result_expires_at = null,
                         model_alias = null, actual_model = null, prompt_version = null,
@@ -1530,6 +1716,21 @@ class Repository:
                     """,
                     (row["job_id"],),
                 )
+        return len(rows)
+
+    def purge_expired_cache_entries(self, limit: int = 1000) -> int:
+        with self.database.transaction() as connection:
+            rows = connection.execute(
+                """
+                select cache_key from ai_result_cache
+                where expires_at <= clock_timestamp() or invalidated_at is not null
+                order by coalesce(invalidated_at, expires_at), cache_key
+                for update skip locked limit %s
+                """,
+                (limit,),
+            ).fetchall()
+            for row in rows:
+                connection.execute("delete from ai_result_cache where cache_key = %s", (row["cache_key"],))
         return len(rows)
 
     def purge_expired_metadata(self, limit: int = 1000) -> int:
