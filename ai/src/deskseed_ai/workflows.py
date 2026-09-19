@@ -11,8 +11,13 @@ from langgraph.graph import END, START, StateGraph
 
 from .call_receipts import ReceiptRecorder
 from .providers import GenerationProvider, ProviderResult
-from .retrieval import KnowledgeChunk, KnowledgeRepository
-from .schemas import Citation, Feature, ReplyDraftResult, ReplyProviderOutput, SourceContext
+from .retrieval import (
+    KnowledgeChunk,
+    KnowledgeRepository,
+    RetrievalQuery,
+    build_retrieval_query,
+)
+from .schemas import AuthorRole, Citation, Feature, ReplyDraftResult, ReplyProviderOutput, SourceContext
 
 
 class InvalidReplyOutputError(RuntimeError):
@@ -37,6 +42,7 @@ class ReplyState(TypedDict, total=False):
     generation: ProviderResult
     query_call_id: UUID
     query_receipt_recorder: ReceiptRecorder
+    retrieval_query: RetrievalQuery
     prepare_generation: Callable[[SourceContext, list[KnowledgeChunk]], tuple[UUID, ReceiptRecorder]]
     no_evidence: bool
     validated: bool
@@ -82,6 +88,7 @@ class ReplyWorkflow:
         workspace_key: str,
         authorize_candidates: Callable[[list[Citation]], list[Citation]],
         options: dict[str, str],
+        retrieval_query: RetrievalQuery,
         query_call_id: UUID,
         query_receipt_recorder: ReceiptRecorder,
         prepare_generation: Callable[
@@ -94,6 +101,7 @@ class ReplyWorkflow:
                 "workspace_key": workspace_key,
                 "authorize_candidates": authorize_candidates,
                 "options": options,
+                "retrieval_query": retrieval_query,
                 "query_call_id": query_call_id,
                 "query_receipt_recorder": query_receipt_recorder,
                 "prepare_generation": prepare_generation,
@@ -118,11 +126,9 @@ class ReplyWorkflow:
         return {"authorized": True}
 
     def _retrieve(self, state: ReplyState) -> dict[str, Any]:
-        context = state["context"]
-        query = reply_query(context)
         knowledge, _receipt = self.knowledge.retrieve_with_receipt(
             state["workspace_key"],
-            query,
+            state["retrieval_query"],
             state["query_call_id"],
             state["query_receipt_recorder"],
             limit=5,
@@ -243,5 +249,12 @@ def _citation_for(chunk: KnowledgeChunk) -> Citation:
     )
 
 
-def reply_query(context: SourceContext) -> str:
-    return "\n".join(comment.body for comment in context.comments)[-4000:]
+def reply_query(
+    context: SourceContext,
+    count_tokens: Callable[[str], int] | None = None,
+) -> RetrievalQuery:
+    current_problem = next(
+        (comment.body for comment in reversed(context.comments) if comment.authorRole == AuthorRole.CUSTOMER),
+        context.comments[-1].body,
+    )
+    return build_retrieval_query(current_problem, count_tokens)

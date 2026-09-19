@@ -18,7 +18,14 @@ from deskseed_ai.providers import LiteLlmGenerationProvider
 from deskseed_ai.queue import InputTooLongError, _bounded_context
 from deskseed_ai.repository import ClaimedJob, PublishedIndexGeneration
 from deskseed_ai.result_cache import exact_result_cache_key
-from deskseed_ai.retrieval import KnowledgeChunk, LiteLlmEmbeddingProvider
+from deskseed_ai.retrieval import (
+    EMBEDDING_QUERY_TOKEN_LIMIT,
+    KnowledgeChunk,
+    LiteLlmEmbeddingProvider,
+    MissingCurrentProblemError,
+    RetrievalQueryTooLongError,
+    build_retrieval_query,
+)
 from deskseed_ai.schemas import (
     AuthorRole,
     Citation,
@@ -31,7 +38,7 @@ from deskseed_ai.schemas import (
 )
 from deskseed_ai.security import authenticate_machine
 from deskseed_ai.usage_normalization import normalize_litellm_usage
-from deskseed_ai.workflows import source_map_digest
+from deskseed_ai.workflows import reply_query, source_map_digest
 
 
 def test_production_requires_explicit_machine_auth() -> None:
@@ -799,6 +806,69 @@ def test_reply_context_without_customer_preserves_latest_non_customer_role() -> 
 
     assert bounded.comments[-1].authorRole == AuthorRole.SYSTEM
     assert bounded.comments[-1].body == "최신 시스템 상태"
+
+
+def test_reply_query_uses_only_the_latest_customer_problem() -> None:
+    context = _v2_context(
+        Feature.REPLY_DRAFT,
+        [
+            (AuthorRole.CUSTOMER, "Deskseed 로그인 ERR-OLD 오류"),
+            (AuthorRole.STAFF, "비밀번호 재설정을 안내했습니다."),
+            (AuthorRole.CUSTOMER, "  Deskseed 로그인에서 ERR-42 가 계속됩니다.  "),
+            (AuthorRole.SYSTEM, "상태가 갱신되었습니다."),
+        ],
+    )
+
+    query = reply_query(context, lambda value: len(value.split()))
+
+    assert query.embedding_text == "Deskseed 로그인에서 ERR-42 가 계속됩니다."
+    assert "비밀번호" not in query.embedding_text
+    assert "상태" not in query.embedding_text
+    assert "ERR-42" in query.keyword_tokens
+    assert query.error_codes == ("ERR-42",)
+
+
+def test_reply_query_uses_last_public_comment_for_legacy_source() -> None:
+    now = datetime.now(UTC)
+    context = SourceContext(
+        jobId=uuid4(),
+        ticketId=uuid4(),
+        ticketNumber=1,
+        ticketVersion=0,
+        feature=Feature.REPLY_DRAFT,
+        requestRevision=1,
+        contextRevision="a" * 64,
+        contextPolicyVersion="public-comments-v1",
+        inputScope="PUBLIC_ONLY",
+        comments=[
+            PublicComment(id=uuid4(), body="이전 문의", createdAt=now),
+            PublicComment(id=uuid4(), body="마지막 공개 문의", createdAt=now),
+        ],
+    )
+
+    assert reply_query(context).embedding_text == "마지막 공개 문의"
+
+
+def test_retrieval_query_is_bounded_and_allows_only_literal_tokens() -> None:
+    query = build_retrieval_query(
+        "로그인\u0000 ERR-42'; DROP TABLE ai_kb_chunks; -- 결제/취소 A1.B2 "
+        + " ".join(f"word{index}" for index in range(30))
+        + " CRITICAL-999",
+        lambda value: len(value.split()),
+    )
+
+    assert len(query.keyword_tokens) == 16
+    assert all('"' not in token and "'" not in token and ";" not in token for token in query.keyword_tokens)
+    assert "ERR-42" in query.error_codes
+    assert "CRITICAL-999" in query.keyword_tokens
+    assert len(query.error_codes) <= 8
+
+
+def test_retrieval_query_rejects_empty_or_over_cap_current_problem() -> None:
+    with pytest.raises(MissingCurrentProblemError):
+        build_retrieval_query(" \u0000 \n")
+    with pytest.raises(RetrievalQueryTooLongError):
+        build_retrieval_query("핵심 질문", lambda _value: EMBEDDING_QUERY_TOKEN_LIMIT + 1)
 
 
 def _v2_context(feature: Feature, comments: list[tuple[AuthorRole, str]]) -> SourceContext:

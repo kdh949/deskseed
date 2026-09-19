@@ -15,7 +15,7 @@ REPLY_CACHE_KEY_VERSION = "result-cache-reply-v1"
 MODEL_ROUTE_VERSION = "model-route-v1"
 OUTPUT_SCHEMA_VERSION = "typed-result-v1"
 CONTEXT_BUILDER_VERSION = "public-comments-bounded-v1"
-RETRIEVAL_VERSION = "hybrid-pgvector-v1"
+RETRIEVAL_VERSION = "current-problem-rrf-v2"
 CHUNKING_VERSION = "public-kb-fixed-1800-v1"
 
 

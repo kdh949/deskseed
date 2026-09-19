@@ -32,7 +32,11 @@ from .repository import (
     StaleLeaseError,
 )
 from .result_cache import exact_result_cache_key
-from .retrieval import KnowledgeRepository
+from .retrieval import (
+    KnowledgeRepository,
+    MissingCurrentProblemError,
+    RetrievalQueryTooLongError,
+)
 from .schemas import AuthorRole, Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
 from .workflows import (
     InvalidReplyOutputError,
@@ -269,11 +273,17 @@ class StreamRuntime:
                         return
                 context = _bounded_context(context, claim.feature)
                 if claim.feature == Feature.REPLY_DRAFT:
-                    query = reply_query(context)
+                    retrieval_query = reply_query(
+                        context,
+                        lambda value: self.pricing.count_text_tokens(self.settings.embedding_model, value),
+                    )
                     query_call_id, query_recorder = self._prepare_call(
                         claim,
                         self.settings.embedding_model,
-                        self.pricing.count_text_tokens(self.settings.embedding_model, query),
+                        self.pricing.count_text_tokens(
+                            self.settings.embedding_model,
+                            retrieval_query.embedding_text,
+                        ),
                         0,
                         "QUERY_EMBEDDING",
                         shared,
@@ -305,6 +315,7 @@ class StreamRuntime:
                         claim.workspace_key,
                         lambda candidates: self.backend.authorize_citations(claim.job_id, candidates),
                         claim.options,
+                        retrieval_query,
                         query_call_id,
                         query_recorder,
                         prepare_generation,
@@ -397,8 +408,14 @@ class StreamRuntime:
                 self.repository.fail_job(claim, "BUDGET_EXCEEDED", retryable=False)
             except ProviderCallStateUnknownError:
                 self.repository.fail_job(claim, "PROVIDER_OUTCOME_UNKNOWN", retryable=False)
-            except InputTooLongError:
+            except (InputTooLongError, RetrievalQueryTooLongError):
                 self.repository.fail_job(claim, "INPUT_TOO_LONG", retryable=False)
+            except MissingCurrentProblemError:
+                self.repository.complete_needs_review(
+                    claim,
+                    "NO_APPROVED_KNOWLEDGE",
+                    self.repository.job_cost_microusd(claim.job_id),
+                )
             except InvalidProviderOutputError:
                 self.repository.complete_needs_review(
                     claim,
