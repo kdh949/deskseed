@@ -466,6 +466,31 @@ components:
       - postgres
       - redis
       title: DependencyStatus
+    EmbeddingBatchStatus:
+      properties:
+        counts:
+          additionalProperties:
+            type: integer
+            minimum: 0.0
+          type: object
+          title: Counts
+        cleanupPendingCount:
+          type: integer
+          minimum: 0.0
+          title: Cleanuppendingcount
+        oldestCleanupPendingAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Oldestcleanuppendingat
+      additionalProperties: false
+      type: object
+      required:
+      - counts
+      - cleanupPendingCount
+      - oldestCleanupPendingAt
+      title: EmbeddingBatchStatus
     Feature:
       type: string
       enum:
@@ -1123,6 +1148,8 @@ components:
           $ref: '#/components/schemas/BudgetStatus'
         index:
           $ref: '#/components/schemas/KnowledgeIndexStatus'
+        embeddingBatches:
+          $ref: '#/components/schemas/EmbeddingBatchStatus'
         deadLetterCount:
           type: integer
           minimum: 0.0
@@ -1141,6 +1168,7 @@ components:
       - sharedExecutionCounts
       - budget
       - index
+      - embeddingBatches
       - deadLetterCount
       title: ServiceStatus
     SummaryResult:

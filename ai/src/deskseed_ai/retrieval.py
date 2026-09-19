@@ -272,6 +272,108 @@ class KnowledgeRepository:
                 _parse_vector_literal(str(row["vector"]), spec.dimension)
         return True
 
+    def store_embedding_artifacts_for_batch_event(
+        self,
+        workspace_key: str,
+        article_id: UUID,
+        source_version: int,
+        event_id: UUID,
+        artifact_generation: int,
+        reconciliation_run_id: UUID,
+        artifacts: list[tuple[EmbeddingArtifactSpec, str, list[float], str]],
+    ) -> bool:
+        now = datetime.now(UTC)
+        for spec, final_input, vector, actual_model in artifacts:
+            receipt = ProviderCallReceipt(
+                call_id=event_id,
+                provider_request_id=None,
+                requested_alias=actual_model,
+                actual_model=actual_model,
+                usage_schema_version="batch-artifact-validation-v1",
+                usage_status=UsageStatus.UNAVAILABLE,
+                usage=None,
+                usage_issue_code="NOT_APPLICABLE",
+                service_tier="batch",
+                context_price_band="short",
+            )
+            _validate_new_embedding_artifact(spec, final_input, vector, receipt)
+        with self.database.transaction() as connection:
+            job = connection.execute(
+                """
+                select job.workspace_key, job.article_id, job.source_version, job.action,
+                       job.artifact_generation, job.reconciliation_run_id, job.status,
+                       job.last_error_code, run.status as run_status
+                from ai_kb_index_jobs job
+                join ai_kb_reconciliation_runs run on run.run_id = job.reconciliation_run_id
+                where job.event_id = %s for update of job, run
+                """,
+                (event_id,),
+            ).fetchone()
+            state = connection.execute(
+                """
+                select source_version, action from ai_kb_article_state
+                where workspace_key = %s and article_id = %s for update
+                """,
+                (workspace_key, article_id),
+            ).fetchone()
+            stale = bool(
+                state
+                and (
+                    state["source_version"] > source_version
+                    or (state["source_version"] == source_version and state["action"] != "UPSERT")
+                )
+            )
+            current = bool(
+                job
+                and job["workspace_key"] == workspace_key
+                and job["article_id"] == article_id
+                and job["source_version"] == source_version
+                and job["action"] == "UPSERT"
+                and job["artifact_generation"] == artifact_generation
+                and job["reconciliation_run_id"] == reconciliation_run_id
+                and job["status"] == "PENDING"
+                and job["last_error_code"] == "BATCH_PENDING"
+                and job["run_status"] in {"RUNNING", "INDEXING"}
+                and not stale
+            )
+            if not current:
+                return False
+            for spec, _, vector, actual_model in artifacts:
+                connection.execute(
+                    """
+                    insert into ai_embedding_artifacts (
+                        artifact_key, key_version, model_snapshot, embedding_dimension,
+                        normalization_version, embedding_input_sha256, actual_model,
+                        embedding, created_at, last_used_at
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s, %s)
+                    on conflict do nothing
+                    """,
+                    (
+                        spec.artifact_key,
+                        EMBEDDING_ARTIFACT_KEY_VERSION,
+                        spec.model_snapshot,
+                        spec.dimension,
+                        spec.normalization_version,
+                        spec.input_sha256,
+                        actual_model,
+                        _vector_literal(vector),
+                        now,
+                        now,
+                    ),
+                )
+                row = connection.execute(
+                    """
+                    select artifact_key, key_version, model_snapshot, embedding_dimension,
+                           normalization_version, embedding_input_sha256, embedding::text as vector
+                    from ai_embedding_artifacts where artifact_key = %s
+                    """,
+                    (spec.artifact_key,),
+                ).fetchone()
+                if row is None or not _artifact_row_matches(row, spec):
+                    raise ValueError("embedding batch artifact conflict")
+                _parse_vector_literal(str(row["vector"]), spec.dimension)
+        return True
+
     def replace_public_revision(
         self,
         workspace_key: str,

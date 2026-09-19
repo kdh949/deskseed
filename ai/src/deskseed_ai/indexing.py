@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from .backend_client import BackendClient
@@ -23,6 +24,9 @@ from .retrieval import (
 )
 from .schemas import IndexEvent
 
+if TYPE_CHECKING:
+    from .embedding_batch import EmbeddingBatchService
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -35,6 +39,7 @@ class IndexingService:
         settings: Settings,
         pricing_path: Path,
         traces: TraceAdapter,
+        embedding_batches: EmbeddingBatchService | None = None,
     ):
         self.backend = backend
         self.knowledge = knowledge
@@ -42,15 +47,20 @@ class IndexingService:
         self.settings = settings
         self.pricing = PricingCatalog(pricing_path)
         self.traces = traces
+        self.embedding_batches = embedding_batches
         self.owner = f"indexer-{uuid4()}"
 
     def process_once(self, limit: int = 10) -> int:
+        from .embedding_batch import BatchPendingError
+
         completed = 0
         for event in self.repository.claim_index_events(self.owner, limit):
             try:
                 self.process(event)
                 self.repository.mark_index_event_succeeded(event.event_id, self.owner)
                 completed += 1
+            except BatchPendingError:
+                continue
             except Exception as exception:
                 LOGGER.warning(
                     "AI knowledge indexing failed",
@@ -60,6 +70,8 @@ class IndexingService:
         return completed
 
     def cycle_once(self) -> int:
+        if self.embedding_batches is not None:
+            self.embedding_batches.progress_once()
         processed = self.process_once()
         self.reconcile_once()
         return processed
@@ -157,6 +169,13 @@ class IndexingService:
         )
         if not chunks:
             raise ConflictError("published knowledge article is empty")
+        if (
+            self.embedding_batches is not None
+            and self.embedding_batches.defer_missing(event, chunks, self.owner)
+        ):
+            from .embedding_batch import BatchPendingError
+
+            raise BatchPendingError("offline embedding batch is pending")
         if self.settings.embedding_optimization_mode == "off":
             embedded = self._embed_individually(event, chunks)
             embedding_artifacts = None
