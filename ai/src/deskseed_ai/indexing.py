@@ -9,8 +9,15 @@ from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
 from .observability import CallTraceAttributes, TraceAdapter
 from .pricing import PricingCatalog
-from .repository import ConflictError, Repository
-from .retrieval import KnowledgeRepository, chunk_public_article
+from .repository import ConflictError, IndexWorkItem, Repository
+from .retrieval import (
+    CHUNKER_VERSION,
+    EMBEDDING_DIMENSION,
+    INDEX_CONTRACT_VERSION,
+    NORMALIZATION_VERSION,
+    KnowledgeRepository,
+    build_public_article_chunks,
+)
 from .schemas import IndexEvent
 
 LOGGER = logging.getLogger(__name__)
@@ -39,14 +46,14 @@ class IndexingService:
         for event in self.repository.claim_index_events(self.owner, limit):
             try:
                 self.process(event)
-                self.repository.mark_index_event_succeeded(event.eventId, self.owner)
+                self.repository.mark_index_event_succeeded(event.event_id, self.owner)
                 completed += 1
             except Exception as exception:
                 LOGGER.warning(
                     "AI knowledge indexing failed",
-                    extra={"event_id": str(event.eventId), "error": type(exception).__name__},
+                    extra={"event_id": str(event.event_id), "error": type(exception).__name__},
                 )
-                self.repository.release_index_event(event.eventId, self.owner, type(exception).__name__.upper())
+                self.repository.release_index_event(event.event_id, self.owner, type(exception).__name__.upper())
         return completed
 
     def cycle_once(self) -> int:
@@ -82,7 +89,8 @@ class IndexingService:
                     schemaVersion=1,
                     eventId=uuid5(
                         NAMESPACE_URL,
-                        f"deskseed:kb:{workspace_key}:{item.articleId}:{item.revisionId}:{item.publicRevision}",
+                        f"deskseed:kb-build:{run.run_id}:{run.target_artifact_generation}:"
+                        f"{item.articleId}:{item.revisionId}:{item.publicRevision}:{INDEX_CONTRACT_VERSION}",
                     ),
                     workspaceKey=workspace_key,
                     articleId=item.articleId,
@@ -92,7 +100,7 @@ class IndexingService:
                     publicRevision=item.publicRevision,
                     createdAt=item.publishedAt,
                 )
-                self.repository.accept_index_event(event)
+                self.repository.accept_reconciliation_index_event(run, event)
             return self.repository.record_reconciliation_page(
                 run,
                 [
@@ -116,36 +124,47 @@ class IndexingService:
             page.snapshotToken,
             page.expiresAt,
             getattr(page, "canonicalPublicCorpusRevision", None),
+            INDEX_CONTRACT_VERSION,
+            CHUNKER_VERSION,
+            NORMALIZATION_VERSION,
+            self.settings.embedding_model,
+            EMBEDDING_DIMENSION,
         ):
             return None
         return self.repository.current_reconciliation(workspace_key)
 
-    def process(self, event: IndexEvent) -> int:
+    def process(self, event: IndexWorkItem) -> int:
         if event.action == "DELETE":
             return 0
-        article = self.backend.read_public_article(event.articleId, event.revisionId, event.eventId)
+        article = self.backend.read_public_article(event.article_id, event.revision_id, event.event_id)
         if article.dataClass != "PUBLIC_KB_ONLY":
             raise ConflictError("knowledge source data class is not PUBLIC_KB_ONLY")
-        if article.articleId != event.articleId or article.revisionId != event.revisionId:
+        if article.articleId != event.article_id or article.revisionId != event.revision_id:
             raise ConflictError("knowledge source binding mismatch")
-        if article.sourceVersion != event.sourceVersion:
+        if article.sourceVersion != event.source_version:
             raise ConflictError("knowledge source version mismatch")
-        if article.publicRevision != event.publicRevision:
+        if article.publicRevision != event.public_revision:
             raise ConflictError("knowledge source revision mismatch")
-        chunks = chunk_public_article(article.body)
+        chunks = build_public_article_chunks(
+            article.title,
+            article.categoryTitle,
+            article.sectionTitle,
+            article.body,
+            lambda value: self.pricing.count_text_tokens(self.settings.embedding_model, value),
+        )
         if not chunks:
             raise ConflictError("published knowledge article is empty")
         embedded = []
         for ordinal, chunk in enumerate(chunks):
             call_id = uuid4()
             reservation = self.repository.reserve_system_budget(
-                event.workspaceKey,
-                f"index:{event.eventId}:{ordinal}",
+                event.workspace_key,
+                f"index:{event.artifact_generation}:{event.event_id}:{ordinal}",
                 self.settings.embedding_model,
                 self.pricing.version,
                 self.pricing.upper_bound_microusd(
                     self.settings.embedding_model,
-                    self.pricing.count_text_tokens(self.settings.embedding_model, chunk),
+                    self.pricing.count_text_tokens(self.settings.embedding_model, chunk.embedding_input),
                 ),
             )
             self.repository.create_provider_call(
@@ -159,7 +178,7 @@ class IndexingService:
             self.repository.mark_provider_call_dispatching(call_id)
             try:
                 result = self.knowledge.embed_text(
-                    chunk,
+                    chunk.embedding_input,
                     call_id,
                     self._receipt_recorder(call_id, reservation),
                 )
@@ -168,15 +187,20 @@ class IndexingService:
                 self.repository.mark_provider_call_unknown(call_id)
                 raise
         tokens, _ = self.knowledge.replace_public_revision_with_vectors(
-            event.workspaceKey,
+            event.workspace_key,
             article.articleId,
             article.revisionId,
-            event.sourceVersion,
-            event.eventId,
+            event.source_version,
+            event.event_id,
             article.slug,
             article.title,
             article.publicRevision,
             embedded,
+            artifact_generation=event.artifact_generation,
+            category_title=article.categoryTitle,
+            section_title=article.sectionTitle,
+            reconciliation_run_id=event.reconciliation_run_id,
+            lease_owner=self.owner,
         )
         return tokens
 

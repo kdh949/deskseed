@@ -24,6 +24,7 @@ from deskseed_ai.retrieval import (
     LiteLlmEmbeddingProvider,
     MissingCurrentProblemError,
     RetrievalQueryTooLongError,
+    build_public_article_chunks,
     build_retrieval_query,
 )
 from deskseed_ai.schemas import (
@@ -209,7 +210,9 @@ def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
     reply_claim = replace(claim, feature=Feature.REPLY_DRAFT, input_policy_version="reply-input-v1")
     assert exact_result_cache_key(reply_claim, policy, settings.model_standard, settings) is None
     reply_policy = policy.model_copy(update={"canonicalPublicCorpusRevision": 9})
-    published_index = PublishedIndexGeneration(generation=4, canonical_corpus_revision=9)
+    published_index = PublishedIndexGeneration(
+        generation=4, canonical_corpus_revision=9, artifact_generation=3
+    )
     reply_key = exact_result_cache_key(
         reply_claim,
         reply_policy,
@@ -224,14 +227,14 @@ def test_exact_result_cache_key_is_server_scoped_and_versioned() -> None:
         reply_policy,
         settings.model_standard,
         settings,
-        PublishedIndexGeneration(generation=4, canonical_corpus_revision=8),
+        PublishedIndexGeneration(generation=4, canonical_corpus_revision=8, artifact_generation=3),
     ) is None
     assert exact_result_cache_key(
         reply_claim,
         reply_policy,
         settings.model_standard,
         settings,
-        PublishedIndexGeneration(generation=5, canonical_corpus_revision=9),
+        PublishedIndexGeneration(generation=5, canonical_corpus_revision=9, artifact_generation=3),
     ) != reply_key
 
 
@@ -869,6 +872,45 @@ def test_retrieval_query_rejects_empty_or_over_cap_current_problem() -> None:
         build_retrieval_query(" \u0000 \n")
     with pytest.raises(RetrievalQueryTooLongError):
         build_retrieval_query("핵심 질문", lambda _value: EMBEDDING_QUERY_TOKEN_LIMIT + 1)
+
+
+def test_section_chunker_preserves_public_structure_and_bounds_embedding_input() -> None:
+    def count_tokens(value: str) -> int:
+        return len(value.split())
+
+    body = (
+        "환불 조건은 결제 후 7일 이내입니다. 단, 사용한 상품은 제외합니다.\n\n"
+        "항목 | 기준\n기간 | 7일\n예외 | 사용 상품\n\n"
+        + " ".join(f"긴문장{index}" for index in range(80))
+        + "\u0000"
+    )
+
+    chunks = build_public_article_chunks(
+        " 환불\u00a0정책 ",
+        " 고객 지원 ",
+        " 결제와 환불 ",
+        body,
+        count_tokens,
+        max_tokens=32,
+    )
+
+    assert len(chunks) > 2
+    assert "환불 조건은 결제 후 7일 이내입니다. 단, 사용한 상품은 제외합니다." in chunks[0].body
+    assert "항목 | 기준\n기간 | 7일\n예외 | 사용 상품" in chunks[0].body
+    assert all(count_tokens(chunk.embedding_input) <= 32 for chunk in chunks)
+    assert all("Document title: 환불 정책" in chunk.embedding_input for chunk in chunks)
+    assert all("Category: 고객 지원" in chunk.embedding_input for chunk in chunks)
+    assert all("Section: 결제와 환불" in chunk.embedding_input for chunk in chunks)
+    assert all("Document title:" not in chunk.body for chunk in chunks)
+    assert all("\u0000" not in chunk.body for chunk in chunks)
+    assert chunks == build_public_article_chunks(
+        " 환불\u00a0정책 ",
+        " 고객 지원 ",
+        " 결제와 환불 ",
+        body,
+        count_tokens,
+        max_tokens=32,
+    )
 
 
 def _v2_context(feature: Feature, comments: list[tuple[AuthorRole, str]]) -> SourceContext:

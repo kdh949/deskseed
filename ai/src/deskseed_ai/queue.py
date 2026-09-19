@@ -216,6 +216,14 @@ class StreamRuntime:
                 if model not in {policy.fastModelAlias, policy.standardModelAlias}:
                     raise BackendPolicyDisabledError("configured model alias differs from backend policy")
                 published_index = self.repository.current_published_index_generation(claim.workspace_key)
+                if claim.feature == Feature.REPLY_DRAFT and (
+                    published_index is None
+                    or getattr(policy, "canonicalPublicCorpusRevision", None) is None
+                    or published_index.canonical_corpus_revision
+                    != policy.canonicalPublicCorpusRevision
+                ):
+                    self.repository.complete_needs_review(claim, "KNOWLEDGE_INDEX_NOT_READY", 0)
+                    return
                 cache_key = exact_result_cache_key(claim, policy, model, self.settings, published_index)
                 if cache_key is not None:
                     current = self.backend.read_context_revision(claim.job_id)

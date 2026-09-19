@@ -212,6 +212,8 @@ class AdminKnowledgeIntegrationTest {
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.dataClass").value("PUBLIC_KB_ONLY"))
             .andExpect(jsonPath("$.sourceVersion").value(2))
+            .andExpect(jsonPath("$.categoryTitle").value("결제와 청구"))
+            .andExpect(jsonPath("$.sectionTitle").value("결제 오류"))
             .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("카드 정보를 다시 확인하세요")))
         assertThat(
             jdbc.queryForObject(

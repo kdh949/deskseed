@@ -24,6 +24,8 @@ data class AiPublicKnowledgeArticle(
     val revisionId: UUID,
     val slug: String,
     val title: String,
+    val categoryTitle: String,
+    val sectionTitle: String,
     val body: String,
     val sourceVersion: Long,
     val publicRevision: String,

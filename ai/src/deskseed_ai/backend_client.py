@@ -176,6 +176,8 @@ class PublicKnowledgeArticle(BaseModel):
     revisionId: UUID
     slug: str
     title: str
+    categoryTitle: str
+    sectionTitle: str
     body: str
     sourceVersion: int
     publicRevision: str

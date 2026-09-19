@@ -22,6 +22,11 @@ EVIDENCE_LIMIT = 5
 EMBEDDING_QUERY_TOKEN_LIMIT = 2_048
 KEYWORD_TOKEN_LIMIT = 16
 ERROR_CODE_LIMIT = 8
+INDEX_CONTRACT_VERSION = "public-kb-artifact-v2"
+CHUNKER_VERSION = "section-block-v2"
+NORMALIZATION_VERSION = "public-text-nfkc-v2"
+EMBEDDING_DIMENSION = 1536
+EMBEDDING_INPUT_TOKEN_LIMIT = 512
 
 _KEYWORD_TOKEN = re.compile(r"[^\W_][\w./-]{1,63}", re.UNICODE)
 
@@ -51,6 +56,13 @@ class KnowledgeChunk:
     content: str
     score: float
     ordinal: int = 0
+
+
+@dataclass(frozen=True)
+class PreparedKnowledgeChunk:
+    body: str
+    embedding_input: str
+    search_text: str
 
 
 @dataclass(frozen=True)
@@ -146,6 +158,12 @@ class KnowledgeRepository:
         title: str,
         public_revision: str,
         chunks: list[str],
+        *,
+        artifact_generation: int = 1,
+        category_title: str = "PUBLIC",
+        section_title: str = "PUBLIC",
+        reconciliation_run_id: UUID | None = None,
+        lease_owner: str | None = None,
     ) -> tuple[int, bool]:
         embedded_results = [self.embeddings.embed(text, uuid4(), lambda _receipt: None) for text in chunks]
         embedded = [(text, result.vector, result.receipt) for text, result in zip(chunks, embedded_results)]
@@ -159,6 +177,11 @@ class KnowledgeRepository:
             title,
             public_revision,
             embedded,
+            artifact_generation=artifact_generation,
+            category_title=category_title,
+            section_title=section_title,
+            reconciliation_run_id=reconciliation_run_id,
+            lease_owner=lease_owner,
         )
 
     def replace_public_revision_with_vectors(
@@ -171,54 +194,109 @@ class KnowledgeRepository:
         slug: str,
         title: str,
         public_revision: str,
-        embedded: list[tuple[str, list[float], ProviderCallReceipt]],
+        embedded: list[tuple[str | PreparedKnowledgeChunk, list[float], ProviderCallReceipt]],
+        *,
+        artifact_generation: int = 1,
+        category_title: str = "PUBLIC",
+        section_title: str = "PUBLIC",
+        reconciliation_run_id: UUID | None = None,
+        lease_owner: str | None = None,
     ) -> tuple[int, bool]:
         now = datetime.now(UTC)
         with self.database.transaction() as connection:
-            state = connection.execute(
-                """
-                select source_version, action, event_id from ai_kb_article_state
-                where workspace_key = %s and article_id = %s for update
-                """,
-                (workspace_key, article_id),
-            ).fetchone()
-            if (
-                not state
-                or state["source_version"] != source_version
-                or state["action"] != "UPSERT"
-                or state["event_id"] != event_id
-            ):
+            if reconciliation_run_id is None:
+                state = connection.execute(
+                    """
+                    select source_version, action, event_id from ai_kb_article_state
+                    where workspace_key = %s and article_id = %s for update
+                    """,
+                    (workspace_key, article_id),
+                ).fetchone()
+                applicable = bool(
+                    state
+                    and state["source_version"] == source_version
+                    and state["action"] == "UPSERT"
+                    and state["event_id"] == event_id
+                )
+            else:
+                job = connection.execute(
+                    """
+                    select source_version, action, artifact_generation, reconciliation_run_id,
+                           status, lease_owner
+                    from ai_kb_index_jobs where event_id = %s for update
+                    """,
+                    (event_id,),
+                ).fetchone()
+                applicable = bool(
+                    job
+                    and job["source_version"] == source_version
+                    and job["action"] == "UPSERT"
+                    and job["artifact_generation"] == artifact_generation
+                    and job["reconciliation_run_id"] == reconciliation_run_id
+                    and job["status"] == "LEASED"
+                    and job["lease_owner"] == lease_owner
+                )
+            if not applicable:
                 return _known_input_tokens(embedded), False
             connection.execute(
-                "update ai_kb_revisions set status = 'DELETED', deleted_at = %s where workspace_key = %s and article_id = %s",
-                (now, workspace_key, article_id),
+                "delete from ai_kb_revisions where workspace_key = %s and artifact_generation = %s and article_id = %s",
+                (workspace_key, artifact_generation, article_id),
             )
             connection.execute(
                 """
                 insert into ai_kb_revisions (
-                    article_id, revision_id, workspace_key, slug, title, public_revision, status, indexed_at
-                ) values (%s, %s, %s, %s, %s, %s, 'PUBLIC', %s)
-                on conflict (article_id, revision_id) do update set
-                    slug = excluded.slug, title = excluded.title, public_revision = excluded.public_revision,
+                    article_id, revision_id, workspace_key, artifact_generation, slug, title,
+                    category_title, section_title, public_revision, status, indexed_at
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'PUBLIC', %s)
+                on conflict (workspace_key, artifact_generation, article_id, revision_id) do update set
+                    slug = excluded.slug, title = excluded.title,
+                    category_title = excluded.category_title, section_title = excluded.section_title,
+                    public_revision = excluded.public_revision,
                     status = 'PUBLIC', indexed_at = excluded.indexed_at, deleted_at = null
                 """,
-                (article_id, revision_id, workspace_key, slug, title, public_revision, now),
+                (
+                    article_id,
+                    revision_id,
+                    workspace_key,
+                    artifact_generation,
+                    slug,
+                    title,
+                    category_title,
+                    section_title,
+                    public_revision,
+                    now,
+                ),
             )
-            connection.execute(
-                "delete from ai_kb_chunks where workspace_key = %s and article_id = %s",
-                (workspace_key, article_id),
-            )
-            for ordinal, (content, vector, _) in enumerate(embedded):
+            for ordinal, (prepared_or_content, vector, _) in enumerate(embedded):
+                if isinstance(prepared_or_content, PreparedKnowledgeChunk):
+                    content = prepared_or_content.body
+                    search_text = prepared_or_content.search_text
+                    embedding_input = prepared_or_content.embedding_input
+                else:
+                    content = prepared_or_content
+                    search_text = "\n".join((title, category_title, section_title, content))
+                    embedding_input = content
                 connection.execute(
                     """
                     insert into ai_kb_chunks (
-                        chunk_id, article_id, revision_id, workspace_key, ordinal, content,
-                        content_sha256, embedding, indexed_at
-                    ) values (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
+                        chunk_id, article_id, revision_id, workspace_key, artifact_generation,
+                        ordinal, content, search_text, content_sha256, embedding_input_sha256,
+                        embedding, indexed_at
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
                     """,
                     (
-                        uuid4(), article_id, revision_id, workspace_key, ordinal, content,
-                        hashlib.sha256(content.encode()).hexdigest(), _vector_literal(vector), now,
+                        uuid4(),
+                        article_id,
+                        revision_id,
+                        workspace_key,
+                        artifact_generation,
+                        ordinal,
+                        content,
+                        search_text,
+                        hashlib.sha256(content.encode()).hexdigest(),
+                        hashlib.sha256(embedding_input.encode()).hexdigest(),
+                        _vector_literal(vector),
+                        now,
                     ),
                 )
         return _known_input_tokens(embedded), True
@@ -267,6 +345,13 @@ class KnowledgeRepository:
         with self.database.connection() as connection, connection.transaction():
             connection.execute("set transaction isolation level repeatable read, read only")
             connection.execute("set local hnsw.iterative_scan = 'strict_order'")
+            published = connection.execute(
+                "select artifact_generation from ai_kb_published_generations where workspace_key = %s",
+                (workspace_key,),
+            ).fetchone()
+            if published is None:
+                return []
+            artifact_generation = published["artifact_generation"]
             vector_rows = connection.execute(
                 """
                 select chunk.chunk_id, chunk.article_id, chunk.revision_id, revision.title, revision.slug,
@@ -274,14 +359,18 @@ class KnowledgeRepository:
                        (chunk.embedding <=> %s::vector)::double precision as distance
                 from ai_kb_chunks chunk
                 join ai_kb_revisions revision
-                  on revision.article_id = chunk.article_id and revision.revision_id = chunk.revision_id
-                where chunk.workspace_key = %s and revision.status = 'PUBLIC'
+                  on revision.workspace_key = chunk.workspace_key
+                 and revision.artifact_generation = chunk.artifact_generation
+                 and revision.article_id = chunk.article_id and revision.revision_id = chunk.revision_id
+                where chunk.workspace_key = %s and chunk.artifact_generation = %s
+                  and revision.status = 'PUBLIC'
                 order by chunk.embedding <=> %s::vector, chunk.chunk_id
                 limit %s
                 """,
                 (
                     vector_literal,
                     workspace_key,
+                    artifact_generation,
                     vector_literal,
                     VECTOR_CANDIDATE_LIMIT,
                 ),
@@ -294,7 +383,7 @@ class KnowledgeRepository:
                     select chunk.chunk_id, chunk.article_id, chunk.revision_id,
                            revision.title, revision.slug, chunk.content, chunk.ordinal,
                            ts_rank_cd(
-                               to_tsvector('simple', chunk.content),
+                               to_tsvector('simple', chunk.search_text),
                                websearch_to_tsquery('simple', %s)
                            )::double precision + (
                                select count(*)::double precision
@@ -302,7 +391,7 @@ class KnowledgeRepository:
                                where exists (
                                    select 1
                                    from regexp_split_to_table(
-                                       chunk.content,
+                                       chunk.search_text,
                                        '[^[:alnum:]_./-]+'
                                    ) as content_token
                                    where upper(content_token) = upper(error_code)
@@ -310,11 +399,14 @@ class KnowledgeRepository:
                            ) as keyword_score
                     from ai_kb_chunks chunk
                     join ai_kb_revisions revision
-                      on revision.article_id = chunk.article_id
+                      on revision.workspace_key = chunk.workspace_key
+                     and revision.artifact_generation = chunk.artifact_generation
+                     and revision.article_id = chunk.article_id
                      and revision.revision_id = chunk.revision_id
                     where chunk.workspace_key = %s
+                      and chunk.artifact_generation = %s
                       and revision.status = 'PUBLIC'
-                      and to_tsvector('simple', chunk.content)
+                      and to_tsvector('simple', chunk.search_text)
                           @@ websearch_to_tsquery('simple', %s)
                     order by keyword_score desc, chunk.chunk_id
                     limit %s
@@ -323,6 +415,7 @@ class KnowledgeRepository:
                         websearch_query,
                         list(query.error_codes),
                         workspace_key,
+                        artifact_generation,
                         websearch_query,
                         KEYWORD_CANDIDATE_LIMIT,
                     ),
@@ -458,8 +551,57 @@ def _uuid_value(row: dict[str, object], key: str) -> UUID:
     return candidate
 
 
+def build_public_article_chunks(
+    title: str,
+    category_title: str,
+    section_title: str,
+    body: str,
+    count_tokens: Callable[[str], int],
+    max_tokens: int = EMBEDDING_INPUT_TOKEN_LIMIT,
+) -> list[PreparedKnowledgeChunk]:
+    normalized_title = _normalize_public_text(title, preserve_blank_lines=False)
+    normalized_category = _normalize_public_text(category_title, preserve_blank_lines=False)
+    normalized_section = _normalize_public_text(section_title, preserve_blank_lines=False)
+    normalized_body = _normalize_public_text(body, preserve_blank_lines=True)
+    if not all((normalized_title, normalized_category, normalized_section, normalized_body)):
+        return []
+    prefix = (
+        f"Document title: {normalized_title}\n"
+        f"Category: {normalized_category}\n"
+        f"Section: {normalized_section}\n"
+        "Body:\n"
+    )
+    if count_tokens(prefix) >= max_tokens:
+        raise ValueError("knowledge title metadata exceeds embedding token limit")
+    blocks = [block.strip() for block in re.split(r"\n{2,}", normalized_body) if block.strip()]
+    packed: list[str] = []
+    current = ""
+    for block in blocks:
+        for unit in _split_oversized_block(block, prefix, count_tokens, max_tokens):
+            candidate = unit if not current else f"{current}\n\n{unit}"
+            if count_tokens(prefix + candidate) <= max_tokens:
+                current = candidate
+                continue
+            if current:
+                packed.append(current)
+            current = unit
+    if current:
+        packed.append(current)
+    return [
+        PreparedKnowledgeChunk(
+            body=chunk,
+            embedding_input=prefix + chunk,
+            search_text="\n".join(
+                (normalized_title, normalized_category, normalized_section, chunk)
+            ),
+        )
+        for chunk in packed
+    ]
+
+
 def chunk_public_article(body: str, max_chars: int = 1200, overlap: int = 120) -> list[str]:
-    normalized = "\n".join(line.strip() for line in body.splitlines() if line.strip())
+    """Legacy fixed-character helper retained only for migration/regression fixtures."""
+    normalized = _normalize_public_text(body, preserve_blank_lines=False)
     if not normalized:
         return []
     chunks: list[str] = []
@@ -477,11 +619,108 @@ def chunk_public_article(body: str, max_chars: int = 1200, overlap: int = 120) -
     return chunks
 
 
+def _normalize_public_text(value: str, preserve_blank_lines: bool) -> str:
+    normalized = unicodedata.normalize("NFKC", value.replace("\r\n", "\n").replace("\r", "\n"))
+    normalized = "".join(
+        character
+        for character in normalized
+        if character in {"\n", "\t"} or not unicodedata.category(character).startswith("C")
+    )
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in normalized.split("\n")]
+    if not preserve_blank_lines:
+        return "\n".join(line for line in lines if line)
+    result: list[str] = []
+    blank = False
+    for line in lines:
+        if line:
+            result.append(line)
+            blank = False
+        elif result and not blank:
+            result.append("")
+            blank = True
+    return "\n".join(result).strip()
+
+
+def _split_oversized_block(
+    block: str,
+    prefix: str,
+    count_tokens: Callable[[str], int],
+    max_tokens: int,
+) -> list[str]:
+    if count_tokens(prefix + block) <= max_tokens:
+        return [block]
+    lines = block.splitlines()
+    if len(lines) > 1:
+        units: list[str] = []
+        current = ""
+        for line in lines:
+            candidate = line if not current else f"{current}\n{line}"
+            if count_tokens(prefix + candidate) <= max_tokens:
+                current = candidate
+                continue
+            if current:
+                units.extend(_split_oversized_block(current, prefix, count_tokens, max_tokens))
+            current = line
+        if current:
+            units.extend(_split_oversized_block(current, prefix, count_tokens, max_tokens))
+        return units
+    sentences = [item.strip() for item in re.split(r"(?<=[.!?。！？])\s+", block) if item.strip()]
+    if len(sentences) > 1:
+        units = []
+        current = ""
+        for sentence in sentences:
+            candidate = sentence if not current else f"{current} {sentence}"
+            if count_tokens(prefix + candidate) <= max_tokens:
+                current = candidate
+                continue
+            if current:
+                units.extend(_split_oversized_block(current, prefix, count_tokens, max_tokens))
+            current = sentence
+        if current:
+            units.extend(_split_oversized_block(current, prefix, count_tokens, max_tokens))
+        return units
+    return _split_text_to_token_bound(block, prefix, count_tokens, max_tokens)
+
+
+def _split_text_to_token_bound(
+    text: str,
+    prefix: str,
+    count_tokens: Callable[[str], int],
+    max_tokens: int,
+) -> list[str]:
+    remaining = text.strip()
+    result: list[str] = []
+    while remaining:
+        low, high = 1, len(remaining)
+        best = 0
+        while low <= high:
+            middle = (low + high) // 2
+            if count_tokens(prefix + remaining[:middle]) <= max_tokens:
+                best = middle
+                low = middle + 1
+            else:
+                high = middle - 1
+        if best == 0:
+            raise ValueError("knowledge content cannot fit embedding token limit")
+        if best < len(remaining):
+            whitespace = remaining.rfind(" ", 0, best + 1)
+            if whitespace >= max(1, best // 2):
+                best = whitespace
+        part = remaining[:best].strip()
+        if not part:
+            raise ValueError("knowledge content split made no progress")
+        result.append(part)
+        remaining = remaining[best:].strip()
+    return result
+
+
 def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(f"{value:.8f}" for value in vector) + "]"
 
 
-def _known_input_tokens(embedded: list[tuple[str, list[float], ProviderCallReceipt]]) -> int:
+def _known_input_tokens(
+    embedded: list[tuple[str | PreparedKnowledgeChunk, list[float], ProviderCallReceipt]],
+) -> int:
     return sum(
         receipt.usage.input_total_tokens
         for _, _, receipt in embedded
