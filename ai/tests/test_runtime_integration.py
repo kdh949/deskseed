@@ -34,6 +34,7 @@ from deskseed_ai.repository import (
     Repository,
     StaleLeaseError,
 )
+from deskseed_ai.result_cache import exact_result_cache_key
 from deskseed_ai.retrieval import FakeEmbeddingProvider, KnowledgeRepository, chunk_public_article
 from deskseed_ai.schemas import (
     CancellationEnvelope,
@@ -117,6 +118,17 @@ def cache_enabled(settings: Settings) -> Settings:
         settings.model_dump()
         | {
             "exact_result_cache_mode": "test",
+            "result_cache_key_secret": "synthetic-cache-key-secret-at-least-32-bytes",
+        }
+    )
+
+
+def shared_execution_enabled(settings: Settings) -> Settings:
+    return Settings.model_validate(
+        settings.model_dump()
+        | {
+            "exact_result_cache_mode": "test",
+            "shared_execution_mode": "test",
             "result_cache_key_secret": "synthetic-cache-key-secret-at-least-32-bytes",
         }
     )
@@ -327,6 +339,408 @@ def test_exact_result_cache_reencrypts_completed_result_without_second_provider_
             bytes(by_job[consumer.jobId]["result_nonce"]),
             str(origin.jobId).encode(),
         )
+
+
+@pytest.mark.integration
+def test_shared_execution_joins_twenty_jobs_and_runs_provider_once(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    origin = envelope_v2(Feature.SUMMARY)
+    items = [origin, *(matching_v2_job(origin) for _ in range(19))]
+    for item in items:
+        repository.accept_job(item)
+    claims = [
+        repository.claim_job(item.jobId, 1, f"join-{index}")
+        for index, item in enumerate(items)
+    ]
+    assert all(claim is not None for claim in claims)
+    typed_claims = [claim for claim in claims if claim is not None]
+    policy = StaticBackend(origin).read_policy(Feature.SUMMARY.value)
+    cache_key = exact_result_cache_key(
+        typed_claims[0], policy, enabled.model_fast, enabled, None
+    )
+    assert cache_key is not None
+
+    def join(claim):
+        return repository.claim_shared_execution(claim, cache_key.digest, cache_key.version)
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        joined = list(executor.map(join, typed_claims))
+    assert [item.disposition for item in joined].count("LEADER") == 1
+    assert [item.disposition for item in joined].count("WAITING") == 19
+
+    leader_index = next(index for index, item in enumerate(joined) if item.disposition == "LEADER")
+    leader = typed_claims[leader_index]
+    runtime_for(repository, enabled, StaticBackend(items[leader_index]))._execute(leader, None)
+
+    for index, item in enumerate(items):
+        if index == leader_index:
+            continue
+        follower = repository.claim_job(item.jobId, 2, f"wake-{index}")
+        assert follower is not None
+        runtime_for(repository, enabled, StaticBackend(item))._execute(follower, None)
+
+    receipts = [repository.get_job(item.jobId) for item in items]
+    assert all(receipt.status == JobStatus.SUCCEEDED for receipt in receipts)
+    assert sum(receipt.costMicrousd == 0 for receipt in receipts) == 19
+    with repository.database.connection() as connection:
+        execution = connection.execute(
+            "select status, phase from ai_shared_executions"
+        ).fetchone()
+        consumers = connection.execute(
+            "select state, count(*) as count from ai_execution_consumers group by state"
+        ).fetchall()
+        calls = connection.execute(
+            "select count(*) as count, count(distinct execution_id) as executions from ai_provider_calls"
+        ).fetchone()
+    assert execution == {"status": "SUCCEEDED", "phase": "COMPLETE"}
+    assert consumers == [{"state": "COMPLETED", "count": 20}]
+    assert calls == {"count": 1, "executions": 1}
+
+
+@pytest.mark.integration
+def test_shared_reply_execution_runs_each_provider_stage_once_and_reencrypts_followers(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    index_public_chunks(repository, 1)
+    publish_current_index_generation(repository, canonical_corpus_revision=7)
+    origin = envelope_v2(Feature.REPLY_DRAFT)
+    items = [origin, *(matching_v2_job(origin) for _ in range(19))]
+    for item in items:
+        repository.accept_job(item)
+    claims = [
+        repository.claim_job(item.jobId, 1, f"reply-join-{index}")
+        for index, item in enumerate(items)
+    ]
+    assert all(claim is not None for claim in claims)
+    typed_claims = [claim for claim in claims if claim is not None]
+    published = repository.current_published_index_generation(origin.workspaceKey)
+    cache_key = exact_result_cache_key(
+        typed_claims[0],
+        StaticBackend(origin).read_policy(Feature.REPLY_DRAFT.value),
+        enabled.model_standard,
+        enabled,
+        published,
+    )
+    assert cache_key is not None
+
+    def join(claim):
+        return repository.claim_shared_execution(claim, cache_key.digest, cache_key.version)
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        joined = list(executor.map(join, typed_claims))
+    leader_index = next(index for index, item in enumerate(joined) if item.disposition == "LEADER")
+    runtime_for(repository, enabled, StaticBackend(items[leader_index]))._execute(
+        typed_claims[leader_index], None
+    )
+    for index, item in enumerate(items):
+        if index == leader_index:
+            continue
+        follower = repository.claim_job(item.jobId, 2, f"reply-wake-{index}")
+        assert follower is not None
+        runtime_for(repository, enabled, StaticBackend(item))._execute(follower, None)
+
+    with repository.database.connection() as connection:
+        stages = connection.execute(
+            "select stage, count(*) as count from ai_provider_calls group by stage order by stage"
+        ).fetchall()
+        jobs = connection.execute(
+            """
+            select count(*) as count, count(distinct result_ciphertext) as ciphertexts,
+                   count(*) filter (where cost_microusd = 0) as zero_cost
+            from ai_jobs where feature = 'ticket.reply_draft' and status = 'SUCCEEDED'
+            """
+        ).fetchone()
+    assert stages == [
+        {"stage": "GENERATION", "count": 1},
+        {"stage": "QUERY_EMBEDDING", "count": 1},
+    ]
+    assert jobs == {"count": 20, "ciphertexts": 20, "zero_cost": 19}
+
+
+@pytest.mark.integration
+def test_shared_reply_no_evidence_wakes_all_consumers_without_generation(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    index_public_chunks(repository, 1)
+    publish_current_index_generation(repository, canonical_corpus_revision=7)
+    leader_item = envelope_v2(Feature.REPLY_DRAFT)
+    follower_item = matching_v2_job(leader_item)
+
+    class NoEvidenceBackend(StaticBackend):
+        def authorize_citations(self, job_id, citations):
+            return []
+
+    for item in (leader_item, follower_item):
+        repository.accept_job(item)
+    leader = repository.claim_job(leader_item.jobId, 1, "leader")
+    follower = repository.claim_job(follower_item.jobId, 1, "follower")
+    assert leader is not None and follower is not None
+    cache_key = exact_result_cache_key(
+        leader,
+        NoEvidenceBackend(leader_item).read_policy(Feature.REPLY_DRAFT.value),
+        enabled.model_standard,
+        enabled,
+        repository.current_published_index_generation(leader_item.workspaceKey),
+    )
+    assert cache_key is not None
+    repository.claim_shared_execution(leader, cache_key.digest, cache_key.version)
+    repository.claim_shared_execution(follower, cache_key.digest, cache_key.version)
+    runtime_for(repository, enabled, NoEvidenceBackend(leader_item))._execute(leader, None)
+    awakened = repository.claim_job(follower_item.jobId, 2, "awakened")
+    assert awakened is not None
+    runtime_for(repository, enabled, NoEvidenceBackend(follower_item))._execute(awakened, None)
+
+    for item in (leader_item, follower_item):
+        receipt = repository.get_job(item.jobId)
+        assert receipt.status == JobStatus.NEEDS_REVIEW
+        assert receipt.errorCode == "NO_APPROVED_KNOWLEDGE"
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select stage, count(*) as count from ai_provider_calls group by stage"
+        ).fetchall()
+    assert calls == [{"stage": "QUERY_EMBEDDING", "count": 1}]
+
+
+@pytest.mark.integration
+def test_shared_execution_promotes_waiter_when_leader_is_cancelled_before_provider(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    leader_item = envelope_v2(Feature.SUMMARY)
+    follower_item = matching_v2_job(leader_item)
+    for item in (leader_item, follower_item):
+        repository.accept_job(item)
+    leader = repository.claim_job(leader_item.jobId, 1, "leader")
+    follower = repository.claim_job(follower_item.jobId, 1, "follower")
+    assert leader is not None and follower is not None
+    cache_key = exact_result_cache_key(
+        leader,
+        StaticBackend(leader_item).read_policy(Feature.SUMMARY.value),
+        enabled.model_fast,
+        enabled,
+        None,
+    )
+    assert cache_key is not None
+    assert repository.claim_shared_execution(
+        leader, cache_key.digest, cache_key.version
+    ).disposition == "LEADER"
+    assert repository.claim_shared_execution(
+        follower, cache_key.digest, cache_key.version
+    ).disposition == "WAITING"
+
+    repository.cancel(
+        CancellationEnvelope(
+            schemaVersion=1,
+            eventId=uuid4(),
+            jobId=leader_item.jobId,
+            workspaceKey=leader_item.workspaceKey,
+            requestRevision=2,
+            createdAt=datetime.now(UTC),
+        )
+    )
+    promoted = repository.claim_job(follower_item.jobId, 2, "promoted")
+    assert promoted is not None
+    runtime_for(repository, enabled, StaticBackend(follower_item))._execute(promoted, None)
+
+    assert repository.get_job(leader_item.jobId).status == JobStatus.CANCELLED
+    assert repository.get_job(follower_item.jobId).status == JobStatus.SUCCEEDED
+    with repository.database.connection() as connection:
+        execution = connection.execute(
+            "select representative_job_id, execution_generation, status from ai_shared_executions"
+        ).fetchone()
+        calls = connection.execute("select count(*) as count from ai_provider_calls").fetchone()
+    assert execution == {
+        "representative_job_id": follower_item.jobId,
+        "execution_generation": 2,
+        "status": "SUCCEEDED",
+    }
+    assert calls["count"] == 1
+
+
+@pytest.mark.integration
+def test_shared_execution_promotes_waiter_when_recovered_leader_deadline_expired(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    leader_item = envelope_v2(Feature.SUMMARY)
+    follower_item = matching_v2_job(leader_item)
+    for item in (leader_item, follower_item):
+        repository.accept_job(item)
+    leader = repository.claim_job(leader_item.jobId, 1, "leader")
+    follower = repository.claim_job(follower_item.jobId, 1, "follower")
+    assert leader is not None and follower is not None
+    cache_key = exact_result_cache_key(
+        leader,
+        StaticBackend(leader_item).read_policy(Feature.SUMMARY.value),
+        enabled.model_fast,
+        enabled,
+        None,
+    )
+    assert cache_key is not None
+    repository.claim_shared_execution(leader, cache_key.digest, cache_key.version)
+    repository.claim_shared_execution(follower, cache_key.digest, cache_key.version)
+    with repository.database.transaction() as connection:
+        connection.execute(
+            """
+            update ai_jobs set created_at = clock_timestamp() - interval '2 seconds',
+                deadline_at = clock_timestamp() - interval '1 second',
+                lease_expires_at = clock_timestamp() - interval '1 second'
+            where job_id = %s
+            """,
+            (leader_item.jobId,),
+        )
+
+    assert repository.claim_job(leader_item.jobId, 1, "recovery") is None
+    promoted = repository.claim_job(follower_item.jobId, 2, "promoted")
+    assert promoted is not None
+    runtime_for(repository, enabled, StaticBackend(follower_item))._execute(promoted, None)
+    assert repository.get_job(leader_item.jobId).status == JobStatus.EXPIRED
+    assert repository.get_job(follower_item.jobId).status == JobStatus.SUCCEEDED
+    with repository.database.connection() as connection:
+        calls = connection.execute("select count(*) as count from ai_provider_calls").fetchone()
+    assert calls["count"] == 1
+
+
+@pytest.mark.integration
+def test_shared_execution_post_dispatch_cancel_is_unknown_and_never_recalled(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    leader_item = envelope_v2(Feature.SUMMARY)
+    follower_item = matching_v2_job(leader_item)
+    for item in (leader_item, follower_item):
+        repository.accept_job(item)
+    leader = repository.claim_job(leader_item.jobId, 1, "leader")
+    follower = repository.claim_job(follower_item.jobId, 1, "follower")
+    assert leader is not None and follower is not None
+    cache_key = exact_result_cache_key(
+        leader,
+        StaticBackend(leader_item).read_policy(Feature.SUMMARY.value),
+        enabled.model_fast,
+        enabled,
+        None,
+    )
+    assert cache_key is not None
+    shared = repository.claim_shared_execution(leader, cache_key.digest, cache_key.version)
+    repository.claim_shared_execution(follower, cache_key.digest, cache_key.version)
+    runtime = runtime_for(repository, enabled, StaticBackend(leader_item))
+    runtime._prepare_call(leader, enabled.model_fast, 10, 10, "GENERATION", shared)
+
+    repository.cancel(
+        CancellationEnvelope(
+            schemaVersion=1,
+            eventId=uuid4(),
+            jobId=leader_item.jobId,
+            workspaceKey=leader_item.workspaceKey,
+            requestRevision=2,
+            createdAt=datetime.now(UTC),
+        )
+    )
+    awakened = repository.claim_job(follower_item.jobId, 2, "awakened")
+    assert awakened is not None
+    runtime_for(repository, enabled, StaticBackend(follower_item))._execute(awakened, None)
+
+    follower_receipt = repository.get_job(follower_item.jobId)
+    assert follower_receipt.status == JobStatus.FAILED
+    assert follower_receipt.errorCode == "PROVIDER_OUTCOME_UNKNOWN"
+    with repository.database.connection() as connection:
+        execution = connection.execute(
+            "select status, terminal_reason from ai_shared_executions"
+        ).fetchone()
+        calls = connection.execute(
+            "select count(*) as count, min(lifecycle_status) as lifecycle from ai_provider_calls"
+        ).fetchone()
+        ledger = connection.execute(
+            "select count(*) as count, min(status) as status from ai_cost_ledger"
+        ).fetchone()
+    assert execution == {"status": "UNKNOWN", "terminal_reason": "PROVIDER_OUTCOME_UNKNOWN"}
+    assert calls == {"count": 1, "lifecycle": "UNKNOWN"}
+    assert ledger == {"count": 1, "status": "UNKNOWN"}
+
+
+@pytest.mark.integration
+def test_shared_execution_recovery_preserves_operation_key_and_blocks_duplicate_call(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    item = envelope_v2(Feature.SUMMARY)
+    repository.accept_job(item)
+    first = repository.claim_job(item.jobId, 1, "first")
+    assert first is not None
+    cache_key = exact_result_cache_key(
+        first,
+        StaticBackend(item).read_policy(Feature.SUMMARY.value),
+        enabled.model_fast,
+        enabled,
+        None,
+    )
+    assert cache_key is not None
+    shared = repository.claim_shared_execution(first, cache_key.digest, cache_key.version)
+    runtime = runtime_for(repository, enabled, StaticBackend(item))
+    runtime._prepare_call(first, enabled.model_fast, 10, 10, "GENERATION", shared)
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set lease_expires_at = clock_timestamp() - interval '1 second' where job_id = %s",
+            (item.jobId,),
+        )
+    recovered = repository.claim_job(item.jobId, 1, "recovered")
+    assert recovered is not None
+    recovered_shared = repository.claim_shared_execution(
+        recovered, cache_key.digest, cache_key.version
+    )
+    with pytest.raises(ProviderCallStateUnknownError):
+        runtime._prepare_call(
+            recovered, enabled.model_fast, 10, 10, "GENERATION", recovered_shared
+        )
+    repository.fail_job(recovered, "PROVIDER_OUTCOME_UNKNOWN", retryable=False)
+
+    assert repository.get_job(item.jobId).errorCode == "PROVIDER_OUTCOME_UNKNOWN"
+    with repository.database.connection() as connection:
+        calls = connection.execute(
+            "select count(*) as count, min(lifecycle_status) as lifecycle from ai_provider_calls"
+        ).fetchone()
+        execution = connection.execute(
+            "select status, terminal_reason from ai_shared_executions"
+        ).fetchone()
+    assert calls == {"count": 1, "lifecycle": "UNKNOWN"}
+    assert execution == {"status": "UNKNOWN", "terminal_reason": "PROVIDER_OUTCOME_UNKNOWN"}
+
+
+@pytest.mark.integration
+def test_shared_execution_retention_detaches_settled_cost_before_job_cleanup(
+    repository: Repository, settings: Settings
+) -> None:
+    enabled = shared_execution_enabled(settings)
+    item = envelope_v2(Feature.SUMMARY)
+    repository.accept_job(item)
+    runtime = runtime_for(repository, enabled, StaticBackend(item))
+    assert runtime.dispatch_once() == 1
+    assert runtime.consume_once(block_ms=1) == 1
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set result_expires_at = clock_timestamp() - interval '1 second'"
+        )
+    assert repository.purge_expired_results() == 1
+    assert repository.purge_expired_cache_entries() == 1
+    with repository.database.transaction() as connection:
+        connection.execute(
+            "update ai_jobs set completed_at = clock_timestamp() - interval '31 days'"
+        )
+        connection.execute(
+            "update ai_shared_executions set completed_at = clock_timestamp() - interval '31 days'"
+        )
+
+    assert repository.purge_expired_shared_executions(limit=1) == 1
+    assert repository.purge_expired_metadata(limit=1) == 1
+    with repository.database.connection() as connection:
+        ledger = connection.execute(
+            "select status, execution_id from ai_cost_ledger"
+        ).fetchone()
+    assert ledger == {"status": "SETTLED", "execution_id": None}
 
 
 @pytest.mark.integration

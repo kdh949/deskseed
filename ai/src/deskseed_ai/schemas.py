@@ -333,6 +333,7 @@ class ServiceStatus(StrictModel):
     langfuseEnabled: bool
     telemetry: TelemetryExporterStatus
     jobCounts: dict[str, Annotated[int, Field(ge=0)]]
+    sharedExecutionCounts: dict[str, Annotated[int, Field(ge=0)]]
     budget: BudgetStatus
     index: KnowledgeIndexStatus
     deadLetterCount: Annotated[int, Field(ge=0)]
