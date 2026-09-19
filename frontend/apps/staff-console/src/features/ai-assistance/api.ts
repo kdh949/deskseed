@@ -3,7 +3,10 @@ import { createOpaqueUuid } from '../../api/uuid'
 import type { TicketPriority } from '../../api/types'
 
 export type AiFeature =
-  'ticket.summary' | 'ticket.triage' | 'ticket.reply_draft'
+  | 'ticket.summary'
+  | 'ticket.triage'
+  | 'ticket.reply_draft'
+  | 'ticket.reply_rewrite'
 
 export type AiGenerationMode = 'REUSE_OR_CREATE' | 'NEW_CANDIDATE'
 
@@ -61,7 +64,30 @@ export interface AiReplyDraftResult {
   citations: AiCitation[]
 }
 
-export type AiResult = AiSummaryResult | AiTriageResult | AiReplyDraftResult
+export type AiReplyRewriteTone = 'calm' | 'formal'
+
+export type AiReplyRewriteLength = 'concise' | 'standard'
+
+export interface AiReplyRewriteResult {
+  type: 'ticket.reply_rewrite'
+  answer: string
+  citations: AiCitation[]
+  language: 'ko'
+  tone: AiReplyRewriteTone
+  length: AiReplyRewriteLength
+}
+
+export type AiResult =
+  AiSummaryResult | AiTriageResult | AiReplyDraftResult | AiReplyRewriteResult
+
+export interface AiReplyRewriteRequest {
+  sourceJobId: string
+  options: {
+    language: 'ko'
+    tone: AiReplyRewriteTone
+    length: AiReplyRewriteLength
+  }
+}
 
 export interface AiJobReceipt {
   jobId: string
@@ -75,6 +101,7 @@ export interface AiJobReceipt {
   resultExpiresAt: string | null
   pollAfterMs: number
   cancelRequested: boolean
+  sourceJobId?: string | null
   contextRevision: string
   contextPolicyVersion: 'public-comments-v1' | 'public-comments-v2'
   inputScope: 'PUBLIC_ONLY' | 'PUBLIC_DRAFT_ONLY'
@@ -98,6 +125,7 @@ const FEATURES = new Set<AiFeature>([
   'ticket.summary',
   'ticket.triage',
   'ticket.reply_draft',
+  'ticket.reply_rewrite',
 ])
 const STATUSES = new Set<AiJobStatus>([
   'ACCEPTED',
@@ -138,6 +166,8 @@ const TOPICS = new Set<AiTriageResult['topicCode']>([
   'OTHER',
 ])
 const PRIORITIES = new Set<TicketPriority>(['LOW', 'NORMAL', 'HIGH', 'URGENT'])
+const REWRITE_TONES = new Set<AiReplyRewriteTone>(['calm', 'formal'])
+const REWRITE_LENGTHS = new Set<AiReplyRewriteLength>(['concise', 'standard'])
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const REVISION = /^[0-9a-f]{64}$/
@@ -157,6 +187,24 @@ const uuidArray = (value: unknown, max: number): value is string[] =>
   Array.isArray(value) &&
   value.length <= max &&
   value.every((item) => text(item) && UUID.test(item))
+
+const citations = (value: unknown, minimum = 0): value is AiCitation[] =>
+  Array.isArray(value) &&
+  value.length >= minimum &&
+  value.length <= 8 &&
+  value.every(
+    (citation) =>
+      record(citation) &&
+      text(citation.articleId) &&
+      UUID.test(citation.articleId) &&
+      text(citation.revisionId) &&
+      UUID.test(citation.revisionId) &&
+      text(citation.chunkId) &&
+      UUID.test(citation.chunkId) &&
+      text(citation.title) &&
+      text(citation.url) &&
+      ARTICLE_URL.test(citation.url),
+  )
 
 function decodeResult(value: unknown): AiResult | null | undefined {
   if (value === null) return null
@@ -185,23 +233,23 @@ function decodeResult(value: unknown): AiResult | null | undefined {
   if (
     value.type === 'ticket.reply_draft' &&
     text(value.answer) &&
-    Array.isArray(value.citations) &&
-    value.citations.length <= 8 &&
-    value.citations.every(
-      (citation) =>
-        record(citation) &&
-        text(citation.articleId) &&
-        UUID.test(citation.articleId) &&
-        text(citation.revisionId) &&
-        UUID.test(citation.revisionId) &&
-        text(citation.chunkId) &&
-        UUID.test(citation.chunkId) &&
-        text(citation.title) &&
-        text(citation.url) &&
-        ARTICLE_URL.test(citation.url),
-    )
+    value.answer.length <= 6_000 &&
+    citations(value.citations)
   ) {
     return value as unknown as AiReplyDraftResult
+  }
+  if (
+    value.type === 'ticket.reply_rewrite' &&
+    text(value.answer) &&
+    value.answer.length <= 6_000 &&
+    citations(value.citations, 1) &&
+    value.language === 'ko' &&
+    text(value.tone) &&
+    REWRITE_TONES.has(value.tone as AiReplyRewriteTone) &&
+    text(value.length) &&
+    REWRITE_LENGTHS.has(value.length as AiReplyRewriteLength)
+  ) {
+    return value as unknown as AiReplyRewriteResult
   }
   return undefined
 }
@@ -212,11 +260,13 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
   const generationMode = value.generationMode as AiGenerationMode | undefined
   const candidateSequence = value.candidateSequence
   const reuseKind = value.reuseKind as AiReuseKind | undefined
+  const feature = value.feature as AiFeature
+  const sourceJobId = value.sourceJobId
   if (
     !text(value.jobId) ||
     !UUID.test(value.jobId) ||
     !text(value.feature) ||
-    !FEATURES.has(value.feature as AiFeature) ||
+    !FEATURES.has(feature) ||
     !text(value.status) ||
     !STATUSES.has(value.status as AiJobStatus) ||
     !text(value.phase) ||
@@ -229,6 +279,12 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
     !integer(value.pollAfterMs, 100) ||
     value.pollAfterMs > 10_000 ||
     typeof value.cancelRequested !== 'boolean' ||
+    (sourceJobId !== undefined &&
+      sourceJobId !== null &&
+      (!text(sourceJobId) || !UUID.test(sourceJobId))) ||
+    (feature === 'ticket.reply_rewrite' &&
+      (sourceJobId === undefined || sourceJobId === null)) ||
+    (feature !== 'ticket.reply_rewrite' && sourceJobId != null) ||
     !text(value.contextRevision) ||
     !REVISION.test(value.contextRevision) ||
     !['public-comments-v1', 'public-comments-v2'].includes(
@@ -243,18 +299,21 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
     (reuseKind !== undefined &&
       (!text(reuseKind) || !REUSE_KINDS.has(reuseKind))) ||
     (generationMode === 'NEW_CANDIDATE' && candidateSequence === undefined) ||
+    (feature === 'ticket.reply_rewrite' &&
+      generationMode === 'NEW_CANDIDATE') ||
     (generationMode !== 'NEW_CANDIDATE' && candidateSequence !== undefined) ||
     (generationMode === undefined && reuseKind !== undefined) ||
     typeof value.stale !== 'boolean' ||
     typeof value.canInsert !== 'boolean' ||
     !nullableText(value.errorCode) ||
-    result === undefined
+    result === undefined ||
+    (result !== null && result.type !== feature)
   ) {
     return undefined
   }
   return {
     jobId: value.jobId,
-    feature: value.feature as AiFeature,
+    feature,
     status: value.status as AiJobStatus,
     phase: value.phase as AiJobPhase,
     requestRevision: value.requestRevision,
@@ -264,6 +323,7 @@ export function decodeAiJobReceipt(value: unknown): AiJobReceipt | undefined {
     resultExpiresAt: value.resultExpiresAt,
     pollAfterMs: value.pollAfterMs,
     cancelRequested: value.cancelRequested,
+    ...(sourceJobId !== undefined ? { sourceJobId } : {}),
     contextRevision: value.contextRevision,
     contextPolicyVersion:
       value.contextPolicyVersion as AiJobReceipt['contextPolicyVersion'],
@@ -313,6 +373,7 @@ export const createAiJob = (
   feature: AiFeature,
   generationMode: AiGenerationMode,
   idempotencyKey: string,
+  rewrite?: AiReplyRewriteRequest,
 ) =>
   requestStaffResource(
     `/api/v1/agent/tickets/${ticketNumber}/ai/jobs`,
@@ -324,10 +385,15 @@ export const createAiJob = (
         feature,
         expectedTicketVersion,
         generationMode,
+        ...(feature === 'ticket.reply_rewrite'
+          ? { sourceJobId: rewrite?.sourceJobId }
+          : {}),
         options:
-          feature === 'ticket.reply_draft'
-            ? { language: 'ko', tone: 'calm' }
-            : {},
+          feature === 'ticket.reply_rewrite'
+            ? rewrite?.options
+            : feature === 'ticket.reply_draft'
+              ? { language: 'ko', tone: 'calm' }
+              : {},
       },
     },
   )

@@ -6,7 +6,12 @@ import type {
   RichTextDocumentV1,
   TicketVisibility,
 } from '../../api/types'
-import { SeedButton, SeedIcon, SeedNotice } from '../../design-system/canonical'
+import {
+  SeedButton,
+  SeedIcon,
+  SeedNotice,
+  SeedSelect,
+} from '../../design-system/canonical'
 import {
   cancelAiJob,
   createAiJob,
@@ -17,6 +22,9 @@ import {
   type AiFeedbackType,
   type AiGenerationMode,
   type AiJobReceipt,
+  type AiReplyRewriteLength,
+  type AiReplyRewriteRequest,
+  type AiReplyRewriteTone,
   type AiResult,
 } from './api'
 import './ai-assistant.css'
@@ -90,6 +98,7 @@ type PendingCreateCommand = {
   expectedTicketVersion: number
   generationMode: AiGenerationMode
   idempotencyKey: string
+  rewrite?: AiReplyRewriteRequest
 }
 
 export interface AiPublicDraftSnapshot {
@@ -179,15 +188,23 @@ export function AiAssistantPanel({
     generateInFlightRef.current.clear()
     pollFailuresRef.current.clear()
     usedReplyJobsRef.current.clear()
+    setJobs({})
+    setErrors({})
+    setChoiceJobId(null)
+    setInsertMessage('')
+    setInsertingJobId(null)
+    setGeneratingFeatures(new Set())
     setAmbiguousCreateFeatures(new Set())
+    setFeedbackByJob({})
   }, [ticketNumber])
 
   const load = useCallback(async () => {
+    const requestTicketNumber = ticketNumber
     setLoading(true)
     setLoadError(null)
     setDenied(false)
     try {
-      const page = await client.list(ticketNumber)
+      const page = await client.list(requestTicketNumber)
       const latest: JobMap = {}
       for (const job of page.items) {
         if (!latest[job.feature]) latest[job.feature] = job
@@ -197,10 +214,12 @@ export function AiAssistantPanel({
           try {
             return await hydrateResult(job)
           } catch (cause) {
-            setErrors((current) => ({
-              ...current,
-              [job.feature]: messageForError(cause),
-            }))
+            if (latestRef.current.ticketNumber === requestTicketNumber) {
+              setErrors((current) => ({
+                ...current,
+                [job.feature]: messageForError(cause),
+              }))
+            }
             return job
           }
         }),
@@ -208,8 +227,10 @@ export function AiAssistantPanel({
       const listed = Object.fromEntries(
         hydrated.map((job) => [job.feature, job]),
       ) as JobMap
+      if (latestRef.current.ticketNumber !== requestTicketNumber) return
       setJobs((current) => ({ ...listed, ...current }))
     } catch (cause) {
+      if (latestRef.current.ticketNumber !== requestTicketNumber) return
       if (
         cause instanceof ApiError &&
         (cause.status === 401 || cause.status === 403 || cause.status === 404)
@@ -219,7 +240,9 @@ export function AiAssistantPanel({
         setLoadError(messageForError(cause))
       }
     } finally {
-      setLoading(false)
+      if (latestRef.current.ticketNumber === requestTicketNumber) {
+        setLoading(false)
+      }
     }
   }, [client, hydrateResult, ticketNumber])
 
@@ -233,14 +256,17 @@ export function AiAssistantPanel({
       const failureCount = pollFailuresRef.current.get(job.jobId) ?? 0
       const timer = window.setTimeout(
         async () => {
+          const requestTicketNumber = ticketNumber
           try {
             const next = await hydrateResult(
-              await client.get(ticketNumber, job.jobId),
+              await client.get(requestTicketNumber, job.jobId),
             )
+            if (latestRef.current.ticketNumber !== requestTicketNumber) return
             pollFailuresRef.current.delete(job.jobId)
             replaceJob(next)
             setErrors((current) => ({ ...current, [job.feature]: undefined }))
           } catch (cause) {
+            if (latestRef.current.ticketNumber !== requestTicketNumber) return
             const nextFailureCount = failureCount + 1
             pollFailuresRef.current.set(job.jobId, nextFailureCount)
             setErrors((current) => ({
@@ -261,8 +287,10 @@ export function AiAssistantPanel({
     feature: AiFeature,
     generationMode: AiGenerationMode,
     retryAmbiguous = false,
+    rewrite?: AiReplyRewriteRequest,
   ) => {
     if (loading || generateInFlightRef.current.has(feature)) return
+    const requestTicketNumber = ticketNumber
     const pending = pendingCreateCommandsRef.current.get(feature)
     const command = retryAmbiguous
       ? pending
@@ -270,6 +298,7 @@ export function AiAssistantPanel({
           expectedTicketVersion: ticketVersion,
           generationMode,
           idempotencyKey: createOpaqueUuid(),
+          ...(rewrite ? { rewrite } : {}),
         }
     if (!command) return
     if (!retryAmbiguous) pendingCreateCommandsRef.current.set(feature, command)
@@ -279,18 +308,28 @@ export function AiAssistantPanel({
     setChoiceJobId(null)
     setInsertMessage('')
     try {
-      replaceJob(
-        await client.create(
-          ticketNumber,
-          command.expectedTicketVersion,
-          feature,
-          command.generationMode,
-          command.idempotencyKey,
-        ),
-      )
+      const created = command.rewrite
+        ? await client.create(
+            requestTicketNumber,
+            command.expectedTicketVersion,
+            feature,
+            command.generationMode,
+            command.idempotencyKey,
+            command.rewrite,
+          )
+        : await client.create(
+            requestTicketNumber,
+            command.expectedTicketVersion,
+            feature,
+            command.generationMode,
+            command.idempotencyKey,
+          )
+      if (latestRef.current.ticketNumber !== requestTicketNumber) return
+      replaceJob(created)
       pendingCreateCommandsRef.current.delete(feature)
       setAmbiguousCreateFeatures((current) => withoutFeature(current, feature))
     } catch (cause) {
+      if (latestRef.current.ticketNumber !== requestTicketNumber) return
       if (isAmbiguousCreateOutcome(cause)) {
         setAmbiguousCreateFeatures((current) => new Set(current).add(feature))
       } else {
@@ -304,20 +343,26 @@ export function AiAssistantPanel({
         [feature]: messageForCreateError(cause, command.generationMode),
       }))
     } finally {
-      generateInFlightRef.current.delete(feature)
-      setGeneratingFeatures((current) => {
-        const next = new Set(current)
-        next.delete(feature)
-        return next
-      })
+      if (latestRef.current.ticketNumber === requestTicketNumber) {
+        generateInFlightRef.current.delete(feature)
+        setGeneratingFeatures((current) => {
+          const next = new Set(current)
+          next.delete(feature)
+          return next
+        })
+      }
     }
   }
 
   const cancel = async (job: AiJobReceipt) => {
+    const requestTicketNumber = ticketNumber
     setErrors((current) => ({ ...current, [job.feature]: undefined }))
     try {
-      replaceJob(await client.cancel(ticketNumber, job.jobId))
+      const cancelled = await client.cancel(requestTicketNumber, job.jobId)
+      if (latestRef.current.ticketNumber !== requestTicketNumber) return
+      replaceJob(cancelled)
     } catch (cause) {
+      if (latestRef.current.ticketNumber !== requestTicketNumber) return
       setErrors((current) => ({
         ...current,
         [job.feature]: messageForError(cause),
@@ -326,18 +371,19 @@ export function AiAssistantPanel({
   }
 
   const recordFeedback = async (job: AiJobReceipt, type: AiFeedbackType) => {
+    const requestTicketNumber = ticketNumber
     setFeedbackByJob((current) => ({ ...current, [job.jobId]: type }))
     try {
-      await client.feedback(ticketNumber, job.jobId, type)
+      await client.feedback(requestTicketNumber, job.jobId, type)
     } catch {
+      if (latestRef.current.ticketNumber !== requestTicketNumber) return
       setFeedbackByJob((current) => ({ ...current, [job.jobId]: undefined }))
     }
   }
 
   const validateReply = async (job: AiJobReceipt) => {
     const snapshot = latestSnapshot(latestRef.current)
-    const latest = await client.get(ticketNumber, job.jobId, true)
-    replaceJob(latest)
+    const latest = await client.get(snapshot.ticketNumber, job.jobId, true)
     const current = latestRef.current
     if (
       snapshot.ticketNumber !== current.ticketNumber ||
@@ -351,11 +397,12 @@ export function AiAssistantPanel({
       )
       return null
     }
+    replaceJob(latest)
     if (
       latest.status !== 'SUCCEEDED' ||
       latest.stale ||
       !latest.canInsert ||
-      latest.result?.type !== 'ticket.reply_draft' ||
+      !isReplyResult(latest.result) ||
       !latest.candidateId
     ) {
       setInsertMessage(
@@ -516,18 +563,26 @@ export function AiAssistantPanel({
         <div className="ai-assistant__cards">
           {FEATURES.map((definition) => {
             const job = availableJobs[definition.feature]
+            const rewriteJob = availableJobs['ticket.reply_rewrite']
+            const choiceJob =
+              choiceJobId === job?.jobId
+                ? job
+                : definition.feature === 'ticket.reply_draft' &&
+                    choiceJobId === rewriteJob?.jobId
+                  ? rewriteJob
+                  : undefined
             return (
               <AiFeatureCard
-                choiceOpen={choiceJobId === job?.jobId}
+                choiceJob={choiceJob}
                 definition={definition}
                 error={errors[definition.feature]}
                 feedback={job ? feedbackByJob[job.jobId] : undefined}
                 generationDisabled={
                   loading || generatingFeatures.has(definition.feature)
                 }
-                insertionBusy={insertingJobId === job?.jobId}
+                insertingJobId={insertingJobId}
                 job={job}
-                key={definition.feature}
+                key={`${ticketNumber}-${definition.feature}`}
                 onCancelChoice={() => setChoiceJobId(null)}
                 onCancelJob={cancel}
                 onFeedback={recordFeedback}
@@ -538,6 +593,23 @@ export function AiAssistantPanel({
                   generate(definition.feature, 'REUSE_OR_CREATE', true)
                 }
                 retryAvailable={ambiguousCreateFeatures.has(definition.feature)}
+                rewriteError={errors['ticket.reply_rewrite']}
+                rewriteGenerationDisabled={
+                  loading || generatingFeatures.has('ticket.reply_rewrite')
+                }
+                rewriteJob={rewriteJob}
+                rewriteRetryAvailable={ambiguousCreateFeatures.has(
+                  'ticket.reply_rewrite',
+                )}
+                onGenerateRewrite={(sourceJobId, options) =>
+                  generate('ticket.reply_rewrite', 'REUSE_OR_CREATE', false, {
+                    sourceJobId,
+                    options,
+                  })
+                }
+                onRetryRewrite={() =>
+                  generate('ticket.reply_rewrite', 'REUSE_OR_CREATE', true)
+                }
               />
             )
           })}
@@ -556,28 +628,34 @@ export function AiAssistantPanel({
 }
 
 function AiFeatureCard({
-  choiceOpen,
+  choiceJob,
   definition,
   error,
   feedback,
   generationDisabled,
-  insertionBusy,
+  insertingJobId,
   job,
   onCancelChoice,
   onCancelJob,
   onFeedback,
   onGenerate,
+  onGenerateRewrite,
   onInsert,
   onInsertChoice,
   onRetryGenerate,
+  onRetryRewrite,
   retryAvailable,
+  rewriteError,
+  rewriteGenerationDisabled,
+  rewriteJob,
+  rewriteRetryAvailable,
 }: {
-  choiceOpen: boolean
+  choiceJob?: AiJobReceipt
   definition: (typeof FEATURES)[number]
   error?: string
   feedback?: AiFeedbackType
   generationDisabled: boolean
-  insertionBusy: boolean
+  insertingJobId: string | null
   job?: AiJobReceipt
   onCancelChoice: () => void
   onCancelJob: (job: AiJobReceipt) => Promise<void>
@@ -586,14 +664,32 @@ function AiFeatureCard({
     feature: AiFeature,
     generationMode: AiGenerationMode,
   ) => Promise<void>
+  onGenerateRewrite: (
+    sourceJobId: string,
+    options: AiReplyRewriteRequest['options'],
+  ) => Promise<void>
   onInsert: (job: AiJobReceipt) => Promise<void>
   onInsertChoice: (job: AiJobReceipt, strategy: InsertStrategy) => Promise<void>
   onRetryGenerate: () => Promise<void>
+  onRetryRewrite: () => Promise<void>
   retryAvailable: boolean
+  rewriteError?: string
+  rewriteGenerationDisabled: boolean
+  rewriteJob?: AiJobReceipt
+  rewriteRetryAvailable: boolean
 }) {
   const active = job ? ACTIVE_STATUSES.has(job.status) : false
   const ready = job?.status === 'SUCCEEDED' && job.result !== null
   const routeDescription = job ? generationRouteDescription(job) : null
+  const rewriteSourceReady =
+    ready &&
+    job.result?.type === 'ticket.reply_draft' &&
+    !job.stale &&
+    job.canInsert &&
+    Boolean(job.candidateId)
+  const attachedRewriteJob =
+    rewriteJob?.sourceJobId === job?.jobId ? rewriteJob : undefined
+  const insertionBusy = insertingJobId === job?.jobId
   return (
     <article className="ai-assistant-card">
       <div className="ai-assistant-card__heading">
@@ -658,7 +754,7 @@ function AiFeatureCard({
         </SeedNotice>
       )}
 
-      {choiceOpen && job && (
+      {choiceJob && (
         <div
           className="ai-assistant-card__choice"
           role="group"
@@ -667,22 +763,22 @@ function AiFeatureCard({
           <p>PUBLIC 작성기에 기존 초안이 있습니다.</p>
           <div>
             <SeedButton
-              disabled={insertionBusy}
-              onClick={() => void onInsertChoice(job, 'append')}
+              disabled={insertingJobId !== null}
+              onClick={() => void onInsertChoice(choiceJob, 'append')}
               size="compact"
             >
               뒤에 추가
             </SeedButton>
             <SeedButton
-              disabled={insertionBusy}
-              onClick={() => void onInsertChoice(job, 'replace')}
+              disabled={insertingJobId !== null}
+              onClick={() => void onInsertChoice(choiceJob, 'replace')}
               size="compact"
               variant="danger"
             >
               교체
             </SeedButton>
             <SeedButton
-              disabled={insertionBusy}
+              disabled={insertingJobId !== null}
               onClick={onCancelChoice}
               size="compact"
               variant="quiet"
@@ -733,6 +829,20 @@ function AiFeatureCard({
         </p>
       )}
 
+      {rewriteSourceReady && job && (
+        <AiReplyRewriteControls
+          error={rewriteError}
+          generationDisabled={rewriteGenerationDisabled}
+          insertionBusy={insertingJobId === attachedRewriteJob?.jobId}
+          onCancelJob={onCancelJob}
+          onGenerate={(options) => onGenerateRewrite(job.jobId, options)}
+          onInsert={onInsert}
+          onRetry={onRetryRewrite}
+          retryAvailable={rewriteRetryAvailable}
+          rewriteJob={attachedRewriteJob}
+        />
+      )}
+
       {ready && job && (
         <div
           className="ai-assistant-card__feedback"
@@ -759,6 +869,182 @@ function AiFeatureCard({
         </div>
       )}
     </article>
+  )
+}
+
+function AiReplyRewriteControls({
+  error,
+  generationDisabled,
+  insertionBusy,
+  onCancelJob,
+  onGenerate,
+  onInsert,
+  onRetry,
+  retryAvailable,
+  rewriteJob,
+}: {
+  error?: string
+  generationDisabled: boolean
+  insertionBusy: boolean
+  onCancelJob: (job: AiJobReceipt) => Promise<void>
+  onGenerate: (options: AiReplyRewriteRequest['options']) => Promise<void>
+  onInsert: (job: AiJobReceipt) => Promise<void>
+  onRetry: () => Promise<void>
+  retryAvailable: boolean
+  rewriteJob?: AiJobReceipt
+}) {
+  const [tone, setTone] = useState<AiReplyRewriteTone>('calm')
+  const [length, setLength] = useState<AiReplyRewriteLength>('standard')
+  const active = rewriteJob ? ACTIVE_STATUSES.has(rewriteJob.status) : false
+  const result =
+    rewriteJob?.status === 'SUCCEEDED' &&
+    rewriteJob.result?.type === 'ticket.reply_rewrite' &&
+    !rewriteJob.stale &&
+    rewriteJob.canInsert &&
+    rewriteJob.candidateId
+      ? rewriteJob.result
+      : null
+  const routeDescription = rewriteJob
+    ? generationRouteDescription(rewriteJob)
+    : null
+  const controlsDisabled = active || generationDisabled || retryAvailable
+
+  return (
+    <section
+      aria-labelledby="ai-reply-rewrite-title"
+      className="ai-assistant-card__rewrite"
+    >
+      <div className="ai-assistant-card__rewrite-heading">
+        <div>
+          <h4 id="ai-reply-rewrite-title">문체와 길이 조정</h4>
+          <p>원 답변과 공개 지식 인용을 유지한 별도 결과만 표시합니다.</p>
+        </div>
+        <span>한국어</span>
+      </div>
+
+      <div className="ai-assistant-card__rewrite-options">
+        <label>
+          문체
+          <SeedSelect
+            aria-label="재작성 문체"
+            disabled={controlsDisabled}
+            onChange={(event) =>
+              setTone(event.currentTarget.value as AiReplyRewriteTone)
+            }
+            value={tone}
+          >
+            <option value="calm">차분하게</option>
+            <option value="formal">격식 있게</option>
+          </SeedSelect>
+        </label>
+        <label>
+          길이
+          <SeedSelect
+            aria-label="재작성 길이"
+            disabled={controlsDisabled}
+            onChange={(event) =>
+              setLength(event.currentTarget.value as AiReplyRewriteLength)
+            }
+            value={length}
+          >
+            <option value="standard">표준</option>
+            <option value="concise">간결하게</option>
+          </SeedSelect>
+        </label>
+      </div>
+
+      <div className="ai-assistant-card__rewrite-actions">
+        <SeedButton
+          disabled={controlsDisabled}
+          onClick={() => void onGenerate({ language: 'ko', tone, length })}
+          size="compact"
+          variant="quiet"
+        >
+          문체·길이 재작성
+        </SeedButton>
+      </div>
+
+      {active && rewriteJob && (
+        <div className="ai-assistant-card__progress" role="status">
+          <span className="ai-assistant-card__spinner" aria-hidden="true" />
+          <span>답변 표현을 조정하는 중…</span>
+          <SeedButton
+            onClick={() => void onCancelJob(rewriteJob)}
+            size="compact"
+            variant="quiet"
+          >
+            재작성 취소
+          </SeedButton>
+        </div>
+      )}
+
+      {routeDescription && (
+        <p className="ai-assistant-card__reuse-status">{routeDescription}</p>
+      )}
+
+      {rewriteJob?.status === 'NEEDS_REVIEW' && (
+        <SeedNotice title="재작성 검토 실패" tone="warning">
+          사실·조건·부정 의미 또는 인용 보존을 확인하지 못했습니다. 원 답변을
+          유지합니다.
+        </SeedNotice>
+      )}
+
+      {rewriteJob &&
+        ['FAILED', 'CANCELLED', 'SUPERSEDED', 'EXPIRED'].includes(
+          rewriteJob.status,
+        ) && (
+          <SeedNotice
+            title={terminalTitle(rewriteJob.status)}
+            tone={rewriteJob.status === 'FAILED' ? 'danger' : 'info'}
+          >
+            재작성 결과를 사용하지 않고 원 답변을 유지합니다.{' '}
+            {terminalDescription(rewriteJob)}
+          </SeedNotice>
+        )}
+
+      {rewriteJob?.status === 'SUCCEEDED' && !result && (
+        <SeedNotice title="현재 사용할 수 없는 재작성" tone="warning">
+          최신성 또는 삽입 조건을 확인하지 못했습니다. 원 답변을 유지하고 다시
+          확인해 주세요.
+        </SeedNotice>
+      )}
+
+      {error && (
+        <SeedNotice title="재작성을 완료하지 못했습니다" tone="danger">
+          <p>{error}</p>
+          {retryAvailable && (
+            <SeedButton
+              disabled={generationDisabled}
+              onClick={() => void onRetry()}
+              size="compact"
+            >
+              같은 재작성 요청 다시 시도
+            </SeedButton>
+          )}
+        </SeedNotice>
+      )}
+
+      {result && rewriteJob && (
+        <div className="ai-assistant-card__rewrite-result">
+          <div className="ai-assistant-card__rewrite-result-heading">
+            <strong>재작성 결과</strong>
+            <span>
+              {rewriteToneLabel(result.tone)} ·{' '}
+              {rewriteLengthLabel(result.length)}
+            </span>
+          </div>
+          <AiResultContent result={result} stale={false} />
+          <SeedButton
+            disabled={insertionBusy}
+            onClick={() => void onInsert(rewriteJob)}
+            size="compact"
+            variant="primary"
+          >
+            재작성 결과를 PUBLIC 작성기에 사용
+          </SeedButton>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -803,7 +1089,8 @@ function AiResultContent({
           <ResultList label="제안 근거" items={result.reasons} />
         </>
       )}
-      {result.type === 'ticket.reply_draft' && (
+      {(result.type === 'ticket.reply_draft' ||
+        result.type === 'ticket.reply_rewrite') && (
         <>
           <div className="ai-assistant-card__answer">
             {result.answer.split(/\n{2,}/).map((paragraph) => (
@@ -840,6 +1127,26 @@ function ResultList({ label, items }: { label: string; items: string[] }) {
       </ul>
     </div>
   )
+}
+
+function isReplyResult(
+  result: AiResult | null,
+): result is Extract<
+  AiResult,
+  { type: 'ticket.reply_draft' | 'ticket.reply_rewrite' }
+> {
+  return (
+    result?.type === 'ticket.reply_draft' ||
+    result?.type === 'ticket.reply_rewrite'
+  )
+}
+
+function rewriteToneLabel(tone: AiReplyRewriteTone) {
+  return tone === 'formal' ? '격식 있게' : '차분하게'
+}
+
+function rewriteLengthLabel(length: AiReplyRewriteLength) {
+  return length === 'concise' ? '간결하게' : '표준'
 }
 
 function phaseLabel(phase: AiJobReceipt['phase']) {

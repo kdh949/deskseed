@@ -29,6 +29,23 @@ const reply: AiResult = {
   citations: [],
 }
 
+const rewrite: AiResult = {
+  type: 'ticket.reply_rewrite',
+  answer: '확인 후 정식으로 안내드리겠습니다.',
+  citations: [
+    {
+      articleId: '55555555-5555-4555-8555-555555555555',
+      revisionId: '66666666-6666-4666-8666-666666666666',
+      chunkId: '77777777-7777-4777-8777-777777777777',
+      title: '공개 안내',
+      url: '/help/articles/public-guide',
+    },
+  ],
+  language: 'ko',
+  tone: 'formal',
+  length: 'concise',
+}
+
 function receipt(
   feature: AiFeature,
   overrides: Partial<AiJobReceipt> = {},
@@ -37,7 +54,9 @@ function receipt(
     jobId:
       feature === 'ticket.reply_draft'
         ? '33333333-3333-4333-8333-333333333333'
-        : '11111111-1111-4111-8111-111111111111',
+        : feature === 'ticket.reply_rewrite'
+          ? '88888888-8888-4888-8888-888888888888'
+          : '11111111-1111-4111-8111-111111111111',
     feature,
     status: 'SUCCEEDED',
     phase: 'COMPLETE',
@@ -50,13 +69,25 @@ function receipt(
     cancelRequested: false,
     contextRevision: 'a'.repeat(64),
     contextPolicyVersion: 'public-comments-v1',
-    inputScope: 'PUBLIC_ONLY',
+    inputScope:
+      feature === 'ticket.reply_rewrite' ? 'PUBLIC_DRAFT_ONLY' : 'PUBLIC_ONLY',
     stale: false,
-    canInsert: feature === 'ticket.reply_draft',
+    canInsert:
+      feature === 'ticket.reply_draft' || feature === 'ticket.reply_rewrite',
     errorCode: null,
-    result: feature === 'ticket.reply_draft' ? reply : summary,
-    ...(feature === 'ticket.reply_draft'
+    result:
+      feature === 'ticket.reply_draft'
+        ? reply
+        : feature === 'ticket.reply_rewrite'
+          ? rewrite
+          : summary,
+    ...(feature === 'ticket.reply_draft' || feature === 'ticket.reply_rewrite'
       ? { candidateId: '44444444-4444-4444-8444-444444444444' }
+      : {}),
+    ...(feature === 'ticket.reply_rewrite'
+      ? {
+          sourceJobId: '33333333-3333-4333-8333-333333333333',
+        }
       : {}),
     ...overrides,
   }
@@ -85,6 +116,7 @@ function panel(
   aiClient: AiAssistantClient,
   publicDraft: AiPublicDraftSnapshot = emptyDraft,
   onInsertReply = vi.fn(),
+  ticketNumber = 3001,
 ) {
   return (
     <AiAssistantPanel
@@ -92,7 +124,7 @@ function panel(
       composerMode="PUBLIC"
       onInsertReply={onInsertReply}
       publicDraft={publicDraft}
-      ticketNumber={3001}
+      ticketNumber={ticketNumber}
       ticketVersion={7}
     />
   )
@@ -300,6 +332,199 @@ describe('AiAssistantPanel', () => {
     expect(
       screen.queryByRole('button', { name: '같은 요청 다시 시도' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('creates a source-bound rewrite with the selected closed options', async () => {
+    const source = receipt('ticket.reply_draft')
+    const create = vi.fn(
+      async (
+        _ticketNumber: number,
+        _version: number,
+        feature: AiFeature,
+        _generationMode: string,
+        _idempotencyKey: string,
+        request?: {
+          sourceJobId: string
+          options: {
+            language: 'ko'
+            tone: 'calm' | 'formal'
+            length: 'concise' | 'standard'
+          }
+        },
+      ) =>
+        receipt(feature, {
+          sourceJobId: request?.sourceJobId,
+          result: { ...rewrite, ...request?.options },
+          generationMode: 'REUSE_OR_CREATE',
+          reuseKind: 'GENERATED',
+        }),
+    )
+    render(
+      panel(
+        client({
+          list: vi.fn(async () => ({ items: [source] })),
+          create,
+        }),
+      ),
+    )
+
+    fireEvent.change(
+      await screen.findByRole('combobox', { name: '재작성 문체' }),
+      { target: { value: 'formal' } },
+    )
+    fireEvent.change(screen.getByRole('combobox', { name: '재작성 길이' }), {
+      target: { value: 'concise' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '문체·길이 재작성' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    expect(create).toHaveBeenCalledWith(
+      3001,
+      7,
+      'ticket.reply_rewrite',
+      'REUSE_OR_CREATE',
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      {
+        sourceJobId: source.jobId,
+        options: { language: 'ko', tone: 'formal', length: 'concise' },
+      },
+    )
+    expect(await screen.findByText('재작성 결과')).toBeVisible()
+    expect(screen.getByText('격식 있게 · 간결하게')).toBeVisible()
+    expect(screen.getByText('확인 후 안내드리겠습니다.')).toBeVisible()
+  })
+
+  it('keeps the original reply and exact rewrite command for ambiguous retry', async () => {
+    const source = receipt('ticket.reply_draft')
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network lost'))
+      .mockResolvedValueOnce(
+        receipt('ticket.reply_rewrite', {
+          generationMode: 'REUSE_OR_CREATE',
+          reuseKind: 'GENERATED',
+        }),
+      )
+    render(
+      panel(
+        client({
+          list: vi.fn(async () => ({ items: [source] })),
+          create,
+        }),
+      ),
+    )
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: '문체·길이 재작성' }),
+    )
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: '같은 재작성 요청 다시 시도',
+      }),
+    )
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0])
+    expect(screen.getByText('확인 후 안내드리겠습니다.')).toBeVisible()
+    expect(await screen.findByText('재작성 결과')).toBeVisible()
+  })
+
+  it('inserts a validated rewrite through the existing PUBLIC lineage path', async () => {
+    const source = receipt('ticket.reply_draft')
+    const rewritten = receipt('ticket.reply_rewrite')
+    const onInsertReply = vi.fn()
+    render(
+      panel(
+        client({
+          list: vi.fn(async () => ({ items: [source, rewritten] })),
+          get: vi.fn(async (_ticketNumber, jobId) =>
+            jobId === rewritten.jobId ? rewritten : source,
+          ),
+        }),
+        emptyDraft,
+        onInsertReply,
+      ),
+    )
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: '재작성 결과를 PUBLIC 작성기에 사용',
+      }),
+    )
+
+    await waitFor(() => expect(onInsertReply).toHaveBeenCalledTimes(1))
+    expect(onInsertReply).toHaveBeenCalledWith(
+      '확인 후 정식으로 안내드리겠습니다.',
+      'replace',
+      emptyDraft,
+      {
+        jobId: rewritten.jobId,
+        candidateId: rewritten.candidateId,
+        originalAnswer: '확인 후 정식으로 안내드리겠습니다.',
+      },
+    )
+  })
+
+  it('does not offer rewrite controls for an unusable source reply', async () => {
+    render(
+      panel(
+        client({
+          list: vi.fn(async () => ({
+            items: [
+              receipt('ticket.reply_draft', {
+                stale: true,
+                canInsert: false,
+              }),
+            ],
+          })),
+        }),
+      ),
+    )
+
+    await screen.findByText('확인 후 안내드리겠습니다.')
+    expect(
+      screen.queryByRole('button', { name: '문체·길이 재작성' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('clears source and rewrite state before loading another ticket', async () => {
+    let resolveFirstList:
+      ((page: { items: AiJobReceipt[] }) => void) | undefined
+    let resolveSecondList:
+      ((page: { items: AiJobReceipt[] }) => void) | undefined
+    const list = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ items: AiJobReceipt[] }>((resolve) => {
+            resolveFirstList = resolve
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ items: AiJobReceipt[] }>((resolve) => {
+            resolveSecondList = resolve
+          }),
+      )
+    const aiClient = client({ list })
+    const view = render(panel(aiClient))
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1))
+    view.rerender(panel(aiClient, emptyDraft, vi.fn(), 3002))
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+
+    expect(
+      screen.queryByRole('button', { name: '문체·길이 재작성' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('최근 AI 작업을 불러오는 중…')).toBeVisible()
+    await act(async () =>
+      resolveFirstList?.({ items: [receipt('ticket.reply_draft')] }),
+    )
+    expect(
+      screen.queryByRole('button', { name: '문체·길이 재작성' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('최근 AI 작업을 불러오는 중…')).toBeVisible()
+    await act(async () => resolveSecondList?.({ items: [] }))
   })
 
   it('rejects insertion when rich content changes during revalidation', async () => {

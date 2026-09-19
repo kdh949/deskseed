@@ -234,6 +234,71 @@
   line-height: var(--ds-line-normal);
 }
 
+.ai-assistant-card__rewrite {
+  display: grid;
+  gap: var(--ds-space-100);
+  padding: var(--ds-space-125);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line-strong);
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-palette-wash);
+}
+
+.ai-assistant-card__rewrite-heading,
+.ai-assistant-card__rewrite-result-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ds-space-075);
+}
+
+.ai-assistant-card__rewrite-heading h4 {
+  margin: 0;
+  font-size: var(--ds-font-size-200);
+  line-height: var(--ds-line-tight);
+}
+
+.ai-assistant-card__rewrite-heading p,
+.ai-assistant-card__rewrite-heading > span,
+.ai-assistant-card__rewrite-result-heading > span {
+  color: var(--ds-palette-ink-muted);
+  font-size: var(--ds-font-size-050);
+  line-height: var(--ds-line-normal);
+}
+
+.ai-assistant-card__rewrite-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ds-space-075);
+}
+
+.ai-assistant-card__rewrite-options label {
+  display: grid;
+  gap: var(--ds-space-050);
+  color: var(--ds-palette-ink-soft);
+  font-size: var(--ds-font-size-050);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.ai-assistant-card__rewrite-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-assistant-card__rewrite-result {
+  display: grid;
+  gap: var(--ds-space-100);
+  padding: var(--ds-space-100);
+  border: var(--ds-border-hairline) solid var(--ds-palette-line);
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-palette-paper);
+}
+
+.ai-assistant-card__rewrite-result .ai-assistant-card__result {
+  padding-top: 0;
+  border-top: 0;
+}
+
 .ai-assistant-card__feedback button {
   padding: var(--ds-space-050) var(--ds-space-075);
   border: 0;
@@ -282,5 +347,11 @@
 @media (prefers-reduced-motion: reduce) {
   .ai-assistant-card__spinner {
     animation: none;
+  }
+}
+
+@media (max-width: 32rem) {
+  .ai-assistant-card__rewrite-options {
+    grid-template-columns: 1fr;
   }
 }

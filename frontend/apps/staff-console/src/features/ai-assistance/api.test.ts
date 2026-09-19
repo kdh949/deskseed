@@ -45,6 +45,23 @@ const receipt = {
   costMicrousd: 12,
 }
 
+const rewriteReceipt = {
+  ...receipt,
+  jobId: '77777777-7777-4777-8777-777777777777',
+  feature: 'ticket.reply_rewrite',
+  sourceJobId: receipt.jobId,
+  inputScope: 'PUBLIC_DRAFT_ONLY',
+  reuseKind: 'GENERATED',
+  result: {
+    type: 'ticket.reply_rewrite',
+    answer: '결제 승인 기록을 확인한 뒤 안내드리겠습니다.',
+    citations: receipt.result.citations,
+    language: 'ko',
+    tone: 'formal',
+    length: 'concise',
+  },
+}
+
 afterEach(() => {
   setConfirmedStaffActor(null)
   vi.unstubAllGlobals()
@@ -109,6 +126,41 @@ describe('AI assistance API', () => {
     ).toBeUndefined()
   })
 
+  it('strictly binds a rewrite result to its source and closed options', () => {
+    expect(decodeAiJobReceipt(rewriteReceipt)).toMatchObject({
+      feature: 'ticket.reply_rewrite',
+      sourceJobId: receipt.jobId,
+      result: {
+        type: 'ticket.reply_rewrite',
+        language: 'ko',
+        tone: 'formal',
+        length: 'concise',
+      },
+    })
+    expect(
+      decodeAiJobReceipt({ ...rewriteReceipt, sourceJobId: undefined }),
+    ).toBeUndefined()
+    expect(
+      decodeAiJobReceipt({
+        ...rewriteReceipt,
+        result: { ...rewriteReceipt.result, tone: 'friendly' },
+      }),
+    ).toBeUndefined()
+    expect(
+      decodeAiJobReceipt({
+        ...rewriteReceipt,
+        result: { ...rewriteReceipt.result, citations: [] },
+      }),
+    ).toBeUndefined()
+    expect(
+      decodeAiJobReceipt({
+        ...rewriteReceipt,
+        generationMode: 'NEW_CANDIDATE',
+        candidateSequence: 1,
+      }),
+    ).toBeUndefined()
+  })
+
   it('creates a PUBLIC-only reply job with CSRF, actor and idempotency headers', async () => {
     setConfirmedStaffActor('55555555-5555-4555-8555-555555555555')
     const fetchMock = vi
@@ -157,6 +209,49 @@ describe('AI assistance API', () => {
       expectedTicketVersion: 7,
       generationMode: 'REUSE_OR_CREATE',
       options: { language: 'ko', tone: 'calm' },
+    })
+  })
+
+  it('creates a source-bound rewrite with only frozen style options', async () => {
+    setConfirmedStaffActor('55555555-5555-4555-8555-555555555555')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-rewrite', headerName: 'X-CSRF-TOKEN' }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(rewriteReceipt), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createAiJob(
+      3001,
+      7,
+      'ticket.reply_rewrite',
+      'REUSE_OR_CREATE',
+      '88888888-8888-4888-8888-888888888888',
+      {
+        sourceJobId: receipt.jobId,
+        options: { language: 'ko', tone: 'formal', length: 'concise' },
+      },
+    )
+
+    const request = fetchMock.mock.calls[1]?.[1] as RequestInit
+    expect(JSON.parse(String(request.body))).toEqual({
+      feature: 'ticket.reply_rewrite',
+      expectedTicketVersion: 7,
+      generationMode: 'REUSE_OR_CREATE',
+      sourceJobId: receipt.jobId,
+      options: { language: 'ko', tone: 'formal', length: 'concise' },
     })
   })
 
