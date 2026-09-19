@@ -401,9 +401,9 @@ INTERNAL 작성기의 임의 텍스트를 새 AI 입력 통로로 만들지 않�
 
 ### S13 — prompt cache
 
-안정적인 업무 지침·schema·검증된 공통 예시를 앞에, ticket·query·KB를 뒤에 배치한다. 캐시를 채우려고 무의미한 토큰을 늘리지 않는다. 공식 caching 옵션을 현재 LiteLLM completion transport가 실제로 전달하는지 fixture와 제한된 live 호출로 확인한다. API surface가 다른 예제를 그대로 붙이지 않는다. [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching)
+안정적인 repository-owned 업무 지침만 explicit breakpoint 앞에 두고 ticket·query·KB·result·citation·memory·rewrite content는 모두 뒤에 배치한다. GPT-5.6은 visible prefix 1,024 token부터 cacheable하고 write 1.25x/read 0.1x이며 explicit `30m` TTL을 사용하므로, reviewed tokenizer 기준 미달이면 option 자체를 보내지 않는다. 현재 prompt의 static system prefix는 약 101~233 token으로 모두 미달이다. 캐시를 채우려고 padding이나 무의미한 예시를 늘리지 않는다. [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching)
 
-비교 지표는 hit rate와 함께 쓰기/read/일반 입력/출력 비용을 합친 실제 비용이다. 초기 쓰기 비용·최소 길이·재사용 간격·TTL을 포함해 비교한다. 결과 캐시와 별도 toggle로 두며, 효과가 없으면 prompt cache 옵션만 끈다.
+`off | test | intent`를 결과 캐시와 별도 toggle로 두고, pinned LiteLLM 1.101.0 Chat Completions fixture가 `prompt_cache_breakpoint`, allowlisted `prompt_cache_options`, content-free bounded key를 실제 SDK body에 전달하는지 확인한다. 비교 지표는 hit rate와 함께 쓰기/read/일반 입력/출력/UNKNOWN 비용과 latency를 합친 실제 비용이다. 현재 구현은 transport capability와 bypass 증거를 제공하되, live canary와 충분히 길고 유용한 prefix가 없으면 production은 `off`다.
 
 ### S14 — embedding 재사용·배치
 
