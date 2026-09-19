@@ -88,6 +88,7 @@ def run_role(role: str) -> None:
         "retention": (
             lambda: (
                 runtime.repository.purge_expired_cache_entries()
+                + runtime.repository.purge_expired_context_memories()
                 + runtime.repository.purge_expired_results()
                 + runtime.repository.purge_expired_shared_executions()
                 + runtime.repository.purge_expired_metadata()

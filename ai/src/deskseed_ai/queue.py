@@ -18,14 +18,23 @@ from .backend_client import (
 )
 from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .config import Settings
+from .context_memory import (
+    FULL_REBUILD_INTERVAL,
+    ContextMemoryConflictError,
+    ContextMemorySourceChangedError,
+    ContextMemoryValidationError,
+    plan_context_memory,
+    validate_provider_output,
+)
 from .observability import CallTraceAttributes, TraceAdapter, TraceAttributes
 from .pricing import PricingCatalog
-from .prompting import prompt_for
+from .prompting import context_memory_prompt, prompt_for
 from .providers import GenerationProvider, InvalidProviderOutputError
 from .repository import (
     ActiveLeaseError,
     BudgetExceededError,
     ClaimedJob,
+    ConflictError,
     ProviderCallStateUnknownError,
     Repository,
     SharedExecutionClaim,
@@ -37,10 +46,21 @@ from .retrieval import (
     MissingCurrentProblemError,
     RetrievalQueryTooLongError,
 )
-from .schemas import AuthorRole, Feature, JobPhase, JobStatus, ReplyDraftResult, TriageResult
+from .schemas import (
+    AuthorRole,
+    ContextMemoryPayload,
+    ContextMemoryProviderOutput,
+    Feature,
+    JobPhase,
+    JobStatus,
+    ReplyDraftResult,
+    SourceContext,
+    TriageResult,
+)
 from .workflows import (
     InvalidReplyOutputError,
     InvalidSourceAuthorizationError,
+    PreparedReplyGeneration,
     ReplyWorkflow,
     reply_query,
 )
@@ -205,6 +225,7 @@ class StreamRuntime:
                 source_map_digest: str | None = None
                 source_chunk_ids: list[UUID] | None = None
                 context = self.backend.read_context(claim.job_id, traceparent)
+                full_context = context
                 if (
                     context.contextRevision != claim.context_revision
                     or context.aiInputRevision != claim.ai_input_revision
@@ -300,15 +321,21 @@ class StreamRuntime:
                     self.repository.set_phase(claim, JobPhase.RETRIEVE)
 
                     def prepare_generation(source_context, knowledge):
+                        prepared_context, memory, source_comment_ids = self._prepare_context_memory(
+                            claim,
+                            full_context,
+                            source_context,
+                            knowledge,
+                            model,
+                            shared,
+                            calls,
+                        )
                         call_id, recorder = self._prepare_call(
                             claim,
                             model,
                             self.provider.estimate_input_tokens(
-                                self.pricing,
-                                claim.feature,
-                                source_context,
-                                knowledge,
-                                claim.options,
+                                self.pricing, claim.feature, prepared_context, knowledge,
+                                claim.options, memory,
                             ),
                             2048,
                             "GENERATION",
@@ -316,7 +343,13 @@ class StreamRuntime:
                         )
                         calls.append(call_id)
                         self.repository.set_phase(claim, JobPhase.GENERATE)
-                        return call_id, recorder
+                        return PreparedReplyGeneration(
+                            prepared_context,
+                            memory,
+                            call_id,
+                            recorder,
+                            source_comment_ids,
+                        )
 
                     reply_execution = self.reply_workflow.invoke(
                         context,
@@ -331,6 +364,7 @@ class StreamRuntime:
                     generated = reply_execution.generation
                     source_map_digest = reply_execution.source_map_digest
                     source_chunk_ids = list(reply_execution.source_chunk_ids) or None
+                    source_comment_ids = list(reply_execution.source_comment_ids)
                 elif claim.feature == Feature.SUMMARY:
                     call_id, recorder = self._prepare_call(
                         claim,
@@ -394,7 +428,11 @@ class StreamRuntime:
                         JobStatus.SUCCEEDED,
                         cost,
                         generated.receipt.actual_model or generated.receipt.requested_alias,
-                        [item.id for item in context.comments],
+                        (
+                            source_comment_ids
+                            if claim.feature == Feature.REPLY_DRAFT
+                            else [item.id for item in context.comments]
+                        ),
                         generated.prompt_version,
                         source_map_digest,
                         source_chunk_ids,
@@ -405,6 +443,8 @@ class StreamRuntime:
                         ),
                     )
             except BackendSupersededError:
+                self.repository.terminate_job(claim, JobStatus.SUPERSEDED, "CONTEXT_SUPERSEDED")
+            except ConflictError:
                 self.repository.terminate_job(claim, JobStatus.SUPERSEDED, "CONTEXT_SUPERSEDED")
             except BackendAuthorizationError:
                 self.repository.fail_job(claim, "SOURCE_AUTHORIZATION_FAILED", retryable=False)
@@ -425,6 +465,12 @@ class StreamRuntime:
                     self.repository.job_cost_microusd(claim.job_id),
                 )
             except InvalidProviderOutputError:
+                self.repository.complete_needs_review(
+                    claim,
+                    "MODEL_OUTPUT_INVALID",
+                    self.repository.job_cost_microusd(claim.job_id),
+                )
+            except (ContextMemoryValidationError, ContextMemoryConflictError):
                 self.repository.complete_needs_review(
                     claim,
                     "MODEL_OUTPUT_INVALID",
@@ -452,6 +498,149 @@ class StreamRuntime:
                 else:
                     self.repository.fail_job(claim, type(exception).__name__.upper()[:80], retryable=True)
                 raise
+
+    def _prepare_context_memory(
+        self,
+        claim: ClaimedJob,
+        full_context,
+        fallback_context,
+        knowledge,
+        model: str,
+        shared: SharedExecutionClaim | None,
+        calls: list[UUID],
+    ) -> tuple[SourceContext, ContextMemoryPayload | None, tuple[UUID, ...]]:
+        fallback_ids = tuple(comment.id for comment in fallback_context.comments)
+        if self.settings.context_memory_mode == "off":
+            return fallback_context, None, fallback_ids
+        existing = self.repository.read_context_memory(
+            claim.workspace_key, claim.requester_id, claim.ticket_id
+        )
+        try:
+            plan = plan_context_memory(full_context, existing)
+        except ContextMemorySourceChangedError as exception:
+            self.repository.invalidate_context_memory(
+                exception.record.memory_id,
+                exception.record.memory_version,
+                "SOURCE_CHANGED",
+            )
+            plan = plan_context_memory(full_context, None)
+        if plan is None or not self._context_memory_is_economic(
+            full_context, plan, knowledge, claim.options, model
+        ):
+            return fallback_context, None, fallback_ids
+
+        memory = plan.previous_payload
+        if plan.requires_provider_call:
+            if plan.build_context is None:
+                raise ContextMemoryValidationError("context memory build context is absent")
+            call_id, recorder = self._prepare_call(
+                claim,
+                self.settings.model_fast,
+                self.provider.estimate_context_memory_input_tokens(
+                    self.pricing, plan.build_context, plan.previous_payload
+                ),
+                1024,
+                "CONTEXT_MEMORY",
+                shared,
+            )
+            calls.append(call_id)
+            generated = self.provider.context_memory(
+                plan.build_context, plan.previous_payload, call_id, recorder
+            )
+            if not isinstance(generated.result, ContextMemoryProviderOutput):
+                raise ContextMemoryValidationError("context memory provider returned wrong schema")
+            payload = validate_provider_output(generated.result, plan.target_sequence)
+            current = self.backend.read_context_revision(claim.job_id)
+            if (
+                current.contextRevision != claim.context_revision
+                or current.aiInputRevision != claim.ai_input_revision
+                or current.inputPolicyVersion != claim.input_policy_version
+            ):
+                raise BackendSupersededError("context changed after context memory generation")
+            saved = self.repository.save_context_memory(
+                claim.workspace_key,
+                claim.requester_id,
+                claim.ticket_id,
+                plan.target_sequence,
+                plan.source_prefix_digest,
+                payload,
+                generated.prompt_version,
+                generated.receipt.requested_alias,
+                plan.existing,
+                plan.full_rebuild,
+            )
+            memory = saved.payload
+        if memory is None:
+            raise ContextMemoryValidationError("context memory payload is absent")
+        return (
+            plan.recent_context,
+            memory,
+            _context_memory_source_ids(full_context, memory, plan.recent_context),
+        )
+
+    def _context_memory_is_economic(
+        self,
+        full_context,
+        plan,
+        knowledge,
+        options,
+        model: str,
+    ) -> bool:
+        baseline_tokens = self.provider.estimate_input_tokens(
+            self.pricing, Feature.REPLY_DRAFT, full_context, knowledge, options
+        )
+        if plan.requires_provider_call:
+            compressed_tokens = self.provider.estimate_input_tokens(
+                self.pricing, Feature.REPLY_DRAFT, plan.recent_context, knowledge, options
+            ) + 1024
+            memory_tokens = self.provider.estimate_context_memory_input_tokens(
+                self.pricing, plan.build_context, plan.previous_payload
+            )
+            memory_cost = self.pricing.upper_bound_microusd(
+                self.settings.model_fast,
+                memory_tokens,
+                1024,
+                self.pricing.service_tier,
+                self.pricing.context_price_band,
+            )
+            if not plan.full_rebuild:
+                full_prefix_context = full_context.model_copy(
+                    update={"comments": full_context.comments[: plan.target_sequence]}
+                )
+                full_rebuild_tokens = self.provider.estimate_context_memory_input_tokens(
+                    self.pricing, full_prefix_context, None
+                )
+                full_rebuild_cost = self.pricing.upper_bound_microusd(
+                    self.settings.model_fast,
+                    full_rebuild_tokens,
+                    1024,
+                    self.pricing.service_tier,
+                    self.pricing.context_price_band,
+                )
+                memory_cost += (
+                    full_rebuild_cost + FULL_REBUILD_INTERVAL - 1
+                ) // FULL_REBUILD_INTERVAL
+        else:
+            compressed_tokens = self.provider.estimate_input_tokens(
+                self.pricing,
+                Feature.REPLY_DRAFT,
+                plan.recent_context,
+                knowledge,
+                options,
+                plan.previous_payload,
+            )
+            memory_cost = 0
+        avoided_tokens = max(0, baseline_tokens - compressed_tokens)
+        if avoided_tokens == 0:
+            return False
+        savings = self.pricing.upper_bound_microusd(
+            model,
+            avoided_tokens,
+            0,
+            self.pricing.service_tier,
+            self.pricing.context_price_band,
+        ) * self.settings.context_memory_expected_reuses
+        return savings > memory_cost
 
     def _prepare_call(
         self,
@@ -489,9 +678,22 @@ class StreamRuntime:
             self.pricing.context_price_band,
         )
         self.repository.mark_provider_call_dispatching(call_id)
-        return call_id, self._receipt_recorder(call_id, claim.job_id.hex, call_type)
+        operation_version = None
+        if call_type == "CONTEXT_MEMORY":
+            operation_version = context_memory_prompt().version
+        elif call_type == "GENERATION":
+            operation_version = prompt_for(claim.feature).version
+        return call_id, self._receipt_recorder(
+            call_id, claim.job_id.hex, call_type, operation_version
+        )
 
-    def _receipt_recorder(self, expected_call_id: UUID, trace_id: str, stage: str) -> ReceiptRecorder:
+    def _receipt_recorder(
+        self,
+        expected_call_id: UUID,
+        trace_id: str,
+        stage: str,
+        operation_version: str | None = None,
+    ) -> ReceiptRecorder:
         def record(receipt: ProviderCallReceipt) -> None:
             if receipt.call_id != expected_call_id:
                 raise ValueError("provider receipt call identity mismatch")
@@ -519,6 +721,7 @@ class StreamRuntime:
                     stage=stage,
                     pricing_version=self.pricing.version,
                     known_cost_microusd=persisted_cost,
+                    operation_version=operation_version,
                 ),
                 receipt,
             )
@@ -598,3 +801,22 @@ def _bounded_context(context, feature: Feature):
             used += size
     selected = [comment for index, comment in enumerate(comments) if index in selected_indexes]
     return context.model_copy(update={"comments": selected})
+
+
+def _context_memory_source_ids(
+    full_context: SourceContext,
+    memory: ContextMemoryPayload,
+    recent_context: SourceContext,
+) -> tuple[UUID, ...]:
+    referenced_sequences = {
+        int(source_ref[1:])
+        for item in memory.confirmedFacts + memory.attemptsAndOutcomes + memory.openQuestions
+        for source_ref in item.sourceRefs
+    }
+    selected = [
+        comment.id
+        for comment in full_context.comments
+        if comment.sequence in referenced_sequences
+    ]
+    selected.extend(comment.id for comment in recent_context.comments)
+    return tuple(dict.fromkeys(selected))

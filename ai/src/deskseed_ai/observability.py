@@ -47,6 +47,7 @@ class CallTraceAttributes:
     stage: str
     pricing_version: str
     known_cost_microusd: int | None
+    operation_version: str | None = None
 
 
 class TraceAdapter:
@@ -140,7 +141,11 @@ class TraceAdapter:
             observation = self._client.start_observation(
                 trace_context={"trace_id": attributes.trace_id},
                 name=f"deskseed-ai-{attributes.stage.lower().replace('_', '-')}",
-                as_type="generation" if attributes.stage == "GENERATION" else "embedding",
+                as_type=(
+                    "generation"
+                    if attributes.stage in {"GENERATION", "CONTEXT_MEMORY"}
+                    else "embedding"
+                ),
                 model=receipt.actual_model,
                 version=attributes.pricing_version,
                 usage_details=usage_details,
@@ -153,6 +158,7 @@ class TraceAdapter:
                     "requestedAlias": receipt.requested_alias,
                     "actualModel": receipt.actual_model,
                     "pricingVersion": attributes.pricing_version,
+                    "operationVersion": attributes.operation_version,
                     "serviceTier": receipt.service_tier,
                     "contextPriceBand": receipt.context_price_band,
                     "usageSchemaVersion": receipt.usage_schema_version,

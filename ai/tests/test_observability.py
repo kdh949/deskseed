@@ -142,6 +142,25 @@ def test_provider_observation_exports_only_receipt_allowlist() -> None:
     assert "input" not in exported or exported["input"] is None
     assert "output" not in exported or exported["output"] is None
 
+    memory_call_id = uuid4()
+    assert adapter.export_provider_call(
+        CallTraceAttributes(
+            trace_id,
+            memory_call_id.hex,
+            "CONTEXT_MEMORY",
+            "pricing-v2",
+            321,
+            "context-memory-v1:fixture",
+        ),
+        receipt(memory_call_id),
+    ) is True
+    memory_export = client.observations[1]
+    assert memory_export["as_type"] == "generation"
+    assert memory_export["metadata"]["stage"] == "CONTEXT_MEMORY"
+    assert memory_export["metadata"]["operationVersion"] == "context-memory-v1:fixture"
+    assert "input" not in memory_export or memory_export["input"] is None
+    assert "output" not in memory_export or memory_export["output"] is None
+
 
 @pytest.mark.parametrize(
     ("failure", "counter"),

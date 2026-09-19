@@ -15,6 +15,7 @@ REPLY_CACHE_KEY_VERSION = "result-cache-reply-v1"
 MODEL_ROUTE_VERSION = "model-route-v1"
 OUTPUT_SCHEMA_VERSION = "typed-result-v1"
 CONTEXT_BUILDER_VERSION = "public-comments-bounded-v1"
+REPLY_CONTEXT_BUILDER_VERSION = "public-comments-memory-v2"
 RETRIEVAL_VERSION = "current-problem-rrf-artifact-v3"
 CHUNKING_VERSION = "section-block-v2"
 
@@ -77,8 +78,18 @@ def exact_result_cache_key(
         resolved_model,
         str(policy.version),
         settings.config_version,
+        settings.context_memory_mode if claim.feature == Feature.REPLY_DRAFT else "",
+        (
+            str(settings.context_memory_expected_reuses)
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
         *knowledge_fields,
-        CONTEXT_BUILDER_VERSION,
+        (
+            REPLY_CONTEXT_BUILDER_VERSION
+            if claim.feature == Feature.REPLY_DRAFT
+            else CONTEXT_BUILDER_VERSION
+        ),
     )
     canonical = bytearray()
     for field in fields:

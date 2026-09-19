@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     exact_result_cache_mode: Literal["off", "test", "intent"] = "off"
     shared_execution_mode: Literal["off", "test", "intent"] = "off"
     result_cache_key_secret: SecretStr = SecretStr("")
+    context_memory_mode: Literal["off", "test", "intent"] = "off"
+    context_memory_expected_reuses: int = Field(2, ge=1, le=20)
+    context_memory_ttl_hours: int = Field(24, ge=1, le=168)
 
     workspace_daily_budget_microusd: int = 3_000_000
     actor_daily_budget_microusd: int = 500_000
@@ -106,6 +109,8 @@ class Settings(BaseSettings):
                 raise ValueError("production shared execution requires the S08 reuse-intent contract")
             if self.exact_result_cache_mode != self.shared_execution_mode:
                 raise ValueError("shared execution requires the exact result cache in the matching mode")
+        if self.environment == "production" and self.context_memory_mode == "test":
+            raise ValueError("production context memory requires measured intent activation")
         if self.workspace_daily_budget_microusd <= 0 or self.actor_daily_budget_microusd <= 0:
             raise ValueError("daily budgets must be positive")
         if self.job_budget_microusd <= 0:
