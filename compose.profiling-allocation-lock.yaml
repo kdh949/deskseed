@@ -1,0 +1,6 @@
+# Optional diagnostic overlay. Combine only for a short, explicitly scoped allocation/lock capture.
+services:
+  backend:
+    environment:
+      PYROSCOPE_PROFILER_ALLOC: 512k
+      PYROSCOPE_PROFILER_LOCK: 10ms

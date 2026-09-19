@@ -1,0 +1,16 @@
+# Requires the production and personal-staging-observability compose files.
+# This overlay is explicitly opt-in and must never be included by the production deploy command.
+services:
+  backend:
+    environment:
+      DESKSEED_SEARCH_DIAGNOSTICS_ENABLED: "true"
+      DESKSEED_SERVICE_VERSION: ${IMAGE_TAG:?set the 40-character deployed revision}
+      DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED: "true"
+      JAVA_TOOL_OPTIONS: -javaagent:/opt/pyroscope/pyroscope.jar
+      PYROSCOPE_APPLICATION_NAME: deskseed-backend
+      PYROSCOPE_SERVER_ADDRESS: ${DESKSEED_PYROSCOPE_SERVER_URL:?set the private Pyroscope server URL}
+      PYROSCOPE_LABELS: environment=personal-staging,service=deskseed-backend,service_name=deskseed-backend,service_version=${IMAGE_TAG:?set the 40-character deployed revision}
+      PYROSCOPE_FORMAT: jfr
+      PYROSCOPE_PROFILER_EVENT: wall
+      PYROSCOPE_PROFILING_INTERVAL: 10ms
+      PYROSCOPE_UPLOAD_INTERVAL: 15s

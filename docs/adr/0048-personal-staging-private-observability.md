@@ -8,17 +8,20 @@ Accepted — 2026-09-12
 
 ADR 0047 and D-064 support a disposable `load` topology only. Its Alloy collector reads the Docker socket, its JVM profile agent is load-only, and its Compose profile must not be combined with the personal-staging deployment.
 
-Personal staging needs release-candidate diagnosis with the same three useful signals—Prometheus metrics, searchable logs, and traces—without changing the public product surface or treating operational telemetry as an audit ledger. The current personal-staging deployment already uses the `production` profile, exact SHA-tagged images, split database roles, and private Compose networks. Replacing that profile with `load` would weaken those deployment guarantees.
+Personal staging needs release-candidate diagnosis with the same three useful signals—Prometheus metrics, searchable logs, and traces—without changing the public product surface or treating operational telemetry as an audit ledger. The current personal-staging deployment already uses the `production` profile, exact SHA-tagged images, split database roles, and private Compose networks. Replacing that profile with `load` would weaken those deployment guarantees. A later search-performance RCA slice needs direct trace/profile correlation plus read-only DB and bounded host evidence, but must not silently expand the baseline personal-staging deployment.
 
 ## Decision
 
 - Personal staging keeps `SPRING_PROFILES_ACTIVE=production` and adds the opt-in `personal-staging-observability` profile through `SPRING_PROFILES_INCLUDE`; it never activates `load`.
 - Prometheus is the only application-metrics export path. The profile publishes `/actuator/prometheus` on management port `9090`, bound to a non-wildcard, non-globally-routable address assigned to the host. A management-server-only filter chain permits the required read endpoints on that private port and denies every other management request; product API authorization on `8080` is unchanged. The frontend continues to proxy only aggregate `/actuator/health` to `9090` when this overlay is enabled and returns `404` for `/actuator/prometheus`. OTLP metrics export is disabled so the application does not retry a nonexistent `localhost:4318` receiver.
 - The backend emits sampled traces and safe Logback events to an internal Alloy OTLP receiver. Alloy forwards traces to Tempo and logs to Loki's native OTLP endpoint. The receiver is not host-published; application-network membership remains constrained by the Compose topology.
-- The personal-staging collector has no Docker socket, Docker discovery, host filesystem mount, privileged mode, host PID/network namespace, node exporter, cAdvisor, or CPU profiler. It runs read-only as the image's non-root Alloy user with ephemeral collector storage.
+- The baseline `personal-staging-observability` collector has no Docker socket, Docker discovery, host filesystem mount, privileged mode, host PID/network namespace, node exporter, cAdvisor, or CPU profiler. It runs read-only as the image's non-root Alloy user with ephemeral collector storage.
+- A second explicit `compose.personal-staging-diagnostics.yaml` overlay may enable the pinned Pyroscope agent and root-span correlation for a bounded diagnostic window. Read-only PostgreSQL and node exporters remain a separately operated diagnostics Compose project with private binds, least-privilege DB role, no Docker socket, and no application-schema SELECT grant. Neither diagnostics overlay is part of the production/default deploy command.
+- Personal staging uses the same JFR wall/10 ms/15 s/root-span defaults as load. Allocation and lock profiling remain unset unless the separate `compose.profiling-allocation-lock.yaml` overlay is intentionally combined; the starting values are `512k` and `10ms`.
+- Personal staging never runs `EXPLAIN ANALYZE`; a slow family is reproduced from the same synthetic corpus and deployment revision on the load DB. `auto_explain`, full SQL logging and bind logging remain prohibited.
 - Loki records the OTLP resource attributes `service.name`, `service.namespace`, and `deployment.environment.name`; request and correlation IDs are bounded structured metadata, never Loki or Prometheus labels. Dashboard and runbook queries select stable `service_name` then filter `deployment_environment_name` as structured metadata, so they do not depend on resource-attribute label promotion. The monitoring server must run Loki 3.0+ with `allow_structured_metadata: true` and expose its `/otlp` endpoint only on the private monitoring path.
 - The repository supplies Prometheus, rule, dashboard, and runbook fragments. It does not SSH to, rewrite, or automatically reload the external monitoring server. Firewall source allowlists and monitoring-server credentials remain operator-owned.
-- CPU profiling, host/container/database/Redis exporters, k6, alert delivery, production rollout, and capacity/SLA claims remain outside this decision.
+- k6 execution, automatic alert delivery, production rollout, shared Pyroscope retention changes, and capacity/SLA claims remain outside this decision.
 
 ## Consequences
 
@@ -26,6 +29,7 @@ Personal staging needs release-candidate diagnosis with the same three useful si
 - Backend log delivery is explicit rather than host-wide Docker log scraping. This avoids collecting unrelated containers that may coexist on the host, but it requires the Spring Logback appender and the monitoring server's native OTLP Loki capability.
 - Telemetry export failure may produce bounded operational errors and lose non-audit telemetry after retry exhaustion; it does not change ticket, audit, mail, webhook, or authorization transaction outcomes. Required audit persistence retains its existing fail-closed behavior.
 - Rollback is to redeploy without `DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED=true`, then explicitly stop/remove the optional Alloy service and remove the two private Prometheus targets and dashboard/rule fragments. No product schema or public API changes are involved.
+- Diagnostics rollback additionally removes the diagnostics Compose overlay, stops the standalone DB/host exporter project, and removes the profiler/DB/host scrape targets. Telemetry rollback never rolls back ticket or audit data.
 
 ## Rejected alternatives
 

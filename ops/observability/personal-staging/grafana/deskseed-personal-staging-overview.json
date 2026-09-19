@@ -2,80 +2,141 @@
   "annotations": {"list": []},
   "editable": true,
   "graphTooltip": 1,
+  "links": [{"title": "Performance RCA", "url": "/d/deskseed-search-diagnostics", "targetBlank": false}],
   "panels": [
     {
-      "type": "timeseries",
-      "title": "HTTP request rate and server 5xx",
+      "id": 1, "type": "timeseries", "title": "Required targets and scrape freshness",
+      "description": "backend, Alloy, PostgreSQL and node targets must remain 1. Freshness is seconds since the latest sample. No data means the target or scrape path is unavailable, not healthy zero.",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "noValue": "No data — scrape unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 30}]}}},
       "targets": [
-        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"personal-staging\"}[1m]))", "legendFormat": "requests/s"},
-        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"personal-staging\",status=~\"5..\"}[1m]))", "legendFormat": "server 5xx/s"}
-      ],
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+        {"expr": "up{environment=\"personal-staging\",stack=\"deskseed\",service=~\"deskseed-(backend|alloy|postgresql|node)\"}", "legendFormat": "{{service}} up"},
+        {"expr": "time() - timestamp(up{environment=\"personal-staging\",stack=\"deskseed\",service=~\"deskseed-(backend|alloy|postgresql|node)\"})", "legendFormat": "{{service}} freshness"}
+      ], "gridPos": {"h": 8, "w": 16, "x": 0, "y": 0}
     },
     {
-      "type": "timeseries",
-      "title": "Backend p95 / p99 by route",
+      "id": 2, "type": "stat", "title": "Backend deployment SHA",
+      "description": "Full 40-character backend revision from deskseed_build_info. No data means the deployed process did not publish a valid revision.",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "noValue": "No data — revision missing", "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}},
+      "targets": [{"expr": "max by (revision) (deskseed_build_info{environment=\"personal-staging\"})", "legendFormat": "{{revision}}"}],
+      "options": {"textMode": "name"}, "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "User impact — RPS, 5xx and 429",
+      "description": "Server request rates by outcome. No data means no scrape samples; a plotted zero means measured zero.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "reqps", "noValue": "No data — backend scrape unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 0.01}]}}},
+      "targets": [
+        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"personal-staging\"}[1m]))", "legendFormat": "all"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"personal-staging\",status=~\"5..\"}[1m]))", "legendFormat": "5xx"},
+        {"expr": "sum(rate(http_server_requests_seconds_count{environment=\"personal-staging\",status=\"429\"}[1m]))", "legendFormat": "429"}
+      ], "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "User impact — backend p95 / p99",
+      "description": "Route-level server latency. No data means the selected route/window has no histogram samples, not zero latency.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "noValue": "No data — no latency samples", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 0.5}, {"color": "red", "value": 1}]}}},
       "targets": [
         {"expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"personal-staging\"}[5m])))", "legendFormat": "{{uri}} p95"},
         {"expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{environment=\"personal-staging\"}[5m])))", "legendFormat": "{{uri}} p99"}
-      ],
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      ], "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
     },
     {
-      "type": "timeseries",
-      "title": "JVM CPU and heap",
+      "id": 5, "type": "timeseries", "title": "JVM CPU, heap and GC pause",
+      "description": "JVM saturation and GC pause rate. No data means JVM metrics were not scraped.",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "noValue": "No data — JVM scrape unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 0.7}, {"color": "red", "value": 0.9}]}}},
       "targets": [
         {"expr": "process_cpu_usage{environment=\"personal-staging\"}", "legendFormat": "process CPU"},
-        {"expr": "sum(jvm_memory_used_bytes{environment=\"personal-staging\",area=\"heap\"}) / sum(jvm_memory_max_bytes{environment=\"personal-staging\",area=\"heap\"})", "legendFormat": "heap ratio"}
-      ],
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
+        {"expr": "sum(jvm_memory_used_bytes{environment=\"personal-staging\",area=\"heap\"}) / sum(jvm_memory_max_bytes{environment=\"personal-staging\",area=\"heap\"})", "legendFormat": "heap ratio"},
+        {"expr": "sum(rate(jvm_gc_pause_seconds_sum{environment=\"personal-staging\"}[5m]))", "legendFormat": "GC pause seconds/s"}
+      ], "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
     },
     {
-      "type": "timeseries",
-      "title": "Hikari pool",
+      "id": 6, "type": "timeseries", "title": "JVM threads and Hikari pool",
+      "description": "Live JVM threads and active/idle/pending DB connections. Pending above zero is saturation evidence; No data is unavailable telemetry.",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "noValue": "No data — backend scrape unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}},
       "targets": [
-        {"expr": "hikaricp_connections_active{environment=\"personal-staging\"}", "legendFormat": "active"},
-        {"expr": "hikaricp_connections_idle{environment=\"personal-staging\"}", "legendFormat": "idle"},
-        {"expr": "hikaricp_connections_pending{environment=\"personal-staging\"}", "legendFormat": "pending"}
-      ],
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}
+        {"expr": "jvm_threads_live_threads{environment=\"personal-staging\"}", "legendFormat": "threads"},
+        {"expr": "hikaricp_connections_active{environment=\"personal-staging\"}", "legendFormat": "Hikari active"},
+        {"expr": "hikaricp_connections_idle{environment=\"personal-staging\"}", "legendFormat": "Hikari idle"},
+        {"expr": "hikaricp_connections_pending{environment=\"personal-staging\"}", "legendFormat": "Hikari pending"}
+      ], "gridPos": {"h": 8, "w": 8, "x": 12, "y": 16}
     },
     {
-      "type": "timeseries",
-      "title": "Required audit write failures",
+      "id": 7, "type": "timeseries", "title": "Hikari acquire p95",
+      "description": "Connection acquisition histogram p95. No data means the histogram is unavailable or no acquisitions occurred.",
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [
-        {"expr": "sum(increase(deskseed_audit_persistence_failures_total{environment=\"personal-staging\"}[5m]))", "legendFormat": "failures / 5m"}
-      ],
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}
+      "fieldConfig": {"defaults": {"unit": "s", "noValue": "No data — no acquisition samples", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 0.1}, {"color": "red", "value": 0.5}]}}},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{environment=\"personal-staging\"}[5m])))", "legendFormat": "acquire p95"}],
+      "gridPos": {"h": 8, "w": 4, "x": 20, "y": 16}
     },
     {
-      "type": "logs",
-      "title": "Backend OTLP logs",
+      "id": 8, "type": "timeseries", "title": "PostgreSQL connections, waits and blocking",
+      "description": "Database connection count plus sampled wait/blocking sessions. Snapshots can miss short waits; No data means the DB exporter path is unavailable.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "noValue": "No data — DB exporter unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}},
+      "targets": [
+        {"expr": "sum(pg_stat_database_numbackends{environment=\"personal-staging\"})", "legendFormat": "connections"},
+        {"expr": "sum by (wait_type, wait_event) (deskseed_db_wait_sessions{environment=\"personal-staging\"})", "legendFormat": "wait {{wait_type}}/{{wait_event}}"},
+        {"expr": "deskseed_db_blocking_blocked_sessions{environment=\"personal-staging\"}", "legendFormat": "blocking"}
+      ], "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Host CPU, memory and disk I/O",
+      "description": "Host saturation signals from the opt-in node exporter. No data is expected when diagnostics collectors are disabled and must not be read as healthy zero.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "noValue": "No data — diagnostics collector disabled/unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 0.8}, {"color": "red", "value": 0.9}]}}},
+      "targets": [
+        {"expr": "1 - avg(rate(node_cpu_seconds_total{environment=\"personal-staging\",mode=\"idle\"}[5m]))", "legendFormat": "CPU busy"},
+        {"expr": "1 - node_memory_MemAvailable_bytes{environment=\"personal-staging\"} / node_memory_MemTotal_bytes{environment=\"personal-staging\"}", "legendFormat": "memory used"},
+        {"expr": "max(rate(node_disk_io_time_seconds_total{environment=\"personal-staging\"}[5m]))", "legendFormat": "disk busy"}
+      ], "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Operational integrity",
+      "description": "Required audit failures, delivery backlogs/failures, WebSocket rejection and telemetry export failures. No data means a required producer/exporter metric is missing.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "noValue": "No data — integrity metric unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}},
+      "targets": [
+        {"expr": "sum(increase(deskseed_audit_persistence_failures_total{environment=\"personal-staging\"}[5m]))", "legendFormat": "audit failures"},
+        {"expr": "sum(deskseed_mail_outbox_backlog{environment=\"personal-staging\"})", "legendFormat": "mail backlog"},
+        {"expr": "sum(increase(deskseed_mail_delivery_failed_total{environment=\"personal-staging\"}[5m]))", "legendFormat": "mail failures"},
+        {"expr": "sum(deskseed_webhook_delivery_backlog{environment=\"personal-staging\"})", "legendFormat": "webhook backlog"},
+        {"expr": "sum(increase(deskseed_webhook_delivery_failed_total{environment=\"personal-staging\"}[5m]))", "legendFormat": "webhook failures"},
+        {"expr": "sum(increase(deskseed_collaboration_websocket_rejections_total{environment=\"personal-staging\"}[5m]))", "legendFormat": "WebSocket rejects"},
+        {"expr": "sum(increase(otelcol_exporter_send_failed_spans_total[5m]) + increase(otelcol_exporter_send_failed_log_records_total[5m]))", "legendFormat": "telemetry export failures"}
+      ], "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+    },
+    {
+      "id": 11, "type": "traces", "title": "Recent slow traces",
+      "description": "Recent backend traces over 500 ms. No data means no matching sampled trace or unavailable Tempo ingest; it does not prove no slow request occurred.",
+      "datasource": {"type": "tempo", "uid": "deskseed-search-tempo"},
+      "fieldConfig": {"defaults": {"unit": "s", "noValue": "No data — no sampled trace or Tempo unavailable", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 0.5}, {"color": "red", "value": 1}]}}},
+      "targets": [{"refId": "A", "queryType": "traceql", "query": "{ resource.service.name = \"deskseed-backend\" && resource.deployment.environment.name = \"personal-staging\" } | duration > 500ms"}],
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 40}
+    },
+    {
+      "id": 12, "type": "logs", "title": "Recent backend logs",
+      "description": "Safe structured OTLP logs. No data means no matching logs or unavailable Loki ingest, not a healthy state.",
       "datasource": {"type": "loki", "uid": "loki"},
-      "targets": [
-        {"expr": "{service_name=\"deskseed-backend\"} | deployment_environment_name = \"personal-staging\"", "refId": "A"}
-      ],
+      "fieldConfig": {"defaults": {"noValue": "No data — no logs or Loki unavailable"}},
+      "targets": [{"expr": "{service_name=\"deskseed-backend\"} | deployment_environment_name = \"personal-staging\"", "refId": "A"}],
       "options": {"dedupStrategy": "none", "enableLogDetails": true, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
-      "gridPos": {"h": 11, "w": 16, "x": 0, "y": 16}
-    },
-    {
-      "type": "text",
-      "title": "Correlation drill-down",
-      "options": {"mode": "markdown", "content": "Use Grafana Explore with the same Loki stream and filter the `correlationId` structured-metadata field. It is intentionally not a Loki label. Open the trace ID from the selected log in Tempo; do not copy request bodies, cookies, or Authorization values into the query."},
-      "gridPos": {"h": 11, "w": 8, "x": 16, "y": 16}
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 40}
     }
   ],
+  "refresh": "15s",
   "schemaVersion": 41,
-  "tags": ["deskseed", "personal-staging"],
+  "tags": ["deskseed", "personal-staging", "operations"],
   "templating": {"list": []},
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {"from": "now-30m", "to": "now"},
   "timepicker": {},
-  "title": "Deskseed Personal Staging Overview",
+  "timezone": "browser",
+  "title": "Deskseed Live Operations",
   "uid": "deskseed-personal-staging-overview",
-  "version": 1
+  "version": 2
 }

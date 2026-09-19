@@ -1,0 +1,1206 @@
+{
+  "id": null,
+  "uid": "deskseed-search-diagnostics",
+  "title": "Deskseed Performance RCA",
+  "tags": [
+    "deskseed",
+    "personal-staging",
+    "search"
+  ],
+  "schemaVersion": 39,
+  "version": 6,
+  "editable": true,
+  "timezone": "browser",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "refresh": "15s",
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "type": "custom",
+        "query": "personal-staging,load",
+        "current": {
+          "text": "personal-staging",
+          "value": "personal-staging"
+        },
+        "hide": 0,
+        "label": "Environment",
+        "options": [
+          {
+            "selected": true,
+            "text": "personal-staging",
+            "value": "personal-staging"
+          },
+          {
+            "selected": false,
+            "text": "load",
+            "value": "load"
+          }
+        ]
+      },
+      {
+        "name": "run",
+        "label": "Test run",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(k6_agent_search_requests_total{environment=\"$environment\"},test_run_id)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "plan_artifact_base",
+        "label": "Protected plan artifact index",
+        "type": "textbox",
+        "query": "/search-plan-artifacts/index.html",
+        "current": {
+          "text": "/search-plan-artifacts/index.html",
+          "value": "/search-plan-artifacts/index.html"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Required scrape targets",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{environment=\"$environment\",stack=\"deskseed\",service=~\"deskseed-backend|deskseed-alloy|deskseed-postgresql|deskseed-node\"}",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "All four must be 1 in the selected interval; absence is a failed readiness check. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 2,
+      "title": "PostgreSQL exporter connection and scrape error",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"pg_up|pg_exporter_last_scrape_error\",environment=\"$environment\",stack=\"deskseed\"}",
+          "legendFormat": "{{__name__}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 3,
+      "title": "Search class HTTP p95 (k6)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "last_over_time(k6_agent_operation_duration_p95{environment=\"$environment\",test_run_id=~\"$run\",phase=\"measurement\",operation=\"agent_search\"}[1m])",
+          "legendFormat": "{{test_run_id}} / {{query_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Cumulative client trend summaries per run/class, held for up to 1 minute for short preflight visibility. Do not average percentiles or subtract client/server percentiles. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 4,
+      "title": "Search requests by class (k6)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(query_class) (rate(k6_agent_search_requests_total{environment=\"$environment\",test_run_id=~\"$run\",phase=\"measurement\"}[$__rate_interval]))",
+          "legendFormat": "{{query_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Counter rate requires at least two remote-write samples; a single-request preflight can legitimately show No data."
+    },
+    {
+      "id": 5,
+      "title": "JDBC count / page and audit phase p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95,sum by(le,phase,query_class)(rate(deskseed_search_phase_seconds_bucket{environment=\"$environment\",service=\"deskseed-backend\"}[$__rate_interval])))",
+          "legendFormat": "{{phase}} / {{query_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "JDBC includes client round trip and row mapping. Audit includes protection/persistence calls but excludes transaction commit; HTTP span remains the end-to-end server boundary. Run selector filters client metrics only; server metrics require the same absolute time interval. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 6,
+      "title": "Phase errors",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(phase,query_class)(rate(deskseed_search_phase_seconds_count{environment=\"$environment\",service=\"deskseed-backend\",outcome=\"error\"}[$__rate_interval]))",
+          "legendFormat": "{{phase}} / {{query_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 7,
+      "title": "Search SQL database mean execution",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(phase,queryid)(rate(deskseed_search_sql_execution_seconds{environment=\"$environment\",stack=\"deskseed\"}[$__rate_interval])) / sum by(phase,queryid)(rate(deskseed_search_sql_calls{environment=\"$environment\",stack=\"deskseed\"}[$__rate_interval]))",
+          "legendFormat": "{{phase}} / {{queryid}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Completed SQL only, aggregated by normalized statement. No exact per-request queryid or query-class attribution is implied. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 8,
+      "title": "Search SQL calls",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(phase,queryid)(rate(deskseed_search_sql_calls{environment=\"$environment\",stack=\"deskseed\"}[$__rate_interval]))",
+          "legendFormat": "{{phase}} / {{queryid}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 9,
+      "title": "Search SQL shared read time",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(phase)(rate(deskseed_search_sql_read_seconds{environment=\"$environment\",stack=\"deskseed\"}[$__rate_interval]))",
+          "legendFormat": "{{phase}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "I/O wait contribution across statements; zero does not prove the operating system did no I/O. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 10,
+      "title": "Search SQL temp writes",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(phase)(rate(deskseed_search_sql_temp_blks_written{environment=\"$environment\",stack=\"deskseed\"}[$__rate_interval]))",
+          "legendFormat": "{{phase}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Blocks/s; a spill signal, not proof of a missing index. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 11,
+      "title": "Active database wait events",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "deskseed_db_wait_sessions{environment=\"$environment\",stack=\"deskseed\"}",
+          "legendFormat": "{{wait_type}} / {{wait_event}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "15-second snapshots can miss short waits. CPU_or_running means no recorded wait; it is not measured CPU time. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 12,
+      "title": "Blocking database sessions",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "deskseed_db_blocking_blocked_sessions{environment=\"$environment\",stack=\"deskseed\"}",
+          "legendFormat": "blocked"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 13,
+      "title": "Hikari pool active / idle / pending",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"hikaricp_connections_active|hikaricp_connections_idle|hikaricp_connections_pending\",environment=\"$environment\",service=\"deskseed-backend\"}",
+          "legendFormat": "{{__name__}} / {{pool}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 14,
+      "title": "Hikari acquisition p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95,sum by(le)(rate(hikaricp_connections_acquire_seconds_bucket{environment=\"$environment\",service=\"deskseed-backend\"}[$__rate_interval])))",
+          "legendFormat": "acquire p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Requires acquisition histogram enabled on the backend. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 15,
+      "title": "Host CPU and I/O wait",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(mode)(rate(node_cpu_seconds_total{environment=\"$environment\",stack=\"deskseed\",mode!=\"idle\"}[$__rate_interval])) / count(node_cpu_seconds_total{environment=\"$environment\",stack=\"deskseed\",mode=\"idle\"})",
+          "legendFormat": "{{mode}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 16,
+      "title": "Host disk I/O busy time",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_disk_io_time_seconds_total{environment=\"$environment\",stack=\"deskseed\",device!~\"loop.*\"}[$__rate_interval])",
+          "legendFormat": "{{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 17,
+      "title": "Host memory available",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_memory_MemAvailable_bytes{environment=\"$environment\",stack=\"deskseed\"}",
+          "legendFormat": "available"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 18,
+      "title": "Statistics reset / eviction",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"deskseed_pg_stat_statements_reset_timestamp_seconds|deskseed_pg_stat_statements_dealloc\",environment=\"$environment\",stack=\"deskseed\"}",
+          "legendFormat": "{{__name__}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — unavailable or no matching samples",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "A restart/reset/eviction splits evidence windows; do not compare cumulative means across it. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state."
+    },
+    {
+      "id": 21,
+      "title": "Actual search arrival, active VUs and dropped iterations",
+      "type": "timeseries",
+      "description": "Actual completed search request rate, active VUs and scheduler drops for the selected k6 run. No data means remote-write samples are missing; zero drops must be a measured zero.",
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (test_run_id) (rate(k6_agent_search_requests_total{environment=\"$environment\",test_run_id=~\"$run\",phase=\"measurement\"}[$__rate_interval]))",
+          "legendFormat": "{{test_run_id}} actual search/s"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (test_run_id) (k6_vus{environment=\"$environment\",test_run_id=~\"$run\"})",
+          "legendFormat": "{{test_run_id}} VUs"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (test_run_id) (increase(k6_dropped_iterations_total{environment=\"$environment\",test_run_id=~\"$run\"}[1m]))",
+          "legendFormat": "{{test_run_id}} dropped/1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data — k6 remote write unavailable",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "HTTP, OVERALL, phase sum and mean unattributed time",
+      "type": "timeseries",
+      "description": "Mean wall-time decomposition at compatible rate/count grain. Unattributed = HTTP mean - COUNT/PAGE/AUDIT mean sum; it is a candidate bucket for filters, transaction commit, serialization and network, never a percentile subtraction or causal proof. No data means required histograms are missing.",
+      "gridPos": {
+        "x": 12,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_seconds_sum{environment=\"$environment\",uri=\"/api/v1/agent/search\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_seconds_count{environment=\"$environment\",uri=\"/api/v1/agent/search\"}[$__rate_interval])), 0.000001)",
+          "legendFormat": "HTTP mean"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(deskseed_search_phase_seconds_sum{environment=\"$environment\",phase=\"overall\"}[$__rate_interval])) / clamp_min(sum(rate(deskseed_search_phase_seconds_count{environment=\"$environment\",phase=\"overall\"}[$__rate_interval])), 0.000001)",
+          "legendFormat": "OVERALL mean"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(sum by (phase) (rate(deskseed_search_phase_seconds_sum{environment=\"$environment\",phase=~\"count|page|audit\"}[$__rate_interval])) / clamp_min(sum by (phase) (rate(deskseed_search_phase_seconds_count{environment=\"$environment\",phase=~\"count|page|audit\"}[$__rate_interval])), 0.000001))",
+          "legendFormat": "COUNT+PAGE+AUDIT mean"
+        },
+        {
+          "refId": "D",
+          "expr": "clamp_min((sum(rate(http_server_requests_seconds_sum{environment=\"$environment\",uri=\"/api/v1/agent/search\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_requests_seconds_count{environment=\"$environment\",uri=\"/api/v1/agent/search\"}[$__rate_interval])), 0.000001)) - sum(sum by (phase) (rate(deskseed_search_phase_seconds_sum{environment=\"$environment\",phase=~\"count|page|audit\"}[$__rate_interval])) / clamp_min(sum by (phase) (rate(deskseed_search_phase_seconds_count{environment=\"$environment\",phase=~\"count|page|audit\"}[$__rate_interval])), 0.000001)), 0)",
+          "legendFormat": "unattributed mean"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data — decomposition inputs missing",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "title": "Search traces — source location and profiles",
+      "type": "traces",
+      "description": "Open a sampled trace to inspect service.version, code.file.path and code.function.name, then use Profiles for this span. No data means no matching sampled trace or unavailable Tempo ingest; it does not prove the request path was fast.",
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "deskseed-search-tempo"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ resource.service.name = \"deskseed-backend\" && resource.deployment.environment.name = \"$environment\" && span.deskseed.search.phase != nil }"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data — no sampled trace or Tempo unavailable",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 24,
+      "title": "Queryid to protected plan artifact",
+      "type": "table",
+      "description": "Candidate queryids and phase only; query text is never exported. Select a queryid and follow the protected artifact index link. No data means no matching pg_stat_statements entry or unavailable DB scrape.",
+      "gridPos": {
+        "x": 12,
+        "y": 80,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (phase, queryid) (increase(deskseed_search_sql_calls{environment=\"$environment\",stack=\"deskseed\"}[$__range]))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "No data — query statistics unavailable",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open plan artifact index for queryid",
+              "url": "$plan_artifact_base?queryid=${__data.fields.queryid}",
+              "targetBlank": true
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 19,
+      "title": "Search diagnostic logs — sampled requests",
+      "type": "logs",
+      "gridPos": {
+        "x": 0,
+        "y": 90,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"deskseed-backend\"} | deployment_environment_name = \"$environment\" |= \"Search diagnostic phase=\""
+        }
+      ],
+      "description": "Same-trace safe diagnostic logs. No data means no sampled diagnostic log or unavailable Loki ingest, not successful execution.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data — no logs or Loki unavailable"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "id": 20,
+      "title": "Evidence rules",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 99,
+        "w": 24,
+        "h": 5
+      },
+      "description": "Interpretation and missing-data rules for this RCA dashboard. No data means telemetry is unavailable or no matching samples exist; it is not measured zero or a healthy state.",
+      "options": {
+        "mode": "markdown",
+        "content": "같은 절대 시간 구간에서 k6 검색군 → HTTP/OVERALL/count/page/audit → Tempo 같은 trace의 소스 위치와 Profiles for this span → queryid별 DB 통계·wait → 보호된 실행계획 artifact를 비교합니다. SQL 원문·검색어·bind 값은 Prometheus/Grafana에 수집하지 않습니다.\n\nNo data는 0이나 정상 상태가 아닙니다. 조회 구간의 동시 변화도 원인 확정이 아닙니다. 실행계획은 동일 corpus의 load DB에서만 캡처하며 개인 스테이징에서는 EXPLAIN ANALYZE를 실행하지 않습니다."
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data — unavailable or no matching samples"
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Search traces in Tempo",
+      "url": "/explore?schemaVersion=1&panes=%7B%22search%22%3A%20%7B%22datasource%22%3A%20%22deskseed-search-tempo%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22queryType%22%3A%20%22traceql%22%2C%20%22query%22%3A%20%22%7Bresource.service.name%20%3D%20%5C%22deskseed-backend%5C%22%20%26%26%20resource.deployment.environment.name%20%3D%20%5C%22personal-staging%5C%22%20%26%26%20span.deskseed.search.phase%20%21%3D%20nil%7D%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22tempo%22%2C%20%22uid%22%3A%20%22deskseed-search-tempo%22%7D%7D%5D%2C%20%22range%22%3A%20%7B%22from%22%3A%20%22now-30m%22%2C%20%22to%22%3A%20%22now%22%7D%7D%7D",
+      "targetBlank": true
+    }
+  ]
+}

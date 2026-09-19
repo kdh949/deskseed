@@ -1,0 +1,29 @@
+{
+  "name": "Deskseed Search Tempo",
+  "uid": "deskseed-search-tempo",
+  "type": "tempo",
+  "access": "proxy",
+  "url": "http://tempo:3200",
+  "isDefault": false,
+  "jsonData": {
+    "tracesToLogsV2": {
+      "datasourceUid": "loki",
+      "spanStartTimeShift": "-1m",
+      "spanEndTimeShift": "1m",
+      "filterByTraceID": true,
+      "filterBySpanID": false,
+      "customQuery": true,
+      "query": "{service_name=\"deskseed-backend\"} | trace_id = \"${__trace.traceId}\""
+    },
+    "tracesToProfiles": {
+      "datasourceUid": "pyroscope",
+      "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+      "tags": [
+        {"key": "service.name", "value": "service_name"},
+        {"key": "service.version", "value": "service_version"}
+      ],
+      "customQuery": true,
+      "query": "{service_name=\"${__span.tags[\"service.name\"]}\",service_version=\"${__span.tags[\"service.version\"]}\"}"
+    }
+  }
+}
