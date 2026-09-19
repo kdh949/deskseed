@@ -99,6 +99,17 @@ class PricingCatalog:
         serialized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return self.count_text_tokens(requested_alias, serialized)
 
+    def require_reviewed_actual_model(
+        self,
+        requested_alias: str,
+        actual_model: str | None,
+        service_tier: str,
+        context_price_band: str,
+    ) -> None:
+        if actual_model is None:
+            raise ValueError("provider did not return a reviewed model identity")
+        self._rates(requested_alias, actual_model, service_tier, context_price_band)
+
     def _rates(
         self,
         requested_alias: str,

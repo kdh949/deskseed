@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     context_memory_ttl_hours: int = Field(24, ge=1, le=168)
     reply_routing_bucket_secret: SecretStr = SecretStr("")
     prompt_cache_mode: Literal["off", "test", "intent"] = "off"
+    embedding_optimization_mode: Literal["off", "test", "intent"] = "off"
+    embedding_model_snapshot: str = ""
+    embedding_array_size: int = Field(8, ge=1, le=8)
 
     workspace_daily_budget_microusd: int = 3_000_000
     actor_daily_budget_microusd: int = 500_000
@@ -115,11 +118,38 @@ class Settings(BaseSettings):
             raise ValueError("production context memory requires measured intent activation")
         if self.environment == "production" and self.prompt_cache_mode == "test":
             raise ValueError("production prompt cache requires measured intent activation")
+        if self.environment == "production" and self.embedding_optimization_mode == "test":
+            raise ValueError("production embedding optimization requires measured intent activation")
+        if self.embedding_optimization_mode == "intent":
+            snapshot = self.embedding_model_snapshot.strip()
+            if (
+                not snapshot
+                or snapshot == self.embedding_model
+                or snapshot.startswith("test:")
+                or len(snapshot) > 160
+                or any(not character.isprintable() for character in snapshot)
+            ):
+                raise ValueError(
+                    "embedding optimization intent requires a reviewed immutable model snapshot"
+                )
+        if self.embedding_model_snapshot and (
+            len(self.embedding_model_snapshot) > 160
+            or self.embedding_model_snapshot != self.embedding_model_snapshot.strip()
+            or any(not character.isprintable() for character in self.embedding_model_snapshot)
+        ):
+            raise ValueError("embedding model snapshot is invalid")
         if self.workspace_daily_budget_microusd <= 0 or self.actor_daily_budget_microusd <= 0:
             raise ValueError("daily budgets must be positive")
         if self.job_budget_microusd <= 0:
             raise ValueError("job budget must be positive")
         return self
+
+    @property
+    def resolved_embedding_model_snapshot(self) -> str:
+        if self.embedding_optimization_mode == "test":
+            snapshot = self.embedding_model_snapshot or self.embedding_model
+            return snapshot if snapshot.startswith("test:") else f"test:{snapshot}"
+        return self.embedding_model_snapshot
 
 
 @lru_cache(maxsize=1)

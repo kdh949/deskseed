@@ -15,8 +15,11 @@ from .retrieval import (
     EMBEDDING_DIMENSION,
     INDEX_CONTRACT_VERSION,
     NORMALIZATION_VERSION,
+    EmbeddingArtifactSpec,
     KnowledgeRepository,
+    PreparedKnowledgeChunk,
     build_public_article_chunks,
+    embedding_artifact_spec,
 )
 from .schemas import IndexEvent
 
@@ -154,7 +157,37 @@ class IndexingService:
         )
         if not chunks:
             raise ConflictError("published knowledge article is empty")
-        embedded = []
+        if self.settings.embedding_optimization_mode == "off":
+            embedded = self._embed_individually(event, chunks)
+            embedding_artifacts = None
+        else:
+            optimized = self._embed_with_reuse(event, chunks)
+            if optimized is None:
+                return 0
+            embedded, embedding_artifacts = optimized
+        tokens, _ = self.knowledge.replace_public_revision_with_vectors(
+            event.workspace_key,
+            article.articleId,
+            article.revisionId,
+            event.source_version,
+            event.event_id,
+            article.slug,
+            article.title,
+            article.publicRevision,
+            embedded,
+            artifact_generation=event.artifact_generation,
+            category_title=article.categoryTitle,
+            section_title=article.sectionTitle,
+            reconciliation_run_id=event.reconciliation_run_id,
+            lease_owner=self.owner,
+            embedding_artifacts=embedding_artifacts,
+        )
+        return tokens
+
+    def _embed_individually(
+        self, event: IndexWorkItem, chunks: list[PreparedKnowledgeChunk]
+    ) -> list[tuple[PreparedKnowledgeChunk, list[float], ProviderCallReceipt]]:
+        embedded: list[tuple[PreparedKnowledgeChunk, list[float], ProviderCallReceipt]] = []
         for ordinal, chunk in enumerate(chunks):
             call_id = uuid4()
             reservation = self.repository.reserve_system_budget(
@@ -186,23 +219,111 @@ class IndexingService:
             except Exception:
                 self.repository.mark_provider_call_unknown(call_id)
                 raise
-        tokens, _ = self.knowledge.replace_public_revision_with_vectors(
-            event.workspace_key,
-            article.articleId,
-            article.revisionId,
-            event.source_version,
-            event.event_id,
-            article.slug,
-            article.title,
-            article.publicRevision,
-            embedded,
-            artifact_generation=event.artifact_generation,
-            category_title=article.categoryTitle,
-            section_title=article.sectionTitle,
-            reconciliation_run_id=event.reconciliation_run_id,
-            lease_owner=self.owner,
-        )
-        return tokens
+        return embedded
+
+    def _embed_with_reuse(
+        self, event: IndexWorkItem, chunks: list[PreparedKnowledgeChunk]
+    ) -> tuple[
+        list[tuple[PreparedKnowledgeChunk, list[float], ProviderCallReceipt | None]],
+        list[EmbeddingArtifactSpec],
+    ] | None:
+        snapshot = self.settings.resolved_embedding_model_snapshot
+        if not snapshot:
+            raise ValueError("embedding optimization requires a model snapshot")
+        specs = [
+            embedding_artifact_spec(
+                snapshot,
+                EMBEDDING_DIMENSION,
+                NORMALIZATION_VERSION,
+                chunk.embedding_input,
+            )
+            for chunk in chunks
+        ]
+        input_by_key: dict[str, str] = {}
+        unique_specs: list[EmbeddingArtifactSpec] = []
+        seen_keys: set[str] = set()
+        for chunk, spec in zip(chunks, specs):
+            existing_input = input_by_key.setdefault(spec.artifact_key, chunk.embedding_input)
+            if existing_input != chunk.embedding_input:
+                raise ValueError("embedding artifact key collision")
+            if spec.artifact_key not in seen_keys:
+                seen_keys.add(spec.artifact_key)
+                unique_specs.append(spec)
+        vectors_by_key = self.knowledge.find_embedding_artifacts(unique_specs)
+        receipts_by_key: dict[str, ProviderCallReceipt] = {}
+        window_size = self.settings.embedding_array_size
+        for start in range(0, len(unique_specs), window_size):
+            window = unique_specs[start : start + window_size]
+            missing = [spec for spec in window if spec.artifact_key not in vectors_by_key]
+            if not missing:
+                continue
+            inputs = [input_by_key[spec.artifact_key] for spec in missing]
+            input_tokens = sum(
+                self.pricing.count_text_tokens(self.settings.embedding_model, text)
+                for text in inputs
+            )
+            call_id = uuid4()
+            reservation = self.repository.reserve_system_budget(
+                event.workspace_key,
+                f"index:{event.artifact_generation}:{event.event_id}:window:{start // window_size}",
+                self.settings.embedding_model,
+                self.pricing.version,
+                self.pricing.upper_bound_microusd(
+                    self.settings.embedding_model,
+                    input_tokens,
+                ),
+            )
+            self.repository.create_provider_call(
+                reservation,
+                call_id,
+                self.settings.embedding_model,
+                self.pricing.version,
+                self.pricing.service_tier,
+                self.pricing.context_price_band,
+            )
+            self.repository.mark_provider_call_dispatching(call_id)
+            try:
+                result = self.knowledge.embed_texts(
+                    inputs,
+                    call_id,
+                    self._receipt_recorder(call_id, reservation),
+                )
+                self.pricing.require_reviewed_actual_model(
+                    result.receipt.requested_alias,
+                    result.receipt.actual_model,
+                    result.receipt.service_tier,
+                    result.receipt.context_price_band,
+                )
+                artifact_rows = [
+                    (spec, input_text, vector, result.receipt)
+                    for spec, input_text, vector in zip(missing, inputs, result.vectors)
+                ]
+                if not self.knowledge.store_embedding_artifacts_for_index_event(
+                    event.workspace_key,
+                    event.article_id,
+                    event.source_version,
+                    event.event_id,
+                    event.artifact_generation,
+                    event.reconciliation_run_id,
+                    self.owner,
+                    artifact_rows,
+                ):
+                    return None
+                for spec, _, vector, receipt in artifact_rows:
+                    vectors_by_key[spec.artifact_key] = vector
+                    receipts_by_key[spec.artifact_key] = receipt
+            except Exception:
+                self.repository.mark_provider_call_unknown(call_id)
+                raise
+        embedded = [
+            (
+                chunk,
+                vectors_by_key[spec.artifact_key],
+                receipts_by_key.get(spec.artifact_key),
+            )
+            for chunk, spec in zip(chunks, specs)
+        ]
+        return embedded, specs
 
     def _receipt_recorder(self, expected_call_id: UUID, reservation_id: UUID) -> ReceiptRecorder:
         def record(receipt: ProviderCallReceipt) -> None:

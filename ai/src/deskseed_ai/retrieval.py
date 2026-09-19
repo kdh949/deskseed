@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from psycopg import Connection
+
 from .call_receipts import ProviderCallReceipt, ReceiptRecorder, UsageStatus
 from .db import Database
 from .pricing import Usage
@@ -27,6 +29,7 @@ CHUNKER_VERSION = "section-block-v2"
 NORMALIZATION_VERSION = "public-text-nfkc-v2"
 EMBEDDING_DIMENSION = 1536
 EMBEDDING_INPUT_TOKEN_LIMIT = 512
+EMBEDDING_ARTIFACT_KEY_VERSION = "embedding-artifact-v1"
 
 _KEYWORD_TOKEN = re.compile(r"[^\W_][\w./-]{1,63}", re.UNICODE)
 
@@ -71,8 +74,29 @@ class EmbeddingResult:
     receipt: ProviderCallReceipt
 
 
+@dataclass(frozen=True)
+class EmbeddingBatchResult:
+    vectors: list[list[float]]
+    receipt: ProviderCallReceipt
+
+
+@dataclass(frozen=True)
+class EmbeddingArtifactSpec:
+    artifact_key: str
+    model_snapshot: str
+    dimension: int
+    normalization_version: str
+    input_sha256: str
+
+
 class EmbeddingProvider:
     def embed(self, text: str, call_id: UUID, record_receipt: ReceiptRecorder) -> EmbeddingResult:
+        result = self.embed_many([text], call_id, record_receipt)
+        return EmbeddingResult(result.vectors[0], result.receipt)
+
+    def embed_many(
+        self, texts: list[str], call_id: UUID, record_receipt: ReceiptRecorder
+    ) -> EmbeddingBatchResult:
         raise NotImplementedError
 
 
@@ -80,10 +104,12 @@ class FakeEmbeddingProvider(EmbeddingProvider):
     def __init__(self, model: str = "openai/text-embedding-3-small"):
         self.model = model
 
-    def embed(self, text: str, call_id: UUID, record_receipt: ReceiptRecorder) -> EmbeddingResult:
-        digest = hashlib.sha256(text.encode()).digest()
-        values = [((digest[index % len(digest)] / 255.0) - 0.5) for index in range(1536)]
-        magnitude = math.sqrt(sum(value * value for value in values)) or 1.0
+    def embed_many(
+        self, texts: list[str], call_id: UUID, record_receipt: ReceiptRecorder
+    ) -> EmbeddingBatchResult:
+        if not texts:
+            raise ValueError("embedding input array must not be empty")
+        vectors = [_fake_embedding(text) for text in texts]
         receipt = ProviderCallReceipt(
             call_id=call_id,
             provider_request_id=f"fake-{call_id}",
@@ -91,13 +117,13 @@ class FakeEmbeddingProvider(EmbeddingProvider):
             actual_model=self.model,
             usage_schema_version="synthetic-v1",
             usage_status=UsageStatus.KNOWN,
-            usage=Usage(max(1, len(text) // 4), 0, 0, 0),
+            usage=Usage(sum(max(1, len(text) // 4) for text in texts), 0, 0, 0),
             usage_issue_code=None,
             service_tier="standard",
             context_price_band="short",
         )
         record_receipt(receipt)
-        return EmbeddingResult([value / magnitude for value in values], receipt)
+        return EmbeddingBatchResult(vectors, receipt)
 
 
 class LiteLlmEmbeddingProvider(EmbeddingProvider):
@@ -106,12 +132,16 @@ class LiteLlmEmbeddingProvider(EmbeddingProvider):
         self.api_key = api_key
         self.timeout_seconds = timeout_seconds
 
-    def embed(self, text: str, call_id: UUID, record_receipt: ReceiptRecorder) -> EmbeddingResult:
+    def embed_many(
+        self, texts: list[str], call_id: UUID, record_receipt: ReceiptRecorder
+    ) -> EmbeddingBatchResult:
         from litellm import embedding
 
+        if not texts:
+            raise ValueError("embedding input array must not be empty")
         response = embedding(
             model=self.model,
-            input=[text],
+            input=texts,
             api_key=self.api_key,
             timeout=min(45, self.timeout_seconds),
             num_retries=0,
@@ -133,8 +163,9 @@ class LiteLlmEmbeddingProvider(EmbeddingProvider):
             context_price_band="short",
         )
         record_receipt(receipt)
-        vector = list(response.data[0]["embedding"])
-        return EmbeddingResult(vector, receipt)
+        return EmbeddingBatchResult(
+            _ordered_embedding_vectors(value(response, "data"), len(texts)), receipt
+        )
 
 
 class KnowledgeRepository:
@@ -146,6 +177,100 @@ class KnowledgeRepository:
         self, text: str, call_id: UUID, record_receipt: ReceiptRecorder
     ) -> EmbeddingResult:
         return self.embeddings.embed(text, call_id, record_receipt)
+
+    def embed_texts(
+        self, texts: list[str], call_id: UUID, record_receipt: ReceiptRecorder
+    ) -> EmbeddingBatchResult:
+        return self.embeddings.embed_many(texts, call_id, record_receipt)
+
+    def find_embedding_artifacts(
+        self, specs: list[EmbeddingArtifactSpec]
+    ) -> dict[str, list[float]]:
+        if not specs:
+            return {}
+        expected = {spec.artifact_key: spec for spec in specs}
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """
+                select artifact_key, key_version, model_snapshot, embedding_dimension,
+                       normalization_version, embedding_input_sha256, embedding::text as vector
+                from ai_embedding_artifacts where artifact_key = any(%s)
+                """,
+                (list(expected),),
+            ).fetchall()
+        artifacts: dict[str, list[float]] = {}
+        for row in rows:
+            key = str(row["artifact_key"])
+            spec = expected.get(key)
+            if spec is None or not _artifact_row_matches(row, spec):
+                raise ValueError("embedding artifact contract mismatch")
+            artifacts[key] = _parse_vector_literal(str(row["vector"]), spec.dimension)
+        return artifacts
+
+    def store_embedding_artifacts_for_index_event(
+        self,
+        workspace_key: str,
+        article_id: UUID,
+        source_version: int,
+        event_id: UUID,
+        artifact_generation: int,
+        reconciliation_run_id: UUID | None,
+        lease_owner: str | None,
+        artifacts: list[
+            tuple[EmbeddingArtifactSpec, str, list[float], ProviderCallReceipt]
+        ],
+    ) -> bool:
+        now = datetime.now(UTC)
+        for spec, final_input, vector, receipt in artifacts:
+            _validate_new_embedding_artifact(spec, final_input, vector, receipt)
+        with self.database.transaction() as connection:
+            if not _index_event_is_current(
+                connection,
+                workspace_key,
+                article_id,
+                source_version,
+                event_id,
+                artifact_generation,
+                reconciliation_run_id,
+                lease_owner,
+            ):
+                return False
+            for spec, _, vector, receipt in artifacts:
+                assert receipt.actual_model is not None
+                connection.execute(
+                    """
+                    insert into ai_embedding_artifacts (
+                        artifact_key, key_version, model_snapshot, embedding_dimension,
+                        normalization_version, embedding_input_sha256, actual_model,
+                        embedding, created_at, last_used_at
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s, %s)
+                    on conflict do nothing
+                    """,
+                    (
+                        spec.artifact_key,
+                        EMBEDDING_ARTIFACT_KEY_VERSION,
+                        spec.model_snapshot,
+                        spec.dimension,
+                        spec.normalization_version,
+                        spec.input_sha256,
+                        receipt.actual_model,
+                        _vector_literal(vector),
+                        now,
+                        now,
+                    ),
+                )
+                row = connection.execute(
+                    """
+                    select artifact_key, key_version, model_snapshot, embedding_dimension,
+                           normalization_version, embedding_input_sha256, embedding::text as vector
+                    from ai_embedding_artifacts where artifact_key = %s
+                    """,
+                    (spec.artifact_key,),
+                ).fetchone()
+                if row is None or not _artifact_row_matches(row, spec):
+                    raise ValueError("embedding artifact conflict")
+                _parse_vector_literal(str(row["vector"]), spec.dimension)
+        return True
 
     def replace_public_revision(
         self,
@@ -194,49 +319,31 @@ class KnowledgeRepository:
         slug: str,
         title: str,
         public_revision: str,
-        embedded: list[tuple[str | PreparedKnowledgeChunk, list[float], ProviderCallReceipt]],
+        embedded: list[
+            tuple[str | PreparedKnowledgeChunk, list[float], ProviderCallReceipt | None]
+        ],
         *,
         artifact_generation: int = 1,
         category_title: str = "PUBLIC",
         section_title: str = "PUBLIC",
         reconciliation_run_id: UUID | None = None,
         lease_owner: str | None = None,
+        embedding_artifacts: list[EmbeddingArtifactSpec] | None = None,
     ) -> tuple[int, bool]:
+        if embedding_artifacts is not None and len(embedding_artifacts) != len(embedded):
+            raise ValueError("embedding artifact bindings do not match chunks")
         now = datetime.now(UTC)
         with self.database.transaction() as connection:
-            if reconciliation_run_id is None:
-                state = connection.execute(
-                    """
-                    select source_version, action, event_id from ai_kb_article_state
-                    where workspace_key = %s and article_id = %s for update
-                    """,
-                    (workspace_key, article_id),
-                ).fetchone()
-                applicable = bool(
-                    state
-                    and state["source_version"] == source_version
-                    and state["action"] == "UPSERT"
-                    and state["event_id"] == event_id
-                )
-            else:
-                job = connection.execute(
-                    """
-                    select source_version, action, artifact_generation, reconciliation_run_id,
-                           status, lease_owner
-                    from ai_kb_index_jobs where event_id = %s for update
-                    """,
-                    (event_id,),
-                ).fetchone()
-                applicable = bool(
-                    job
-                    and job["source_version"] == source_version
-                    and job["action"] == "UPSERT"
-                    and job["artifact_generation"] == artifact_generation
-                    and job["reconciliation_run_id"] == reconciliation_run_id
-                    and job["status"] == "LEASED"
-                    and job["lease_owner"] == lease_owner
-                )
-            if not applicable:
+            if not _index_event_is_current(
+                connection,
+                workspace_key,
+                article_id,
+                source_version,
+                event_id,
+                artifact_generation,
+                reconciliation_run_id,
+                lease_owner,
+            ):
                 return _known_input_tokens(embedded), False
             connection.execute(
                 "delete from ai_kb_revisions where workspace_key = %s and artifact_generation = %s and article_id = %s",
@@ -276,13 +383,38 @@ class KnowledgeRepository:
                     content = prepared_or_content
                     search_text = "\n".join((title, category_title, section_title, content))
                     embedding_input = content
+                artifact_key = None
+                if embedding_artifacts is not None:
+                    spec = embedding_artifacts[ordinal]
+                    if hashlib.sha256(embedding_input.encode()).hexdigest() != spec.input_sha256:
+                        raise ValueError("embedding artifact input digest mismatch")
+                    row = connection.execute(
+                        """
+                        select artifact_key, key_version, model_snapshot, embedding_dimension,
+                               normalization_version, embedding_input_sha256,
+                               embedding::text as vector
+                        from ai_embedding_artifacts where artifact_key = %s for share
+                        """,
+                        (spec.artifact_key,),
+                    ).fetchone()
+                    if row is None or not _artifact_row_matches(row, spec):
+                        raise ValueError("embedding artifact is unavailable")
+                    vector = _parse_vector_literal(str(row["vector"]), spec.dimension)
+                    artifact_key = spec.artifact_key
+                    connection.execute(
+                        """
+                        update ai_embedding_artifacts set last_used_at = %s
+                        where artifact_key = %s
+                        """,
+                        (now, artifact_key),
+                    )
                 connection.execute(
                     """
                     insert into ai_kb_chunks (
                         chunk_id, article_id, revision_id, workspace_key, artifact_generation,
                         ordinal, content, search_text, content_sha256, embedding_input_sha256,
-                        embedding, indexed_at
-                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
+                        embedding_artifact_key, embedding, indexed_at
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
                     """,
                     (
                         uuid4(),
@@ -295,6 +427,7 @@ class KnowledgeRepository:
                         search_text,
                         hashlib.sha256(content.encode()).hexdigest(),
                         hashlib.sha256(embedding_input.encode()).hexdigest(),
+                        artifact_key,
                         _vector_literal(vector),
                         now,
                     ),
@@ -719,10 +852,191 @@ def _vector_literal(vector: list[float]) -> str:
 
 
 def _known_input_tokens(
-    embedded: list[tuple[str | PreparedKnowledgeChunk, list[float], ProviderCallReceipt]],
+    embedded: list[
+        tuple[str | PreparedKnowledgeChunk, list[float], ProviderCallReceipt | None]
+    ],
 ) -> int:
+    receipts = {
+        receipt.call_id: receipt
+        for _, _, receipt in embedded
+        if receipt is not None
+        and receipt.usage_status == UsageStatus.KNOWN
+        and receipt.usage is not None
+    }
     return sum(
         receipt.usage.input_total_tokens
-        for _, _, receipt in embedded
-        if receipt.usage_status == UsageStatus.KNOWN and receipt.usage is not None
+        for receipt in receipts.values()
+        if receipt.usage is not None
+    )
+
+
+def embedding_artifact_spec(
+    model_snapshot: str,
+    dimension: int,
+    normalization_version: str,
+    final_embedding_input: str,
+) -> EmbeddingArtifactSpec:
+    fields = (
+        model_snapshot,
+        str(dimension),
+        normalization_version,
+        final_embedding_input,
+    )
+    digest = hashlib.sha256()
+    digest.update(EMBEDDING_ARTIFACT_KEY_VERSION.encode())
+    for field in fields:
+        encoded = field.encode()
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return EmbeddingArtifactSpec(
+        artifact_key=digest.hexdigest(),
+        model_snapshot=model_snapshot,
+        dimension=dimension,
+        normalization_version=normalization_version,
+        input_sha256=hashlib.sha256(final_embedding_input.encode()).hexdigest(),
+    )
+
+
+def _fake_embedding(text: str) -> list[float]:
+    digest = hashlib.sha256(text.encode()).digest()
+    values = [((digest[index % len(digest)] / 255.0) - 0.5) for index in range(1536)]
+    magnitude = math.sqrt(sum(value * value for value in values)) or 1.0
+    return [value / magnitude for value in values]
+
+
+def _ordered_embedding_vectors(data: object | None, expected_count: int) -> list[list[float]]:
+    if not isinstance(data, (list, tuple)) or len(data) != expected_count:
+        raise ValueError("embedding response count mismatch")
+    ordered: list[list[float] | None] = [None] * expected_count
+    for item in data:
+        index = value(item, "index")
+        vector = value(item, "embedding")
+        if (
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or index < 0
+            or index >= expected_count
+            or ordered[index] is not None
+        ):
+            raise ValueError("embedding response index mapping is invalid")
+        if not isinstance(vector, (list, tuple)) or len(vector) != EMBEDDING_DIMENSION:
+            raise ValueError("embedding response vector dimension is invalid")
+        normalized: list[float] = []
+        for component in vector:
+            if (
+                not isinstance(component, (int, float))
+                or isinstance(component, bool)
+                or not math.isfinite(float(component))
+            ):
+                raise ValueError("embedding response vector value is invalid")
+            normalized.append(float(component))
+        ordered[index] = normalized
+    if any(vector is None for vector in ordered):
+        raise ValueError("embedding response mapping is incomplete")
+    return [vector for vector in ordered if vector is not None]
+
+
+def _parse_vector_literal(value_text: str, expected_dimension: int) -> list[float]:
+    if not value_text.startswith("[") or not value_text.endswith("]"):
+        raise ValueError("stored embedding vector is malformed")
+    values = [float(value) for value in value_text[1:-1].split(",")]
+    if len(values) != expected_dimension or any(not math.isfinite(value) for value in values):
+        raise ValueError("stored embedding vector dimension is invalid")
+    return values
+
+
+def _artifact_row_matches(row: dict[str, object], spec: EmbeddingArtifactSpec) -> bool:
+    return (
+        str(row["artifact_key"]) == spec.artifact_key
+        and row["key_version"] == EMBEDDING_ARTIFACT_KEY_VERSION
+        and row["model_snapshot"] == spec.model_snapshot
+        and row["embedding_dimension"] == spec.dimension
+        and row["normalization_version"] == spec.normalization_version
+        and str(row["embedding_input_sha256"]) == spec.input_sha256
+    )
+
+
+def _validate_new_embedding_artifact(
+    spec: EmbeddingArtifactSpec,
+    final_input: str,
+    vector: list[float],
+    receipt: ProviderCallReceipt,
+) -> None:
+    if spec != embedding_artifact_spec(
+        spec.model_snapshot,
+        spec.dimension,
+        spec.normalization_version,
+        final_input,
+    ):
+        raise ValueError("embedding artifact key does not match the final input")
+    if (
+        len(spec.artifact_key) != 64
+        or len(spec.input_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in spec.artifact_key)
+        or any(character not in "0123456789abcdef" for character in spec.input_sha256)
+    ):
+        raise ValueError("embedding artifact digest is invalid")
+    if (
+        not spec.model_snapshot
+        or len(spec.model_snapshot) > 160
+        or not spec.normalization_version
+        or len(spec.normalization_version) > 80
+    ):
+        raise ValueError("embedding artifact contract identity is invalid")
+    if spec.dimension != EMBEDDING_DIMENSION or len(vector) != spec.dimension:
+        raise ValueError("embedding artifact vector dimension is invalid")
+    if any(not math.isfinite(value) for value in vector):
+        raise ValueError("embedding artifact vector value is invalid")
+    if receipt.actual_model is None:
+        raise ValueError("embedding artifact requires provider model identity")
+
+
+def _index_event_is_current(
+    connection: Connection,
+    workspace_key: str,
+    article_id: UUID,
+    source_version: int,
+    event_id: UUID,
+    artifact_generation: int,
+    reconciliation_run_id: UUID | None,
+    lease_owner: str | None,
+) -> bool:
+    state = connection.execute(
+        """
+        select source_version, action, event_id from ai_kb_article_state
+        where workspace_key = %s and article_id = %s for update
+        """,
+        (workspace_key, article_id),
+    ).fetchone()
+    if reconciliation_run_id is None:
+        return bool(
+            state
+            and state["source_version"] == source_version
+            and state["action"] == "UPSERT"
+            and state["event_id"] == event_id
+        )
+    job = connection.execute(
+        """
+        select source_version, action, artifact_generation, reconciliation_run_id,
+               status, lease_owner
+        from ai_kb_index_jobs where event_id = %s for update
+        """,
+        (event_id,),
+    ).fetchone()
+    state_is_newer_or_withdrawn = bool(
+        state
+        and (
+            state["source_version"] > source_version
+            or (state["source_version"] == source_version and state["action"] != "UPSERT")
+        )
+    )
+    return bool(
+        job
+        and job["source_version"] == source_version
+        and job["action"] == "UPSERT"
+        and job["artifact_generation"] == artifact_generation
+        and job["reconciliation_run_id"] == reconciliation_run_id
+        and job["status"] == "LEASED"
+        and job["lease_owner"] == lease_owner
+        and not state_is_newer_or_withdrawn
     )

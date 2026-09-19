@@ -45,6 +45,7 @@ from deskseed_ai.retrieval import (
     KnowledgeRepository,
     build_retrieval_query,
     chunk_public_article,
+    embedding_artifact_spec,
 )
 from deskseed_ai.schemas import (
     CancellationEnvelope,
@@ -277,6 +278,69 @@ def test_prompt_cache_migration_preserves_pre_s13_provider_calls(
         "prompt_cache_status": None,
         "prompt_cache_prefix_tokens": None,
         "prompt_cache_key_version": None,
+    }
+
+
+@pytest.mark.integration
+def test_embedding_artifact_migration_is_additive_and_constrained(
+    repository: Repository,
+) -> None:
+    with repository.database.connection() as connection:
+        migration = connection.execute(
+            "select description from ai_schema_history where version = 17"
+        ).fetchone()
+        chunk_column = connection.execute(
+            """
+            select is_nullable from information_schema.columns
+            where table_schema = 'public' and table_name = 'ai_kb_chunks'
+              and column_name = 'embedding_artifact_key'
+            """
+        ).fetchone()
+    assert migration["description"] == "017_embedding_artifacts"
+    assert chunk_column["is_nullable"] == "YES"
+
+    with pytest.raises(CheckViolation), repository.database.transaction() as connection:
+        connection.execute(
+            """
+            insert into ai_embedding_artifacts (
+                artifact_key, key_version, model_snapshot, embedding_dimension,
+                normalization_version, embedding_input_sha256, actual_model,
+                embedding, created_at, last_used_at
+            ) values (%s, 'embedding-artifact-v1', 'test:model', 1536,
+                      'public-text-nfkc-v2', %s, 'text-embedding-3-small',
+                      array_fill(0::real, array[1536])::vector,
+                      clock_timestamp(), clock_timestamp())
+            """,
+            ("z" * 64, "a" * 64),
+        )
+
+
+@pytest.mark.integration
+def test_embedding_artifact_migration_preserves_pre_s14_chunk_rows(
+    repository: Repository,
+) -> None:
+    existing_chunk_id = uuid4()
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "017_embedding_artifacts.sql"
+    ).read_text(encoding="utf-8")
+    with repository.database.transaction() as connection:
+        connection.execute("drop schema if exists migration_017_probe cascade")
+        connection.execute("create schema migration_017_probe")
+        connection.execute("set local search_path = migration_017_probe, public")
+        connection.execute("create table ai_kb_chunks (chunk_id uuid primary key)")
+        connection.execute(
+            "insert into ai_kb_chunks (chunk_id) values (%s)", (existing_chunk_id,)
+        )
+        connection.execute(migration)
+        preserved = connection.execute(
+            "select chunk_id, embedding_artifact_key from ai_kb_chunks"
+        ).fetchone()
+        connection.execute("drop schema migration_017_probe cascade")
+    assert preserved == {
+        "chunk_id": existing_chunk_id,
+        "embedding_artifact_key": None,
     }
 
 
@@ -2293,6 +2357,15 @@ def test_public_kb_revision_replacement_and_vector_retrieval(repository: Reposit
         "refund-policy", "환불 정책", "c" * 64, chunks
     )
     assert token_count > 0 and applied
+    with repository.database.connection() as connection:
+        legacy_binding = connection.execute(
+            """
+            select embedding_artifact_key from ai_kb_chunks
+            where workspace_key = 'default' and article_id = %s
+            """,
+            (article_id,),
+        ).fetchone()
+    assert legacy_binding["embedding_artifact_key"] is None
     publish_test_artifact(repository, "default", 7)
     matches = knowledge.retrieve("default", "환불 요청 기간", limit=3)
     assert matches and matches[0].revision_id == first_revision
@@ -2510,6 +2583,259 @@ def test_index_event_fetches_exact_public_revision_and_settles_system_budget(
 
 
 @pytest.mark.integration
+def test_embedding_optimization_batches_unique_misses_and_reuses_artifacts(
+    repository: Repository, settings: Settings
+) -> None:
+    optimized_settings = settings.model_copy(
+        update={"embedding_optimization_mode": "test", "embedding_array_size": 2}
+    )
+    body = "\n\n".join(
+        " ".join(f"항목{block}-{item}" for item in range(180))
+        for block in range(5)
+    )
+    now = datetime.now(UTC)
+    events = [
+        IndexEvent(
+            schemaVersion=1,
+            eventId=uuid4(),
+            workspaceKey="embedding-reuse",
+            articleId=uuid4(),
+            revisionId=uuid4(),
+            action="UPSERT",
+            sourceVersion=1,
+            publicRevision=character * 64,
+            createdAt=now + timedelta(seconds=index),
+        )
+        for index, character in enumerate(("a", "b"))
+    ]
+    assert repository.begin_reconciliation(
+        uuid4(),
+        "embedding-reuse",
+        uuid4(),
+        now + timedelta(hours=1),
+        9,
+        INDEX_CONTRACT_VERSION,
+        CHUNKER_VERSION,
+        NORMALIZATION_VERSION,
+        optimized_settings.embedding_model,
+        EMBEDDING_DIMENSION,
+    )
+    run = repository.current_reconciliation("embedding-reuse")
+    assert run is not None
+    for event in events:
+        repository.accept_reconciliation_index_event(run, event)
+    assert repository.record_reconciliation_page(
+        run,
+        [
+            (event.articleId, event.revisionId, event.sourceVersion, event.publicRevision)
+            for event in events
+        ],
+        None,
+    )
+
+    class PublicArticleBackend:
+        def read_public_article(self, article_id, revision_id, request_ref):
+            event = next(item for item in events if item.eventId == request_ref)
+            assert (article_id, revision_id) == (event.articleId, event.revisionId)
+            return PublicKnowledgeArticle(
+                articleId=article_id,
+                revisionId=revision_id,
+                slug=f"article-{article_id}",
+                title="공개 배열 도움말",
+                categoryTitle="지원",
+                sectionTitle="배열",
+                body=body,
+                sourceVersion=1,
+                publicRevision=event.publicRevision,
+                publishedAt=now,
+                dataClass="PUBLIC_KB_ONLY",
+            )
+
+    class CountingArrayProvider(FakeEmbeddingProvider):
+        calls: list[list[str]] = []
+
+        def embed_many(self, texts, call_id, record_receipt):
+            self.calls.append(list(texts))
+            return super().embed_many(texts, call_id, record_receipt)
+
+    provider = CountingArrayProvider()
+    service = IndexingService(
+        PublicArticleBackend(),
+        KnowledgeRepository(repository.database, provider),
+        repository,
+        optimized_settings,
+        Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
+        TraceAdapter(optimized_settings),
+    )
+
+    assert service.process_once(limit=10) == 2
+    with repository.database.connection() as connection:
+        counts = connection.execute(
+            """
+            select
+                (select count(*) from ai_embedding_artifacts) as artifacts,
+                (select count(*) from ai_kb_chunks
+                 where workspace_key = 'embedding-reuse') as chunks,
+                (select count(*) from ai_kb_chunks
+                 where workspace_key = 'embedding-reuse'
+                   and embedding_artifact_key is null) as unbound,
+                (select count(*) from ai_provider_calls) as provider_calls
+            """
+        ).fetchone()
+        operation_keys = [
+            row["operation_key"]
+            for row in connection.execute(
+                "select operation_key from ai_cost_ledger order by operation_key"
+            ).fetchall()
+        ]
+    artifact_count = counts["artifacts"]
+    assert artifact_count > 2
+    assert counts["chunks"] == artifact_count * 2
+    assert counts["unbound"] == 0
+    assert len(provider.calls) == (artifact_count + 1) // 2
+    assert counts["provider_calls"] == len(provider.calls)
+    assert all(1 <= len(call) <= 2 for call in provider.calls)
+    assert all(":window:" in key for key in operation_keys)
+
+
+@pytest.mark.integration
+def test_concurrent_embedding_artifact_insert_converges_on_one_canonical_vector(
+    repository: Repository,
+) -> None:
+    event = IndexEvent(
+        schemaVersion=1,
+        eventId=uuid4(),
+        workspaceKey="embedding-concurrency",
+        articleId=uuid4(),
+        revisionId=uuid4(),
+        action="UPSERT",
+        sourceVersion=1,
+        publicRevision="d" * 64,
+        createdAt=datetime.now(UTC),
+    )
+    run = begin_test_index_build(repository, event)
+    claimed = repository.claim_index_events("concurrent-owner", 1)
+    assert len(claimed) == 1
+    final_input = "Document title: 동시성\nCategory: 지원\nSection: 색인\nBody:\n공개 본문"
+    spec = embedding_artifact_spec(
+        "test:concurrent-v1",
+        EMBEDDING_DIMENSION,
+        NORMALIZATION_VERSION,
+        final_input,
+    )
+    receipt = provider_receipt(uuid4(), alias="openai/text-embedding-3-small")
+    knowledge = KnowledgeRepository(repository.database, FakeEmbeddingProvider())
+
+    def store(vector_value: float) -> bool:
+        return knowledge.store_embedding_artifacts_for_index_event(
+            event.workspaceKey,
+            event.articleId,
+            event.sourceVersion,
+            event.eventId,
+            run.target_artifact_generation,
+            run.run_id,
+            "concurrent-owner",
+            [(spec, final_input, [vector_value] * EMBEDDING_DIMENSION, receipt)],
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(store, (0.0, 1.0)))
+
+    assert results == [True, True]
+    with repository.database.connection() as connection:
+        rows = connection.execute(
+            """
+            select artifact_key, embedding::text as vector
+            from ai_embedding_artifacts where artifact_key = %s
+            """,
+            (spec.artifact_key,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["artifact_key"] == spec.artifact_key
+    assert rows[0]["vector"].startswith("[0") or rows[0]["vector"].startswith("[1")
+
+
+@pytest.mark.integration
+def test_embedding_array_later_failure_preserves_earlier_cost_and_artifact(
+    repository: Repository, settings: Settings
+) -> None:
+    optimized_settings = settings.model_copy(
+        update={"embedding_optimization_mode": "test", "embedding_array_size": 1}
+    )
+    event = IndexEvent(
+        schemaVersion=1,
+        eventId=uuid4(),
+        workspaceKey="embedding-partial",
+        articleId=uuid4(),
+        revisionId=uuid4(),
+        action="UPSERT",
+        sourceVersion=1,
+        publicRevision="c" * 64,
+        createdAt=datetime.now(UTC),
+    )
+    begin_test_index_build(repository, event)
+    body = "\n\n".join(
+        " ".join(f"실패{block}-{item}" for item in range(180))
+        for block in range(3)
+    )
+
+    class PublicArticleBackend:
+        def read_public_article(self, article_id, revision_id, request_ref):
+            return PublicKnowledgeArticle(
+                articleId=article_id,
+                revisionId=revision_id,
+                slug="partial-array",
+                title="부분 실패",
+                categoryTitle="지원",
+                sectionTitle="배열",
+                body=body,
+                sourceVersion=1,
+                publicRevision=event.publicRevision,
+                publishedAt=datetime.now(UTC),
+                dataClass="PUBLIC_KB_ONLY",
+            )
+
+    class FailSecondArray(FakeEmbeddingProvider):
+        calls = 0
+
+        def embed_many(self, texts, call_id, record_receipt):
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("synthetic second array failure")
+            return super().embed_many(texts, call_id, record_receipt)
+
+    service = IndexingService(
+        PublicArticleBackend(),
+        KnowledgeRepository(repository.database, FailSecondArray()),
+        repository,
+        optimized_settings,
+        Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
+        TraceAdapter(optimized_settings),
+    )
+
+    assert service.process_once(limit=1) == 0
+    with repository.database.connection() as connection:
+        statuses = connection.execute(
+            """
+            select status, count(*) as count from ai_cost_ledger
+            group by status order by status
+            """
+        ).fetchall()
+        artifacts = connection.execute(
+            "select count(*) as count from ai_embedding_artifacts"
+        ).fetchone()["count"]
+        chunks = connection.execute(
+            "select count(*) as count from ai_kb_chunks"
+        ).fetchone()["count"]
+    assert {row["status"]: row["count"] for row in statuses} == {
+        "SETTLED": 1,
+        "UNKNOWN": 1,
+    }
+    assert artifacts == 1
+    assert chunks == 0
+
+
+@pytest.mark.integration
 def test_delete_accepted_during_embedding_cannot_be_reversed(
     repository: Repository, settings: Settings
 ) -> None:
@@ -2534,11 +2860,11 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
     class DeleteDuringEmbedding(FakeEmbeddingProvider):
         accepted = False
 
-        def embed(self, text, call_id, record_receipt):
+        def embed_many(self, texts, call_id, record_receipt):
             if not self.accepted:
                 self.accepted = True
                 repository.accept_index_event(deleted)
-            return super().embed(text, call_id, record_receipt)
+            return super().embed_many(texts, call_id, record_receipt)
 
     class PublicArticleBackend:
         def read_public_article(self, requested_article, requested_revision, request_ref):
@@ -2556,13 +2882,14 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
                 dataClass="PUBLIC_KB_ONLY",
             )
 
+    optimized_settings = settings.model_copy(update={"embedding_optimization_mode": "test"})
     service = IndexingService(
         PublicArticleBackend(),
         KnowledgeRepository(repository.database, DeleteDuringEmbedding()),
         repository,
-        settings,
+        optimized_settings,
         Path(__file__).resolve().parents[1] / "config" / "pricing-v2.json",
-        TraceAdapter(settings),
+        TraceAdapter(optimized_settings),
     )
     assert service.process_once(limit=1) == 1
     with repository.database.connection() as connection:
@@ -2572,7 +2899,10 @@ def test_delete_accepted_during_embedding_cannot_be_reversed(
             where article_id = %s and artifact_generation = %s and status = 'PUBLIC'
             """,
             (article_id, run.target_artifact_generation),
-        ).fetchone()["count"] == 1
+        ).fetchone()["count"] == 0
+        assert connection.execute(
+            "select count(*) as count from ai_embedding_artifacts"
+        ).fetchone()["count"] == 0
     assert repository.try_publish_index_generation("default") is False
     assert repository.current_published_index_generation("default") is None
 
