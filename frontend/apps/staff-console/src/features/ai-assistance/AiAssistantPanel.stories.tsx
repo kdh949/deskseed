@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { AiAssistantPanel, type AiAssistantClient } from './AiAssistantPanel'
+import { ApiError } from '../../api/client'
 import { plainTextDocument } from '../../api/types'
 import type { AiFeature, AiJobReceipt, AiResult } from './api'
 
@@ -80,7 +81,13 @@ function clientFor(items: AiJobReceipt[]): AiAssistantClient {
       if (!job) throw new Error('missing story job')
       return job
     }),
-    create: fn(async (_ticketNumber, _version, feature) => receipt(feature)),
+    create: fn(async (_ticketNumber, _version, feature, generationMode) =>
+      receipt(feature, {
+        generationMode,
+        ...(generationMode === 'NEW_CANDIDATE' ? { candidateSequence: 1 } : {}),
+        reuseKind: 'GENERATED',
+      }),
+    ),
     cancel: fn(async (_ticketNumber, jobId) => {
       const job = items.find((item) => item.jobId === jobId)
       if (!job) throw new Error('missing story job')
@@ -145,6 +152,72 @@ export const Generating: Story = {
         result: null,
       }),
     ]),
+  },
+}
+
+export const RecentResultReuse: Story = {
+  args: {
+    client: clientFor([
+      receipt('ticket.reply_draft', {
+        generationMode: 'REUSE_OR_CREATE',
+        reuseKind: 'CACHE_HIT',
+      }),
+    ]),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByText('현재 입력과 일치하는 최근 결과를 사용했습니다.'),
+    ).toBeVisible()
+  },
+}
+
+export const SharedExecutionWait: Story = {
+  args: {
+    client: clientFor([
+      receipt('ticket.reply_draft', {
+        status: 'RUNNING',
+        phase: 'GENERATE',
+        completedAt: null,
+        resultExpiresAt: null,
+        canInsert: false,
+        result: null,
+        generationMode: 'REUSE_OR_CREATE',
+      }),
+    ]),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      await canvas.findByText(
+        '최근 결과를 확인하거나 같은 입력의 진행 중인 작업을 기다리고 있습니다.',
+      ),
+    ).toBeVisible()
+  },
+}
+
+export const CandidateLimit: Story = {
+  args: {
+    client: {
+      ...clientFor([receipt('ticket.reply_draft')]),
+      create: fn(async () => {
+        throw new ApiError('rate limited', 429, undefined, undefined, '7200')
+      }),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '다른 초안 생성' }),
+    )
+    await expect(
+      await canvas.findByText(
+        '다른 초안 요청 한도 또는 AI 사용 한도에 도달했습니다. 약 2시간 후 다시 시도해 주세요.',
+      ),
+    ).toBeVisible()
+    await expect(
+      canvas.getByText('안녕하세요. 결제 승인 기록을 확인하고 있습니다.'),
+    ).toBeVisible()
   },
 }
 

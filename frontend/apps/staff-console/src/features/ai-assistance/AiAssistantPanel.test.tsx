@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../api/client'
 import { plainTextDocument } from '../../api/types'
 import {
   AiAssistantPanel,
@@ -148,7 +149,7 @@ describe('AiAssistantPanel', () => {
     render(panel(client({ create })))
     const button = (
       await screen.findAllByRole('button', {
-        name: '생성하기',
+        name: '결과 확인/생성',
       })
     )[0]!
     await waitFor(() => expect(button).toBeEnabled())
@@ -171,14 +172,134 @@ describe('AiAssistantPanel', () => {
     render(panel(client({ list })))
 
     expect(
-      screen.getAllByRole('button', { name: '생성하기' })[0],
+      screen.getAllByRole('button', { name: '결과 확인/생성' })[0],
     ).toBeDisabled()
     await act(async () => resolveList?.({ items: [] }))
     await waitFor(() =>
       expect(
-        screen.getAllByRole('button', { name: '생성하기' })[0],
+        screen.getAllByRole('button', { name: '결과 확인/생성' })[0],
       ).toBeEnabled(),
     )
+  })
+
+  it('uses explicit reuse intent for the primary action', async () => {
+    const create = vi.fn(
+      async (_ticketNumber: number, _version: number, feature: AiFeature) =>
+        receipt(feature),
+    )
+    render(panel(client({ create })))
+
+    fireEvent.click(
+      (
+        await screen.findAllByRole('button', {
+          name: '결과 확인/생성',
+        })
+      )[0]!,
+    )
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    expect(create).toHaveBeenCalledWith(
+      3001,
+      7,
+      'ticket.summary',
+      'REUSE_OR_CREATE',
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+    )
+  })
+
+  it('creates a distinct candidate only from the secondary action', async () => {
+    const ready = receipt('ticket.summary')
+    const create = vi.fn(
+      async (_ticketNumber: number, _version: number, feature: AiFeature) =>
+        receipt(feature, {
+          generationMode: 'NEW_CANDIDATE',
+          candidateSequence: 1,
+          reuseKind: 'GENERATED',
+        }),
+    )
+    render(
+      panel(
+        client({
+          list: vi.fn(async () => ({ items: [ready] })),
+          create,
+        }),
+      ),
+    )
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: '다른 초안 생성' }),
+    )
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    expect(create).toHaveBeenCalledWith(
+      3001,
+      7,
+      'ticket.summary',
+      'NEW_CANDIDATE',
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+    )
+    expect(
+      await screen.findByText('다른 초안을 새 후보로 생성했습니다.'),
+    ).toBeVisible()
+  })
+
+  it('retries an ambiguous create with the exact command identity', async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network lost'))
+      .mockResolvedValueOnce(
+        receipt('ticket.summary', {
+          generationMode: 'REUSE_OR_CREATE',
+          reuseKind: 'GENERATED',
+        }),
+      )
+    render(panel(client({ create })))
+
+    fireEvent.click(
+      (
+        await screen.findAllByRole('button', {
+          name: '결과 확인/생성',
+        })
+      )[0]!,
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: '같은 요청 다시 시도' }),
+    )
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0])
+    expect(
+      await screen.findByText('현재 입력에 맞는 새 결과를 생성했습니다.'),
+    ).toBeVisible()
+  })
+
+  it('keeps the current result and shows bounded retry guidance on 429', async () => {
+    const ready = receipt('ticket.summary')
+    const create = vi.fn(async () => {
+      throw new ApiError('rate limited', 429, undefined, undefined, '3600')
+    })
+    render(
+      panel(
+        client({
+          list: vi.fn(async () => ({ items: [ready] })),
+          create,
+        }),
+      ),
+    )
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: '다른 초안 생성' }),
+    )
+
+    expect(
+      await screen.findByText(
+        '다른 초안 요청 한도 또는 AI 사용 한도에 도달했습니다. 약 1시간 후 다시 시도해 주세요.',
+      ),
+    ).toBeVisible()
+    expect(screen.getByText('결제 상태를 확인하고 있습니다.')).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: '같은 요청 다시 시도' }),
+    ).not.toBeInTheDocument()
   })
 
   it('rejects insertion when rich content changes during revalidation', async () => {

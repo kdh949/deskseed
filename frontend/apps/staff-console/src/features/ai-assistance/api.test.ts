@@ -25,7 +25,9 @@ const receipt = {
   stale: false,
   canInsert: true,
   errorCode: null,
+  generationMode: 'REUSE_OR_CREATE',
   candidateId: '55555555-5555-4555-8555-555555555555',
+  reuseKind: 'CACHE_HIT',
   result: {
     type: 'ticket.reply_draft',
     answer: '공개 답변 초안',
@@ -55,6 +57,41 @@ describe('AI assistance API', () => {
     )
     expect(
       decodeAiJobReceipt({ ...receipt, candidateId: 'browser-created' }),
+    ).toBeUndefined()
+  })
+
+  it('strictly decodes generation intent and reuse metadata', () => {
+    expect(decodeAiJobReceipt(receipt)).toMatchObject({
+      generationMode: 'REUSE_OR_CREATE',
+      reuseKind: 'CACHE_HIT',
+    })
+    expect(
+      decodeAiJobReceipt({
+        ...receipt,
+        generationMode: 'NEW_CANDIDATE',
+        candidateSequence: 2,
+        reuseKind: 'GENERATED',
+      }),
+    ).toMatchObject({
+      generationMode: 'NEW_CANDIDATE',
+      candidateSequence: 2,
+      reuseKind: 'GENERATED',
+    })
+    expect(
+      decodeAiJobReceipt({ ...receipt, generationMode: 'AUTOMATIC' }),
+    ).toBeUndefined()
+    expect(
+      decodeAiJobReceipt({ ...receipt, generationMode: 'NEW_CANDIDATE' }),
+    ).toBeUndefined()
+    expect(
+      decodeAiJobReceipt({ ...receipt, candidateSequence: 1 }),
+    ).toBeUndefined()
+    expect(
+      decodeAiJobReceipt({
+        ...receipt,
+        generationMode: undefined,
+        reuseKind: 'CACHE_HIT',
+      }),
     ).toBeUndefined()
   })
 
@@ -93,7 +130,13 @@ describe('AI assistance API', () => {
       )
     vi.stubGlobal('fetch', fetchMock)
 
-    await createAiJob(3001, 7, 'ticket.reply_draft')
+    await createAiJob(
+      3001,
+      7,
+      'ticket.reply_draft',
+      'REUSE_OR_CREATE',
+      '66666666-6666-4666-8666-666666666666',
+    )
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
@@ -104,7 +147,7 @@ describe('AI assistance API', () => {
           'X-CSRF-TOKEN': 'csrf-ai',
           'X-Deskseed-Expected-Staff-Id':
             '55555555-5555-4555-8555-555555555555',
-          'Idempotency-Key': expect.stringMatching(/^[0-9a-f-]{36}$/),
+          'Idempotency-Key': '66666666-6666-4666-8666-666666666666',
         }),
       }),
     )
@@ -112,6 +155,7 @@ describe('AI assistance API', () => {
     expect(JSON.parse(String(request.body))).toEqual({
       feature: 'ticket.reply_draft',
       expectedTicketVersion: 7,
+      generationMode: 'REUSE_OR_CREATE',
       options: { language: 'ko', tone: 'calm' },
     })
   })

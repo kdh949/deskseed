@@ -136,6 +136,15 @@
   font-size: var(--ds-font-size-100);
 }
 
+.ai-assistant-card__reuse-status {
+  padding: var(--ds-space-075) var(--ds-space-100);
+  border-radius: var(--ds-radius-medium);
+  background: var(--ds-palette-brand-soft);
+  color: var(--ds-palette-brand-strong);
+  font-size: var(--ds-font-size-100);
+  line-height: var(--ds-line-normal);
+}
+
 .ai-assistant-card__progress .seed-button {
   margin-left: auto;
 }
@@ -217,6 +226,12 @@
   border-top: var(--ds-border-hairline) solid var(--ds-palette-line);
   color: var(--ds-palette-ink-muted);
   font-size: var(--ds-font-size-050);
+}
+
+.ai-assistant-card__candidate-limit {
+  color: var(--ds-palette-ink-muted);
+  font-size: var(--ds-font-size-050);
+  line-height: var(--ds-line-normal);
 }
 
 .ai-assistant-card__feedback button {
