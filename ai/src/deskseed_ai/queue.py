@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -46,8 +47,10 @@ from .retrieval import (
     MissingCurrentProblemError,
     RetrievalQueryTooLongError,
 )
+from .routing import reply_routing_policy_fingerprint, select_reply_route
 from .schemas import (
     AuthorRole,
+    Citation,
     ContextMemoryPayload,
     ContextMemoryProviderOutput,
     Feature,
@@ -234,7 +237,10 @@ class StreamRuntime:
                     raise BackendSupersededError("context revision mismatch")
                 policy = self.backend.read_policy(claim.feature.value)
                 model = self.settings.model_standard if claim.feature == Feature.REPLY_DRAFT else self.settings.model_fast
-                if model not in {policy.fastModelAlias, policy.standardModelAlias}:
+                if (
+                    self.settings.model_fast != policy.fastModelAlias
+                    or self.settings.model_standard != policy.standardModelAlias
+                ):
                     raise BackendPolicyDisabledError("configured model alias differs from backend policy")
                 published_index = self.repository.current_published_index_generation(claim.workspace_key)
                 if claim.feature == Feature.REPLY_DRAFT and (
@@ -330,25 +336,139 @@ class StreamRuntime:
                             shared,
                             calls,
                         )
+                        route = select_reply_route(
+                            context=prepared_context,
+                            knowledge=knowledge,
+                            memory=memory,
+                            policy=policy,
+                            workspace_key=claim.workspace_key,
+                            requester_id=claim.requester_id,
+                            bucket_secret=self.settings.reply_routing_bucket_secret.get_secret_value(),
+                            count_tokens=lambda value: self.pricing.count_text_tokens(
+                                self.settings.model_fast, value
+                            ),
+                        )
+                        requested_alias = (
+                            self.settings.model_fast
+                            if route.route == "LOW_COST"
+                            else self.settings.model_standard
+                        )
+                        call_type = (
+                            "GENERATION_LOW_COST"
+                            if route.route == "LOW_COST"
+                            else "GENERATION"
+                        )
+                        self.repository.record_reply_route(
+                            claim,
+                            decision=route.route,
+                            cohort=route.cohort,
+                            policy_version=route.policy_version,
+                            marker_version=route.marker_version,
+                            rollout_percent=route.rollout_percent,
+                            requested_alias=requested_alias,
+                        )
                         call_id, recorder = self._prepare_call(
                             claim,
-                            model,
+                            requested_alias,
                             self.provider.estimate_input_tokens(
                                 self.pricing, claim.feature, prepared_context, knowledge,
-                                claim.options, memory,
+                                claim.options, memory, requested_alias=requested_alias,
                             ),
                             2048,
-                            "GENERATION",
+                            call_type,
                             shared,
                         )
                         calls.append(call_id)
                         self.repository.set_phase(claim, JobPhase.GENERATE)
+
+                        def prepare_escalation(reason: str) -> PreparedReplyGeneration:
+                            if datetime.now(UTC) >= claim.deadline_at:
+                                raise BackendSupersededError(
+                                    "job deadline expired before reply escalation"
+                                )
+                            current = self.backend.read_context_revision(claim.job_id)
+                            if (
+                                current.contextRevision != claim.context_revision
+                                or current.aiInputRevision != claim.ai_input_revision
+                                or current.inputPolicyVersion != claim.input_policy_version
+                            ):
+                                raise BackendSupersededError(
+                                    "context changed before reply escalation"
+                                )
+                            current_policy = self.backend.read_policy(claim.feature.value)
+                            if reply_routing_policy_fingerprint(
+                                current_policy
+                            ) != reply_routing_policy_fingerprint(policy):
+                                raise BackendPolicyDisabledError(
+                                    "reply routing policy changed before escalation"
+                                )
+                            current_index = self.repository.current_published_index_generation(
+                                claim.workspace_key
+                            )
+                            if current_index != published_index:
+                                raise BackendSupersededError(
+                                    "knowledge index changed before reply escalation"
+                                )
+                            candidates = [
+                                Citation(
+                                    articleId=item.article_id,
+                                    revisionId=item.revision_id,
+                                    chunkId=item.chunk_id,
+                                    title=item.title,
+                                    url=f"/help/articles/{item.slug}",
+                                )
+                                for item in knowledge
+                            ]
+                            if self.backend.authorize_citations(
+                                claim.job_id, candidates
+                            ) != candidates:
+                                raise BackendSupersededError(
+                                    "knowledge authorization changed before escalation"
+                                )
+                            escalation_id, escalation_recorder = self._prepare_call(
+                                claim,
+                                self.settings.model_standard,
+                                self.provider.estimate_input_tokens(
+                                    self.pricing,
+                                    claim.feature,
+                                    prepared_context,
+                                    knowledge,
+                                    claim.options,
+                                    memory,
+                                    requested_alias=self.settings.model_standard,
+                                ),
+                                2048,
+                                "GENERATION_ESCALATION",
+                                shared,
+                            )
+                            self.repository.record_reply_escalation(
+                                claim,
+                                reason=reason,
+                                requested_alias=self.settings.model_standard,
+                            )
+                            calls.append(escalation_id)
+                            return PreparedReplyGeneration(
+                                prepared_context,
+                                memory,
+                                escalation_id,
+                                escalation_recorder,
+                                source_comment_ids,
+                                self.settings.model_standard,
+                                None,
+                            )
+
                         return PreparedReplyGeneration(
                             prepared_context,
                             memory,
                             call_id,
                             recorder,
                             source_comment_ids,
+                            (
+                                self.settings.model_fast
+                                if route.route == "LOW_COST"
+                                else None
+                            ),
+                            prepare_escalation if route.route == "LOW_COST" else None,
                         )
 
                     reply_execution = self.reply_workflow.invoke(
@@ -681,7 +801,7 @@ class StreamRuntime:
         operation_version = None
         if call_type == "CONTEXT_MEMORY":
             operation_version = context_memory_prompt().version
-        elif call_type == "GENERATION":
+        elif call_type.startswith("GENERATION"):
             operation_version = prompt_for(claim.feature).version
         return call_id, self._receipt_recorder(
             call_id, claim.job_id.hex, call_type, operation_version

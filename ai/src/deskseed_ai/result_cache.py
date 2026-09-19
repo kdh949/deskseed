@@ -8,11 +8,12 @@ from .backend_client import AiPolicy
 from .config import Settings
 from .prompting import prompt_for
 from .repository import ClaimedJob, PublishedIndexGeneration
+from .routing import ROUTE_MARKER_VERSION, ROUTE_POLICY_VERSION
 from .schemas import Feature, GenerationMode
 
 SUMMARY_TRIAGE_CACHE_KEY_VERSION = "result-cache-summary-triage-v1"
 REPLY_CACHE_KEY_VERSION = "result-cache-reply-v1"
-MODEL_ROUTE_VERSION = "model-route-v1"
+MODEL_ROUTE_VERSION = ROUTE_POLICY_VERSION
 OUTPUT_SCHEMA_VERSION = "typed-result-v1"
 CONTEXT_BUILDER_VERSION = "public-comments-bounded-v1"
 REPLY_CONTEXT_BUILDER_VERSION = "public-comments-memory-v2"
@@ -75,7 +76,43 @@ def exact_result_cache_key(
         prompt_for(claim.feature).digest,
         OUTPUT_SCHEMA_VERSION,
         MODEL_ROUTE_VERSION,
+        ROUTE_MARKER_VERSION if claim.feature == Feature.REPLY_DRAFT else "",
         resolved_model,
+        (
+            getattr(policy, "fastModelAlias", "")
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
+        (
+            getattr(policy, "standardModelAlias", "")
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
+        (
+            getattr(policy, "replyRoutingMode", "STANDARD_ONLY")
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
+        (
+            ",".join(getattr(policy, "replyRoutingCohorts", []))
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
+        (
+            str(getattr(policy, "replyRoutingRolloutPercent", 0))
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
+        (
+            getattr(policy, "replyRoutingEvaluationApprovalVersion", None) or ""
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
+        (
+            settings.reply_routing_bucket_secret.get_secret_value()
+            if claim.feature == Feature.REPLY_DRAFT
+            else ""
+        ),
         str(policy.version),
         settings.config_version,
         settings.context_memory_mode if claim.feature == Feature.REPLY_DRAFT else "",

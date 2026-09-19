@@ -143,7 +143,8 @@ class TraceAdapter:
                 name=f"deskseed-ai-{attributes.stage.lower().replace('_', '-')}",
                 as_type=(
                     "generation"
-                    if attributes.stage in {"GENERATION", "CONTEXT_MEMORY"}
+                    if attributes.stage.startswith("GENERATION")
+                    or attributes.stage == "CONTEXT_MEMORY"
                     else "embedding"
                 ),
                 model=receipt.actual_model,

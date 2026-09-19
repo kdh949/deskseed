@@ -272,6 +272,10 @@ data class AiSettingsView(
     val replyDraftEnabled: Boolean,
     val fastModelAlias: String,
     val standardModelAlias: String,
+    val replyRoutingMode: AiReplyRoutingMode,
+    val replyRoutingCohorts: List<String>,
+    val replyRoutingRolloutPercent: Int,
+    val replyRoutingEvaluationApprovalVersion: String?,
     val allowedStaffIds: List<UUID>,
     val version: Long,
     val updatedAt: Instant,
@@ -284,12 +288,21 @@ data class UpdateAiSettingsCommand(
     val replyDraftEnabled: Boolean,
     val fastModelAlias: String,
     val standardModelAlias: String,
+    val replyRoutingMode: AiReplyRoutingMode,
+    val replyRoutingCohorts: Set<String>,
+    val replyRoutingRolloutPercent: Int,
+    val replyRoutingEvaluationApprovalVersion: String?,
     val allowedStaffIds: Set<UUID>,
     val expectedVersion: Long,
     val actorId: UUID,
     val actorDisplayName: String,
     val metadata: AiRequestMetadata,
 )
+
+enum class AiReplyRoutingMode {
+    STANDARD_ONLY,
+    EVALUATED_COHORT,
+}
 
 data class AiStatusView(
     val enabled: Boolean,

@@ -40,6 +40,10 @@ class AdminAiIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.enabled").value(false))
+            .andExpect(jsonPath("$.replyRoutingMode").value("STANDARD_ONLY"))
+            .andExpect(jsonPath("$.replyRoutingCohorts").isEmpty)
+            .andExpect(jsonPath("$.replyRoutingRolloutPercent").value(0))
+            .andExpect(jsonPath("$.replyRoutingEvaluationApprovalVersion").doesNotExist())
             .andExpect(jsonPath("$.version").value(0))
 
         val update = """
@@ -50,6 +54,10 @@ class AdminAiIntegrationTest {
               "replyDraftEnabled": false,
               "fastModelAlias": "openai/gpt-5.6-luna",
               "standardModelAlias": "openai/gpt-5.6-terra",
+              "replyRoutingMode": "STANDARD_ONLY",
+              "replyRoutingCohorts": [],
+              "replyRoutingRolloutPercent": 0,
+              "replyRoutingEvaluationApprovalVersion": null,
               "allowedStaffIds": ["$agent"],
               "expectedVersion": 0
             }
@@ -80,6 +88,66 @@ class AdminAiIntegrationTest {
         assertThat(count("select count(*) from admin_security_audit_events where event_type = 'AI_SETTINGS_UPDATED'"))
             .isEqualTo(1)
         assertThat(count("select count(*) from ai_feature_staff_allowlist where staff_id = '$agent'"))
+            .isEqualTo(1)
+    }
+
+    @Test
+    fun `evaluated reply routing requires exact cohort rollout and approval version`() {
+        val admin = insertStaff("ai-routing-admin@example.com", "ADMIN")
+        val agent = insertStaff("ai-routing-agent@example.com", "AGENT")
+        val session = login("ai-routing-admin@example.com")
+        val active = """
+            {
+              "enabled": true,
+              "summaryEnabled": true,
+              "triageEnabled": true,
+              "replyDraftEnabled": true,
+              "fastModelAlias": "openai/gpt-5.6-luna",
+              "standardModelAlias": "openai/gpt-5.6-terra",
+              "replyRoutingMode": "EVALUATED_COHORT",
+              "replyRoutingCohorts": ["reply-single-public-article-short-v1"],
+              "replyRoutingRolloutPercent": 10,
+              "replyRoutingEvaluationApprovalVersion": "eval-2026-09-19-v1",
+              "allowedStaffIds": ["$agent"],
+              "expectedVersion": 0
+            }
+        """.trimIndent()
+
+        mockMvc.perform(
+            put("/api/v1/admin/ai/settings")
+                .session(session)
+                .header("X-CSRF-TOKEN", csrf(session))
+                .header("X-Deskseed-Expected-Staff-Id", admin.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(active),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.replyRoutingMode").value("EVALUATED_COHORT"))
+            .andExpect(
+                jsonPath("$.replyRoutingCohorts[0]")
+                    .value("reply-single-public-article-short-v1"),
+            )
+            .andExpect(jsonPath("$.replyRoutingRolloutPercent").value(10))
+            .andExpect(
+                jsonPath("$.replyRoutingEvaluationApprovalVersion")
+                    .value("eval-2026-09-19-v1"),
+            )
+
+        val invalid = active
+            .replace("\"replyRoutingRolloutPercent\": 10", "\"replyRoutingRolloutPercent\": 25")
+            .replace("\"expectedVersion\": 0", "\"expectedVersion\": 1")
+        mockMvc.perform(
+            put("/api/v1/admin/ai/settings")
+                .session(session)
+                .header("X-CSRF-TOKEN", csrf(session))
+                .header("X-Deskseed-Expected-Staff-Id", admin.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalid),
+        ).andExpect(status().isBadRequest)
+
+        assertThat(jdbcTemplate.queryForObject("select version from ai_settings", Long::class.java))
+            .isEqualTo(1)
+        assertThat(count("select count(*) from ai_reply_routing_cohorts"))
             .isEqualTo(1)
     }
 

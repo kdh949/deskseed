@@ -177,6 +177,10 @@ class AdminKnowledgeIntegrationTest {
                 .header("Authorization", "Bearer test-ai-source-secret")
                 .header("X-Deskseed-AI-Key-Id", "test-ai-key"),
         ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.replyRoutingMode").value("STANDARD_ONLY"))
+            .andExpect(jsonPath("$.replyRoutingCohorts").isEmpty)
+            .andExpect(jsonPath("$.replyRoutingRolloutPercent").value(0))
+            .andExpect(jsonPath("$.replyRoutingEvaluationApprovalVersion").doesNotExist())
             .andExpect(jsonPath("$.canonicalPublicCorpusRevision").value(initialCorpusRevision + 4))
 
         val publishedRevisionId = jdbc.queryForObject(

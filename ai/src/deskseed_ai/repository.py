@@ -910,7 +910,8 @@ class Repository:
         shared: SharedExecutionClaim,
         phase: str,
     ) -> None:
-        if phase not in {"QUERY_EMBEDDING", "CONTEXT_MEMORY", "GENERATION"}:
+        shared_phase = "GENERATION" if phase.startswith("GENERATION") else phase
+        if shared_phase not in {"QUERY_EMBEDDING", "CONTEXT_MEMORY", "GENERATION"}:
             raise ValueError("unsupported shared provider phase")
         with self.database.transaction() as connection:
             updated = connection.execute(
@@ -927,7 +928,7 @@ class Repository:
                   )
                 """,
                 (
-                    phase,
+                    shared_phase,
                     shared.execution_id,
                     claim.job_id,
                     shared.execution_generation,
@@ -939,6 +940,82 @@ class Repository:
             ).rowcount
             if updated != 1:
                 raise StaleLeaseError("shared execution lease lost before provider dispatch")
+
+    def record_reply_route(
+        self,
+        claim: ClaimedJob,
+        *,
+        decision: str,
+        cohort: str | None,
+        policy_version: str,
+        marker_version: str,
+        rollout_percent: int,
+        requested_alias: str,
+    ) -> None:
+        if decision not in {"STANDARD", "LOW_COST"}:
+            raise ValueError("invalid reply route decision")
+        with self.database.transaction() as connection:
+            updated = connection.execute(
+                """
+                update ai_jobs set
+                    reply_route_decision = %s,
+                    reply_route_cohort = %s,
+                    reply_route_policy_version = %s,
+                    reply_route_marker_version = %s,
+                    reply_route_rollout_percent = %s,
+                    reply_route_requested_alias = %s,
+                    reply_route_escalation_reason = null,
+                    updated_at = clock_timestamp()
+                where job_id = %s and generation = %s and lease_epoch = %s
+                  and status = 'RUNNING'
+                """,
+                (
+                    decision,
+                    cohort,
+                    policy_version,
+                    marker_version,
+                    rollout_percent,
+                    requested_alias,
+                    claim.job_id,
+                    claim.generation,
+                    claim.lease_epoch,
+                ),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("job lease lost before reply route recording")
+
+    def record_reply_escalation(
+        self,
+        claim: ClaimedJob,
+        *,
+        reason: str,
+        requested_alias: str,
+    ) -> None:
+        if reason not in {"PROVIDER_OUTPUT_INVALID", "REPLY_VALIDATION_FAILED"}:
+            raise ValueError("invalid reply escalation reason")
+        with self.database.transaction() as connection:
+            updated = connection.execute(
+                """
+                update ai_jobs set
+                    reply_route_decision = 'ESCALATED',
+                    reply_route_requested_alias = %s,
+                    reply_route_escalation_reason = %s,
+                    updated_at = clock_timestamp()
+                where job_id = %s and generation = %s and lease_epoch = %s
+                  and status = 'RUNNING'
+                  and reply_route_decision = 'LOW_COST'
+                  and reply_route_escalation_reason is null
+                """,
+                (
+                    requested_alias,
+                    reason,
+                    claim.job_id,
+                    claim.generation,
+                    claim.lease_epoch,
+                ),
+            ).rowcount
+            if updated != 1:
+                raise StaleLeaseError("reply escalation is stale or already recorded")
 
     def finish_shared_terminal_consumer(
         self,

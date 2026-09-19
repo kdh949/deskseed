@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     context_memory_mode: Literal["off", "test", "intent"] = "off"
     context_memory_expected_reuses: int = Field(2, ge=1, le=20)
     context_memory_ttl_hours: int = Field(24, ge=1, le=168)
+    reply_routing_bucket_secret: SecretStr = SecretStr("")
 
     workspace_daily_budget_microusd: int = 3_000_000
     actor_daily_budget_microusd: int = 500_000

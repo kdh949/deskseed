@@ -10,7 +10,7 @@ from uuid import UUID
 from langgraph.graph import END, START, StateGraph
 
 from .call_receipts import ReceiptRecorder
-from .providers import GenerationProvider, ProviderResult
+from .providers import GenerationProvider, InvalidProviderOutputError, ProviderResult
 from .retrieval import (
     KnowledgeChunk,
     KnowledgeRepository,
@@ -48,6 +48,7 @@ class ReplyState(TypedDict, total=False):
     source_map_digest: str
     source_chunk_ids: tuple[UUID, ...]
     generation: ProviderResult
+    prepared_generation: PreparedReplyGeneration
     query_call_id: UUID
     query_receipt_recorder: ReceiptRecorder
     retrieval_query: RetrievalQuery
@@ -75,6 +76,8 @@ class PreparedReplyGeneration:
     call_id: UUID
     receipt_recorder: ReceiptRecorder
     source_comment_ids: tuple[UUID, ...]
+    requested_alias: str | None = None
+    prepare_escalation: Callable[[str], PreparedReplyGeneration] | None = None
 
 
 class ReplyWorkflow:
@@ -220,20 +223,89 @@ class ReplyWorkflow:
         memory_argument = (
             {"memory": prepared.memory} if prepared.memory is not None else {}
         )
+        try:
+            generation = self._reply(prepared, knowledge, state["options"], memory_argument)
+        except InvalidProviderOutputError:
+            if prepared.prepare_escalation is None:
+                raise
+            prepared = prepared.prepare_escalation("PROVIDER_OUTPUT_INVALID")
+            memory_argument = (
+                {"memory": prepared.memory} if prepared.memory is not None else {}
+            )
+            generation = self._reply(prepared, knowledge, state["options"], memory_argument)
         return {
-            "generation": self.provider.reply(
-                prepared.context,
-                knowledge,
-                state["options"],
-                prepared.call_id,
-                prepared.receipt_recorder,
-                **memory_argument,
-            ),
+            "generation": generation,
+            "prepared_generation": prepared,
             "prepared_source_comment_ids": prepared.source_comment_ids,
         }
 
     def _validate(self, state: ReplyState) -> dict[str, Any]:
         generated = state["generation"]
+        try:
+            return self._validated_generation(state, generated)
+        except InvalidReplyOutputError:
+            prepared = state["prepared_generation"]
+            if prepared.prepare_escalation is None:
+                raise
+            escalated = prepared.prepare_escalation("REPLY_VALIDATION_FAILED")
+            memory_argument = (
+                {"memory": escalated.memory} if escalated.memory is not None else {}
+            )
+            retried = self._reply(
+                escalated,
+                state["approved_knowledge"],
+                state["options"],
+                memory_argument,
+            )
+            return self._validated_generation(state, retried)
+
+    def _reply(
+        self,
+        prepared: PreparedReplyGeneration,
+        knowledge: list[KnowledgeChunk],
+        options: dict[str, str],
+        memory_argument: dict[str, ContextMemoryPayload],
+    ) -> ProviderResult:
+        memory = memory_argument.get("memory")
+        if prepared.requested_alias is None:
+            if memory is None:
+                return self.provider.reply(
+                    prepared.context,
+                    knowledge,
+                    options,
+                    prepared.call_id,
+                    prepared.receipt_recorder,
+                )
+            return self.provider.reply(
+                prepared.context,
+                knowledge,
+                options,
+                prepared.call_id,
+                prepared.receipt_recorder,
+                memory=memory,
+            )
+        if memory is None:
+            return self.provider.reply(
+                prepared.context,
+                knowledge,
+                options,
+                prepared.call_id,
+                prepared.receipt_recorder,
+                requested_alias=prepared.requested_alias,
+            )
+        return self.provider.reply(
+            prepared.context,
+            knowledge,
+            options,
+            prepared.call_id,
+            prepared.receipt_recorder,
+            memory=memory,
+            requested_alias=prepared.requested_alias,
+        )
+
+    def _validated_generation(
+        self, state: ReplyState, generated: ProviderResult
+    ) -> dict[str, Any]:
         result = generated.result
         if not isinstance(result, ReplyProviderOutput):
             raise InvalidReplyOutputError("reply workflow received a non-reply provider output")

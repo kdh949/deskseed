@@ -313,7 +313,7 @@ components:
     AiPolicy:
       type: object
       additionalProperties: false
-      required: [enabled, features, fastModelAlias, standardModelAlias, version, updatedAt, dataAsOf, canonicalPublicCorpusRevision]
+      required: [enabled, features, fastModelAlias, standardModelAlias, replyRoutingMode, replyRoutingCohorts, replyRoutingRolloutPercent, version, updatedAt, dataAsOf, canonicalPublicCorpusRevision]
       properties:
         enabled: {type: boolean}
         features:
@@ -321,6 +321,22 @@ components:
           additionalProperties: {type: boolean}
         fastModelAlias: {type: string, const: openai/gpt-5.6-luna}
         standardModelAlias: {type: string, const: openai/gpt-5.6-terra}
+        replyRoutingMode:
+          type: string
+          enum: [STANDARD_ONLY, EVALUATED_COHORT]
+        replyRoutingCohorts:
+          type: array
+          maxItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [reply-single-public-article-short-v1]
+        replyRoutingRolloutPercent: {type: integer, enum: [0, 10, 50, 100]}
+        replyRoutingEvaluationApprovalVersion:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 80
+          pattern: '^[a-z0-9][a-z0-9._-]*$'
         version: {type: integer, format: int64, minimum: 0}
         updatedAt: {type: string, format: date-time}
         dataAsOf: {type: string, format: date-time}
