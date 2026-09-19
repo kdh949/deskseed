@@ -11,6 +11,8 @@ import dev.deskseed.audit.SearchQueryProtector
 import dev.deskseed.audit.SearchResultAuditItem
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.foundation.SearchDiagnostics
+import dev.deskseed.foundation.SearchPhase
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSearchFilter
@@ -59,6 +61,7 @@ internal class AgentTicketSearchApplicationService(
     private val accessAuditWriter: AccessAuditWriter,
     private val cursorCodec: AgentTicketSearchCursorCodec,
     private val clock: Clock,
+    private val searchDiagnostics: SearchDiagnostics,
 ) {
     @Transactional
     fun search(
@@ -66,7 +69,7 @@ internal class AgentTicketSearchApplicationService(
         interactionId: UUID,
         request: AgentTicketSearchRequest,
         context: AgentReadRequestContext,
-    ): AgentTicketSearchPage {
+    ): AgentTicketSearchPage = searchDiagnostics.measure(SearchPhase.OVERALL) {
         require(principal.id != UUID(0, 0)) { "Active staff principal is required" }
         require(request.query.isNotBlank() && request.query.length <= 500) {
             "Search query must contain between 1 and 500 characters"
@@ -116,34 +119,36 @@ internal class AgentTicketSearchApplicationService(
         }
         val searchEventId = UUID.randomUUID()
         try {
-            val auditContext = context.toAccessAuditContext(
-                principal,
-                sessionFingerprint.fingerprint(context.sessionId),
-            )
-            val protectedQuery = queryProtector.protect(searchEventId, request.query, occurredAt)
-            accessAuditWriter.appendSearchExecuted(
-                SearchExecutedAccessAudit(
-                    eventId = searchEventId,
-                    context = auditContext,
-                    interactionId = interactionId,
-                    protectedQuery = protectedQuery,
-                    normalizedFilters = normalizedFilters(request.filters),
-                    sort = request.sort,
-                    resultCount = result.resultCount,
-                    resultItems = items.mapIndexed { ordinal, hit ->
-                        SearchResultAuditItem(hit.ticket.id, hit.ticket.ticketNumber, ordinal)
-                    },
-                    outcome = AccessAuditOutcome.SUCCEEDED,
-                    httpStatus = 200,
-                    occurredAt = occurredAt,
-                ),
-            )
+            searchDiagnostics.measure(SearchPhase.AUDIT) {
+                val auditContext = context.toAccessAuditContext(
+                    principal,
+                    sessionFingerprint.fingerprint(context.sessionId),
+                )
+                val protectedQuery = queryProtector.protect(searchEventId, request.query, occurredAt)
+                accessAuditWriter.appendSearchExecuted(
+                    SearchExecutedAccessAudit(
+                        eventId = searchEventId,
+                        context = auditContext,
+                        interactionId = interactionId,
+                        protectedQuery = protectedQuery,
+                        normalizedFilters = normalizedFilters(request.filters),
+                        sort = request.sort,
+                        resultCount = result.resultCount,
+                        resultItems = items.mapIndexed { ordinal, hit ->
+                            SearchResultAuditItem(hit.ticket.id, hit.ticket.ticketNumber, ordinal)
+                        },
+                        outcome = AccessAuditOutcome.SUCCEEDED,
+                        httpStatus = 200,
+                        occurredAt = occurredAt,
+                    ),
+                )
+            }
         } catch (exception: DataAccessException) {
             throw AccessAuditUnavailableException(exception)
         } catch (exception: AccessAuditProtectionException) {
             throw AccessAuditUnavailableException(exception)
         }
-        return AgentTicketSearchPage(
+        AgentTicketSearchPage(
             searchEventId = searchEventId,
             searchInteractionId = interactionId,
             items = items.map { it.ticket },

@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.audit.internal.SearchQueryCiphertextRetentionJob
+import io.micrometer.core.instrument.MeterRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
@@ -27,7 +28,7 @@ import java.time.Instant
 import java.util.UUID
 
 @dev.deskseed.testsupport.integration.DeskseedSpringIntegrationTest(
-    properties = ["deskseed.test.context-group=agent-ticket-search"],
+    properties = ["deskseed.test.context-group=agent-ticket-search", "deskseed.search-diagnostics.enabled=true"],
 )
 @AutoConfigureMockMvc
 @ExtendWith(OutputCaptureExtension::class)
@@ -41,6 +42,8 @@ class AgentTicketSearchIntegrationTest {
 
     @Autowired
     private lateinit var ciphertextRetentionJob: SearchQueryCiphertextRetentionJob
+
+    @Autowired private lateinit var meters: MeterRegistry
 
     @BeforeEach
     fun clearState() {
@@ -97,7 +100,9 @@ class AgentTicketSearchIntegrationTest {
                   "sort":"updatedAt:desc,ticketNumber:desc",
                   "limit":25
                 }""".trimIndent(),
-            ),
+            ).header("X-Deskseed-Search-Class", "phrase")
+                .header("X-Deskseed-Test-Run-Id", "integration-preflight")
+                .header("X-Deskseed-Search-Case", "0"),
         )
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
@@ -109,6 +114,10 @@ class AgentTicketSearchIntegrationTest {
             .andReturn().response.contentAsString
 
         val searchEventId = UUID.fromString(stringField(response, "searchEventId"))
+        listOf("overall", "count", "page", "audit").forEach { phase ->
+            assertThat(meters.get("deskseed.search.phase").tag("phase", phase)
+                .tag("query_class", "phrase").tag("outcome", "success").timer().count()).isPositive()
+        }
         val event = jdbcTemplate.queryForMap(
             """
             select actor_id, source, action, resource_type, interaction_id, session_fingerprint,
@@ -289,6 +298,10 @@ class AgentTicketSearchIntegrationTest {
                 .andExpect(jsonPath("$.resultCount").doesNotExist())
                 .andReturn().response.contentAsString
             assertThat(response).doesNotContain("audit-failure-protected-search-result")
+            assertThat(meters.get("deskseed.search.phase").tag("phase", "audit")
+                .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
+            assertThat(meters.get("deskseed.search.phase").tag("phase", "overall")
+                .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_search_audit on access_audit_events")
             jdbcTemplate.execute("drop function if exists fail_search_audit_insert()")

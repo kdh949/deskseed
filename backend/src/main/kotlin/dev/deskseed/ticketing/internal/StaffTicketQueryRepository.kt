@@ -2,6 +2,8 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.attachments.AttachmentVisibility
 import dev.deskseed.attachments.TicketAttachmentReadProjection
+import dev.deskseed.foundation.SearchDiagnostics
+import dev.deskseed.foundation.SearchPhase
 import dev.deskseed.ticketing.AiPublicComment
 import dev.deskseed.ticketing.AiPublicTicketContext
 import dev.deskseed.ticketing.CommentVisibility
@@ -52,6 +54,8 @@ internal class StaffTicketQueryRepository(
     private val clock: Clock,
     private val objectMapper: ObjectMapper,
     private val configurationPredicates: SavedViewConfigurationPredicates,
+    private val searchDiagnostics: SearchDiagnostics,
+    private val searchSqlPlanFactory: StaffTicketSearchSqlPlanFactory,
 ) : StaffTicketReadStore {
     override fun list(
         view: DefaultStaffView,
@@ -197,97 +201,40 @@ internal class StaffTicketQueryRepository(
         require(scope == StaffTicketReadScope.ALL_TICKETS) { "Unsupported ticket search read policy" }
         require(query.isNotBlank()) { "Search query is required" }
         require(limit in 1..100) { "Search limit must be between 1 and 100" }
-        require(sort in SEARCH_SORTS) { "Unsupported ticket search sort" }
+        require(sort in STAFF_SEARCH_SORTS) { "Unsupported ticket search sort" }
 
         val now = clock.instant()
         val riskAt = now.plusSeconds(30 * 60)
-        val conditions = mutableListOf<String>()
-        val trimmedQuery = query.trim()
-        val parameters = MapSqlParameterSource()
-            .addValue("actorId", actorId)
-            .addValue("ticketNumberQuery", trimmedQuery.toLongOrNull())
-            .addValue("queryText", trimmedQuery)
-            .addValue("queryPattern", likeLiteralPattern(trimmedQuery))
-            .addValue("limit", limit)
-            .addValue("now", Timestamp.from(now))
-            .addValue("riskAt", Timestamp.from(riskAt))
-            .addValue("snapshotAt", Timestamp.from(snapshotAt))
-
-        // The current product policy grants active staff ALL_TICKETS.  Keep the grant in SQL,
-        // rather than assuming an application-layer check remains sufficient if that policy narrows.
-        conditions += """
-            exists (
-                select 1 from staff_accounts authorized_actor
-                where authorized_actor.id = :actorId and authorized_actor.status = 'ACTIVE'
-            )
-        """.trimIndent()
-        conditions += "t.updated_at <= :snapshotAt"
-        conditions += """
-            (
-                (cast(:ticketNumberQuery as bigint) is not null
-                    and search_document.ticket_number = cast(:ticketNumberQuery as bigint))
-                or search_document.staff_document like lower(:queryPattern) escape '\'
-            )
-        """.trimIndent()
-        conditions += compileFilters(filters.toListFilter(), parameters, "search", now, riskAt)
-        val whereClause = conditions.joinToString("\n  and ")
-        val fromClause = """
-            from tickets t
-            join ticket_search_documents search_document on search_document.ticket_id = t.id
-            left join customers c on c.id = t.requester_id
-            left join support_groups g on g.id = t.group_id
-            left join staff_accounts s on s.id = t.assignee_id
-            left join analytics_first_reply_facts fact on fact.ticket_id = t.id
-            where $whereClause
-        """.trimIndent()
-        val scoreExpression = searchScoreExpression()
-        val ranked = """
-            select ${ticketSummaryColumns()},
-                   $scoreExpression as search_score
-            $fromClause
-        """.trimIndent()
+        val plan = searchSqlPlanFactory.build(
+            query = query,
+            actorId = actorId,
+            filters = filters,
+            sort = sort,
+            snapshotAt = snapshotAt,
+            cursor = cursor,
+            limit = limit,
+            now = now,
+        )
 
         // Keep the exact count on the same authorization/search predicate, but do not
         // make PostgreSQL evaluate detail-only summary projections for every matching row.
-        val resultCount = jdbcTemplate.queryForObject(
-            "select count(*) $fromClause",
-            parameters,
-            Long::class.java,
-        ) ?: 0L
-        val cursorPredicate = when (sort) {
-            SCORE_SORT -> cursor?.let {
-                parameters.addValue("cursorScore", checkNotNull(it.lastScore))
-                parameters.addValue("cursorTicketNumber", it.lastTicketNumber)
-                "where (search_score, ticket_number) < (:cursorScore, :cursorTicketNumber)"
-            }.orEmpty()
-            UPDATED_SORT -> cursor?.let {
-                parameters.addValue("cursorUpdatedAt", Timestamp.from(checkNotNull(it.lastUpdatedAt)))
-                parameters.addValue("cursorTicketNumber", it.lastTicketNumber)
-                "where (updated_at, ticket_number) < (:cursorUpdatedAt, :cursorTicketNumber)"
-            }.orEmpty()
-            else -> error("Validated above")
+        val resultCount = searchDiagnostics.measure(SearchPhase.COUNT) {
+            jdbcTemplate.queryForObject(
+                plan.countSql,
+                plan.parameters,
+                Long::class.java,
+            ) ?: 0L
         }
-        val orderBy = if (sort == SCORE_SORT) {
-            "search_score desc, ticket_number desc"
-        } else {
-            "updated_at desc, ticket_number desc"
-        }
-        val items = jdbcTemplate.query(
-            """
-            with ranked as (
-                $ranked
-            )
-            select * from ranked
-            $cursorPredicate
-            order by $orderBy
-            limit :limit
-            """.trimIndent(),
-            parameters,
-        ) { result, _ ->
-            StaffTicketSearchHit(
-                ticket = ticketSummary(result, now, riskAt),
-                score = result.getInt("search_score"),
-            )
+        val items = searchDiagnostics.measure(SearchPhase.PAGE) {
+            jdbcTemplate.query(
+                plan.pageSql,
+                plan.parameters,
+            ) { result, _ ->
+                StaffTicketSearchHit(
+                    ticket = ticketSummary(result, now, riskAt),
+                    score = result.getInt("search_score"),
+                )
+            }
         }
         return StaffTicketSearchResult(hits = items, resultCount = resultCount)
     }
@@ -719,14 +666,6 @@ internal class StaffTicketQueryRepository(
             sla = slaBadge(result, result.getString("kind"), now, riskAt),
         )
 
-    private fun StaffTicketSearchFilter.toListFilter(): StaffTicketListFilter = StaffTicketListFilter(
-        status = status,
-        priority = priority,
-        groupId = groupId,
-        assignee = assignee,
-        slaState = slaState,
-    )
-
     private fun compileFilters(
         filters: StaffTicketListFilter,
         parameters: MapSqlParameterSource,
@@ -898,30 +837,6 @@ internal class StaffTicketQueryRepository(
         end)
     """.trimIndent()
 
-    private fun searchScoreExpression(): String = """
-        (
-            case when cast(:ticketNumberQuery as bigint) is not null
-                    and search_document.ticket_number = cast(:ticketNumberQuery as bigint) then 1000 else 0 end
-            + case when search_document.subject_text = lower(:queryText) then 500
-                   when strpos(search_document.subject_text, lower(:queryText)) > 0 then 250 else 0 end
-            + case when search_document.requester_name_text = lower(:queryText) then 180
-                   when strpos(search_document.requester_name_text, lower(:queryText)) > 0 then 90 else 0 end
-            + case when search_document.requester_email_text = lower(:queryText) then 160
-                   when strpos(search_document.requester_email_text, lower(:queryText)) > 0 then 80 else 0 end
-            + case when search_document.group_name_text = lower(:queryText) then 80
-                   when strpos(search_document.group_name_text, lower(:queryText)) > 0 then 40 else 0 end
-            + case when search_document.assignee_name_text = lower(:queryText) then 80
-                   when strpos(search_document.assignee_name_text, lower(:queryText)) > 0 then 40 else 0 end
-            + case when strpos(search_document.public_comment_text, lower(:queryText)) > 0
-                         or strpos(search_document.internal_comment_text, lower(:queryText)) > 0
-                   then 20 else 0 end
-        )
-    """.trimIndent()
-
-    private fun likeLiteralPattern(query: String): String = "%${
-        query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    }%"
-
     private data class DetailRow(
         val summary: StaffTicketSummary,
         val customer: StaffTicketCustomer?,
@@ -966,11 +881,6 @@ internal class StaffTicketQueryRepository(
         )
     }
 
-    private companion object {
-        const val UPDATED_SORT = "updatedAt:desc,ticketNumber:desc"
-        const val SCORE_SORT = "score:desc,ticketNumber:desc"
-        val SEARCH_SORTS = setOf(UPDATED_SORT, SCORE_SORT)
-    }
 }
 
 internal fun classifyFirstReplySlaState(

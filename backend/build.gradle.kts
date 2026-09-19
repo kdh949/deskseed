@@ -72,6 +72,10 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.85.2")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+    implementation("io.pyroscope:otel:2.1.2") {
+        // The deployment already supplies the pinned 2.9.1 Java agent. Avoid packaging a second engine.
+        exclude(group = "io.pyroscope", module = "agent")
+    }
     // Keep the instrumentation release aligned with Spring Boot 4.1's OpenTelemetry 1.62 runtime.
     implementation("io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:2.28.1-alpha")
     implementation("io.micrometer:micrometer-java21")
@@ -101,6 +105,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("io.pyroscope:agent:2.9.1")
 }
 
 kotlin {
@@ -199,4 +204,12 @@ tasks.processResources {
         )
         into("static/api-docs/specs")
     }
+}
+
+tasks.register<JavaExec>("captureSearchPlan") {
+    group = "diagnostics"
+    description = "Captures a protected EXPLAIN ANALYZE artifact from the load database"
+    dependsOn(tasks.classes)
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "dev.deskseed.ticketing.internal.SearchPlanCapture"
 }

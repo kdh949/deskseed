@@ -30,5 +30,9 @@ class LoadObservabilityConfigurationTest {
         assertThat(properties.getProperty("management.metrics.distribution.percentiles.http.server.requests")).isNull()
         assertThat(properties.getProperty("management.metrics.distribution.percentiles-histogram.http.server.requests"))
             .isEqualTo(true)
+        assertThat(properties.getProperty("management.opentelemetry.resource-attributes.service.version"))
+            .isEqualTo("\${DESKSEED_SERVICE_VERSION:unknown}")
+        assertThat(properties.getProperty("deskseed.profiling.span-correlation-enabled"))
+            .isEqualTo("\${DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED:false}")
     }
 }
