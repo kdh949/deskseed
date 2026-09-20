@@ -114,7 +114,7 @@ class AgentTicketSearchIntegrationTest {
             .andReturn().response.contentAsString
 
         val searchEventId = UUID.fromString(stringField(response, "searchEventId"))
-        listOf("overall", "count", "page", "audit").forEach { phase ->
+        listOf("overall", "page", "audit").forEach { phase ->
             assertThat(meters.get("deskseed.search.phase").tag("phase", phase)
                 .tag("query_class", "phrase").tag("outcome", "success").timer().count()).isPositive()
         }

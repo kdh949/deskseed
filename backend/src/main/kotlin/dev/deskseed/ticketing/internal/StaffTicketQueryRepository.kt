@@ -216,28 +216,34 @@ internal class StaffTicketQueryRepository(
             now = now,
         )
 
-        // Keep the exact count on the same authorization/search predicate, but do not
-        // make PostgreSQL evaluate detail-only summary projections for every matching row.
-        val resultCount = searchDiagnostics.measure(SearchPhase.COUNT) {
-            jdbcTemplate.queryForObject(
-                plan.countSql,
-                plan.parameters,
-                Long::class.java,
-            ) ?: 0L
-        }
-        val items = searchDiagnostics.measure(SearchPhase.PAGE) {
+        // The materialized candidate set is shared by the exact count and page selection,
+        // so a broad literal substring query scans the search projection once per request.
+        val rows = searchDiagnostics.measure(SearchPhase.PAGE) {
             jdbcTemplate.query(
                 plan.pageSql,
                 plan.parameters,
             ) { result, _ ->
-                StaffTicketSearchHit(
-                    ticket = ticketSummary(result, now, riskAt),
-                    score = result.getInt("search_score"),
+                SearchResultRow(
+                    hit = result.getObject("selected_ticket_id")?.let {
+                        StaffTicketSearchHit(
+                            ticket = ticketSummary(result, now, riskAt),
+                            score = result.getInt("search_score"),
+                        )
+                    },
+                    resultCount = result.getLong("result_count"),
                 )
             }
         }
-        return StaffTicketSearchResult(hits = items, resultCount = resultCount)
+        return StaffTicketSearchResult(
+            hits = rows.mapNotNull(SearchResultRow::hit),
+            resultCount = rows.firstOrNull()?.resultCount ?: 0L,
+        )
     }
+
+    private data class SearchResultRow(
+        val hit: StaffTicketSearchHit?,
+        val resultCount: Long,
+    )
 
     override fun listSavedView(
         actorId: UUID,

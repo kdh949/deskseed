@@ -10,7 +10,7 @@ import java.util.UUID
 @dev.deskseed.testsupport.category.FastTest
 class StaffTicketSearchSqlPlanTest {
     @Test
-    fun `count and page share the canonical predicate and keep query in parameters`() {
+    fun `count and combined page share the canonical predicate and keep query in parameters`() {
         val rawQuery = "sensitive@example.test"
         val plan = StaffTicketSearchSqlPlanFactory().build(
             query = rawQuery,
@@ -24,8 +24,10 @@ class StaffTicketSearchSqlPlanTest {
         )
 
         assertThat(plan.countSql).startsWith("select count(*)").contains("join ticket_search_documents search_document")
-        assertThat(plan.pageSql).startsWith("with selected as materialized")
+        assertThat(plan.pageSql).startsWith("with ranked as materialized")
             .contains("join ticket_search_documents search_document")
+            .contains("candidate_stats as materialized", "select count(*) as result_count from ranked")
+            .contains("left join selected on true")
         assertThat(plan.countSql).doesNotContain(rawQuery)
         assertThat(plan.pageSql).doesNotContain(rawQuery)
         assertThat(plan.parameters.getValue("queryText")).isEqualTo(rawQuery)
@@ -40,6 +42,8 @@ class StaffTicketSearchSqlPlanTest {
 
         assertThat(plan.pageSql).contains(
             "select t.id as ticket_id, t.ticket_number, t.updated_at",
+            "selected.ticket_id as selected_ticket_id",
+            "candidate_stats.result_count",
             "join tickets t on t.id = selected.ticket_id",
         )
         assertThat(plan.pageSql.indexOf("limit :limit"))
@@ -53,6 +57,22 @@ class StaffTicketSearchSqlPlanTest {
             )
         assertThat(plan.pageSql.substringAfter("limit :limit"))
             .contains("left join customers c", "left join support_groups g", "left join staff_accounts s")
+    }
+
+    @Test
+    fun `combined page counts all snapshot candidates before applying cursor`() {
+        val plan = buildPlan(
+            sort = STAFF_SEARCH_SCORE_SORT,
+            cursor = StaffTicketSearchCursor(
+                snapshotAt = Instant.parse("2026-09-19T00:00:00Z"),
+                lastScore = 250,
+                lastTicketNumber = 1042,
+            ),
+        )
+
+        assertThat(plan.pageSql.indexOf("select count(*) as result_count from ranked"))
+            .isLessThan(plan.pageSql.indexOf("where (search_score, ticket_number)"))
+        assertThat(plan.pageSql).contains("from candidate_stats", "left join selected on true")
     }
 
     @Test

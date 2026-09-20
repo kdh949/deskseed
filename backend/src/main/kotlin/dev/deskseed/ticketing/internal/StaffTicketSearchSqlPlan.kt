@@ -60,15 +60,6 @@ internal class StaffTicketSearchSqlPlanFactory {
             """.trimIndent(),
         )
         conditions += compileFilters(filters, parameters)
-        val countFromClause = """
-            from tickets t
-            join ticket_search_documents search_document on search_document.ticket_id = t.id
-            left join customers c on c.id = t.requester_id
-            left join support_groups g on g.id = t.group_id
-            left join staff_accounts s on s.id = t.assignee_id
-            left join analytics_first_reply_facts fact on fact.ticket_id = t.id
-            where ${conditions.joinToString("\n  and ")}
-        """.trimIndent()
         val candidateFromClause = """
             from tickets t
             join ticket_search_documents search_document on search_document.ticket_id = t.id
@@ -104,21 +95,28 @@ internal class StaffTicketSearchSqlPlanFactory {
             "selected.updated_at desc, selected.ticket_number desc"
         }
         return StaffTicketSearchSqlPlan(
-            countSql = "select count(*) $countFromClause",
+            countSql = "select count(*) $candidateFromClause",
             pageSql = """
-                with selected as materialized (
+                with ranked as materialized (
+                    $rankedCandidates
+                ),
+                candidate_stats as materialized (
+                    select count(*) as result_count from ranked
+                ),
+                selected as materialized (
                     select ticket_id, ticket_number, updated_at, search_score
-                    from (
-                        $rankedCandidates
-                    ) ranked
+                    from ranked
                     $cursorPredicate
                     order by $orderBy
                     limit :limit
                 )
-                select ${ticketSummaryColumns()},
+                select selected.ticket_id as selected_ticket_id,
+                       candidate_stats.result_count,
+                       ${ticketSummaryColumns()},
                        selected.search_score
-                from selected
-                join tickets t on t.id = selected.ticket_id
+                from candidate_stats
+                left join selected on true
+                left join tickets t on t.id = selected.ticket_id
                 left join customers c on c.id = t.requester_id
                 left join support_groups g on g.id = t.group_id
                 left join staff_accounts s on s.id = t.assignee_id
