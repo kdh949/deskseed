@@ -37,17 +37,17 @@ class StaffTicketSearchSqlPlanTest {
     }
 
     @Test
-    fun `one and two character queries use ngram candidates with literal recheck`() {
+    fun `one and two character queries use character candidates with literal recheck`() {
         val oneCharacter = buildPlan(query = "결")
         val twoCharacters = buildPlan(query = "결제")
 
-        listOf(oneCharacter to "u:", twoCharacters to "b:").forEach { (plan, prefix) ->
+        listOf(oneCharacter, twoCharacters).forEach { plan ->
             assertThat(plan.pageSql).contains(
-                "staff_ticket_search_ngrams(search_document.staff_document)",
-                "@> array[cast(:queryNgramPrefix as text) || lower(:queryText)]",
+                "staff_ticket_search_characters(search_document.staff_document)",
+                "@> staff_ticket_search_characters(cast(:queryText as text))",
                 "and search_document.staff_document like lower(:queryPattern) escape '\\'",
             )
-            assertThat(plan.parameters.getValue("queryNgramPrefix")).isEqualTo(prefix)
+            assertThat(plan.parameters.parameterNames).doesNotContain("queryNgramPrefix")
         }
     }
 
@@ -57,7 +57,7 @@ class StaffTicketSearchSqlPlanTest {
 
         assertThat(plan.pageSql)
             .contains("search_document.staff_document like lower(:queryPattern) escape '\\'")
-            .doesNotContain("staff_ticket_search_ngrams", "queryNgramPrefix")
+            .doesNotContain("staff_ticket_search_characters", "queryNgramPrefix")
         assertThat(plan.parameters.parameterNames).doesNotContain("queryNgramPrefix")
     }
 

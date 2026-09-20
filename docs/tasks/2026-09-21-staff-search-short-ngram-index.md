@@ -1,4 +1,4 @@
-# Staff search short-query n-gram index vertical slice
+# Staff search short-query character index vertical slice
 
 ## Goal
 
@@ -21,7 +21,7 @@
 
 ## In scope
 
-- `staff_document`에서 중복을 제거한 1자·2자 토큰을 만드는 immutable PostgreSQL 함수
+- `staff_document`를 Unicode 문자 배열로 변환하는 immutable PostgreSQL 함수
 - 같은 PostgreSQL의 GIN 표현식 인덱스
 - 1~2자 query의 인덱스 후보 조건과 기존 literal `LIKE` 재검증
 - SQL 구조·실제 PostgreSQL index plan·검색 결과 회귀 테스트
@@ -36,8 +36,8 @@
 
 ## Invariants and failure semantics
 
-- 1자 token은 `u:`, 2자 token은 `b:` namespace를 사용해 서로 충돌하지 않는다.
-- GIN 조건 뒤에 기존 escaped literal `LIKE`를 유지해 index 후보의 결과 의미를 바꾸지 않는다.
+- GIN 조건은 query의 모든 문자를 포함하는 문서를 후보로 선택한다.
+- GIN 조건 뒤에 기존 escaped literal `LIKE`를 유지해 문자 인접성·중복과 결과 의미를 바꾸지 않는다.
 - 3자 이상 query는 기존 `pg_trgm` 경로를 유지한다.
 - exact count는 cursor 적용 전 snapshot과 filters에 일치하는 전체 후보 수다.
 - score/updated order, ticket-number tie-break와 signed cursor는 바뀌지 않는다.
@@ -53,10 +53,10 @@
 
 ## Acceptance scenarios
 
-1. Given 1자 또는 2자 literal이 subject/comment에 있을 때, when staff search를 실행하면, then 기존 결과와 exact count가 반환되고 SQL은 short n-gram GIN 후보 조건을 사용한다.
+1. Given 1자 또는 2자 literal이 subject/comment에 있을 때, when staff search를 실행하면, then 기존 결과와 exact count가 반환되고 SQL은 short character GIN 후보 조건을 사용한다.
 2. Given `%`, `_`, `\\` 같은 wildcard 문자가 포함된 1~2자 query일 때, when 검색하면, then 문자는 wildcard가 아니라 literal로 취급된다.
 3. Given 3자 이상 query일 때, when 검색하면, then 기존 `staff_document LIKE ... escape '\\'`와 trigram index 경로가 유지된다.
-4. Given short n-gram index를 사용할 수 없는 DB 상태일 때, when migration/startup이 실행되면, then 배포는 실패하고 인덱스 없는 새 SQL을 성공으로 제공하지 않는다.
+4. Given short character index를 사용할 수 없는 DB 상태일 때, when migration/startup이 실행되면, then 배포는 실패하고 인덱스 없는 새 SQL을 성공으로 제공하지 않는다.
 5. Given access audit persistence failure일 때, when 검색하면, then 검색 결과는 반환되지 않는다.
 
 ## Validation
@@ -80,6 +80,7 @@
 ## Human explanation
 
 - PostgreSQL `pg_trgm`은 추출 가능한 trigram이 없는 짧은 패턴에서 후보를 충분히 줄일 수 없다.
-- 이번 구조는 원문을 새 table에 복제하지 않고 기존 rebuildable staff projection에 1~2자 inverted index만 보강한다.
+- 이번 구조는 원문을 새 table에 복제하지 않고 기존 rebuildable staff projection에 문자 membership index만 보강한다.
+- 2자 query의 두 문자가 떨어져 있거나 같은 문자의 개수가 부족한 후보는 기존 literal `LIKE`가 제거한다.
 - exact result semantics와 audit contract를 유지하려고 GIN 조건을 최종 판정으로 사용하지 않고 기존 literal `LIKE`를 함께 적용한다.
 - 인덱스 크기·갱신 비용과 검색 지연의 전후 실측을 함께 기록하며, 비용이 이익보다 크면 외부 검색 저장소가 아니라 먼저 이 index를 rollback 후보로 둔다.
