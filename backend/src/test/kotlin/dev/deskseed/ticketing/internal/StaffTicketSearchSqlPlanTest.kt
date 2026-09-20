@@ -41,11 +41,14 @@ class StaffTicketSearchSqlPlanTest {
         val plan = buildPlan(sort = STAFF_SEARCH_SCORE_SORT, cursor = null)
 
         assertThat(plan.pageSql).contains(
-            "select t.id as ticket_id, t.ticket_number, t.updated_at",
-            "selected.ticket_id as selected_ticket_id",
+            "select t.ticket_number,",
+            "select ticket_number, search_score",
+            "t.id as selected_ticket_id",
             "candidate_stats.result_count",
-            "join tickets t on t.id = selected.ticket_id",
+            "join tickets t on t.ticket_number = selected.ticket_number",
         )
+        assertThat(plan.pageSql.substringBefore("limit :limit"))
+            .doesNotContain("t.id as ticket_id", "select ticket_id", "t.updated_at,")
         assertThat(plan.pageSql.indexOf("limit :limit"))
             .isLessThan(plan.pageSql.indexOf("left join customers c"))
         assertThat(plan.pageSql.substringBefore("limit :limit"))
@@ -98,7 +101,11 @@ class StaffTicketSearchSqlPlanTest {
             .contains("where (search_score, ticket_number) < (:cursorScore, :cursorTicketNumber)")
         assertThat(scorePlan.pageSql).endsWith("order by selected.search_score desc, selected.ticket_number desc")
         assertThat(updatedPlan.pageSql.substringBefore("limit :limit"))
-            .contains("where (updated_at, ticket_number) < (:cursorUpdatedAt, :cursorTicketNumber)")
+            .contains(
+                "select t.ticket_number, t.updated_at,",
+                "select ticket_number, updated_at, search_score",
+                "where (updated_at, ticket_number) < (:cursorUpdatedAt, :cursorTicketNumber)",
+            )
         assertThat(updatedPlan.pageSql).endsWith("order by selected.updated_at desc, selected.ticket_number desc")
     }
 

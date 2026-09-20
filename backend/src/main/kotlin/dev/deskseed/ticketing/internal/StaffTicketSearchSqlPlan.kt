@@ -66,8 +66,14 @@ internal class StaffTicketSearchSqlPlanFactory {
             ${if (filters.slaState != null) "left join analytics_first_reply_facts fact on fact.ticket_id = t.id" else ""}
             where ${conditions.joinToString("\n  and ")}
         """.trimIndent()
+        val rankedSortColumns = if (sort == STAFF_SEARCH_UPDATED_SORT) "t.updated_at," else ""
+        val selectedColumns = if (sort == STAFF_SEARCH_UPDATED_SORT) {
+            "ticket_number, updated_at, search_score"
+        } else {
+            "ticket_number, search_score"
+        }
         val rankedCandidates = """
-            select t.id as ticket_id, t.ticket_number, t.updated_at,
+            select t.ticket_number, $rankedSortColumns
                    ${searchScoreExpression()} as search_score
             $candidateFromClause
         """.trimIndent()
@@ -104,19 +110,19 @@ internal class StaffTicketSearchSqlPlanFactory {
                     select count(*) as result_count from ranked
                 ),
                 selected as materialized (
-                    select ticket_id, ticket_number, updated_at, search_score
+                    select $selectedColumns
                     from ranked
                     $cursorPredicate
                     order by $orderBy
                     limit :limit
                 )
-                select selected.ticket_id as selected_ticket_id,
+                select t.id as selected_ticket_id,
                        candidate_stats.result_count,
                        ${ticketSummaryColumns()},
                        selected.search_score
                 from candidate_stats
                 left join selected on true
-                left join tickets t on t.id = selected.ticket_id
+                left join tickets t on t.ticket_number = selected.ticket_number
                 left join customers c on c.id = t.requester_id
                 left join support_groups g on g.id = t.group_id
                 left join staff_accounts s on s.id = t.assignee_id
