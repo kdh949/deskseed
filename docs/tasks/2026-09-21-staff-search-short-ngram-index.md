@@ -72,7 +72,7 @@
 
 - OpenAPI와 response schema는 변경하지 않는다.
 - V94는 immutable function과 GIN index를 추가한다. index는 `CREATE INDEX CONCURRENTLY`로 같은 DB에서 작성한다.
-- Flyway migration은 non-transactional script이고 PostgreSQL advisory lock은 session lock을 사용한다.
+- Flyway migration은 non-transactional script이고 PostgreSQL advisory lock은 session lock을 사용한다. production의 별도 Flyway CLI `db-migrate`에도 같은 설정을 전달하며 Compose 계약에서 고정한다.
 - rollback은 이전 application SHA로 되돌리는 것이다. 추가 function/index는 무해하게 남기고, 제거는 별도 forward migration에서만 수행한다.
 - index build 실패는 배포 실패로 남기고 Flyway repair 후 재실행한다. 데이터 volume은 삭제하거나 교체하지 않는다.
 

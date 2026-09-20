@@ -32,6 +32,7 @@ services:
       FLYWAY_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?set the migration password}
       FLYWAY_LOCATIONS: filesystem:/flyway/sql
       FLYWAY_CONNECT_RETRIES: "60"
+      FLYWAY_POSTGRESQL_TRANSACTIONAL_LOCK: "false"
       REDGATE_DISABLE_TELEMETRY: "true"
     volumes:
       - ./backend/src/main/resources/db/migration:/flyway/sql:ro

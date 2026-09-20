@@ -139,6 +139,7 @@ assert redis_secret["source"] == "deskseed-redis-acl", redis_secret
 assert redis_secret["target"].endswith("/deskseed-redis-acl"), redis_secret
 
 assert services["db-migrate"]["environment"]["FLYWAY_USER"] == "deskseed_migration"
+assert services["db-migrate"]["environment"]["FLYWAY_POSTGRESQL_TRANSACTIONAL_LOCK"] == "false"
 assert services["db"]["environment"]["POSTGRES_USER"] == "deskseed_bootstrap"
 assert services["db"]["environment"]["DESKSEED_MIGRATION_ROLE"] == "deskseed_migration"
 assert services["db"]["environment"]["DESKSEED_RUNTIME_ROLE"] == "deskseed_runtime"
