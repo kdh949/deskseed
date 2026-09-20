@@ -185,51 +185,64 @@ begin
               )
         $query$, md5(p_seed || ':staff:42')::uuid, p_base_time),
         format($query$
-            with ranked as (
-                select t.id, t.ticket_number, t.subject, t.status, t.priority,
-                       t.created_at, t.updated_at, t.version, t.kind,
-                       c.id as customer_id, c.name as customer_name,
-                       g.id as group_id, g.name as group_name,
-                       s.id as assignee_id, s.display_name as assignee_name,
-                       fact.outcome as sla_outcome, fact.due_at as sla_due_at,
-                       fact.target_minutes as sla_target_minutes,
-                       fact.policy_version as sla_policy_version,
-                       fact.schedule_version as sla_schedule_version,
-                       (
-                           case when search_document.ticket_number = 6242 then 1000 else 0 end
-                           + case when search_document.subject_text = '6242' then 500
-                                  when strpos(search_document.subject_text, '6242') > 0 then 250 else 0 end
-                           + case when search_document.requester_name_text = '6242' then 180
-                                  when strpos(search_document.requester_name_text, '6242') > 0 then 90 else 0 end
-                           + case when search_document.requester_email_text = '6242' then 160
-                                  when strpos(search_document.requester_email_text, '6242') > 0 then 80 else 0 end
-                           + case when search_document.group_name_text = '6242' then 80
-                                  when strpos(search_document.group_name_text, '6242') > 0 then 40 else 0 end
-                           + case when search_document.assignee_name_text = '6242' then 80
-                                  when strpos(search_document.assignee_name_text, '6242') > 0 then 40 else 0 end
-                           + case when strpos(search_document.public_comment_text, '6242') > 0
-                                        or strpos(search_document.internal_comment_text, '6242') > 0
-                                  then 20 else 0 end
-                       ) as search_score
-                from tickets t
-                join ticket_search_documents search_document on search_document.ticket_id = t.id
-                left join customers c on c.id = t.requester_id
-                left join support_groups g on g.id = t.group_id
-                left join staff_accounts s on s.id = t.assignee_id
-                left join analytics_first_reply_facts fact on fact.ticket_id = t.id
-                where exists (
-                    select 1 from staff_accounts authorized_actor
-                    where authorized_actor.id = %L::uuid and authorized_actor.status = 'ACTIVE'
-                )
-                  and t.updated_at <= %L::timestamptz
-                  and (
-                      search_document.ticket_number = 6242
-                      or search_document.staff_document like '%%6242%%'
-                  )
+            with selected as materialized (
+                select ticket_id, ticket_number, updated_at, search_score
+                from (
+                    select t.id as ticket_id, t.ticket_number, t.updated_at,
+                           (
+                               case when search_document.ticket_number = 6242 then 1000 else 0 end
+                               + case when search_document.subject_text = '6242' then 500
+                                      when strpos(search_document.subject_text, '6242') > 0 then 250 else 0 end
+                               + case when search_document.requester_name_text = '6242' then 180
+                                      when strpos(search_document.requester_name_text, '6242') > 0 then 90 else 0 end
+                               + case when search_document.requester_email_text = '6242' then 160
+                                      when strpos(search_document.requester_email_text, '6242') > 0 then 80 else 0 end
+                               + case when search_document.group_name_text = '6242' then 80
+                                      when strpos(search_document.group_name_text, '6242') > 0 then 40 else 0 end
+                               + case when search_document.assignee_name_text = '6242' then 80
+                                      when strpos(search_document.assignee_name_text, '6242') > 0 then 40 else 0 end
+                               + case when strpos(search_document.public_comment_text, '6242') > 0
+                                            or strpos(search_document.internal_comment_text, '6242') > 0
+                                      then 20 else 0 end
+                           ) as search_score
+                    from tickets t
+                    join ticket_search_documents search_document on search_document.ticket_id = t.id
+                    where exists (
+                        select 1 from staff_accounts authorized_actor
+                        where authorized_actor.id = %L::uuid and authorized_actor.status = 'ACTIVE'
+                    )
+                      and t.updated_at <= %L::timestamptz
+                      and (
+                          search_document.ticket_number = 6242
+                          or search_document.staff_document like '%%6242%%'
+                      )
+                ) ranked
+                order by search_score desc, ticket_number desc
+                limit 51
             )
-            select * from ranked
-            order by search_score desc, ticket_number desc
-            limit 51
+            select t.id, t.ticket_number, t.subject, t.status, t.priority,
+                   t.created_at, t.updated_at, t.version, t.kind,
+                   (select count(*)
+                    from ticket_relations relation
+                    join tickets child on child.id = relation.target_ticket_id
+                    where relation.source_ticket_id = t.id
+                      and relation.relation_type = 'PARENT_CHILD'
+                      and child.status not in ('SOLVED', 'CLOSED')) as open_child_count,
+                   c.id as customer_id, c.name as customer_name,
+                   g.id as group_id, g.name as group_name,
+                   s.id as assignee_id, s.display_name as assignee_name,
+                   fact.outcome as sla_outcome, fact.due_at as sla_due_at,
+                   fact.target_minutes as sla_target_minutes,
+                   fact.policy_version as sla_policy_version,
+                   fact.schedule_version as sla_schedule_version,
+                   selected.search_score
+            from selected
+            join tickets t on t.id = selected.ticket_id
+            left join customers c on c.id = t.requester_id
+            left join support_groups g on g.id = t.group_id
+            left join staff_accounts s on s.id = t.assignee_id
+            left join analytics_first_reply_facts fact on fact.ticket_id = t.id
+            order by selected.search_score desc, selected.ticket_number desc
         $query$, md5(p_seed || ':staff:42')::uuid, p_base_time),
         format($query$
             select *

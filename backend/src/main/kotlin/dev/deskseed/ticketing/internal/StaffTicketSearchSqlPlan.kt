@@ -60,7 +60,7 @@ internal class StaffTicketSearchSqlPlanFactory {
             """.trimIndent(),
         )
         conditions += compileFilters(filters, parameters)
-        val fromClause = """
+        val countFromClause = """
             from tickets t
             join ticket_search_documents search_document on search_document.ticket_id = t.id
             left join customers c on c.id = t.requester_id
@@ -69,10 +69,16 @@ internal class StaffTicketSearchSqlPlanFactory {
             left join analytics_first_reply_facts fact on fact.ticket_id = t.id
             where ${conditions.joinToString("\n  and ")}
         """.trimIndent()
-        val ranked = """
-            select ${ticketSummaryColumns()},
+        val candidateFromClause = """
+            from tickets t
+            join ticket_search_documents search_document on search_document.ticket_id = t.id
+            ${if (filters.slaState != null) "left join analytics_first_reply_facts fact on fact.ticket_id = t.id" else ""}
+            where ${conditions.joinToString("\n  and ")}
+        """.trimIndent()
+        val rankedCandidates = """
+            select t.id as ticket_id, t.ticket_number, t.updated_at,
                    ${searchScoreExpression()} as search_score
-            $fromClause
+            $candidateFromClause
         """.trimIndent()
         val cursorPredicate = when (sort) {
             STAFF_SEARCH_SCORE_SORT -> cursor?.let {
@@ -92,16 +98,32 @@ internal class StaffTicketSearchSqlPlanFactory {
         } else {
             "updated_at desc, ticket_number desc"
         }
+        val selectedOrderBy = if (sort == STAFF_SEARCH_SCORE_SORT) {
+            "selected.search_score desc, selected.ticket_number desc"
+        } else {
+            "selected.updated_at desc, selected.ticket_number desc"
+        }
         return StaffTicketSearchSqlPlan(
-            countSql = "select count(*) $fromClause",
+            countSql = "select count(*) $countFromClause",
             pageSql = """
-                with ranked as (
-                    $ranked
+                with selected as materialized (
+                    select ticket_id, ticket_number, updated_at, search_score
+                    from (
+                        $rankedCandidates
+                    ) ranked
+                    $cursorPredicate
+                    order by $orderBy
+                    limit :limit
                 )
-                select * from ranked
-                $cursorPredicate
-                order by $orderBy
-                limit :limit
+                select ${ticketSummaryColumns()},
+                       selected.search_score
+                from selected
+                join tickets t on t.id = selected.ticket_id
+                left join customers c on c.id = t.requester_id
+                left join support_groups g on g.id = t.group_id
+                left join staff_accounts s on s.id = t.assignee_id
+                left join analytics_first_reply_facts fact on fact.ticket_id = t.id
+                order by $selectedOrderBy
             """.trimIndent().trim(),
             parameters = parameters,
         )

@@ -493,6 +493,110 @@ class AgentTicketSearchIntegrationTest {
     }
 
     @Test
+    fun `updated cursor preserves status priority group assignee and SLA filters`() {
+        val agent = insertStaff("updated-filter@example.com", "Agent password 42", "Updated 상담사")
+        val ownGroup = insertGroup("Updated 그룹", agent)
+        val otherAgent = insertStaff("updated-filter-other@example.com", "Agent password 42", "다른 Updated 상담사")
+        val otherGroup = insertGroup("다른 Updated 그룹", otherAgent)
+        insertTicket(8901, "two phase filtered result", "OPEN", "HIGH", ownGroup, agent)
+        insertTicket(8902, "two phase filtered result", "OPEN", "HIGH", ownGroup, agent)
+        insertTicket(8903, "two phase filtered result", "SOLVED", "HIGH", ownGroup, agent)
+        insertTicket(8904, "two phase filtered result", "OPEN", "HIGH", otherGroup, otherAgent)
+        insertTicket(8905, "two phase filtered result", "OPEN", "HIGH", ownGroup, null)
+        val browser = login("updated-filter@example.com", "Agent password 42")
+
+        val first = mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{
+                    "status":"OPEN",
+                    "priority":"HIGH",
+                    "groupId":"$ownGroup",
+                    "assigneeId":"me",
+                    "slaState":"NO_POLICY"
+                  },
+                  "sort":"updatedAt:desc,ticketNumber:desc",
+                  "limit":1
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(2))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8902))
+            .andReturn().response.contentAsString
+        val cursor = stringField(first, "nextCursor")
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{
+                    "status":"OPEN",
+                    "priority":"HIGH",
+                    "groupId":"$ownGroup",
+                    "assigneeId":"me",
+                    "slaState":"NO_POLICY"
+                  },
+                  "sort":"updatedAt:desc,ticketNumber:desc",
+                  "cursor":"$cursor",
+                  "limit":1
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(2))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8901))
+            .andExpect(jsonPath("$.nextCursor").isEmpty)
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{"groupId":"$ownGroup","assigneeId":"unassigned"},
+                  "sort":"score:desc,ticketNumber:desc",
+                  "limit":25
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8905))
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{"groupId":"$otherGroup","assigneeId":"$otherAgent"},
+                  "sort":"score:desc,ticketNumber:desc",
+                  "limit":25
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8904))
+    }
+
+    @Test
     fun `projection quality corpus preserves internal exact rank and literal wildcard behavior`() {
         val agent = insertStaff("projection-corpus@example.com", "Agent password 42", "Corpus 상담사")
         val group = insertGroup("Corpus 그룹", agent)
@@ -661,7 +765,7 @@ class AgentTicketSearchIntegrationTest {
         status: String,
         priority: String,
         groupId: UUID,
-        assigneeId: UUID,
+        assigneeId: UUID?,
         updatedAt: Instant = Instant.parse("2026-08-11T00:00:00Z").plusSeconds(number),
     ): UUID {
         val customerId = UUID.randomUUID()
