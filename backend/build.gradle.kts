@@ -124,10 +124,6 @@ kotlin {
 tasks.withType<Test> {
     useJUnitPlatform()
 
-    // V94 builds the short-query GIN index concurrently, so Flyway must not hold
-    // its PostgreSQL advisory lock through an enclosing transaction in direct API tests.
-    environment("FLYWAY_POSTGRESQL_TRANSACTIONAL_LOCK", "false")
-
     // The suite has distinct Spring integration contexts; retain a bounded set in CI.
     maxHeapSize = "1g"
     maxParallelForks = 1

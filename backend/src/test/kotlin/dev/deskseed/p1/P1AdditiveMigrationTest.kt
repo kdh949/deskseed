@@ -118,7 +118,7 @@ class P1AdditiveMigrationTest {
     }
 
     private fun migrateTo(version: String) {
-        Flyway.configure()
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
             .locations("classpath:db/migration")
             .target(version)

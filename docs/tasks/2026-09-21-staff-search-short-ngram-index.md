@@ -63,6 +63,7 @@
 
 - `StaffTicketSearchSqlPlanTest`: short/long SQL 분기와 parameter-only query
 - `StaffTicketQueryEvidenceIntegrationTest`: short literal 결과와 forced planner index 선택
+- 직접 Flyway API를 사용하는 migration/integration tests는 `flyway.postgresql.transactional.lock=false`를 명시해 non-transactional V94를 같은 방식으로 검증한다.
 - clean Flyway migration 및 Hibernate validation: ARCH-002
 - CI backend/module/contract gates
 - 개인 스테이징: exact SHA, 같은 DB/corpus/seed, 20회 bounded sequential 비교와 Grafana/pg_stat_statements 증거

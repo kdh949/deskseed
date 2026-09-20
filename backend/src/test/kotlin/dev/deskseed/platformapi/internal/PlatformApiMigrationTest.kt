@@ -13,7 +13,7 @@ class PlatformApiMigrationTest {
     fun `migration adds internal work items integration authors and bounded idempotency identity`() {
         PostgreSQLContainer(DockerImageName.parse("postgres:17-alpine")).use { postgres ->
             postgres.start()
-            Flyway.configure().dataSource(postgres.jdbcUrl, postgres.username, postgres.password).load().migrate()
+            Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false")).dataSource(postgres.jdbcUrl, postgres.username, postgres.password).load().migrate()
 
             DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
                 connection.createStatement().use { statement ->

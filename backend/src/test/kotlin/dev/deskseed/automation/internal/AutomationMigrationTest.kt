@@ -23,7 +23,7 @@ class AutomationMigrationTest {
 
     @Test
     fun `V75 creates versioned solved automation candidates and execution provenance`() {
-        Flyway.configure().dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false")).dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
             .locations("classpath:db/migration").target("75").load().migrate()
         connection().use { connection -> connection.createStatement().use { statement ->
             listOf(
@@ -46,7 +46,7 @@ class AutomationMigrationTest {
 
     @Test
     fun `V76 adds an immutable position snapshot and ordering index to automation candidates`() {
-        Flyway.configure().dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false")).dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
             .locations("classpath:db/migration").target("76").load().migrate()
         connection().use { connection -> connection.createStatement().use { statement ->
             statement.executeQuery(

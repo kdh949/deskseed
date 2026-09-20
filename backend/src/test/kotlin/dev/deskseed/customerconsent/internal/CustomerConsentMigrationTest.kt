@@ -270,7 +270,7 @@ class CustomerConsentMigrationTest {
     private fun String?.sqlUuid(): String = this?.let { "'$it'" } ?: "null"
 
     private fun migrateTo(version: String) {
-        Flyway.configure()
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
             .locations("classpath:db/migration")
             .target(version)
@@ -278,7 +278,7 @@ class CustomerConsentMigrationTest {
             .migrate()
     }
 
-    private fun flyway(): Flyway = Flyway.configure()
+    private fun flyway(): Flyway = Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
         .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
         .locations("classpath:db/migration")
         .cleanDisabled(false)

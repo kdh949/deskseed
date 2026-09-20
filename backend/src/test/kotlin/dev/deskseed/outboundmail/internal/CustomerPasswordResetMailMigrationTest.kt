@@ -86,7 +86,7 @@ class CustomerPasswordResetMailMigrationTest {
     ).use { result -> check(result.next()); result.getString(1) }
 
     private fun migrateTo(version: String) {
-        Flyway.configure()
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
             .locations("classpath:db/migration")
             .target(version)
@@ -94,7 +94,7 @@ class CustomerPasswordResetMailMigrationTest {
             .migrate()
     }
 
-    private fun flyway(): Flyway = Flyway.configure()
+    private fun flyway(): Flyway = Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
         .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
         .locations("classpath:db/migration")
         .cleanDisabled(false)

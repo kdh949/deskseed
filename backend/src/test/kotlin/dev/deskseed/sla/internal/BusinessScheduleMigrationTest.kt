@@ -16,7 +16,7 @@ import java.sql.SQLException
 class BusinessScheduleMigrationTest {
     @Test
     fun `migration seeds Seoul weekday schedule and protects immutable history`() {
-        Flyway.configure()
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
             .locations("classpath:db/migration")
             .load()

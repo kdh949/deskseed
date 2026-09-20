@@ -37,7 +37,7 @@ class JdbcTicketDraftStoreIntegrationTest {
     @BeforeEach
     fun prepareStore() {
         val dataSource = DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password)
-        Flyway.configure()
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
             .dataSource(dataSource)
             .locations("classpath:db/migration")
             .load()

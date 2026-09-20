@@ -16,7 +16,7 @@ import java.sql.SQLException
 class FirstReplySlaMigrationTest {
     @Test
     fun `migration creates indexed target facts scanner checkpoint and immutable policy history`() {
-        Flyway.configure()
+        Flyway.configure().configuration(mapOf("flyway.postgresql.transactional.lock" to "false"))
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
             .locations("classpath:db/migration")
             .load()
