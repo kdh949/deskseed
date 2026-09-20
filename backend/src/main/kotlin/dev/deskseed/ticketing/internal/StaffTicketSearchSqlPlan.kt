@@ -44,11 +44,11 @@ internal class StaffTicketSearchSqlPlanFactory {
             .addValue("now", Timestamp.from(now))
             .addValue("riskAt", Timestamp.from(riskAt))
             .addValue("snapshotAt", Timestamp.from(snapshotAt))
-        val documentPredicate = if (queryCharacterCount <= 2) {
+        val documentPredicate = if (queryCharacterCount == 2) {
             """
             (
-                staff_ticket_search_characters(search_document.staff_document)
-                    @> staff_ticket_search_characters(cast(:queryText as text))
+                staff_ticket_search_bigrams(search_document.staff_document)
+                    @> staff_ticket_search_bigrams(cast(:queryText as text))
                 and search_document.staff_document like lower(:queryPattern) escape '\'
             )
             """.trimIndent()

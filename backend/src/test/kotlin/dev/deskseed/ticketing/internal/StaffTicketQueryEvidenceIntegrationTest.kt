@@ -186,21 +186,21 @@ class StaffTicketQueryEvidenceIntegrationTest {
 
     @Test
     @Transactional
-    fun `short search predicate can use its character index`() {
+    fun `two character search predicate can use its adjacent bigram index`() {
         jdbcTemplate.execute("set local enable_seqscan = off")
 
         val plan = jdbcTemplate.queryForList(
             """
             explain (costs off)
             select ticket_id from ticket_search_documents
-            where staff_ticket_search_characters(staff_document)
-                    @> staff_ticket_search_characters('대화')
+            where staff_ticket_search_bigrams(staff_document)
+                    @> staff_ticket_search_bigrams('대화')
               and staff_document like '%대화%' escape '\'
             """.trimIndent(),
             String::class.java,
         ).joinToString("\n")
 
-        assertThat(plan).contains("ticket_search_documents_staff_character_idx")
+        assertThat(plan).contains("ticket_search_documents_staff_bigram_idx")
     }
 
     @Test

@@ -226,7 +226,7 @@ refreshed_at
 
 - `public_comment_text`와 `internal_comment_text`를 분리하고 staff endpoint만 generated `staff_document`를 조회한다.
 - `staff_document gin_trgm_ops`는 기존 literal substring 의미를 유지한다. `%`, `_`, `\`는 application에서 literal로 escape한다.
-- 1~2자 literal 검색은 immutable `staff_ticket_search_characters(staff_document)`의 문자 GIN 표현식 인덱스로 모든 query 문자를 포함한 후보를 줄인 뒤 같은 escaped `LIKE`로 인접성과 중복을 재검증한다. 결과·exact count 의미는 바뀌지 않으며 index는 projection과 함께 rebuildable하다.
+- 2자 literal 검색은 immutable `staff_ticket_search_bigrams(staff_document)`의 인접 bigram GIN 표현식 인덱스로 동일한 2자 토큰을 포함한 후보를 줄인 뒤 같은 escaped `LIKE`로 결과를 재검증한다. 1자는 기존 literal scan, 3자 이상은 기존 trigram 경로를 유지한다. 결과·exact count 의미는 바뀌지 않으며 index는 projection과 함께 rebuildable하다.
 - ticket/comment/requester/group/assignee의 검색 필드 변경은 canonical transaction 안에서 projection도 갱신한다.
 - refresh는 shared advisory transaction lock, rebuild는 같은 key의 exclusive lock을 사용한다. PostgreSQL row가 source of truth이고 projection은 `rebuild_ticket_search_documents()`로 재생성 가능하다.
 - 검색 원문, fingerprint, ciphertext, audit metadata는 이 table에 저장하지 않는다.
