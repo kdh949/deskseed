@@ -24,9 +24,14 @@ class StaffTicketSearchSqlPlanTest {
         )
 
         assertThat(plan.countSql).startsWith("select count(*)").contains("join ticket_search_documents search_document")
-        assertThat(plan.pageSql).startsWith("with ranked as materialized")
+        assertThat(plan.pageSql).startsWith("with selected as materialized")
             .contains("join ticket_search_documents search_document")
-            .contains("candidate_stats as materialized", "select count(*) as result_count from ranked")
+            .contains(
+                "count(*) over () as result_count",
+                "candidate_stats as materialized",
+                "select coalesce(max(result_count), 0) as result_count from selected",
+            )
+            .doesNotContain("ranked as materialized")
             .contains("left join selected on true")
         assertThat(plan.countSql).doesNotContain(rawQuery)
         assertThat(plan.pageSql).doesNotContain(rawQuery)
@@ -75,7 +80,22 @@ class StaffTicketSearchSqlPlanTest {
 
         assertThat(plan.pageSql.indexOf("select count(*) as result_count from ranked"))
             .isLessThan(plan.pageSql.indexOf("where (search_score, ticket_number)"))
-        assertThat(plan.pageSql).contains("from candidate_stats", "left join selected on true")
+        assertThat(plan.pageSql)
+            .startsWith("with ranked as materialized")
+            .contains("from candidate_stats", "left join selected on true")
+    }
+
+    @Test
+    fun `first page carries exact total through the bounded selected rows`() {
+        val plan = buildPlan(sort = STAFF_SEARCH_SCORE_SORT, cursor = null)
+
+        assertThat(plan.pageSql)
+            .startsWith("with selected as materialized")
+            .contains("count(*) over () as result_count")
+            .contains("select ticket_number, search_score, result_count")
+            .contains("select coalesce(max(result_count), 0) as result_count from selected")
+        assertThat(plan.pageSql.indexOf("count(*) over () as result_count"))
+            .isLessThan(plan.pageSql.indexOf("limit :limit"))
     }
 
     @Test

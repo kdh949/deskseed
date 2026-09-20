@@ -100,9 +100,37 @@ internal class StaffTicketSearchSqlPlanFactory {
         } else {
             "selected.updated_at desc, selected.ticket_number desc"
         }
-        return StaffTicketSearchSqlPlan(
-            countSql = "select count(*) $candidateFromClause",
-            pageSql = """
+        val pageSql = if (cursor == null) {
+            """
+                with selected as materialized (
+                    select $selectedColumns, result_count
+                    from (
+                        select t.ticket_number, $rankedSortColumns
+                               ${searchScoreExpression()} as search_score,
+                               count(*) over () as result_count
+                        $candidateFromClause
+                    ) ranked
+                    order by $orderBy
+                    limit :limit
+                ),
+                candidate_stats as materialized (
+                    select coalesce(max(result_count), 0) as result_count from selected
+                )
+                select t.id as selected_ticket_id,
+                       candidate_stats.result_count,
+                       ${ticketSummaryColumns()},
+                       selected.search_score
+                from candidate_stats
+                left join selected on true
+                left join tickets t on t.ticket_number = selected.ticket_number
+                left join customers c on c.id = t.requester_id
+                left join support_groups g on g.id = t.group_id
+                left join staff_accounts s on s.id = t.assignee_id
+                left join analytics_first_reply_facts fact on fact.ticket_id = t.id
+                order by $selectedOrderBy
+            """.trimIndent().trim()
+        } else {
+            """
                 with ranked as materialized (
                     $rankedCandidates
                 ),
@@ -128,7 +156,11 @@ internal class StaffTicketSearchSqlPlanFactory {
                 left join staff_accounts s on s.id = t.assignee_id
                 left join analytics_first_reply_facts fact on fact.ticket_id = t.id
                 order by $selectedOrderBy
-            """.trimIndent().trim(),
+            """.trimIndent().trim()
+        }
+        return StaffTicketSearchSqlPlan(
+            countSql = "select count(*) $candidateFromClause",
+            pageSql = pageSql,
             parameters = parameters,
         )
     }
