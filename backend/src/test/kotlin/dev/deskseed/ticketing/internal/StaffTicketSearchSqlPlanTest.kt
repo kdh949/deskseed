@@ -37,6 +37,31 @@ class StaffTicketSearchSqlPlanTest {
     }
 
     @Test
+    fun `one and two character queries use ngram candidates with literal recheck`() {
+        val oneCharacter = buildPlan(query = "결")
+        val twoCharacters = buildPlan(query = "결제")
+
+        listOf(oneCharacter to "u:", twoCharacters to "b:").forEach { (plan, prefix) ->
+            assertThat(plan.pageSql).contains(
+                "staff_ticket_search_ngrams(search_document.staff_document)",
+                "@> array[cast(:queryNgramPrefix as text) || lower(:queryText)]",
+                "and search_document.staff_document like lower(:queryPattern) escape '\\'",
+            )
+            assertThat(plan.parameters.getValue("queryNgramPrefix")).isEqualTo(prefix)
+        }
+    }
+
+    @Test
+    fun `three or more characters keep the trigram literal predicate`() {
+        val plan = buildPlan(query = "결제오류")
+
+        assertThat(plan.pageSql)
+            .contains("search_document.staff_document like lower(:queryPattern) escape '\\'")
+            .doesNotContain("staff_ticket_search_ngrams", "queryNgramPrefix")
+        assertThat(plan.parameters.parameterNames).doesNotContain("queryNgramPrefix")
+    }
+
+    @Test
     fun `page limits minimal candidates before joining detail projections`() {
         val plan = buildPlan(sort = STAFF_SEARCH_SCORE_SORT, cursor = null)
 
@@ -109,9 +134,13 @@ class StaffTicketSearchSqlPlanTest {
         assertThat(updatedPlan.pageSql).endsWith("order by selected.updated_at desc, selected.ticket_number desc")
     }
 
-    private fun buildPlan(sort: String, cursor: StaffTicketSearchCursor?) =
+    private fun buildPlan(
+        sort: String = STAFF_SEARCH_SCORE_SORT,
+        cursor: StaffTicketSearchCursor? = null,
+        query: String = "synthetic query",
+    ) =
         StaffTicketSearchSqlPlanFactory().build(
-            query = "synthetic query",
+            query = query,
             actorId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             filters = StaffTicketSearchFilter(null, null, null, null, null),
             sort = sort,

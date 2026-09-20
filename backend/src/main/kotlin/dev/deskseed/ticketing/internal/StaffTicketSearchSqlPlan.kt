@@ -34,6 +34,7 @@ internal class StaffTicketSearchSqlPlanFactory {
         require(sort in STAFF_SEARCH_SORTS) { "Unsupported ticket search sort" }
         val riskAt = now.plusSeconds(30 * 60)
         val trimmedQuery = query.trim()
+        val queryCharacterCount = trimmedQuery.codePointCount(0, trimmedQuery.length)
         val parameters = MapSqlParameterSource()
             .addValue("actorId", actorId)
             .addValue("ticketNumberQuery", trimmedQuery.toLongOrNull())
@@ -43,6 +44,18 @@ internal class StaffTicketSearchSqlPlanFactory {
             .addValue("now", Timestamp.from(now))
             .addValue("riskAt", Timestamp.from(riskAt))
             .addValue("snapshotAt", Timestamp.from(snapshotAt))
+        val documentPredicate = if (queryCharacterCount <= 2) {
+            parameters.addValue("queryNgramPrefix", if (queryCharacterCount == 1) "u:" else "b:")
+            """
+            (
+                staff_ticket_search_ngrams(search_document.staff_document)
+                    @> array[cast(:queryNgramPrefix as text) || lower(:queryText)]
+                and search_document.staff_document like lower(:queryPattern) escape '\'
+            )
+            """.trimIndent()
+        } else {
+            "search_document.staff_document like lower(:queryPattern) escape '\\'"
+        }
         val conditions = mutableListOf(
             """
             exists (
@@ -55,7 +68,7 @@ internal class StaffTicketSearchSqlPlanFactory {
             (
                 (cast(:ticketNumberQuery as bigint) is not null
                     and search_document.ticket_number = cast(:ticketNumberQuery as bigint))
-                or search_document.staff_document like lower(:queryPattern) escape '\'
+                or $documentPredicate
             )
             """.trimIndent(),
         )

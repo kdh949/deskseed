@@ -18,6 +18,8 @@ spring:
         format_sql: false
   flyway:
     enabled: true
+    postgresql:
+      transactional-lock: false
   data:
     redis:
       host: ${DESKSEED_CUSTOMER_AUTH_REDIS_HOST:localhost}

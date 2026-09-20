@@ -168,6 +168,41 @@ class StaffTicketQueryEvidenceIntegrationTest {
     }
 
     @Test
+    fun `short literal search keeps exact results and one combined query`() {
+        queryCounter.reset()
+
+        val result = ticketStore.search(
+            query = "대화",
+            scope = StaffTicketReadScope.ALL_TICKETS,
+            actorId = staffId,
+            filters = StaffTicketSearchFilter(),
+            limit = 25,
+        )
+
+        assertThat(result.resultCount).isEqualTo(1)
+        assertThat(result.items.map { it.ticketNumber }).containsExactly(6001)
+        assertThat(queryCounter.count()).isEqualTo(1)
+    }
+
+    @Test
+    @Transactional
+    fun `short search predicate can use its ngram index`() {
+        jdbcTemplate.execute("set local enable_seqscan = off")
+
+        val plan = jdbcTemplate.queryForList(
+            """
+            explain (costs off)
+            select ticket_id from ticket_search_documents
+            where staff_ticket_search_ngrams(staff_document) @> array['b:대화']
+              and staff_document like '%대화%' escape '\'
+            """.trimIndent(),
+            String::class.java,
+        ).joinToString("\n")
+
+        assertThat(plan).contains("ticket_search_documents_staff_ngram_idx")
+    }
+
+    @Test
     @Transactional
     fun `staff search projection separates visibility stays transactionally fresh and uses its trigram index`() {
         val internalCommentId = UUID.randomUUID()
