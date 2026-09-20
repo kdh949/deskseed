@@ -301,6 +301,7 @@ environment = model["services"]["backend"]["environment"]
 assert environment["JAVA_TOOL_OPTIONS"] == "-javaagent:/opt/pyroscope/pyroscope.jar"
 assert environment["DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED"] == "true"
 assert environment["DESKSEED_SEARCH_DIAGNOSTICS_ENABLED"] == "true"
+assert environment["DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY"] == "1.0"
 assert environment["PYROSCOPE_FORMAT"] == "jfr"
 assert environment["PYROSCOPE_PROFILER_EVENT"] == "wall"
 assert environment["PYROSCOPE_PROFILING_INTERVAL"] == "10ms"

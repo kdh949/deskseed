@@ -114,7 +114,7 @@ class AgentTicketSearchIntegrationTest {
             .andReturn().response.contentAsString
 
         val searchEventId = UUID.fromString(stringField(response, "searchEventId"))
-        listOf("overall", "page", "audit").forEach { phase ->
+        listOf("http_overall", "overall", "page", "audit", "response_assembly").forEach { phase ->
             assertThat(meters.get("deskseed.search.phase").tag("phase", phase)
                 .tag("query_class", "phrase").tag("outcome", "success").timer().count()).isPositive()
         }
@@ -301,6 +301,8 @@ class AgentTicketSearchIntegrationTest {
             assertThat(meters.get("deskseed.search.phase").tag("phase", "audit")
                 .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
             assertThat(meters.get("deskseed.search.phase").tag("phase", "overall")
+                .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
+            assertThat(meters.get("deskseed.search.phase").tag("phase", "http_overall")
                 .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_search_audit on access_audit_events")

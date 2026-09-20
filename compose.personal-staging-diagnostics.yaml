@@ -6,6 +6,8 @@ services:
       DESKSEED_SEARCH_DIAGNOSTICS_ENABLED: "true"
       DESKSEED_SERVICE_VERSION: ${IMAGE_TAG:?set the 40-character deployed revision}
       DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED: "true"
+      # The diagnostics overlay is bounded and opt-in; preserve complete traces for its short runs.
+      DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY: "1.0"
       JAVA_TOOL_OPTIONS: -javaagent:/opt/pyroscope/pyroscope.jar
       PYROSCOPE_APPLICATION_NAME: deskseed-backend
       PYROSCOPE_SERVER_ADDRESS: ${DESKSEED_PYROSCOPE_SERVER_URL:?set the private Pyroscope server URL}
