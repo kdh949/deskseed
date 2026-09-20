@@ -216,6 +216,12 @@ internal class StaffTicketQueryRepository(
             now = now,
         )
 
+        // Keep the larger sort/window budget local to this transaction. The broad
+        // substring search can otherwise spill hundreds of MiB through PostgreSQL's
+        // 4 MiB default work_mem, while a global or role-level change would also
+        // raise memory use for unrelated requests.
+        jdbcTemplate.jdbcOperations.execute("set local work_mem = '64MB'")
+
         // The materialized candidate set is shared by the exact count and page selection,
         // so a broad literal substring query scans the search projection once per request.
         val rows = searchDiagnostics.measure(SearchPhase.PAGE) {
