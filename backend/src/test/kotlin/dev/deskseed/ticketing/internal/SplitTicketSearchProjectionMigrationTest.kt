@@ -133,6 +133,29 @@ class SplitTicketSearchProjectionMigrationTest {
         }
     }
 
+    @Test
+    fun `V97 adds a latest-first ticket index for bounded search pages`() {
+        migrateTo("97")
+
+        connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                assertThat(
+                    queryString(
+                        statement,
+                        """
+                        select indexdef from pg_indexes
+                        where schemaname = 'public'
+                          and indexname = 'tickets_staff_search_latest_idx'
+                        """.trimIndent(),
+                    ),
+                ).contains(
+                    "ON public.tickets USING btree (updated_at DESC, ticket_number DESC)",
+                    "INCLUDE (id)",
+                )
+            }
+        }
+    }
+
     private fun migrateTo(version: String) {
         Flyway.configure()
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)

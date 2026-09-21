@@ -256,6 +256,9 @@ terminal_ticket_search_documents(
 - Flyway는 두 table을 비운 상태로 추가한다. `backfill_split_ticket_search_documents(batch)`를 commit 사이에 반복해 1~1,000행씩 진행하고 `ticket_search_projection_backfill_state` checkpoint로 재개한다.
 - 완료는 `reconcile_split_ticket_search_documents()`의 missing/unexpected/duplicate가 모두 0일 때만 인정한다.
 - V95는 ticket-number B-tree만 추가한다. V96은 두 projection의 `staff_document gin_trgm_ops`를 각각 추가한다.
+- V97은 latest-first staff search가 unfiltered canonical ticket order를 선택할 수 있도록
+  `tickets_staff_search_latest_idx (updated_at desc, ticket_number desc) include (id)`를 추가한다.
+  이 B-tree는 trigram membership index를 대체하지 않고 planner 선택지를 추가한다.
 - runtime search는 status가 없으면 active를 먼저 읽고 `limit + 1` lookahead가 부족할 때만 terminal을 읽는다. `CLOSED` filter는 terminal만, 다른 status filter는 active만 읽는다.
 - active 결과는 terminal 결과보다 항상 앞서며 선택한 score/updatedAt 정렬은 각 partition 안에서 적용한다. signed cursor v3가 partition과 기존 snapshot/tuple/누적 반환 수를 함께 고정한다.
 - 기존 V35 `ticket_search_documents`는 application rollback source로 유지하며 별도 승인 전에는 제거하지 않는다.
