@@ -285,12 +285,16 @@ class AgentTicketReadIntegrationTest {
             .andExpect(jsonPath("$.description").value("고객 응대 집중 View"))
             .andExpect(jsonPath("$.ticketCountAsOf").isEmpty)
             .andExpect(jsonPath("$.definitionVersion").value(1))
+            .andExpect(jsonPath("$.createdAt").isString)
+            .andExpect(jsonPath("$.updatedAt").isString)
             .andReturn().response.contentAsString
         val personalId = UUID.fromString(stringField(personal, "id"))
         val personalKey = stringField(personal, "key")
 
         val listed = mockMvc.perform(get("/api/v1/agent/views").session(ownerSession))
             .andExpect(status().isOk)
+            .andExpect(jsonPath("$[?(@.key == '$personalKey')].createdAt").isNotEmpty)
+            .andExpect(jsonPath("$[?(@.key == '$personalKey')].updatedAt").isNotEmpty)
             .andReturn().response.contentAsString
         assertThat(listed)
             .contains(

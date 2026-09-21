@@ -10760,6 +10760,8 @@ components:
       - columns
       - sort
       - readScope
+      - createdAt
+      - updatedAt
       properties:
         id:
           type: string

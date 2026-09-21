@@ -401,6 +401,8 @@ internal class AgentTicketReadController(
         ticketCountState = ticketCountState,
         ticketCountAsOf = ticketCountAsOf,
         readScope = "ALL_TICKETS",
+        createdAt = view.createdAt,
+        updatedAt = view.updatedAt,
     )
 
     private fun HttpServletRequest.readContext() = AgentReadRequestContext(
@@ -498,6 +500,8 @@ internal data class SavedViewResponse(
     val ticketCountState: String,
     val ticketCountAsOf: Instant?,
     val readScope: String,
+    val createdAt: Instant,
+    val updatedAt: Instant,
 )
 
 internal data class SavedViewDefinitionRequest(
