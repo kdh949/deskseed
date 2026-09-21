@@ -131,6 +131,40 @@ class StaffTicketSearchSqlPlanTest {
         assertThat(updatedPlan.pageSql).endsWith("order by selected.updated_at desc, selected.ticket_number desc")
     }
 
+    @Test
+    fun `numeric query uses only exact ticket number predicate without substring scoring`() {
+        val plan = StaffTicketSearchSqlPlanFactory().build(
+            query = "8802",
+            actorId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            filters = StaffTicketSearchFilter(null, null, null, null, null),
+            sort = STAFF_SEARCH_SCORE_SORT,
+            snapshotAt = Instant.parse("2026-09-19T00:00:00Z"),
+            cursor = null,
+            limit = 26,
+            now = Instant.parse("2026-09-19T00:00:00Z"),
+        )
+
+        assertThat(plan.countSql)
+            .contains("search_document.ticket_number = :ticketNumberQuery")
+            .doesNotContain("staff_document like", "queryPattern", "strpos")
+        assertThat(plan.pageSql)
+            .contains("1000 as search_score")
+            .doesNotContain("staff_document like", "queryPattern", "strpos")
+        assertThat(plan.parameters.parameterNames)
+            .contains("ticketNumberQuery")
+            .doesNotContain("queryText", "queryPattern")
+    }
+
+    @Test
+    fun `updated sort skips relevance score calculation while preserving literal candidate matching`() {
+        val plan = buildPlan(sort = STAFF_SEARCH_UPDATED_SORT, cursor = null)
+
+        assertThat(plan.countSql).contains("search_document.staff_document like lower(:queryPattern)")
+        assertThat(plan.pageSql)
+            .contains("0 as search_score", "order by updated_at desc, ticket_number desc")
+            .doesNotContain("strpos(")
+    }
+
     private fun buildPlan(sort: String, cursor: StaffTicketSearchCursor?) =
         StaffTicketSearchSqlPlanFactory().build(
             query = "synthetic query",

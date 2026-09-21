@@ -21,6 +21,10 @@ requireConfirmedTarget();
 
 const mode = __ENV.AGENT_READ_MODE || 'composite';
 if (!['composite', 'search-only'].includes(mode)) fail('AGENT_READ_MODE must be composite or search-only');
+const searchSort = __ENV.AGENT_SEARCH_SORT || 'updatedAt:desc,ticketNumber:desc';
+if (!['score:desc,ticketNumber:desc', 'updatedAt:desc,ticketNumber:desc'].includes(searchSort)) {
+  fail('AGENT_SEARCH_SORT must be score:desc,ticketNumber:desc or updatedAt:desc,ticketNumber:desc');
+}
 const workload = loadWorkload();
 const viewKeys = (__ENV.STAFF_VIEW_KEYS || __ENV.STAFF_VIEW_KEY || 'pending').split(',').map((value) => value.trim());
 if (viewKeys.some((value) => !/^[A-Za-z0-9_-]{1,100}$/.test(value))) fail('Invalid STAFF_VIEW_KEYS');
@@ -59,7 +63,7 @@ export default function () {
     const searchTags = { ...tags, query_class: input.queryClass };
     searchRequests.add(1, searchTags);
     const response = http.post(`${targetUrl}/api/v1/agent/search`, JSON.stringify({
-      query: input.query, filters: {}, sort: 'score:desc,ticketNumber:desc', limit: 25,
+      query: input.query, filters: {}, sort: searchSort, limit: 25,
     }), params('agent_search', searchTags, {
       'Content-Type': 'application/json', 'X-Interaction-Id': randomUuid(),
       'X-Deskseed-Search-Class': input.queryClass, 'X-Deskseed-Test-Run-Id': runId,

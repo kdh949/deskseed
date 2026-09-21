@@ -59,6 +59,19 @@ set -- docker run --rm \
   -e "LOAD_SCRIPT_REVISION=$script_revision" \
   -v "$repository_root/tests/load:/scripts:ro" \
   -v "$run_directory:/results"
+if [ -n "${DESKSEED_LOAD_RUN_ID_OVERRIDE:-}" ]; then
+  case "$DESKSEED_LOAD_RUN_ID_OVERRIDE" in
+    *[!A-Za-z0-9._-]*|'') echo "invalid DESKSEED_LOAD_RUN_ID_OVERRIDE" >&2; exit 2 ;;
+  esac
+  set -- "$@" -e "TEST_RUN_ID=$DESKSEED_LOAD_RUN_ID_OVERRIDE"
+fi
+if [ -n "${DESKSEED_AGENT_SEARCH_SORT_OVERRIDE:-}" ]; then
+  case "$DESKSEED_AGENT_SEARCH_SORT_OVERRIDE" in
+    score:desc,ticketNumber:desc|updatedAt:desc,ticketNumber:desc) ;;
+    *) echo "invalid DESKSEED_AGENT_SEARCH_SORT_OVERRIDE" >&2; exit 2 ;;
+  esac
+  set -- "$@" -e "AGENT_SEARCH_SORT=$DESKSEED_AGENT_SEARCH_SORT_OVERRIDE"
+fi
 if [ -n "$fixture_directory" ]; then
   set -- "$@" -v "$fixture_directory:/fixtures:ro"
   if [ "$scenario" = agent-read ]; then

@@ -67,7 +67,7 @@ export function AgentSearchPage() {
   const [queryText, setQueryText] = useState('')
   const [draftFilters, setDraftFilters] = useState<AgentTicketSearchFilters>({})
   const [sort, setSort] = useState<AgentTicketSearchSort>(
-    'score:desc,ticketNumber:desc',
+    'updatedAt:desc,ticketNumber:desc',
   )
   const [submitted, setSubmitted] = useState<AgentTicketSearchInput | null>(
     null,

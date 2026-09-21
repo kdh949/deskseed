@@ -36,15 +36,22 @@ internal class StaffTicketSearchSqlPlanFactory {
         require(sort in STAFF_SEARCH_SORTS) { "Unsupported ticket search sort" }
         val riskAt = now.plusSeconds(30 * 60)
         val trimmedQuery = query.trim()
+        val ticketNumberQuery = trimmedQuery.toLongOrNull()
         val parameters = MapSqlParameterSource()
             .addValue("actorId", actorId)
-            .addValue("ticketNumberQuery", trimmedQuery.toLongOrNull())
-            .addValue("queryText", trimmedQuery)
-            .addValue("queryPattern", likeLiteralPattern(trimmedQuery))
+            .addValue("ticketNumberQuery", ticketNumberQuery)
             .addValue("limit", limit)
             .addValue("now", Timestamp.from(now))
             .addValue("riskAt", Timestamp.from(riskAt))
             .addValue("snapshotAt", Timestamp.from(snapshotAt))
+        val searchCondition = if (ticketNumberQuery != null) {
+            "search_document.ticket_number = :ticketNumberQuery"
+        } else {
+            parameters
+                .addValue("queryText", trimmedQuery)
+                .addValue("queryPattern", likeLiteralPattern(trimmedQuery))
+            "search_document.staff_document like lower(:queryPattern) escape '\\'"
+        }
         val conditions = mutableListOf(
             """
             exists (
@@ -53,13 +60,7 @@ internal class StaffTicketSearchSqlPlanFactory {
             )
             """.trimIndent().trim(),
             "t.updated_at <= :snapshotAt",
-            """
-            (
-                (cast(:ticketNumberQuery as bigint) is not null
-                    and search_document.ticket_number = cast(:ticketNumberQuery as bigint))
-                or search_document.staff_document like lower(:queryPattern) escape '\'
-            )
-            """.trimIndent(),
+            searchCondition,
         )
         conditions += compileFilters(filters, parameters)
         val searchDocumentTable = when (partition) {
@@ -80,7 +81,7 @@ internal class StaffTicketSearchSqlPlanFactory {
         }
         val rankedCandidates = """
             select t.ticket_number, $rankedSortColumns
-                   ${searchScoreExpression()} as search_score
+                   ${searchScoreExpression(ticketNumberQuery, sort)} as search_score
             $candidateFromClause
         """.trimIndent()
         val cursorPredicate = when (sort) {
@@ -194,11 +195,12 @@ internal class StaffTicketSearchSqlPlanFactory {
         fact.schedule_version as sla_schedule_version
     """.trimIndent()
 
-    private fun searchScoreExpression(): String = """
+    private fun searchScoreExpression(ticketNumberQuery: Long?, sort: String): String = when {
+        ticketNumberQuery != null -> "1000"
+        sort == STAFF_SEARCH_UPDATED_SORT -> "0"
+        else -> """
         (
-            case when cast(:ticketNumberQuery as bigint) is not null
-                    and search_document.ticket_number = cast(:ticketNumberQuery as bigint) then 1000 else 0 end
-            + case when search_document.subject_text = lower(:queryText) then 500
+            case when search_document.subject_text = lower(:queryText) then 500
                    when strpos(search_document.subject_text, lower(:queryText)) > 0 then 250 else 0 end
             + case when search_document.requester_name_text = lower(:queryText) then 180
                    when strpos(search_document.requester_name_text, lower(:queryText)) > 0 then 90 else 0 end
@@ -212,5 +214,6 @@ internal class StaffTicketSearchSqlPlanFactory {
                          or strpos(search_document.internal_comment_text, lower(:queryText)) > 0
                    then 20 else 0 end
         )
-    """.trimIndent()
+        """.trimIndent()
+    }
 }
