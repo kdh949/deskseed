@@ -40,6 +40,10 @@ class PersonalStagingObservabilityConfigurationTest {
         assertThat(properties.getProperty("management.opentelemetry.logging.limits.max-attributes")).isEqualTo(16)
         assertThat(properties.getProperty("management.opentelemetry.logging.limits.max-attribute-value-length"))
             .isEqualTo(256)
+        assertThat(properties.getProperty("management.opentelemetry.resource-attributes.service.version"))
+            .isEqualTo("\${DESKSEED_SERVICE_VERSION:unknown}")
+        assertThat(properties.getProperty("deskseed.profiling.span-correlation-enabled"))
+            .isEqualTo("\${DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED:false}")
     }
 
     @Test

@@ -2,6 +2,8 @@
 
 This runbook enables detailed personal-staging diagnostics without changing the `production` Spring profile or exposing a public management endpoint. It is separate from the disposable `load` overlay.
 
+The baseline overlay remains metrics/logs/traces only. CPU/wall profiling and DB/host collectors require the additional diagnostics opt-in below and are never part of the default production deployment.
+
 ## What this enables
 
 ```text
@@ -94,6 +96,30 @@ docker compose --project-name deskseed \
 
 Classify the result as `Passed` only after the Prometheus scrape, one safe log, and its matching trace are all visible. A running container, an HTTP 200, or a Grafana `No data` panel is not ingest evidence.
 
+## 4.1 Opt in to performance diagnostics
+
+This is a separate, manually controlled diagnostic window. Do not add this overlay to the normal deploy script.
+
+1. Set `DESKSEED_PYROSCOPE_SERVER_URL` to the private Pyroscope endpoint and keep `IMAGE_TAG` equal to the deployed 40-character revision.
+2. Render the effective Compose model with production, personal staging, observability and `compose.personal-staging-diagnostics.yaml`. Confirm the backend alone gains the Pyroscope Java agent; `PYROSCOPE_PROFILER_ALLOC` and `PYROSCOPE_PROFILER_LOCK` must be absent.
+3. Start the backend with that effective model. Start the standalone collector project under `ops/observability/personal-staging/search-diagnostics` only after its private bind and least-privilege DB role checks pass.
+4. Import the Pyroscope and Tempo datasource fragments, then `Deskseed Live Operations` and `Deskseed Performance RCA`. Preserve the UIDs or update all references together.
+5. Confirm a sampled search root span contains `pyroscope.profile.id`, `service.version`, `code.file.path` and `code.function.name`. From that trace, open `Profiles for this span`. A short span may legitimately contain no samples; record it as No data, not zero cost.
+
+Allocation/lock capture is a separate short-lived mode. Combine `compose.profiling-allocation-lock.yaml` only for the bounded window, starting at `512k` allocations and `10ms` locks. Remove that overlay after capture.
+
+Personal staging must not run `SearchPlanCapture` or any `EXPLAIN ANALYZE`. Reproduce a selected query family with the same corpus and revision on the load DB:
+
+```bash
+cd backend
+DESKSEED_PLAN_CAPTURE_DATABASE_URL='jdbc:postgresql://load-db.internal:5432/deskseed' \
+DESKSEED_PLAN_CAPTURE_DATABASE_USER='deskseed_plan_capture' \
+DESKSEED_PLAN_CAPTURE_DATABASE_PASSWORD='from-protected-secret-source' \
+./gradlew captureSearchPlan --args='--environment load --corpus /protected/search-corpus.json --case-id phrase:0 --family page --deployment-sha <40-char-sha> --output /protected/run/plans --actor-id <active-load-staff-uuid>'
+```
+
+The command never prints SQL or the corpus query, uses read-only transaction settings plus statement/lock timeouts, and writes a protected plan JSON, bounded metadata and a readable summary. The artifact can contain synthetic literals emitted by PostgreSQL and must not be published as a Grafana metric or public file.
+
 ## 5. Roll back
 
 Redeploy without the opt-in flag to remove the additional Spring profile from the backend. The optional Alloy service is intentionally not removed as an implicit Compose orphan; stop and remove that exact service explicitly after the application rollback is healthy:
@@ -118,6 +144,8 @@ IMAGE_TAG=<currently-deployed-sha> docker compose --project-name deskseed \
 
 Then remove the two Prometheus targets, rule fragment, private firewall allows, and Grafana dashboard if they are no longer wanted. No database or public API rollback is involved.
 
+If diagnostics were enabled, first redeploy without `compose.personal-staging-diagnostics.yaml`, then stop/remove the exact standalone search-diagnostics exporter project and remove only its DB/host/profile scrape and datasource fragments. Removing telemetry does not require ticket/audit data rollback.
+
 ## Failure guides
 
 ### Target down
@@ -140,3 +168,28 @@ Then remove the two Prometheus targets, rule fragment, private firewall allows, 
 
 - Start with the dashboard's Hikari pending/active/idle panels, then use one safe correlation ID in Loki and Tempo.
 - This overlay is not a load-test result. Do not infer capacity, SLA, or a production bottleneck without a separately authorized versioned workload and supporting evidence.
+
+### Database scrape failure
+
+- Check `pg_up`, `pg_exporter_last_scrape_error`, the private bind and monitor role before changing application DB roles.
+- The exporter role must not gain application-schema SELECT merely to make a panel green.
+
+### Database blocking
+
+- Identify blockers through bounded activity/wait evidence. Do not enable SQL/bind logging or terminate sessions automatically from this runbook.
+
+### Disk low
+
+- Stop new load/diagnostic capture and preserve existing artifacts. Do not delete shared retention data automatically; confirm the owning service and rollback plan first.
+
+### Redis eviction
+
+- Correlate eviction with Redis memory and request impact. Do not infer lost durable ticket/audit data because Redis is not their source of truth.
+
+### Worker backlog
+
+- Compare backlog direction, failure counters and DB/transport health. Webhook delivery failures do not roll back committed ticket mutations.
+
+### Profile ingest rejection
+
+- Check the private Pyroscope endpoint, tenant/auth policy and agent label bounds without printing credentials. Disable the diagnostics profiler if retries threaten application resources; business and audit behavior must remain unchanged.

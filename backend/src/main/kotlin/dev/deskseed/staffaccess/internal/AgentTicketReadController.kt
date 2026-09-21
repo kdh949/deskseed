@@ -1,6 +1,9 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.foundation.RequestIdFilter
+import dev.deskseed.foundation.SearchDiagnostics
+import dev.deskseed.foundation.SearchPhase
+import dev.deskseed.foundation.SearchResultCount
 import dev.deskseed.attachments.TicketAttachment
 import dev.deskseed.ticketing.SavedTicketView
 import dev.deskseed.ticketing.SavedViewColumn
@@ -50,6 +53,7 @@ internal class AgentTicketReadController(
     private val savedViewApplicationService: SavedViewApplicationService,
     private val searchApplicationService: AgentTicketSearchApplicationService,
     private val customerSearchApplicationService: AgentCustomerSearchApplicationService,
+    private val searchDiagnostics: SearchDiagnostics,
 ) {
     @GetMapping("/views")
     fun views(@AuthenticationPrincipal principal: StaffPrincipal): List<SavedViewResponse> =
@@ -276,18 +280,20 @@ internal class AgentTicketReadController(
                 userAgent = request.getHeader("User-Agent"),
             ),
         )
-        return ResponseEntity.ok()
-            .cacheControl(CacheControl.noStore())
-            .body(
-                AgentTicketSearchPageResponse(
-                    searchEventId = page.searchEventId,
-                    searchInteractionId = page.searchInteractionId,
-                    items = page.items.map(::ticketResponse),
-                    resultCount = page.resultCount,
-                    sort = page.sort,
-                    nextCursor = page.nextCursor,
-                ),
-            )
+        return searchDiagnostics.measure(SearchPhase.RESPONSE_ASSEMBLY) {
+            ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(
+                    AgentTicketSearchPageResponse(
+                        searchEventId = page.searchEventId,
+                        searchInteractionId = page.searchInteractionId,
+                        items = page.items.map(::ticketResponse),
+                        resultCount = page.resultCount,
+                        sort = page.sort,
+                        nextCursor = page.nextCursor,
+                    ),
+                )
+        }
     }
 
     @PostMapping("/customers/search")
@@ -446,7 +452,7 @@ internal data class AgentTicketSearchPageResponse(
     val searchEventId: UUID,
     val searchInteractionId: UUID,
     val items: List<TicketSummaryResponse>,
-    val resultCount: Long,
+    val resultCount: SearchResultCount,
     val sort: String,
     val nextCursor: String?,
 )

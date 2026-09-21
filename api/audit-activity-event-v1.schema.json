@@ -56,6 +56,10 @@
     "queryRedacted": { "type": ["string", "null"], "maxLength": 1000 },
     "queryFingerprint": { "type": ["string", "null"], "maxLength": 200 },
     "resultCount": { "type": ["integer", "null"], "minimum": 0 },
+    "resultCountRelation": {
+      "type": ["string", "null"],
+      "enum": ["EXACT", "LOWER_BOUND", null]
+    },
     "requestId": { "type": "string", "minLength": 1, "maxLength": 200 },
     "correlationId": { "type": ["string", "null"], "format": "uuid" },
     "ipAddress": { "type": ["string", "null"], "maxLength": 64 },

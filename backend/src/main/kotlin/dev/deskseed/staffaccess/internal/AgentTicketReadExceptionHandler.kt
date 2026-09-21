@@ -180,6 +180,15 @@ internal class AgentTicketReadExceptionHandler {
         "The search-result navigation context is invalid or no longer belongs to this session.",
     )
 
+    @ExceptionHandler(AgentTicketSearchTooBroadException::class)
+    fun searchTooBroad(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        "/problems/agent-search-too-broad",
+        "Ticket search is too broad",
+        "Add more characters or a narrowing filter and try again.",
+    )
+
     @ExceptionHandler(
         IllegalArgumentException::class,
         ConstraintViolationException::class,

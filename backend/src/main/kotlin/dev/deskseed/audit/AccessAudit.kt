@@ -2,6 +2,7 @@ package dev.deskseed.audit
 
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.foundation.SearchResultCountRelation
 import java.time.Instant
 import java.util.UUID
 
@@ -143,6 +144,7 @@ data class SearchExecutedAccessAudit(
     val normalizedFilters: Map<String, String>,
     val sort: String,
     val resultCount: Long,
+    val resultCountRelation: SearchResultCountRelation,
     val resultItems: List<SearchResultAuditItem>,
     val outcome: AccessAuditOutcome,
     val httpStatus: Int,

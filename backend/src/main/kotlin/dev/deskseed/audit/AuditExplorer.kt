@@ -1,6 +1,7 @@
 package dev.deskseed.audit
 
 import dev.deskseed.foundation.ActorType
+import dev.deskseed.foundation.SearchResultCountRelation
 import java.time.Instant
 import java.io.InputStream
 import java.util.UUID
@@ -108,6 +109,7 @@ data class AuditSearchContext(
     val filters: Map<String, String>,
     val sort: String?,
     val resultCount: Long,
+    val resultCountRelation: SearchResultCountRelation,
     val originSearchActivityId: UUID?,
     val openedActivities: List<AuditOpenedActivity>,
     val openedActivityCount: Long,

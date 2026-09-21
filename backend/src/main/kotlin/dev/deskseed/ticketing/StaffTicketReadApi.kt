@@ -41,21 +41,28 @@ data class StaffTicketSearchFilter(
     val slaState: StaffSlaDisplayState? = null,
 )
 
+enum class StaffTicketSearchPartition {
+    ACTIVE,
+    TERMINAL,
+}
+
 data class StaffTicketSearchCursor(
     val snapshotAt: Instant,
     val lastScore: Int? = null,
     val lastUpdatedAt: Instant? = null,
     val lastTicketNumber: Long,
+    val returnedBefore: Long,
+    val partition: StaffTicketSearchPartition = StaffTicketSearchPartition.ACTIVE,
 )
 
 data class StaffTicketSearchHit(
     val ticket: StaffTicketSummary,
     val score: Int?,
+    val partition: StaffTicketSearchPartition = StaffTicketSearchPartition.ACTIVE,
 )
 
 data class StaffTicketSearchResult(
     val hits: List<StaffTicketSearchHit>,
-    val resultCount: Long,
 ) {
     /** Legacy internal callers consume summaries; cursor-aware callers use [hits]. */
     val items: List<StaffTicketSummary> get() = hits.map(StaffTicketSearchHit::ticket)

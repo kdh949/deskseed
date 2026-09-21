@@ -16,6 +16,7 @@ import dev.deskseed.audit.TicketResourceReadAccessAudit
 import dev.deskseed.audit.TicketViewAccessAudit
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.foundation.SearchResultCountRelation
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -347,6 +348,9 @@ internal class JpaAccessAuditWriter(
         validateStaffContext(event.context)
         require(event.outcome == AccessAuditOutcome.SUCCEEDED) { "Canonical search audit requires success outcome" }
         require(event.resultCount >= 0) { "Search result count cannot be negative" }
+        require(event.resultCountRelation != SearchResultCountRelation.UNAVAILABLE) {
+            "Successful search audit requires an available result count"
+        }
         require(event.resultItems.size <= 100 && event.resultItems.size <= event.resultCount) {
             "Search result audit membership must be bounded by the result count"
         }
@@ -385,8 +389,8 @@ internal class JpaAccessAuditWriter(
             """
             insert into search_audit_details (
                 access_event_id, query_redacted, query_fingerprint, query_key_version,
-                normalized_filters, sort, result_count
-            ) values (?, ?, ?, ?, ?::jsonb, ?, ?)
+                normalized_filters, sort, result_count, result_count_relation
+            ) values (?, ?, ?, ?, ?::jsonb, ?, ?, ?)
             """.trimIndent(),
             event.eventId,
             event.protectedQuery.queryRedacted,
@@ -395,6 +399,7 @@ internal class JpaAccessAuditWriter(
             filtersJson(event.normalizedFilters),
             event.sort,
             event.resultCount,
+            event.resultCountRelation.name,
         )
         if (event.resultItems.isNotEmpty()) {
             jdbcTemplate.batchUpdate(

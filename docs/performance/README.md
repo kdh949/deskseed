@@ -3,6 +3,8 @@
 Keep reproducible fixture definitions, the exact query, `EXPLAIN (ANALYZE, BUFFERS)` output, p50/p95 measurements, hypothesis, change, and before/after result here. Do not add an index or cache based only on intuition.
 
 - [Agent Views and ticket detail read path](agent-ticket-read-query-plan.md)
+- [Staff search two-phase PAGE evidence](staff-search-two-phase-page.md)
+- [Staff search single-pass exact COUNT and PAGE evidence](staff-search-single-pass-count-page.md)
 - [Unified Audit Explorer one-million-row query plans](audit-explorer-1m-query-plan.md)
 - [Release-scale exact Agent View queries, Audit Explorer plans, and strict access-write overhead](../evidence/release/performance/README.md)
 

@@ -14,7 +14,7 @@ Load evidence must not weaken the existing audit, privacy, or deployment boundar
 
 - Prometheus pulls application and exporter metrics over the VPN. Every published metrics port binds only to an explicitly configured private address and the monitoring server is the only allowed source.
 - A load-only Grafana Alloy collector batches OTLP traces to Tempo and Docker logs to Loki. Its Docker access is accepted only on the disposable load host and is not an approved production topology.
-- The JVM pushes CPU profiles directly to Pyroscope. Allocation and lock profiling are opt-in diagnostics rather than the default load-test mode.
+- The JVM pushes JFR wall profiles directly to Pyroscope with a 10 ms sampling interval and 15 s upload interval. The pinned Pyroscope Java agent remains the profiling engine. `io.pyroscope:otel:2.1.2` contributes only a `PyroscopeOtelSpanProcessor` to Spring Boot's existing tracer provider, marks sampled root spans with `pyroscope.profile.id`, and never creates another OTel SDK or Java OTel agent. Allocation (`512k`) and lock (`10ms`) profiling are separate short-lived opt-in diagnostics rather than the default load-test mode.
 - k6 runs from a host separate from the Deskseed application and monitoring server. It sends bounded run metrics to Prometheus remote write and writes a local JSON summary.
 - Pushgateway is not used for the application, workers, exporters, or k6. Its stale-series and missing `up` semantics are unsuitable for these long-running targets.
 - Metric labels are restricted to bounded dimensions such as service, environment, route template, status class, operation, and outcome. Request, correlation, trace, actor, ticket, email, query, raw URL, and error-message values are forbidden labels.
@@ -28,14 +28,15 @@ The dashboards and run evidence must answer:
 1. Are clients observing errors, latency, throttling, or dropped work during a named load profile?
 2. Is saturation in the JVM, Hikari pool, PostgreSQL, Redis, host, or container correlated with that symptom?
 3. Are required audit writes, mail/webhook workers, or collaboration delivery failing or falling behind?
-4. Can one safe synthetic request be followed by correlation ID through logs and traces, then compared with the matching profile window?
+4. Can one safe synthetic request be followed through OVERALL/COUNT/PAGE/AUDIT spans, bounded source metadata, queryid/waits, a protected load-only execution plan, and the same root span's profile?
 
 ## Consequences
 
 - The default Compose topology remains unchanged; the load observability overlay is opt-in and rollback is removal of that overlay and its private firewall rules.
 - Public product OpenAPI contracts do not change. The Prometheus endpoint is a private management surface and is never proxied by the public frontend.
 - Capacity, SLA, and bottleneck claims remain `Not run` until a versioned dataset, environment description, k6 result, Prometheus snapshot, and database evidence are recorded together.
-- Direct trace-to-profile span linking is deferred. The first slice correlates profiles by service, environment, instance, and time window.
+- Tempo `tracesToProfiles` uses `pyroscope.profile.id` and the Pyroscope datasource for direct root-span profile navigation. Short sampled spans can still have no profile sample; `No data` is not proof of no CPU/wall cost.
+- `pg_stat_statements` exposes only fixed query family plus queryid/calls/time/blocks/temp/rows. Query text and bind values never enter exporter, Prometheus, or Grafana. `SearchPlanCapture` may run `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` only against an explicitly identified load DB with a synthetic corpus and protected artifact output.
 
 ## References
 

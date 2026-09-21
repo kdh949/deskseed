@@ -28,6 +28,8 @@ The load-only database enables `pg_stat_statements` and `track_io_timing`. Exist
 
 ## 2. Validate and start Deskseed
 
+Set `DESKSEED_SERVICE_VERSION` to the exact 40-character checkout/image revision before rendering Compose. This value becomes the bounded `service.version` trace resource and `deskseed_build_info` metric; aliases such as `latest` or a shortened SHA are rejected by the operational contract.
+
 ```bash
 ./scripts/validate-observability-config.sh
 

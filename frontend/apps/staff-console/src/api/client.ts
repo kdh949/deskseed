@@ -3574,13 +3574,12 @@ export async function searchAgentTickets(
     throw malformedSuccess(response)
   }
   const items = body.items.map(decodeAgentTicketSummary)
+  const resultCount = decodeSearchResultCount(body.resultCount)
   if (
     !isUuid(body.searchEventId) ||
     !isUuid(body.searchInteractionId) ||
     items.some((ticket) => !ticket) ||
-    typeof body.resultCount !== 'number' ||
-    !Number.isSafeInteger(body.resultCount) ||
-    body.resultCount < 0 ||
+    !resultCount ||
     typeof body.sort !== 'string' ||
     !AGENT_TICKET_SEARCH_SORTS.has(body.sort) ||
     (body.nextCursor !== null && !isNonBlankString(body.nextCursor))
@@ -3591,10 +3590,30 @@ export async function searchAgentTickets(
     searchEventId: body.searchEventId,
     searchInteractionId: body.searchInteractionId,
     items: items as AgentTicketSummary[],
-    resultCount: body.resultCount,
+    resultCount,
     sort: body.sort as AgentTicketSearchPage['sort'],
     nextCursor: body.nextCursor,
   }
+}
+
+function decodeSearchResultCount(
+  value: unknown,
+): AgentTicketSearchPage['resultCount'] | undefined {
+  if (!isRecord(value) || typeof value.relation !== 'string') return undefined
+  if (value.relation === 'UNAVAILABLE') {
+    return value.value === null
+      ? { value: null, relation: 'UNAVAILABLE' }
+      : undefined
+  }
+  if (
+    (value.relation !== 'EXACT' && value.relation !== 'LOWER_BOUND') ||
+    typeof value.value !== 'number' ||
+    !Number.isSafeInteger(value.value) ||
+    value.value < 0
+  ) {
+    return undefined
+  }
+  return { value: value.value, relation: value.relation }
 }
 
 export async function getAgentTicket(
@@ -4069,6 +4088,8 @@ function decodeAuditSearchContext(
     typeof value.resultCount !== 'number' ||
     !Number.isSafeInteger(value.resultCount) ||
     value.resultCount < 0 ||
+    (value.resultCountRelation !== 'EXACT' &&
+      value.resultCountRelation !== 'LOWER_BOUND') ||
     !isNullableString(value.originSearchActivityId) ||
     typeof value.openedActivityCount !== 'number' ||
     !Number.isSafeInteger(value.openedActivityCount) ||
@@ -4103,6 +4124,7 @@ function decodeAuditSearchContext(
     filters: value.filters as Record<string, string>,
     sort: value.sort,
     resultCount: value.resultCount,
+    resultCountRelation: value.resultCountRelation,
     originSearchActivityId: value.originSearchActivityId,
     openedActivityCount: value.openedActivityCount,
     openedActivitiesTruncated: value.openedActivitiesTruncated,

@@ -40,3 +40,64 @@ groups:
         annotations:
           summary: Deskseed personal-staging database connection acquisition is waiting
           runbook: docs/runbooks/deskseed-personal-staging-observability.md#database-saturation
+
+      - alert: DeskseedPersonalStagingDatabaseScrapeFailure
+        expr: pg_up{environment="personal-staging",stack="deskseed"} != 1 or pg_exporter_last_scrape_error{environment="personal-staging",stack="deskseed"} != 0
+        for: 2m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed personal-staging PostgreSQL diagnostics scrape is failing
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#database-scrape-failure
+
+      - alert: DeskseedPersonalStagingDatabaseBlocking
+        expr: deskseed_db_blocking_blocked_sessions{environment="personal-staging",stack="deskseed"} > 0
+        for: 2m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed personal-staging has persistent blocked database sessions
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#database-blocking
+
+      - alert: DeskseedPersonalStagingDiskLow
+        expr: |
+          node_filesystem_avail_bytes{environment="personal-staging",fstype!~"tmpfs|overlay"}
+          /
+          node_filesystem_size_bytes{environment="personal-staging",fstype!~"tmpfs|overlay"}
+          < 0.15
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed personal-staging host disk has less than 15 percent free
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#disk-low
+
+      - alert: DeskseedPersonalStagingRedisEviction
+        expr: increase(redis_evicted_keys_total{environment="personal-staging"}[5m]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed personal-staging Redis evicted keys
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#redis-eviction
+
+      - alert: DeskseedPersonalStagingWorkerBacklogStalled
+        expr: |
+          (max_over_time(deskseed_mail_outbox_backlog{environment="personal-staging"}[5m]) > 0
+          and delta(deskseed_mail_outbox_backlog{environment="personal-staging"}[5m]) >= 0)
+          or
+          (max_over_time(deskseed_webhook_delivery_backlog{environment="personal-staging"}[5m]) > 0
+          and delta(deskseed_webhook_delivery_backlog{environment="personal-staging"}[5m]) >= 0)
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deskseed personal-staging delivery backlog is not draining
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#worker-backlog
+
+      - alert: DeskseedPersonalStagingProfileIngestRejected
+        expr: increase(pyroscope_distributor_discarded_bytes_total[5m]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: Pyroscope rejected profile bytes during personal-staging diagnostics
+          runbook: docs/runbooks/deskseed-personal-staging-observability.md#profile-ingest-rejection
