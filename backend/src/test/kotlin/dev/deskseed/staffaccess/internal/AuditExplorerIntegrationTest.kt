@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.mock.web.MockHttpSession
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
@@ -708,11 +709,18 @@ class AuditExplorerIntegrationTest {
             .andExpect(jsonPath("$.artifact.checksumSha256").isNotEmpty)
             .andExpect(jsonPath("$.artifact.expiresAt").exists())
 
-        val downloaded = mockMvc.perform(
+        val initialDownload = mockMvc.perform(
             get("/api/v1/audit/exports/{jobId}/download", jobId)
                 .session(session)
                 .header("X-Interaction-Id", UUID.randomUUID()),
         )
+        val initialDownloadResult = initialDownload.andReturn()
+        val completedDownload = if (initialDownloadResult.request.isAsyncStarted) {
+            mockMvc.perform(asyncDispatch(initialDownloadResult))
+        } else {
+            initialDownload
+        }
+        val downloaded = completedDownload
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(header().string("Content-Type", "text/csv"))
