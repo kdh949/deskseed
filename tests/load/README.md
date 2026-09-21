@@ -39,6 +39,7 @@ MAX_VUS=45
 WARMUP_DURATION=3m
 LOAD_DURATION=10m
 AGENT_READ_MODE=composite
+AGENT_SEARCH_SORT=updatedAt:desc,ticketNumber:desc
 STAFF_VIEW_KEYS=pending
 K6_PROMETHEUS_RW_SERVER_URL=http://your-monitoring-host.example:9090/api/v1/write
 ```
@@ -52,11 +53,14 @@ K6_PROMETHEUS_RW_SERVER_URL=http://your-monitoring-host.example:9090/api/v1/writ
 
 네 번째 인자의 폴더에서 search-corpus.json과 선택적인 staff-accounts.json을 읽기 전용으로 마운트한다. 모든 fixture JSON과 env 파일은 group/others 권한이 없어야 한다. 실행마다 별도 결과 디렉터리를 만들어 이전 결과를 보존한다. TEST_RUN_ID도 매 실행 고유하게 지정해 remote-write 결과를 구분한다.
 
+기존 mode-0600 env를 비밀값 노출 없이 재사용하는 진단 A/B는 runner process에 `DESKSEED_LOAD_RUN_ID_OVERRIDE`와 `DESKSEED_AGENT_SEARCH_SORT_OVERRIDE`를 지정할 수 있다. 두 값만 container 환경에서 env-file 값을 덮어쓰며 인증정보나 대상은 덮어쓰지 않는다.
+
 | 옵션 | 동작 |
 |---|---|
 | TARGET_ITERATIONS_PER_SECOND | 초당 시나리오 시작 수. 기존 TARGET_RPS는 같은 단위의 호환 이름; 함께 주면 값이 같아야 함 |
 | AGENT_READ_MODE=composite | 큐 → 상세 → 검색. 정상 완료 시 업무 HTTP 약 3배, 로그인 별도 |
 | AGENT_READ_MODE=search-only | 인증된 검색만 수행. 시나리오/s = 검색/s |
+| AGENT_SEARCH_SORT | 검색 정렬 계약. 기본은 `updatedAt:desc,ticketNumber:desc`; 관련도 경로 대조 시 `score:desc,ticketNumber:desc`를 명시하고 서로 다른 run ID로 기록 |
 | WARMUP_DURATION | 기본 0. 같은 scenario/VU에서 준비 구간 뒤 측정; LOAD_DURATION에는 준비 시간을 더해 실행 |
 | LOAD_DURATION | 측정 구간. 일반 기본 5m, soak 기본 30m |
 | PREALLOCATED_VUS / MAX_VUS | agent-read는 두 값이 같아야 함. 기본 max는 preallocated와 같음 |

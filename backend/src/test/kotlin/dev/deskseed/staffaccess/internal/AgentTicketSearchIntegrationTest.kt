@@ -716,9 +716,10 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.value").value(1))
+            .andExpect(jsonPath("$.resultCount.relation").value("EXACT"))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8802))
-            .andExpect(jsonPath("$.items[1].ticketNumber").value(8803))
+            .andExpect(jsonPath("$.items[1]").doesNotExist())
 
         mockMvc.perform(
             search(

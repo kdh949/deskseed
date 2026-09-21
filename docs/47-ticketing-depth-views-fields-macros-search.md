@@ -10,8 +10,8 @@ The following narrow P1 slices are implemented without changing the broader stag
 
 - V30 seeds five read-only SYSTEM definitions and stores versioned PERSONAL/SHARED definitions. The P1 AST allowlists status, priority, group, assignee/current actor, First Reply SLA state, ticket kind, and bounded updated-age predicates. It rejects tags, raw SQL, SpEL, JavaScript, and scripts.
 - View rows, preview, and counts share the condition compiler and SQL authorization predicate. The first 20 visible views receive exact counts with one parameterized `UNION ALL` database round-trip; queue rows remain authoritative.
-- `searchAgentWorkspace` is PostgreSQL-first with SQL-side authorization, an opaque query/filter/sort/snapshot-bound cursor, score plus ticket-number tie breaking, relation-aware exact/lower-bound count, SLA-state filtering, and protected query/audit handling. ADR 0050 removes synchronous exact count from the first-page path, requires a narrowing filter for unfiltered non-numeric terms shorter than three code points, and applies a five-second PostgreSQL statement budget.
-- V35 adds a versioned staff-only search document with distinct PUBLIC/INTERNAL comment segments, a `pg_trgm` GIN index, and same-transaction refresh for canonical searchable fields. Exact ticket-number rank and literal substring behavior are unchanged.
+- `searchAgentWorkspace` is PostgreSQL-first with SQL-side authorization, an opaque query/filter/sort/snapshot-bound cursor, relation-aware exact/lower-bound count, SLA-state filtering, and protected query/audit handling. ADR 0050 removes synchronous exact count from the first-page path, requires a narrowing filter for unfiltered non-numeric terms shorter than three code points, and applies a five-second PostgreSQL statement budget. ADR 0053 makes decimal-integer input exact ticket-number lookup, defaults the Staff Console to latest-first order, and keeps score order as an explicit non-numeric search option.
+- V35 adds a versioned staff-only search document with distinct PUBLIC/INTERNAL comment segments, a `pg_trgm` GIN index, and same-transaction refresh for canonical searchable fields. Literal substring behavior remains for non-numeric input; ADR 0053 later separates decimal-integer exact lookup from textual numeric references.
 - Canonical writes take a shared transaction advisory lock while `rebuild_ticket_search_documents()` takes the exclusive form. A committed write therefore has zero projection lag, and an atomic rebuild cannot overwrite a concurrent refresh. Operators invoke `scripts/rebuild-ticket-search-documents.sql`; no runtime HTTP rebuild endpoint is exposed.
 - Original P1 excluded tags, custom fields, forms and macros. The 2026-09-08 REQ-CFG-001 extension now freezes and implements TAG / FORM / CUSTOM_STATUS / CUSTOM_FIELD equality filters using existing PostgreSQL read projections. `FORM` is the first customer intake binding. Custom fields must be active, agent-visible, searchable and non-sensitive; LONG_TEXT remains excluded. Unavailable field predicates evaluate false even for negative operators. See `tasks/2026-09-08-configuration-view-filters.md`.
 - The committed 1M evidence records both the former full-scan baseline and the V35 projection result. PostgreSQL remains the only search store until a measured relevance, concurrency, size, or latency limit justifies an external engine.
@@ -249,10 +249,10 @@ or one row with distinct public/internal vectors. The design must prove internal
 
 ### 5.3 Query behavior
 
-- exact ticket number/reference lookup before full text
+- a decimal-integer input performs exact ticket-number lookup without textual numeric-reference matching
 - language-aware tokenization where practical
 - quoted/advanced syntax only after UX and injection review
-- stable cursor based on score plus ticket number
+- stable cursor based on the selected score-or-updated-time tuple plus ticket number
 - permission filter applied in query, not client
 - query, filters, result count, and result-open chain audited for staff
 

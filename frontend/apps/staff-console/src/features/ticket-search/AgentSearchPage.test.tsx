@@ -93,7 +93,7 @@ describe('AgentSearchPage', () => {
             resultCount: body.cursor
               ? { value: 2, relation: 'EXACT' }
               : { value: 2, relation: 'LOWER_BOUND' },
-            sort: 'score:desc,ticketNumber:desc',
+            sort: 'updatedAt:desc,ticketNumber:desc',
             nextCursor: body.cursor ? null : 'opaque-next',
           })
         }
@@ -113,6 +113,7 @@ describe('AgentSearchPage', () => {
     expect(firstSearch?.body).toMatchObject({
       query: '중복 결제',
       cursor: null,
+      sort: 'updatedAt:desc,ticketNumber:desc',
     })
 
     await user.click(screen.getByRole('button', { name: '다음 페이지' }))
@@ -194,11 +195,11 @@ describe('AgentSearchPage', () => {
 
     await user.selectOptions(
       screen.getByLabelText('정렬 검색 필터'),
-      'updatedAt:desc,ticketNumber:desc',
+      'score:desc,ticketNumber:desc',
     )
     await waitFor(() => expect(searches).toHaveLength(4))
     expect(searches[3]?.body).toMatchObject({
-      sort: 'updatedAt:desc,ticketNumber:desc',
+      sort: 'score:desc,ticketNumber:desc',
       cursor: null,
     })
   })
