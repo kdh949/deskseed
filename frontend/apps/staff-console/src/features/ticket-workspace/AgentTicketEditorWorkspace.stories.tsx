@@ -419,7 +419,7 @@ export const RecoversRemoteDrafts: Story = {
             baseTicketVersion: 3,
             draftVersion: 2,
             updatedAt: '2026-08-22T00:00:00Z',
-            expiresAt: '2026-09-21T00:00:00Z',
+            expiresAt: '2099-09-21T00:00:00Z',
           }),
         ),
         http.get('/api/v1/agent/tickets/3001/drafts/INTERNAL_NOTE', () =>
@@ -436,7 +436,7 @@ export const RecoversRemoteDrafts: Story = {
             baseTicketVersion: 3,
             draftVersion: 3,
             updatedAt: '2026-08-22T00:00:00Z',
-            expiresAt: '2026-09-21T00:00:00Z',
+            expiresAt: '2099-09-21T00:00:00Z',
           }),
         ),
       ),
