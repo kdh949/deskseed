@@ -151,7 +151,7 @@ class StaffTicketQueryEvidenceIntegrationTest {
     }
 
     @Test
-    fun `search uses a fixed count and result query regardless of comment count`() {
+    fun `search prepares at most one query per partition regardless of comment count`() {
         queryCounter.reset()
 
         val result = ticketStore.search(
@@ -162,7 +162,6 @@ class StaffTicketQueryEvidenceIntegrationTest {
             limit = 25,
         )
 
-        assertThat(result.resultCount).isEqualTo(1)
         assertThat(result.items.map { it.ticketNumber }).containsExactly(6001)
         assertThat(queryCounter.count()).isEqualTo(2)
     }
@@ -260,6 +259,145 @@ class StaffTicketQueryEvidenceIntegrationTest {
                 ticketId,
             ),
         ).isEqualTo("변경된 검색 제목")
+    }
+
+    @Test
+    fun `split projection freezes closed documents and cascades ticket deletion`() {
+        val publicCommentId = UUID.randomUUID()
+        val internalCommentId = UUID.randomUUID()
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments
+                (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AGENT', ?, 'PUBLIC', '공개 projection 경계', now())
+            """.trimIndent(),
+            publicCommentId,
+            ticketId,
+            staffId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments
+                (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AGENT', ?, 'INTERNAL', '내부 projection 경계', now())
+            """.trimIndent(),
+            internalCommentId,
+            ticketId,
+            staffId,
+        )
+
+        val active = jdbcTemplate.queryForMap(
+            """
+            select document_version, rank_schema_version, public_comment_text, internal_comment_text
+            from active_ticket_search_documents
+            where ticket_id = ?
+            """.trimIndent(),
+            ticketId,
+        )
+        assertThat(active).containsEntry("document_version", 1).containsEntry("rank_schema_version", 1)
+        assertThat(active["public_comment_text"].toString())
+            .contains("공개 projection 경계")
+            .doesNotContain("내부 projection 경계")
+        assertThat(active["internal_comment_text"].toString()).contains("내부 projection 경계")
+
+        jdbcTemplate.update("update tickets set status = 'CLOSED', updated_at = now() where id = ?", ticketId)
+
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from active_ticket_search_documents where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )).isZero()
+        val terminal = jdbcTemplate.queryForMap(
+            """
+            select subject_text, public_comment_text, internal_comment_text
+            from terminal_ticket_search_documents
+            where ticket_id = ?
+            """.trimIndent(),
+            ticketId,
+        )
+        assertThat(terminal["subject_text"]).isEqualTo("쿼리 티켓 0")
+        assertThat(terminal["public_comment_text"].toString()).contains("공개 projection 경계")
+        assertThat(terminal["internal_comment_text"].toString()).contains("내부 projection 경계")
+
+        // CLOSED is immutable through product commands. Even a direct database mutation must not
+        // rewrite the finalized terminal search snapshot.
+        jdbcTemplate.update("update tickets set subject = '종료 후 직접 변경' where id = ?", ticketId)
+        jdbcTemplate.update(
+            """
+            insert into ticket_comments
+                (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'AGENT', ?, 'INTERNAL', '종료 후 직접 메모', now())
+            """.trimIndent(),
+            UUID.randomUUID(),
+            ticketId,
+            staffId,
+        )
+        assertThat(jdbcTemplate.queryForObject(
+            "select subject_text from terminal_ticket_search_documents where ticket_id = ?",
+            String::class.java,
+            ticketId,
+        )).isEqualTo("쿼리 티켓 0")
+        assertThat(jdbcTemplate.queryForObject(
+            "select internal_comment_text from terminal_ticket_search_documents where ticket_id = ?",
+            String::class.java,
+            ticketId,
+        )).doesNotContain("종료 후 직접 메모")
+
+        jdbcTemplate.update("delete from ticket_comments where ticket_id = ?", ticketId)
+        jdbcTemplate.update("delete from tickets where id = ?", ticketId)
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from terminal_ticket_search_documents where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )).isZero()
+    }
+
+    @Test
+    fun `split projection backfill resumes in bounded batches and reconciles state`() {
+        jdbcTemplate.update("update tickets set status = 'CLOSED' where ticket_number in (6001, 6002)")
+        jdbcTemplate.update("delete from active_ticket_search_documents")
+        jdbcTemplate.update("delete from terminal_ticket_search_documents")
+        jdbcTemplate.update(
+            """
+            update ticket_search_projection_backfill_state
+            set last_ticket_number = 0,
+                processed_count = 0,
+                status = 'PENDING',
+                started_at = null,
+                updated_at = transaction_timestamp(),
+                completed_at = null
+            where projection_version = 1
+            """.trimIndent(),
+        )
+
+        val first = jdbcTemplate.queryForMap("select * from backfill_split_ticket_search_documents(7)")
+        assertThat(first)
+            .containsEntry("batch_processed", 7)
+            .containsEntry("total_processed", 7L)
+            .containsEntry("backfill_status", "RUNNING")
+
+        var state = first
+        while (state["backfill_status"] != "COMPLETE") {
+            state = jdbcTemplate.queryForMap("select * from backfill_split_ticket_search_documents(7)")
+        }
+        assertThat(state).containsEntry("total_processed", 40L)
+
+        val reconciliation = jdbcTemplate.queryForMap("select * from reconcile_split_ticket_search_documents()")
+        assertThat(reconciliation)
+            .containsEntry("canonical_active_count", 38L)
+            .containsEntry("projected_active_count", 38L)
+            .containsEntry("missing_active_count", 0L)
+            .containsEntry("unexpected_active_count", 0L)
+            .containsEntry("canonical_terminal_count", 2L)
+            .containsEntry("projected_terminal_count", 2L)
+            .containsEntry("missing_terminal_count", 0L)
+            .containsEntry("unexpected_terminal_count", 0L)
+            .containsEntry("duplicate_count", 0L)
+
+        assertThat(jdbcTemplate.queryForMap("select * from backfill_split_ticket_search_documents(7)"))
+            .containsEntry("batch_processed", 0)
+            .containsEntry("total_processed", 40L)
+            .containsEntry("backfill_status", "COMPLETE")
     }
 
     @Test

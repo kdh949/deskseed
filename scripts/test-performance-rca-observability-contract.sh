@@ -28,8 +28,10 @@ jq -e '
   all(.panels[] | select(.type != "logs" and .type != "text");
     (.fieldConfig.defaults.unit | length) > 0 and (.fieldConfig.defaults.thresholds.steps | length) > 0) and
   any(.panels[]; .id == 22 and (.description | contains("Unattributed"))) and
-  any(.panels[]; .id == 23 and .type == "traces") and
-  any(.panels[]; .id == 24 and (.targets[0].expr | contains("queryid")))
+  any(.panels[]; .id == 23 and .type == "table" and (.targets[0].query | contains("deskseed.test_run_id"))) and
+  any(.panels[]; .id == 24 and (.targets[0].expr | contains("queryid"))) and
+  any(.panels[]; .id == 25 and ([.targets[].expr] | any(contains("otelcol_receiver_accepted_spans_total")))) and
+  any(.panels[]; .id == 26 and .targets[0].profileTypeId == "process_cpu:cpu:nanoseconds:cpu:nanoseconds")
 ' "$rca" >/dev/null
 
 jq -e '

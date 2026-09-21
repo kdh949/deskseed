@@ -107,14 +107,15 @@ class AgentTicketSearchIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(jsonPath("$.searchInteractionId").value(interactionId.toString()))
-            .andExpect(jsonPath("$.resultCount").value(2))
+            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.relation").value("EXACT"))
             .andExpect(jsonPath("$.items.length()").value(2))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8103))
             .andExpect(jsonPath("$.items[1].ticketNumber").value(8101))
             .andReturn().response.contentAsString
 
         val searchEventId = UUID.fromString(stringField(response, "searchEventId"))
-        listOf("overall", "count", "page", "audit").forEach { phase ->
+        listOf("http_overall", "overall", "page", "audit", "response_assembly").forEach { phase ->
             assertThat(meters.get("deskseed.search.phase").tag("phase", phase)
                 .tag("query_class", "phrase").tag("outcome", "success").timer().count()).isPositive()
         }
@@ -143,7 +144,7 @@ class AgentTicketSearchIntegrationTest {
         val detail = jdbcTemplate.queryForMap(
             """
             select query_redacted, query_fingerprint, query_key_version,
-                   normalized_filters::text as filters, sort, result_count
+                   normalized_filters::text as filters, sort, result_count, result_count_relation
             from search_audit_details where access_event_id = ?
             """.trimIndent(),
             searchEventId,
@@ -155,6 +156,7 @@ class AgentTicketSearchIntegrationTest {
         assertThat(detail["filters"].toString()).contains("\"priority\": \"HIGH\"")
         assertThat(detail["sort"]).isEqualTo("updatedAt:desc,ticketNumber:desc")
         assertThat(detail["result_count"]).isEqualTo(2L)
+        assertThat(detail["result_count_relation"]).isEqualTo("EXACT")
         assertThat(
             jdbcTemplate.queryForList(
                 """
@@ -203,7 +205,7 @@ class AgentTicketSearchIntegrationTest {
             search(
                 browser,
                 searchInteractionId,
-                """{"query":"환불","filters":{},"sort":"updatedAt:desc,ticketNumber:desc","limit":25}""",
+                """{"query":"환불","filters":{"status":"OPEN"},"sort":"updatedAt:desc,ticketNumber:desc","limit":25}""",
             ),
         ).andExpect(status().isOk).andReturn().response.contentAsString
         val searchEventId = UUID.fromString(stringField(searchResponse, "searchEventId"))
@@ -302,6 +304,8 @@ class AgentTicketSearchIntegrationTest {
                 .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
             assertThat(meters.get("deskseed.search.phase").tag("phase", "overall")
                 .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
+            assertThat(meters.get("deskseed.search.phase").tag("phase", "http_overall")
+                .tag("query_class", "unclassified").tag("outcome", "error").timer().count()).isPositive()
         } finally {
             jdbcTemplate.execute("drop trigger if exists fail_search_audit on access_audit_events")
             jdbcTemplate.execute("drop function if exists fail_search_audit_insert()")
@@ -321,6 +325,35 @@ class AgentTicketSearchIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"query":"감사 장애","filters":{},"sort":"updatedAt:desc,ticketNumber:desc","limit":25}"""),
         ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `unfiltered short non numeric search is rejected without database results or success audit`() {
+        val agent = insertStaff("broad-search@example.com", "Agent password 42", "Broad 상담사")
+        val group = insertGroup("Broad 그룹", agent)
+        insertTicket(8451, "결제 확인 대상", "OPEN", "NORMAL", group, agent)
+        val browser = login("broad-search@example.com", "Agent password 42")
+
+        val response = mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """{"query":"결제","filters":{},"sort":"score:desc,ticketNumber:desc","limit":25}""",
+            ),
+        )
+            .andExpect(status().isUnprocessableEntity)
+            .andExpect(jsonPath("$.type").value("/problems/agent-search-too-broad"))
+            .andExpect(jsonPath("$.items").doesNotExist())
+            .andReturn().response.contentAsString
+
+        assertThat(response).doesNotContain("결제")
+        assertThat(
+            jdbcTemplate.queryForObject(
+                "select count(*) from access_audit_events where actor_id = ? and action = 'SEARCH_EXECUTED'",
+                Long::class.java,
+                agent,
+            ),
+        ).isZero()
     }
 
     @Test
@@ -440,7 +473,8 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount").value(4))
+            .andExpect(jsonPath("$.resultCount.value").value(3))
+            .andExpect(jsonPath("$.resultCount.relation").value("LOWER_BOUND"))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8604))
             .andExpect(jsonPath("$.items[1].ticketNumber").value(8603))
             .andReturn().response.contentAsString
@@ -467,7 +501,8 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount").value(4))
+            .andExpect(jsonPath("$.resultCount.value").value(4))
+            .andExpect(jsonPath("$.resultCount.relation").value("EXACT"))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8602))
             .andExpect(jsonPath("$.items[1].ticketNumber").value(8601))
             .andExpect(jsonPath("$.nextCursor").isEmpty)
@@ -490,6 +525,153 @@ class AgentTicketSearchIntegrationTest {
                 """.trimIndent(),
             ),
         ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `unfiltered search pages active matches before immutable terminal matches`() {
+        val agent = insertStaff("partition-search@example.com", "Agent password 42", "Partition 상담사")
+        val group = insertGroup("Partition 그룹", agent)
+        insertTicket(8801, "partition handoff marker", "OPEN", "NORMAL", group, agent)
+        insertTicket(8899, "partition handoff marker", "CLOSED", "NORMAL", group, agent)
+        val browser = login("partition-search@example.com", "Agent password 42")
+        val interactionId = UUID.randomUUID()
+
+        val first = mockMvc.perform(
+            search(
+                browser,
+                interactionId,
+                """
+                {"query":"partition handoff marker","filters":{},"sort":"score:desc,ticketNumber:desc","limit":1}
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8801))
+            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.relation").value("LOWER_BOUND"))
+            .andReturn().response.contentAsString
+
+        val cursor = stringField(first, "nextCursor")
+        mockMvc.perform(
+            search(
+                browser,
+                interactionId,
+                """
+                {"query":"partition handoff marker","filters":{},"sort":"score:desc,ticketNumber:desc","cursor":"$cursor","limit":1}
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8899))
+            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.relation").value("EXACT"))
+            .andExpect(jsonPath("$.nextCursor").isEmpty)
+    }
+
+    @Test
+    fun `updated cursor preserves status priority group assignee and SLA filters`() {
+        val agent = insertStaff("updated-filter@example.com", "Agent password 42", "Updated 상담사")
+        val ownGroup = insertGroup("Updated 그룹", agent)
+        val otherAgent = insertStaff("updated-filter-other@example.com", "Agent password 42", "다른 Updated 상담사")
+        val otherGroup = insertGroup("다른 Updated 그룹", otherAgent)
+        insertTicket(8901, "two phase filtered result", "OPEN", "HIGH", ownGroup, agent)
+        insertTicket(8902, "two phase filtered result", "OPEN", "HIGH", ownGroup, agent)
+        insertTicket(8903, "two phase filtered result", "SOLVED", "HIGH", ownGroup, agent)
+        insertTicket(8904, "two phase filtered result", "OPEN", "HIGH", otherGroup, otherAgent)
+        insertTicket(8905, "two phase filtered result", "OPEN", "HIGH", ownGroup, null)
+        val browser = login("updated-filter@example.com", "Agent password 42")
+
+        val first = mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{
+                    "status":"OPEN",
+                    "priority":"HIGH",
+                    "groupId":"$ownGroup",
+                    "assigneeId":"me",
+                    "slaState":"NO_POLICY"
+                  },
+                  "sort":"updatedAt:desc,ticketNumber:desc",
+                  "limit":1
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.relation").value("LOWER_BOUND"))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8902))
+            .andReturn().response.contentAsString
+        val cursor = stringField(first, "nextCursor")
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{
+                    "status":"OPEN",
+                    "priority":"HIGH",
+                    "groupId":"$ownGroup",
+                    "assigneeId":"me",
+                    "slaState":"NO_POLICY"
+                  },
+                  "sort":"updatedAt:desc,ticketNumber:desc",
+                  "cursor":"$cursor",
+                  "limit":1
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.relation").value("EXACT"))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8901))
+            .andExpect(jsonPath("$.nextCursor").isEmpty)
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{"groupId":"$ownGroup","assigneeId":"unassigned"},
+                  "sort":"score:desc,ticketNumber:desc",
+                  "limit":25
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount.value").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8905))
+
+        mockMvc.perform(
+            search(
+                browser,
+                UUID.randomUUID(),
+                """
+                {
+                  "query":"two phase filtered",
+                  "filters":{"groupId":"$otherGroup","assigneeId":"$otherAgent"},
+                  "sort":"score:desc,ticketNumber:desc",
+                  "limit":25
+                }
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.resultCount.value").value(1))
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8904))
     }
 
     @Test
@@ -523,7 +705,7 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.resultCount.value").value(1))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8801))
 
         mockMvc.perform(
@@ -534,9 +716,10 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount").value(2))
+            .andExpect(jsonPath("$.resultCount.value").value(1))
+            .andExpect(jsonPath("$.resultCount.relation").value("EXACT"))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8802))
-            .andExpect(jsonPath("$.items[1].ticketNumber").value(8803))
+            .andExpect(jsonPath("$.items[1]").doesNotExist())
 
         mockMvc.perform(
             search(
@@ -546,7 +729,7 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.resultCount.value").value(1))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8804))
 
         mockMvc.perform(
@@ -557,7 +740,7 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount").value(1))
+            .andExpect(jsonPath("$.resultCount.value").value(1))
             .andExpect(jsonPath("$.items[0].ticketNumber").value(8807))
 
         // V35 deliberately preserves literal substring semantics; fuzzy typo correction is not claimed.
@@ -569,7 +752,7 @@ class AgentTicketSearchIntegrationTest {
             ),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.resultCount").value(0))
+            .andExpect(jsonPath("$.resultCount.value").value(0))
             .andExpect(jsonPath("$.items").isEmpty)
     }
 
@@ -661,7 +844,7 @@ class AgentTicketSearchIntegrationTest {
         status: String,
         priority: String,
         groupId: UUID,
-        assigneeId: UUID,
+        assigneeId: UUID?,
         updatedAt: Instant = Instant.parse("2026-08-11T00:00:00Z").plusSeconds(number),
     ): UUID {
         val customerId = UUID.randomUUID()

@@ -19,7 +19,7 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
   await writeFile(corpusPath, JSON.stringify(corpus), { mode: 0o600 });
   await writeFile(accountsPath, JSON.stringify(Array.from({ length: 5 }, (_, i) => ({ email: `agent${i}@mock.invalid`, password: 'mock-only-password' }))), { mode: 0o600 });
   let state;
-  const reset = (failure = null) => { state = { failure, logins: 0, queries: [], interactionIds: new Set(), requestIds: new Set(), duplicateRequest: false, missingHeader: false, accountEmails: new Set() }; };
+  const reset = (failure = null) => { state = { failure, logins: 0, queries: [], sorts: [], interactionIds: new Set(), requestIds: new Set(), duplicateRequest: false, missingHeader: false, accountEmails: new Set() }; };
   reset();
   const server = http.createServer(async (request, response) => {
     let text = ''; for await (const chunk of request) text += chunk;
@@ -56,10 +56,15 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
       if (!['ticket-number', 'requester', 'phrase', 'topic', 'common', 'short', 'internal', 'absent'].includes(request.headers['x-deskseed-search-class']) ||
           !request.headers['x-deskseed-test-run-id'] || !/^\d{1,4}$/.test(request.headers['x-deskseed-search-case'] || '')) state.missingHeader = true;
       state.interactionIds.add(interaction);
-      state.queries.push(JSON.parse(text).query);
+      const body = JSON.parse(text);
+      state.queries.push(body.query);
+      state.sorts.push(body.sort);
       if (state.failure === 'json') { response.end('invalid-json'); return; }
-      // All queries deliberately return empty results: the script must not grade relevance.
-      return send(200, { items: [], resultCount: 0, nextCursor: null });
+      if (request.headers['x-deskseed-search-class'] === 'short') {
+        return send(422, { type: '/problems/agent-search-too-broad', status: 422 });
+      }
+      // All successful queries deliberately return empty results: the script must not grade relevance.
+      return send(200, { items: [], resultCount: { value: 0, relation: 'EXACT' }, nextCursor: null });
     }
     return send(404, {});
   });
@@ -81,7 +86,10 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
     let output = ''; child.stdout.on('data', (data) => { output += data; }); child.stderr.on('data', (data) => { output += data; });
     const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
     assert(!output.includes('mock-only-password'));
-    const summary = JSON.parse(await readFile(path.join(results, 'agent-read-summary.json'), 'utf8'));
+    let summaryText;
+    try { summaryText = await readFile(path.join(results, 'agent-read-summary.json'), 'utf8'); }
+    catch (error) { assert.equal(code, 0, output); throw error; }
+    const summary = JSON.parse(summaryText);
     return { code, output, summary, results };
   }
   try {
@@ -89,8 +97,14 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
     assert.equal(smoke.code, 0, smoke.output);
     assert.equal(state.logins, 1); assert.equal(state.queries.length, 100);
     assert(new Set(state.queries).size >= 80);
+    assert.deepEqual(new Set(state.sorts), new Set(['updatedAt:desc,ticketNumber:desc']));
     assert.equal(state.missingHeader, false); assert.equal(state.duplicateRequest, false);
     assert.equal(smoke.summary.metrics.agent_search_empty_results.values.rate, 1);
+    assert.equal(smoke.summary.metrics.agent_search_refine_required.values.rate, 0.1);
+    assert.equal(smoke.summary.metrics['agent_search_outcomes{phase:measurement,search_outcome:page}'].values.count, 90);
+    assert.equal(smoke.summary.metrics['agent_search_outcomes{phase:measurement,search_outcome:refine}'].values.count, 10);
+    assert.equal(smoke.summary.metrics['agent_search_outcomes{phase:measurement,search_outcome:invalid}'].values.count, 0);
+    assert.equal(smoke.summary.metrics.unexpected_status.values.rate, 0);
     const manifest = await readFile(path.join(smoke.results, 'agent-read-manifest.json'), 'utf8');
     for (const value of [state.queries[0], 'mock-only-password', 'agent0@mock.invalid']) assert(!manifest.includes(value));
     reset();

@@ -1054,7 +1054,7 @@ describe('agent ticket read API client', () => {
             searchEventId: '11111111-1111-4111-8111-111111111111',
             searchInteractionId: '22222222-2222-4222-8222-222222222222',
             items: [],
-            resultCount: 0,
+            resultCount: { value: 26, relation: 'LOWER_BOUND' },
             sort: 'score:desc,ticketNumber:desc',
             nextCursor: 'opaque-next-cursor',
           }),
@@ -1076,7 +1076,7 @@ describe('agent ticket read API client', () => {
       ),
     ).resolves.toMatchObject({
       searchEventId: '11111111-1111-4111-8111-111111111111',
-      resultCount: 0,
+      resultCount: { value: 26, relation: 'LOWER_BOUND' },
       nextCursor: 'opaque-next-cursor',
     })
 

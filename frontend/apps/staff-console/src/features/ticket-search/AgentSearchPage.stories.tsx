@@ -27,6 +27,24 @@ const ticket = {
   },
 }
 
+const assignmentOptionsHandler = http.get(
+  '/api/v1/agent/assignment-options',
+  () => HttpResponse.json({ groups: [] }),
+)
+const csrfHandler = http.get('/api/v1/agent/csrf', () =>
+  HttpResponse.json({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+)
+const exactSearchHandler = http.post('/api/v1/agent/search', () =>
+  HttpResponse.json({
+    searchEventId: '33333333-3333-4333-8333-333333333333',
+    searchInteractionId: '44444444-4444-4444-8444-444444444444',
+    items: [ticket],
+    resultCount: { value: 1, relation: 'EXACT' },
+    sort: 'score:desc,ticketNumber:desc',
+    nextCursor: null,
+  }),
+)
+
 const meta = {
   title: '06 Domain & Workspace/AgentSearchPage',
   component: AgentSearchPage,
@@ -43,24 +61,7 @@ const meta = {
   ],
   parameters: {
     msw: {
-      handlers: [
-        http.get('/api/v1/agent/assignment-options', () =>
-          HttpResponse.json({ groups: [] }),
-        ),
-        http.get('/api/v1/agent/csrf', () =>
-          HttpResponse.json({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
-        ),
-        http.post('/api/v1/agent/search', () =>
-          HttpResponse.json({
-            searchEventId: '33333333-3333-4333-8333-333333333333',
-            searchInteractionId: '44444444-4444-4444-8444-444444444444',
-            items: [ticket],
-            resultCount: 1,
-            sort: 'score:desc,ticketNumber:desc',
-            nextCursor: null,
-          }),
-        ),
-      ],
+      handlers: [assignmentOptionsHandler, csrfHandler, exactSearchHandler],
     },
   },
   tags: ['autodocs'],
@@ -78,7 +79,68 @@ export const SearchResults: Story = {
     await userEvent.click(
       canvas.getByRole('button', { name: '서버 전체 검색' }),
     )
-    await expect(await canvas.findByText('정확한 전체 결과 1개')).toBeVisible()
+    await expect(await canvas.findByText('전체 결과 1개')).toBeVisible()
     await expect(canvas.getByLabelText('최초 답변 SLA 위험')).toBeVisible()
+  },
+}
+
+export const LowerBoundResults: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        assignmentOptionsHandler,
+        csrfHandler,
+        http.post('/api/v1/agent/search', () =>
+          HttpResponse.json({
+            searchEventId: '33333333-3333-4333-8333-333333333333',
+            searchInteractionId: '44444444-4444-4444-8444-444444444444',
+            items: [ticket],
+            resultCount: { value: 26, relation: 'LOWER_BOUND' },
+            sort: 'score:desc,ticketNumber:desc',
+            nextCursor: 'opaque-next',
+          }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(
+      canvas.getByLabelText('서버 전체 티켓 검색어'),
+      '결제 오류',
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: '서버 전체 검색' }),
+    )
+    await expect(await canvas.findByText('결과 26개 이상')).toBeVisible()
+  },
+}
+
+export const BroadQueryGuidance: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        assignmentOptionsHandler,
+        csrfHandler,
+        http.post('/api/v1/agent/search', () =>
+          HttpResponse.json(
+            {
+              type: '/problems/agent-search-too-broad',
+              title: 'Ticket search is too broad',
+              status: 422,
+            },
+            { status: 422 },
+          ),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(canvas.getByLabelText('서버 전체 티켓 검색어'), '결제')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '서버 전체 검색' }),
+    )
+    await expect(
+      await canvas.findByText('검색 범위를 더 좁혀 주세요'),
+    ).toBeVisible()
   },
 }

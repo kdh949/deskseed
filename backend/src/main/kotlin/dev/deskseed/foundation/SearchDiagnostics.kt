@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
 import java.time.Duration
 
 /** Bounded diagnostic vocabulary. Never accepts SQL, bind values, bodies or exception messages. */
@@ -48,6 +50,18 @@ enum class SearchPhase(
         codeFunctionName = "AgentTicketSearchApplicationService.search",
         codeFilePath = "backend/src/main/kotlin/dev/deskseed/staffaccess/internal/AgentTicketSearchApplicationService.kt",
     ),
+    HTTP_OVERALL(
+        label = "http_overall",
+        codeNamespace = "dev.deskseed.foundation",
+        codeFunctionName = "SearchHttpDiagnosticsFilter.doFilterInternal",
+        codeFilePath = "backend/src/main/kotlin/dev/deskseed/foundation/SearchHttpDiagnosticsFilter.kt",
+    ),
+    RESPONSE_ASSEMBLY(
+        label = "response_assembly",
+        codeNamespace = "dev.deskseed.staffaccess.internal",
+        codeFunctionName = "AgentTicketReadController.search",
+        codeFilePath = "backend/src/main/kotlin/dev/deskseed/staffaccess/internal/AgentTicketReadController.kt",
+    ),
 }
 
 @Component
@@ -55,13 +69,36 @@ class SearchDiagnostics(
     openTelemetry: OpenTelemetry,
     private val meters: MeterRegistry,
     @param:Value("\${deskseed.search-diagnostics.enabled:false}") private val enabled: Boolean,
+    @param:Value("\${management.opentelemetry.resource-attributes.deployment.environment.name:unknown}")
+    private val environment: String,
 ) {
     private val tracer = openTelemetry.getTracer("dev.deskseed.search")
     private val logger = LoggerFactory.getLogger(SearchDiagnostics::class.java)
 
     fun <T> measure(phase: SearchPhase, action: () -> T): T {
-        if (!enabled) return action()
         val request = (RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes)?.request
+        return measure(phase, request, { "success" }, action)
+    }
+
+    fun <T> measure(phase: SearchPhase, request: HttpServletRequest?, action: () -> T): T {
+        return measure(phase, request, { "success" }, action)
+    }
+
+    fun <T> measureHttp(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        action: () -> T,
+    ): T = measure(SearchPhase.HTTP_OVERALL, request, {
+        if (response.status >= 500) "error" else "success"
+    }, action)
+
+    private fun <T> measure(
+        phase: SearchPhase,
+        request: HttpServletRequest?,
+        successOutcome: () -> String,
+        action: () -> T,
+    ): T {
+        if (!enabled) return action()
         val queryClass = request?.getHeader(CLASS_HEADER)?.takeIf { it in QUERY_CLASSES } ?: "unclassified"
         val span = runCatching {
             tracer.spanBuilder("deskseed.search.${phase.label}")
@@ -71,6 +108,7 @@ class SearchDiagnostics(
                 .setAttribute("code.file.path", phase.codeFilePath)
                 .setAttribute("deskseed.search.phase", phase.label)
                 .setAttribute("deskseed.search.query_class", queryClass)
+                .setAttribute("deployment.environment.name", environment)
                 .also { builder -> phase.querySummary?.let { builder.setAttribute("db.query.summary", it) } }
                 .startSpan()
                 .also { created ->
@@ -93,7 +131,12 @@ class SearchDiagnostics(
         val scope = runCatching { span?.makeCurrent() }.getOrNull()
         var outcome = "success"
         try {
-            return action()
+            val result = action()
+            outcome = successOutcome()
+            if (outcome == "error") {
+                runCatching { span?.setStatus(StatusCode.ERROR) }
+            }
+            return result
         } catch (failure: Throwable) {
             outcome = "error"
             // SQL exceptions can contain bind values. Do not record the exception or its message.

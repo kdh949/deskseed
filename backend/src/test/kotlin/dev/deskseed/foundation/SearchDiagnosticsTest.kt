@@ -16,6 +16,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 
@@ -33,7 +34,7 @@ class SearchDiagnosticsTest {
     private val provider = SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exporter)).build()
     private val telemetry = OpenTelemetrySdk.builder().setTracerProvider(provider).build()
     private val meters = SimpleMeterRegistry()
-    private val diagnostics = SearchDiagnostics(telemetry, meters, true)
+    private val diagnostics = SearchDiagnostics(telemetry, meters, true, "personal-staging")
 
     @AfterEach fun cleanup() {
         RequestContextHolder.resetRequestAttributes()
@@ -45,26 +46,35 @@ class SearchDiagnosticsTest {
         request("phrase", "preflight-20260919")
         val parent = telemetry.getTracer("test").spanBuilder("POST agent search").startSpan()
         parent.makeCurrent().use {
-            diagnostics.measure(SearchPhase.OVERALL) {
-                assertThat(diagnostics.measure(SearchPhase.COUNT) { 12L }).isEqualTo(12L)
-                diagnostics.measure(SearchPhase.PAGE) { listOf(1, 2) }
-                diagnostics.measure(SearchPhase.AUDIT) { Unit }
+            diagnostics.measure(SearchPhase.HTTP_OVERALL) {
+                diagnostics.measure(SearchPhase.OVERALL) {
+                    assertThat(diagnostics.measure(SearchPhase.COUNT) { 12L }).isEqualTo(12L)
+                    diagnostics.measure(SearchPhase.PAGE) { listOf(1, 2) }
+                    diagnostics.measure(SearchPhase.AUDIT) { Unit }
+                }
+                diagnostics.measure(SearchPhase.RESPONSE_ASSEMBLY) { Unit }
             }
         }
         parent.end()
         val phases = spans.filter { it.name.startsWith("deskseed.search.") }
-        assertThat(phases).hasSize(4)
+        assertThat(phases).hasSize(6)
         val byName = phases.associateBy { it.name }
-        assertThat(byName.getValue("deskseed.search.overall").parentSpanId).isEqualTo(parent.spanContext.spanId)
+        assertThat(byName.getValue("deskseed.search.http_overall").parentSpanId).isEqualTo(parent.spanContext.spanId)
+        assertThat(byName.getValue("deskseed.search.overall").parentSpanId)
+            .isEqualTo(byName.getValue("deskseed.search.http_overall").spanId)
         listOf("count", "page", "audit").forEach { phase ->
             assertThat(byName.getValue("deskseed.search.$phase").parentSpanId)
                 .isEqualTo(byName.getValue("deskseed.search.overall").spanId)
         }
+        assertThat(byName.getValue("deskseed.search.response_assembly").parentSpanId)
+            .isEqualTo(byName.getValue("deskseed.search.http_overall").spanId)
         phases.forEach {
             assertThat(it.traceId).isEqualTo(parent.spanContext.traceId)
             assertThat(it.attributes.get(AttributeKey.stringKey("deskseed.search.query_class"))).isEqualTo("phrase")
             assertThat(it.attributes.get(AttributeKey.stringKey("deskseed.test_run_id"))).isEqualTo("preflight-20260919")
             assertThat(it.attributes.get(AttributeKey.longKey("deskseed.search.case_index"))).isEqualTo(4)
+            assertThat(it.attributes.get(AttributeKey.stringKey("deployment.environment.name")))
+                .isEqualTo("personal-staging")
         }
         assertThat(meters.meters).allSatisfy { meter ->
             assertThat(meter.id.tags.map { it.key }).containsExactlyInAnyOrder("phase", "query_class", "outcome")
@@ -100,7 +110,7 @@ class SearchDiagnosticsTest {
     }
 
     @Test fun `disabled diagnostics do not export or change action behavior`() {
-        val disabled = SearchDiagnostics(telemetry, meters, false)
+        val disabled = SearchDiagnostics(telemetry, meters, false, "test")
         assertThat(disabled.measure(SearchPhase.COUNT) { 7 }).isEqualTo(7)
         assertThat(spans).isEmpty()
         assertThat(meters.meters).isEmpty()
@@ -116,6 +126,31 @@ class SearchDiagnosticsTest {
         val failure = IllegalArgumentException("business failure")
         assertThatThrownBy { diagnostics.measure(SearchPhase.AUDIT) { throw failure } }.isSameAs(failure)
         assertThat(spans).hasSize(2)
+    }
+
+    @Test fun `HTTP filter measures only agent search and closes the span on failure`() {
+        val filter = SearchHttpDiagnosticsFilter(diagnostics)
+        val search = MockHttpServletRequest("POST", "/api/v1/agent/search").apply {
+            addHeader(SearchDiagnostics.CLASS_HEADER, "single-smoke")
+            addHeader(SearchDiagnostics.RUN_HEADER, "bounded-smoke")
+        }
+        val failure = IllegalStateException("response conversion failed with sensitive body")
+
+        assertThatThrownBy {
+            filter.doFilter(search, MockHttpServletResponse()) { _, _ -> throw failure }
+        }.isSameAs(failure)
+
+        val span = spans.single()
+        assertThat(span.name).isEqualTo("deskseed.search.http_overall")
+        assertThat(span.status.statusCode).isEqualTo(StatusCode.ERROR)
+        assertThat(span.events).isEmpty()
+        assertThat(span.attributes.asMap().toString()).doesNotContain("sensitive body")
+
+        filter.doFilter(
+            MockHttpServletRequest("POST", "/api/v1/agent/customers/search"),
+            MockHttpServletResponse(),
+        ) { _, _ -> Unit }
+        assertThat(spans).hasSize(1)
     }
 
     private fun request(queryClass: String, runId: String) {
