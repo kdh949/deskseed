@@ -13,6 +13,7 @@ const searchReached = new Rate('agent_search_reached');
 const searchRequests = new Counter('agent_search_requests');
 const emptyResults = new Rate('agent_search_empty_results');
 const refineRequired = new Rate('agent_search_refine_required');
+const searchOutcomes = new Counter('agent_search_outcomes');
 const operationDuration = new Trend('agent_operation_duration', true);
 const journeyDuration = new Trend('agent_journey_duration', true);
 const lateAuthentications = new Counter('agent_late_authentications');
@@ -69,6 +70,7 @@ export default function () {
     const refineResponse = response.status === 422 && body?.type === '/problems/agent-search-too-broad';
     const outcomeTags = { ...searchTags, search_outcome: pageResponse ? 'page' : refineResponse ? 'refine' : 'invalid' };
     record(response, 'agent_search', outcomeTags, pageResponse || refineResponse);
+    searchOutcomes.add(1, outcomeTags);
     completed = check(response, {
       'agent search returns a usable page or refine response': () => pageResponse || refineResponse,
     }, outcomeTags);
@@ -139,6 +141,12 @@ function buildOptions() {
   }
   for (const group of workload?.groups || []) {
     result.thresholds[`agent_search_requests{phase:measurement,query_class:${group.queryClass}}`] = [loadProfile === 'smoke' ? 'count>=0' : 'count>0'];
+  }
+  for (const outcome of ['page', 'refine', 'invalid']) {
+    result.thresholds[`agent_search_outcomes{phase:measurement,search_outcome:${outcome}}`] = ['count>=0'];
+  }
+  for (const outcome of ['page', 'refine']) {
+    result.thresholds[`agent_operation_duration{phase:measurement,operation:agent_search,search_outcome:${outcome}}`] = ['p(95)>=0'];
   }
   return result;
 }

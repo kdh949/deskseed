@@ -77,6 +77,7 @@ K6_PROMETHEUS_RW_SERVER_URL=http://your-monitoring-host.example:9090/api/v1/writ
 - `agent_journeys_started`, `agent_journeys_completed`, `agent_search_reached`: 초기화 실패·중간 중단·검색 미도달을 드러낸다.
 - `agent_search_requests`: 검색군별 실제 호출 수. manifest는 군별 준비된 고유 검색어 수와 측정 요청 수를 기록한다. 실제 고유 사용 수를 전역 집계하는 metric은 만들지 않는다.
 - `agent_search_empty_results`: 실제 빈 결과 비율. 정답 판정에 사용하지 않는다.
+- `agent_search_outcomes`: 정상 페이지(`page`), 검색어 구체화 요청(`refine`), 비정상 응답(`invalid`)의 수. `agent_operation_duration`도 같은 outcome으로 분리해 서로 다른 계약의 지연을 합치지 않는다.
 - `agent_late_authentications`: 준비 구간이 끝난 뒤 처음 사용된 VU의 인증 수. 이 값이 발생한 실행은 준비 시간을 늘려 재측정하거나 인증 영향이 있는 결과로 표시한다.
 
 기본 요청 상태·JSON 응답 구조만 확인한다. 정확한 결과 수, 검색된 티켓 ID, 순위, 적합도는 평가하지 않는다. 검색·상세 요청에는 필수 interaction 헤더가 전달되고 기존 서버의 STAFF 인증·감사 의미를 따른다. 정상적인 빈 결과도 성공이다.

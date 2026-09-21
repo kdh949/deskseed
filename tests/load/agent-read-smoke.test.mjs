@@ -84,7 +84,10 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
     let output = ''; child.stdout.on('data', (data) => { output += data; }); child.stderr.on('data', (data) => { output += data; });
     const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
     assert(!output.includes('mock-only-password'));
-    const summary = JSON.parse(await readFile(path.join(results, 'agent-read-summary.json'), 'utf8'));
+    let summaryText;
+    try { summaryText = await readFile(path.join(results, 'agent-read-summary.json'), 'utf8'); }
+    catch (error) { assert.equal(code, 0, output); throw error; }
+    const summary = JSON.parse(summaryText);
     return { code, output, summary, results };
   }
   try {
@@ -95,6 +98,9 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
     assert.equal(state.missingHeader, false); assert.equal(state.duplicateRequest, false);
     assert.equal(smoke.summary.metrics.agent_search_empty_results.values.rate, 1);
     assert.equal(smoke.summary.metrics.agent_search_refine_required.values.rate, 0.1);
+    assert.equal(smoke.summary.metrics['agent_search_outcomes{phase:measurement,search_outcome:page}'].values.count, 90);
+    assert.equal(smoke.summary.metrics['agent_search_outcomes{phase:measurement,search_outcome:refine}'].values.count, 10);
+    assert.equal(smoke.summary.metrics['agent_search_outcomes{phase:measurement,search_outcome:invalid}'].values.count, 0);
     assert.equal(smoke.summary.metrics.unexpected_status.values.rate, 0);
     const manifest = await readFile(path.join(smoke.results, 'agent-read-manifest.json'), 'utf8');
     for (const value of [state.queries[0], 'mock-only-password', 'agent0@mock.invalid']) assert(!manifest.includes(value));
