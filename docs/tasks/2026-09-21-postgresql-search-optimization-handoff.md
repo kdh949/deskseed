@@ -360,6 +360,7 @@ UI 변경은 target Staff Console documentation MCP를 먼저 사용하고 focus
 - R3 Grafana k6 class p95는 topic/page 58.224ms, common/page 393.851ms 등 8 series가 조회됐다. application histogram의 같은 UTC 창 topic PAGE p95는 약 27.4ms였다.
 - Hikari pending/timeout 0, required audit failure 0, blocking 0, `pg_up=1`, backend restart 0, health `UP`으로 회복했다. DB log에 timeout/cancel/deadlock/ERROR/FATAL 일치 행은 없었다.
 - generator CPU/RAM/network와 DB wait series는 No data다. dashboard의 짧은 k6 run 상세 패널은 stale marker 때문에 No data였고 동일 datasource의 Explore `last_over_time` 결과와 구분했다.
+- 실제 `/agent/search`를 브라우저에서 열었지만 현재 in-app browser에 staff session이 없어 `/agent/login`으로 리다이렉트됐다. protected env의 인증정보를 화면으로 옮기지 않았으므로 브라우저 TTFUR은 측정하지 않았다.
 
 ### 남은 작업과 중단 범위
 
