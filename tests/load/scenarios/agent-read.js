@@ -12,6 +12,7 @@ const journeysCompleted = new Rate('agent_journeys_completed');
 const searchReached = new Rate('agent_search_reached');
 const searchRequests = new Counter('agent_search_requests');
 const emptyResults = new Rate('agent_search_empty_results');
+const refineRequired = new Rate('agent_search_refine_required');
 const operationDuration = new Trend('agent_operation_duration', true);
 const journeyDuration = new Trend('agent_journey_duration', true);
 const lateAuthentications = new Counter('agent_late_authentications');
@@ -63,12 +64,16 @@ export default function () {
       'X-Deskseed-Search-Class': input.queryClass, 'X-Deskseed-Test-Run-Id': runId,
       'X-Deskseed-Search-Case': String(input.caseIndex ?? 0),
     }));
-    record(response, 'agent_search', searchTags);
     const body = safeJson(response);
+    const pageResponse = response.status === 200 && Array.isArray(body?.items) && usableResultCount(body?.resultCount);
+    const refineResponse = response.status === 422 && body?.type === '/problems/agent-search-too-broad';
+    const outcomeTags = { ...searchTags, search_outcome: pageResponse ? 'page' : refineResponse ? 'refine' : 'invalid' };
+    record(response, 'agent_search', outcomeTags, pageResponse || refineResponse);
     completed = check(response, {
-      'agent search returns a usable response': () => response.status === 200 && Array.isArray(body?.items) && Number.isFinite(body?.resultCount) && body.resultCount >= 0,
-    }, searchTags);
-    if (completed) emptyResults.add(body.items.length === 0, searchTags);
+      'agent search returns a usable page or refine response': () => pageResponse || refineResponse,
+    }, outcomeTags);
+    refineRequired.add(refineResponse, searchTags);
+    if (pageResponse) emptyResults.add(body.items.length === 0, outcomeTags);
     // Observe empty results; do not compare expected counts, ticket IDs, or rank.
   } finally {
     journeysCompleted.add(completed, tags);
@@ -78,14 +83,22 @@ export default function () {
 }
 
 function params(name, tags, extra = {}) {
-  return { headers: staffHeaders(extra), tags: { name, ...tags }, timeout: __ENV.HTTP_TIMEOUT || '15s', redirects: 0 };
+  const result = { headers: staffHeaders(extra), tags: { name, ...tags }, timeout: __ENV.HTTP_TIMEOUT || '15s', redirects: 0 };
+  if (name === 'agent_search') result.responseCallback = http.expectedStatuses(200, 422);
+  return result;
 }
 function safeJson(response) {
   try { return response.json(); } catch (_) { return null; }
 }
-function record(response, operation, tags) {
-  unexpectedStatus.add(response.status !== 200, tags);
+function record(response, operation, tags, expected = response.status === 200) {
+  unexpectedStatus.add(!expected, tags);
   operationDuration.add(response.timings.duration, { ...tags, operation });
+}
+function usableResultCount(value) {
+  if (!value || typeof value !== 'object') return false;
+  if (value.relation === 'UNAVAILABLE') return value.value === null;
+  return (value.relation === 'EXACT' || value.relation === 'LOWER_BOUND') &&
+    Number.isSafeInteger(value.value) && value.value >= 0;
 }
 function loadWorkload() {
   if (__ENV.STAFF_SEARCH_CORPUS) {
@@ -148,7 +161,7 @@ export function handleSummary(data) {
     accountMode: staffAccountCount() ? 'one-per-vu' : 'single-account',
     scriptRevision: __ENV.LOAD_SCRIPT_REVISION || 'unrecorded',
     scenarios: options.scenarios, thresholds: options.thresholds,
-    note: 'Input diversity and latency measurement only; no search-result oracle. No service capacity claim from a mock or smoke run.',
+    note: 'Input diversity, page/refine outcome, and latency measurement only; no search-result oracle. No service capacity claim from a mock or smoke run.',
   };
   return {
     [`${directory}/agent-read-summary.json`]: JSON.stringify(data, null, 2),

@@ -38,6 +38,7 @@
 - transaction-local PostgreSQL statement budget
 - relation-aware canonical search audit metadata and Audit Explorer projection response
 - Staff Console decoding and truthful result-count/refine-query UI
+- k6 page/refine outcome separation without search correctness or ranking assertions
 - migration, integration/unit/story fixtures, traceability and performance documentation
 
 ## Out of scope
@@ -77,4 +78,3 @@
    transaction writes no successful search audit.
 6. Given audit persistence failure, when an otherwise valid search completes, then 503 returns no
    protected result.
-

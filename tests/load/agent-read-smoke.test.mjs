@@ -58,8 +58,11 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
       state.interactionIds.add(interaction);
       state.queries.push(JSON.parse(text).query);
       if (state.failure === 'json') { response.end('invalid-json'); return; }
-      // All queries deliberately return empty results: the script must not grade relevance.
-      return send(200, { items: [], resultCount: 0, nextCursor: null });
+      if (request.headers['x-deskseed-search-class'] === 'short') {
+        return send(422, { type: '/problems/agent-search-too-broad', status: 422 });
+      }
+      // All successful queries deliberately return empty results: the script must not grade relevance.
+      return send(200, { items: [], resultCount: { value: 0, relation: 'EXACT' }, nextCursor: null });
     }
     return send(404, {});
   });
@@ -91,6 +94,8 @@ test('real k6: repeated sessions, diverse requests, warmup, empty responses, fai
     assert(new Set(state.queries).size >= 80);
     assert.equal(state.missingHeader, false); assert.equal(state.duplicateRequest, false);
     assert.equal(smoke.summary.metrics.agent_search_empty_results.values.rate, 1);
+    assert.equal(smoke.summary.metrics.agent_search_refine_required.values.rate, 0.1);
+    assert.equal(smoke.summary.metrics.unexpected_status.values.rate, 0);
     const manifest = await readFile(path.join(smoke.results, 'agent-read-manifest.json'), 'utf8');
     for (const value of [state.queries[0], 'mock-only-password', 'agent0@mock.invalid']) assert(!manifest.includes(value));
     reset();
