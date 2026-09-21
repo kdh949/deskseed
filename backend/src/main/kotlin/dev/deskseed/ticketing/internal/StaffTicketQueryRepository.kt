@@ -200,7 +200,7 @@ internal class StaffTicketQueryRepository(
     ): StaffTicketSearchResult {
         require(scope == StaffTicketReadScope.ALL_TICKETS) { "Unsupported ticket search read policy" }
         require(query.isNotBlank()) { "Search query is required" }
-        require(limit in 1..100) { "Search limit must be between 1 and 100" }
+        require(limit in 1..101) { "Search page look-ahead limit must be between 1 and 101" }
         require(sort in STAFF_SEARCH_SORTS) { "Unsupported ticket search sort" }
 
         val now = clock.instant()
@@ -216,34 +216,20 @@ internal class StaffTicketQueryRepository(
             now = now,
         )
 
-        // The materialized candidate set is shared by the exact count and page selection,
-        // so a broad literal substring query scans the search projection once per request.
-        val rows = searchDiagnostics.measure(SearchPhase.PAGE) {
+        val hits = searchDiagnostics.measure(SearchPhase.PAGE) {
+            jdbcTemplate.jdbcOperations.execute("set local statement_timeout = '5s'")
             jdbcTemplate.query(
                 plan.pageSql,
                 plan.parameters,
             ) { result, _ ->
-                SearchResultRow(
-                    hit = result.getObject("selected_ticket_id")?.let {
-                        StaffTicketSearchHit(
-                            ticket = ticketSummary(result, now, riskAt),
-                            score = result.getInt("search_score"),
-                        )
-                    },
-                    resultCount = result.getLong("result_count"),
+                StaffTicketSearchHit(
+                    ticket = ticketSummary(result, now, riskAt),
+                    score = result.getInt("search_score"),
                 )
             }
         }
-        return StaffTicketSearchResult(
-            hits = rows.mapNotNull(SearchResultRow::hit),
-            resultCount = rows.firstOrNull()?.resultCount ?: 0L,
-        )
+        return StaffTicketSearchResult(hits = hits)
     }
-
-    private data class SearchResultRow(
-        val hit: StaffTicketSearchHit?,
-        val resultCount: Long,
-    )
 
     override fun listSavedView(
         actorId: UUID,

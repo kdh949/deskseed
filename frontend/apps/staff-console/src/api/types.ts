@@ -742,6 +742,10 @@ export interface AgentTicketSearchFilters {
 export type AgentTicketSearchSort =
   'updatedAt:desc,ticketNumber:desc' | 'score:desc,ticketNumber:desc'
 
+export type SearchResultCount =
+  | { value: number; relation: 'EXACT' | 'LOWER_BOUND' }
+  | { value: null; relation: 'UNAVAILABLE' }
+
 export interface AgentTicketSearchInput {
   query: string
   filters: AgentTicketSearchFilters
@@ -754,7 +758,7 @@ export interface AgentTicketSearchPage {
   searchEventId: string
   searchInteractionId: string
   items: AgentTicketSummary[]
-  resultCount: number
+  resultCount: SearchResultCount
   sort: AgentTicketSearchSort
   nextCursor: string | null
 }
@@ -1108,6 +1112,7 @@ export interface AuditSearchContext {
   filters: Record<string, string>
   sort: string | null
   resultCount: number
+  resultCountRelation: 'EXACT' | 'LOWER_BOUND'
   originSearchActivityId: string | null
   openedActivityCount: number
   openedActivitiesTruncated: boolean

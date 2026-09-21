@@ -46,6 +46,7 @@ data class StaffTicketSearchCursor(
     val lastScore: Int? = null,
     val lastUpdatedAt: Instant? = null,
     val lastTicketNumber: Long,
+    val returnedBefore: Long,
 )
 
 data class StaffTicketSearchHit(
@@ -55,7 +56,6 @@ data class StaffTicketSearchHit(
 
 data class StaffTicketSearchResult(
     val hits: List<StaffTicketSearchHit>,
-    val resultCount: Long,
 ) {
     /** Legacy internal callers consume summaries; cursor-aware callers use [hits]. */
     val items: List<StaffTicketSummary> get() = hits.map(StaffTicketSearchHit::ticket)

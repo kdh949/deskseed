@@ -67,6 +67,7 @@ const searchDetail: AuditActivityDetail = {
     filters: { status: 'OPEN' },
     sort: null,
     resultCount: 4,
+    resultCountRelation: 'LOWER_BOUND',
     originSearchActivityId: null,
     openedActivityCount: 2,
     openedActivitiesTruncated: false,

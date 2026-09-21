@@ -10,7 +10,7 @@ import java.util.UUID
 @dev.deskseed.testsupport.category.FastTest
 class StaffTicketSearchSqlPlanTest {
     @Test
-    fun `count and combined page share the canonical predicate and keep query in parameters`() {
+    fun `diagnostic count and runtime page share the canonical predicate while page omits exact count`() {
         val rawQuery = "sensitive@example.test"
         val plan = StaffTicketSearchSqlPlanFactory().build(
             query = rawQuery,
@@ -24,10 +24,9 @@ class StaffTicketSearchSqlPlanTest {
         )
 
         assertThat(plan.countSql).startsWith("select count(*)").contains("join ticket_search_documents search_document")
-        assertThat(plan.pageSql).startsWith("with ranked as materialized")
+        assertThat(plan.pageSql).startsWith("with ranked as not materialized")
             .contains("join ticket_search_documents search_document")
-            .contains("candidate_stats as materialized", "select count(*) as result_count from ranked")
-            .contains("left join selected on true")
+            .doesNotContain("candidate_stats", "select count(*) as result_count", "result_count")
         assertThat(plan.countSql).doesNotContain(rawQuery)
         assertThat(plan.pageSql).doesNotContain(rawQuery)
         assertThat(plan.parameters.getValue("queryText")).isEqualTo(rawQuery)
@@ -44,7 +43,6 @@ class StaffTicketSearchSqlPlanTest {
             "select t.ticket_number,",
             "select ticket_number, search_score",
             "t.id as selected_ticket_id",
-            "candidate_stats.result_count",
             "join tickets t on t.ticket_number = selected.ticket_number",
         )
         assertThat(plan.pageSql.substringBefore("limit :limit"))
@@ -63,19 +61,19 @@ class StaffTicketSearchSqlPlanTest {
     }
 
     @Test
-    fun `combined page counts all snapshot candidates before applying cursor`() {
+    fun `runtime page applies cursor without calculating exact count`() {
         val plan = buildPlan(
             sort = STAFF_SEARCH_SCORE_SORT,
             cursor = StaffTicketSearchCursor(
                 snapshotAt = Instant.parse("2026-09-19T00:00:00Z"),
                 lastScore = 250,
                 lastTicketNumber = 1042,
+                returnedBefore = 25,
             ),
         )
 
-        assertThat(plan.pageSql.indexOf("select count(*) as result_count from ranked"))
-            .isLessThan(plan.pageSql.indexOf("where (search_score, ticket_number)"))
-        assertThat(plan.pageSql).contains("from candidate_stats", "left join selected on true")
+        assertThat(plan.pageSql).contains("where (search_score, ticket_number)")
+            .doesNotContain("select count(*) from ranked", "candidate_stats", "result_count")
     }
 
     @Test
@@ -86,6 +84,7 @@ class StaffTicketSearchSqlPlanTest {
                 snapshotAt = Instant.parse("2026-09-19T00:00:00Z"),
                 lastScore = 250,
                 lastTicketNumber = 1042,
+                returnedBefore = 25,
             ),
         )
         val updatedPlan = buildPlan(
@@ -94,6 +93,7 @@ class StaffTicketSearchSqlPlanTest {
                 snapshotAt = Instant.parse("2026-09-19T00:00:00Z"),
                 lastUpdatedAt = Instant.parse("2026-09-18T12:00:00Z"),
                 lastTicketNumber = 1042,
+                returnedBefore = 25,
             ),
         )
 

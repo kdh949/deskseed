@@ -1602,10 +1602,17 @@ paths:
         '403': *id005
         '409':
           $ref: '#/components/responses/StaffSessionActorMismatch'
+        '422':
+          description: 필터 없는 비숫자 검색어가 3 Unicode code point 미만이거나 PostgreSQL 검색이 5초 실행 예산을 초과했습니다. 검색어 원문은 Problem Details에
+            포함하지 않습니다.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '503': *id005
       description: 상담사가 현재 server-side ticket-read authorization 범위에서 검색합니다. query는 request body에서만 받고 보호된 encrypted/fingerprint
         audit으로 처리하며 URL, cursor, ordinary log에 포함하지 않습니다. score/ticketNumber cursor는 normalized query/filter/sort와 첫 snapshot에
-        서명 결합되고 exact resultCount와 nextCursor를 반환합니다.
+        서명 결합됩니다. 첫 페이지는 `limit + 1`로 nextCursor와 exact/lower-bound resultCount를 반환하고 전체 exact count를 동기 계산하지 않습니다.
   /api/v1/agent/customers/search:
     post:
       summary: 상담사가 요청자 후보로 선택할 기존 고객 검색
@@ -12449,6 +12456,32 @@ components:
           slaState: AT_RISK
         sort: score:desc,ticketNumber:desc
         limit: 25
+    SearchResultCount:
+      type: object
+      additionalProperties: false
+      required:
+      - value
+      - relation
+      properties:
+        value:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+          description: relation이 EXACT면 전체 수, LOWER_BOUND면 확인된 최소 수입니다. UNAVAILABLE이면 null입니다.
+        relation:
+          type: string
+          enum:
+          - EXACT
+          - LOWER_BOUND
+          - UNAVAILABLE
+          description: value가 전체 exact 수인지 하한인지, 또는 계산하지 않았는지를 나타냅니다.
+      description: 전체 exact count를 첫 페이지의 필수 동기 경로에서 분리하기 위한 검색 결과 수입니다.
+      x-deskseed-documentation-review: MANUAL
+      example:
+        value: 26
+        relation: LOWER_BOUND
     AgentTicketSearchPage:
       type: object
       additionalProperties: false
@@ -12471,10 +12504,7 @@ components:
           items:
             $ref: '#/components/schemas/TicketSummary'
         resultCount:
-          type: integer
-          format: int64
-          minimum: 0
-          description: cursor snapshot과 filters에 일치하는 전체 exact row 수입니다. 현재 페이지 길이와 다를 수 있습니다.
+          $ref: '#/components/schemas/SearchResultCount'
         sort:
           type: string
           enum:
@@ -12486,7 +12516,8 @@ components:
           - 'null'
           maxLength: 2048
       description: protected staff search 결과입니다. `score:desc,ticketNumber:desc`는 match score와 ticketNumber를 tie-breaker로 쓰며
-        cursor가 그 tuple과 snapshot을 포함합니다. raw query는 응답이나 cursor에 존재하지 않습니다.
+        cursor가 그 tuple, snapshot, 앞 페이지에서 반환한 누적 수를 포함합니다. nextCursor가 있으면 resultCount는 LOWER_BOUND이고 마지막 페이지에서는 EXACT입니다.
+        raw query는 응답이나 cursor에 존재하지 않습니다.
       x-deskseed-documentation-review: MANUAL
     AgentCustomerSearchRequest:
       type: object
@@ -13508,6 +13539,7 @@ components:
       - queryFingerprint
       - filters
       - resultCount
+      - resultCountRelation
       - openedActivityCount
       - openedActivitiesTruncated
       - openedActivities
@@ -13529,6 +13561,12 @@ components:
           type: integer
           format: int64
           minimum: 0
+        resultCountRelation:
+          type: string
+          enum:
+          - EXACT
+          - LOWER_BOUND
+          description: SEARCH_EXECUTED가 기록한 resultCount가 exact 전체 수인지 당시 확인된 하한인지를 나타냅니다.
         originSearchActivityId:
           type:
           - string

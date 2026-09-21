@@ -3,6 +3,7 @@ package dev.deskseed.staffaccess.internal
 import dev.deskseed.foundation.RequestIdFilter
 import dev.deskseed.foundation.SearchDiagnostics
 import dev.deskseed.foundation.SearchPhase
+import dev.deskseed.foundation.SearchResultCount
 import dev.deskseed.attachments.TicketAttachment
 import dev.deskseed.ticketing.SavedTicketView
 import dev.deskseed.ticketing.SavedViewColumn
@@ -451,7 +452,7 @@ internal data class AgentTicketSearchPageResponse(
     val searchEventId: UUID,
     val searchInteractionId: UUID,
     val items: List<TicketSummaryResponse>,
-    val resultCount: Long,
+    val resultCount: SearchResultCount,
     val sort: String,
     val nextCursor: String?,
 )

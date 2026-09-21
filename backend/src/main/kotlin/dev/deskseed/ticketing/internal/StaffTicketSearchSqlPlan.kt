@@ -103,11 +103,8 @@ internal class StaffTicketSearchSqlPlanFactory {
         return StaffTicketSearchSqlPlan(
             countSql = "select count(*) $candidateFromClause",
             pageSql = """
-                with ranked as materialized (
+                with ranked as not materialized (
                     $rankedCandidates
-                ),
-                candidate_stats as materialized (
-                    select count(*) as result_count from ranked
                 ),
                 selected as materialized (
                     select $selectedColumns
@@ -117,12 +114,10 @@ internal class StaffTicketSearchSqlPlanFactory {
                     limit :limit
                 )
                 select t.id as selected_ticket_id,
-                       candidate_stats.result_count,
                        ${ticketSummaryColumns()},
                        selected.search_score
-                from candidate_stats
-                left join selected on true
-                left join tickets t on t.ticket_number = selected.ticket_number
+                from selected
+                join tickets t on t.ticket_number = selected.ticket_number
                 left join customers c on c.id = t.requester_id
                 left join support_groups g on g.id = t.group_id
                 left join staff_accounts s on s.id = t.assignee_id

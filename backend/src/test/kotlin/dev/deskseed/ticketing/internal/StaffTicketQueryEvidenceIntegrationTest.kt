@@ -151,7 +151,7 @@ class StaffTicketQueryEvidenceIntegrationTest {
     }
 
     @Test
-    fun `search uses one combined count and result query regardless of comment count`() {
+    fun `search uses one budget statement and one page query regardless of comment count`() {
         queryCounter.reset()
 
         val result = ticketStore.search(
@@ -162,9 +162,8 @@ class StaffTicketQueryEvidenceIntegrationTest {
             limit = 25,
         )
 
-        assertThat(result.resultCount).isEqualTo(1)
         assertThat(result.items.map { it.ticketNumber }).containsExactly(6001)
-        assertThat(queryCounter.count()).isEqualTo(1)
+        assertThat(queryCounter.count()).isEqualTo(2)
     }
 
     @Test

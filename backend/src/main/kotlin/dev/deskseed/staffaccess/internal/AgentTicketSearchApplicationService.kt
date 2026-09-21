@@ -13,6 +13,8 @@ import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.foundation.SearchDiagnostics
 import dev.deskseed.foundation.SearchPhase
+import dev.deskseed.foundation.SearchResultCount
+import dev.deskseed.foundation.SearchResultCountRelation
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSearchFilter
@@ -22,6 +24,7 @@ import dev.deskseed.ticketing.StaffSlaDisplayState
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import org.springframework.dao.DataAccessException
+import org.springframework.dao.QueryTimeoutException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -48,7 +51,7 @@ internal data class AgentTicketSearchPage(
     val searchEventId: UUID,
     val searchInteractionId: UUID,
     val items: List<StaffTicketSummary>,
-    val resultCount: Long,
+    val resultCount: SearchResultCount,
     val sort: String,
     val nextCursor: String?,
 )
@@ -77,6 +80,7 @@ internal class AgentTicketSearchApplicationService(
         require(request.sort in SUPPORTED_SORTS) { "Unsupported ticket search sort" }
         require(request.limit in 1..100) { "Search limit must be between 1 and 100" }
         validateAssignee(request.filters.assigneeId)
+        validateBroadQuery(request)
 
         val decodedCursor = request.cursor?.let {
             cursorCodec.decode(request.query, request.filters, request.sort, it)
@@ -84,24 +88,35 @@ internal class AgentTicketSearchApplicationService(
         val occurredAt = Instant.now(clock)
         val snapshotAt = decodedCursor?.snapshotAt ?: occurredAt
 
-        val result = ticketStore.search(
-            query = request.query,
-            scope = StaffTicketReadScope.ALL_TICKETS,
-            actorId = principal.id,
-            filters = StaffTicketSearchFilter(
-                status = request.filters.status,
-                priority = request.filters.priority,
-                groupId = request.filters.groupId,
-                assignee = request.filters.assigneeId,
-                slaState = request.filters.slaState,
-            ),
-            sort = request.sort,
-            snapshotAt = snapshotAt,
-            cursor = decodedCursor,
-            limit = request.limit + 1,
-        )
+        val result = try {
+            ticketStore.search(
+                query = request.query,
+                scope = StaffTicketReadScope.ALL_TICKETS,
+                actorId = principal.id,
+                filters = StaffTicketSearchFilter(
+                    status = request.filters.status,
+                    priority = request.filters.priority,
+                    groupId = request.filters.groupId,
+                    assignee = request.filters.assigneeId,
+                    slaState = request.filters.slaState,
+                ),
+                sort = request.sort,
+                snapshotAt = snapshotAt,
+                cursor = decodedCursor,
+                limit = request.limit + 1,
+            )
+        } catch (exception: QueryTimeoutException) {
+            throw AgentTicketSearchTooBroadException(exception)
+        }
         val items = result.hits.take(request.limit)
-        val nextCursor = if (result.hits.size > request.limit) {
+        val hasMore = result.hits.size > request.limit
+        val returnedBefore = decodedCursor?.returnedBefore ?: 0L
+        val returnedThroughPage = Math.addExact(returnedBefore, items.size.toLong())
+        val resultCount = SearchResultCount(
+            value = if (hasMore) Math.addExact(returnedThroughPage, 1L) else returnedThroughPage,
+            relation = if (hasMore) SearchResultCountRelation.LOWER_BOUND else SearchResultCountRelation.EXACT,
+        )
+        val nextCursor = if (hasMore) {
             val last = checkNotNull(items.lastOrNull())
             cursorCodec.encode(
                 query = request.query,
@@ -112,6 +127,7 @@ internal class AgentTicketSearchApplicationService(
                     lastScore = last.score.takeIf { request.sort == SCORE_SORT },
                     lastUpdatedAt = last.ticket.updatedAt.takeIf { request.sort == UPDATED_SORT },
                     lastTicketNumber = last.ticket.ticketNumber,
+                    returnedBefore = returnedThroughPage,
                 ),
             )
         } else {
@@ -133,7 +149,8 @@ internal class AgentTicketSearchApplicationService(
                         protectedQuery = protectedQuery,
                         normalizedFilters = normalizedFilters(request.filters),
                         sort = request.sort,
-                        resultCount = result.resultCount,
+                        resultCount = checkNotNull(resultCount.value),
+                        resultCountRelation = resultCount.relation,
                         resultItems = items.mapIndexed { ordinal, hit ->
                             SearchResultAuditItem(hit.ticket.id, hit.ticket.ticketNumber, ordinal)
                         },
@@ -152,7 +169,7 @@ internal class AgentTicketSearchApplicationService(
             searchEventId = searchEventId,
             searchInteractionId = interactionId,
             items = items.map { it.ticket },
-            resultCount = result.resultCount,
+            resultCount = resultCount,
             sort = request.sort,
             nextCursor = nextCursor,
         )
@@ -172,12 +189,26 @@ internal class AgentTicketSearchApplicationService(
             .getOrElse { throw IllegalArgumentException("assigneeId must be a UUID, me, or unassigned") }
     }
 
+    private fun validateBroadQuery(request: AgentTicketSearchRequest) {
+        val normalized = request.query.trim()
+        if (normalized.toLongOrNull() != null) return
+        val hasNarrowingFilter = with(request.filters) {
+            status != null || priority != null || groupId != null || assigneeId != null || slaState != null
+        }
+        if (normalized.codePointCount(0, normalized.length) < MIN_UNFILTERED_QUERY_CODE_POINTS && !hasNarrowingFilter) {
+            throw AgentTicketSearchTooBroadException()
+        }
+    }
+
     private companion object {
         const val UPDATED_SORT = "updatedAt:desc,ticketNumber:desc"
         const val SCORE_SORT = "score:desc,ticketNumber:desc"
+        const val MIN_UNFILTERED_QUERY_CODE_POINTS = 3
         val SUPPORTED_SORTS = setOf(UPDATED_SORT, SCORE_SORT)
     }
 }
+
+internal class AgentTicketSearchTooBroadException(cause: Throwable? = null) : RuntimeException(cause)
 
 internal fun AgentReadRequestContext.toAccessAuditContext(
     principal: StaffPrincipal,
