@@ -1,6 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
 import dev.deskseed.ticketing.StaffTicketSearchCursor
+import dev.deskseed.ticketing.StaffTicketSearchPartition
 import java.nio.charset.StandardCharsets
 import java.security.InvalidKeyException
 import java.security.MessageDigest
@@ -35,6 +36,7 @@ internal class AgentTicketSearchCursorCodec(
             cursor.lastUpdatedAt?.toString().orEmpty(),
             cursor.lastTicketNumber.toString(),
             cursor.returnedBefore.toString(),
+            cursor.partition.name,
         ).joinToString(SEPARATOR)
         val encodedPayload = encodeBase64(payload.toByteArray(StandardCharsets.UTF_8))
         val keyId = properties.activeKeyId
@@ -58,7 +60,7 @@ internal class AgentTicketSearchCursorCodec(
         }
         val values = String(decodeBase64(encodedPayload), StandardCharsets.UTF_8).split(SEPARATOR)
         if (
-            values.size != 9 || values[0] != VERSION || values[1] != queryDigest(query) ||
+            values.size != 10 || values[0] != VERSION || values[1] != queryDigest(query) ||
             values[2] != filterFingerprint(filters) || values[3] != sort
         ) {
             throw IllegalArgumentException("Ticket search cursor does not match the request")
@@ -70,6 +72,7 @@ internal class AgentTicketSearchCursorCodec(
                 lastUpdatedAt = values[6].takeIf(String::isNotEmpty)?.let(Instant::parse),
                 lastTicketNumber = values[7].toLong(),
                 returnedBefore = values[8].toLong().also { require(it >= 0) },
+                partition = StaffTicketSearchPartition.valueOf(values[9]),
             )
         }.getOrElse { throw IllegalArgumentException("Invalid ticket search cursor") }
     }
@@ -111,7 +114,7 @@ internal class AgentTicketSearchCursorCodec(
     }.getOrElse { throw IllegalArgumentException("Invalid ticket search cursor") }
 
     private companion object {
-        const val VERSION = "v2"
+        const val VERSION = "v3"
         const val SEPARATOR = "~"
         const val ENVELOPE_SEPARATOR = "."
         const val HMAC_ALGORITHM = "HmacSHA256"

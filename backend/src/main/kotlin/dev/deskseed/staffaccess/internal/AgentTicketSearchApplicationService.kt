@@ -108,16 +108,16 @@ internal class AgentTicketSearchApplicationService(
         } catch (exception: QueryTimeoutException) {
             throw AgentTicketSearchTooBroadException(exception)
         }
-        val items = result.hits.take(request.limit)
+        val returnedHits = result.hits.take(request.limit)
         val hasMore = result.hits.size > request.limit
         val returnedBefore = decodedCursor?.returnedBefore ?: 0L
-        val returnedThroughPage = Math.addExact(returnedBefore, items.size.toLong())
+        val returnedThroughPage = Math.addExact(returnedBefore, returnedHits.size.toLong())
         val resultCount = SearchResultCount(
             value = if (hasMore) Math.addExact(returnedThroughPage, 1L) else returnedThroughPage,
             relation = if (hasMore) SearchResultCountRelation.LOWER_BOUND else SearchResultCountRelation.EXACT,
         )
         val nextCursor = if (hasMore) {
-            val last = checkNotNull(items.lastOrNull())
+            val last = checkNotNull(returnedHits.lastOrNull())
             cursorCodec.encode(
                 query = request.query,
                 filters = request.filters,
@@ -128,6 +128,7 @@ internal class AgentTicketSearchApplicationService(
                     lastUpdatedAt = last.ticket.updatedAt.takeIf { request.sort == UPDATED_SORT },
                     lastTicketNumber = last.ticket.ticketNumber,
                     returnedBefore = returnedThroughPage,
+                    partition = last.partition,
                 ),
             )
         } else {
@@ -151,7 +152,7 @@ internal class AgentTicketSearchApplicationService(
                         sort = request.sort,
                         resultCount = checkNotNull(resultCount.value),
                         resultCountRelation = resultCount.relation,
-                        resultItems = items.mapIndexed { ordinal, hit ->
+                        resultItems = returnedHits.mapIndexed { ordinal, hit ->
                             SearchResultAuditItem(hit.ticket.id, hit.ticket.ticketNumber, ordinal)
                         },
                         outcome = AccessAuditOutcome.SUCCEEDED,
@@ -168,7 +169,7 @@ internal class AgentTicketSearchApplicationService(
         AgentTicketSearchPage(
             searchEventId = searchEventId,
             searchInteractionId = interactionId,
-            items = items.map { it.ticket },
+            items = returnedHits.map { it.ticket },
             resultCount = resultCount,
             sort = request.sort,
             nextCursor = nextCursor,

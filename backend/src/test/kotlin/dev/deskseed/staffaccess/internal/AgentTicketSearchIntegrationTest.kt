@@ -528,6 +528,47 @@ class AgentTicketSearchIntegrationTest {
     }
 
     @Test
+    fun `unfiltered search pages active matches before immutable terminal matches`() {
+        val agent = insertStaff("partition-search@example.com", "Agent password 42", "Partition 상담사")
+        val group = insertGroup("Partition 그룹", agent)
+        insertTicket(8801, "partition handoff marker", "OPEN", "NORMAL", group, agent)
+        insertTicket(8899, "partition handoff marker", "CLOSED", "NORMAL", group, agent)
+        val browser = login("partition-search@example.com", "Agent password 42")
+        val interactionId = UUID.randomUUID()
+
+        val first = mockMvc.perform(
+            search(
+                browser,
+                interactionId,
+                """
+                {"query":"partition handoff marker","filters":{},"sort":"score:desc,ticketNumber:desc","limit":1}
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8801))
+            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.relation").value("LOWER_BOUND"))
+            .andReturn().response.contentAsString
+
+        val cursor = stringField(first, "nextCursor")
+        mockMvc.perform(
+            search(
+                browser,
+                interactionId,
+                """
+                {"query":"partition handoff marker","filters":{},"sort":"score:desc,ticketNumber:desc","cursor":"$cursor","limit":1}
+                """.trimIndent(),
+            ),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].ticketNumber").value(8899))
+            .andExpect(jsonPath("$.resultCount.value").value(2))
+            .andExpect(jsonPath("$.resultCount.relation").value("EXACT"))
+            .andExpect(jsonPath("$.nextCursor").isEmpty)
+    }
+
+    @Test
     fun `updated cursor preserves status priority group assignee and SLA filters`() {
         val agent = insertStaff("updated-filter@example.com", "Agent password 42", "Updated 상담사")
         val ownGroup = insertGroup("Updated 그룹", agent)

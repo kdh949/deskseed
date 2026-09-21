@@ -2,6 +2,7 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.foundation.ServiceVersionMetrics
 import dev.deskseed.ticketing.StaffTicketSearchFilter
+import dev.deskseed.ticketing.StaffTicketSearchPartition
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.SingleConnectionDataSource
 import tools.jackson.databind.JsonNode
@@ -45,6 +46,7 @@ internal object SearchPlanCapture {
             cursor = null,
             limit = 26,
             now = now,
+            partition = args.partition,
         )
         val sql = when (args.family) {
             "count" -> plan.countSql
@@ -90,7 +92,8 @@ internal object SearchPlanCapture {
             put("corpusCaseId", args.caseId)
             put("queryClass", selected.queryClass)
             put("queryFamily", args.family)
-            put("querySummary", "deskseed.staff_ticket_search.${args.family}")
+            put("querySummary", "deskseed.staff_ticket_search.${args.partition.name.lowercase()}.${args.family}")
+            put("candidatePartition", args.partition.name)
             put("queryId", queryId)
             put("corpusSha256", sha256(corpusBytes))
             put("sourceManifestSha256", corpus.path("sourceManifestSha256").asText("unavailable"))
@@ -123,6 +126,7 @@ internal object SearchPlanCapture {
 
             - query family: `${metadata.path("queryFamily").asText()}`
             - query summary: `${metadata.path("querySummary").asText()}`
+            - candidate partition: `${metadata.path("candidatePartition").asText()}`
             - queryid: `${metadata.path("queryId").asText()}`
             - deployment SHA: `${metadata.path("deploymentSha").asText()}`
             - corpus case: `${metadata.path("corpusCaseId").asText()}` (raw query intentionally omitted)
@@ -179,6 +183,7 @@ internal object SearchPlanCapture {
         val output: Path,
         val actorId: UUID,
         val environment: String,
+        val partition: StaffTicketSearchPartition,
     ) {
         companion object {
             fun parse(values: Array<String>): Arguments {
@@ -198,6 +203,11 @@ internal object SearchPlanCapture {
                     output = Path.of(required("--output")),
                     actorId = UUID.fromString(required("--actor-id")),
                     environment = required("--environment"),
+                    partition = when (pairs["--partition"] ?: "active") {
+                        "active" -> StaffTicketSearchPartition.ACTIVE
+                        "terminal" -> StaffTicketSearchPartition.TERMINAL
+                        else -> throw IllegalArgumentException("--partition must be active or terminal")
+                    },
                 )
             }
         }

@@ -2,6 +2,7 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.ticketing.StaffTicketSearchCursor
 import dev.deskseed.ticketing.StaffTicketSearchFilter
+import dev.deskseed.ticketing.StaffTicketSearchPartition
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -23,9 +24,10 @@ class StaffTicketSearchSqlPlanTest {
             now = Instant.parse("2026-09-19T00:00:00Z"),
         )
 
-        assertThat(plan.countSql).startsWith("select count(*)").contains("join ticket_search_documents search_document")
+        assertThat(plan.countSql).startsWith("select count(*)")
+            .contains("join active_ticket_search_documents search_document")
         assertThat(plan.pageSql).startsWith("with ranked as not materialized")
-            .contains("join ticket_search_documents search_document")
+            .contains("join active_ticket_search_documents search_document")
             .doesNotContain("candidate_stats", "select count(*) as result_count", "result_count")
         assertThat(plan.countSql).doesNotContain(rawQuery)
         assertThat(plan.pageSql).doesNotContain(rawQuery)
@@ -33,6 +35,26 @@ class StaffTicketSearchSqlPlanTest {
         assertThat(plan.parameters.parameterNames).contains(
             "actorId", "ticketNumberQuery", "queryText", "queryPattern", "limit", "now", "riskAt", "snapshotAt",
         )
+    }
+
+    @Test
+    fun `terminal partition uses only the immutable closed-ticket projection`() {
+        val plan = StaffTicketSearchSqlPlanFactory().build(
+            query = "closed fixture",
+            actorId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            filters = StaffTicketSearchFilter(status = dev.deskseed.ticketing.TicketStatus.CLOSED),
+            sort = STAFF_SEARCH_SCORE_SORT,
+            snapshotAt = Instant.parse("2026-09-19T00:00:00Z"),
+            cursor = null,
+            limit = 26,
+            now = Instant.parse("2026-09-19T00:00:00Z"),
+            partition = StaffTicketSearchPartition.TERMINAL,
+        )
+
+        assertThat(plan.countSql).contains("join terminal_ticket_search_documents search_document")
+            .doesNotContain("join ticket_search_documents search_document")
+        assertThat(plan.pageSql).contains("join terminal_ticket_search_documents search_document")
+            .doesNotContain("join active_ticket_search_documents search_document")
     }
 
     @Test

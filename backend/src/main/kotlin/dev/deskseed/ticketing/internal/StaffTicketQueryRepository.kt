@@ -24,6 +24,7 @@ import dev.deskseed.ticketing.StaffTicketSearchCursor
 import dev.deskseed.ticketing.StaffTicketSearchFilter
 import dev.deskseed.ticketing.StaffTicketSearchHit
 import dev.deskseed.ticketing.StaffTicketSearchResult
+import dev.deskseed.ticketing.StaffTicketSearchPartition
 import dev.deskseed.ticketing.StaffTicketSummary
 import dev.deskseed.ticketing.StaffSlaBadge
 import dev.deskseed.ticketing.StaffSlaDisplayState
@@ -205,30 +206,51 @@ internal class StaffTicketQueryRepository(
 
         val now = clock.instant()
         val riskAt = now.plusSeconds(30 * 60)
-        val plan = searchSqlPlanFactory.build(
-            query = query,
-            actorId = actorId,
-            filters = filters,
-            sort = sort,
-            snapshotAt = snapshotAt,
-            cursor = cursor,
-            limit = limit,
-            now = now,
-        )
-
         val hits = searchDiagnostics.measure(SearchPhase.PAGE) {
             jdbcTemplate.jdbcOperations.execute("set local statement_timeout = '5s'")
-            jdbcTemplate.query(
-                plan.pageSql,
-                plan.parameters,
-            ) { result, _ ->
-                StaffTicketSearchHit(
-                    ticket = ticketSummary(result, now, riskAt),
-                    score = result.getInt("search_score"),
+            val selected = mutableListOf<StaffTicketSearchHit>()
+            searchPartitions(filters, cursor).forEach { partition ->
+                if (selected.size >= limit) return@forEach
+                val partitionCursor = cursor?.takeIf { it.partition == partition }
+                val plan = searchSqlPlanFactory.build(
+                    query = query,
+                    actorId = actorId,
+                    filters = filters,
+                    sort = sort,
+                    snapshotAt = snapshotAt,
+                    cursor = partitionCursor,
+                    limit = limit - selected.size,
+                    now = now,
+                    partition = partition,
                 )
+                selected += jdbcTemplate.query(
+                    plan.pageSql,
+                    plan.parameters,
+                ) { result, _ ->
+                    StaffTicketSearchHit(
+                        ticket = ticketSummary(result, now, riskAt),
+                        score = result.getInt("search_score"),
+                        partition = partition,
+                    )
+                }
             }
+            selected
         }
         return StaffTicketSearchResult(hits = hits)
+    }
+
+    private fun searchPartitions(
+        filters: StaffTicketSearchFilter,
+        cursor: StaffTicketSearchCursor?,
+    ): List<StaffTicketSearchPartition> {
+        val allowed = when (filters.status) {
+            TicketStatus.CLOSED -> listOf(StaffTicketSearchPartition.TERMINAL)
+            null -> listOf(StaffTicketSearchPartition.ACTIVE, StaffTicketSearchPartition.TERMINAL)
+            else -> listOf(StaffTicketSearchPartition.ACTIVE)
+        }
+        if (cursor == null) return allowed
+        require(cursor.partition in allowed) { "Ticket search cursor partition does not match the filters" }
+        return allowed.dropWhile { it != cursor.partition }
     }
 
     override fun listSavedView(

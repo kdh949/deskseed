@@ -1611,8 +1611,10 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '503': *id005
       description: 상담사가 현재 server-side ticket-read authorization 범위에서 검색합니다. query는 request body에서만 받고 보호된 encrypted/fingerprint
-        audit으로 처리하며 URL, cursor, ordinary log에 포함하지 않습니다. score/ticketNumber cursor는 normalized query/filter/sort와 첫 snapshot에
-        서명 결합됩니다. 첫 페이지는 `limit + 1`로 nextCursor와 exact/lower-bound resultCount를 반환하고 전체 exact count를 동기 계산하지 않습니다.
+        audit으로 처리하며 URL, cursor, ordinary log에 포함하지 않습니다. status가 없으면 active 결과를 terminal(`CLOSED`) 결과보다 먼저 반환하며 선택한 score/updatedAt
+        정렬은 각 partition 안에서 적용합니다. `CLOSED` filter는 terminal만, 다른 status filter는 active만 조회합니다. opaque cursor v3는 normalized
+        query/filter/sort, 첫 snapshot, 정렬 tuple, partition에 서명 결합됩니다. 첫 페이지는 `limit + 1`로 nextCursor와 exact/lower-bound resultCount를
+        반환하고 전체 exact count를 동기 계산하지 않습니다.
   /api/v1/agent/customers/search:
     post:
       summary: 상담사가 요청자 후보로 선택할 기존 고객 검색
@@ -12515,9 +12517,9 @@ components:
           - string
           - 'null'
           maxLength: 2048
-      description: protected staff search 결과입니다. `score:desc,ticketNumber:desc`는 match score와 ticketNumber를 tie-breaker로 쓰며
-        cursor가 그 tuple, snapshot, 앞 페이지에서 반환한 누적 수를 포함합니다. nextCursor가 있으면 resultCount는 LOWER_BOUND이고 마지막 페이지에서는 EXACT입니다.
-        raw query는 응답이나 cursor에 존재하지 않습니다.
+      description: protected staff search 결과입니다. status가 없으면 active partition 전체가 terminal(`CLOSED`) partition보다 앞서며 `score:desc,ticketNumber:desc`
+        또는 `updatedAt:desc,ticketNumber:desc` 정렬은 각 partition 안에서 적용됩니다. cursor가 partition, 정렬 tuple, snapshot, 앞 페이지에서 반환한
+        누적 수를 포함합니다. nextCursor가 있으면 resultCount는 LOWER_BOUND이고 마지막 페이지에서는 EXACT입니다. raw query는 응답이나 cursor에 존재하지 않습니다.
       x-deskseed-documentation-review: MANUAL
     AgentCustomerSearchRequest:
       type: object

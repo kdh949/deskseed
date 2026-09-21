@@ -151,7 +151,7 @@ class StaffTicketQueryEvidenceIntegrationTest {
     }
 
     @Test
-    fun `search prepares one page query regardless of comment count`() {
+    fun `search prepares at most one query per partition regardless of comment count`() {
         queryCounter.reset()
 
         val result = ticketStore.search(
@@ -163,7 +163,7 @@ class StaffTicketQueryEvidenceIntegrationTest {
         )
 
         assertThat(result.items.map { it.ticketNumber }).containsExactly(6001)
-        assertThat(queryCounter.count()).isEqualTo(1)
+        assertThat(queryCounter.count()).isEqualTo(2)
     }
 
     @Test

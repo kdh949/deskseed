@@ -2,6 +2,7 @@ package dev.deskseed.ticketing.internal
 
 import dev.deskseed.ticketing.StaffTicketSearchCursor
 import dev.deskseed.ticketing.StaffTicketSearchFilter
+import dev.deskseed.ticketing.StaffTicketSearchPartition
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.stereotype.Component
 import java.sql.Timestamp
@@ -30,6 +31,7 @@ internal class StaffTicketSearchSqlPlanFactory {
         cursor: StaffTicketSearchCursor?,
         limit: Int,
         now: Instant,
+        partition: StaffTicketSearchPartition = StaffTicketSearchPartition.ACTIVE,
     ): StaffTicketSearchSqlPlan {
         require(sort in STAFF_SEARCH_SORTS) { "Unsupported ticket search sort" }
         val riskAt = now.plusSeconds(30 * 60)
@@ -60,9 +62,13 @@ internal class StaffTicketSearchSqlPlanFactory {
             """.trimIndent(),
         )
         conditions += compileFilters(filters, parameters)
+        val searchDocumentTable = when (partition) {
+            StaffTicketSearchPartition.ACTIVE -> "active_ticket_search_documents"
+            StaffTicketSearchPartition.TERMINAL -> "terminal_ticket_search_documents"
+        }
         val candidateFromClause = """
             from tickets t
-            join ticket_search_documents search_document on search_document.ticket_id = t.id
+            join $searchDocumentTable search_document on search_document.ticket_id = t.id
             ${if (filters.slaState != null) "left join analytics_first_reply_facts fact on fact.ticket_id = t.id" else ""}
             where ${conditions.joinToString("\n  and ")}
         """.trimIndent()

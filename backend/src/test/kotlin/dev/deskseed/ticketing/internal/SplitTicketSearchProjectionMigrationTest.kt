@@ -103,6 +103,36 @@ class SplitTicketSearchProjectionMigrationTest {
         }
     }
 
+    @Test
+    fun `V96 adds independent trigram candidate indexes to both projections`() {
+        migrateTo("96")
+
+        connection().use { jdbc ->
+            jdbc.createStatement().use { statement ->
+                assertThat(
+                    queryString(
+                        statement,
+                        """
+                        select indexdef from pg_indexes
+                        where schemaname = 'public'
+                          and indexname = 'active_ticket_search_documents_staff_document_trgm_idx'
+                        """.trimIndent(),
+                    ),
+                ).contains("USING gin", "staff_document gin_trgm_ops")
+                assertThat(
+                    queryString(
+                        statement,
+                        """
+                        select indexdef from pg_indexes
+                        where schemaname = 'public'
+                          and indexname = 'terminal_ticket_search_documents_staff_document_trgm_idx'
+                        """.trimIndent(),
+                    ),
+                ).contains("USING gin", "staff_document gin_trgm_ops")
+            }
+        }
+    }
+
     private fun migrateTo(version: String) {
         Flyway.configure()
             .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)

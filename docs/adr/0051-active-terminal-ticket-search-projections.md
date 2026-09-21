@@ -62,6 +62,8 @@ cause of request latency.
   read paths are retired.
 - If `CLOSED` becomes reopenable or mutable, this decision must be replaced before such a product
   contract is implemented.
+- ADR 0052 activates the split read path with an explicit active-before-terminal ordering contract;
+  V35 remains the rollback source.
 
 ## Verification
 
