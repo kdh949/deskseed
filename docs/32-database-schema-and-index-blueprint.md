@@ -230,6 +230,33 @@ refreshed_at
 - refresh는 shared advisory transaction lock, rebuild는 같은 key의 exclusive lock을 사용한다. PostgreSQL row가 source of truth이고 projection은 `rebuild_ticket_search_documents()`로 재생성 가능하다.
 - 검색 원문, fingerprint, ciphertext, audit metadata는 이 table에 저장하지 않는다.
 
+### active_ticket_search_documents / terminal_ticket_search_documents
+
+V95가 다음 read-path 전환을 위해 추가한 staff-only projection이다. 기존 `ticket_search_documents`는 그대로 유지한다.
+
+```text
+active_ticket_search_documents(
+  ticket_id PK/FK -> tickets on delete cascade,
+  document_version = 1, rank_schema_version = 1,
+  ticket_number,
+  subject/requester/group/assignee normalized fields,
+  public_comment_text, internal_comment_text,
+  staff_document generated, refreshed_at
+)
+
+terminal_ticket_search_documents(
+  same normalized/versioned fields,
+  staff_document generated, finalized_at
+)
+```
+
+- `SOLVED`는 reopen 가능하므로 active이고 `CLOSED`만 terminal이다.
+- active field/comment/label 변경은 active row만 갱신한다. `SOLVED -> CLOSED`는 같은 canonical transaction에서 terminal insert와 active delete를 수행한다.
+- terminal row update는 DB trigger가 거부한다. 기존 CLOSED row의 backfill snapshot 이후 label/comment 변경은 반영하지 않는다.
+- Flyway는 두 table을 비운 상태로 추가한다. `backfill_split_ticket_search_documents(batch)`를 commit 사이에 반복해 1~1,000행씩 진행하고 `ticket_search_projection_backfill_state` checkpoint로 재개한다.
+- 완료는 `reconcile_split_ticket_search_documents()`의 missing/unexpected/duplicate가 모두 0일 때만 인정한다.
+- PR1은 ticket-number B-tree만 추가한다. rank weight, trigram/bigram candidate index와 read switch는 실제 plan/Grafana 근거를 갖춘 후속 slice가 소유한다.
+
 ### ticket_relations
 
 ```text

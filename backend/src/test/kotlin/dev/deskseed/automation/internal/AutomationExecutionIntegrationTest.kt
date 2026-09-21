@@ -54,6 +54,27 @@ class AutomationExecutionIntegrationTest {
         val now = Instant.now().minusSeconds(5).truncatedTo(java.time.temporal.ChronoUnit.MICROS)
         val solvedAt = now.minusSeconds(3_700)
         val ticketId = solvedTicket(60_001, solvedAt)
+        jdbc.update(
+            """
+            insert into ticket_comments (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'SYSTEM', null, 'PUBLIC', 'automation public projection', now())
+            """.trimIndent(),
+            UUID.randomUUID(),
+            ticketId,
+        )
+        jdbc.update(
+            """
+            insert into ticket_comments (id, ticket_id, author_type, author_id, visibility, body, created_at)
+            values (?, ?, 'SYSTEM', null, 'INTERNAL', 'automation internal projection', now())
+            """.trimIndent(),
+            UUID.randomUUID(),
+            ticketId,
+        )
+        assertThat(jdbc.queryForObject(
+            "select count(*) from active_ticket_search_documents where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )).isEqualTo(1L)
         assertThat(scanner.scanOnce(now)).isEqualTo(1)
 
         assertThat(worker.runOnce("automation-test-worker")).isTrue()
@@ -61,6 +82,24 @@ class AutomationExecutionIntegrationTest {
         assertThat(jdbc.queryForMap("select status, version, solved_at from tickets where id = ?", ticketId))
             .containsEntry("status", "CLOSED")
             .containsEntry("version", 1L)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from active_ticket_search_documents where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )).isZero()
+        val terminalDocument = jdbc.queryForMap(
+            """
+            select public_comment_text, internal_comment_text
+            from terminal_ticket_search_documents
+            where ticket_id = ?
+            """.trimIndent(),
+            ticketId,
+        )
+        assertThat(terminalDocument["public_comment_text"].toString())
+            .contains("automation public projection")
+            .doesNotContain("automation internal projection")
+        assertThat(terminalDocument["internal_comment_text"].toString())
+            .contains("automation internal projection")
         val audit = jdbc.queryForMap(
             "select id, actor_type, actor_id, source from ticket_audits where ticket_id = ? and actor_type = 'AUTOMATION'",
             ticketId,
@@ -231,6 +270,16 @@ class AutomationExecutionIntegrationTest {
 
         assertThat(jdbc.queryForMap("select status, version from tickets where id = ?", ticketId))
             .containsEntry("status", "SOLVED").containsEntry("version", 0L)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from active_ticket_search_documents where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )).isEqualTo(1L)
+        assertThat(jdbc.queryForObject(
+            "select count(*) from terminal_ticket_search_documents where ticket_id = ?",
+            Long::class.java,
+            ticketId,
+        )).isZero()
         assertThat(jdbc.queryForMap("select status, attempt_count from automation_candidates where ticket_id = ?", ticketId))
             .containsEntry("status", "DEAD_LETTERED").containsEntry("attempt_count", 5)
         assertThat(jdbc.queryForObject("select count(*) from automation_executions", Long::class.java)).isZero()

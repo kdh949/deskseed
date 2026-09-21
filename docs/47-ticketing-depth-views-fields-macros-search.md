@@ -238,6 +238,8 @@ The projection may denormalize authorized searchable text but must preserve visi
 
 V35 uses one `ticket_search_documents` row with lower-cased field segments and separate `public_comment_text` and `internal_comment_text`. Its generated `staff_document` combines both only for the staff endpoint. There is no customer ticket-search consumer of this table. Primary-row delete cascades and comment refresh remove retained text; backup deletion follows the existing retention policy rather than claiming immediate physical erasure.
 
+V95 additively separates future staff candidate storage into `active_ticket_search_documents` for every non-`CLOSED` status (including reopenable `SOLVED`) and immutable `terminal_ticket_search_documents` for `CLOSED`. Product writes refresh only active rows; automation closure finalizes terminal content and removes the active row in the same transaction. PUBLIC and INTERNAL text remain distinct. Flyway does not backfill the corpus: operators invoke bounded, resumable batches and accept completion only after missing/unexpected/duplicate reconciliation reaches zero. The current search SQL still reads V35, so this slice changes neither ranking nor result membership and its rollback is the existing read path.
+
 Possible separation:
 
 - `ticket_search_public`
