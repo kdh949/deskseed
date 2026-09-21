@@ -746,7 +746,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(mode)(rate(node_cpu_seconds_total{environment=\"$environment\",stack=\"deskseed\",mode!=\"idle\"}[$__rate_interval])) / count(node_cpu_seconds_total{environment=\"$environment\",stack=\"deskseed\",mode=\"idle\"})",
+          "expr": "sum by(mode)(rate(node_cpu_seconds_total{environment=\"$environment\",stack=\"deskseed\",mode!=\"idle\"}[$__rate_interval])) / scalar(count(node_cpu_seconds_total{environment=\"$environment\",stack=\"deskseed\",mode=\"idle\"}))",
           "legendFormat": "{{mode}}"
         }
       ],
