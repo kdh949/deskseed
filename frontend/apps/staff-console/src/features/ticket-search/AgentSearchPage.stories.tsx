@@ -27,6 +27,24 @@ const ticket = {
   },
 }
 
+const assignmentOptionsHandler = http.get(
+  '/api/v1/agent/assignment-options',
+  () => HttpResponse.json({ groups: [] }),
+)
+const csrfHandler = http.get('/api/v1/agent/csrf', () =>
+  HttpResponse.json({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
+)
+const exactSearchHandler = http.post('/api/v1/agent/search', () =>
+  HttpResponse.json({
+    searchEventId: '33333333-3333-4333-8333-333333333333',
+    searchInteractionId: '44444444-4444-4444-8444-444444444444',
+    items: [ticket],
+    resultCount: { value: 1, relation: 'EXACT' },
+    sort: 'score:desc,ticketNumber:desc',
+    nextCursor: null,
+  }),
+)
+
 const meta = {
   title: '06 Domain & Workspace/AgentSearchPage',
   component: AgentSearchPage,
@@ -43,24 +61,7 @@ const meta = {
   ],
   parameters: {
     msw: {
-      handlers: [
-        http.get('/api/v1/agent/assignment-options', () =>
-          HttpResponse.json({ groups: [] }),
-        ),
-        http.get('/api/v1/agent/csrf', () =>
-          HttpResponse.json({ token: 'csrf', headerName: 'X-CSRF-TOKEN' }),
-        ),
-        http.post('/api/v1/agent/search', () =>
-          HttpResponse.json({
-            searchEventId: '33333333-3333-4333-8333-333333333333',
-            searchInteractionId: '44444444-4444-4444-8444-444444444444',
-            items: [ticket],
-            resultCount: { value: 1, relation: 'EXACT' },
-            sort: 'score:desc,ticketNumber:desc',
-            nextCursor: null,
-          }),
-        ),
-      ],
+      handlers: [assignmentOptionsHandler, csrfHandler, exactSearchHandler],
     },
   },
   tags: ['autodocs'],
@@ -87,6 +88,8 @@ export const LowerBoundResults: Story = {
   parameters: {
     msw: {
       handlers: [
+        assignmentOptionsHandler,
+        csrfHandler,
         http.post('/api/v1/agent/search', () =>
           HttpResponse.json({
             searchEventId: '33333333-3333-4333-8333-333333333333',
@@ -116,6 +119,8 @@ export const BroadQueryGuidance: Story = {
   parameters: {
     msw: {
       handlers: [
+        assignmentOptionsHandler,
+        csrfHandler,
         http.post('/api/v1/agent/search', () =>
           HttpResponse.json(
             {
