@@ -44,6 +44,7 @@ export function CustomerRequestForm({
   const [touched, setTouched] = useState<Set<RequestField>>(new Set())
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<SubmitError | null>(null)
+  const [serverErrors, setServerErrors] = useState<RequestFieldErrors>({})
   const [files, setFiles] = useState<File[]>([])
   const [attachmentLimitError, setAttachmentLimitError] = useState(false)
   const configuration = useRequestConfiguration(loadConfiguration)
@@ -62,6 +63,7 @@ export function CustomerRequestForm({
     ) ?? false
   const errors = validateRequestForm(customer ? { ...form, ...customer } : form)
   const valid = Object.keys(errors).length === 0
+  const visibleErrors = { ...errors, ...serverErrors }
   const nameId = useId()
   const emailId = useId()
   const subjectId = useId()
@@ -78,8 +80,20 @@ export function CustomerRequestForm({
     return () => window.removeEventListener('beforeunload', warn)
   }, [files.length, submitting])
 
+  useEffect(() => {
+    if (submitError?.kind !== 'invalid-fields' || locked) return
+    formElement.current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+      ?.focus()
+  }, [submitError, locked])
+
   const updateField = (field: RequestField, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
+    setServerErrors((current) => {
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
     setSubmitError(null)
   }
 
@@ -125,6 +139,7 @@ export function CustomerRequestForm({
     }
     setSubmitting(true)
     setSubmitError(null)
+    setServerErrors({})
     try {
       const attempt = pending.current
       onSubmitted(
@@ -140,6 +155,8 @@ export function CustomerRequestForm({
         uncertain || !(error instanceof ApiError) || error.status >= 500
       setUncertain(ambiguous)
       if (!ambiguous) pending.current = null
+      if (!ambiguous && error instanceof ApiError && error.status === 400)
+        setServerErrors(requestFieldErrors(error.fieldErrors, !!customer))
       setSubmitError(toSubmitError(error))
     } finally {
       setSubmitting(false)
@@ -198,7 +215,7 @@ export function CustomerRequestForm({
           ) : (
             <>
               <CustomerField
-                error={fieldError('name', errors, touched)}
+                error={fieldError('name', visibleErrors, touched)}
                 id={nameId}
                 label="이름"
               >
@@ -212,7 +229,7 @@ export function CustomerRequestForm({
                 />
               </CustomerField>
               <CustomerField
-                error={fieldError('email', errors, touched)}
+                error={fieldError('email', visibleErrors, touched)}
                 id={emailId}
                 label="이메일"
               >
@@ -230,7 +247,7 @@ export function CustomerRequestForm({
             </>
           )}
           <CustomerField
-            error={fieldError('subject', errors, touched)}
+            error={fieldError('subject', visibleErrors, touched)}
             id={subjectId}
             label="제목"
           >
@@ -243,7 +260,7 @@ export function CustomerRequestForm({
             />
           </CustomerField>
           <CustomerField
-            error={fieldError('message', errors, touched)}
+            error={fieldError('message', visibleErrors, touched)}
             id={messageId}
             label="문의 내용"
           >
@@ -369,12 +386,13 @@ function CustomerField({
 }) {
   const errorId = `${id}-error`
   const control = cloneElement(children, {
+    'aria-labelledby': `${id}-label`,
     'aria-describedby': error ? errorId : undefined,
-    'aria-invalid': error || undefined,
+    'aria-invalid': error ? true : undefined,
   })
   return (
     <label className="customer-field" htmlFor={id}>
-      <span>{label}</span>
+      <span id={`${id}-label`}>{label}</span>
       {control}
       {error ? (
         <small id={errorId} role="alert">
@@ -386,6 +404,7 @@ function CustomerField({
 }
 
 interface FieldControlProps {
+  'aria-labelledby'?: string
   'aria-describedby'?: string
   'aria-invalid'?: boolean | string
   id: string
@@ -397,6 +416,27 @@ function fieldError(
   touched: Set<RequestField>,
 ) {
   return touched.has(field) ? errors[field] : undefined
+}
+
+function requestFieldErrors(
+  fields: Record<string, string>,
+  signedIn: boolean,
+): RequestFieldErrors {
+  const errors: RequestFieldErrors = {}
+  const paths: [string, RequestField][] = [
+    ['subject', 'subject'],
+    ['message', 'message'],
+    ...(!signedIn
+      ? ([
+          ['requester.name', 'name'],
+          ['requester.email', 'email'],
+        ] as [string, RequestField][])
+      : []),
+  ]
+  for (const [path, field] of paths) {
+    if (fields[path]) errors[field] = fields[path]
+  }
+  return errors
 }
 
 function markTouched(

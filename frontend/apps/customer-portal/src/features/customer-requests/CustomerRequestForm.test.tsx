@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/client'
@@ -8,6 +8,95 @@ import { CustomerRequestCustomFields } from './CustomerRequestCustomFields'
 const emptyConfiguration = async () => ({ form: null, policies: [] })
 
 describe('CustomerRequestForm', () => {
+  it('connects rejected fields to editable inputs and preserves the rest of the draft', async () => {
+    const user = userEvent.setup()
+    const submitted = { ticketNumber: 1042, status: 'NEW' }
+    const submit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ApiError('invalid', 400, undefined, 'req-input-1', undefined, {
+          'requester.email': '이메일 주소를 확인해 주세요.',
+          subject: '제목을 확인해 주세요.',
+          internalField: '숨겨진 필드 오류',
+        }),
+      )
+      .mockResolvedValueOnce(submitted)
+    const onSubmitted = vi.fn()
+    render(
+      <CustomerRequestForm
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={onSubmitted}
+        submit={submit}
+      />,
+    )
+    await user.type(screen.getByLabelText('이름'), '김민아')
+    await user.type(screen.getByLabelText('이메일'), 'mina@example.test')
+    await user.type(screen.getByLabelText('제목'), '결제 확인 요청')
+    await user.type(screen.getByLabelText('문의 내용'), '결제를 확인해 주세요.')
+    const attachment = new File(['receipt'], 'receipt.txt', {
+      type: 'text/plain',
+    })
+    await user.upload(screen.getByLabelText('첨부 파일'), attachment)
+    await user.click(screen.getByRole('button', { name: '문의 접수' }))
+
+    const email = screen.getByLabelText('이메일')
+    const subject = screen.getByLabelText('제목')
+    await waitFor(() => expect(email).toHaveFocus())
+    expect(email).toHaveAttribute('aria-invalid', 'true')
+    expect(email).toHaveAccessibleDescription('이메일 주소를 확인해 주세요.')
+    expect(subject).toHaveAccessibleDescription('제목을 확인해 주세요.')
+    expect(screen.queryByText('숨겨진 필드 오류')).not.toBeInTheDocument()
+    expect(screen.getByText('요청 ID: req-input-1')).toBeVisible()
+    expect(screen.getByLabelText('문의 내용')).toHaveValue(
+      '결제를 확인해 주세요.',
+    )
+    expect(screen.getByText(/receipt.txt/)).toBeVisible()
+    await user.type(email, '.corrected')
+    expect(email).not.toHaveAttribute('aria-invalid')
+    expect(subject).toHaveAccessibleDescription('제목을 확인해 주세요.')
+    await user.type(subject, ' 수정')
+    await user.click(screen.getByRole('button', { name: '문의 접수' }))
+    expect(submit.mock.calls[1]?.[0].clientCommandId).not.toBe(
+      submit.mock.calls[0]?.[0].clientCommandId,
+    )
+    expect(submit.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        subject: '결제 확인 요청 수정',
+        message: '결제를 확인해 주세요.',
+      }),
+    )
+    expect(submit.mock.calls[1]?.[1]).toEqual([attachment])
+    expect(onSubmitted).toHaveBeenCalledWith(submitted)
+  })
+
+  it('keeps generic 400 errors generic and ignores fields absent from a signed-in form', async () => {
+    const user = userEvent.setup()
+    render(
+      <CustomerRequestForm
+        customer={{ name: '고객', email: 'customer@example.test' }}
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={vi.fn()}
+        submit={vi.fn().mockRejectedValue(
+          new ApiError('invalid', 400, undefined, 'req-generic', undefined, {
+            'requester.email': '보여주면 안 되는 오류',
+          }),
+        )}
+      />,
+    )
+    await user.type(screen.getByLabelText('제목'), '확인 요청')
+    await user.type(screen.getByLabelText('문의 내용'), '확인해 주세요.')
+    await user.click(screen.getByRole('button', { name: '문의 접수' }))
+    expect(
+      await screen.findByText('필수 항목과 입력값을 확인해 주세요.'),
+    ).toBeVisible()
+    expect(screen.getByText('요청 ID: req-generic')).toBeVisible()
+    expect(screen.queryByText('보여주면 안 되는 오류')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '양식과 동의 내용 다시 확인' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByLabelText('문의 내용')).toBeEnabled()
+  })
+
   it('describes the request journey without exposing conversation visibility terms', () => {
     render(
       <CustomerRequestForm
@@ -102,60 +191,70 @@ describe('CustomerRequestForm', () => {
     expect(screen.getByRole('button', { name: '문의 접수' })).toBeEnabled()
   })
 
-  it('keeps the original request and attachment after an uncertain result followed by rate limiting', async () => {
-    const user = userEvent.setup()
-    const submitted = {
-      ticketNumber: 1042,
-      status: 'NEW',
-      accessToken: 'a'.repeat(43),
-      createdAt: '2026-08-15T00:00:00Z',
-    }
-    const submit = vi
-      .fn()
-      .mockRejectedValueOnce(new TypeError('response lost'))
-      .mockRejectedValueOnce(
-        new ApiError('요청이 많습니다.', 429, undefined, 'req-rate-1', '60'),
+  it.each([429, 400])(
+    'keeps the original request and attachment after an uncertain result followed by %s',
+    async (status) => {
+      const user = userEvent.setup()
+      const submitted = {
+        ticketNumber: 1042,
+        status: 'NEW',
+        accessToken: 'a'.repeat(43),
+        createdAt: '2026-08-15T00:00:00Z',
+      }
+      const submit = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError('response lost'))
+        .mockRejectedValueOnce(
+          new ApiError('invalid', status, undefined, 'req-rate-1', '60', {
+            message: '본문 오류',
+          }),
+        )
+        .mockResolvedValueOnce(submitted)
+      const onSubmitted = vi.fn()
+      render(
+        <CustomerRequestForm
+          loadConfiguration={emptyConfiguration}
+          onSubmitted={onSubmitted}
+          submit={submit}
+        />,
       )
-      .mockResolvedValueOnce(submitted)
-    const onSubmitted = vi.fn()
-    render(
-      <CustomerRequestForm
-        loadConfiguration={emptyConfiguration}
-        onSubmitted={onSubmitted}
-        submit={submit}
-      />,
-    )
 
-    await user.type(screen.getByLabelText('이름'), '김민아')
-    await user.type(screen.getByLabelText('이메일'), 'mina@example.test')
-    await user.type(screen.getByLabelText('제목'), '결제 확인 요청')
-    await user.type(
-      screen.getByLabelText('문의 내용'),
-      '결제 승인 내역을 확인해 주세요.',
-    )
-    const attachment = new File(['receipt'], 'receipt.txt', {
-      type: 'text/plain',
-    })
-    await user.upload(screen.getByLabelText('첨부 파일'), attachment)
-    await user.click(screen.getByRole('button', { name: '문의 접수' }))
-    await user.click(
-      await screen.findByRole('button', { name: '같은 내용으로 접수 확인' }),
-    )
+      await user.type(screen.getByLabelText('이름'), '김민아')
+      await user.type(screen.getByLabelText('이메일'), 'mina@example.test')
+      await user.type(screen.getByLabelText('제목'), '결제 확인 요청')
+      await user.type(
+        screen.getByLabelText('문의 내용'),
+        '결제 승인 내역을 확인해 주세요.',
+      )
+      const attachment = new File(['receipt'], 'receipt.txt', {
+        type: 'text/plain',
+      })
+      await user.upload(screen.getByLabelText('첨부 파일'), attachment)
+      await user.click(screen.getByRole('button', { name: '문의 접수' }))
+      await user.click(
+        await screen.findByRole('button', { name: '같은 내용으로 접수 확인' }),
+      )
 
-    expect(await screen.findByText(/60초 후 다시 시도/)).toBeVisible()
-    expect(screen.getByLabelText('문의 내용')).toBeDisabled()
-    expect(screen.getByLabelText('첨부 파일')).toBeDisabled()
-    expect(onSubmitted).not.toHaveBeenCalled()
-    await user.click(
-      screen.getByRole('button', { name: '같은 내용으로 접수 확인' }),
-    )
+      expect(
+        await screen.findByText(
+          status === 429 ? /60초 후 다시 시도/ : /필수 항목과 입력값을 확인/,
+        ),
+      ).toBeVisible()
+      expect(screen.queryByText('본문 오류')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('문의 내용')).toBeDisabled()
+      expect(screen.getByLabelText('첨부 파일')).toBeDisabled()
+      expect(onSubmitted).not.toHaveBeenCalled()
+      await user.click(
+        screen.getByRole('button', { name: '같은 내용으로 접수 확인' }),
+      )
 
-    expect(submit).toHaveBeenCalledTimes(3)
-    expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0])
-    expect(submit.mock.calls[2]).toEqual(submit.mock.calls[0])
-    expect(submit.mock.calls[2]?.[1]).toEqual([attachment])
-    expect(onSubmitted).toHaveBeenCalledExactlyOnceWith(submitted)
-  })
+      expect(submit).toHaveBeenCalledTimes(3)
+      expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0])
+      expect(submit.mock.calls[2]).toEqual(submit.mock.calls[0])
+      expect(submit.mock.calls[2]?.[1]).toEqual([attachment])
+      expect(onSubmitted).toHaveBeenCalledExactlyOnceWith(submitted)
+    },
+  )
 
   it('rejects more than five initial attachments before submit', async () => {
     const user = userEvent.setup()
