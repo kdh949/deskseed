@@ -22,14 +22,15 @@ internal class MailDeliveryConfigurationValidator(
         requirePositive(properties.leaseDuration, "outbound mail lease duration")
         // Public request and public-reply flows enqueue PROTECTED intents even while delivery is disabled.
         properties.protectedContent.requireActiveKey()
+        // Rendering is part of enqueueing, not network delivery, so these settings are always required.
+        safety.requireMailbox(properties.fromAddress)
+        safety.requireAbsoluteHttpUrl(properties.publicBaseUrl.removeSuffix("/"), "public base URL")
         if (!properties.deliveryEnabled) {
             require(properties.transport == "disabled") { "disabled outbound delivery requires the disabled transport" }
             return
         }
 
         require(properties.transport != "disabled") { "enabled outbound delivery requires a transport" }
-        safety.requireMailbox(properties.fromAddress)
-        safety.requireAbsoluteHttpUrl(properties.publicBaseUrl.removeSuffix("/"), "public base URL")
 
         if (environment.acceptsProfiles(Profiles.of("production"))) validateProductionSmtp()
     }

@@ -152,6 +152,8 @@ services:
       DESKSEED_MAIL_DELIVERY_ENABLED: "false"
       DESKSEED_MAIL_SCHEDULING_ENABLED: "false"
       DESKSEED_MAIL_TRANSPORT: disabled
+      DESKSEED_MAIL_FROM_ADDRESS: ${DESKSEED_MAIL_FROM_ADDRESS:?set the sender for queued customer notifications}
+      DESKSEED_MAIL_PUBLIC_BASE_URL: ${DESKSEED_MAIL_PUBLIC_BASE_URL:?set the public request origin for queued customer notifications}
       MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
       DESKSEED_MAIL_PROTECTED_ACTIVE_KEY_VERSION: v1
       DESKSEED_MAIL_PROTECTED_KEY_V1: ${DESKSEED_MAIL_PROTECTED_KEY_V1:?set the protected mail key}
