@@ -252,9 +252,11 @@ for (const viewport of [
     const { detailHeaders } = await mockAgentReadApi(page)
     await page.goto('/agent/views/my-open')
 
-    await expect(page.getByRole('heading', { name: '내 티켓' })).toBeVisible()
     await expect(
-      page.getByRole('table', { name: '내 티켓 티켓' }),
+      page.getByRole('heading', { name: '내 처리 중 티켓' }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole('table', { name: '내 처리 중 티켓 티켓' }),
     ).toBeVisible()
     await expect(
       page.getByRole('complementary', {
@@ -317,7 +319,9 @@ test('Personal view configuration persists on the server and returns focus to it
 }) => {
   const { savedViewWrites } = await mockAgentReadApi(page)
   await page.goto('/agent/views/my-open')
-  await expect(page.getByRole('table', { name: '내 티켓 티켓' })).toBeVisible()
+  await expect(
+    page.getByRole('table', { name: '내 처리 중 티켓 티켓' }),
+  ).toBeVisible()
   const createButton = page.getByRole('button', { name: '새 보기 만들기' })
   await createButton.click()
   await expect(

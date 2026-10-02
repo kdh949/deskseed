@@ -65,7 +65,7 @@ const VIEW_PRESENTATION: Record<
   }
 > = {
   'my-open': {
-    name: '내 티켓',
+    name: '내 처리 중 티켓',
   },
   'unassigned-my-groups': {
     name: '미배정 티켓',
@@ -179,6 +179,7 @@ export function AgentViewsPage() {
   const viewQuery = useQuery({
     queryKey: ['agent-views'],
     queryFn: listAgentViews,
+    retry: false,
   })
   const assignmentQuery = useQuery({
     queryKey: ['agent-assignment-options'],
@@ -476,6 +477,47 @@ export function AgentViewsPage() {
         onCreate={openCreateEditor}
         onEdit={openEditEditor}
         sections={sidebarSections}
+        feedback={
+          viewQuery.isPending ? (
+            <SeedSkeletonRows label="보기 목록 불러오는 중" rows={3} />
+          ) : viewQuery.isError ? (
+            <SeedFeedbackState
+              kind={
+                viewQuery.error instanceof ApiError &&
+                viewQuery.error.status === 403
+                  ? 'denied'
+                  : 'error'
+              }
+              title={
+                viewQuery.error instanceof ApiError &&
+                viewQuery.error.status === 403
+                  ? '보기 목록에 접근할 권한이 없습니다'
+                  : '보기 목록을 불러오지 못했습니다'
+              }
+              description={
+                viewQuery.error instanceof ApiError && viewQuery.error.requestId
+                  ? `요청 ID: ${viewQuery.error.requestId}`
+                  : '잠시 후 보기 목록을 다시 불러와 주세요.'
+              }
+              action={
+                <SeedButton onClick={() => void viewQuery.refetch()}>
+                  보기 목록 다시 시도
+                </SeedButton>
+              }
+            />
+          ) : !serverViews.length ? (
+            <SeedFeedbackState
+              kind="empty"
+              title="표시할 저장 보기가 없습니다"
+              description="새 보기를 만들거나 티켓 검색에서 업무를 찾아보세요."
+              action={
+                <SeedButton onClick={() => navigate('/agent/search')}>
+                  티켓 검색 열기
+                </SeedButton>
+              }
+            />
+          ) : undefined
+        }
       />
       <section
         className="seed-queue__content"
@@ -490,9 +532,11 @@ export function AgentViewsPage() {
                 <b>{query.data.totalApproximate ?? query.data.items.length}</b>
               )}
             </div>
-            {currentServerView?.description && (
+            {viewKey === 'my-open' ? (
+              <p>내게 배정된 티켓 중 처리 중 상태만 표시합니다.</p>
+            ) : currentServerView?.description ? (
               <p>{currentServerView.description}</p>
-            )}
+            ) : null}
           </div>
           <div className="seed-queue__actions">
             <SeedButton
@@ -635,18 +679,26 @@ export function AgentViewsPage() {
               action={
                 hasActiveFilters ? (
                   <SeedButton onClick={clearFilters}>필터 지우기</SeedButton>
+                ) : viewKey === 'my-open' ? (
+                  <SeedButton onClick={() => navigate('/agent/search')}>
+                    티켓 검색 열기
+                  </SeedButton>
                 ) : undefined
               }
               description={
                 hasActiveFilters
                   ? '다른 필터나 검색어를 사용해 보세요.'
-                  : '새로운 티켓이 도착하면 여기에 표시됩니다.'
+                  : viewKey === 'my-open'
+                    ? '신규·고객 답변 대기·보류 티켓은 다른 보기나 티켓 검색에서 확인하세요.'
+                    : '이 보기의 조건에 맞는 티켓이 여기에 표시됩니다.'
               }
               kind="empty"
               title={
                 hasActiveFilters
                   ? '일치하는 티켓이 없습니다.'
-                  : '처리할 티켓이 없습니다.'
+                  : viewKey === 'my-open'
+                    ? '내게 배정된 처리 중 티켓이 없습니다'
+                    : '이 보기의 티켓이 없습니다.'
               }
             />
           ) : (

@@ -120,6 +120,7 @@ function jsonResponse(body: unknown, status = 200) {
 function mockReadApi(
   page = ticketPage(),
   error?: { body: unknown; status: number },
+  viewList?: () => Response | Promise<Response>,
 ) {
   let serverViews = [...views]
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -170,7 +171,7 @@ function mockReadApi(
       return Promise.resolve(jsonResponse(created, 201))
     }
     if (url.endsWith('/api/v1/agent/views') && method === 'GET')
-      return Promise.resolve(jsonResponse(serverViews))
+      return Promise.resolve(viewList ? viewList() : jsonResponse(serverViews))
     if (url.includes('/api/v1/agent/views/') && method === 'PATCH') {
       const key = url.split('/').at(-1)
       const body = JSON.parse(String(init?.body))
@@ -229,6 +230,94 @@ function renderPage(path = '/agent/views/pending') {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('AgentViewsPage', () => {
+  it('names the default queue by its OPEN scope and explains empty results', async () => {
+    vi.stubGlobal('fetch', mockReadApi(ticketPage([])))
+    renderPage('/agent/views/my-open')
+    expect(
+      await screen.findByRole('heading', { name: '내 처리 중 티켓' }),
+    ).toBeVisible()
+    expect(
+      await screen.findByText('내게 배정된 처리 중 티켓이 없습니다'),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        '신규·고객 답변 대기·보류 티켓은 다른 보기나 티켓 검색에서 확인하세요.',
+      ),
+    ).toBeVisible()
+  })
+
+  it('keeps queue data usable while a failed view list can be retried', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    vi.stubGlobal(
+      'fetch',
+      mockReadApi(ticketPage(), undefined, () =>
+        ++attempts === 1
+          ? jsonResponse(
+              { title: 'Unavailable', status: 503, requestId: 'views-example' },
+              503,
+            )
+          : jsonResponse(views),
+      ),
+    )
+    renderPage()
+    expect(
+      await screen.findByText('보기 목록을 불러오지 못했습니다'),
+    ).toBeVisible()
+    expect(screen.getByText('요청 ID: views-example')).toBeVisible()
+    expect(await screen.findByText('결제 승인 오류')).toBeVisible()
+    expect(screen.queryByText('일치하는 보기가 없습니다.')).toBeNull()
+    await user.click(
+      screen.getByRole('button', { name: '보기 목록 다시 시도' }),
+    )
+    expect(
+      await screen.findByRole('link', { name: '내 처리 중 티켓' }),
+    ).toBeVisible()
+    expect(screen.queryByText('보기 목록을 불러오지 못했습니다')).toBeNull()
+  })
+
+  it.each([
+    ['empty', () => jsonResponse([]), '표시할 저장 보기가 없습니다'],
+    [
+      'denied',
+      () => jsonResponse({ title: 'Forbidden', status: 403 }, 403),
+      '보기 목록에 접근할 권한이 없습니다',
+    ],
+    [
+      'malformed',
+      () =>
+        jsonResponse(views.map((view) => ({ ...view, createdAt: undefined }))),
+      '보기 목록을 불러오지 못했습니다',
+    ],
+  ] as const)(
+    'distinguishes %s view lists from a name-search miss',
+    async (_state, response, title) => {
+      vi.stubGlobal('fetch', mockReadApi(ticketPage(), undefined, response))
+      renderPage()
+      expect(await screen.findByText(title)).toBeVisible()
+      expect(screen.queryByText('일치하는 보기가 없습니다.')).toBeNull()
+      expect(screen.queryByRole('searchbox', { name: '보기 검색' })).toBeNull()
+    },
+  )
+
+  it('shows list loading independently of queue loading', async () => {
+    let resolveViews!: (response: Response) => void
+    const pendingViews = new Promise<Response>((resolve) => {
+      resolveViews = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      mockReadApi(ticketPage(), undefined, () => pendingViews),
+    )
+    renderPage()
+    expect(await screen.findByText('결제 승인 오류')).toBeVisible()
+    expect(screen.getByLabelText('보기 목록 불러오는 중')).toBeVisible()
+    resolveViews(jsonResponse(views))
+    expect(
+      await screen.findByRole('link', { name: '내 처리 중 티켓' }),
+    ).toBeVisible()
+  })
+
   it('uses supported URL filters, hides unsupported controls, and supports current-page selection', async () => {
     const user = userEvent.setup()
     const fetchMock = mockReadApi()
@@ -328,7 +417,7 @@ describe('AgentViewsPage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     renderPage('/agent/views/my-open')
-    await screen.findByRole('table', { name: '내 티켓 티켓' })
+    await screen.findByRole('table', { name: '내 처리 중 티켓 티켓' })
     await user.click(screen.getByRole('button', { name: '새 보기 만들기' }))
     const dialog = await screen.findByRole('dialog', {
       name: '새 보기 만들기',
@@ -377,13 +466,14 @@ describe('AgentViewsPage', () => {
     vi.stubGlobal('fetch', mockReadApi())
 
     renderPage('/agent/views/my-open')
-    await screen.findByRole('table', { name: '내 티켓 티켓' })
+    await screen.findByRole('table', { name: '내 처리 중 티켓 티켓' })
 
-    expect(screen.getByRole('link', { name: '내 티켓' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
-    expect(screen.getByText('상담 운영에 사용하는 보기입니다.')).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: '내 처리 중 티켓' }),
+    ).toHaveAttribute('aria-current', 'page')
+    expect(
+      screen.getByText('내게 배정된 티켓 중 처리 중 상태만 표시합니다.'),
+    ).toBeVisible()
     expect(
       screen.getByRole('link', { name: '고객 답변 대기' }),
     ).not.toHaveAttribute('aria-current')
@@ -406,7 +496,7 @@ describe('AgentViewsPage', () => {
     renderPage('/agent/views/follow-up')
     await screen.findByRole('table', { name: '내가 팔로우 중인 티켓 티켓' })
     expect(
-      screen.queryByRole('button', { name: '내 티켓 편집' }),
+      screen.queryByRole('button', { name: '내 처리 중 티켓 편집' }),
     ).not.toBeInTheDocument()
 
     await user.click(
@@ -562,9 +652,9 @@ describe('AgentViewsPage', () => {
         name: /내가 팔로우 중인 티켓.*티켓 2개.*기준/,
       }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '내 티켓' })).not.toHaveTextContent(
-      '기준',
-    )
+    expect(
+      screen.getByRole('link', { name: '내 처리 중 티켓' }),
+    ).not.toHaveTextContent('기준')
   })
 
   it('keeps a committed definition and retries only reorder with the latest order version', async () => {
@@ -658,7 +748,7 @@ describe('AgentViewsPage', () => {
     const first = renderPage()
     expect(
       await screen.findByRole('heading', {
-        name: '처리할 티켓이 없습니다.',
+        name: '이 보기의 티켓이 없습니다.',
       }),
     ).toBeVisible()
     first.unmount()
