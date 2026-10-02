@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   BusinessSchedule,
+  FirstReplySlaAnalytics,
   FirstReplySlaPolicy,
   SupportGroup,
 } from '../../api/types'
@@ -121,10 +122,12 @@ function installSlaFetch({
   groups,
   policy,
   saveStatus,
+  analytics,
 }: {
   groups: SupportGroup[]
   policy: FirstReplySlaPolicy
   saveStatus?: number
+  analytics?: (url: URL) => Response | Promise<Response>
 }) {
   let policyReads = 0
   let versionReads = 0
@@ -156,6 +159,7 @@ function installSlaFetch({
         })
       }
       if (url.pathname === '/api/v1/analytics/first-reply-sla') {
+        if (analytics) return analytics(url)
         return json({
           metric: 'FIRST_REPLY',
           calculationVersion: 'v1',
@@ -267,5 +271,126 @@ describe('AdminFirstReplySlaPage', () => {
         screen.getByRole('button', { name: '새 version 작성' }),
       ).toBeEnabled()
     })
+  })
+})
+
+const analyticsFixture: FirstReplySlaAnalytics = {
+  metric: 'FIRST_REPLY',
+  calculationVersion: 'v1',
+  active: 3,
+  paused: 1,
+  achieved: 20,
+  breached: 2,
+  cancelled: 7,
+  noPolicy: 1,
+  achievedRateDenominator: 22,
+  achievedRate: 0.909,
+}
+
+describe('First Reply SLA analytics meaning', () => {
+  it('keeps reporting filters independent of policy editing and never shows another scope while loading', async () => {
+    const user = userEvent.setup()
+    const policy = createPolicy(groupId(1))
+    const requests: URL[] = []
+    let resolveFiltered: ((response: Response) => void) | undefined
+    installSlaFetch({
+      groups: [createGroup(1)],
+      policy,
+      analytics: (url) => {
+        requests.push(url)
+        if (url.searchParams.get('priority') === 'HIGH') {
+          return new Promise<Response>((resolve) => {
+            resolveFiltered = resolve
+          })
+        }
+        return json(analyticsFixture)
+      },
+    })
+    renderPage()
+    const region = await screen.findByRole('region', {
+      name: '현재 First Reply SLA 성과',
+    })
+    expect(await within(region).findByText('22건')).toBeVisible()
+    expect(within(region).getByText('7')).toBeVisible()
+    expect(within(region).getByText('계산 버전: v1')).toBeVisible()
+    expect(region.querySelector('time')).toHaveAttribute('datetime')
+    expect(requests[0]?.search).toBe('')
+
+    await user.selectOptions(screen.getByLabelText('집계 정책'), policy.id)
+    await waitFor(() =>
+      expect(requests.at(-1)?.searchParams.get('policyId')).toBe(policy.id),
+    )
+    await user.selectOptions(screen.getByLabelText('집계 우선순위'), 'HIGH')
+    await waitFor(() => expect(resolveFiltered).toBeDefined())
+    expect(
+      within(region).getByText('First Reply SLA 성과를 불러오는 중'),
+    ).toBeVisible()
+    expect(within(region).queryByText('22건')).not.toBeInTheDocument()
+    expect(requests.at(-1)?.searchParams.get('policyId')).toBe(policy.id)
+    expect(requests.at(-1)?.searchParams.get('priority')).toBe('HIGH')
+    resolveFiltered?.(
+      json({
+        ...analyticsFixture,
+        achieved: 0,
+        breached: 0,
+        achievedRateDenominator: 0,
+        achievedRate: null,
+      }),
+    )
+    expect(await within(region).findByText('집계 대상 없음')).toBeVisible()
+    expect(within(region).queryByText('0%')).not.toBeInTheDocument()
+    await openVersionEditor(user)
+    expect(screen.getByLabelText('집계 우선순위')).toHaveValue('HIGH')
+    expect(screen.getByLabelText('집계 정책')).toHaveValue(policy.id)
+    await user.selectOptions(screen.getByLabelText('집계 우선순위'), '')
+    await user.selectOptions(screen.getByLabelText('집계 정책'), '')
+    await waitFor(() => expect(requests.at(-1)?.search).toBe(''))
+    expect(await within(region).findByText('22건')).toBeVisible()
+  })
+
+  it('retries a failed analytics read without blocking policy administration', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    installSlaFetch({
+      groups: [createGroup(1)],
+      policy: createPolicy(groupId(1)),
+      analytics: () => {
+        attempts += 1
+        return attempts === 1
+          ? json({ status: 503 }, 503)
+          : json(analyticsFixture)
+      },
+    })
+    renderPage()
+    const region = await screen.findByRole('region', {
+      name: '현재 First Reply SLA 성과',
+    })
+    expect(
+      await within(region).findByText(
+        'First Reply SLA 성과를 불러오지 못했습니다.',
+      ),
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: 'SLA 정책 관리' })).toBeEnabled()
+    await user.click(within(region).getByRole('button', { name: '다시 시도' }))
+    expect(await within(region).findByText('22건')).toBeVisible()
+  })
+
+  it('shows a permission state without retry or stale performance counts after denial', async () => {
+    installSlaFetch({
+      groups: [createGroup(1)],
+      policy: createPolicy(groupId(1)),
+      analytics: () => json({ status: 403 }, 403),
+    })
+    renderPage()
+    const region = await screen.findByRole('region', {
+      name: '현재 First Reply SLA 성과',
+    })
+    expect(
+      await within(region).findByText('SLA 성과 조회 권한이 없습니다.'),
+    ).toBeVisible()
+    expect(
+      within(region).queryByRole('button', { name: '다시 시도' }),
+    ).not.toBeInTheDocument()
+    expect(within(region).queryByText('달성률')).not.toBeInTheDocument()
   })
 })
