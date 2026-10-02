@@ -43,49 +43,54 @@ export function CustomerPasswordResetRequestPage() {
     }
   }
   return (
-    <div className="customer-page customer-auth-page">
-      <h1>비밀번호 재설정</h1>
-      <p>비밀번호로 가입한 계정의 이메일을 입력해 주세요.</p>
-      {sent && (
-        <Notification tone="success" title="받은 편지함을 확인해 주세요.">
-          <p>
-            재설정 가능한 계정이면 이메일이 전송됩니다. 메일의 링크에서 새
-            비밀번호를 설정해 주세요.
-          </p>
-        </Notification>
-      )}
-      {failure && (
-        <Notification tone="danger" title="재설정 링크를 요청하지 못했습니다.">
-          <p>{failure}</p>
-        </Notification>
-      )}
-      <form onSubmit={(event) => void submit(event)}>
-        <label htmlFor="reset-email">이메일 주소</label>
-        <input
-          id="reset-email"
-          type="email"
-          autoComplete="email"
-          maxLength={254}
-          required
-          value={email}
-          disabled={pending}
-          onChange={(event) => {
-            setEmail(event.target.value)
-            setSent(false)
-            setFailure(null)
-          }}
-        />
-        <DsButton type="submit" disabled={pending}>
-          {pending
-            ? '요청 중…'
-            : sent
-              ? '재설정 링크 다시 요청'
-              : '재설정 링크 요청'}
-        </DsButton>
-      </form>
-      <p>
-        <Link to="/customer/sign-in">로그인으로 돌아가기</Link>
-      </p>
+    <div className="customer-auth-page customer-auth-page--single">
+      <section className="customer-auth-card">
+        <h1>비밀번호 재설정</h1>
+        <p>비밀번호로 가입한 계정의 이메일을 입력해 주세요.</p>
+        {sent && (
+          <Notification tone="success" title="받은 편지함을 확인해 주세요.">
+            <p>
+              재설정 가능한 계정이면 이메일이 전송됩니다. 메일의 링크에서 새
+              비밀번호를 설정해 주세요.
+            </p>
+          </Notification>
+        )}
+        {failure && (
+          <Notification
+            tone="danger"
+            title="재설정 링크를 요청하지 못했습니다."
+          >
+            <p>{failure}</p>
+          </Notification>
+        )}
+        <form onSubmit={(event) => void submit(event)}>
+          <label htmlFor="reset-email">이메일 주소</label>
+          <input
+            id="reset-email"
+            type="email"
+            autoComplete="email"
+            maxLength={254}
+            required
+            value={email}
+            disabled={pending}
+            onChange={(event) => {
+              setEmail(event.target.value)
+              setSent(false)
+              setFailure(null)
+            }}
+          />
+          <DsButton type="submit" disabled={pending}>
+            {pending
+              ? '요청 중…'
+              : sent
+                ? '재설정 링크 다시 요청'
+                : '재설정 링크 요청'}
+          </DsButton>
+        </form>
+        <p>
+          <Link to="/customer/sign-in">로그인으로 돌아가기</Link>
+        </p>
+      </section>
     </div>
   )
 }
@@ -159,49 +164,58 @@ export function CustomerPasswordResetPage() {
       </div>
     )
   return (
-    <div className="customer-page customer-auth-page">
-      <h1>
-        {state === 'complete' ? '비밀번호를 변경했습니다.' : '새 비밀번호 설정'}
-      </h1>
-      {state === 'complete' ? (
-        <>
-          <p>기존 로그인은 종료되었습니다. 새 비밀번호로 로그인해 주세요.</p>
-          <Link to="/customer/sign-in">로그인</Link>
-        </>
-      ) : (
-        <>
-          <p>
-            12~128자의 새 비밀번호를 입력해 주세요. 변경하면 모든 기기의
-            로그인이 종료됩니다.
-          </p>
-          {failure && (
-            <Notification tone="danger" title="비밀번호를 변경하지 못했습니다.">
-              <p id="reset-password-feedback">{failure}</p>
-            </Notification>
-          )}
-          <form onSubmit={(event) => void submit(event)}>
-            <label htmlFor="reset-password">새 비밀번호</label>
-            <input
-              id="reset-password"
-              type="password"
-              autoComplete="new-password"
-              aria-describedby="reset-password-feedback"
-              aria-invalid={Boolean(failure)}
-              minLength={12}
-              maxLength={registrationFieldLimits.password * 2}
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-            <DsButton type="submit" disabled={state === 'pending'}>
-              {state === 'pending' ? '변경 중…' : '비밀번호 변경'}
-            </DsButton>
-          </form>
-          <p>
-            <Link to="/customer/password-reset">새 재설정 링크 요청</Link>
-          </p>
-        </>
-      )}
+    <div className="customer-auth-page customer-auth-page--single">
+      <section className="customer-auth-card">
+        <h1>
+          {state === 'complete'
+            ? '비밀번호를 변경했습니다.'
+            : '새 비밀번호 설정'}
+        </h1>
+        {state === 'complete' ? (
+          <>
+            <p>기존 로그인은 종료되었습니다. 새 비밀번호로 로그인해 주세요.</p>
+            <Link to="/customer/sign-in">로그인</Link>
+          </>
+        ) : (
+          <>
+            <p>
+              12~128자의 새 비밀번호를 입력해 주세요. 변경하면 모든 기기의
+              로그인이 종료됩니다.
+            </p>
+            {failure && (
+              <Notification
+                tone="danger"
+                title="비밀번호를 변경하지 못했습니다."
+              >
+                <p id="reset-password-feedback">{failure}</p>
+              </Notification>
+            )}
+            <form onSubmit={(event) => void submit(event)}>
+              <label htmlFor="reset-password">새 비밀번호</label>
+              <input
+                id="reset-password"
+                type="password"
+                autoComplete="new-password"
+                aria-describedby={
+                  failure ? 'reset-password-feedback' : undefined
+                }
+                aria-invalid={Boolean(failure)}
+                minLength={12}
+                maxLength={registrationFieldLimits.password * 2}
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <DsButton type="submit" disabled={state === 'pending'}>
+                {state === 'pending' ? '변경 중…' : '비밀번호 변경'}
+              </DsButton>
+            </form>
+            <p>
+              <Link to="/customer/password-reset">새 재설정 링크 요청</Link>
+            </p>
+          </>
+        )}
+      </section>
     </div>
   )
 }

@@ -22,6 +22,34 @@ function renderPage() {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('CustomerSignInPage', () => {
+  it('matches the instructions and password recovery link to the selected method', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(screen.getByText('이메일과 비밀번호로 로그인하세요.')).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' }),
+    ).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '이메일 링크' }))
+    expect(
+      screen.queryByText('이메일과 비밀번호로 로그인하세요.'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: '비밀번호를 잊으셨나요?' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '비밀번호 없이 문의한 고객은 이메일 링크로 로그인할 수 있습니다.',
+      ),
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '비밀번호' }))
+    expect(screen.getByText('이메일과 비밀번호로 로그인하세요.')).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: '비밀번호를 잊으셨나요?' }),
+    ).toBeVisible()
+  })
+
   it('promises only the account capabilities that are implemented', () => {
     renderPage()
 

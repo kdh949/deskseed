@@ -45,6 +45,34 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+export const ModeSwitch: Story = {
+  play: async ({ canvas }) => {
+    const password = canvas.getByRole('button', { name: '비밀번호' })
+    const magic = canvas.getByRole('button', { name: '이메일 링크' })
+    await expect(password).toHaveAttribute('aria-pressed', 'true')
+    password.focus()
+    await userEvent.tab()
+    await expect(magic).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    await expect(magic).toHaveAttribute('aria-pressed', 'true')
+    await expect(
+      canvas.queryByText('이메일과 비밀번호로 로그인하세요.'),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.queryByRole('link', { name: '비밀번호를 잊으셨나요?' }),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.getByText(
+        '비밀번호 없이 문의한 고객은 이메일 링크로 로그인할 수 있습니다.',
+      ),
+    ).toBeVisible()
+    await userEvent.click(password)
+    await expect(
+      canvas.getByRole('link', { name: '비밀번호를 잊으셨나요?' }),
+    ).toBeVisible()
+  },
+}
+
 export const RequestLink: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.queryByText('계정 정보 관리')).not.toBeInTheDocument()
