@@ -2313,8 +2313,16 @@ export async function previewFirstReplySlaPolicy(
   return value as unknown as FirstReplySlaPreview
 }
 
-export async function getFirstReplySlaAnalytics(): Promise<FirstReplySlaAnalytics> {
-  const response = await staffFetch('/api/v1/analytics/first-reply-sla')
+export async function getFirstReplySlaAnalytics(
+  filters: { policyId?: string; priority?: TicketPriority } = {},
+): Promise<FirstReplySlaAnalytics> {
+  const params = new URLSearchParams()
+  if (filters.policyId) params.set('policyId', filters.policyId)
+  if (filters.priority) params.set('priority', filters.priority)
+  const query = params.toString()
+  const response = await staffFetch(
+    `/api/v1/analytics/first-reply-sla${query ? `?${query}` : ''}`,
+  )
   const value = await checkedBody(response)
   const countFields = [
     'active',

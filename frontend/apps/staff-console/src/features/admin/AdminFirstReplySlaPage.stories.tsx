@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { http, HttpResponse } from 'msw'
+import MockDate from 'mockdate'
+import { delay, http, HttpResponse } from 'msw'
 import { expect, userEvent, waitFor } from 'storybook/test'
 import { AdminFirstReplySlaPage } from './AdminFirstReplySlaPage'
 
@@ -140,11 +141,15 @@ const handlers = [
 const meta = {
   title: '06 Admin/Admin First Reply SLA Page',
   component: AdminFirstReplySlaPage,
+  beforeEach: () => {
+    MockDate.set('2026-10-03T03:00:00Z')
+    return () => MockDate.reset()
+  },
   parameters: {
     docs: {
       description: {
         component:
-          'REQ-SLA-001/003/SLA-009 First Reply SLA 운영 route입니다. 실제 schedule/group projection을 조건 option으로 사용하고 policy version/activation/preview/analytics를 API에 연결합니다.',
+          'REQ-SLA-001/003/SLA-008/SLA-009 First Reply SLA 운영 route입니다. 성과는 기간을 적용하지 않은 티켓별 현재 상태이며, 정책/우선순위 필터는 정책 편집 대상과 독립적입니다. 달성률 분모는 달성+위반이고 조회 시각은 클라이언트의 마지막 성공 조회 시각입니다.',
       },
     },
     msw: { handlers },
@@ -271,8 +276,116 @@ export const Empty: Story = {
     },
   },
   play: async ({ canvas }) => {
+    await expect(await canvas.findByText('집계 대상 없음')).toBeVisible()
+    await expect(canvas.queryByText('0%')).not.toBeInTheDocument()
     await expect(
       await canvas.findByText('등록된 First Reply SLA 정책이 없습니다.'),
     ).toBeVisible()
+  },
+}
+
+export const AnalyticsFilters: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/analytics/first-reply-sla', ({ request }) => {
+          const params = new URL(request.url).searchParams
+          const filtered =
+            params.get('policyId') === policy.id &&
+            params.get('priority') === 'HIGH'
+          return HttpResponse.json({
+            metric: 'FIRST_REPLY',
+            calculationVersion: 'v1',
+            active: 3,
+            paused: 1,
+            achieved: filtered ? 8 : 20,
+            breached: 2,
+            cancelled: 7,
+            noPolicy: 1,
+            achievedRateDenominator: filtered ? 10 : 22,
+            achievedRate: filtered ? 0.8 : 0.909,
+          })
+        }),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('22건')).toBeVisible()
+    await userEvent.selectOptions(canvas.getByLabelText('집계 정책'), policy.id)
+    await userEvent.tab()
+    await expect(canvas.getByLabelText('집계 우선순위')).toHaveFocus()
+    await userEvent.selectOptions(
+      canvas.getByLabelText('집계 우선순위'),
+      'HIGH',
+    )
+    await expect(await canvas.findByText('80%')).toBeVisible()
+    await expect(canvas.getByText('10건')).toBeVisible()
+    await expect(canvas.getByText('계산 버전: v1')).toBeVisible()
+  },
+}
+
+export const AnalyticsLoading: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/analytics/first-reply-sla', async () => {
+          await delay('infinite')
+          return HttpResponse.json({})
+        }),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('First Reply SLA 성과를 불러오는 중'),
+    ).toBeVisible()
+    await expect(canvas.getByLabelText('집계 정책')).toBeEnabled()
+  },
+}
+
+export const AnalyticsError: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/analytics/first-reply-sla', () =>
+          HttpResponse.json({ status: 503 }, { status: 503 }),
+        ),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('First Reply SLA 성과를 불러오지 못했습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '다시 시도' }),
+    ).toBeEnabled()
+    await expect(
+      canvas.getByRole('button', { name: 'SLA 정책 관리' }),
+    ).toBeEnabled()
+  },
+}
+
+export const AnalyticsDenied: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/analytics/first-reply-sla', () =>
+          HttpResponse.json({ status: 403 }, { status: 403 }),
+        ),
+        ...handlers,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('SLA 성과 조회 권한이 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: '다시 시도' }),
+    ).not.toBeInTheDocument()
   },
 }

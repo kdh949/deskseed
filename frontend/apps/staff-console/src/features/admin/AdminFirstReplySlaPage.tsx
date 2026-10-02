@@ -142,6 +142,10 @@ export function AdminFirstReplySlaPage() {
   const [previewGroupId, setPreviewGroupId] = useState<string | null>(null)
   const [previewChannel, setPreviewChannel] = useState<TicketChannel>('WEB')
   const [previewStart, setPreviewStart] = useState('')
+  const [analyticsPolicyId, setAnalyticsPolicyId] = useState('')
+  const [analyticsPriority, setAnalyticsPriority] = useState<
+    TicketPriority | ''
+  >('')
 
   const policiesQuery = useQuery({
     queryKey: ['admin-first-reply-sla-policies'],
@@ -159,8 +163,16 @@ export function AdminFirstReplySlaPage() {
     retry: false,
   })
   const analyticsQuery = useQuery({
-    queryKey: ['admin-first-reply-sla-analytics'],
-    queryFn: getFirstReplySlaAnalytics,
+    queryKey: [
+      'admin-first-reply-sla-analytics',
+      analyticsPolicyId,
+      analyticsPriority,
+    ],
+    queryFn: () =>
+      getFirstReplySlaAnalytics({
+        policyId: analyticsPolicyId || undefined,
+        priority: analyticsPriority || undefined,
+      }),
     retry: false,
   })
   const versionsQuery = useQuery({
@@ -375,7 +387,14 @@ export function AdminFirstReplySlaPage() {
         </div>
       </header>
 
-      <SlaAnalytics query={analyticsQuery} />
+      <SlaAnalytics
+        query={analyticsQuery}
+        policies={policiesQuery.data}
+        policyId={analyticsPolicyId}
+        priority={analyticsPriority}
+        onPolicyChange={setAnalyticsPolicyId}
+        onPriorityChange={setAnalyticsPriority}
+      />
       {schedulesQuery.isError ? (
         <Notification
           title="영업 시간표 선택 목록을 불러오지 못했습니다."
@@ -838,66 +857,140 @@ export function AdminFirstReplySlaPage() {
 
 function SlaAnalytics({
   query,
+  policies,
+  policyId,
+  priority,
+  onPolicyChange,
+  onPriorityChange,
 }: {
   query: ReturnType<typeof useQuery<FirstReplySlaAnalytics, Error>>
+  policies: FirstReplySlaPolicy[]
+  policyId: string
+  priority: TicketPriority | ''
+  onPolicyChange: (value: string) => void
+  onPriorityChange: (value: TicketPriority | '') => void
 }) {
-  if (query.isPending) {
-    return (
-      <section aria-label="First Reply SLA 성과" className="admin-surface">
+  const denied = query.error instanceof ApiError && query.error.status === 403
+  const analytics = query.data
+  return (
+    <section aria-labelledby="sla-analytics-heading" className="admin-surface">
+      <h2 id="sla-analytics-heading">현재 First Reply SLA 성과</h2>
+      <p>
+        선택한 범위의 티켓별 현재 최초 답변 상태입니다. 기간 필터는 적용하지
+        않습니다.
+      </p>
+      <div className="admin-form-grid">
+        <label className="admin-field">
+          <span>집계 정책</span>
+          <select
+            value={policyId}
+            onChange={(event) => onPolicyChange(event.target.value)}
+          >
+            <option value="">전체 정책</option>
+            {policies.map((policy) => (
+              <option key={policy.id} value={policy.id}>
+                {policy.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="admin-field">
+          <span>집계 우선순위</span>
+          <select
+            value={priority}
+            onChange={(event) =>
+              onPriorityChange(event.target.value as TicketPriority | '')
+            }
+          >
+            <option value="">전체 우선순위</option>
+            {PRIORITIES.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {query.isPending ? (
         <ScreenState
           compact
           kind="loading"
           title="First Reply SLA 성과를 불러오는 중"
         />
-      </section>
-    )
-  }
-  if (query.isError) {
-    return (
-      <Notification
-        title="First Reply SLA 성과를 불러오지 못했습니다."
-        tone="danger"
-      >
-        <p>
-          정책 운영은 계속할 수 있지만 성과 수치는 서버에서 다시 확인해 주세요.
-        </p>
-      </Notification>
-    )
-  }
-  const analytics = query.data
-  return (
-    <section aria-labelledby="sla-analytics-heading" className="admin-surface">
-      <h2 id="sla-analytics-heading">현재 First Reply SLA 성과</h2>
-      <dl className="admin-definition-list">
-        <div>
-          <dt>활성</dt>
-          <dd>{analytics.active}</dd>
-        </div>
-        <div>
-          <dt>정지</dt>
-          <dd>{analytics.paused}</dd>
-        </div>
-        <div>
-          <dt>달성</dt>
-          <dd>{analytics.achieved}</dd>
-        </div>
-        <div>
-          <dt>위반</dt>
-          <dd>{analytics.breached}</dd>
-        </div>
-        <div>
-          <dt>정책 없음</dt>
-          <dd>{analytics.noPolicy}</dd>
-        </div>
-        <div>
-          <dt>달성률</dt>
-          <dd>
-            {analytics.achievedRate === null
-              ? '—'
-              : `${Math.round(analytics.achievedRate * 100)}%`}
-          </dd>
-        </div>
-      </dl>
+      ) : query.isError ? (
+        <ScreenState
+          compact
+          kind={denied ? 'denied' : 'error'}
+          title={
+            denied
+              ? 'SLA 성과 조회 권한이 없습니다.'
+              : 'First Reply SLA 성과를 불러오지 못했습니다.'
+          }
+          description="정책 운영은 계속할 수 있습니다. 집계 조건을 확인하거나 다시 조회해 주세요."
+          action={
+            denied ? undefined : (
+              <RetryButton onClick={() => void query.refetch()} />
+            )
+          }
+        />
+      ) : analytics ? (
+        <>
+          {query.isFetching && (
+            <p role="status">새 집계를 조회하는 중입니다.</p>
+          )}
+          <dl className="admin-definition-list">
+            <div>
+              <dt>활성</dt>
+              <dd>{analytics.active.toLocaleString('ko-KR')}</dd>
+            </div>
+            <div>
+              <dt>정지</dt>
+              <dd>{analytics.paused.toLocaleString('ko-KR')}</dd>
+            </div>
+            <div>
+              <dt>달성</dt>
+              <dd>{analytics.achieved.toLocaleString('ko-KR')}</dd>
+            </div>
+            <div>
+              <dt>위반</dt>
+              <dd>{analytics.breached.toLocaleString('ko-KR')}</dd>
+            </div>
+            <div>
+              <dt>취소</dt>
+              <dd>{analytics.cancelled.toLocaleString('ko-KR')}</dd>
+            </div>
+            <div>
+              <dt>정책 없음</dt>
+              <dd>{analytics.noPolicy.toLocaleString('ko-KR')}</dd>
+            </div>
+            <div>
+              <dt>달성률</dt>
+              <dd>
+                {analytics.achievedRate === null
+                  ? '집계 대상 없음'
+                  : `${Math.round(analytics.achievedRate * 100)}%`}
+              </dd>
+            </div>
+            <div>
+              <dt>달성률 분모</dt>
+              <dd>
+                {analytics.achievedRateDenominator.toLocaleString('ko-KR')}건
+              </dd>
+            </div>
+          </dl>
+          <p>
+            달성률 = 달성 ÷ (달성 + 위반). 활성·정지·취소·정책 없음은 분모에서
+            제외합니다.
+          </p>
+          <p>계산 버전: {analytics.calculationVersion}</p>
+          <p>
+            마지막 성공 조회:{' '}
+            <time dateTime={new Date(query.dataUpdatedAt).toISOString()}>
+              {formatTimestamp(new Date(query.dataUpdatedAt).toISOString())}
+            </time>
+          </p>
+        </>
+      ) : null}
     </section>
   )
 }
