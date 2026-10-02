@@ -112,6 +112,8 @@ Production Redis는 host port 없이 전용 internal network에만 연결되고 
 
 ### 3.2 Production runtime 시작
 
+production WebSocket presence는 `DESKSEED_CORS_ALLOWED_ORIGINS`의 명시적 origin allowlist를 HTTP와 함께 사용한다. 실제 직원 UI의 HTTPS origin을 지정해야 하며 wildcard·다른 origin을 허용하지 않는다. 이 설정은 staff session·ticket authorization을 대체하지 않는다.
+
 새 빈 volume 기준의 최소 순서다. 예시는 `/etc/deskseed`를 사용하며 실제 secret 값은 출력하거나 Git에 저장하지 않는다.
 
 ```bash

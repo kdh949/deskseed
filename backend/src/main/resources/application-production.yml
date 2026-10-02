@@ -128,6 +128,10 @@ deskseed:
           v1: ${DESKSEED_AUDIT_CURSOR_SIGNING_KEY}
   cors:
     allowed-origins: ${DESKSEED_CORS_ALLOWED_ORIGINS}
+  collaboration:
+    websocket:
+      # Both staff browser surfaces use the explicitly configured production origin allowlist.
+      allowed-origins: ${deskseed.cors.allowed-origins}
   agent-ticket-read:
     cursor:
       signing-keys:

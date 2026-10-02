@@ -1,6 +1,13 @@
 package dev.deskseed
 
 import dev.deskseed.foundation.PersonalStagingOpenTelemetryLogAppenderInitializer
+import dev.deskseed.staffaccess.internal.StaffCollaborationOriginInterceptor
+import org.springframework.http.HttpHeaders
+import org.springframework.http.server.ServletServerHttpRequest
+import org.springframework.http.server.ServletServerHttpResponse
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.web.socket.handler.TextWebSocketHandler
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -42,6 +49,8 @@ import java.net.http.HttpResponse
 @Testcontainers
 @dev.deskseed.testsupport.category.IntegrationTest
 class PersonalStagingObservabilityRuntimeIntegrationTest {
+    @Autowired private lateinit var originInterceptor: StaffCollaborationOriginInterceptor
+
     @Autowired private lateinit var environment: Environment
 
     @Autowired private lateinit var context: org.springframework.context.ApplicationContext
@@ -83,6 +92,25 @@ class PersonalStagingObservabilityRuntimeIntegrationTest {
         assertThat(get(applicationPort, "/actuator/prometheus").statusCode()).isNotEqualTo(200)
         assertThat(get(applicationPort, "/api/v1/agent/me").statusCode()).isIn(401, 403)
         assertThat(get(applicationPort, "/api/v1/customer/me").statusCode()).isIn(401, 403)
+    }
+
+    @Test
+    fun `production collaboration permits its configured browser origin and rejects other origins`() {
+        val handler = object : TextWebSocketHandler() {}
+        listOf("https://deskseed.test" to true, "http://localhost:5173" to false, "https://attacker.example" to false)
+            .forEach { (origin, allowed) ->
+                val request = MockHttpServletRequest("GET", "/ws/agent/collaboration")
+                request.addHeader(HttpHeaders.ORIGIN, origin)
+                val response = MockHttpServletResponse()
+
+                assertThat(originInterceptor.beforeHandshake(
+                    ServletServerHttpRequest(request),
+                    ServletServerHttpResponse(response),
+                    handler,
+                    mutableMapOf(),
+                )).isEqualTo(allowed)
+                if (!allowed) assertThat(response.status).isEqualTo(403)
+            }
     }
 
     private fun get(port: Int, path: String): HttpResponse<String> = http.send(
