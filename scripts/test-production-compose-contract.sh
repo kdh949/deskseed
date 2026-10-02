@@ -45,6 +45,8 @@ export DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK=true
 export DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS=192.0.2.0/24
 export DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS=172.30.10.0/24
 export DESKSEED_WEBHOOK_SECRET_KEY_V1=contract-webhook-secret
+export DESKSEED_MAIL_FROM_ADDRESS=no-reply@support.example.test
+export DESKSEED_MAIL_PUBLIC_BASE_URL=https://support.example.test
 export DESKSEED_MAIL_PROTECTED_KEY_V1=contract-mail-protected-key
 export DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY=contract-mail-cursor-key
 export DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY=contract-customer-fingerprint-key
@@ -71,6 +73,19 @@ DESKSEED_FRONTEND_ORIGIN_PORT=18080 \
     --file "$repository_root/compose.yaml" \
     --file "$repository_root/compose.production.yaml" \
     config --format json >"$test_root/merged.json"
+
+# The production environment override must not silently omit render prerequisites.
+for required_mail_setting in DESKSEED_MAIL_FROM_ADDRESS DESKSEED_MAIL_PUBLIC_BASE_URL; do
+  if missing_setting_error="$(env "$required_mail_setting=" \
+    DESKSEED_FRONTEND_BIND_ADDRESS=192.0.2.10 DESKSEED_FRONTEND_ORIGIN_PORT=18080 \
+    docker compose --project-name deskseed-production-contract \
+      --file "$repository_root/compose.yaml" --file "$repository_root/compose.production.yaml" \
+      config --quiet 2>&1)"; then
+    printf 'Expected missing %s to fail before deployment.\n' "$required_mail_setting" >&2
+    exit 1
+  fi
+  [[ "$missing_setting_error" == *"$required_mail_setting"* ]] || exit 1
+done
 
 python3 - "$test_root/merged.json" <<'PY'
 import json
@@ -121,6 +136,8 @@ assert backend_environment["DESKSEED_ATTACHMENT_S3_CREATE_BUCKET"] == "true"
 assert backend_environment["DESKSEED_ATTACHMENT_S3_PLAINTEXT_INTERNAL_NETWORK_ACK"] == "true"
 assert backend_environment["DESKSEED_MAIL_DELIVERY_ENABLED"] == "false"
 assert backend_environment["DESKSEED_MAIL_TRANSPORT"] == "disabled"
+assert backend_environment["DESKSEED_MAIL_FROM_ADDRESS"] == "no-reply@support.example.test"
+assert backend_environment["DESKSEED_MAIL_PUBLIC_BASE_URL"] == "https://support.example.test"
 assert backend_environment["SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE"] == "20971520B"
 assert backend_environment["SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE"] == "110100480B"
 file_limit = int(backend_environment["SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE"].removesuffix("B"))

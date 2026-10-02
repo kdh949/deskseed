@@ -112,6 +112,8 @@ Production Redis는 host port 없이 전용 internal network에만 연결되고 
 
 ### 3.2 Production runtime 시작
 
+`DESKSEED_MAIL_FROM_ADDRESS`와 `DESKSEED_MAIL_PUBLIC_BASE_URL`은 발송 비활성 상태에도 필수다. 고객 접수·공개 답변 transaction에서 메일 intent를 렌더링하므로 유효한 발신 주소와 고객이 접근하는 공개 HTTPS origin을 지정한다. production Compose는 누락을 거부하고 backend도 잘못된 값을 시작 시 거부한다. 이 값을 설정해도 SMTP 전달은 활성화되지 않는다.
+
 새 빈 volume 기준의 최소 순서다. 예시는 `/etc/deskseed`를 사용하며 실제 secret 값은 출력하거나 Git에 저장하지 않는다.
 
 ```bash

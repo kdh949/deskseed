@@ -51,6 +51,47 @@ class MailDeliveryConfigurationValidatorTest {
     }
 
     @Test
+    fun `disabled delivery rejects configuration that cannot render queued mail`() {
+        val invalidSettings = listOf(
+            "deskseed.mail.from-address=",
+            "deskseed.mail.from-address=not-a-mailbox",
+            "deskseed.mail.public-base-url=",
+            "deskseed.mail.public-base-url=relative-path",
+        )
+
+        invalidSettings.forEach { invalidSetting ->
+            contextRunner
+                .withInitializer { context -> context.environment.setActiveProfiles("production") }
+                .withPropertyValues(
+                    "deskseed.mail.delivery-enabled=false",
+                    "deskseed.mail.transport=disabled",
+                    "deskseed.mail.from-address=no-reply@deskseed.example",
+                    "deskseed.mail.public-base-url=https://deskseed.example",
+                    "deskseed.mail.protected-content.active-key-version=v1",
+                    "deskseed.mail.protected-content.keys.v1=$protectedKey",
+                )
+                .withPropertyValues(invalidSetting)
+                .run { context ->
+                    assertThat(context).hasFailed()
+                    assertThat(context.startupFailure).hasRootCauseInstanceOf(IllegalArgumentException::class.java)
+                }
+        }
+    }
+
+    @Test
+    fun `disabled delivery accepts render configuration without SMTP credentials`() {
+        val environment = MockEnvironment().apply { setActiveProfiles("production") }
+
+        assertThatCode {
+            MailDeliveryConfigurationValidator(
+                properties(deliveryEnabled = false, transport = "disabled"),
+                environment,
+                OutboundMailSafety(),
+            ).afterPropertiesSet()
+        }.doesNotThrowAnyException()
+    }
+
+    @Test
     fun `enabled production SMTP rejects every missing security prerequisite`() {
         val environment = MockEnvironment().apply { setActiveProfiles("production") }
 

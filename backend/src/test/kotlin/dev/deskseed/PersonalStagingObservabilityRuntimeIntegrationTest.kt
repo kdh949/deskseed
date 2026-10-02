@@ -121,6 +121,8 @@ class PersonalStagingObservabilityRuntimeIntegrationTest {
                 "DESKSEED_PLATFORM_ALLOWED_CLIENT_CIDRS" to "127.0.0.1/32",
                 "DESKSEED_PLATFORM_TRUSTED_PROXY_CIDRS" to "127.0.0.1/32",
                 "DESKSEED_WEBHOOK_SECRET_KEY_V1" to BASE64_32_BYTE_KEY,
+                "DESKSEED_MAIL_FROM_ADDRESS" to "no-reply@deskseed.test",
+                "DESKSEED_MAIL_PUBLIC_BASE_URL" to "https://deskseed.test",
                 "DESKSEED_MAIL_PROTECTED_KEY_V1" to BASE64_32_BYTE_KEY,
                 "DESKSEED_MAIL_OPERATIONS_CURSOR_SIGNING_KEY" to CURSOR_KEY,
                 "DESKSEED_CUSTOMER_AUTH_FINGERPRINT_KEY" to BASE64_32_BYTE_KEY,

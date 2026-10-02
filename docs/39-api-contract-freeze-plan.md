@@ -87,6 +87,7 @@ GET  /api/v1/customer/requests/{ticketNumber}        account later
 - 목록 cursor는 서명되고 status filter에 결합된다. 목록과 detail은 `Cache-Control: no-store`이며, raw recipient/sender, subject/body, token, protected ciphertext/nonce/key version, request/correlation ID, SMTP credential, provider message ID/response를 계약에서 제외한다.
 - summary/detail은 masked recipient, template/version, 상태/시도 수/시간, normalized failure code만 반환한다. provider 원문과 retry reason은 response에 반사하지 않는다.
 - retry는 같은 terminal `FAILED` intent만 pessimistic lock으로 `QUEUED`에 재큐잉한다. 새 ticket/comment/intent/token grant는 만들지 않으며 delivery event와 Admin/Security audit이 한 transaction에서 함께 commit/rollback한다. 이미 다른 retry가 성공했으면 conflict다.
+- 발송 disabled 상태에서도 업무 transaction이 보호된 mail intent를 렌더링하므로 sender mailbox, 절대 HTTP(S) public base URL, active protected-content key는 시작 시 검증한다. disabled에는 SMTP host/credential이 필요하지 않다.
 - production SMTP는 disabled-by-default다. `delivery-enabled=true`와 `transport=smtp`를 명시할 때 host/port/auth/credentials, TLS, sender, HTTPS public base URL, active protected-content key 검증을 통과해야 worker/scheduler/transport가 시작한다.
 
 ### Agent v1
