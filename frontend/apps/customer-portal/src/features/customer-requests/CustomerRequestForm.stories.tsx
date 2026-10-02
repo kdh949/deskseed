@@ -77,6 +77,56 @@ export const RateLimited: Story = {
   },
 }
 
+export const ServerFieldErrors: Story = {
+  args: {
+    submit: fn(async () => {
+      throw new ApiError('invalid', 400, undefined, 'req-fields-1', undefined, {
+        'requester.email': '이메일 주소를 확인해 주세요.',
+        subject: '제목을 확인해 주세요.',
+      })
+    }),
+  },
+  play: async ({ canvas, args }) => {
+    await fillValidRequest(canvas)
+    await userEvent.click(canvas.getByRole('button', { name: '문의 접수' }))
+    const email = canvas.getByRole('textbox', { name: '이메일' })
+    await waitFor(() => expect(email).toHaveFocus())
+    await expect(email).toHaveAttribute('aria-invalid', 'true')
+    await expect(email).toHaveAccessibleDescription(
+      '이메일 주소를 확인해 주세요.',
+    )
+    await expect(
+      canvas.getByRole('textbox', { name: '제목' }),
+    ).toHaveAccessibleDescription('제목을 확인해 주세요.')
+    await expect(canvas.getByLabelText('문의 내용')).toHaveValue(
+      '결제 승인 내역을 확인해 주세요.',
+    )
+    await expect(args.submit).toHaveBeenCalledOnce()
+    await expect(args.onSubmitted).not.toHaveBeenCalled()
+  },
+}
+
+export const GenericValidationFailure: Story = {
+  args: {
+    submit: fn(async () => {
+      throw new ApiError('invalid', 400, undefined, 'req-generic-1')
+    }),
+  },
+  play: async ({ canvas, args }) => {
+    await fillValidRequest(canvas)
+    await userEvent.click(canvas.getByRole('button', { name: '문의 접수' }))
+    await expect(
+      await canvas.findByText('필수 항목과 입력값을 확인해 주세요.'),
+    ).toBeVisible()
+    await expect(canvas.getByText('요청 ID: req-generic-1')).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: '양식과 동의 내용 다시 확인' }),
+    ).not.toBeInTheDocument()
+    await expect(canvas.getByLabelText('문의 내용')).toBeEnabled()
+    await expect(args.submit).toHaveBeenCalledOnce()
+  },
+}
+
 const formId = '22222222-2222-4222-8222-222222222222'
 const refund = {
   field: {
