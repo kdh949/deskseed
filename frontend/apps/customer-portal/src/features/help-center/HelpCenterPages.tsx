@@ -4,9 +4,16 @@ import { isHelpScopeReady, useHelpScope } from './useHelpScope'
 import {
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type FormEvent,
+} from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   CustomerIcon,
@@ -139,6 +146,8 @@ export function HelpCenterHomePage() {
 }
 
 export function HelpSearchPage() {
+  const queryClient = useQueryClient()
+  const searchInput = useRef<HTMLInputElement>(null)
   const scope = useHelpScope()
   const [parameters, setParameters] = useSearchParams()
   const initial = parameters.get('q') ?? ''
@@ -148,6 +157,7 @@ export function HelpSearchPage() {
   const results = useInfiniteQuery({
     enabled: isHelpScopeReady(scope) && Boolean(normalized),
     queryKey: [...scope, 'search', normalized],
+    retry: false,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       searchHelpArticles(normalized, pageParam, signal),
@@ -155,6 +165,17 @@ export function HelpSearchPage() {
       page.hasMore ? (page.nextCursor ?? undefined) : undefined,
   })
   const hits = results.data?.pages.flatMap((page) => page.items) ?? []
+  const rejectedPage =
+    results.isFetchNextPageError &&
+    results.error instanceof HelpApiError &&
+    results.error.status === 400
+  const restart = () => {
+    void queryClient.resetQueries({
+      queryKey: [...scope, 'search', normalized],
+      exact: true,
+    })
+    searchInput.current?.focus()
+  }
   const submit = (event: FormEvent) => {
     event.preventDefault()
     setParameters(query.trim() ? { q: query.trim() } : {})
@@ -176,6 +197,7 @@ export function HelpSearchPage() {
           <CustomerIcon name="search" />
           <input
             aria-label="도움말 검색어"
+            ref={searchInput}
             onChange={(event) => setQuery(event.target.value)}
             value={query}
           />
@@ -188,40 +210,56 @@ export function HelpSearchPage() {
         ) : null}
         {results.isError ? (
           <ScreenState
-            action={<RetryButton onClick={() => void results.refetch()} />}
+            action={
+              rejectedPage ? (
+                <DsButton onClick={restart}>처음부터 다시 검색</DsButton>
+              ) : (
+                <RetryButton
+                  onClick={() => {
+                    if (results.isFetchNextPageError)
+                      void results.fetchNextPage()
+                    else void results.refetch()
+                  }}
+                />
+              )
+            }
             kind="error"
-            title="검색 결과를 불러올 수 없습니다."
+            title={
+              rejectedPage
+                ? '검색 결과를 다시 확인해 주세요.'
+                : results.isFetchNextPageError
+                  ? '추가 검색 결과를 불러올 수 없습니다.'
+                  : '검색 결과를 불러올 수 없습니다.'
+            }
+            description={
+              rejectedPage
+                ? '같은 검색어로 첫 페이지부터 다시 검색할 수 있습니다.'
+                : undefined
+            }
           />
         ) : null}
-        {results.data ? (
+        {results.data && (!results.isError || results.isFetchNextPageError) ? (
           hits.length ? (
-            <div className="customer-search-results">
-              {hits.map((item, index) => (
-                <Link
-                  className={index === 0 ? 'is-top' : ''}
-                  key={item.articleSlug}
-                  to={`/articles/${item.articleSlug}`}
-                >
-                  <span>
-                    <CustomerIcon
-                      name={index === 0 ? 'inbox' : 'book'}
-                      size="lg"
-                    />
-                  </span>
-                  <div>
-                    {index === 0 ? <small>가장 관련 높은 결과</small> : null}
+            <ol className="customer-search-results" aria-label="검색 결과 목록">
+              {hits.map((item) => (
+                <li key={item.articleSlug}>
+                  <Link
+                    to={`/articles/${encodeURIComponent(item.articleSlug)}`}
+                  >
                     <h2>{item.title}</h2>
-                    <p>{item.excerpt}</p>
-                    <em>
-                      {[item.categoryTitle, item.sectionTitle]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </em>
-                  </div>
-                  <b aria-hidden="true">›</b>
-                </Link>
+                    <p>{highlightLiteralQuery(item.excerpt, normalized)}</p>
+                    {[item.categoryTitle, item.sectionTitle].filter(Boolean)
+                      .length > 0 && (
+                      <em>
+                        {[item.categoryTitle, item.sectionTitle]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </em>
+                    )}
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ol>
           ) : (
             <ScreenState
               description="다른 키워드로 검색하거나 지원팀에 문의해 주세요."
@@ -230,7 +268,7 @@ export function HelpSearchPage() {
             />
           )
         ) : null}
-        {results.hasNextPage && (
+        {results.hasNextPage && !results.isError && (
           <DsButton
             disabled={results.isFetchingNextPage}
             onClick={() => void results.fetchNextPage()}
@@ -656,4 +694,25 @@ function HelpSessionState() {
       />
     </div>
   )
+}
+
+function highlightLiteralQuery(text: string, query: string) {
+  if (!query) return text
+  const parts: ReactNode[] = []
+  let start = 0
+  for (let index = 0; index <= text.length - query.length; index++) {
+    if (
+      text.slice(index, index + query.length).toLowerCase() !==
+      query.toLowerCase()
+    )
+      continue
+    parts.push(
+      text.slice(start, index),
+      <mark key={index}>{text.slice(index, index + query.length)}</mark>,
+    )
+    start = index + query.length
+    index = start - 1
+  }
+  parts.push(text.slice(start))
+  return parts
 }

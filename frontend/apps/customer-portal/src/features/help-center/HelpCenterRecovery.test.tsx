@@ -214,3 +214,70 @@ it.each([404, 503])(
     ).toBeVisible()
   },
 )
+
+it('restarts rejected pagination without cursor and restores search focus', async () => {
+  const bodies: Array<{ query: string; cursor?: string }> = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/categories')) return Response.json([])
+      const body = JSON.parse(init!.body as string)
+      bodies.push(body)
+      if (body.cursor) return new Response(null, { status: 400 })
+      return Response.json({
+        items: [
+          {
+            articleSlug: 'reset',
+            title: '재검색 문서',
+            excerpt: '비밀번호 안내',
+          },
+        ],
+        hasMore: true,
+        nextCursor: 'opaque-v2',
+      })
+    }),
+  )
+  app('/search?q=비밀번호')
+  await userEvent.click(
+    await screen.findByRole('button', { name: '검색 결과 더 보기' }),
+  )
+  await userEvent.click(
+    await screen.findByRole('button', { name: '처음부터 다시 검색' }),
+  )
+  expect(screen.getByRole('textbox', { name: '도움말 검색어' })).toHaveFocus()
+  expect(
+    await screen.findByRole('heading', { name: '재검색 문서' }),
+  ).toBeVisible()
+  expect(bodies.map((body) => body.cursor)).toEqual([
+    undefined,
+    'opaque-v2',
+    undefined,
+  ])
+})
+it('renders excerpt markup as text and highlights literal punctuation safely', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url.endsWith('/categories')
+        ? Response.json([])
+        : Response.json({
+            items: [
+              {
+                articleSlug: 'safe',
+                title: '안전한 발췌',
+                excerpt: '<img src=x onerror=alert(1)> (a+b) 찾기',
+              },
+            ],
+            hasMore: false,
+            nextCursor: null,
+          }),
+    ),
+  )
+  const { container } = app('/search?q=%28a%2Bb%29')
+  await screen.findByRole('heading', { name: '안전한 발췌' })
+  expect(container.querySelector('mark')).toHaveTextContent('(a+b)')
+  expect(container.querySelector('.customer-search-results img')).toBeNull()
+  expect(container.querySelector('.customer-search-results')).toHaveTextContent(
+    '<img src=x onerror=alert(1)>',
+  )
+})
