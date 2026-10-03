@@ -91,10 +91,10 @@
 .knowledge-editor h2 {
   scroll-margin-top: var(--ds-space-300);
 }
-.knowledge-page h1 {
+.knowledge-admin h1 {
   font-size: var(--ds-font-lg);
 }
-.knowledge-page h2 {
+.knowledge-admin h2 {
   font-size: var(--ds-font-md);
 }
 @media (max-width: 800px) {

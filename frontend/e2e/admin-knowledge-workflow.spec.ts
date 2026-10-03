@@ -99,13 +99,15 @@ for (const width of [1280, 1440, 1920])
     await expect(page.getByText('검색 결과 51개 · 현재 목록 1개')).toBeVisible()
     await page.getByRole('button', { name: '다음 목록' }).click()
     await expect(page.getByRole('button', { name: '첫 목록' })).toBeVisible()
-    expect(requests.at(-1)?.cursor).toBe('opaque-next')
+    await expect.poll(() => requests.at(-1)?.cursor).toBe('opaque-next')
     await page.getByLabel('문서 상태 필터').selectOption('DRAFT')
     await expect(page.getByRole('button', { name: '첫 목록' })).toHaveCount(0)
-    expect(requests.at(-1)).toMatchObject({
-      query: '전체 검색 비공개어',
-      lifecycle: 'DRAFT',
-    })
+    await expect
+      .poll(() => requests.at(-1))
+      .toMatchObject({
+        query: '전체 검색 비공개어',
+        lifecycle: 'DRAFT',
+      })
     expect(requests.at(-1)?.cursor).toBeUndefined()
     expect(page.url()).not.toContain('검색')
     expect(

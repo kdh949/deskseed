@@ -311,7 +311,7 @@ export function AdminKnowledgePage() {
   }
   const failure = error || categories.error || sections.error || articles.error
   return (
-    <main className="knowledge-page">
+    <main className="knowledge-page knowledge-admin">
       <header>
         <h1>지식 문서</h1>
         <p>도움말을 분류하고 초안 작성·검토·발행을 관리합니다.</p>
