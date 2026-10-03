@@ -5534,6 +5534,12 @@ paths:
   /api/v1/help/search:
     post:
       operationId: searchHelpArticles
+      x-deskseed-planned-search:
+        status: BLUEPRINT
+        description: 현재 audience를 통과한 published 문서를 기존 title A·summary B·body C 가중 벡터의 ts_rank 내림차순으로 정렬합니다. 동점은 revision.created_at·article.id
+          내림차순입니다. rank/시각/ID 및 query·reader 범위를 결합한 signed v2 cursor를 사용하고 이전 v1·다른 query/reader·변조 cursor는 400입니다. section/admin
+          목록의 v1 cursor는 바꾸지 않습니다. excerpt는 summary/body의 일치 문맥 중심 최대 240 Unicode 문자 plain text입니다. HTML highlight를 넣지 않으며
+          일치 문맥이 없으면 시작 부분을 사용합니다. visible corpus가 바뀌는 동안 페이지 snapshot을 보장하지 않습니다.
       summary: 고객 Help Center 권한 필터 검색
       description: POST body query는 URL history나 ordinary log에 남기지 않습니다. SQL audience filter 뒤의 cursor·snippet만 반환하며 hidden
         문서는 count·rank·excerpt에 영향을 주지 않습니다.
@@ -5596,6 +5602,12 @@ paths:
   /api/v1/agent/knowledge/search:
     post:
       operationId: searchAgentKnowledge
+      x-deskseed-planned-search:
+        status: BLUEPRINT
+        description: 현재 audience를 통과한 published 문서를 기존 title A·summary B·body C 가중 벡터의 ts_rank 내림차순으로 정렬합니다. 동점은 revision.created_at·article.id
+          내림차순입니다. rank/시각/ID 및 query·reader 범위를 결합한 signed v2 cursor를 사용하고 이전 v1·다른 query/reader·변조 cursor는 400입니다. section/admin
+          목록의 v1 cursor는 바꾸지 않습니다. excerpt는 summary/body의 일치 문맥 중심 최대 240 Unicode 문자 plain text입니다. HTML highlight를 넣지 않으며
+          일치 문맥이 없으면 시작 부분을 사용합니다. visible corpus가 바뀌는 동안 페이지 snapshot을 보장하지 않습니다.
       summary: 상담사 PUBLIC·INTERNAL 지식 검색
       description: staff session 권한과 selected group audience를 SQL에서 확인하고 search access audit을 성공 응답 전에 기록합니다. audit 저장 실패는
         503으로 fail closed합니다.
@@ -5661,6 +5673,12 @@ paths:
   /api/v1/agent/tickets/{ticketNumber}/knowledge-suggestions:
     get:
       operationId: suggestAgentKnowledgeForTicket
+      x-deskseed-planned-search:
+        status: BLUEPRINT
+        description: 현재 audience를 통과한 published 문서를 기존 title A·summary B·body C 가중 벡터의 ts_rank 내림차순으로 정렬합니다. 동점은 revision.created_at·article.id
+          내림차순입니다. rank/시각/ID 및 query·reader 범위를 결합한 signed v2 cursor를 사용하고 이전 v1·다른 query/reader·변조 cursor는 400입니다. section/admin
+          목록의 v1 cursor는 바꾸지 않습니다. excerpt는 summary/body의 일치 문맥 중심 최대 240 Unicode 문자 plain text입니다. HTML highlight를 넣지 않으며
+          일치 문맥이 없으면 시작 부분을 사용합니다. visible corpus가 바뀌는 동안 페이지 snapshot을 보장하지 않습니다.
       summary: 티켓 공개 맥락 기반 지식 추천
       description: 서버가 subject와 bounded PUBLIC text만 query로 변환합니다. INTERNAL comment·raw query는 response, event, ordinary log에
         포함하지 않습니다.
