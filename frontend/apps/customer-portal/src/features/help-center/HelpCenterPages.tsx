@@ -633,39 +633,42 @@ export function HelpSectionPage() {
           />
         )
       )}
-      {first && (!section.isError || section.isFetchNextPageError) && (
-        <>
-          {!isAnnouncements && <h1>{first.title}</h1>}
-          <p>{first.description}</p>
-          {articles.length ? (
-            <ul>
-              {articles.map((article) => (
-                <li key={article.slug}>
-                  <Link to={`/articles/${encodeURIComponent(article.slug)}`}>
-                    {article.title}
-                  </Link>
-                  <p>{article.summary}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <ScreenState
-              kind="empty"
-              title={
-                isAnnouncements
-                  ? '등록된 공지사항이 없습니다.'
-                  : '등록된 문서가 없습니다.'
-              }
-            />
-          )}
-        </>
-      )}
+      {!missingAnnouncements &&
+        first &&
+        (!section.isError || section.isFetchNextPageError) && (
+          <>
+            {!isAnnouncements && <h1>{first.title}</h1>}
+            <p>{first.description}</p>
+            {articles.length ? (
+              <ul>
+                {articles.map((article) => (
+                  <li key={article.slug}>
+                    <Link to={`/articles/${encodeURIComponent(article.slug)}`}>
+                      {article.title}
+                    </Link>
+                    <p>{article.summary}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ScreenState
+                kind="empty"
+                title={
+                  isAnnouncements
+                    ? '등록된 공지사항이 없습니다.'
+                    : '등록된 문서가 없습니다.'
+                }
+              />
+            )}
+          </>
+        )}
       {isAnnouncements && (
         <p>
           <Link to="/">도움말 홈으로</Link>
         </p>
       )}
-      {section.hasNextPage &&
+      {!missingAnnouncements &&
+        section.hasNextPage &&
         (!section.isError || section.isFetchNextPageError) && (
           <DsButton
             disabled={section.isFetchingNextPage}

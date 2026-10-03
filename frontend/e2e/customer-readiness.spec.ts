@@ -65,6 +65,69 @@ for (const width of [390, 768]) {
   })
 }
 
+test('customer announcements removed while loading the next page', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/v1/customer/me')
+      return route.fulfill({ status: 401, json: {} })
+    if (url.pathname === '/api/v1/help/sections/announcements') {
+      if (url.searchParams.has('cursor'))
+        return route.fulfill({ status: 404, json: {} })
+      return route.fulfill({
+        json: {
+          id: section.id,
+          categoryId: category.id,
+          slug: 'announcements',
+          title: '공지사항',
+          description: '',
+          articles: [
+            {
+              slug: 'customer-update',
+              title: '고객 포털 업데이트 안내',
+              summary: '합성 공지',
+              audience: 'PUBLIC',
+            },
+          ],
+          hasMore: true,
+          nextCursor: 'announcement-page-2',
+        },
+      })
+    }
+    throw new Error(`Unexpected ${route.request().method()} ${url.pathname}`)
+  })
+  await page.goto(
+    `${process.env.PLAYWRIGHT_CUSTOMER_BASE_URL ?? ''}/sections/announcements`,
+  )
+  await expect(
+    page.getByRole('link', { name: '고객 포털 업데이트 안내' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '문서 더 보기' }).click()
+  await expect(page.getByText('등록된 공지사항이 없습니다.')).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: '고객 포털 업데이트 안내' }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '문서 더 보기' })).toHaveCount(
+    0,
+  )
+  await expect(
+    page.getByRole('heading', { name: '공지사항', level: 1 }),
+  ).toBeVisible()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await page.screenshot({
+    path: testInfo.outputPath('announcements-next-page-404.png'),
+    fullPage: true,
+  })
+  await page.getByRole('button', { name: '다시 시도' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(
+    page.getByRole('link', { name: '고객 포털 업데이트 안내' }),
+  ).toBeVisible()
+  await expect(page.getByText('등록된 공지사항이 없습니다.')).toHaveCount(0)
+})
+
 test('admin read-only readiness uses filters and keeps failure distinct at 1448', async ({
   page,
 }, testInfo) => {

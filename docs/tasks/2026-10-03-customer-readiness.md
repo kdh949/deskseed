@@ -47,3 +47,13 @@ MCP previews (전체 변경 fallback 포함):
 ### 통합 E2E 후속 보완
 
 선택 환경변수 `PLAYWRIGHT_CUSTOMER_BASE_URL`이 없는 기본 CI/dev 환경에서도 `/`로 이동하도록 빈 문자열 fallback을 추가했다. 제품 코드 변경은 없다. 해당 변수를 지정하지 않고 기존 고객 dev 서버(45285)를 baseURL로 사용한 `customer-readiness.spec.ts --grep 'customer announcements'` 390/768 두 시나리오와 변경 파일 lint/format 통과.
+
+### 최종 고객 여정 검수 보완
+
+공지 첫 페이지를 읽은 뒤 추가 페이지가 404로 바뀌면 빈 상태와 이전 성공 목록이 함께 표시되던 조건을 수정했다. 이전 목록과 더 보기를 숨기고 공지 제목·재확인·홈 복귀는 유지한다. 키보드 재확인이 성공하면 목록으로 돌아온다. REQ-KB-001/004, UI-004/005/006 범위의 기존 error 계약 처리이며 숨겨진 문서나 운영 구성 상세는 노출하지 않는다.
+
+- Passed: 관련 MCP story 4개+a11y, 변경/소비자 조회와 preview, mock Chromium 고객 E2E 3개(390/768 초기404·503 및390 추가페이지404·키보드복구), 타입검사, 변경 파일 lint/format, `git diff --check`. 새390 캡처에서 빈 상태와 기존 목록이 중복되지 않고 제목/복구 경로가 남는 것을 확인했다.
+- P02 최신 보완(가입 정책 미준비 안내·로그인 복귀)을 먼저 병합하여 PR 기반을 최신화했다. 실제 서버 상태변경·배포·SMTP·Firefox/WebKit·pixel baseline 비교는 재실행하지 않았다.
+- http://localhost:6024/?statuses=affected;modified;new
+- http://localhost:6024/?path=/story/customer-portal-help-center-pages--announcements-removed-during-pagination
+- Passed: P02를 포함한 고객 full MCP 79개+a11y. 최초 reused Storybook의 full 실행은 결과 반환이 멈춰 완료로 간주하지 않았고, 소유 서버만 재시작한 fresh 실행이 21파일/79개 모두 통과 결과를 반환했다.

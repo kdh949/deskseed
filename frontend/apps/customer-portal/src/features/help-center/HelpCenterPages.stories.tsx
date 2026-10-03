@@ -614,3 +614,49 @@ export const AnnouncementsFailureRecovery: Story = {
     ).toBeVisible()
   },
 }
+
+export const AnnouncementsRemovedDuringPagination: Story = {
+  ...AnnouncementsNotFound,
+  parameters: {
+    msw: {
+      handlers: {
+        helpAnnouncements: http.get(
+          '/api/v1/help/sections/announcements',
+          ({ request }) =>
+            new URL(request.url).searchParams.has('cursor')
+              ? HttpResponse.json({}, { status: 404 })
+              : HttpResponse.json({
+                  ...announcements,
+                  hasMore: true,
+                  nextCursor: 'announcement-page-2',
+                }),
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '문서 더 보기' }))
+    await expect(
+      await canvas.findByText('등록된 공지사항이 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('link', { name: '고객 포털 업데이트 안내' }),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.queryByRole('button', { name: '문서 더 보기' }),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('heading', { name: '공지사항', level: 1 }),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '다시 시도' }))
+    await expect(
+      await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByText('등록된 공지사항이 없습니다.'),
+    ).not.toBeInTheDocument()
+  },
+}
