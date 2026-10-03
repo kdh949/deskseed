@@ -180,6 +180,60 @@ export const DrawerPreservesInputFocus: Story = {
   },
 }
 
+export const RetainedDrawer: Story = {
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'SeedDrawer.keepMounted?: boolean defaults to false. Use true for local work that must survive closing a panel. Closed content is hidden and owns no focus trap; children remain mounted and callers still own authorization and data lifecycle.',
+      },
+    },
+  },
+  render: function RetainedDrawerDemo() {
+    const [open, setOpen] = useState(false)
+    return (
+      <>
+        <SeedButton onClick={() => setOpen(true)}>작성 패널 열기</SeedButton>
+        <SeedDrawer
+          keepMounted
+          open={open}
+          onClose={() => setOpen(false)}
+          title="작성 내용 유지"
+        >
+          <RetainedInput />
+        </SeedDrawer>
+      </>
+    )
+  },
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole('button', { name: '작성 패널 열기' })
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.click(trigger)
+    await userEvent.type(
+      canvas.getByLabelText('진행 중인 협업'),
+      '고객에게 확인할 내용',
+    )
+    await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.click(trigger)
+    await expect(canvas.getByLabelText('진행 중인 협업')).toHaveValue(
+      '고객에게 확인할 내용',
+    )
+  },
+}
+
+function RetainedInput() {
+  const [value, setValue] = useState('')
+  return (
+    <SeedTextField
+      label="진행 중인 협업"
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+    />
+  )
+}
+
 export const NestedDrawerKeyboard: Story = {
   render: function NestedDrawer() {
     const [outer, setOuter] = useState(false)

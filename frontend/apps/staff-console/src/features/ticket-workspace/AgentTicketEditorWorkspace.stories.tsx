@@ -384,6 +384,81 @@ export const Writable: Story = {
   },
 }
 
+export const LatestActivity: Story = {
+  args: {
+    detail: {
+      ...detail,
+      history: [1, 6, 2, 5, 3, 4].map((hour) => ({
+        id: `activity-${hour}`,
+        eventType: 'TICKET_UPDATED',
+        actor: { id: 'staff-3001', type: 'STAFF', displayName: '상담사 A' },
+        occurredAt: `2026-08-15T0${hour}:00:00Z`,
+      })),
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
+    )
+    const panel = canvas.getByRole('tabpanel', { name: '고객' })
+    const times = () =>
+      Array.from(panel.querySelectorAll('time')).map((item) => item.dateTime)
+    await expect(times()).toEqual(
+      [6, 5, 4, 3].map((hour) => `2026-08-15T0${hour}:00:00Z`),
+    )
+    await userEvent.click(
+      within(panel).getByRole('button', { name: '활동 6건 모두 보기' }),
+    )
+    await expect(times()).toHaveLength(6)
+    await userEvent.click(
+      within(panel).getByRole('button', { name: '최근 4건만 보기' }),
+    )
+    await expect(times()).toHaveLength(4)
+  },
+}
+
+export const ContextPreservesWork: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole('button', {
+      name: '협업 작업',
+    })
+    await userEvent.click(trigger)
+    const dialog = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    const context = within(dialog)
+    await expect(context.getByRole('tab', { name: '협업' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await userEvent.click(
+      context.getByRole('button', { name: '협업 메모 작성' }),
+    )
+    await userEvent.type(
+      context.getByRole('textbox', { name: '협업 메모' }),
+      '확인 중인 내용은 유지합니다.',
+    )
+    const collaborationTab = context.getByRole('tab', {
+      name: '협업',
+    })
+    collaborationTab.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect(context.getByRole('tab', { name: '자료' })).toHaveFocus()
+    await expect(
+      context.queryByRole('textbox', { name: '협업 메모' }),
+    ).not.toBeInTheDocument()
+    await userEvent.keyboard('{ArrowLeft}')
+    await expect(
+      context.getByRole('textbox', { name: '협업 메모' }),
+    ).toHaveValue('확인 중인 내용은 유지합니다.')
+    await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.click(trigger)
+    await expect(
+      canvas.getByRole('textbox', { name: '협업 메모' }),
+    ).toHaveValue('확인 중인 내용은 유지합니다.')
+  },
+}
+
 export const HundredCommentPerformance: Story = {
   args: {
     detail: hundredCommentDetail,
@@ -956,6 +1031,7 @@ export const CollaborationDenied: Story = {
       canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
     )
     const drawer = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    await userEvent.click(within(drawer).getByRole('tab', { name: '협업' }))
     await expect(
       await within(drawer).findByText('협업 메모를 볼 권한이 없습니다'),
     ).toBeVisible()
@@ -982,6 +1058,7 @@ export const ExternalReferencesEmpty: Story = {
       canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
     )
     const drawer = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    await userEvent.click(within(drawer).getByRole('tab', { name: '자료' }))
     await expect(
       await within(drawer).findByText('연결된 외부 참조가 없습니다.'),
     ).toBeVisible()
@@ -1010,6 +1087,7 @@ export const ExternalReferencesDenied: Story = {
       canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
     )
     const drawer = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    await userEvent.click(within(drawer).getByRole('tab', { name: '자료' }))
     await expect(
       await within(drawer).findByText(/외부 참조를 볼 권한이 없습니다/),
     ).toBeVisible()
@@ -1038,6 +1116,7 @@ export const ExternalReferencesError: Story = {
       canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
     )
     const drawer = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    await userEvent.click(within(drawer).getByRole('tab', { name: '자료' }))
     await expect(await within(drawer).findByRole('alert')).toHaveTextContent(
       /외부 참조를 불러오지 못했습니다/,
     )
@@ -1082,6 +1161,7 @@ export const InsertKnowledgeLinkPreservesReply: Story = {
       canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
     )
     const context = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    await userEvent.click(within(context).getByRole('tab', { name: '자료' }))
     await userEvent.click(
       within(context).getByRole('button', { name: '문서 검색 열기' }),
     )

@@ -690,6 +690,7 @@ export function SeedComposer({
 }
 
 export function SeedWorkspaceHeader({
+  actions,
   assignee,
   contextButtonRef,
   copiedMessage,
@@ -703,6 +704,7 @@ export function SeedWorkspaceHeader({
   ticketLabel,
   title,
 }: {
+  actions?: ReactNode
   assignee?: { initials: string; label: string }
   contextButtonRef?: RefObject<HTMLButtonElement>
   copiedMessage?: string
@@ -761,6 +763,7 @@ export function SeedWorkspaceHeader({
         )}
       </div>
       <div className="seed-workspace-header__actions">
+        {actions}
         {status}
         {priority && (
           <span
@@ -981,7 +984,6 @@ export function SeedTicketWorkspaceShell({
         <div className="seed-ticket-workspace__conversation">
           {conversation}
         </div>
-        <aside className="seed-ticket-workspace__context">{context}</aside>
         {onContextOpen && (
           <nav
             aria-label="티켓 정보 패널"
@@ -1000,6 +1002,7 @@ export function SeedTicketWorkspaceShell({
         description="고객, 관련 티켓, 외부 참조와 최근 활동을 확인합니다."
         onClose={onContextClose}
         open={contextOpen}
+        keepMounted
         returnFocusRef={contextReturnFocusRef}
         title="티켓 컨텍스트"
       >

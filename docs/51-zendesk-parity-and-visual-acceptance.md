@@ -265,4 +265,8 @@ A screenshot that looks similar but produces a worse or unsafe workflow fails ac
 
 사용자가 선택한 3번 Deskseed 합성 시안을 현재 상담 화면의 비교 기준으로 사용한다. 전역 rail 64px, 속성 320px, 모든 데스크톱 폭에서 기본 접힌 context drawer와 고정 composer를 사용한다. 현재 제공되는 menu, 대화 필터, 초안 저장, 공개/내부 구분 및 실제 SLA 상태는 유지한다. 다중 티켓 탭과 독립 context tab은 이번 시각 개편에서 새로 구현하지 않는다. 선택 시안과 비교할 때 이 기능 차이는 의도된 제품 경계로 기록한다.
 
-구현/검증 기록: `docs/tasks/2026-09-05-agent-conversation-focused-redesign.md`, `design-qa.md`. 기존 Darwin/Linux 픽셀 기준선은 이번 작업에서 자동 갱신하지 않으며 최종 화면 검토 후 별도로 반영한다.
+### 2026-10-03 문맥 동선 보완
+
+사용자가 승인한 UX 개선 P10은 위 시안의 대화 중심 배치를 재사용하며 독립 context tab을 고객/협업/자료로 보완한다. 숨긴 context와 drawer를 이중 mount하지 않고 한 작성 상태를 유지한다. 최신 main의 읽기 쉬운 속성 글꼴과 긴 제목 줄바꿈을 보존한다. UI-005 baseline은 해당 배치·문맥 동선의 1280/1440/1920 렌더, keyboard/focus, page-level Axe 확인 후 갱신하며 Darwin/Linux 각각의 실제 렌더를 사용한다. 다중 티켓 탭과 패널 크기 조정은 P11에서 별도로 검증한다.
+
+구현/검증 기록: `docs/tasks/2026-09-05-agent-conversation-focused-redesign.md`, `docs/tasks/2026-10-03-agent-context-ux.md`, `design-qa.md`. 2026-09-05에서 보류한 Darwin/Linux 픽셀 기준선은 P10의 실제 렌더 검증과 PR 화면 검토 대상으로 반영한다. 갱신된 기준선 자체가 사람의 최종 시각 승인을 의미하지 않는다.

@@ -253,6 +253,9 @@ const meta = {
         http.get('/api/v1/agent/tickets/1042/external-references', () =>
           HttpResponse.json(externalReferences),
         ),
+        http.get('/api/v1/agent/tickets/1042/ai/jobs', () =>
+          HttpResponse.json({ items: [] }),
+        ),
         http.get('/api/v1/agent/tickets/1042/collaboration-notes', () =>
           HttpResponse.json({
             items: [

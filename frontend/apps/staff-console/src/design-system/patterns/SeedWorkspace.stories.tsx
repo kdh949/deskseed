@@ -213,6 +213,11 @@ function TicketWorkspaceAnatomyPattern() {
       }
       header={
         <SeedWorkspaceHeader
+          actions={
+            <SeedButton onClick={() => setContextOpen(true)}>
+              협업 작업
+            </SeedButton>
+          }
           requester={{
             label: 'Jennifer Ward',
             email: 'jennifer.ward@example.com',
@@ -252,11 +257,11 @@ const meta = {
         component: `
 Canonical staff workspace patterns. Use the icon rail for global navigation; every item retains its label as an accessible name and native tooltip. SeedBrandLockup compact renders the existing Deskseed mark.
 
-SeedWorkspaceHeader: title and ticketLabel identify the ticket; status is the current server state. Optional requester: { label: string; email?: string } adds the requester row. onOpenContext opens the existing context drawer through the labelled customer-info action. contextButtonRef is an optional return-focus anchor. copiedMessage/onCopyTicketLabel and onRefresh preserve copy/refresh actions. Existing optional assignee, priority and sla remain compatible, but avoid duplicating editable properties in the focused screen.
+SeedWorkspaceHeader: title and ticketLabel identify the ticket; status is the current server state. Optional requester: { label: string; email?: string } adds the requester row. Optional actions: ReactNode composes ticket-level actions beside status; orchestration stays in the feature. onOpenContext opens the existing context drawer through the labelled customer-info action. contextButtonRef is an optional return-focus anchor. copiedMessage/onCopyTicketLabel and onRefresh preserve copy/refresh actions. Existing optional assignee, priority and sla remain compatible, but avoid duplicating editable properties in the focused screen.
 
 SeedPropertyStack: title, children and optional action compose the property panel. Optional details: { summary: string; content: ReactNode } puts secondary read-only metadata in a native keyboard-accessible disclosure. Never place status, priority, group or assignee in this disclosure.
 
-SeedTicketWorkspaceShell: header, properties, conversation and context are ReactNode slots. contextOpen defaults to false at every desktop width. onContextOpen optionally adds the right-side context rail action; onContextClose closes the drawer. contextReturnFocusRef is optional: without it the drawer restores focus to whichever action opened it. Keep contextOpen in layout state and preserve PUBLIC/INTERNAL drafts in the editor model.
+SeedTicketWorkspaceShell: header, properties, conversation and context are ReactNode slots. contextOpen defaults to false at every desktop width. onContextOpen optionally adds the right-side context rail action; onContextClose closes the drawer. contextReturnFocusRef is optional: without it the drawer restores focus to whichever action opened it. Context is mounted once in a keepMounted drawer; closing hides it from keyboard/assistive technology while retaining local work. Keep contextOpen in layout state and preserve PUBLIC/INTERNAL drafts in the editor model.
 `,
       },
     },
@@ -270,6 +275,17 @@ type Story = StoryObj<typeof meta>
 export const QueueShell: Story = {}
 export const TicketWorkspaceAnatomy: Story = {
   render: () => <TicketWorkspaceAnatomyPattern />,
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole('button', {
+      name: '협업 작업',
+    })
+    await userEvent.click(trigger)
+    await expect(
+      canvas.getByRole('dialog', { name: '티켓 컨텍스트' }),
+    ).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+  },
 }
 export const Composer: Story = {
   render: () => (
