@@ -1,7 +1,13 @@
 import { useState } from 'react'
+import { useBeforeUnload, useBlocker } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ApiError } from '../../api/client'
-import { DsButton, Notification, ScreenState } from '../../design-system'
+import {
+  DsButton,
+  DsDrawer,
+  Notification,
+  ScreenState,
+} from '../../design-system'
 import {
   ConsentDocumentEditor,
   ConsentDocumentView,
@@ -63,6 +69,44 @@ export function AdminCustomerConsentPage() {
   const archived =
     selected !== null && selected !== 'new' && selected.lifecycle === 'ARCHIVED'
   const editing = busy || dirty || mustRefresh
+  const blocker = useBlocker(editing)
+  useBeforeUnload((event) => {
+    if (!editing) return
+    event.preventDefault()
+    event.returnValue = ''
+  })
+  const navigationGuard = (
+    <DsDrawer
+      open={blocker.state === 'blocked'}
+      onClose={() => {
+        if (blocker.state === 'blocked') blocker.reset()
+      }}
+      title="정책 작성 화면을 떠날까요?"
+      description={
+        busy
+          ? '진행 중인 요청의 결과를 확인한 뒤 이동해 주세요.'
+          : '저장하지 않은 작성 내용과 확인하지 않은 요청 결과가 남아 있습니다.'
+      }
+    >
+      <div className="admin-form-actions">
+        <DsButton
+          onClick={() => {
+            if (blocker.state === 'blocked') blocker.reset()
+          }}
+        >
+          계속 작성
+        </DsButton>
+        <DsButton
+          disabled={busy}
+          onClick={() => {
+            if (blocker.state === 'blocked') blocker.proceed()
+          }}
+        >
+          작성 내용 버리고 이동
+        </DsButton>
+      </div>
+    </DsDrawer>
+  )
 
   function acceptPolicy(policy: ConsentPolicy) {
     const next = draftOf(policy)
@@ -177,12 +221,14 @@ export function AdminCustomerConsentPage() {
   if (policies.isPending)
     return (
       <main className="admin-page">
+        {navigationGuard}
         <ScreenState kind="loading" title="고객 동의 정책을 불러오는 중" />
       </main>
     )
   if (policies.isError)
     return (
       <main className="admin-page">
+        {navigationGuard}
         <ScreenState
           kind={
             policies.error instanceof ApiError && policies.error.status === 403
@@ -210,6 +256,7 @@ export function AdminCustomerConsentPage() {
     )
   return (
     <main className="admin-page" aria-label="고객 동의 정책 관리">
+      {navigationGuard}
       <header className="admin-page-header">
         <div>
           <h1>고객 동의 정책</h1>

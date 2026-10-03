@@ -126,6 +126,23 @@ for (const width of [1280, 1448]) {
     await page.getByLabel('정책 제목').fill('합성 검증 정책')
     await page.getByLabel('항목 1 내용').fill('합성 검증 문서')
     await page.getByLabel('필수 동의', { exact: true }).check()
+    if (width === 1280) {
+      await page
+        .getByRole('navigation', { name: '관리자 설정 메뉴' })
+        .getByRole('link', { name: '고객 접근', exact: true })
+        .click()
+      await expect(
+        page.getByRole('dialog', { name: '정책 작성 화면을 떠날까요?' }),
+      ).toBeVisible()
+      await page.getByRole('button', { name: '계속 작성' }).click()
+      await expect(page.getByLabel('정책 제목')).toHaveValue('합성 검증 정책')
+      const dialogEvent = page.waitForEvent('dialog')
+      void page.reload().catch(() => null)
+      const dialog = await dialogEvent
+      expect(dialog.type()).toBe('beforeunload')
+      await dialog.dismiss()
+      await expect(page.getByLabel('정책 제목')).toHaveValue('합성 검증 정책')
+    }
     await page.screenshot({
       path: testInfo.outputPath('policy-draft.png'),
       fullPage: true,

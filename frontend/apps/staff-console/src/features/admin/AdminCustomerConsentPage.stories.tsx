@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { Link, Route, Routes } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { http, HttpResponse, delay } from 'msw'
 import { expect, userEvent, waitFor } from 'storybook/test'
 import { setConfirmedStaffActor } from '../../api/client'
@@ -337,5 +339,104 @@ export const DocumentBlocks: Story = {
     )
     await userEvent.click(canvas.getByRole('button', { name: '초안 저장' }))
     await expect(await canvas.findByText(/초안을 저장했습니다/)).toBeVisible()
+  },
+}
+
+export const NavigationKeepsDraft: Story = {
+  render: () => (
+    <>
+      <Link to="/consent-destination">다른 관리 화면</Link>
+      <Routes>
+        <Route
+          path="/consent-destination"
+          element={<h1>다른 관리 화면으로 이동했습니다</h1>}
+        />
+        <Route path="*" element={<AdminCustomerConsentPage />} />
+      </Routes>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '정책 만들기' }),
+    )
+    await userEvent.type(canvas.getByLabelText('정책 제목'), '보존할 초안')
+    await userEvent.click(canvas.getByRole('link', { name: '다른 관리 화면' }))
+    await expect(
+      await canvas.findByRole('dialog', { name: '정책 작성 화면을 떠날까요?' }),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '계속 작성' }))
+    await expect(canvas.getByLabelText('정책 제목')).toHaveValue('보존할 초안')
+    await userEvent.click(canvas.getByRole('link', { name: '다른 관리 화면' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: '작성 내용 버리고 이동' }),
+    )
+    await expect(
+      canvas.getByRole('heading', { name: '다른 관리 화면으로 이동했습니다' }),
+    ).toBeVisible()
+  },
+}
+
+export const ListFailureKeepsDraft: Story = {
+  beforeEach: () => {
+    exists = true
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers.filter((handler) => handler.info.header !== `GET ${root}`),
+        (() => {
+          let reads = 0
+          return http.get(root, () => {
+            reads += 1
+            if (reads === 2) return new HttpResponse(null, { status: 503 })
+            return HttpResponse.json({
+              items: [
+                {
+                  ...policy,
+                  publishedVersion: null,
+                  required: true,
+                  displayOrder: 1,
+                },
+              ],
+              page: 0,
+              size: 20,
+              totalPages: 1,
+              totalCount: 1,
+            })
+          })
+        })(),
+      ],
+    },
+  },
+  render: function Render() {
+    const client = useQueryClient()
+    return (
+      <>
+        <button
+          onClick={() =>
+            void client.invalidateQueries({
+              queryKey: ['admin-consent-policies'],
+            })
+          }
+        >
+          목록 갱신
+        </button>
+        <AdminCustomerConsentPage />
+      </>
+    )
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: 'synthetic-terms 열기' }),
+    )
+    await userEvent.type(await canvas.findByLabelText('정책 제목'), ' 보존')
+    await userEvent.click(canvas.getByRole('button', { name: '목록 갱신' }))
+    await expect(
+      await canvas.findByText('고객 동의 정책을 불러올 수 없습니다.'),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '다시 확인' }))
+    await expect(await canvas.findByLabelText('정책 제목')).toHaveValue(
+      '합성 검증 정책 보존',
+    )
   },
 }

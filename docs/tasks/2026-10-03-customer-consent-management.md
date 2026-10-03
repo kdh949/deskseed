@@ -55,3 +55,10 @@ MCP preview (staff 5개/customer 3개 대표; 나머지는 changed-stories 필�
 - http://localhost:6007/?statuses=affected;modified;new
 
 CONSENT-001/002의 frontend 경계와 UI-002/004/005/006을 위 근거로 확인했다. 실제 서버 gate 전체의 재실행이나 운영 준비 완료를 주장하지 않는다. migration/계약/의존성 변화 없이 UI commit revert로 복구한다.
+
+### 리뷰 보완
+
+관리자 sidebar/뒤로가기 등 router 이탈은 기존 `useBlocker`와 `DsDrawer`, 새로고침/창 닫기는 `useBeforeUnload`로 보호한다. 처리 중에는 이탈 확정을 막으며 draft는 계속 메모리에만 보관한다. 목록 background refetch가 실패하면 error 화면을 표시하지만 재확인 후 같은 작성안이 복구된다. 이탈 취소/확정 및 query error 복구 story 2개를 추가했고 staff full MCP 301개+a11y, 타입/staff build/lint/format과 E2E 4개를 재통과했다. E2E는 관리자 메뉴 이탈 취소와 실제 beforeunload 경고 취소 후 값 유지도 확인했다. 기존 4fd4cd50 CI gate는 통과했으며 후속 보완 커밋은 별도 CI를 확인한다.
+
+- http://localhost:6009/?path=/story/06-admin-admin-customer-consent-page--navigation-keeps-draft
+- http://localhost:6009/?path=/story/06-admin-admin-customer-consent-page--list-failure-keeps-draft
