@@ -410,7 +410,8 @@ export const SaveTargetLabels: Story = {
     const editor = await canvas.findByRole('textbox', {
       name: '공개 답변 내용',
     })
-    await userEvent.type(editor, '변경한 상태와 함께 보낼 답변')
+    await userEvent.click(editor)
+    await userEvent.paste('변경한 상태와 함께 보낼 답변')
     await expect(
       canvas.getByRole('button', { name: '답변과 변경사항 저장' }),
     ).toBeEnabled()
@@ -458,7 +459,9 @@ export const ValidationFeedback: Story = {
     const editor = await canvas.findByRole('textbox', {
       name: '공개 답변 내용',
     })
-    await userEvent.type(editor, '실패해도 보존하는 답변')
+    await userEvent.click(editor)
+    await userEvent.paste('실패해도 보존하는 답변')
+    await expect(editor).toHaveTextContent('실패해도 보존하는 답변')
     await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
     await expect(
       await canvas.findByText(
@@ -508,7 +511,9 @@ export const BackgroundOwnershipUpdate: Story = {
     const editor = await canvas.findByRole('textbox', {
       name: '공개 답변 내용',
     })
-    await userEvent.type(editor, '이관 결과 조회 중에도 보존할 답변')
+    await userEvent.click(editor)
+    await userEvent.paste('이관 결과 조회 중에도 보존할 답변')
+    await expect(editor).toHaveTextContent('이관 결과 조회 중에도 보존할 답변')
     await userEvent.click(
       canvas.getByRole('button', { name: '이관 완료 조회' }),
     )
