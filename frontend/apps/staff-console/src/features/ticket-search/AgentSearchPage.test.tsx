@@ -102,8 +102,8 @@ describe('AgentSearchPage', () => {
     )
 
     renderPage()
-    await user.type(screen.getByLabelText('서버 전체 티켓 검색어'), '중복 결제')
-    await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
+    await user.type(screen.getByLabelText('티켓 검색어'), '중복 결제')
+    await user.click(screen.getByRole('button', { name: '티켓 검색' }))
 
     expect(await screen.findByText('결과 2개 이상')).toBeVisible()
     const firstSearch = requests.find((request) =>
@@ -168,9 +168,9 @@ describe('AgentSearchPage', () => {
       }),
     )
     renderPage()
-    await user.type(screen.getByLabelText('서버 전체 티켓 검색어'), '결제')
+    await user.type(screen.getByLabelText('티켓 검색어'), '결제')
     await user.selectOptions(screen.getByLabelText('상태 검색 필터'), 'OPEN')
-    await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
+    await user.click(screen.getByRole('button', { name: '티켓 검색' }))
     await screen.findByText('결과 3개 이상')
 
     const links = screen.getAllByRole('link', { name: /티켓 #10/ })
@@ -180,14 +180,21 @@ describe('AgentSearchPage', () => {
     ])
     await user.click(screen.getByRole('button', { name: '다음 페이지' }))
     await waitFor(() => expect(searches).toHaveLength(2))
+    expect(searches[1]?.interactionId).toBe(searches[0]?.interactionId)
     await user.selectOptions(screen.getByLabelText('상태 검색 필터'), 'SOLVED')
+    await user.clear(screen.getByLabelText('티켓 검색어'))
+    await user.type(screen.getByLabelText('티켓 검색어'), '환불')
     await new Promise((resolve) => window.setTimeout(resolve, 0))
     expect(searches).toHaveLength(2)
+    expect(
+      screen.getByRole('region', { name: '적용된 검색 조건' }),
+    ).toHaveTextContent('검색어: 결제')
 
     const previousInteraction = searches[1]?.interactionId
-    await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
+    await user.click(screen.getByRole('button', { name: '검색 조건 적용' }))
     await waitFor(() => expect(searches).toHaveLength(3))
     expect(searches[2]?.body).toMatchObject({
+      query: '환불',
       filters: { status: 'SOLVED' },
       cursor: null,
     })
@@ -197,11 +204,91 @@ describe('AgentSearchPage', () => {
       screen.getByLabelText('정렬 검색 필터'),
       'score:desc,ticketNumber:desc',
     )
+    expect(searches).toHaveLength(3)
+    expect(
+      screen.getByText('아직 적용하지 않은 검색 조건이 있습니다'),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('region', { name: '적용된 검색 조건' }),
+    ).toHaveTextContent('최근 업데이트 순')
+    await user.click(screen.getByRole('button', { name: '검색 조건 적용' }))
     await waitFor(() => expect(searches).toHaveLength(4))
     expect(searches[3]?.body).toMatchObject({
       sort: 'score:desc,ticketNumber:desc',
       cursor: null,
     })
+    expect(
+      screen.queryByText('아직 적용하지 않은 검색 조건이 있습니다'),
+    ).toBeNull()
+    expect(
+      screen.getByRole('region', { name: '적용된 검색 조건' }),
+    ).toHaveTextContent('관련도 높은 순')
+    await user.click(screen.getByRole('button', { name: '필터·정렬 초기화' }))
+    expect(searches).toHaveLength(4)
+    expect(screen.getByLabelText('티켓 검색어')).toHaveValue('환불')
+    expect(
+      screen.getByRole('region', { name: '적용된 검색 조건' }),
+    ).toHaveTextContent('상태: 해결')
+    await user.click(screen.getByRole('button', { name: '검색 조건 적용' }))
+    await waitFor(() => expect(searches).toHaveLength(5))
+    expect(searches[4]?.body).toMatchObject({
+      query: '환불',
+      filters: {},
+      cursor: null,
+      sort: 'updatedAt:desc,ticketNumber:desc',
+    })
+  })
+
+  it('retries the applied input after failure without discarding pending criteria', async () => {
+    const user = userEvent.setup()
+    const searches: AgentTicketSearchInput[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/assignment-options')) return json({ groups: [] })
+        if (url.endsWith('/csrf'))
+          return json({ token: 'csrf', headerName: 'X-CSRF-TOKEN' })
+        if (url.endsWith('/search')) {
+          searches.push(JSON.parse(String(init?.body)))
+          if (searches.length === 1)
+            return new Response(
+              JSON.stringify({
+                status: 503,
+                title: 'Unavailable',
+                requestId: 'search-example',
+              }),
+              {
+                status: 503,
+                headers: { 'Content-Type': 'application/problem+json' },
+              },
+            )
+          return json({
+            searchEventId: crypto.randomUUID(),
+            searchInteractionId: crypto.randomUUID(),
+            items: [ticket],
+            resultCount: { value: null, relation: 'UNAVAILABLE' },
+            sort: 'updatedAt:desc,ticketNumber:desc',
+            nextCursor: null,
+          })
+        }
+        return json({})
+      }),
+    )
+    renderPage()
+    await user.type(screen.getByLabelText('티켓 검색어'), '중복 결제')
+    await user.click(screen.getByRole('button', { name: '티켓 검색' }))
+    await screen.findByText('티켓 검색을 완료하지 못했습니다')
+    await user.selectOptions(screen.getByLabelText('상태 검색 필터'), 'OPEN')
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(
+      await screen.findByText('전체 결과 수는 계산하지 않았습니다'),
+    ).toBeVisible()
+    expect(searches[1]).toEqual(searches[0])
+    expect(screen.getByLabelText('상태 검색 필터')).toHaveValue('OPEN')
+    expect(
+      screen.getByText('아직 적용하지 않은 검색 조건이 있습니다'),
+    ).toBeVisible()
   })
 
   it('shows actionable guidance for an unfiltered short broad query', async () => {
@@ -232,8 +319,8 @@ describe('AgentSearchPage', () => {
     )
 
     renderPage()
-    await user.type(screen.getByLabelText('서버 전체 티켓 검색어'), '결제')
-    await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
+    await user.type(screen.getByLabelText('티켓 검색어'), '결제')
+    await user.click(screen.getByRole('button', { name: '티켓 검색' }))
 
     expect(await screen.findByText('검색 범위를 더 좁혀 주세요')).toBeVisible()
     expect(

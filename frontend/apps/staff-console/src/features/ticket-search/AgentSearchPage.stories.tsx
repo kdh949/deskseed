@@ -72,13 +72,8 @@ type Story = StoryObj<typeof meta>
 
 export const SearchResults: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(
-      canvas.getByLabelText('서버 전체 티켓 검색어'),
-      '중복 결제',
-    )
-    await userEvent.click(
-      canvas.getByRole('button', { name: '서버 전체 검색' }),
-    )
+    await userEvent.type(canvas.getByLabelText('티켓 검색어'), '중복 결제')
+    await userEvent.click(canvas.getByRole('button', { name: '티켓 검색' }))
     await expect(await canvas.findByText('전체 결과 1개')).toBeVisible()
     await expect(canvas.getByLabelText('최초 답변 SLA 위험')).toBeVisible()
   },
@@ -104,13 +99,8 @@ export const LowerBoundResults: Story = {
     },
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(
-      canvas.getByLabelText('서버 전체 티켓 검색어'),
-      '결제 오류',
-    )
-    await userEvent.click(
-      canvas.getByRole('button', { name: '서버 전체 검색' }),
-    )
+    await userEvent.type(canvas.getByLabelText('티켓 검색어'), '결제 오류')
+    await userEvent.click(canvas.getByRole('button', { name: '티켓 검색' }))
     await expect(await canvas.findByText('결과 26개 이상')).toBeVisible()
   },
 }
@@ -135,12 +125,69 @@ export const BroadQueryGuidance: Story = {
     },
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(canvas.getByLabelText('서버 전체 티켓 검색어'), '결제')
-    await userEvent.click(
-      canvas.getByRole('button', { name: '서버 전체 검색' }),
-    )
+    await userEvent.type(canvas.getByLabelText('티켓 검색어'), '결제')
+    await userEvent.click(canvas.getByRole('button', { name: '티켓 검색' }))
     await expect(
       await canvas.findByText('검색 범위를 더 좁혀 주세요'),
     ).toBeVisible()
+  },
+}
+
+export const PendingConditions: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(canvas.getByLabelText('티켓 검색어'), '중복 결제')
+    await userEvent.click(canvas.getByRole('button', { name: '티켓 검색' }))
+    await expect(await canvas.findByText('전체 결과 1개')).toBeVisible()
+    await userEvent.selectOptions(
+      canvas.getByLabelText('상태 검색 필터'),
+      'OPEN',
+    )
+    await userEvent.selectOptions(
+      canvas.getByLabelText('정렬 검색 필터'),
+      'score:desc,ticketNumber:desc',
+    )
+    await expect(
+      canvas.getByText('아직 적용하지 않은 검색 조건이 있습니다'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('region', { name: '적용된 검색 조건' }),
+    ).toHaveTextContent('최근 업데이트 순')
+    await expect(
+      canvas.getByRole('button', { name: '검색 조건 적용' }),
+    ).toBeEnabled()
+  },
+}
+
+export const ApplyAndResetConditions: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(canvas.getByLabelText('티켓 검색어'), '중복 결제')
+    await userEvent.click(canvas.getByRole('button', { name: '티켓 검색' }))
+    await expect(await canvas.findByText('전체 결과 1개')).toBeVisible()
+    await userEvent.selectOptions(
+      canvas.getByLabelText('상태 검색 필터'),
+      'OPEN',
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: '검색 조건 적용' }),
+    )
+    await expect(
+      canvas.getByRole('region', { name: '적용된 검색 조건' }),
+    ).toHaveTextContent('상태: 처리 중')
+    await expect(
+      canvas.queryByText('아직 적용하지 않은 검색 조건이 있습니다'),
+    ).not.toBeInTheDocument()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '필터·정렬 초기화' }),
+    )
+    await expect(canvas.getByLabelText('티켓 검색어')).toHaveValue('중복 결제')
+    await expect(
+      canvas.getByRole('region', { name: '적용된 검색 조건' }),
+    ).toHaveTextContent('상태: 처리 중')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '검색 조건 적용' }),
+    )
+    await expect(
+      canvas.getByRole('region', { name: '적용된 검색 조건' }),
+    ).not.toHaveTextContent('상태: 처리 중')
   },
 }

@@ -22,6 +22,7 @@ import {
   SeedFeedbackState,
   SeedFilterBar,
   SeedIcon,
+  SeedNotice,
   SeedSelectField,
   SeedSkeletonRows,
   SeedStatusBadge,
@@ -61,14 +62,20 @@ const PRIORITY_LABELS: Record<TicketPriority, string> = {
   HIGH: '높음',
   URGENT: '긴급',
 }
+const DEFAULT_SORT: AgentTicketSearchSort = 'updatedAt:desc,ticketNumber:desc'
+const FILTER_KEYS = [
+  'status',
+  'priority',
+  'groupId',
+  'assigneeId',
+  'slaState',
+] as const
 
 export function AgentSearchPage() {
   const navigate = useNavigate()
   const [queryText, setQueryText] = useState('')
   const [draftFilters, setDraftFilters] = useState<AgentTicketSearchFilters>({})
-  const [sort, setSort] = useState<AgentTicketSearchSort>(
-    'updatedAt:desc,ticketNumber:desc',
-  )
+  const [sort, setSort] = useState<AgentTicketSearchSort>(DEFAULT_SORT)
   const [submitted, setSubmitted] = useState<AgentTicketSearchInput | null>(
     null,
   )
@@ -97,6 +104,15 @@ export function AgentSearchPage() {
     retry: false,
   })
   const items = searchQuery.data?.items ?? []
+  const hasPendingChanges =
+    submitted !== null &&
+    (queryText.trim() !== submitted.query ||
+      sort !== submitted.sort ||
+      FILTER_KEYS.some((key) => draftFilters[key] !== submitted.filters?.[key]))
+  const hasDraftFilters =
+    FILTER_KEYS.some((key) => draftFilters[key]) || sort !== DEFAULT_SORT
+  const groups = assignmentQuery.data?.groups ?? []
+  const members = uniqueMembers(groups)
   const updateFilter = <K extends keyof AgentTicketSearchFilters>(
     key: K,
     value: AgentTicketSearchFilters[K] | undefined,
@@ -127,17 +143,16 @@ export function AgentSearchPage() {
     <section className="seed-route" aria-labelledby="agent-search-title">
       <header className="seed-route__header">
         <div>
-          <span className="seed-route__eyebrow">WORKSPACE SEARCH</span>
           <h1 id="agent-search-title">티켓 검색</h1>
-          <p>권한 범위 안의 서버 전체 티켓을 검색합니다.</p>
+          <p>조회할 수 있는 티켓을 검색어와 조건으로 찾습니다.</p>
         </div>
       </header>
       <form className="seed-search-panel" onSubmit={submitSearch} role="search">
         <div className="seed-search-panel__query">
           <SeedTextField
-            aria-label="서버 전체 티켓 검색어"
+            aria-label="티켓 검색어"
             autoComplete="off"
-            hint="검색어는 URL, 일반 로그, analytics에 기록하지 않습니다."
+            hint="티켓 번호는 정확히 일치하는 티켓을 찾습니다. 검색어와 조건을 입력한 뒤 검색을 눌러 주세요."
             label="검색어"
             leadingIcon="search"
             maxLength={500}
@@ -147,13 +162,17 @@ export function AgentSearchPage() {
             value={queryText}
           />
           <SeedButton
-            aria-label="서버 전체 검색"
+            aria-label={hasPendingChanges ? '검색 조건 적용' : '티켓 검색'}
             disabled={!queryText.trim() || searchQuery.isFetching}
             type="submit"
             variant="primary"
           >
             <SeedIcon name="search" />
-            {searchQuery.isFetching ? '검색 중…' : '검색'}
+            {searchQuery.isFetching
+              ? '검색 중…'
+              : hasPendingChanges
+                ? '조건 적용'
+                : '검색'}
           </SeedButton>
         </div>
         <SeedFilterBar>
@@ -221,32 +240,90 @@ export function AgentSearchPage() {
             <option value="">전체 SLA</option>
             {SLA_STATES.map((state) => (
               <option key={state} value={state}>
-                {state}
+                {slaLabel(state)}
               </option>
             ))}
           </SearchFilter>
           <SearchFilter
             label="정렬"
             value={sort}
-            onChange={(value) => {
-              const next = value as AgentTicketSearchSort
-              setSort(next)
-              if (submitted) {
-                interactionId.current = createOpaqueUuid()
-                resetPaging()
-                setSubmitted((current) =>
-                  current ? { ...current, sort: next, cursor: null } : current,
-                )
-              }
-            }}
+            onChange={(value) => setSort(value as AgentTicketSearchSort)}
           >
             <option value="score:desc,ticketNumber:desc">관련도 높은 순</option>
             <option value="updatedAt:desc,ticketNumber:desc">
               최근 업데이트 순
             </option>
           </SearchFilter>
+          <SeedButton
+            disabled={!hasDraftFilters}
+            onClick={() => {
+              setDraftFilters({})
+              setSort(DEFAULT_SORT)
+            }}
+            type="button"
+          >
+            필터·정렬 초기화
+          </SeedButton>
         </SeedFilterBar>
+        {hasPendingChanges && (
+          <SeedNotice
+            title="아직 적용하지 않은 검색 조건이 있습니다"
+            tone="warning"
+          >
+            아래 결과에는 이전 조건이 적용되어 있습니다. 변경한 조건으로
+            검색하려면 조건 적용을 눌러 주세요.
+          </SeedNotice>
+        )}
       </form>
+      {submitted && (
+        <section aria-label="적용된 검색 조건" className="seed-filter-summary">
+          <div>
+            <strong>현재 결과 조건</strong>
+            <span>
+              검색어:{' '}
+              {submitted.query.length > 60
+                ? `${submitted.query.slice(0, 60)}…`
+                : submitted.query}
+            </span>
+            {submitted.filters?.status && (
+              <span>상태: {STATUS_LABELS[submitted.filters.status]}</span>
+            )}
+            {submitted.filters?.priority && (
+              <span>
+                우선순위: {PRIORITY_LABELS[submitted.filters.priority]}
+              </span>
+            )}
+            {submitted.filters?.groupId && (
+              <span>
+                그룹:{' '}
+                {groups.find((group) => group.id === submitted.filters?.groupId)
+                  ?.name ?? '선택한 그룹'}
+              </span>
+            )}
+            {submitted.filters?.assigneeId && (
+              <span>
+                담당자:{' '}
+                {submitted.filters.assigneeId === 'me'
+                  ? '나'
+                  : submitted.filters.assigneeId === 'unassigned'
+                    ? '미배정'
+                    : (members.find(
+                        (member) => member.id === submitted.filters?.assigneeId,
+                      )?.displayName ?? '선택한 담당자')}
+              </span>
+            )}
+            {submitted.filters?.slaState && (
+              <span>최초 답변 SLA: {slaLabel(submitted.filters.slaState)}</span>
+            )}
+            <span>
+              정렬:{' '}
+              {submitted.sort === DEFAULT_SORT
+                ? '최근 업데이트 순'
+                : '관련도 높은 순'}
+            </span>
+          </div>
+        </section>
+      )}
       <div className="seed-route__content">
         {!submitted ? (
           <SeedFeedbackState
@@ -255,7 +332,7 @@ export function AgentSearchPage() {
             description="검색어와 필요한 필터를 입력하면 권한 범위 내 결과가 표시됩니다."
           />
         ) : searchQuery.isPending ? (
-          <SeedSkeletonRows label="서버 전체 검색 결과 불러오는 중" rows={7} />
+          <SeedSkeletonRows label="티켓 검색 결과 불러오는 중" rows={7} />
         ) : searchQuery.isError ? (
           <SearchError
             error={searchQuery.error}
@@ -268,7 +345,7 @@ export function AgentSearchPage() {
             description="검색어나 필터 조건을 바꿔 다시 검색해 보세요."
           />
         ) : (
-          <section className="seed-results" aria-label="서버 전체 검색 결과">
+          <section className="seed-results" aria-label="티켓 검색 결과">
             <header>
               <div>
                 <h2>검색 결과</h2>
@@ -276,7 +353,7 @@ export function AgentSearchPage() {
               </div>
             </header>
             <SeedDataTable
-              ariaLabel="서버 전체 검색 결과"
+              ariaLabel="티켓 검색 결과"
               columns={searchColumns(searchQuery.data.searchEventId)}
               onActivate={(ticket) =>
                 navigate(`/agent/tickets/${ticket.ticketNumber}`, {

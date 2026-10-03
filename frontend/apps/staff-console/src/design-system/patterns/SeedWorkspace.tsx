@@ -325,6 +325,7 @@ export function SeedSavedViewNavigation({
   activeKey,
   onCreate,
   onEdit,
+  feedback,
 }: {
   sections: Array<{ id: string; label: string; items: SeedSavedViewItem[] }>
   activeKey: string
@@ -333,6 +334,8 @@ export function SeedSavedViewNavigation({
     item: SeedSavedViewItem,
     event: MouseEvent<HTMLButtonElement>,
   ) => void
+  /** Replaces list search and items while the owning query is loading, empty or unavailable. */
+  feedback?: ReactNode
 }) {
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR')
@@ -361,58 +364,68 @@ export function SeedSavedViewNavigation({
           variant="quiet"
         />
       </header>
-      <label>
-        <span className="seed-visually-hidden">보기 검색</span>
-        <SeedIcon name="search" />
-        <input
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="보기 검색"
-          type="search"
-          value={query}
-        />
-      </label>
-      {visibleSections.length ? (
-        visibleSections.map((section) => (
-          <section key={section.id}>
-            <h3>{section.label}</h3>
-            <ul>
-              {section.items.map((item) => (
-                <li key={item.key}>
-                  <Link
-                    aria-current={item.key === activeKey ? 'page' : undefined}
-                    to={item.to}
-                  >
-                    <SeedIcon
-                      name={section.id === 'personal' ? 'bookmark' : 'ticket'}
-                      size="small"
-                    />
-                    <span>{item.label}</span>
-                    {item.count !== null && item.count !== undefined && (
-                      <b>{item.count}</b>
-                    )}
-                    {item.count !== null &&
-                      item.count !== undefined &&
-                      item.countAsOf && (
-                        <span className="seed-visually-hidden">
-                          티켓 {item.count}개, 기준 {item.countAsOf}
-                        </span>
+      {feedback ?? (
+        <>
+          <label>
+            <span className="seed-visually-hidden">보기 검색</span>
+            <SeedIcon name="search" />
+            <input
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="보기 검색"
+              type="search"
+              value={query}
+            />
+          </label>
+          {visibleSections.length ? (
+            visibleSections.map((section) => (
+              <section key={section.id}>
+                <h3>{section.label}</h3>
+                <ul>
+                  {section.items.map((item) => (
+                    <li key={item.key}>
+                      <Link
+                        aria-current={
+                          item.key === activeKey ? 'page' : undefined
+                        }
+                        to={item.to}
+                      >
+                        <SeedIcon
+                          name={
+                            section.id === 'personal' ? 'bookmark' : 'ticket'
+                          }
+                          size="small"
+                        />
+                        <span>{item.label}</span>
+                        {item.count !== null && item.count !== undefined && (
+                          <b>{item.count}</b>
+                        )}
+                        {item.count !== null &&
+                          item.count !== undefined &&
+                          item.countAsOf && (
+                            <span className="seed-visually-hidden">
+                              티켓 {item.count}개, 기준 {item.countAsOf}
+                            </span>
+                          )}
+                      </Link>
+                      {item.editable && (
+                        <SeedIconButton
+                          icon="more"
+                          label={`${item.label} 편집`}
+                          onClick={(event) => onEdit(item, event)}
+                          variant="quiet"
+                        />
                       )}
-                  </Link>
-                  {item.editable && (
-                    <SeedIconButton
-                      icon="more"
-                      label={`${item.label} 편집`}
-                      onClick={(event) => onEdit(item, event)}
-                      variant="quiet"
-                    />
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
-      ) : (
-        <p className="seed-view-navigation__empty">일치하는 보기가 없습니다.</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          ) : (
+            <p className="seed-view-navigation__empty">
+              일치하는 보기가 없습니다.
+            </p>
+          )}
+        </>
       )}
     </aside>
   )
