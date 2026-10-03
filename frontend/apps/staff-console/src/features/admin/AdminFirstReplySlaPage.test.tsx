@@ -185,9 +185,7 @@ function installSlaFetch({
 
 async function openVersionEditor(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: 'SLA 정책 관리' }))
-  await user.click(
-    await screen.findByRole('button', { name: '새 version 작성' }),
-  )
+  await user.click(await screen.findByRole('button', { name: '새 버전 작성' }))
   return screen.findByLabelText('그룹 조건')
 }
 
@@ -248,24 +246,20 @@ describe('AdminFirstReplySlaPage', () => {
 
     await openVersionEditor(user)
     const name = screen.getByLabelText('정책 이름')
-    await user.click(screen.getByRole('button', { name: '새 version 저장' }))
+    await user.click(screen.getByRole('button', { name: '새 버전 저장' }))
 
     expect(
       await screen.findByText('SLA 정책 저장 결과를 확인할 수 없습니다.'),
     ).toBeVisible()
     expect(name).toHaveValue(policy.name)
-    expect(
-      screen.getByRole('button', { name: '새 version 저장' }),
-    ).toBeDisabled()
+    expect(screen.getByRole('button', { name: '새 버전 저장' })).toBeDisabled()
     await waitFor(() => {
       expect(policyReads()).toBeGreaterThanOrEqual(2)
       expect(versionReads()).toBeGreaterThanOrEqual(2)
     })
     await user.click(screen.getByRole('button', { name: '작성 닫기' }))
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: '새 version 작성' }),
-      ).toBeEnabled()
+      expect(screen.getByRole('button', { name: '새 버전 작성' })).toBeEnabled()
     })
   })
 })

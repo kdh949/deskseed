@@ -20,7 +20,7 @@ const navigation = [
   { label: '그룹', to: '/admin/groups' },
   { label: '고객 접근', to: '/admin/settings/customer-access-mode' },
   { label: '영업 시간표', to: '/admin/business-rules/schedules' },
-  { label: 'First Reply SLA', to: '/admin/business-rules/sla' },
+  { label: '최초 답변 목표', to: '/admin/business-rules/sla' },
 ]
 
 function initials(displayName: string) {
