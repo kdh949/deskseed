@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, Link } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -214,3 +214,71 @@ it.each([404, 503])(
     ).toBeVisible()
   },
 )
+
+it('uses current server parents for direct article and section navigation', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (url.includes('/articles/'))
+        return Response.json({
+          slug: 'direct',
+          category: { slug: 'moved-topic', title: '이동한 주제' },
+          section: { slug: 'current-section', title: '현재 섹션' },
+          currentPublishedRevision: {
+            title: '직접 연 문서',
+            document: { schemaVersion: 1, blocks: [] },
+          },
+        })
+      return Response.json({
+        slug: 'current-section',
+        title: '현재 섹션',
+        category: { slug: 'moved-topic', title: '이동한 주제' },
+        articles: [],
+      })
+    }),
+  )
+  app('/articles/direct')
+  const nav = await screen.findByRole('navigation', { name: '문서 경로' })
+  expect(
+    within(nav).getByRole('link', { name: '이동한 주제' }),
+  ).toHaveAttribute('href', '/categories/moved-topic')
+  await userEvent.click(within(nav).getByRole('link', { name: '현재 섹션' }))
+  expect(
+    await screen.findByRole('heading', { name: '현재 섹션' }),
+  ).toBeVisible()
+  expect(
+    within(screen.getByRole('navigation', { name: '문서 경로' })).getByRole(
+      'link',
+      { name: '이동한 주제' },
+    ),
+  ).toHaveAttribute('href', '/categories/moved-topic')
+})
+it('does not guess absent parents and rejects malformed parent projections', async () => {
+  const fetcher = vi.fn(async () =>
+    Response.json({
+      slug: 'direct',
+      currentPublishedRevision: {
+        title: '이전 응답 문서',
+        document: { schemaVersion: 1, blocks: [] },
+      },
+    }),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const view = app('/articles/direct')
+  const nav = await screen.findByRole('navigation', { name: '문서 경로' })
+  expect(within(nav).getAllByRole('link')).toHaveLength(1)
+  view.unmount()
+  fetcher.mockImplementation(async () =>
+    Response.json({
+      slug: 'direct',
+      category: { slug: '', title: '잘못된 부모' },
+      currentPublishedRevision: {
+        title: '거부할 문서',
+        document: { schemaVersion: 1, blocks: [] },
+      },
+    }),
+  )
+  app('/articles/direct')
+  expect(await screen.findByText('문서를 불러올 수 없습니다.')).toBeVisible()
+  expect(screen.queryByText('잘못된 부모')).not.toBeInTheDocument()
+})

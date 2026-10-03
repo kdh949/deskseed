@@ -10,6 +10,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   CustomerIcon,
+  HelpBrowseList,
   DsButton,
   RetryButton,
   ScreenState,
@@ -338,9 +339,29 @@ function HelpArticleContent({
   return (
     <div className="customer-article-layout customer-article-layout--content-only">
       <article className="customer-article">
-        <span className="customer-breadcrumb">
-          <Link to="/categories">모든 문서</Link> / 도움말
-        </span>
+        <nav className="customer-breadcrumb" aria-label="문서 경로">
+          <Link to="/categories">모든 문서</Link>
+          {data.category && (
+            <>
+              <span aria-hidden="true"> / </span>
+              <Link
+                to={`/categories/${encodeURIComponent(data.category.slug)}`}
+              >
+                {data.category.title}
+              </Link>
+            </>
+          )}
+          {data.section && (
+            <>
+              <span aria-hidden="true"> / </span>
+              <Link to={`/sections/${encodeURIComponent(data.section.slug)}`}>
+                {data.section.title}
+              </Link>
+            </>
+          )}
+          <span aria-hidden="true"> / </span>
+          <span aria-current="page">{data.title}</span>
+        </nav>
         <header>
           <div>
             <h1>{data.title}</h1>
@@ -528,7 +549,7 @@ export function HelpCategoryPage() {
 
   return (
     <div className="customer-page">
-      <Link to="/categories">모든 문서</Link>
+      {!category.isSuccess && <Link to="/categories">모든 문서</Link>}
       {category.isPending ? (
         <ScreenState kind="loading" title="주제를 불러오고 있습니다." />
       ) : category.isError ? (
@@ -544,19 +565,22 @@ export function HelpCategoryPage() {
         />
       ) : (
         <>
+          <nav className="customer-breadcrumb" aria-label="문서 경로">
+            <Link to="/categories">모든 문서</Link>
+            <span aria-hidden="true"> / </span>
+            <span aria-current="page">{category.data.title}</span>
+          </nav>
           <h1>{category.data.title}</h1>
           <p>{category.data.description}</p>
           {category.data.sections?.length ? (
-            <ul>
-              {category.data.sections.map((section) => (
-                <li key={section.slug}>
-                  <Link to={`/sections/${encodeURIComponent(section.slug)}`}>
-                    {section.title}
-                  </Link>
-                  <p>{section.description}</p>
-                </li>
-              ))}
-            </ul>
+            <HelpBrowseList
+              ariaLabel="섹션 목록"
+              items={category.data.sections.map((section) => ({
+                to: `/sections/${encodeURIComponent(section.slug)}`,
+                title: section.title,
+                description: section.description,
+              }))}
+            />
           ) : (
             <ScreenState kind="empty" title="등록된 섹션이 없습니다." />
           )}
@@ -583,7 +607,7 @@ export function HelpSectionPage() {
 
   return (
     <div className="customer-page">
-      <Link to="/categories">모든 문서</Link>
+      {!first && <Link to="/categories">모든 문서</Link>}
       {section.isPending && (
         <ScreenState kind="loading" title="문서 목록을 불러오고 있습니다." />
       )}
@@ -601,19 +625,32 @@ export function HelpSectionPage() {
       )}
       {first && (
         <>
+          <nav className="customer-breadcrumb" aria-label="문서 경로">
+            <Link to="/categories">모든 문서</Link>
+            {first.category && (
+              <>
+                <span aria-hidden="true"> / </span>
+                <Link
+                  to={`/categories/${encodeURIComponent(first.category.slug)}`}
+                >
+                  {first.category.title}
+                </Link>
+              </>
+            )}
+            <span aria-hidden="true"> / </span>
+            <span aria-current="page">{first.title}</span>
+          </nav>
           <h1>{first.title}</h1>
           <p>{first.description}</p>
           {articles.length ? (
-            <ul>
-              {articles.map((article) => (
-                <li key={article.slug}>
-                  <Link to={`/articles/${encodeURIComponent(article.slug)}`}>
-                    {article.title}
-                  </Link>
-                  <p>{article.summary}</p>
-                </li>
-              ))}
-            </ul>
+            <HelpBrowseList
+              ariaLabel="문서 목록"
+              items={articles.map((article) => ({
+                to: `/articles/${encodeURIComponent(article.slug)}`,
+                title: article.title,
+                description: article.summary,
+              }))}
+            />
           ) : (
             <ScreenState kind="empty" title="등록된 문서가 없습니다." />
           )}
