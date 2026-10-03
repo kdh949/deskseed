@@ -6,6 +6,7 @@ import dev.deskseed.knowledge.KnowledgeArticleListing
 import dev.deskseed.knowledge.KnowledgeAudience
 import dev.deskseed.knowledge.KnowledgeNavigationCategory
 import dev.deskseed.knowledge.KnowledgeNavigationSection
+import dev.deskseed.knowledge.KnowledgeParentLink
 import dev.deskseed.knowledge.KnowledgeReader
 import dev.deskseed.knowledge.KnowledgeReading
 import dev.deskseed.knowledge.KnowledgeRevisionView
@@ -140,9 +141,12 @@ internal data class HelpCategoryResponse(
     val sections: List<HelpSectionResponse> = emptyList(),
 )
 
+internal data class HelpParentLinkResponse(val slug: String, val title: String)
+
 internal data class HelpSectionResponse(
     val id: java.util.UUID,
     val categoryId: java.util.UUID,
+    val category: HelpParentLinkResponse,
     val slug: String,
     val title: String,
     val description: String,
@@ -176,6 +180,8 @@ internal data class HelpArticleResponse(
     val audience: HelpAudienceResponse,
     val audienceVersion: Int,
     val currentPublishedRevision: HelpRevisionResponse,
+    val category: HelpParentLinkResponse,
+    val section: HelpParentLinkResponse,
 )
 
 internal data class HelpAudienceResponse(
@@ -200,6 +206,7 @@ private fun categoryResponse(category: KnowledgeNavigationCategory): HelpCategor
 private fun sectionResponse(section: KnowledgeNavigationSection): HelpSectionResponse = HelpSectionResponse(
     section.id,
     section.categoryId,
+    section.category.toResponse(),
     section.slug,
     section.title,
     section.description,
@@ -222,7 +229,11 @@ private fun PublishedKnowledgeArticle.toResponse(codec: CanonicalKnowledgeDocume
     audience = HelpAudienceResponse(audience.type, audience.groupIds),
     audienceVersion = audienceVersion,
     currentPublishedRevision = revision.toResponse(codec),
+    category = category.toResponse(),
+    section = section.toResponse(),
 )
+
+private fun KnowledgeParentLink.toResponse() = HelpParentLinkResponse(slug, title)
 
 private fun KnowledgeRevisionView.toResponse(codec: CanonicalKnowledgeDocumentCodec) = HelpRevisionResponse(
     id,
@@ -237,5 +248,6 @@ private fun KnowledgeRevisionView.toResponse(codec: CanonicalKnowledgeDocumentCo
 private fun KnowledgeSearchPage.toResponse() = HelpKnowledgeSearchPageResponse(items, hasMore, nextCursor)
 
 private fun PublishedKnowledgeArticle.etag(): String = "\"" + MessageDigest.getInstance("SHA-256")
-    .digest("${revision.id}:${audienceVersion}".toByteArray(StandardCharsets.UTF_8))
+    .digest(listOf(revision.id.toString(), audienceVersion.toString(), category.slug, category.title, section.slug, section.title)
+        .joinToString("") { "${it.length}:$it" }.toByteArray(StandardCharsets.UTF_8))
     .joinToString("") { "%02x".format(it) } + "\""
