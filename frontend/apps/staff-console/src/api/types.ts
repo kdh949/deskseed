@@ -286,6 +286,19 @@ export interface AdminListPage<T> {
   totalPages: number
 }
 
+export interface AdminStaffSearchInput {
+  query: string
+  role?: StaffRole
+  status?: StaffStatus
+  memberOfGroupId?: string
+  excludeGroupId?: string
+}
+
+export interface AdminGroupSearchInput {
+  query: string
+  status?: OrganizationStatus
+}
+
 export interface SupportGroup {
   id: string
   name: string

@@ -39,6 +39,7 @@ internal class AuditPersistenceMetrics(meterRegistry: MeterRegistry) {
         TICKET_VIEWED("ticket-viewed"),
         SEARCH_EXECUTED("search-executed"),
         CUSTOMER_SEARCH_EXECUTED("customer-search-executed"),
+        ADMIN_DIRECTORY_SEARCH("admin-directory-search"),
         SEARCH_RESULT_OPENED("search-result-opened"),
         APPEND("append"),
     }

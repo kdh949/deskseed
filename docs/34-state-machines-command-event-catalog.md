@@ -1,6 +1,6 @@
 # State Machines, Commands, Audit Events, Domain Events
 
-관리자 directory 검색의 [P15 pending event 계약](tasks/2026-10-03-admin-directory-search-contract.md)은 `ADMIN_STAFF_SEARCH_EXECUTED`/`ADMIN_GROUP_SEARCH_EXECUTED`를 성공 검색마다 기록한다. source는 ADMIN_UI이며 그룹·직원 상태를 변경하지 않고 ticket origin/result membership을 생성하지 않는다. 기존 event/runtime projection에는 아직 추가되지 않았으며 구현 PR에서 typed writer·migration·안전한 projection을 함께 승격한다.
+관리자 directory 검색의 [P15 event 계약](tasks/2026-10-03-admin-directory-search-contract.md)은 `ADMIN_STAFF_SEARCH_EXECUTED`/`ADMIN_GROUP_SEARCH_EXECUTED`를 성공 검색마다 기록한다. source는 ADMIN_UI이며 그룹·직원 상태를 변경하지 않고 ticket origin/result membership을 생성하지 않는다. V99와 typed writer가 보호 query 저장까지 같은 transaction으로 수행하며 routine projection은 안전한 metadata만 노출한다. exact reveal은 기존 티켓 검색으로 제한한다.
 
 ## 1. Ticket status model
 

@@ -147,7 +147,7 @@ Inject AccessAuditEvent insert failure:
 - raw query is never plaintext in DB/log when encrypted mode is configured.
 - secrets/patterns are masked according to policy.
 
-### ADMIN-SEARCH-001 — Administrator directory search (pending implementation)
+### ADMIN-SEARCH-001 — Administrator directory search
 
 - 직원 이름/이메일과 그룹 이름 조건이 현재 페이지가 아닌 전체 DB 범위에 적용된다. 100개를 넘는 fixture, exact count/page 정렬과 literal wildcard를 검증한다.
 - memberOfGroupId/excludeGroupId는 상호 배타적이며 ADMIN 인가 뒤 ACTIVE 그룹을 확인한다. 구성원과 추가 후보 범위 및 role/status 조건을 검증한다.

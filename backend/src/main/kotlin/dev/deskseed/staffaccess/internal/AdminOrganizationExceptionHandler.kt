@@ -19,6 +19,12 @@ import java.net.URI
 
 @RestControllerAdvice(assignableTypes = [AdminOrganizationController::class])
 internal class AdminOrganizationExceptionHandler {
+    @ExceptionHandler(AccessAuditUnavailableException::class)
+    fun searchAuditUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = response(
+        request, HttpStatus.SERVICE_UNAVAILABLE, "/problems/audit-write-unavailable",
+        "Required access audit unavailable", "The search could not be safely audited. Try again later.",
+    )
+
     @ExceptionHandler(OrganizationConflictException::class)
     fun conflict(
         exception: OrganizationConflictException,

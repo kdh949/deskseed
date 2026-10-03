@@ -242,7 +242,7 @@ SDK release마다:
 
 ## 10. Contract freeze gate
 
-P15 `searchAdminStaffAccounts`/`searchAdminGroups`는 [승인된 directory search blueprint](tasks/2026-10-03-admin-directory-search-contract.md)와 owned fragment `06-admin-directory-search.yaml`로 정의한다. 두 operation은 actor blueprint registry에 두고 runtime parity 전까지 FROZEN을 표시하지 않는다. 기존 GET 목록과 Audit Explorer operation의 FROZEN은 유지한다. 새 ADMIN 검색 action/보호 detail의 projection 의미는 pending 확장이며 구현·migration·fail-closed/privacy 회귀와 함께 적용한다. KB 제목/cursor 검색은 이 계약에 포함하지 않는다.
+P15 `searchAdminStaffAccounts`/`searchAdminGroups`는 [승인된 directory search 계약](tasks/2026-10-03-admin-directory-search-contract.md)과 owned fragment `06-admin-directory-search.yaml`로 정의하며 FROZEN이다. 두 operation의 ADMIN/CSRF/expected actor, 전체 페이지, V99 typed access audit, 보호 query와 fail-closed/privacy 회귀는 [구현 증거](tasks/2026-10-03-admin-directory-search-implementation.md)로 추적한다. 기존 GET 목록과 Audit Explorer operation의 FROZEN을 유지하며 ADMIN 검색의 routine projection은 보호 metadata만 반환하고 exact reveal 범위를 확대하지 않는다. KB 제목/cursor 검색은 이 계약에 포함하지 않는다.
 
 기능 코딩 전 다음을 승인한다.
 

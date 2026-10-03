@@ -207,6 +207,9 @@ fun interface AccessAuditSessionFingerprint {
 }
 
 interface AccessAuditWriter {
+    /** Required protected ADMIN directory search audit; failure withholds the result page. */
+    fun appendAdminDirectorySearch(event: AdminDirectorySearchAccessAudit)
+
     /** Appends one required access audit for every successful protected ticket-detail read. */
     fun appendTicketResourceRead(event: TicketResourceReadAccessAudit)
 
