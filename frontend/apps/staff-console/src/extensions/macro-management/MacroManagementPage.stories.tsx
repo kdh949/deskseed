@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse, delay } from 'msw'
-import { expect, userEvent, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { MacroManagementPage } from './MacroManagementPage'
 const macro = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -73,6 +73,8 @@ export const CreateAndReview: Story = {
   play: async ({ canvas }) => {
     await canvas.findByText('접수 안내')
     await userEvent.click(canvas.getByRole('button', { name: '매크로 만들기' }))
+    await expect(canvas.getByLabelText(/매크로 이름/)).toHaveFocus()
+    await expect(canvas.queryByText('접수 안내')).not.toBeInTheDocument()
     await userEvent.type(canvas.getByLabelText(/매크로 이름/), '환불 안내')
     await userEvent.selectOptions(
       canvas.getByLabelText('답변 공개 범위'),
@@ -454,5 +456,48 @@ export const NewCustomStatusRequiresLatestChoice: Story = {
     await expect(
       await canvas.findByText('버전 4을 저장했습니다. 확인 후 활성화하세요.'),
     ).toBeVisible()
+  },
+}
+
+export const EmptyEditorAndDiscard: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        csrf,
+        http.get('/api/v1/agent/personal-macros', () => HttpResponse.json([])),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByText('등록된 매크로가 없습니다.')
+    await userEvent.click(canvas.getByRole('button', { name: '매크로 만들기' }))
+    const name = canvas.getByLabelText(/매크로 이름/)
+    await expect(name).toHaveFocus()
+    await expect(
+      canvas.queryByText('등록된 매크로가 없습니다.'),
+    ).not.toBeInTheDocument()
+    await userEvent.type(name, '보존할 초안')
+    await userEvent.click(canvas.getByRole('button', { name: '편집 닫기' }))
+    let dialog = await canvas.findByRole('dialog', {
+      name: '저장하지 않은 매크로 변경',
+    })
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '계속 편집' }),
+    )
+    await expect(name).toHaveValue('보존할 초안')
+    await expect(
+      canvas.getByRole('button', { name: '편집 닫기' }),
+    ).toHaveFocus()
+    await userEvent.click(canvas.getByRole('button', { name: '편집 닫기' }))
+    dialog = await canvas.findByRole('dialog', {
+      name: '저장하지 않은 매크로 변경',
+    })
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '변경 버리기' }),
+    )
+    await expect(canvas.getByText('등록된 매크로가 없습니다.')).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '매크로 만들기' }),
+    ).toHaveFocus()
   },
 }
