@@ -37,7 +37,7 @@ for (const width of [390, 768]) {
         })
       throw new Error(`Unexpected ${route.request().method()} ${path}`)
     })
-    await page.goto(`${process.env.PLAYWRIGHT_CUSTOMER_BASE_URL}/`)
+    await page.goto(`${process.env.PLAYWRIGHT_CUSTOMER_BASE_URL ?? ''}/`)
     await expect(page.getByText('등록된 공지사항이 없습니다.')).toBeVisible()
     await page.getByRole('link', { name: '전체 보기' }).click()
     await expect(page).toHaveURL(/\/sections\/announcements$/)

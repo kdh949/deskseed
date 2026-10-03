@@ -43,3 +43,7 @@ MCP previews (전체 변경 fallback 포함):
 - http://localhost:6014/?path=/story/06-admin-admin-customer-readiness-panel--ready
 - http://localhost:6014/?path=/story/06-admin-admin-customer-readiness-panel--denied
 - http://localhost:6014/?path=/story/06-admin-admin-customer-access-mode-page--save-policy
+
+### 통합 E2E 후속 보완
+
+선택 환경변수 `PLAYWRIGHT_CUSTOMER_BASE_URL`이 없는 기본 CI/dev 환경에서도 `/`로 이동하도록 빈 문자열 fallback을 추가했다. 제품 코드 변경은 없다. 해당 변수를 지정하지 않고 기존 고객 dev 서버(45285)를 baseURL로 사용한 `customer-readiness.spec.ts --grep 'customer announcements'` 390/768 두 시나리오와 변경 파일 lint/format 통과.
