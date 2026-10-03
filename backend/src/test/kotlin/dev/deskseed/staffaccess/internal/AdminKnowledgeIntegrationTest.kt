@@ -590,6 +590,13 @@ class AdminKnowledgeIntegrationTest {
                 get("/api/v1/agent/knowledge/articles/reset-password")
                     .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId),
             ).andExpect(status().isServiceUnavailable)
+            mockMvc.perform(
+                post("/api/v1/agent/knowledge/search")
+                    .session(browser.session).header("X-Deskseed-Expected-Staff-Id", adminId)
+                    .header("X-CSRF-TOKEN", browser.csrfToken).contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"query":"비밀번호"}"""),
+            ).andExpect(status().isServiceUnavailable)
+                .andExpect(jsonPath("$.items").doesNotExist())
         } finally {
             jdbc.execute("drop trigger if exists fail_knowledge_access_audit on knowledge_access_audit_events")
             jdbc.execute("drop function if exists fail_knowledge_access_audit()")

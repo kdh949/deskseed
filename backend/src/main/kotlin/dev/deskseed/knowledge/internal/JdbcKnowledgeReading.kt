@@ -248,30 +248,44 @@ internal class JdbcKnowledgeReading(
     }
 
     private fun searchInternal(query: KnowledgeSearchQuery, audience: AudienceSql, scope: String): KnowledgeSearchPage {
-        val decoded = cursorCodec.decode(scope, query.cursor)
+        val decoded = cursorCodec.decodeRanked(scope, query.cursor)
         val args = mutableListOf<Any>(query.query)
         args.addAll(audience.args)
         val boundary = decoded?.let {
+            args += it.rank
             args += Timestamp.from(it.createdAt)
             args += it.articleId
-            "and (revision.created_at, article.id) < (?, ?)"
+            "where (rank, created_at, id) < (?::real, ?, ?)"
         }.orEmpty()
         val rows = jdbc.query(
             """
-            select article.id, article.slug, article.audience_type, revision.title, revision.plain_text,
-                   category.title as category_title, section.title as section_title, revision.created_at
-              from knowledge_search_documents document
-              join knowledge_articles article on article.id = document.article_id
-              join knowledge_article_revisions revision on revision.id = document.revision_id
-              join knowledge_sections section on section.id = article.section_id
-              join knowledge_categories category on category.id = section.category_id
-             where article.lifecycle = 'PUBLISHED'
-               and section.status = 'ACTIVE' and category.status = 'ACTIVE'
-               and document.search_document @@ websearch_to_tsquery('simple', ?)
-               and ${audience.predicate}
-               $boundary
-             order by revision.created_at desc, article.id desc
-             limit ?
+            with search_query as (select websearch_to_tsquery('simple', ?) as terms),
+            matches as (
+                select article.id, article.slug, article.audience_type, revision.title,
+                       concat_ws(' ', revision.summary, revision.plain_text) as excerpt_source,
+                       category.title as category_title, section.title as section_title, revision.created_at,
+                       ts_rank(document.search_document, search_query.terms) as rank
+                  from knowledge_search_documents document
+                  join knowledge_articles article on article.id = document.article_id
+                  join knowledge_article_revisions revision on revision.id = document.revision_id
+                  join knowledge_sections section on section.id = article.section_id
+                  join knowledge_categories category on category.id = section.category_id
+                  cross join search_query
+                 where article.lifecycle = 'PUBLISHED'
+                   and section.status = 'ACTIVE' and category.status = 'ACTIVE'
+                   and document.search_document @@ search_query.terms
+                   and ${audience.predicate}
+            ), page as (
+                select * from matches $boundary
+                 order by rank desc, created_at desc, id desc
+                 limit ?
+            )
+            select page.*,
+                   left(regexp_replace(ts_headline('simple', excerpt_source, search_query.terms,
+                       'StartSel="", StopSel="", MaxFragments=1, MaxWords=32, MinWords=12, ShortWord=0'),
+                       '\s+', ' ', 'g'), 240) as excerpt
+              from page cross join search_query
+             order by rank desc, created_at desc, id desc
             """.trimIndent(),
             { row, _ -> SearchRow(row) },
             *(args + (query.limit + 1)).toTypedArray(),
@@ -282,13 +296,15 @@ internal class JdbcKnowledgeReading(
                 KnowledgeSearchHit(
                     articleSlug = it.slug,
                     title = it.title,
-                    excerpt = excerpt(it.plainText),
+                    excerpt = it.excerpt,
                     audience = it.audience,
                     categoryTitle = it.categoryTitle,
                     sectionTitle = it.sectionTitle,
                 )
             },
-            nextCursor = if (rows.size > visible.size) visible.last().let { cursorCodec.encode(scope, KnowledgeCursor(it.createdAt, it.id)) } else null,
+            nextCursor = if (rows.size > visible.size) visible.last().let {
+                cursorCodec.encodeRanked(scope, KnowledgeRankedCursor(it.rank, it.createdAt, it.id))
+            } else null,
         )
     }
 
@@ -493,8 +509,6 @@ internal class JdbcKnowledgeReading(
         require(SLUG.matches(it)) { "Knowledge slug is invalid" }
     }
 
-    private fun excerpt(plainText: String): String = plainText.replace(Regex("\\s+"), " ").trim().take(300)
-
     private data class AudienceSql(val predicate: String, val args: List<Any>)
     private data class ListingRow(
         val id: UUID,
@@ -519,7 +533,8 @@ internal class JdbcKnowledgeReading(
         val slug: String,
         val audience: KnowledgeAudienceType,
         val title: String,
-        val plainText: String,
+        val excerpt: String,
+        val rank: Float,
         val categoryTitle: String,
         val sectionTitle: String,
         val createdAt: Instant,
@@ -529,7 +544,8 @@ internal class JdbcKnowledgeReading(
             row.getString("slug"),
             KnowledgeAudienceType.valueOf(row.getString("audience_type")),
             row.getString("title"),
-            row.getString("plain_text"),
+            row.getString("excerpt"),
+            row.getFloat("rank"),
             row.getString("category_title"),
             row.getString("section_title"),
             row.getTimestamp("created_at").toInstant(),
