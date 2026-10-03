@@ -13,6 +13,7 @@ import dev.deskseed.knowledge.KnowledgeAudienceType
 import dev.deskseed.knowledge.KnowledgeNavigationCategory
 import dev.deskseed.knowledge.KnowledgeNavigationSection
 import dev.deskseed.knowledge.KnowledgeNotFoundException
+import dev.deskseed.knowledge.KnowledgeParentLink
 import dev.deskseed.knowledge.KnowledgeReader
 import dev.deskseed.knowledge.KnowledgeReading
 import dev.deskseed.knowledge.KnowledgeRevisionView
@@ -104,7 +105,8 @@ internal class JdbcKnowledgeReading(
         val audience = audienceSql(reader)
         val section = jdbc.query(
             """
-            select section.id, section.category_id, section.slug, section.title, section.description
+            select section.id, section.category_id, section.slug, section.title, section.description,
+                   category.slug as category_slug, category.title as category_title
               from knowledge_sections section
               join knowledge_categories category on category.id = section.category_id
              where section.status = 'ACTIVE' and category.status = 'ACTIVE' and section.slug = ?
@@ -197,9 +199,11 @@ internal class JdbcKnowledgeReading(
 
     private fun visibleSections(categoryId: UUID, audience: AudienceSql): List<KnowledgeNavigationSection> = jdbc.query(
         """
-        select section.id, section.category_id, section.slug, section.title, section.description
+        select section.id, section.category_id, section.slug, section.title, section.description,
+                   category.slug as category_slug, category.title as category_title
           from knowledge_sections section
-         where section.category_id = ? and section.status = 'ACTIVE'
+          join knowledge_categories category on category.id = section.category_id
+         where section.category_id = ? and section.status = 'ACTIVE' and category.status = 'ACTIVE'
            and exists (
                 select 1 from knowledge_articles article
                  where article.section_id = section.id and article.lifecycle = 'PUBLISHED'
@@ -298,7 +302,9 @@ internal class JdbcKnowledgeReading(
             select article.id, article.section_id, article.slug, article.audience_type, article.audience_version,
                    article.published_at, revision.id as revision_id, revision.revision_number, revision.title,
                    revision.document_json::text as document_json, revision.summary, revision.change_note,
-                   revision.content_checksum, revision.created_at
+                   revision.content_checksum, revision.created_at,
+                   category.slug as category_slug, category.title as category_title,
+                   section.slug as section_slug, section.title as section_title
               from knowledge_articles article
               join knowledge_article_revisions revision on revision.id = article.current_published_revision_id
               join knowledge_sections section on section.id = article.section_id
@@ -439,6 +445,7 @@ internal class JdbcKnowledgeReading(
     private fun navigationSection(row: ResultSet) = KnowledgeNavigationSection(
         id = row.getObject("id", UUID::class.java),
         categoryId = row.getObject("category_id", UUID::class.java),
+        category = KnowledgeParentLink(row.getString("category_slug"), row.getString("category_title")),
         slug = row.getString("slug"),
         title = row.getString("title"),
         description = row.getString("description"),
@@ -453,6 +460,8 @@ internal class JdbcKnowledgeReading(
         return PublishedKnowledgeArticle(
             id = articleId,
             sectionId = row.getObject("section_id", UUID::class.java),
+            category = KnowledgeParentLink(row.getString("category_slug"), row.getString("category_title")),
+            section = KnowledgeParentLink(row.getString("section_slug"), row.getString("section_title")),
             slug = row.getString("slug"),
             audience = audience,
             audienceVersion = row.getInt("audience_version"),

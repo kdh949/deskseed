@@ -1,6 +1,6 @@
 # 도움말의 실제 부모 경로
 
-상태: CONTRACT_DEFINED. P05 / C-F06. 현재 FROZEN operation은 유지하고 예정 응답은 BLUEPRINT로 분리한다. 서버 runtime parity 검증 후 이 응답을 승격하고 고객 UI를 연결한다.
+상태: P05 / C-F06 서버 구현 및 해당 회귀 검증 완료. 계약 PR #248의 BLUEPRINT를 실제 고객 응답으로 승격했다. 고객 UI 연결은 후속이다.
 
 ## Goal
 
@@ -39,3 +39,8 @@ REQ-KB-001/004, D-036/D-054/D-055, Accepted ADR 0018/0025/0044. docs/02·25·30�
 ## Compatibility and human explanation
 
 응답 필드 추가이며 기존 slug/id는 유지한다. public HelpArticle schema를 관리자 aggregate와 분리해 실제 고객 projection을 문서화한다. 기존 잘못 공유된 admin `version` required는 고객 DTO에 강제하지 않는다. migration/backfill 없이 코드 revert로 복구할 수 있으며 이전 ETag는 한 번 200으로 갱신된다. 기존 join에서 부모 표시값을 함께 읽고 추가 round trip을 만들지 않는다. latency/load 효과는 측정 전 주장하지 않는다.
+
+
+## Observed verification
+
+기존 조회 join에서 부모 slug/title을 함께 projection하며 새 round trip이나 migration은 없다. 새 회귀의 수정 전 실패 확인 후 `AdminKnowledgeIntegrationTest` 5개, `ArchitectureTest` 1개와 `ApiDocumentationIntegrationTest` 5개, Core bundle/docs-check/diff-check를 통과했다. 실제 부모 rename/move, 같은 응답의 304, 이전 ETag에 대한 갱신 200, hidden audience·archived parent의 404를 검증했다. UI·전체 backend suite·production·latency/load 검증은 로컬에서 실행하지 않았다.

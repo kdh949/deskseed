@@ -16,9 +16,12 @@ data class KnowledgeNavigationCategory(
     val sections: List<KnowledgeNavigationSection> = emptyList(),
 )
 
+data class KnowledgeParentLink(val slug: String, val title: String)
+
 data class KnowledgeNavigationSection(
     val id: UUID,
     val categoryId: UUID,
+    val category: KnowledgeParentLink,
     val slug: String,
     val title: String,
     val description: String,
@@ -36,6 +39,8 @@ data class KnowledgeArticleListing(
 data class PublishedKnowledgeArticle(
     val id: UUID,
     val sectionId: UUID,
+    val category: KnowledgeParentLink,
+    val section: KnowledgeParentLink,
     val slug: String,
     val audience: KnowledgeAudience,
     val audienceVersion: Int,
