@@ -17,18 +17,21 @@ import './ai-assistant.css'
 
 const FEATURES: Array<{
   feature: AiFeature
+  capability: string
   title: string
   description: string
   icon: 'text' | 'priority' | 'speech'
 }> = [
   {
     feature: 'ticket.summary',
+    capability: 'AI_SUMMARY',
     title: '대화 요약',
-    description: 'PUBLIC 대화의 핵심 내용과 확인할 일을 정리합니다.',
+    description: '고객에게 공개된 대화의 핵심 내용과 확인할 일을 정리합니다.',
     icon: 'text',
   },
   {
     feature: 'ticket.triage',
+    capability: 'AI_TRIAGE',
     title: '분류 제안',
     description:
       '주제와 우선순위를 제안합니다. 티켓에는 자동 적용하지 않습니다.',
@@ -36,8 +39,10 @@ const FEATURES: Array<{
   },
   {
     feature: 'ticket.reply_draft',
+    capability: 'AI_REPLY_DRAFT',
     title: '답변 초안',
-    description: 'PUBLIC 대화와 공개 지식 문서를 근거로 답변을 작성합니다.',
+    description:
+      '고객에게 공개된 대화와 공개 지식 문서를 근거로 답변을 작성합니다.',
     icon: 'speech',
   },
 ]
@@ -91,13 +96,17 @@ class AiResultUnavailableError extends Error {}
 
 export function AiAssistantPanel({
   client = defaultClient,
+  capabilities,
   composerMode,
+  onRefreshAvailability,
   publicDraft,
   ticketNumber,
   ticketVersion,
   onInsertReply,
 }: {
   client?: AiAssistantClient
+  capabilities: readonly string[]
+  onRefreshAvailability: () => Promise<unknown>
   composerMode: TicketVisibility
   publicDraft: AiPublicDraftSnapshot
   ticketNumber: number
@@ -111,6 +120,8 @@ export function AiAssistantPanel({
   const [jobs, setJobs] = useState<JobMap>({})
   const [errors, setErrors] = useState<ErrorMap>({})
   const [loading, setLoading] = useState(true)
+  const [refreshingAvailability, setRefreshingAvailability] = useState(false)
+  const [availabilityError, setAvailabilityError] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [denied, setDenied] = useState(false)
   const [choiceJobId, setChoiceJobId] = useState<string | null>(null)
@@ -231,8 +242,31 @@ export function AiAssistantPanel({
     return () => timers.forEach(window.clearTimeout)
   }, [client, hydrateResult, jobs, replaceJob, ticketNumber])
 
+  const refreshAvailability = async () => {
+    setRefreshingAvailability(true)
+    setAvailabilityError(false)
+    try {
+      await onRefreshAvailability()
+    } catch {
+      setAvailabilityError(true)
+    } finally {
+      setRefreshingAvailability(false)
+    }
+  }
+
   const generate = async (feature: AiFeature) => {
-    if (loading || generateInFlightRef.current.has(feature)) return
+    const required = FEATURES.find(
+      (definition) => definition.feature === feature,
+    )?.capability
+    if (
+      loading ||
+      refreshingAvailability ||
+      availabilityError ||
+      !required ||
+      !capabilities.includes(required) ||
+      generateInFlightRef.current.has(feature)
+    )
+      return
     generateInFlightRef.current.add(feature)
     setGeneratingFeatures((current) => new Set(current).add(feature))
     setErrors((current) => ({ ...current, [feature]: undefined }))
@@ -245,6 +279,8 @@ export function AiAssistantPanel({
         ...current,
         [feature]: messageForError(cause),
       }))
+      if (cause instanceof ApiError && cause.status === 403)
+        await refreshAvailability()
     } finally {
       generateInFlightRef.current.delete(feature)
       setGeneratingFeatures((current) => {
@@ -443,6 +479,25 @@ export function AiAssistantPanel({
         </SeedNotice>
       )}
 
+      {refreshingAvailability && (
+        <p role="status">AI 사용 가능 상태를 다시 확인하고 있습니다.</p>
+      )}
+      {availabilityError && (
+        <SeedNotice
+          title="AI 사용 가능 상태를 확인하지 못했습니다"
+          tone="danger"
+        >
+          <p>현재 상태를 확인한 뒤 다시 생성할 수 있습니다.</p>
+          <SeedButton
+            disabled={refreshingAvailability}
+            onClick={() => void refreshAvailability()}
+            size="compact"
+          >
+            사용 가능 상태 다시 확인
+          </SeedButton>
+        </SeedNotice>
+      )}
+
       {!denied && !loadError && (
         <div className="ai-assistant__cards">
           {FEATURES.map((definition) => {
@@ -453,8 +508,15 @@ export function AiAssistantPanel({
                 definition={definition}
                 error={errors[definition.feature]}
                 feedback={job ? feedbackByJob[job.jobId] : undefined}
+                generationUnavailable={
+                  !capabilities.includes(definition.capability)
+                }
                 generationDisabled={
-                  loading || generatingFeatures.has(definition.feature)
+                  loading ||
+                  refreshingAvailability ||
+                  availabilityError ||
+                  !capabilities.includes(definition.capability) ||
+                  generatingFeatures.has(definition.feature)
                 }
                 insertionBusy={insertingJobId === job?.jobId}
                 job={job}
@@ -488,6 +550,7 @@ function AiFeatureCard({
   error,
   feedback,
   generationDisabled,
+  generationUnavailable,
   insertionBusy,
   job,
   onCancelChoice,
@@ -502,6 +565,7 @@ function AiFeatureCard({
   error?: string
   feedback?: AiFeedbackType
   generationDisabled: boolean
+  generationUnavailable: boolean
   insertionBusy: boolean
   job?: AiJobReceipt
   onCancelChoice: () => void
@@ -599,6 +663,9 @@ function AiFeatureCard({
         </div>
       )}
 
+      {generationUnavailable && (
+        <p>현재 이 티켓에서는 {definition.title}을 사용할 수 없습니다.</p>
+      )}
       <div className="ai-assistant-card__actions">
         <SeedButton
           disabled={active || generationDisabled}
@@ -774,7 +841,7 @@ function messageForError(cause: unknown) {
     if (cause.status === 429)
       return '요청이 많습니다. 잠시 후 다시 시도해 주세요.'
     if (cause.status === 403)
-      return '현재 계정에는 이 AI 기능을 사용할 권한이 없습니다.'
+      return '현재 이 티켓에서는 이 AI 기능을 사용할 수 없습니다.'
     return cause.requestId
       ? `${cause.message} (요청 ID: ${cause.requestId})`
       : cause.message

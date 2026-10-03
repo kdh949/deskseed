@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { ApiError } from '../../api/client'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { AiAssistantPanel, type AiAssistantClient } from './AiAssistantPanel'
@@ -107,7 +109,15 @@ const emptyDraft = {
 const meta = {
   title: '06 Domain/AI assistance/AiAssistantPanel',
   component: AiAssistantPanel,
-  parameters: { layout: 'centered' },
+  parameters: {
+    layout: 'centered',
+    docs: {
+      description: {
+        component:
+          '현재 티켓 상세의 AI capability별로 신규 생성을 허용합니다. 기존 작업 조회는 별도로 유지하며 403 이후 onRefreshAvailability로 BACKGROUND 상세를 재확인합니다. 자동 생성·삽입·전송은 하지 않습니다.',
+      },
+    },
+  },
   decorators: [
     (Story) => (
       <div style={{ width: 360 }}>
@@ -116,6 +126,8 @@ const meta = {
     ),
   ],
   args: {
+    capabilities: ['AI_SUMMARY', 'AI_TRIAGE', 'AI_REPLY_DRAFT'],
+    onRefreshAvailability: fn(async () => undefined),
     client: clientFor(readyJobs),
     composerMode: 'PUBLIC',
     publicDraft: emptyDraft,
@@ -263,5 +275,111 @@ export const InternalComposerGuard: Story = {
       canvas.getByText('PUBLIC 답변 작성기를 선택한 뒤 다시 시도해 주세요.'),
     ).toBeVisible()
     await expect(args.onInsertReply).not.toHaveBeenCalled()
+  },
+}
+
+export const GenerationUnavailable: Story = {
+  args: { capabilities: ['READ', 'UPDATE', 'UNKNOWN_FUTURE_CAPABILITY'] },
+  play: async ({ canvas, args }) => {
+    await expect(
+      await canvas.findByText('결제 승인 기록 확인을 시작함'),
+    ).toBeVisible()
+    for (const button of canvas.getAllByRole('button', { name: '새로 생성' }))
+      await expect(button).toBeDisabled()
+    await expect(
+      canvas.getByText('현재 이 티켓에서는 대화 요약을 사용할 수 없습니다.'),
+    ).toBeVisible()
+    await expect(args.client!.create).not.toHaveBeenCalled()
+  },
+}
+export const SummaryOnly: Story = {
+  args: { client: clientFor([]), capabilities: ['AI_SUMMARY'] },
+  play: async ({ canvas, args }) => {
+    const buttons = canvas.getAllByRole('button', { name: '생성하기' })
+    await waitFor(() => expect(buttons[0]).toBeEnabled())
+    await expect(buttons[1]).toBeDisabled()
+    await expect(buttons[2]).toBeDisabled()
+    buttons[0]!.focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(args.client!.create).toHaveBeenCalledWith(
+      3001,
+      7,
+      'ticket.summary',
+    )
+    await expect(args.client!.create).toHaveBeenCalledTimes(1)
+  },
+}
+function ChangedAvailability(
+  props: React.ComponentProps<typeof AiAssistantPanel>,
+) {
+  const [capabilities, setCapabilities] = useState(['AI_SUMMARY'])
+  return (
+    <AiAssistantPanel
+      {...props}
+      capabilities={capabilities}
+      onRefreshAvailability={async () => {
+        await props.onRefreshAvailability()
+        setCapabilities([])
+      }}
+    />
+  )
+}
+export const PolicyChangedBeforeGeneration: Story = {
+  args: {
+    client: {
+      ...clientFor([]),
+      create: fn(async () => {
+        throw new ApiError('denied', 403)
+      }),
+    },
+  },
+  render: (args) => <ChangedAvailability {...args} />,
+  play: async ({ canvas, args }) => {
+    const button = canvas.getAllByRole('button', { name: '생성하기' })[0]!
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
+    await expect(
+      await canvas.findByText(
+        '현재 이 티켓에서는 대화 요약을 사용할 수 없습니다.',
+      ),
+    ).toBeVisible()
+    await expect(button).toBeDisabled()
+    await expect(args.onRefreshAvailability).toHaveBeenCalledTimes(1)
+    await expect(args.client!.create).toHaveBeenCalledTimes(1)
+  },
+}
+let availabilityAttempts = 0
+export const AvailabilityRefreshFailure: Story = {
+  beforeEach: () => {
+    availabilityAttempts = 0
+  },
+  args: {
+    capabilities: ['AI_SUMMARY'],
+    client: {
+      ...clientFor([]),
+      create: fn(async () => {
+        throw new ApiError('denied', 403)
+      }),
+    },
+    onRefreshAvailability: fn(async () => {
+      if (++availabilityAttempts === 1) throw new Error('network')
+    }),
+  },
+  play: async ({ canvas, args }) => {
+    const button = canvas.getAllByRole('button', { name: '생성하기' })[0]!
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
+    await expect(
+      await canvas.findByText('AI 사용 가능 상태를 확인하지 못했습니다'),
+    ).toBeVisible()
+    await expect(button).toBeDisabled()
+    const retry = canvas.getByRole('button', {
+      name: '사용 가능 상태 다시 확인',
+    })
+    retry.focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(button).toBeEnabled())
+    await expect(args.onRefreshAvailability).toHaveBeenCalledTimes(2)
+    await expect(args.client!.create).toHaveBeenCalledTimes(1)
   },
 }

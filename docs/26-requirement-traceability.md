@@ -218,3 +218,5 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 - 2026-09-16~17 REQ-AI-001~005: [AI V1 A 계약·PUBLIC source](tasks/2026-09-16-ai-v1-a-contract-source.md), [AI V1 B~G 격리 실행·운영](tasks/2026-09-16-ai-v1-b-g-runtime.md), [AI V1 상담사 어시스턴트 UI](tasks/2026-09-17-ai-v1-frontend-assistant.md). UI는 current Core contract의 summary/triage/reply와 safe insertion을 연결하며 chat/workflow/auto-apply는 제외한다. live provider/Langfuse/실데이터/배포·사람 평가는 별도 외부 검증이다.
 
 - 2026-10-03 REQ-AI-001/002: [AI 생성 가능 상태](tasks/2026-10-03-ai-generation-availability.md). 기존 detail에 정책 기반 capability를 추가하고 생성·결과 재인가와 같은 gate를 공유한다. PostgreSQL-backed integration 26 및 architecture 1 통과; UI·live provider·배포·부하 검증은 후속이며 requirement 전체 상태는 유지한다.
+
+- 2026-10-03 REQ-AI-001/002 P13 UI: [AI 생성 가능 상태](tasks/2026-10-03-ai-generation-availability.md)의 서버 capability를 staff panel에 연결했다. 기존 작업 조회와 생성 제한을 분리하고403 뒤 BACKGROUND 상세 재확인·실패 잠금/수동 복구·초안 보존을 검증했다. 복구 후 unit259, full MCP294+a11y, mock Chromium2와 타입/빌드/경계/계약/문서 gate 통과. live provider/운영 배포/부하/실DB 감사 재실행은 별도이며 requirement 전체 IN_PROGRESS 상태를 유지한다.

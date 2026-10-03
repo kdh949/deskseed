@@ -146,6 +146,8 @@ function WritableWorkspace({
         properties={<EditableProperties detail={detail} editor={editor} />}
         aiAssistant={
           <AiAssistantPanel
+            capabilities={detail.capabilities}
+            onRefreshAvailability={refreshLatest}
             composerMode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
             onInsertReply={(answer, strategy, expectedDraft) => {
               if (

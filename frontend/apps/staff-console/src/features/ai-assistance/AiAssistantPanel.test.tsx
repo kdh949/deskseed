@@ -1,5 +1,13 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../api/client'
 import { plainTextDocument } from '../../api/types'
 import {
   AiAssistantPanel,
@@ -84,6 +92,8 @@ function panel(
 ) {
   return (
     <AiAssistantPanel
+      capabilities={['AI_SUMMARY', 'AI_TRIAGE', 'AI_REPLY_DRAFT']}
+      onRefreshAvailability={vi.fn().mockResolvedValue(undefined)}
       client={aiClient}
       composerMode="PUBLIC"
       onInsertReply={onInsertReply}
@@ -227,5 +237,140 @@ describe('AiAssistantPanel', () => {
         '검증 중 티켓이나 작성기가 변경되었습니다. 다시 시도해 주세요.',
       ),
     ).toBeVisible()
+  })
+})
+
+describe('AI generation availability', () => {
+  const props = {
+    composerMode: 'PUBLIC' as const,
+    publicDraft: emptyDraft,
+    ticketNumber: 3001,
+    ticketVersion: 7,
+    onInsertReply: vi.fn(),
+  }
+  it('keeps existing jobs readable with no generation capability and ignores unknown capabilities', async () => {
+    const aiClient = client({
+      list: vi.fn(async () => ({ items: [receipt('ticket.summary')] })),
+    })
+    render(
+      <AiAssistantPanel
+        {...props}
+        client={aiClient}
+        capabilities={['READ', 'UPDATE', 'AI_UNKNOWN']}
+        onRefreshAvailability={vi.fn()}
+      />,
+    )
+    expect(
+      await screen.findByText('결제 상태를 확인하고 있습니다.'),
+    ).toBeVisible()
+    for (const button of screen.getAllByRole('button', {
+      name: /생성하기|새로 생성/,
+    })) {
+      expect(button).toBeDisabled()
+      fireEvent.click(button)
+    }
+    expect(
+      screen.getByText('현재 이 티켓에서는 대화 요약을 사용할 수 없습니다.'),
+    ).toBeVisible()
+    expect(aiClient.list).toHaveBeenCalledTimes(1)
+    expect(aiClient.create).not.toHaveBeenCalled()
+  })
+  it('allows only the granted feature and does not generate automatically after capability changes', async () => {
+    const aiClient = client()
+    const view = render(
+      <AiAssistantPanel
+        {...props}
+        client={aiClient}
+        capabilities={['AI_TRIAGE']}
+        onRefreshAvailability={vi.fn()}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByText('최근 AI 작업을 불러오는 중…'),
+      ).not.toBeInTheDocument(),
+    )
+    const buttons = screen.getAllByRole('button', { name: '생성하기' })
+    expect(buttons[0]).toBeDisabled()
+    expect(buttons[1]).toBeEnabled()
+    expect(buttons[2]).toBeDisabled()
+    fireEvent.click(buttons[1]!)
+    await waitFor(() =>
+      expect(aiClient.create).toHaveBeenCalledWith(3001, 7, 'ticket.triage'),
+    )
+    view.rerender(
+      <AiAssistantPanel
+        {...props}
+        client={aiClient}
+        capabilities={['AI_SUMMARY']}
+        onRefreshAvailability={vi.fn()}
+      />,
+    )
+    expect(aiClient.create).toHaveBeenCalledTimes(1)
+  })
+  it('refreshes availability after a denied create and keeps current jobs instead of retrying creation', async () => {
+    const aiClient = client({
+      create: vi.fn().mockRejectedValue(new ApiError('denied', 403)),
+    })
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    const view = render(
+      <AiAssistantPanel
+        {...props}
+        client={aiClient}
+        capabilities={['AI_SUMMARY']}
+        onRefreshAvailability={refresh}
+      />,
+    )
+    const card = screen
+      .getByRole('heading', { name: '대화 요약' })
+      .closest('article')!
+    const button = within(card).getByRole('button', { name: '생성하기' })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
+    view.rerender(
+      <AiAssistantPanel
+        {...props}
+        client={aiClient}
+        capabilities={[]}
+        onRefreshAvailability={refresh}
+      />,
+    )
+    expect(button).toBeDisabled()
+    expect(
+      screen.getByText('현재 이 티켓에서는 이 AI 기능을 사용할 수 없습니다.'),
+    ).toBeVisible()
+    expect(aiClient.create).toHaveBeenCalledTimes(1)
+    expect(aiClient.list).toHaveBeenCalledTimes(1)
+  })
+  it('keeps generation locked after failed policy refresh until an explicit successful check', async () => {
+    const aiClient = client({
+      create: vi.fn().mockRejectedValue(new ApiError('denied', 403)),
+    })
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValue(undefined)
+    render(
+      <AiAssistantPanel
+        {...props}
+        client={aiClient}
+        capabilities={['AI_SUMMARY']}
+        onRefreshAvailability={refresh}
+      />,
+    )
+    const button = screen.getAllByRole('button', { name: '생성하기' })[0]!
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    expect(
+      await screen.findByText('AI 사용 가능 상태를 확인하지 못했습니다'),
+    ).toBeVisible()
+    expect(button).toBeDisabled()
+    fireEvent.click(
+      screen.getByRole('button', { name: '사용 가능 상태 다시 확인' }),
+    )
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(aiClient.create).toHaveBeenCalledTimes(1)
   })
 })
