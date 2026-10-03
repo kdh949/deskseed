@@ -66,6 +66,7 @@ const categories = [
 const announcements = {
   id: 'section-announcements',
   categoryId: 'cat-announcements',
+  category: { slug: 'updates', title: '업데이트' },
   slug: 'announcements',
   title: '공지사항',
   description: 'DeskSeed 서비스와 고객 지원 업데이트',
@@ -299,6 +300,8 @@ export const EmptyArticle: Story = {
         http.get('/api/v1/help/articles/:slug', ({ params }) =>
           HttpResponse.json({
             slug: params.slug,
+            category: { slug: 'billing', title: '결제' },
+            section: { slug: 'payments', title: '결제 수단' },
             currentPublishedRevision: {
               title: '비어 있는 도움말 문서',
               createdAt: '2026-08-27T00:00:00Z',
@@ -339,6 +342,8 @@ export const Article: Story = {
         http.get('/api/v1/help/articles/:slug', ({ params }) =>
           HttpResponse.json({
             slug: params.slug,
+            category: { slug: 'billing', title: '결제' },
+            section: { slug: 'payments', title: '결제 수단' },
             currentPublishedRevision: {
               title: '결제 정보 변경 방법',
               summary:
@@ -374,6 +379,13 @@ export const Article: Story = {
     await expect(
       await canvas.findByRole('heading', { name: '결제 정보 변경 방법' }),
     ).toBeVisible()
+    await expect(canvas.getByRole('link', { name: '결제' })).toHaveAttribute(
+      'href',
+      '/categories/billing',
+    )
+    await expect(
+      canvas.getByRole('link', { name: '결제 수단' }),
+    ).toHaveAttribute('href', '/sections/payments')
   },
 }
 
@@ -413,6 +425,9 @@ export const CategorySections: Story = {
     </AnonymousChrome>
   ),
   play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('list', { name: '섹션 목록' }),
+    ).toBeVisible()
     await expect(
       await canvas.findByRole('link', { name: '공지사항' }),
     ).toHaveAttribute('href', '/sections/announcements')
@@ -525,5 +540,54 @@ export const SessionFailureRecovery: Story = {
       await canvas.findByText('등록된 도움말 주제가 없습니다.'),
     ).toBeVisible()
     await expect(unexpectedHelp).not.toHaveBeenCalled()
+  },
+}
+
+export const ArticleWithLongParents: Story = {
+  ...Article,
+  parameters: {
+    msw: {
+      handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
+        http.get('/api/v1/help/articles/:slug', ({ params }) =>
+          HttpResponse.json({
+            slug: params.slug,
+            category: {
+              slug: '계정-관리',
+              title: '계정과 사용자 설정을 관리하는 방법'.repeat(2),
+            },
+            section: {
+              slug: '로그인-보안',
+              title: '로그인 및 보안 문제를 해결하는 방법'.repeat(2),
+            },
+            currentPublishedRevision: {
+              title: '로그인 확인',
+              document: {
+                schemaVersion: 1,
+                blocks: [
+                  { type: 'paragraph', text: '로그인 정보를 확인해 주세요.' },
+                ],
+              },
+            },
+          }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', {
+        name: '계정과 사용자 설정을 관리하는 방법'.repeat(2),
+      }),
+    ).toHaveAttribute(
+      'href',
+      '/categories/%EA%B3%84%EC%A0%95-%EA%B4%80%EB%A6%AC',
+    )
+    await expect(
+      canvas.getByRole('navigation', { name: '문서 경로' }),
+    ).toBeVisible()
   },
 }

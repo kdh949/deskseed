@@ -17,7 +17,14 @@ export interface HelpSearchHit {
   sectionTitle?: string
 }
 
+export interface HelpParent {
+  slug: string
+  title: string
+}
+
 export interface HelpArticle {
+  category?: HelpParent
+  section?: HelpParent
   slug: string
   title: string
   summary?: string
@@ -32,6 +39,7 @@ export interface HelpArticleListing {
 }
 
 export interface HelpSection {
+  category?: HelpParent
   slug: string
   title: string
   description: string
@@ -103,6 +111,7 @@ export async function getHelpSection(
   return {
     slug: body.slug,
     title: body.title,
+    category: parentReference(body.category),
     description: typeof body.description === 'string' ? body.description : '',
     articles,
     ...pageCursor(body),
@@ -159,6 +168,8 @@ export async function getHelpArticle(
   return {
     slug: body.slug,
     title: revision.title,
+    category: parentReference(body.category),
+    section: parentReference(body.section),
     ...(typeof revision.summary === 'string'
       ? { summary: revision.summary }
       : {}),
@@ -251,6 +262,7 @@ export async function getHelpCategory(
     return {
       slug: item.slug,
       title: item.title,
+      category: parentReference(item.category),
       description: typeof item.description === 'string' ? item.description : '',
       articles: [],
       hasMore: false,
@@ -264,4 +276,18 @@ export async function getHelpCategory(
     description: typeof body.description === 'string' ? body.description : '',
     sections,
   }
+}
+
+// Missing additive fields support rollout/rollback; present invalid paths fail closed.
+function parentReference(value: unknown): HelpParent | undefined {
+  if (value === undefined) return undefined
+  if (
+    !isRecord(value) ||
+    typeof value.slug !== 'string' ||
+    !value.slug.trim() ||
+    typeof value.title !== 'string' ||
+    !value.title.trim()
+  )
+    throw new Error('help-parent-response-invalid')
+  return { slug: value.slug, title: value.title }
 }
