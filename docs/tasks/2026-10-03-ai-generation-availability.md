@@ -1,6 +1,6 @@
 # 티켓별 AI 생성 가능 상태 계약
 
-상태: 서버 구현 및 해당 회귀 검증 완료. 계약 PR #245의 capabilities blueprint를 실제 응답 설명·예시로 승격했다. UI 연결과 live provider 검증은 후속이다.
+상태: 서버와 UI 연결 및 해당 로컬 회귀 검증 완료. 계약 PR #245의 capabilities blueprint를 실제 응답 설명·예시로 승격했다. live provider·운영 배포·부하 검증은 별도다.
 
 ## Goal
 
@@ -80,3 +80,20 @@ REQ-AI-001/002, AI-API-001/AI-SRC-001의 frontend 경계 및 UI-002/003/004/005/
 2026-10-03 checkout 중단 뒤 미커밋 UI를 해당 작업의 원본 도구 기록에서 복구해 Git 체크포인트로 보존했다. 중단 전 로그의 unit259·타입/lint·fresh full MCP294 통과는 이전 작업공간 근거이며 복구 후 검증과 구분한다. E2E fixture는1280에서 기존 컨텍스트 drawer를 먼저 열고 dev StrictMode 초기 목록 조회 횟수 대신 정책 재조회 전후의 증가 여부를 비교하도록 보완했다. 테스트 실행은 팀의 자원 직렬화 순서를 따른다.
 
 `AgentTicketWorkspacePage.refreshLatest`는 `query.refetch()`의 `result.error`를 명시적으로 throw하므로 기본 `throwOnError=false`도 panel에 실패로 전달한다. 구조 변경 없이 해당 경계를 유지한다. 기능 설명 두 곳의 PUBLIC 용어는 고객에게 공개된 대화로 풀어 썼으며 API/feature 식별자는 유지한다.
+
+
+## P13 UI completion evidence
+
+- AI_SUMMARY/AI_TRIAGE/AI_REPLY_DRAFT별 생성 비활성·안내, 기존 job 조회 유지, 생성403 뒤 BACKGROUND 상세 재조회, 재조회 실패시 잠금·명시적 재확인을 연결했다. 알 수 없는 capability는 무시하며 자동 생성/삽입/전송은 없다. 기존 작성안·버전·idempotency·서버 재인가를 유지한다.
+- 복구 worktree의 현 코드에서 Passed: staff unit259/43파일, typecheck, staff build, 경계 검사, P1 OpenAPI fixture contract, 변경 파일 lint/format, docs-check, diff-check. 기존 staff500KB bundle warning은 남는다.
+- Passed: target staff MCP 문서 목록/지침/AI panel 문서 조회, full294/61파일+a11y, 실제 소비자34story 조회, preview. 커밋된 clean 작업 트리의 get-changed-stories는 변경 없음으로 반환하여 get-stories-by-component로 소비자를 확인했다.
+- Passed: mock Chromium E2E2개(1280/1920). 현재 UI에 맞춰 컨텍스트 열기·자료 탭이 있으면 진입하되 AI 노출 자체는 필수로 단언한다. 기능별 비활성, 키보드 생성, 명령 헤더·version·1회 생성, BACKGROUND 재조회,1920 상세503→명시적 재확인, 원래 초안 유지, AI 영역 axe·가로 넘침을 확인했다. 두 viewport 캡처를 직접 확인했다.
+- `test:e2e:dev`의 기존 CI6spec과 이 신규 focused E2E 결과는 구분한다. P10의 자료 탭과 결합한 화면 검증은 상위 통합 검증에 포함하며 이 branch는 서버#247 기반이다.
+- Not run: live provider, 실제 DB/감사 rollback 전체 재실행, 운영 배포·설정·실데이터·성능/부하, Firefox/WebKit, pixel baseline 비교. 기능 사용 가능 상태는 budget/rate/provider 성공을 보장하지 않는다. 신규 API/DB/의존성/인프라·retention 변화 없음.
+
+MCP previews:
+
+- http://localhost:6124/?statuses=affected;modified;new
+- http://localhost:6124/?path=/story/06-domain-ai-assistance-aiassistantpanel--generation-unavailable
+- http://localhost:6124/?path=/story/06-domain-ai-assistance-aiassistantpanel--summary-only
+- http://localhost:6124/?path=/story/06-domain-ai-assistance-aiassistantpanel--policy-changed-before-generation
