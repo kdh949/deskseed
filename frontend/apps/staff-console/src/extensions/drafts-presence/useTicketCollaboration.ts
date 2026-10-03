@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   releaseTicketCollaboration,
   retainTicketCollaboration,
   type CollaborationView,
+  type TicketCollaborationRealtime,
 } from './collaborationRealtime'
 
 const initialView: CollaborationView = {
   connection: 'connecting',
   members: [],
   ticketUpdate: null,
+  lastConfirmedAt: null,
+  reconnectAt: null,
+  snapshotReceived: false,
 }
 
 export function useTicketCollaboration({
@@ -18,12 +22,16 @@ export function useTicketCollaboration({
   composerMode?: 'public' | 'internal'
   ticketNumber: number
 }) {
+  const clientRef = useRef<TicketCollaborationRealtime | null>(null)
+  const retry = useCallback(() => clientRef.current?.retry(), [])
   const [view, setView] = useState<CollaborationView>(initialView)
 
   useEffect(() => {
     const client = retainTicketCollaboration(ticketNumber)
+    clientRef.current = client
     const stopObserving = client.observe(setView)
     return () => {
+      clientRef.current = null
       stopObserving()
       releaseTicketCollaboration(ticketNumber)
     }
@@ -39,5 +47,5 @@ export function useTicketCollaboration({
     }
   }, [composerMode, ticketNumber])
 
-  return view
+  return { ...view, retry }
 }
