@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   ApiError,
   createStaff,
@@ -16,10 +16,12 @@ import type {
 } from '../../api/types'
 import {
   DsButton,
+  DsDrawer,
   Notification,
   RetryButton,
   ScreenState,
 } from '../../design-system'
+import { useAdminDraftExit } from './useAdminDraftExit'
 
 const ROLE_LABELS: Record<StaffRole, string> = {
   ADMIN: '관리자',
@@ -39,6 +41,8 @@ const AUDIT_AUTHORITIES: Array<{
 export function AdminStaffPage() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
+  const [createOpen, setCreateOpen] = useState(false)
+  const actionRef = useRef<HTMLButtonElement | null>(null)
   const [searchDraft, setSearchDraft] = useState('')
   const [search, setSearch] = useState<{ query: string; key: string } | null>(
     null,
@@ -78,6 +82,7 @@ export function AdminStaffPage() {
       setPassword('')
       setRole('AGENT')
       setValidationError(null)
+      setCreateOpen(false)
       await refresh()
     },
   })
@@ -101,11 +106,40 @@ export function AdminStaffPage() {
       grant
         ? grantStaffAuditAuthority(staffId, authority)
         : revokeStaffAuditAuthority(staffId, authority),
-    onSuccess: async () => {
-      setAuthorityStaff(null)
+    onSuccess: async (_, { staffId, authority, grant }) => {
+      setAuthorityStaff((current) =>
+        current?.id === staffId
+          ? {
+              ...current,
+              auditAuthorities: grant
+                ? [...new Set([...current.auditAuthorities, authority])]
+                : current.auditAuthorities.filter(
+                    (value) => value !== authority,
+                  ),
+            }
+          : current,
+      )
       await refresh()
     },
   })
+  const busy =
+    createMutation.isPending ||
+    disableMutation.isPending ||
+    authorityMutation.isPending
+  const dirty =
+    createOpen &&
+    (email !== '' || displayName !== '' || password !== '' || role !== 'AGENT')
+  const exit = useAdminDraftExit(dirty, busy)
+  const leaveCreate = (action: () => void) =>
+    exit.request(() => {
+      setEmail('')
+      setDisplayName('')
+      setPassword('')
+      setRole('AGENT')
+      setValidationError(null)
+      setCreateOpen(false)
+      action()
+    })
 
   if (staffQuery.isPending && !search) {
     return (
@@ -156,19 +190,46 @@ export function AdminStaffPage() {
 
   const staffPage = staffQuery.data
   return (
-    <main aria-label="직원 관리" className="admin-page">
+    <main aria-label="직원 관리" className="admin-page admin-directory-page">
       <header className="admin-page-header">
         <div>
           <h1>직원</h1>
           <p>직원 계정과 보안 감사 권한을 ADMIN 정책 안에서 관리합니다.</p>
         </div>
-        <DsButton onClick={() => void staffQuery.refetch()} tone="secondary">
-          직원 목록 새로고침
-        </DsButton>
+        <div className="admin-inline-actions">
+          <DsButton
+            disabled={busy}
+            onClick={() => void staffQuery.refetch()}
+            tone="secondary"
+          >
+            직원 목록 새로고침
+          </DsButton>
+          <DsButton
+            disabled={busy}
+            tone="primary"
+            onClick={(event) => {
+              actionRef.current = event.currentTarget
+              setCreateOpen(true)
+              createMutation.reset()
+            }}
+          >
+            직원 추가
+          </DsButton>
+        </div>
       </header>
 
-      <section aria-labelledby="create-staff-heading" className="admin-surface">
-        <h2 id="create-staff-heading">직원 계정 생성</h2>
+      {createMutation.isSuccess ? (
+        <Notification title="직원 계정을 만들었습니다." tone="success">
+          <p>현재 직원 목록에서 생성한 계정을 확인할 수 있습니다.</p>
+        </Notification>
+      ) : null}
+
+      <DsDrawer
+        open={createOpen}
+        title="직원 계정 생성"
+        onClose={() => leaveCreate(() => undefined)}
+        returnFocusRef={actionRef}
+      >
         <p>
           초기 비밀번호는 생성 요청에만 사용되며, 성공 후 브라우저 양식에서
           지웁니다.
@@ -179,6 +240,7 @@ export function AdminStaffPage() {
               <span>이메일</span>
               <input
                 autoComplete="off"
+                disabled={busy}
                 id="staff-email"
                 maxLength={254}
                 onChange={(event) => setEmail(event.target.value)}
@@ -189,6 +251,7 @@ export function AdminStaffPage() {
             <label className="admin-field" htmlFor="staff-display-name">
               <span>표시 이름</span>
               <input
+                disabled={busy}
                 id="staff-display-name"
                 maxLength={100}
                 onChange={(event) => setDisplayName(event.target.value)}
@@ -198,6 +261,7 @@ export function AdminStaffPage() {
             <label className="admin-field" htmlFor="staff-role">
               <span>역할</span>
               <select
+                disabled={busy}
                 id="staff-role"
                 onChange={(event) => setRole(event.target.value as StaffRole)}
                 value={role}
@@ -213,6 +277,7 @@ export function AdminStaffPage() {
               <span>초기 비밀번호</span>
               <input
                 autoComplete="new-password"
+                disabled={busy}
                 id="staff-initial-password"
                 maxLength={256}
                 onChange={(event) => setPassword(event.target.value)}
@@ -230,11 +295,6 @@ export function AdminStaffPage() {
               error={createMutation.error}
             />
           ) : null}
-          {createMutation.isSuccess ? (
-            <Notification title="직원 계정을 만들었습니다." tone="success">
-              <p>서버의 현재 직원 목록을 다시 확인했습니다.</p>
-            </Notification>
-          ) : null}
           <div className="admin-form-actions">
             <DsButton
               disabled={createMutation.isPending}
@@ -247,7 +307,7 @@ export function AdminStaffPage() {
             </DsButton>
           </div>
         </form>
-      </section>
+      </DsDrawer>
 
       <section aria-labelledby="staff-list-heading" className="admin-surface">
         <h2 id="staff-list-heading">직원 계정</h2>
@@ -342,7 +402,9 @@ export function AdminStaffPage() {
                   <tr key={staff.id}>
                     <td>{staff.displayName}</td>
                     <td>{staff.email}</td>
-                    <td>{ROLE_LABELS[staff.role]}</td>
+                    <td className="admin-role-cell">
+                      {ROLE_LABELS[staff.role]}
+                    </td>
                     <td>{staff.status === 'ACTIVE' ? '활성' : '비활성'}</td>
                     <td>
                       {staff.memberships
@@ -351,22 +413,42 @@ export function AdminStaffPage() {
                     </td>
                     <td>
                       {staff.auditAuthorities.length > 0
-                        ? staff.auditAuthorities.join(', ')
+                        ? staff.auditAuthorities
+                            .map(
+                              (value) =>
+                                AUDIT_AUTHORITIES.find(
+                                  (authority) => authority.value === value,
+                                )?.label ?? value,
+                            )
+                            .join(', ')
                         : '—'}
                     </td>
                     <td>
                       <div className="admin-inline-actions">
-                        <DsButton
-                          aria-expanded={authorityStaff?.id === staff.id}
-                          onClick={() => setAuthorityStaff(staff)}
-                          tone="secondary"
-                        >
-                          감사 권한
-                        </DsButton>
+                        {staff.role === 'SECURITY_AUDITOR' &&
+                        staff.status === 'ACTIVE' ? (
+                          <DsButton
+                            aria-expanded={authorityStaff?.id === staff.id}
+                            disabled={busy}
+                            onClick={(event) => {
+                              actionRef.current = event.currentTarget
+                              setAuthorityStaff(staff)
+                              authorityMutation.reset()
+                            }}
+                            tone="secondary"
+                          >
+                            감사 권한
+                          </DsButton>
+                        ) : null}
                         {staff.status === 'ACTIVE' ? (
                           <DsButton
                             aria-expanded={disableCandidate?.id === staff.id}
-                            onClick={() => setDisableCandidate(staff)}
+                            disabled={busy}
+                            onClick={(event) => {
+                              actionRef.current = event.currentTarget
+                              setDisableCandidate(staff)
+                              disableMutation.reset()
+                            }}
                             tone="secondary"
                           >
                             직원 비활성화
@@ -408,21 +490,18 @@ export function AdminStaffPage() {
       </section>
 
       {authorityStaff ? (
-        <section
-          aria-labelledby="staff-authorities-heading"
-          className="admin-surface"
+        <DsDrawer
+          open
+          title={`${authorityStaff.displayName} 감사 권한`}
+          onClose={() => {
+            if (!busy) setAuthorityStaff(null)
+          }}
+          returnFocusRef={actionRef}
         >
-          <div className="admin-page-header">
-            <div>
-              <h2 id="staff-authorities-heading">{`${authorityStaff.displayName} 감사 권한`}</h2>
-              <p>
-                권한 부여/회수는 서버에서 ADMIN 보안 감사와 함께 처리됩니다.
-              </p>
-            </div>
-            <DsButton onClick={() => setAuthorityStaff(null)} tone="secondary">
-              닫기
-            </DsButton>
-          </div>
+          <p>
+            활성 보안 감사자에게만 적용됩니다. 선택한 권한 변경은 즉시
+            저장됩니다.
+          </p>
           <div
             className="admin-check-list"
             role="group"
@@ -457,11 +536,18 @@ export function AdminStaffPage() {
               error={authorityMutation.error}
             />
           ) : null}
-        </section>
+        </DsDrawer>
       ) : null}
 
       {disableCandidate ? (
-        <section aria-label="직원 비활성화 확인" className="admin-confirmation">
+        <DsDrawer
+          open
+          title="직원 비활성화 확인"
+          onClose={() => {
+            if (!busy) setDisableCandidate(null)
+          }}
+          returnFocusRef={actionRef}
+        >
           <p>
             {`${disableCandidate.displayName} 계정을 비활성화하면 직원 세션과 배정 제약을 서버가 다시 검증합니다.`}
           </p>
@@ -485,8 +571,25 @@ export function AdminStaffPage() {
               error={disableMutation.error}
             />
           ) : null}
-        </section>
+        </DsDrawer>
       ) : null}
+      <DsDrawer
+        open={exit.open}
+        title="저장하지 않은 직원 정보"
+        description={
+          busy
+            ? '저장 결과를 확인한 뒤 이동할 수 있습니다.'
+            : '입력한 내용은 아직 저장되지 않았습니다.'
+        }
+        onClose={exit.cancel}
+      >
+        <div className="admin-inline-actions">
+          <DsButton onClick={exit.cancel}>계속 편집</DsButton>
+          <DsButton disabled={busy} onClick={exit.discard} tone="primary">
+            변경 사항 버리기
+          </DsButton>
+        </div>
+      </DsDrawer>
     </main>
   )
 }

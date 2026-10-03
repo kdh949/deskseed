@@ -171,6 +171,86 @@ export const Empty: Story = {
   },
 }
 
+export const RenameDraftProtection: Story = {
+  play: async ({ canvas }) => {
+    const trigger = await canvas.findByRole('button', { name: '그룹 관리' })
+    await userEvent.click(trigger)
+    await expect(
+      canvas.getByRole('heading', { name: group.name }),
+    ).toHaveFocus()
+    await userEvent.clear(canvas.getByLabelText('그룹 이름 변경'))
+    await userEvent.type(
+      canvas.getByLabelText('그룹 이름 변경'),
+      '저장 전 이름',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '닫기' }))
+    await expect(
+      canvas.getByRole('dialog', { name: '저장하지 않은 그룹 정보' }),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '계속 편집' }))
+    await expect(canvas.getByLabelText('그룹 이름 변경')).toHaveValue(
+      '저장 전 이름',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '닫기' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: '변경 사항 버리기' }),
+    )
+    await expect(
+      canvas.queryByLabelText('그룹 이름 변경'),
+    ).not.toBeInTheDocument()
+    await expect(trigger).toHaveFocus()
+  },
+}
+
+export const RenameValidationAndConflict: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers.filter(
+          (handler) => !handler.info.header.startsWith('PATCH'),
+        ),
+        http.patch(`/api/v1/admin/groups/${group.id}`, () =>
+          HttpResponse.json({ status: 409 }, { status: 409 }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '그룹 관리' }),
+    )
+    const input = canvas.getByLabelText('그룹 이름 변경')
+    await userEvent.clear(input)
+    await userEvent.click(canvas.getByRole('button', { name: '이름 변경' }))
+    await expect(input).toHaveFocus()
+    await expect(input).toHaveAccessibleDescription(
+      '그룹 이름을 입력해 주세요.',
+    )
+    await userEvent.type(input, '이미 있는 그룹')
+    await userEvent.click(canvas.getByRole('button', { name: '이름 변경' }))
+    await expect(
+      await canvas.findByText('그룹 이름을 변경할 수 없습니다.'),
+    ).toBeVisible()
+    await expect(input).toHaveValue('이미 있는 그룹')
+  },
+}
+
+export const CreateGroupDrawer: Story = {
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '그룹 추가' }),
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: '지원 그룹 생성' }),
+    )
+    await expect(canvas.getByLabelText('그룹 이름')).toHaveFocus()
+    await expect(
+      canvas.getByLabelText('그룹 이름'),
+    ).toHaveAccessibleDescription('그룹 이름을 입력해 주세요.')
+    await userEvent.type(canvas.getByLabelText('그룹 이름'), '새 그룹 초안')
+  },
+}
+
 export const DirectoryAndMembershipSearch: Story = {
   parameters: {
     msw: {

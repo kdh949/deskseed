@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http, HttpResponse } from 'msw'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { AdminStaffPage } from './AdminStaffPage'
 
 const staff = {
@@ -57,6 +57,27 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const ManageAccount: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers.filter(
+          (handler) =>
+            !handler.info.header.startsWith('GET /api/v1/admin/staff') &&
+            !handler.info.header.startsWith('PUT '),
+        ),
+        http.get('/api/v1/admin/staff', () =>
+          HttpResponse.json([{ ...staff, role: 'SECURITY_AUDITOR' }]),
+        ),
+        http.put(
+          '/api/v1/admin/staff/:staffId/audit-authorities/:authority',
+          async () => {
+            await delay(150)
+            return new HttpResponse(null, { status: 204 })
+          },
+        ),
+      ],
+    },
+  },
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole('heading', { name: '직원' }),
@@ -67,6 +88,53 @@ export const ManageAccount: Story = {
       canvas.getByRole('heading', { name: '운영 관리자 감사 권한' }),
     ).toBeVisible()
     await userEvent.click(canvas.getByRole('checkbox', { name: '검색어 공개' }))
+    await waitFor(async () => {
+      await expect(
+        canvas.getByRole('checkbox', { name: '검색어 공개' }),
+      ).toBeChecked()
+      await expect(
+        canvas.getByRole('checkbox', { name: '검색어 공개' }),
+      ).toBeEnabled()
+    })
+    await expect(
+      canvas.getByRole('dialog', { name: '운영 관리자 감사 권한' }),
+    ).toBeVisible()
+  },
+}
+
+export const RoleRestrictedActions: Story = {
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText('운영 관리자')).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: '감사 권한' }),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('button', { name: '직원 비활성화' }),
+    ).toBeVisible()
+  },
+}
+
+export const CreateDraftProtection: Story = {
+  play: async ({ canvas }) => {
+    const trigger = await canvas.findByRole('button', { name: '직원 추가' })
+    await userEvent.click(trigger)
+    await userEvent.type(canvas.getByLabelText('표시 이름'), '새 직원 초안')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '직원 계정 생성 닫기' }),
+    )
+    await expect(
+      canvas.getByRole('dialog', { name: '저장하지 않은 직원 정보' }),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '계속 편집' }))
+    await expect(canvas.getByLabelText('표시 이름')).toHaveValue('새 직원 초안')
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '변경 사항 버리기' }),
+    )
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await expect(trigger).toHaveFocus()
+    await userEvent.click(trigger)
+    await expect(canvas.getByLabelText('표시 이름')).toHaveValue('')
   },
 }
 
