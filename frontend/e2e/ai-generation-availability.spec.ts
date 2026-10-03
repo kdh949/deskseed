@@ -89,6 +89,7 @@ for (const width of [1280, 1920]) {
     const readIntents: string[] = []
     let createCount = 0
     let jobReads = 0
+    let failedAvailabilityRefresh = false
     await page.route('**/api/v1/**', async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
@@ -99,6 +100,13 @@ for (const width of [1280, 1920]) {
         })
       if (path === '/api/v1/agent/tickets/3001' && request.method() === 'GET') {
         readIntents.push(request.headers()['x-deskseed-read-intent'] ?? '')
+        if (width === 1920 && createCount > 0 && !failedAvailabilityRefresh) {
+          failedAvailabilityRefresh = true
+          return route.fulfill({
+            status: 503,
+            json: { title: 'Unavailable', status: 503 },
+          })
+        }
         return route.fulfill({ json: detail })
       }
       if (path === '/api/v1/agent/tickets/3001/ai/jobs') {
@@ -152,6 +160,15 @@ for (const width of [1280, 1920]) {
     const initialReadIntents = [...readIntents]
     await buttons.nth(0).focus()
     await page.keyboard.press('Enter')
+    if (width === 1920) {
+      await expect(
+        ai.getByText('AI 사용 가능 상태를 확인하지 못했습니다'),
+      ).toBeVisible()
+      await expect(buttons.nth(0)).toBeDisabled()
+      expect(createCount).toBe(1)
+      await ai.getByRole('button', { name: '사용 가능 상태 다시 확인' }).focus()
+      await page.keyboard.press('Enter')
+    }
     await expect(
       ai.getByText('현재 이 티켓에서는 대화 요약을 사용할 수 없습니다.'),
     ).toBeVisible()
@@ -160,7 +177,11 @@ for (const width of [1280, 1920]) {
     expect(initialJobReads).toBeGreaterThan(0)
     expect(jobReads).toBe(initialJobReads)
     expect(initialReadIntents).toContain('NAVIGATION')
-    expect(readIntents).toEqual([...initialReadIntents, 'BACKGROUND'])
+    expect(readIntents).toEqual([
+      ...initialReadIntents,
+      'BACKGROUND',
+      ...(width === 1920 ? ['BACKGROUND'] : []),
+    ])
     expect(
       (await new AxeBuilder({ page }).include('.ai-assistant').analyze())
         .violations,
