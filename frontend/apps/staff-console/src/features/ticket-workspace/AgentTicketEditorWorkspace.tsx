@@ -674,6 +674,17 @@ function Composer({
     ? ['INTERNAL']
     : ['PUBLIC', 'INTERNAL']
   const internal = mode === 'INTERNAL'
+  const hasComment = editor.comments[mode].trim().length > 0
+  const submitLabel =
+    !hasComment && editor.dirtyFields.size > 0
+      ? '변경사항 저장'
+      : hasComment && editor.dirtyFields.size > 0
+        ? internal
+          ? '메모와 변경사항 저장'
+          : '답변과 변경사항 저장'
+        : internal
+          ? '내부 메모 저장'
+          : '답변 보내기'
   const [resetVersions, setResetVersions] = useState<
     Record<TicketVisibility, number>
   >({ PUBLIC: 0, INTERNAL: 0 })
@@ -754,23 +765,29 @@ function Composer({
                   actions={[
                     {
                       id: 'PENDING',
-                      label: internal
-                        ? '메모 저장 후 대기'
-                        : '답변 후 고객 대기',
-                      description: '댓글과 상태 변경을 한 번에 저장합니다.',
+                      label: !hasComment
+                        ? '변경사항 저장 후 고객 대기'
+                        : internal
+                          ? '메모 저장 후 대기'
+                          : '답변 후 고객 대기',
+                      description:
+                        '입력한 내용과 고객 답변 대기 상태를 함께 저장합니다.',
                     },
                     {
                       id: 'SOLVED',
-                      label: internal ? '메모 저장 후 해결' : '답변 후 해결',
-                      description:
-                        '댓글과 해결 상태를 한 command로 제출합니다.',
+                      label: !hasComment
+                        ? '변경사항 저장 후 해결'
+                        : internal
+                          ? '메모 저장 후 해결'
+                          : '답변 후 해결',
+                      description: '입력한 내용과 해결 상태를 함께 저장합니다.',
                     },
                   ]}
                   busy={editor.submitting}
                   disabled={
                     !editor.canSubmit || editor.attachmentStates[mode].blocked
                   }
-                  label={internal ? '내부 메모 저장' : '답변 보내기'}
+                  label={submitLabel}
                   onAction={(status) =>
                     void submit(status as AgentTicketStatus)
                   }
@@ -814,7 +831,7 @@ function Composer({
             : '고객에게 보낼 답변을 작성하세요.'
         }
         status={draftStatus}
-        submitLabel={internal ? '내부 메모 저장' : '답변 보내기'}
+        submitLabel={submitLabel}
       />
       {macro.message && (
         <SeedNotice
@@ -1048,6 +1065,15 @@ function EditorFeedback({
           tone="danger"
         >
           {editor.error.message}
+          {!!editor.error.fieldErrors?.length && (
+            <ul>
+              {editor.error.fieldErrors.map(({ label, message }, index) => (
+                <li key={`${label}-${index}`}>
+                  {label}: {message}
+                </li>
+              ))}
+            </ul>
+          )}
           {editor.error.requestId && <p>요청 ID: {editor.error.requestId}</p>}
         </SeedNotice>
       )}

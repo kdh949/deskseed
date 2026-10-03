@@ -1,8 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentTicketDetail } from '../../api/types'
+import { ApiError } from '../../api/client'
 import { SeedThemeProvider } from '../../design-system/canonical'
 import { STAFF_DRAFT_SESSION_OWNER_KEY } from './model/ticketEditorModel'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
@@ -121,23 +123,31 @@ function renderWorkspace({
   refreshLatest?: () => Promise<AgentTicketDetail>
 } = {}) {
   localStorage.setItem(STAFF_DRAFT_SESSION_OWNER_KEY, staffId)
+  let updateProjection: (next: AgentTicketDetail) => void = () => undefined
+  function WorkspaceProjection() {
+    const [projection, setProjection] = useState(detail)
+    updateProjection = setProjection
+    return (
+      <AgentTicketEditorWorkspace
+        detail={projection}
+        refreshLatest={refreshLatest}
+        staffId={staffId}
+      />
+    )
+  }
   const router = createMemoryRouter(
     [
       {
         path: '/',
-        element: (
-          <AgentTicketEditorWorkspace
-            detail={detail}
-            refreshLatest={refreshLatest}
-            staffId={staffId}
-          />
-        ),
+        element: <WorkspaceProjection />,
       },
     ],
     { initialEntries: ['/'] },
   )
   return {
     refreshLatest,
+    updateDetail: (next: AgentTicketDetail) =>
+      act(() => updateProjection(next)),
     ...render(
       <SeedThemeProvider>
         <RouterProvider router={router} />
@@ -170,12 +180,18 @@ async function typePublicReply(
 
 function installMutationFetch(
   commandResponses: Array<Response | Error | Promise<Response>>,
+  backgroundOverride?: (
+    url: string,
+    init?: RequestInit,
+  ) => Response | Promise<Response> | null,
 ) {
   const commands: Array<Record<string, unknown>> = []
   let uploadCount = 0
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
+      const override = backgroundOverride?.(url, init)
+      if (override) return override
       const fixture = backgroundFixture(url)
       if (fixture) return fixture
       if (url.endsWith('/api/v1/agent/tickets/1042/external-references')) {
@@ -269,6 +285,207 @@ afterEach(() => {
 })
 
 describe('AgentTicketEditorWorkspace', () => {
+  it('acknowledges the submitted remote draft before a post-success detail refresh loses authentication', async () => {
+    const user = userEvent.setup()
+    const clearing = deferredResponse()
+    const cleared: string[] = []
+    const { commands } = installMutationFetch(
+      [
+        new Response(
+          JSON.stringify({
+            ticketNumber: 1042,
+            version: 4,
+            auditId: '22222222-2222-4222-8222-222222222222',
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      ],
+      (url, init) => {
+        const channel = url.split('/drafts/')[1]?.split('?')[0]
+        if (!channel) return null
+        if (init?.method === 'DELETE') {
+          cleared.push(channel)
+          return clearing.promise
+        }
+        if (!init?.method || init.method === 'GET')
+          return new Response(
+            JSON.stringify({
+              ticketNumber: 1042,
+              channel,
+              body:
+                channel === 'PUBLIC_REPLY'
+                  ? '제출할 복구 답변'
+                  : '남겨 둘 내부 초안',
+              content: {
+                format: 'PLAIN_TEXT',
+                text:
+                  channel === 'PUBLIC_REPLY'
+                    ? '제출할 복구 답변'
+                    : '남겨 둘 내부 초안',
+              },
+              attachmentIds: [],
+              clientDeviceId: '33333333-3333-4333-8333-333333333333',
+              baseTicketVersion: 3,
+              draftVersion: 2,
+              updatedAt: '2026-08-24T11:00:00Z',
+              expiresAt: '2099-08-31T11:00:00Z',
+            }),
+            { status: 200 },
+          )
+        return null
+      },
+    )
+    const refreshLatest = vi
+      .fn()
+      .mockRejectedValue(new ApiError('session expired', 401))
+    renderWorkspace({ refreshLatest })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('textbox', { name: '공개 답변 내용' }),
+      ).toHaveTextContent('제출할 복구 답변'),
+    )
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await waitFor(() => expect(cleared).toEqual(['PUBLIC_REPLY']))
+    expect(refreshLatest).not.toHaveBeenCalled()
+    clearing.resolve(new Response(null, { status: 204 }))
+    expect(
+      await screen.findByText(
+        '저장은 완료됐지만 최신 티켓을 확인하지 못했습니다. 새로고침해 주세요.',
+      ),
+    ).toBeVisible()
+    expect(commands).toHaveLength(1)
+    expect(
+      screen.getByRole('textbox', { name: '공개 답변 내용' }),
+    ).toHaveTextContent(/^$/)
+    await user.click(
+      screen.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+    expect(
+      screen.getByRole('textbox', { name: '내부 메모 내용' }),
+    ).toHaveTextContent('남겨 둘 내부 초안')
+  })
+
+  it('reconciles a transfer projection before a later status-only save', async () => {
+    const user = userEvent.setup()
+    const { commands } = installMutationFetch([
+      new Response(
+        JSON.stringify({
+          ticketNumber: 1042,
+          version: 5,
+          auditId: '22222222-2222-4222-8222-222222222222',
+          warnings: [],
+        }),
+        { status: 200 },
+      ),
+    ])
+    const transferred = createDetail({
+      ticket: {
+        ...createDetail().ticket,
+        version: 4,
+        group: { id: 'group-shipping', name: '배송 지원' },
+        assignee: { id: 'staff-3', displayName: '박도윤' },
+      },
+    })
+    const workspace = renderWorkspace({
+      refreshLatest: vi.fn().mockResolvedValue({
+        ...transferred,
+        ticket: { ...transferred.ticket, version: 5, status: 'SOLVED' },
+      }),
+    })
+    workspace.updateDetail(transferred)
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: '담당자' }),
+      ).toHaveTextContent('박도윤'),
+    )
+    expect(screen.getByRole('combobox', { name: '그룹' })).toHaveTextContent(
+      '배송 지원',
+    )
+    await selectChoice(user, '상태', '해결됨')
+    await user.click(screen.getByRole('button', { name: '변경사항 저장' }))
+    await waitFor(() => expect(commands).toHaveLength(1))
+    expect(commands[0]).toMatchObject({
+      expectedVersion: 4,
+      changedFields: ['status'],
+      status: 'SOLVED',
+    })
+    expect(commands[0]).not.toHaveProperty('assigneeId')
+    expect(commands[0]).not.toHaveProperty('groupId')
+    expect(commands[0]?.comment).toBeNull()
+  })
+
+  it('preserves a dirty field and composer when a newer projection changes the same field', async () => {
+    const user = userEvent.setup()
+    const workspace = renderWorkspace()
+    await typePublicReply(user, '작성 중인 공개 답변')
+    await selectChoice(user, '우선순위', '높음')
+    workspace.updateDetail(
+      createDetail({
+        ticket: { ...createDetail().ticket, version: 4, priority: 'LOW' },
+      }),
+    )
+    expect(
+      await screen.findByRole('alert', { name: '저장 충돌' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('combobox', { name: '우선순위' }),
+    ).toHaveTextContent('높음')
+    expect(
+      screen.getByRole('textbox', { name: '공개 답변 내용' }),
+    ).toHaveTextContent('작성 중인 공개 답변')
+    expect(
+      screen.getByRole('button', { name: '답변과 변경사항 저장' }),
+    ).toBeDisabled()
+  })
+
+  it('keeps both drafts on a validation rejection and avoids presenting a generic server sentence as input guidance', async () => {
+    const user = userEvent.setup()
+    installMutationFetch([
+      new Response(
+        JSON.stringify({
+          type: '/problems/validation',
+          status: 400,
+          detail: 'One or more command fields are invalid.',
+          requestId: 'public-save-request',
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/problem+json' },
+        },
+      ),
+    ])
+    renderWorkspace()
+    await typePublicReply(user, '보존할 공개 답변')
+    await user.click(
+      screen.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+    await user.click(screen.getByRole('textbox', { name: '내부 메모 내용' }))
+    await user.paste('보존할 내부 메모')
+    await user.click(
+      screen.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }),
+    )
+    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    expect(
+      await screen.findByText(
+        '저장 요청을 처리하지 못했습니다. 입력은 보존되었습니다. 다시 시도해도 계속되면 요청 ID와 함께 관리자에게 문의해 주세요.',
+      ),
+    ).toBeVisible()
+    expect(screen.getByText('요청 ID: public-save-request')).toBeVisible()
+    expect(
+      screen.queryByText('One or more command fields are invalid.'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('textbox', { name: '공개 답변 내용' }),
+    ).toHaveTextContent('보존할 공개 답변')
+    await user.click(
+      screen.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+    expect(
+      screen.getByRole('textbox', { name: '내부 메모 내용' }),
+    ).toHaveTextContent('보존할 내부 메모')
+  })
+
   it('sends a PUBLIC reply and changed field through one expected-version command, then refreshes', async () => {
     const user = userEvent.setup()
     const { commands } = installMutationFetch([
@@ -290,7 +507,9 @@ describe('AgentTicketEditorWorkspace', () => {
 
     await typePublicReply(user, '결제 시도 시간을 확인해 보겠습니다.')
     await selectChoice(user, '우선순위', '높음')
-    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await user.click(
+      screen.getByRole('button', { name: '답변과 변경사항 저장' }),
+    )
 
     await waitFor(() => expect(commands).toHaveLength(1))
     expect(commands[0]).toEqual(
@@ -329,7 +548,7 @@ describe('AgentTicketEditorWorkspace', () => {
     ).toBeVisible()
   })
 
-  it('preserves the same command identity after an ambiguous failure', async () => {
+  it('preserves the original command after an ambiguous failure and a newer background projection', async () => {
     const user = userEvent.setup()
     const { commands } = installMutationFetch([
       new Error('network interrupted'),
@@ -343,7 +562,7 @@ describe('AgentTicketEditorWorkspace', () => {
         { status: 200 },
       ),
     ])
-    renderWorkspace()
+    const { updateDetail } = renderWorkspace()
 
     await typePublicReply(user, '동일 명령으로 다시 저장합니다.')
     await user.click(screen.getByRole('button', { name: '답변 보내기' }))
@@ -351,10 +570,16 @@ describe('AgentTicketEditorWorkspace', () => {
       await screen.findByText(/저장 결과를 확인할 수 없습니다/),
     ).toBeVisible()
 
+    updateDetail(
+      createDetail({
+        ticket: { ...createDetail().ticket, version: 4, priority: 'HIGH' },
+      }),
+    )
+
     await user.click(screen.getByRole('button', { name: '답변 보내기' }))
     await waitFor(() => expect(commands).toHaveLength(2))
-    expect(commands[1]?.clientCommandId).toBe(commands[0]?.clientCommandId)
-    expect(commands[1]?.comment).toEqual(commands[0]?.comment)
+    expect(commands[1]).toEqual(commands[0])
+    expect(commands[1]?.expectedVersion).toBe(3)
   })
 
   it('rotates the complete command when attachments change after an ambiguous failure', async () => {
@@ -465,7 +690,9 @@ describe('AgentTicketEditorWorkspace', () => {
 
     const reply = await typePublicReply(user, '저장 중인 답변입니다.')
     await selectChoice(user, '우선순위', '높음')
-    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await user.click(
+      screen.getByRole('button', { name: '답변과 변경사항 저장' }),
+    )
 
     await waitFor(() => expect(commands).toHaveLength(1))
     expect(reply).toHaveAttribute('contenteditable', 'false')
@@ -571,7 +798,9 @@ describe('AgentTicketEditorWorkspace', () => {
 
     await typePublicReply(user, '초안을 보존해야 합니다.')
     await selectChoice(user, '상태', '해결됨')
-    await user.click(screen.getByRole('button', { name: '답변 보내기' }))
+    await user.click(
+      screen.getByRole('button', { name: '답변과 변경사항 저장' }),
+    )
 
     expect(
       await screen.findByRole('alert', { name: '저장 충돌' }),
