@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent } from 'storybook/test'
+import { Route, Routes } from 'react-router'
+import { requestAccessTokenStorageKey } from '../customer-portal/customerAccessToken'
 import { CustomerRequestLookupPage } from './CustomerRequestLookupPage'
 
 const meta = {
@@ -43,7 +45,7 @@ export const InvalidNumber: Story = {
 
 export const NoSavedEmailLink: Story = {
   play: async ({ canvas }) => {
-    await userEvent.type(canvas.getByLabelText('문의 번호'), '1042')
+    await userEvent.type(canvas.getByLabelText('문의 번호'), '#DS-1042')
     await userEvent.click(canvas.getByRole('button', { name: '문의 열기' }))
     await expect(
       canvas.getByText('이메일로 받은 문의 링크를 다시 열어 주세요.'),
@@ -51,5 +53,28 @@ export const NoSavedEmailLink: Story = {
     await expect(
       canvas.queryByText(/이 브라우저|보안을 위해/),
     ).not.toBeInTheDocument()
+  },
+}
+
+export const FormattedNumberWithEmailLink: Story = {
+  beforeEach: () =>
+    window.sessionStorage.setItem(
+      requestAccessTokenStorageKey(1042),
+      'a'.repeat(43),
+    ),
+  render: () => (
+    <Routes>
+      <Route path="/requests/1042" element={<h1>문의 대화</h1>} />
+      <Route path="*" element={<CustomerRequestLookupPage />} />
+    </Routes>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      canvas.getByLabelText('문의 번호'),
+      ' #DS-1042 {Enter}',
+    )
+    await expect(
+      canvas.getByRole('heading', { name: '문의 대화' }),
+    ).toBeVisible()
   },
 }

@@ -42,6 +42,10 @@ describe('CustomerSiteLayout', () => {
       'href',
       '/customer/sign-in',
     )
+    for (const link of screen.getAllByRole('link', { name: '문의 조회' }))
+      expect(link).toHaveAttribute('href', '/requests/lookup')
+    for (const link of screen.getAllByRole('link', { name: '문서 둘러보기' }))
+      expect(link).toHaveAttribute('href', '/categories')
   })
 
   it('shows an authenticated customer their requests and invokes the supplied logout action', async () => {

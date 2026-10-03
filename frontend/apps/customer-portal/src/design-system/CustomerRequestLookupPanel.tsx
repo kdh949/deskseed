@@ -23,17 +23,22 @@ export function CustomerRequestLookupPanel({
     <section className="customer-lookup-card">
       <header>
         <h1>문의 번호로 빠르게 확인하세요</h1>
-        <p>이메일에 표시된 문의 번호를 입력해 주세요.</p>
+        <p>
+          처음 조회할 때는 이메일로 받은 문의 링크를 열어 주세요. 이후에는 문의
+          번호로 다시 확인할 수 있습니다.
+        </p>
       </header>
       <form onSubmit={submit}>
         <label htmlFor={inputId}>문의 번호</label>
+        <p id={`${inputId}-hint`}>예: 1288, DS-1288, #DS-1288</p>
         <div>
           <input
+            aria-describedby={`${inputId}-hint`}
             aria-invalid={result === 'invalid' || undefined}
             id={inputId}
-            inputMode="numeric"
+            maxLength={32}
             onChange={(event) => onTicketNumberChange(event.target.value)}
-            placeholder="예: 1288"
+            placeholder="예: DS-1288"
             value={ticketNumber}
           />
           <DsButton tone="primary" type="submit">

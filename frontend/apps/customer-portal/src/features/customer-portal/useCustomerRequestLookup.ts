@@ -35,8 +35,9 @@ export function useCustomerRequestLookup() {
 }
 
 function parseTicketNumber(value: string) {
-  if (!/^\d+$/.test(value)) return null
-  const ticketNumber = Number(value)
+  const match = /^(?:#?DS-)?(\d+)$/i.exec(value.trim())
+  if (!match) return null
+  const ticketNumber = Number(match[1])
   return Number.isSafeInteger(ticketNumber) && ticketNumber > 0
     ? ticketNumber
     : null

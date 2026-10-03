@@ -27,24 +27,51 @@ function renderPage() {
 afterEach(() => sessionStorage.clear())
 
 describe('CustomerRequestLookupPage', () => {
-  it('opens a ticket only when this browser already holds that ticket-scoped access proof', async () => {
-    const user = userEvent.setup()
-    sessionStorage.setItem(requestAccessTokenStorageKey(1042), 'a'.repeat(43))
+  it.each(['1042', 'DS-1042', '#DS-1042', ' ds-001042 '])(
+    'opens %s only when this browser already holds that ticket-scoped access proof',
+    async (input) => {
+      const user = userEvent.setup()
+      sessionStorage.setItem(requestAccessTokenStorageKey(1042), 'a'.repeat(43))
 
-    renderPage()
+      renderPage()
 
-    await user.type(screen.getByLabelText('문의 번호'), '1042')
-    await user.click(screen.getByRole('button', { name: '문의 열기' }))
+      await user.type(screen.getByLabelText('문의 번호'), input)
+      await user.click(screen.getByRole('button', { name: '문의 열기' }))
 
-    expect(await screen.findByText('/requests/1042')).toBeVisible()
-    expect(screen.queryByText(/token=/)).not.toBeInTheDocument()
-  })
+      expect(await screen.findByText('/requests/1042')).toBeVisible()
+      expect(screen.queryByText(/token=/)).not.toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    '0',
+    'DS-0',
+    'DS--1',
+    'DS-1.5',
+    '9007199254740992',
+    '#1042',
+    'https://example.test/1042',
+    'DS-1042?token=x',
+  ])(
+    'rejects invalid or unsafe number %s without navigating',
+    async (input) => {
+      const user = userEvent.setup()
+      sessionStorage.setItem(requestAccessTokenStorageKey(1042), 'a'.repeat(43))
+      renderPage()
+      await user.type(screen.getByLabelText('문의 번호'), input)
+      await user.click(screen.getByRole('button', { name: '문의 열기' }))
+      expect(
+        await screen.findByText('문의 번호를 확인해 주세요.'),
+      ).toBeVisible()
+      expect(screen.queryByText('/requests/1042')).not.toBeInTheDocument()
+    },
+  )
 
   it('does not ask a customer to paste a capability token when this browser has no ticket-scoped access proof', async () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.type(screen.getByLabelText('문의 번호'), '1042')
+    await user.type(screen.getByLabelText('문의 번호'), '#DS-1042')
     await user.click(screen.getByRole('button', { name: '문의 열기' }))
 
     expect(
