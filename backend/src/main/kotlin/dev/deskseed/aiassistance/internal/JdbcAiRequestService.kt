@@ -6,6 +6,7 @@ import dev.deskseed.aiassistance.AiActivityAuditWriter
 import dev.deskseed.aiassistance.AiBackendRequestStatus
 import dev.deskseed.aiassistance.AiFeedbackReceipt
 import dev.deskseed.aiassistance.AiFeature
+import dev.deskseed.aiassistance.AiFeatureAvailability
 import dev.deskseed.aiassistance.AiFeatureDisabledException
 import dev.deskseed.aiassistance.AiExecutionStatusReader
 import dev.deskseed.aiassistance.AiJobReceipt
@@ -53,6 +54,7 @@ import java.util.UUID
 @Service
 internal class JdbcAiRequestService(
     private val jdbcTemplate: JdbcTemplate,
+    private val featureAvailability: AiFeatureAvailability,
     private val ticketStore: StaffTicketReadStore,
     private val auditWriter: AccessAuditWriter,
     private val objectMapper: ObjectMapper,
@@ -568,29 +570,8 @@ internal class JdbcAiRequestService(
         if (!isFeatureEnabled(feature, actorId)) throw AiFeatureDisabledException()
     }
 
-    private fun isFeatureEnabled(feature: AiFeature, actorId: UUID): Boolean {
-        val featureColumn = when (feature) {
-            AiFeature.TICKET_SUMMARY -> "summary_enabled"
-            AiFeature.TICKET_TRIAGE -> "triage_enabled"
-            AiFeature.TICKET_REPLY_DRAFT -> "reply_draft_enabled"
-        }
-        val enabled = jdbcTemplate.queryForObject(
-            """
-            select exists (
-                select 1 from ai_settings settings
-                where settings.singleton = true and settings.enabled = true and settings.$featureColumn = true
-                  and exists (
-                      select 1 from ai_feature_staff_allowlist allowed
-                      join staff_accounts staff on staff.id = allowed.staff_id and staff.status = 'ACTIVE'
-                      where allowed.staff_id = ?
-                  )
-            )
-            """.trimIndent(),
-            Boolean::class.java,
-            actorId,
-        ) == true
-        return enabled
-    }
+    private fun isFeatureEnabled(feature: AiFeature, actorId: UUID): Boolean =
+        feature in featureAvailability.enabledFeatures(actorId)
 
     private fun normalizeOptions(feature: AiFeature, options: Map<String, String>): Map<String, String> {
         val allowedKeys = when (feature) {

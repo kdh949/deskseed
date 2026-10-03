@@ -1,6 +1,6 @@
 # 티켓별 AI 생성 가능 상태 계약
 
-상태: CONTRACT_DEFINED. 이 계약 PR에는 서버/화면 구현이 없다. 현행 `getAgentTicket` READ/UPDATE 계약의 FROZEN은 유지하고, 새 의미는 `x-deskseed-planned-capabilities`의 BLUEPRINT로 구분한다. 후속 runtime parity 회귀 후 이 blueprint를 실제 capabilities 설명·예시로 승격한다.
+상태: 서버 구현 및 해당 회귀 검증 완료. 계약 PR #245의 capabilities blueprint를 실제 응답 설명·예시로 승격했다. UI 연결과 live provider 검증은 후속이다.
 
 ## Goal
 
@@ -22,7 +22,7 @@ STAFF/AGENT_UI의 기존 session·expected-actor·ticket read 권한과 request/
 
 ## In scope
 
-계약·합성 응답 예시와 후속 구현/검증 조건. 후속 서버는 기존 AI feature gate를 재사용하며 기존 audited ticket detail 안에서 최소 정책 projection만 추가한다. endpoint·DB migration·새 infrastructure는 필요하지 않다.
+기존 AI request/result feature gate를 aiassistance root API로 공유하고, 기존 audited ticket detail 안에서 최소 정책 projection을 추가한다. endpoint·DB migration·새 infrastructure는 필요하지 않다.
 
 ## Out of scope
 
@@ -57,3 +57,12 @@ STAFF/AGENT_UI의 기존 session·expected-actor·ticket read 권한과 request/
 ## Compatibility / human explanation
 
 문자열 capability의 additive 확장으로 기존 READ/UPDATE client를 유지한다. DB migration/backfill 없음. 기능을 위한 새 API나 전체 설정 노출 대신 이미 감사되는 상세 읽기를 사용한다. 기본 정책 off와 기존 기능 flag를 같은 정책으로 해석하여 UI와 생성의 의미가 달라지지 않도록 한다.
+
+
+## Implementation and observed verification
+
+- `AiFeatureAvailability`는 전역/개별 기능과 active staff allowlist를 한 번의 PostgreSQL 조회로 평가한다. 기존 생성·결과 재인가와 ticket detail이 같은 평가를 사용한다.
+- 권한이 확인된 detail의 PUBLIC comment 존재 여부로 먼저 걸러 INTERNAL-only child에는 정책 조회도 하지 않는다. UPDATE와 AI 생성 가능 상태는 독립적이며 기존 서버 write 권한을 넓히지 않는다.
+- 수정 전 새 capability 회귀 실패 확인. 수정 후 `AgentTicketReadIntegrationTest` 15, `AgentAiRequestIntegrationTest` 9, `AdminAiIntegrationTest` 2와 `ArchitectureTest` 1 통과. 전역 off/allowlist 제외/개별 feature 전환/PUBLIC 없음/READ-only/audit 실패/BACKGROUND 무감사와 생성 시 stale/feature off 재검증을 포함한다.
+- Core bundle, docs-check, diff-check 통과. 전체 backend suite와 실제 모델·배포·부하 검증은 실행하지 않았다. UI Storybook은 후속 UI slice에서 실행한다.
+- 성능상 PUBLIC comment가 있는 detail당 indexed singleton/allowlist 조회 한 번이 추가된다. 측정된 지연 개선·무회귀 주장은 하지 않는다. 외부 호출·캐시·DB migration은 없다.

@@ -5696,19 +5696,15 @@ components:
           type: array
           items:
             type: string
-          description: 직원 상세 조회가 성공하면 READ가 항상 포함됩니다. UPDATE는 현재 actor가 별도 write authorization을 통과하고 티켓이 CLOSED가 아닐 때만 포함됩니다.
-          x-deskseed-planned-capabilities:
-            status: BLUEPRINT
-            values: [AI_SUMMARY, AI_TRIAGE, AI_REPLY_DRAFT]
-            description: >-
-              직원 상세 조회가 성공하면 READ가 항상 포함됩니다. UPDATE는 현재 actor가 별도 write authorization을 통과하고
-              티켓이 CLOSED가 아닐 때만 포함됩니다. AI_SUMMARY, AI_TRIAGE, AI_REPLY_DRAFT는 각각 요약, 분류 제안,
-              답변 초안의 생성 가능 상태입니다. 티켓에 PUBLIC comment가 하나 이상 있고 현재 active staff가 AI allowlist에
-              포함되며 전역 AI와 해당 기능이 활성화된 경우에만 포함됩니다. 이 목록은 조회 시점의 안내이며 생성 권한 토큰이
-              아닙니다. 생성 요청은 기존 서버 정책을 다시 검사합니다. provider 준비, 예산, rate limit, 생성 성공을 보장하지
-              않으며 관리자 설정값, 다른 직원의 허용 여부와 비활성화 상세 원인을 노출하지 않습니다. 클라이언트는 모르는
-              capability를 무시하고 AI capability가 없으면 해당 생성 버튼을 비활성화해야 합니다.
-            example: [READ, UPDATE, AI_SUMMARY, AI_TRIAGE]
+          description: >-
+            직원 상세 조회가 성공하면 READ가 항상 포함됩니다. UPDATE는 현재 actor가 별도 write authorization을 통과하고
+            티켓이 CLOSED가 아닐 때만 포함됩니다. AI_SUMMARY, AI_TRIAGE, AI_REPLY_DRAFT는 각각 요약, 분류 제안,
+            답변 초안의 생성 가능 상태입니다. 티켓에 PUBLIC comment가 하나 이상 있고 현재 active staff가 AI allowlist에
+            포함되며 전역 AI와 해당 기능이 활성화된 경우에만 포함됩니다. 이 목록은 조회 시점의 안내이며 생성 권한 토큰이
+            아닙니다. 생성 요청은 기존 서버 정책을 다시 검사합니다. provider 준비, 예산, rate limit, 생성 성공을 보장하지
+            않으며 관리자 설정값, 다른 직원의 허용 여부와 비활성화 상세 원인을 노출하지 않습니다. 클라이언트는 모르는
+            capability를 무시하고 AI capability가 없으면 해당 생성 버튼을 비활성화해야 합니다.
+          example: [READ, UPDATE, AI_SUMMARY, AI_TRIAGE]
         assignmentOptions:
           $ref: '#/components/schemas/TicketAssignmentOptions'
         context:

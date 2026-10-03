@@ -150,6 +150,42 @@ class AgentTicketReadIntegrationTest {
     }
 
     @Test
+    fun `AI capabilities reflect current policy and public context without granting write access`() {
+        val agent = insertStaff("ai-read@example.com", "Agent password 42", "AGENT", "AI 상담사")
+        val ticket = insertTicket(2051, "AI 사용 상태")
+        val child = insertTicket(2052, "내부 작업", kind = "INTERNAL_CHILD")
+        insertComment(ticket.id, "PUBLIC", "CUSTOMER", ticket.customerId, "도움이 필요합니다.")
+        insertComment(child.id, "INTERNAL", "AGENT", agent, "내부 확인 메모")
+        val browser = login("ai-read@example.com", "Agent password 42")
+        jdbcTemplate.update(
+            "update ai_settings set enabled = true, summary_enabled = true, triage_enabled = false, reply_draft_enabled = true where singleton = true",
+        )
+        jdbcTemplate.update(
+            "insert into ai_feature_staff_allowlist (staff_id, added_by_staff_id, added_at) values (?, ?, clock_timestamp())",
+            agent, agent,
+        )
+
+        fun expectCapabilities(number: Long, vararg capabilities: String) {
+            mockMvc.perform(ticketDetail(number, browser, UUID.randomUUID(), "BACKGROUND"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.capabilities").value(containsInAnyOrder(*capabilities)))
+        }
+        expectCapabilities(2051, "READ", "AI_SUMMARY", "AI_REPLY_DRAFT")
+        expectCapabilities(2052, "READ")
+        jdbcTemplate.update("update ai_settings set summary_enabled = false, triage_enabled = true, reply_draft_enabled = false where singleton = true")
+        expectCapabilities(2051, "READ", "AI_TRIAGE")
+        jdbcTemplate.update("update ai_settings set enabled = false where singleton = true")
+        expectCapabilities(2051, "READ")
+        jdbcTemplate.update("update ai_settings set enabled = true where singleton = true")
+        jdbcTemplate.update("delete from ai_feature_staff_allowlist where staff_id = ?", agent)
+        expectCapabilities(2051, "READ")
+        assertThat(jdbcTemplate.queryForObject(
+            "select count(*) from access_audit_events where action = 'TICKET_VIEWED'", Long::class.java,
+        )).isZero()
+        assertThat(jdbcTemplate.queryForObject("select count(*) from ai_requests", Long::class.java)).isZero()
+    }
+
+    @Test
     fun `cursor is stable for updated time ties and is bound to the selected filters`() {
         val agent = insertStaff("agent@example.com", "Agent password 42", "AGENT", "상담사")
         val group = insertGroup("고객 지원", agent)
@@ -620,6 +656,7 @@ class AgentTicketReadIntegrationTest {
                 .andExpect(jsonPath("$.ticket").doesNotExist())
                 .andExpect(jsonPath("$.comments").doesNotExist())
                 .andExpect(jsonPath("$.context").doesNotExist())
+                .andExpect(jsonPath("$.capabilities").doesNotExist())
                 .andReturn().response.contentAsString
             assertThat(response)
                 .doesNotContain("audit-failure-protected-subject")
