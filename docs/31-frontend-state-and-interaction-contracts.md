@@ -70,6 +70,15 @@ base/request state와 ID를 바꾸지 않는다. Payload edit, definite validati
 회전한다. 성공 응답 뒤 detail refresh보다 먼저 submitted comment와
 confirmed field/base version을 하나의 local-storage write로 정리해 crash/reload가 이미 저장된 comment를 새 ID로 재전송하지 않게 한다.
 
+버전이 증가한 상세 projection(예: 이관 후 재조회)은 untouched field를 갱신하고 dirty field는 기존 field-aware conflict 규칙으로 조정한다.
+저장 중이거나 ambiguous command가 남아 있는 동안에는 이 자동 조정으로 command의 original base/payload를 바꾸지 않는다.
+저장 버튼은 field-only `변경사항 저장`, comment-only `답변 보내기`/`내부 메모 저장`, combined `답변과 변경사항 저장`/`메모와 변경사항 저장`을 구분한다.
+
+확정된 댓글 저장 뒤에는 3초 autosave debounce를 기다리지 않고 해당 채널의 복구 초안을 정리한 뒤 detail refresh를 시작한다.
+진행 중인 autosave와 직렬화하고 확인한 draft version으로만 삭제한다. 다른 채널이나 저장 시점에 미확인된 서버 초안, 더 최신인 서버 초안은 삭제하지 않는다.
+초안 정리 실패/충돌은 이미 성공한 ticket command와 별도의 경고로 알리고 성공 command의 재전송을 유도하지 않는다.
+삭제에 실패한 원격 초안은 이후 복구될 수 있으므로 대화와 복구 내용을 확인하도록 안내한다. 인증/session 정책이나 서버 초안 retention은 변경하지 않는다.
+
 ## 5. Field-aware conflict
 
 서버 응답 예:

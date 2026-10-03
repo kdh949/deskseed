@@ -1,9 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse, type HttpHandler } from 'msw'
+import { useState } from 'react'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { mswHandlers } from '../../../.storybook/msw-handlers'
 import type { AgentTicketDetail } from '../../api/types'
+import { SeedButton } from '../../design-system/canonical'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
+import {
+  article as knowledgeArticle,
+  revision as knowledgeRevision,
+} from '../../extensions/knowledge-workflow/fixtures'
 
 const staffId = '11111111-1111-4111-8111-111111111111'
 
@@ -325,12 +331,18 @@ const csrfHandler = http.get('/api/v1/agent/csrf', () =>
   HttpResponse.json({ token: 'a'.repeat(32), headerName: 'X-CSRF-TOKEN' }),
 )
 
+const aiJobsHandler = http.get(
+  '/api/v1/agent/tickets/:ticketNumber/ai/jobs',
+  () => HttpResponse.json({ items: [] }),
+)
+
 const workspaceHandlers = (...overrides: HttpHandler[]) => [
   ...overrides,
   externalReferenceHandler,
   collaborationHandler,
   macroHandler,
   macroPreviewHandler,
+  aiJobsHandler,
   csrfHandler,
   ...mswHandlers,
 ]
@@ -388,6 +400,187 @@ export const HundredCommentPerformance: Story = {
   },
 }
 
+export const SaveTargetLabels: Story = {
+  play: async ({ canvas }) => {
+    await userEvent.click(canvas.getByRole('combobox', { name: '우선순위' }))
+    await userEvent.keyboard('{End}{Enter}')
+    await expect(
+      canvas.getByRole('button', { name: '변경사항 저장' }),
+    ).toBeEnabled()
+    const editor = await canvas.findByRole('textbox', {
+      name: '공개 답변 내용',
+    })
+    await userEvent.type(editor, '변경한 상태와 함께 보낼 답변')
+    await expect(
+      canvas.getByRole('button', { name: '답변과 변경사항 저장' }),
+    ).toBeEnabled()
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '변경사항 저장' }),
+    ).toBeEnabled()
+    await userEvent.type(
+      await canvas.findByRole('textbox', { name: '내부 메모 내용' }),
+      '내부 확인 사항',
+    )
+    await expect(
+      canvas.getByRole('button', { name: '메모와 변경사항 저장' }),
+    ).toBeEnabled()
+  },
+}
+
+export const ValidationFeedback: Story = {
+  parameters: {
+    msw: {
+      handlers: workspaceHandlers(
+        http.post('/api/v1/agent/tickets/3001/commands', () =>
+          HttpResponse.json(
+            {
+              type: '/problems/validation',
+              status: 400,
+              detail: 'One or more command fields are invalid.',
+              fieldErrors: [
+                {
+                  field: 'assigneeId',
+                  message: '현재 그룹의 활성 상담사를 선택해 주세요.',
+                },
+              ],
+              requestId: 'validation-story',
+            },
+            { status: 400 },
+          ),
+        ),
+      ),
+    },
+  },
+  play: async ({ canvas }) => {
+    const editor = await canvas.findByRole('textbox', {
+      name: '공개 답변 내용',
+    })
+    await userEvent.type(editor, '실패해도 보존하는 답변')
+    await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
+    await expect(
+      await canvas.findByText(
+        '담당자: 현재 그룹의 활성 상담사를 선택해 주세요.',
+      ),
+    ).toBeVisible()
+    await expect(editor).toHaveTextContent('실패해도 보존하는 답변')
+    await expect(canvas.getByText('요청 ID: validation-story')).toBeVisible()
+  },
+}
+
+export const BackgroundOwnershipUpdate: Story = {
+  render: function ProjectionUpdate(args) {
+    const [current, setCurrent] = useState(args.detail)
+    return (
+      <>
+        <SeedButton
+          onClick={() =>
+            setCurrent({
+              ...args.detail,
+              ticket: {
+                ...args.detail.ticket,
+                version: 4,
+                assignee: { id: 'staff-3002', displayName: '상담사 B' },
+              },
+              assignmentOptions: {
+                groups: [
+                  {
+                    ...args.detail.assignmentOptions.groups[0]!,
+                    members: [
+                      ...args.detail.assignmentOptions.groups[0]!.members,
+                      { id: 'staff-3002', displayName: '상담사 B' },
+                    ],
+                  },
+                ],
+              },
+            })
+          }
+        >
+          이관 완료 조회
+        </SeedButton>
+        <AgentTicketEditorWorkspace {...args} detail={current} />
+      </>
+    )
+  },
+  play: async ({ canvas }) => {
+    const editor = await canvas.findByRole('textbox', {
+      name: '공개 답변 내용',
+    })
+    await userEvent.type(editor, '이관 결과 조회 중에도 보존할 답변')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '이관 완료 조회' }),
+    )
+    await expect(
+      canvas.getByRole('combobox', { name: '담당자' }),
+    ).toHaveTextContent('상담사 B')
+    await expect(editor).toHaveTextContent('이관 결과 조회 중에도 보존할 답변')
+    await expect(
+      canvas.getByRole('button', { name: '답변 보내기' }),
+    ).toBeEnabled()
+  },
+}
+
+export const ConfirmedSaveDraftConflict: Story = {
+  args: { staffId: '66666666-6666-4666-8666-666666666666' },
+  parameters: {
+    msw: {
+      handlers: workspaceHandlers(
+        http.get('/api/v1/agent/tickets/3001/drafts/PUBLIC_REPLY', () =>
+          HttpResponse.json({
+            ticketNumber: 3001,
+            channel: 'PUBLIC_REPLY',
+            body: '저장할 복구 답변',
+            content: { format: 'PLAIN_TEXT', text: '저장할 복구 답변' },
+            attachmentIds: [],
+            clientDeviceId: '33333333-3333-4333-8333-333333333333',
+            baseTicketVersion: 3,
+            draftVersion: 2,
+            updatedAt: '2026-08-24T11:00:00Z',
+            expiresAt: '2099-08-31T11:00:00Z',
+          }),
+        ),
+        http.post('/api/v1/agent/tickets/3001/commands', () =>
+          HttpResponse.json({
+            ticketNumber: 3001,
+            version: 4,
+            auditId: '22222222-2222-4222-8222-222222222222',
+            warnings: [],
+          }),
+        ),
+        http.delete('/api/v1/agent/tickets/3001/drafts/PUBLIC_REPLY', () =>
+          HttpResponse.json(
+            {
+              type: '/problems/ticket-draft-conflict',
+              status: 409,
+              requestId: 'draft-clear-story',
+            },
+            { status: 409 },
+          ),
+        ),
+      ),
+    },
+  },
+  play: async ({ canvas }) => {
+    const editor = await canvas.findByRole('textbox', {
+      name: '공개 답변 내용',
+    })
+    await waitFor(() => expect(editor).toHaveTextContent('저장할 복구 답변'))
+    await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
+    await expect(
+      await canvas.findByText('공개 답변과 변경사항을 저장했습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByText(/다른 브라우저의 새 복구 초안은 삭제하지 않았습니다/),
+    ).toBeVisible()
+    await expect(editor).toHaveTextContent(/^$/)
+    await expect(
+      canvas.getByRole('button', { name: '답변 보내기' }),
+    ).toBeDisabled()
+  },
+}
+
 export const RecoversRemoteDrafts: Story = {
   args: {
     staffId: '55555555-5555-4555-8555-555555555555',
@@ -409,7 +602,7 @@ export const RecoversRemoteDrafts: Story = {
             baseTicketVersion: 3,
             draftVersion: 2,
             updatedAt: '2026-08-22T00:00:00Z',
-            expiresAt: '2026-09-21T00:00:00Z',
+            expiresAt: '2099-09-21T00:00:00Z',
           }),
         ),
         http.get('/api/v1/agent/tickets/3001/drafts/INTERNAL_NOTE', () =>
@@ -426,7 +619,7 @@ export const RecoversRemoteDrafts: Story = {
             baseTicketVersion: 3,
             draftVersion: 3,
             updatedAt: '2026-08-22T00:00:00Z',
-            expiresAt: '2026-09-21T00:00:00Z',
+            expiresAt: '2099-09-21T00:00:00Z',
           }),
         ),
       ),
@@ -516,15 +709,28 @@ export const InternalDraft: Story = {
       ),
     },
   },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     await userEvent.click(
       canvas.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
     )
     const editor = await canvas.findByRole('textbox', {
       name: '내부 메모 내용',
     })
-    await userEvent.type(editor, '직원 전용 확인 사항입니다.')
+    await userEvent.click(editor)
+    await userEvent.paste('직원 전용 확인 사항입니다.')
     await expect(editor).toHaveTextContent('직원 전용 확인 사항입니다.')
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }),
+    )
+    await expect(
+      await canvas.findByRole('textbox', { name: '공개 답변 내용' }),
+    ).not.toHaveTextContent('직원 전용 확인 사항입니다.')
+    await userEvent.click(
+      canvas.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }),
+    )
+    await expect(
+      await canvas.findByRole('textbox', { name: '내부 메모 내용' }),
+    ).toHaveTextContent('직원 전용 확인 사항입니다.')
   },
 }
 
@@ -556,6 +762,42 @@ export const ChildTicket: Story = {
     await expect(
       canvas.queryByRole('textbox', { name: '공개 답변 내용' }),
     ).not.toBeInTheDocument()
+  },
+}
+
+export const AllCollaborationRequests: Story = {
+  args: {
+    detail: {
+      ...detail,
+      ticket: { ...detail.ticket, openChildCount: 5 },
+      context: {
+        ...detail.context,
+        children: Array.from({ length: 5 }, (_, index) => ({
+          ...detail.ticket,
+          ticketNumber: 4001 + index,
+          subject: `결제 검토 ${index + 1}`,
+          isChild: true,
+        })),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
+    )
+    const context = within(
+      await canvas.findByRole('dialog', { name: '티켓 컨텍스트' }),
+    )
+    await expect(
+      await context.findByText('진행 중인 내부 협업 요청 5건'),
+    ).toBeVisible()
+    await expect(
+      context.queryByRole('link', { name: '#4005' }),
+    ).not.toBeInTheDocument()
+    await userEvent.click(
+      context.getByRole('button', { name: /관련 티켓 .*건 모두 보기/ }),
+    )
+    await expect(context.getByRole('link', { name: '#4005' })).toBeVisible()
   },
 }
 
@@ -612,7 +854,9 @@ export const ConflictComparison: Story = {
     await userEvent.type(editor, '고객 안내 초안을 보존합니다.')
     await userEvent.click(canvas.getByRole('combobox', { name: '상태' }))
     await userEvent.keyboard('{End}{ArrowUp}{Enter}')
-    await userEvent.click(canvas.getByRole('button', { name: '답변 보내기' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: '답변과 변경사항 저장' }),
+    )
     await expect(
       await canvas.findByRole('alert', { name: '저장 충돌' }),
     ).toBeVisible()
@@ -792,5 +1036,67 @@ export const ExternalReferencesError: Story = {
     await expect(await within(drawer).findByRole('alert')).toHaveTextContent(
       /외부 참조를 불러오지 못했습니다/,
     )
+  },
+}
+
+export const InsertKnowledgeLinkPreservesReply: Story = {
+  parameters: {
+    msw: {
+      handlers: workspaceHandlers(
+        http.post('/api/v1/agent/knowledge/search', () =>
+          HttpResponse.json({
+            items: [
+              {
+                articleSlug: 'refund-guide',
+                title: '환불 처리 안내',
+                excerpt: '환불 절차',
+                audience: 'PUBLIC',
+                categoryTitle: '결제',
+                sectionTitle: '환불',
+              },
+            ],
+            nextCursor: null,
+          }),
+        ),
+        http.get('/api/v1/agent/knowledge/articles/refund-guide', () =>
+          HttpResponse.json({
+            ...knowledgeArticle,
+            lifecycle: 'PUBLISHED',
+            currentPublishedRevision: knowledgeRevision,
+          }),
+        ),
+      ),
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    const reply = await canvas.findByRole('textbox', { name: '공개 답변 내용' })
+    await userEvent.click(reply)
+    await userEvent.paste('기존 답변을 이어서 작성합니다.')
+    await expect(reply).toHaveTextContent('기존 답변을 이어서 작성합니다.')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '티켓 컨텍스트 열기' }),
+    )
+    const context = await canvas.findByRole('dialog', { name: '티켓 컨텍스트' })
+    await userEvent.click(
+      within(context).getByRole('button', { name: '문서 검색 열기' }),
+    )
+    const panel = within(
+      await canvas.findByRole('dialog', { name: '지식 문서 검색' }),
+    )
+    await userEvent.type(panel.getByLabelText(/지식 검색어/), '환불')
+    await userEvent.click(panel.getByRole('button', { name: '지식 검색' }))
+    await userEvent.click(
+      await panel.findByRole('button', { name: '읽기: 환불 처리 안내' }),
+    )
+    await userEvent.click(
+      await panel.findByRole('button', { name: '현재 답변에 링크 삽입' }),
+    )
+    await panel.findByText('공개 답변 초안에 문서 링크를 넣었습니다.')
+    await userEvent.keyboard('{Escape}')
+    await userEvent.keyboard('{Escape}')
+    await expect(reply).toHaveTextContent('기존 답변을 이어서 작성합니다.')
+    await expect(
+      within(reply).getByRole('link', { name: '환불 처리 안내' }),
+    ).toHaveAttribute('href', `${window.location.origin}/articles/refund-guide`)
   },
 }

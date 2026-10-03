@@ -5,6 +5,11 @@ import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.organization.StaffAuthorityCatalog
+import dev.deskseed.trigger.TriggerHistory
+import dev.deskseed.trigger.TriggerVersionSummary
+import dev.deskseed.trigger.TriggerActivationSummary
+import dev.deskseed.trigger.TriggerExecutionSummary
+import dev.deskseed.trigger.TriggerJobSummary
 import dev.deskseed.trigger.TriggerActionDefinition
 import dev.deskseed.trigger.TriggerActionType
 import dev.deskseed.trigger.TriggerAuditUnavailableException
@@ -22,7 +27,7 @@ import dev.deskseed.trigger.TriggerEventType
 import dev.deskseed.trigger.TriggerNotFoundException
 import dev.deskseed.trigger.TriggerPreconditionFailedException
 import dev.deskseed.trigger.TriggerSetGroupAction
-import dev.deskseed.trigger.requireImplemented
+import dev.deskseed.trigger.TriggerSetAssigneeAction
 import dev.deskseed.trigger.TriggerWebhookAction
 import org.springframework.dao.DataAccessException
 import org.springframework.dao.DataIntegrityViolationException
@@ -43,12 +48,35 @@ internal class JdbcTriggerDefinitionAdministration(
     private val objectMapper: ObjectMapper,
     private val auditWriter: AdminSecurityAuditWriter,
     private val clock: Clock,
+    private val evaluation: TriggerTicketEvaluation,
 ) : TriggerDefinitionAdministration {
     @Transactional(readOnly = true)
     override fun list(actor: TriggerDefinitionActor): List<TriggerDefinitionView> {
         requireAccess(actor)
         return jdbc.query("$SELECT order by definition.position, definition.id limit 200", ::state)
             .map { view(it, it.currentVersion) }
+    }
+
+    @Transactional(readOnly = true)
+    override fun version(id: UUID, version: Int, actor: TriggerDefinitionActor): TriggerDefinitionView {
+        requireAccess(actor)
+        require(version > 0)
+        if (!versionExists(id, version)) throw TriggerNotFoundException()
+        return view(stateById(id), version)
+    }
+
+    @Transactional(readOnly = true)
+    override fun history(id: UUID, actor: TriggerDefinitionActor): TriggerHistory {
+        requireAccess(actor)
+        stateById(id)
+        val versions = jdbc.query("select version,name,created_by_display,created_at from trigger_versions where trigger_id = ? order by version desc limit 20", { rs, _ -> TriggerVersionSummary(rs.getInt(1),rs.getString(2),rs.getString(3),rs.getTimestamp(4).toInstant()) }, id)
+        val activations = jdbc.query("select trigger_version,activation_state,actor_display,occurred_at from trigger_activations where trigger_id = ? order by occurred_at desc,id desc limit 50", { rs, _ -> TriggerActivationSummary(rs.getInt(1),rs.getString(2),rs.getString(3),rs.getTimestamp(4).toInstant()) }, id)
+        val executions = jdbc.query("""select execution.id, execution.trigger_version, job.ticket_number, execution.outcome, execution.ticket_audit_id, execution.error_code, execution.completed_at
+            from trigger_executions execution join trigger_evaluation_jobs job on job.id = execution.job_id
+            where execution.trigger_id = ? order by execution.completed_at desc, execution.id desc limit 50""", { rs, _ -> TriggerExecutionSummary(rs.getObject(1,UUID::class.java),rs.getInt(2),rs.getLong(3),rs.getString(4),rs.getObject(5,UUID::class.java),rs.getString(6),rs.getTimestamp(7).toInstant()) }, id)
+        val jobs = jdbc.query("""select id,ticket_number,event_type,status,attempt_count,last_error_code,created_at from trigger_evaluation_jobs
+            where trigger_versions_json @> cast(? as jsonb) order by created_at desc,id desc limit 50""", { rs, _ -> TriggerJobSummary(rs.getObject(1,UUID::class.java),rs.getLong(2),TriggerEventType.valueOf(rs.getString(3)),rs.getString(4),rs.getInt(5),rs.getString(6),rs.getTimestamp(7).toInstant()) }, objectMapper.writeValueAsString(listOf(mapOf("triggerId" to id.toString()))))
+        return TriggerHistory(versions, activations, executions, jobs)
     }
 
     @Transactional
@@ -216,22 +244,13 @@ internal class JdbcTriggerDefinitionAdministration(
         actor: TriggerDefinitionActor,
     ): TriggerDryRunResult {
         requireAccess(actor)
-        eventType.requireImplemented()
         val current = stateById(triggerId)
         if (!versionExists(triggerId, triggerVersion)) throw TriggerNotFoundException()
         val definition = view(current, triggerVersion)
-        val ticket = jdbc.query(
-            "select priority, group_id from tickets where ticket_number = ?",
-            { result, _ -> TicketSnapshot(result.getString("priority"), result.getObject("group_id", UUID::class.java)) },
-            ticketNumber,
-        ).singleOrNull() ?: throw TriggerNotFoundException()
-        val outcomes = definition.conditions.map { condition -> evaluate(condition, eventType, ticket) }
-        val allIndexes = definition.conditions.indices.filter { definition.conditions[it].group == TriggerConditionGroup.ALL }
-        val anyIndexes = definition.conditions.indices.filter { definition.conditions[it].group == TriggerConditionGroup.ANY }
-        val matched = allIndexes.all(outcomes::get) && (anyIndexes.isEmpty() || anyIndexes.any(outcomes::get))
-        val failures = definition.actions.filterIsInstance<TriggerSetGroupAction>()
-            .filterNot { activeGroup(it.groupId) }
-            .map { "TARGET_GROUP_INACTIVE" }
+        val ticket = evaluation.load(ticketNumber) ?: throw TriggerNotFoundException()
+        val outcomes = evaluation.outcomes(definition.conditions, eventType, ticket)
+        val matched = evaluation.matched(definition.conditions, outcomes)
+        val failures = evaluation.failures(definition.actions, ticket)
         return TriggerDryRunResult(
             ticketNumber, triggerId, triggerVersion, matched,
             outcomes.indices.filter(outcomes::get), outcomes.indices.filterNot(outcomes::get),
@@ -259,7 +278,7 @@ internal class JdbcTriggerDefinitionAdministration(
         draft.actions.forEachIndexed { ordinal, action ->
             jdbc.update(
                 "insert into trigger_actions (trigger_id, trigger_version, ordinal, action_type, configuration_json) values (?, ?, ?, ?, cast(? as jsonb))",
-                triggerId, version, ordinal, action.type.name, objectMapper.writeValueAsString(actionConfiguration(action)),
+                triggerId, version, ordinal, action.type.name, objectMapper.writeValueAsString(triggerActionConfiguration(action)),
             )
         }
     }
@@ -294,7 +313,7 @@ internal class JdbcTriggerDefinitionAdministration(
         )
         val actions = jdbc.query(
             "select action_type, configuration_json::text from trigger_actions where trigger_id = ? and trigger_version = ? order by ordinal",
-            { result, _ -> action(result.getString(1), result.getString(2)) },
+            { result, _ -> triggerAction(objectMapper, result.getString(1), result.getString(2)) },
             current.id, version,
         )
         return TriggerDefinitionView(
@@ -303,47 +322,14 @@ internal class JdbcTriggerDefinitionAdministration(
         )
     }
 
-    private fun action(type: String, json: String): TriggerActionDefinition {
-        val node = objectMapper.readTree(json)
-        return when (TriggerActionType.valueOf(type)) {
-            TriggerActionType.SET_GROUP -> TriggerSetGroupAction(UUID.fromString(node["groupId"].asText()))
-            TriggerActionType.ENQUEUE_WEBHOOK -> TriggerWebhookAction(node["eventType"].asText())
-        }
-    }
-
-    private fun actionConfiguration(action: TriggerActionDefinition): Map<String, String> = when (action) {
-        is TriggerSetGroupAction -> mapOf("groupId" to action.groupId.toString())
-        is TriggerWebhookAction -> mapOf("eventType" to action.eventType)
-    }
-
-    private fun evaluate(condition: TriggerConditionDefinition, event: TriggerEventType, ticket: TicketSnapshot): Boolean {
-        val current = when (condition.field) {
-            TriggerConditionField.EVENT -> event.name
-            TriggerConditionField.PRIORITY -> ticket.priority
-            TriggerConditionField.GROUP -> ticket.groupId?.toString()
-        }
-        return when (condition.operator) {
-            TriggerConditionOperator.IS -> current == condition.value
-            TriggerConditionOperator.IS_NOT -> current != condition.value
-            TriggerConditionOperator.PRESENT -> current != null
-            TriggerConditionOperator.NOT_PRESENT -> current == null
-        }
-    }
-
     private fun validateDefinitionTargets(triggerId: UUID, version: Int) {
         val definition = view(stateById(triggerId), version)
-        definition.conditions.filter { it.field == TriggerConditionField.EVENT }.forEach { condition ->
-            TriggerEventType.valueOf(requireNotNull(condition.value)).requireImplemented()
-        }
-        definition.actions.filterIsInstance<TriggerSetGroupAction>().forEach {
-            if (!activeGroup(it.groupId)) throw TriggerConflictException("TRIGGER_TARGET_GROUP_INACTIVE")
+        val group = definition.actions.filterIsInstance<TriggerSetGroupAction>().singleOrNull()?.groupId
+        if (group != null && !evaluation.activeGroup(group)) throw TriggerConflictException("TRIGGER_TARGET_GROUP_INACTIVE")
+        definition.actions.filterIsInstance<TriggerSetAssigneeAction>().singleOrNull()?.assigneeId?.let { staff ->
+            if (!evaluation.activeStaff(staff) || (group != null && !evaluation.activeMember(group, staff))) throw TriggerConflictException("TRIGGER_TARGET_ASSIGNEE_INVALID")
         }
     }
-
-    private fun activeGroup(groupId: UUID): Boolean = jdbc.queryForObject(
-        "select exists(select 1 from support_groups where id = ? and status = 'ACTIVE')",
-        Boolean::class.java, groupId,
-    ) == true
 
     private fun activeTriggerCount(): Long = jdbc.queryForObject(
         "select count(*) from trigger_definitions where active_version is not null",
@@ -419,7 +405,6 @@ internal class JdbcTriggerDefinitionAdministration(
         val updatedAt: Instant,
     )
 
-    private data class TicketSnapshot(val priority: String, val groupId: UUID?)
 
     private companion object {
         const val MAX_ACTIVE_TRIGGER_COUNT = 100

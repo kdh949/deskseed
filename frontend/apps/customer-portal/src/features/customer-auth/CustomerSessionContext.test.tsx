@@ -135,6 +135,10 @@ describe('CustomerSessionProvider', () => {
       { pages: [], pageParams: [] },
     )
 
+    queryClient.setQueryData(
+      ['help', 'authenticated', 'customer-1', 'article', 'private'],
+      { title: 'restricted' },
+    )
     await user.click(screen.getByRole('button', { name: '로그아웃' }))
 
     await waitFor(() => {
@@ -152,5 +156,6 @@ describe('CustomerSessionProvider', () => {
         customerRequestQueryKeys.list('11111111-1111-4111-8111-111111111111'),
       ),
     ).toBeUndefined()
+    expect(queryClient.getQueriesData({ queryKey: ['help'] })).toEqual([])
   })
 })

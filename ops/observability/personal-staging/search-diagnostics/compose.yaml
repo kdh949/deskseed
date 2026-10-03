@@ -1,0 +1,53 @@
+# Standalone, opt-in collectors for the existing personal-staging database/host.
+# No application image replacement, Docker socket, host PID/network, or rootfs mount.
+services:
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    user: "${DIAGNOSTICS_UID:?set the owner of the mode-0600 password file}:${DIAGNOSTICS_GID:?set its group}"
+    environment:
+      DATA_SOURCE_URI: "db:5432/${POSTGRES_DB:?set the existing database}?sslmode=disable"
+      DATA_SOURCE_USER: deskseed_search_monitor
+      DATA_SOURCE_PASS_FILE: /run/secrets/postgres-password
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres-exporter/queries.yaml
+    volumes:
+      - ./postgres-queries.yaml:/etc/postgres-exporter/queries.yaml:ro
+      - ${DIAGNOSTICS_PASSWORD_FILE:?set a mode-0600 file}:/run/secrets/postgres-password:ro
+    ports:
+      - "${DIAGNOSTICS_BIND_ADDRESS:?set a private host IP}:9187:9187"
+    networks: [database, default]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.25
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    user: "65534:65534"
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.diskstats
+      - --collector.stat
+      - --collector.loadavg
+      - --collector.pressure
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    ports:
+      - "${DIAGNOSTICS_BIND_ADDRESS:?set a private host IP}:9100:9100"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.25
+    restart: unless-stopped
+
+networks:
+  database:
+    external: true
+    name: ${DIAGNOSTICS_DATABASE_NETWORK:-deskseed_database}

@@ -28,9 +28,9 @@
   --ds-font-sans:
     Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI',
     sans-serif;
-  --ds-font-size-050: 0.6875rem;
-  --ds-font-size-100: 0.75rem;
-  --ds-font-size-200: 0.8125rem;
+  --ds-font-size-050: 0.875rem;
+  --ds-font-size-100: 0.875rem;
+  --ds-font-size-200: 0.875rem;
   --ds-font-size-300: 0.875rem;
   --ds-font-size-400: 1rem;
   --ds-font-size-500: 1.125rem;

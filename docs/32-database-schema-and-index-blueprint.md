@@ -230,6 +230,39 @@ refreshed_at
 - refresh는 shared advisory transaction lock, rebuild는 같은 key의 exclusive lock을 사용한다. PostgreSQL row가 source of truth이고 projection은 `rebuild_ticket_search_documents()`로 재생성 가능하다.
 - 검색 원문, fingerprint, ciphertext, audit metadata는 이 table에 저장하지 않는다.
 
+### active_ticket_search_documents / terminal_ticket_search_documents
+
+V95가 다음 read-path 전환을 위해 추가한 staff-only projection이다. 기존 `ticket_search_documents`는 그대로 유지한다.
+
+```text
+active_ticket_search_documents(
+  ticket_id PK/FK -> tickets on delete cascade,
+  document_version = 1, rank_schema_version = 1,
+  ticket_number,
+  subject/requester/group/assignee normalized fields,
+  public_comment_text, internal_comment_text,
+  staff_document generated, refreshed_at
+)
+
+terminal_ticket_search_documents(
+  same normalized/versioned fields,
+  staff_document generated, finalized_at
+)
+```
+
+- `SOLVED`는 reopen 가능하므로 active이고 `CLOSED`만 terminal이다.
+- active field/comment/label 변경은 active row만 갱신한다. `SOLVED -> CLOSED`는 같은 canonical transaction에서 terminal insert와 active delete를 수행한다.
+- terminal row update는 DB trigger가 거부한다. 기존 CLOSED row의 backfill snapshot 이후 label/comment 변경은 반영하지 않는다.
+- Flyway는 두 table을 비운 상태로 추가한다. `backfill_split_ticket_search_documents(batch)`를 commit 사이에 반복해 1~1,000행씩 진행하고 `ticket_search_projection_backfill_state` checkpoint로 재개한다.
+- 완료는 `reconcile_split_ticket_search_documents()`의 missing/unexpected/duplicate가 모두 0일 때만 인정한다.
+- V95는 ticket-number B-tree만 추가한다. V96은 두 projection의 `staff_document gin_trgm_ops`를 각각 추가한다.
+- V97은 latest-first staff search가 unfiltered canonical ticket order를 선택할 수 있도록
+  `tickets_staff_search_latest_idx (updated_at desc, ticket_number desc) include (id)`를 추가한다.
+  이 B-tree는 trigram membership index를 대체하지 않고 planner 선택지를 추가한다.
+- runtime search는 status가 없으면 active를 먼저 읽고 `limit + 1` lookahead가 부족할 때만 terminal을 읽는다. `CLOSED` filter는 terminal만, 다른 status filter는 active만 읽는다.
+- active 결과는 terminal 결과보다 항상 앞서며 선택한 score/updatedAt 정렬은 각 partition 안에서 적용한다. signed cursor v3가 partition과 기존 snapshot/tuple/누적 반환 수를 함께 고정한다.
+- 기존 V35 `ticket_search_documents`는 application rollback source로 유지하며 별도 승인 전에는 제거하지 않는다.
+
 ### ticket_relations
 
 ```text
@@ -571,3 +604,10 @@ setting_change_audits (canonical audit ledger와 연결)
 - customer deletion은 legal/business policy에 따라 pseudonymization과 ticket retention을 분리한다.
 - attachment object storage lifecycle와 DB metadata를 일치시킨다.
 - backup에서 삭제가 언제 반영되는지 운영 문서에 적는다.
+
+### Customer request form runtime (V87)
+
+- `ticket_form_versions.customer_field_snapshot_json` holds published customer field/option identity, type, validation and order. Labels/descriptions are read from current catalog copy. Pre-existing versions are backfilled from the migration-time catalog under the immutable-version guard; this does not reconstruct historical semantics.
+- `ticket_customer_form_bindings` links one initial ticket to a specific immutable form version, including forms with no custom values. Typed values remain in `ticket_custom_field_values`.
+- `customer_request_command_receipts` uses purpose-separated HMAC command/payload digests and a ticket reference; it excludes raw command ID, body and access token. `(expires_at)` supports bounded expiry cleanup. Seven-day logical replay is scoped to customer identity or anonymous destination and compares ordered server attachment manifests. Keep the configured fingerprint key stable for the replay horizon.
+- Form withdrawal/publication and final request binding serialize through one PostgreSQL advisory catalog lock. No external network I/O is performed under this lock or the final ticket transaction.

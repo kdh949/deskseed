@@ -45,54 +45,16 @@ internal class PublicRequestApplicationService(
     private val rateLimiter: PublicRequestRateLimiter,
     private val attachmentUploadService: AttachmentUploadService,
     private val attachmentDownloadService: AttachmentDownloadService,
+    private val formBinding: dev.deskseed.ticketing.CustomerRequestFormBinding,
+    private val requestConsents: dev.deskseed.customerconsent.CustomerRequestConsentAcceptance,
+    private val receipts: InitialRequestReceipts,
+    private val attachmentManifest: dev.deskseed.attachments.InitialRequestAttachmentManifest,
+    private val clock: java.time.Clock,
 ) {
     @Transactional
     fun submit(command: SubmitAnonymousRequest): AnonymousRequestSubmitted {
-        rateLimiter.consume(
-            destination = command.authenticatedEmail ?: command.email,
-            clientAddress = command.effectiveClientAddress,
-        )
-        val customer = if (command.authenticatedCustomerId == null) {
-            customerAccessPolicy.requireAnonymousSubmissionAllowed()
-            customerDirectory.createUnverified(name = command.name, email = command.email)
-        } else {
-            customerDirectory.findById(command.authenticatedCustomerId)
-                ?.takeIf {
-                    it.verifiedAt != null && it.email.trim().lowercase(Locale.ROOT) ==
-                        command.authenticatedEmail?.trim()?.lowercase(Locale.ROOT)
-                }
-                ?: throw IllegalArgumentException("Authenticated customer is unavailable")
-        }
-        val ticket = ticketingFacade.submitPublicRequest(
-            SubmitPublicRequestCommand(
-                requesterId = customer.id,
-                subject = command.subject,
-                message = command.message,
-                actor = ActorRef(
-                    actorType = ActorType.CUSTOMER,
-                    actorId = customer.id,
-                ),
-                context = command.context,
-            ),
-        )
-        val rawAccessToken = accessTokenStore.issue(ticket.ticketId)
-        enqueueRequestReceivedMail(
-            ticketId = ticket.ticketId,
-            ticketNumber = ticket.ticketNumber,
-            commentId = null,
-            customerId = customer.id,
-            customerEmail = customer.email,
-            rawAccessToken = rawAccessToken,
-            idempotencyKey = "request-received:${ticket.ticketId}",
-            context = command.context,
-        )
-
-        return AnonymousRequestSubmitted(
-            ticketNumber = ticket.ticketNumber,
-            status = ticket.status,
-            accessToken = rawAccessToken,
-            createdAt = ticket.createdAt,
-        )
+        val prepared = prepare(command)
+        return finalize(prepared, emptyList())
     }
 
     @Transactional(readOnly = true)
@@ -173,28 +135,28 @@ internal class PublicRequestApplicationService(
         ),
     )
 
-    /**
-     * The first request comment has no ticket id yet. This preparation transaction intentionally commits only the
-     * customer/rate-limit decision, then the controller scans files outside a ticket transaction before finalizing.
-     */
+    /** Plans an opaque actor before scanning; no Customer or Ticket is inserted by this transaction. */
     @Transactional
-    fun prepareInitialSubmission(command: SubmitAnonymousRequest): PreparedInitialSubmission {
-        rateLimiter.consume(
-            destination = command.authenticatedEmail ?: command.email,
-            clientAddress = command.effectiveClientAddress,
-        )
-        val customer = if (command.authenticatedCustomerId == null) {
+    fun prepareInitialSubmission(command: SubmitAnonymousRequest): PreparedInitialSubmission = prepare(command)
+
+    private fun prepare(command: SubmitAnonymousRequest): PreparedInitialSubmission {
+        rateLimiter.consume(destination = command.authenticatedEmail ?: command.email, clientAddress = command.effectiveClientAddress)
+        val prepared = identity(command)
+        val existing = receipts.read(receipts.commandDigest(command), Instant.now(clock))
+        formBinding.normalize(command.formValues, requireCurrent = existing == null)
+        if (existing == null) requestConsents.validate(command.acceptedPolicies)
+        return prepared
+    }
+
+    private fun identity(command: SubmitAnonymousRequest): PreparedInitialSubmission {
+        if (command.authenticatedCustomerId == null) {
             customerAccessPolicy.requireAnonymousSubmissionAllowed()
-            customerDirectory.createUnverified(name = command.name, email = command.email)
-        } else {
-            customerDirectory.findById(command.authenticatedCustomerId)
-                ?.takeIf {
-                    it.verifiedAt != null && it.email.trim().lowercase(Locale.ROOT) ==
-                        command.authenticatedEmail?.trim()?.lowercase(Locale.ROOT)
-                }
-                ?: throw IllegalArgumentException("Authenticated customer is unavailable")
+            return PreparedInitialSubmission(UUID.randomUUID(), command.name.trim(), command.email.trim(), command, planned = true)
         }
-        return PreparedInitialSubmission(customer.id, customer.name, customer.email)
+        val customer = customerDirectory.findById(command.authenticatedCustomerId)?.takeIf {
+            it.verifiedAt != null && it.email.trim().lowercase(Locale.ROOT) == command.authenticatedEmail?.trim()?.lowercase(Locale.ROOT)
+        } ?: throw IllegalArgumentException("Authenticated customer is unavailable")
+        return PreparedInitialSubmission(customer.id, customer.name, customer.email, command, planned = false)
     }
 
     fun uploadInitialAttachment(
@@ -206,7 +168,7 @@ internal class PublicRequestApplicationService(
     ): AttachmentUploadResult = attachmentUploadService.upload(
         AttachmentUploadCommand(
             actor = ActorRef(ActorType.CUSTOMER, prepared.customerId),
-            actorDisplayName = prepared.customerName,
+            actorDisplayName = "고객",
             source = dev.deskseed.foundation.RequestSource.CUSTOMER_PORTAL,
             context = context,
             boundTicketId = null,
@@ -219,35 +181,39 @@ internal class PublicRequestApplicationService(
     )
 
     @Transactional
-    fun finishInitialSubmission(
-        prepared: PreparedInitialSubmission,
-        subject: String,
-        message: String,
-        attachmentIds: Set<UUID>,
-        context: CommandContext,
-    ): AnonymousRequestSubmitted {
-        require(attachmentIds.size <= 5) { "Initial request can link at most five attachments" }
-        val ticket = ticketingFacade.submitPublicRequest(
-            SubmitPublicRequestCommand(
-                requesterId = prepared.customerId,
-                subject = subject,
-                message = message,
-                attachmentIds = attachmentIds,
-                actor = ActorRef(ActorType.CUSTOMER, prepared.customerId),
-                context = context,
-            ),
-        )
+    fun finishInitialSubmission(prepared: PreparedInitialSubmission, attachmentIds: List<UUID>): AnonymousRequestSubmitted =
+        finalize(prepared, attachmentIds)
+
+    private fun finalize(prepared: PreparedInitialSubmission, attachmentIds: List<UUID>): AnonymousRequestSubmitted {
+        val command = prepared.command
+        val now = Instant.now(clock)
+        // Recheck identity/access at finalization, after file work and before persisting anything.
+        identity(command)
+        val digest = receipts.commandDigest(command)
+        val existing = receipts.lockAndRead(digest, now)
+        val normalized = formBinding.normalize(command.formValues, requireCurrent = existing == null)
+        val manifest = attachmentManifest.read(attachmentIds, prepared.customerId, now)
+        val payloadDigest = receipts.payloadDigest(command, normalized, manifest)
+        if (existing != null) {
+            if (existing.payloadDigest != payloadDigest) throw InitialRequestCommandConflictException()
+            val ticket = ticketingFacade.findPublicTicket(existing.ticketId, existing.ticketNumber)
+                ?: throw RequestNotFoundException()
+            return AnonymousRequestSubmitted(ticket.ticketNumber, ticket.status, accessTokenStore.issue(existing.ticketId), ticket.createdAt, replayed = true)
+        }
+        requestConsents.validate(command.acceptedPolicies)
+        val customer = if (prepared.planned) customerDirectory.createUnverified(prepared.customerName, prepared.customerEmail, prepared.customerId)
+            else customerDirectory.findById(prepared.customerId) ?: throw IllegalArgumentException("Authenticated customer is unavailable")
+        val context = command.context.copy(commandId = "initial-request:$digest")
+        val ticket = ticketingFacade.submitPublicRequest(SubmitPublicRequestCommand(
+            requesterId = customer.id, subject = command.subject, message = command.message,
+            attachmentIds = attachmentIds.toSet(), formValues = normalized,
+            actor = ActorRef(ActorType.CUSTOMER, customer.id), context = context,
+        ))
+        requestConsents.append(customer.id, ticket.ticketId, command.acceptedPolicies, context)
+        receipts.save(digest, payloadDigest, ticket.ticketId, ticket.ticketNumber, now)
         val rawAccessToken = accessTokenStore.issue(ticket.ticketId)
-        enqueueRequestReceivedMail(
-            ticketId = ticket.ticketId,
-            ticketNumber = ticket.ticketNumber,
-            commentId = null,
-            customerId = prepared.customerId,
-            customerEmail = prepared.customerEmail,
-            rawAccessToken = rawAccessToken,
-            idempotencyKey = "request-received:${ticket.ticketId}",
-            context = context,
-        )
+        enqueueRequestReceivedMail(ticket.ticketId, ticket.ticketNumber, null, customer.id, customer.email,
+            rawAccessToken, "request-received:${ticket.ticketId}", context)
         return AnonymousRequestSubmitted(ticket.ticketNumber, ticket.status, rawAccessToken, ticket.createdAt)
     }
 
@@ -308,13 +274,19 @@ internal data class SubmitAnonymousRequest(
     /** HTTP callers resolve a trusted effective address; loopback keeps direct application tests deterministic. */
     val effectiveClientAddress: String = "127.0.0.1",
     val context: CommandContext,
-)
+    val clientCommandId: String = UUID.randomUUID().toString(),
+    val formValues: dev.deskseed.ticketing.CustomerRequestFormValues = dev.deskseed.ticketing.CustomerRequestFormValues(),
+    val acceptedPolicies: List<dev.deskseed.customerconsent.CustomerRequestPolicySelection> = emptyList(),
+) {
+    override fun toString(): String = "[PROTECTED INITIAL CUSTOMER REQUEST]"
+}
 
 internal data class AnonymousRequestSubmitted(
     val ticketNumber: Long,
     val status: CustomerRequestStatus,
     val accessToken: String,
     val createdAt: Instant,
+    val replayed: Boolean = false,
 )
 
 internal data class PublicAttachmentAuthorizedTicket(
@@ -327,4 +299,8 @@ internal data class PreparedInitialSubmission(
     val customerId: UUID,
     val customerName: String,
     val customerEmail: String,
-)
+    val command: SubmitAnonymousRequest,
+    val planned: Boolean,
+) {
+    override fun toString(): String = "[PROTECTED PREPARED CUSTOMER REQUEST]"
+}

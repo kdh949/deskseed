@@ -1,6 +1,11 @@
-import type { SubmitRequestInput } from '../../api/types'
+export interface RequestFormDraft {
+  name: string
+  email: string
+  subject: string
+  message: string
+}
 
-export type RequestField = keyof SubmitRequestInput
+export type RequestField = keyof RequestFormDraft
 export type RequestFieldErrors = Partial<Record<RequestField, string>>
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -12,7 +17,7 @@ export const REQUEST_FIELD_LIMITS = {
   message: 20_000,
 } as const
 
-export const EMPTY_REQUEST_FORM: SubmitRequestInput = {
+export const EMPTY_REQUEST_FORM: RequestFormDraft = {
   name: '',
   email: '',
   subject: '',
@@ -20,7 +25,7 @@ export const EMPTY_REQUEST_FORM: SubmitRequestInput = {
 }
 
 export function validateRequestForm(
-  form: SubmitRequestInput,
+  form: RequestFormDraft,
 ): RequestFieldErrors {
   const errors: RequestFieldErrors = {}
 

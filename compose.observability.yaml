@@ -14,13 +14,16 @@ services:
       SPRING_PROFILES_ACTIVE: load
       DESKSEED_OTLP_TRACES_ENDPOINT: http://alloy:4318/v1/traces
       DESKSEED_TRACE_SAMPLING_PROBABILITY: ${DESKSEED_TRACE_SAMPLING_PROBABILITY:-0.05}
+      DESKSEED_SERVICE_VERSION: ${DESKSEED_SERVICE_VERSION:?set the 40-character deployed revision}
+      DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED: "true"
       JAVA_TOOL_OPTIONS: -javaagent:/opt/pyroscope/pyroscope.jar
       PYROSCOPE_APPLICATION_NAME: deskseed-backend
       PYROSCOPE_SERVER_ADDRESS: ${DESKSEED_PYROSCOPE_SERVER_URL:?set the private Pyroscope server URL}
-      PYROSCOPE_LABELS: environment=load,service=deskseed-backend
-      PYROSCOPE_PROFILER_EVENT: itimer
-      PYROSCOPE_PROFILER_ALLOC: 0
-      PYROSCOPE_PROFILER_LOCK: 0
+      PYROSCOPE_LABELS: environment=load,service=deskseed-backend,service_name=deskseed-backend,service_version=${DESKSEED_SERVICE_VERSION:?set the 40-character deployed revision}
+      PYROSCOPE_FORMAT: jfr
+      PYROSCOPE_PROFILER_EVENT: wall
+      PYROSCOPE_PROFILING_INTERVAL: 10ms
+      PYROSCOPE_UPLOAD_INTERVAL: 15s
     ports:
       - "${DESKSEED_OBSERVABILITY_BIND_ADDRESS:?set the VPN address}:9090:9090"
 
@@ -88,8 +91,11 @@ services:
       DATA_SOURCE_URI: db:5432/${POSTGRES_DB:-deskseed}?sslmode=disable
       DATA_SOURCE_USER: ${DESKSEED_POSTGRES_EXPORTER_USER:-deskseed_monitor}
       PGPASSFILE: /run/secrets/deskseed-postgres-exporter-pgpass
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres-exporter/deskseed-search-queries.yaml
     secrets:
       - deskseed-postgres-exporter-pgpass
+    volumes:
+      - ./ops/observability/personal-staging/search-diagnostics/postgres-queries.yaml:/etc/postgres-exporter/deskseed-search-queries.yaml:ro
     depends_on:
       db:
         condition: service_healthy

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -141,7 +142,7 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('redirects an authenticated admin from login to the Agent Queue', async () => {
+  it('redirects an authenticated admin from login to the admin workspace', async () => {
     vi.stubGlobal('fetch', sessionFetch('ADMIN'))
     render(
       <DeskseedThemeProvider>
@@ -151,9 +152,11 @@ describe('App', () => {
       </DeskseedThemeProvider>,
     )
 
-    expect(await screen.findByRole('region', { name: '티켓 큐' })).toBeVisible()
     expect(
-      screen.queryByRole('heading', { name: '직원 로그인' }),
+      await screen.findByRole('navigation', { name: '관리자 설정 메뉴' }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('heading', { name: 'Deskseed 로그인' }),
     ).not.toBeInTheDocument()
   })
 
@@ -197,3 +200,84 @@ describe('App', () => {
     ).toBe(false)
   })
 })
+
+it.each(['/agent/audit/typo', '/agent/unknown'])(
+  'renders auditor not-found within a single shell main: %s',
+  async (path) => {
+    vi.stubGlobal('fetch', sessionFetch('SECURITY_AUDITOR'))
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+    expect(
+      await screen.findByRole('heading', {
+        name: '페이지를 찾을 수 없습니다.',
+      }),
+    ).toBeVisible()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(document.querySelector('main main')).toBeNull()
+    expect(
+      screen.queryByText('상담사 작업 공간 권한이 필요합니다.'),
+    ).not.toBeInTheDocument()
+  },
+)
+
+it.each([503, 'network', 401])(
+  'switches accounts only after confirmed logout, retaining denial on %s',
+  async (failure) => {
+    const baseFetch = sessionFetch('SECURITY_AUDITOR')
+    let attempts = 0
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(input), 'http://deskseed.test').pathname
+        if (path === '/api/v1/agent/csrf')
+          return new Response(
+            JSON.stringify({
+              token: 'synthetic-csrf',
+              headerName: 'X-CSRF-TOKEN',
+            }),
+            { status: 200 },
+          )
+        if (path === '/api/v1/agent/session' && init?.method === 'DELETE') {
+          attempts++
+          if (attempts === 1 && failure === 'network')
+            throw new TypeError('offline')
+          return new Response(null, {
+            status: attempts === 1 ? (failure as number) : 204,
+          })
+        }
+        return baseFetch(input)
+      },
+    )
+    vi.stubGlobal('fetch', fetcher)
+    render(
+      <DeskseedThemeProvider>
+        <MemoryRouter initialEntries={['/agent/views/my-open']}>
+          <TestApp />
+        </MemoryRouter>
+      </DeskseedThemeProvider>,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: '다른 계정으로 로그인' }),
+    )
+    if (failure !== 401) {
+      expect(
+        await screen.findByText('로그아웃하지 못했습니다. 다시 시도해 주세요.'),
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('heading', { name: 'Deskseed 로그인' }),
+      ).not.toBeInTheDocument()
+      await user.click(
+        screen.getByRole('button', { name: '다른 계정으로 로그인' }),
+      )
+    }
+    expect(
+      await screen.findByRole('heading', { name: 'Deskseed 로그인' }),
+    ).toBeVisible()
+    expect(attempts).toBe(failure === 401 ? 1 : 2)
+  },
+)

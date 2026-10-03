@@ -280,6 +280,7 @@ class AuditExplorerIntegrationTest {
             .andExpect(jsonPath("$.search.queryFingerprint").value(search.fingerprint))
             .andExpect(jsonPath("$.search.filters.status").value("OPEN"))
             .andExpect(jsonPath("$.search.resultCount").value(1))
+            .andExpect(jsonPath("$.search.resultCountRelation").value("EXACT"))
             .andExpect(jsonPath("$.search.openedActivities.length()").value(1))
             .andExpect(jsonPath("$.search.openedActivities[0].activityId").value(search.openedActivityId.toString()))
             .andExpect(jsonPath("$.rawQuery").doesNotExist())

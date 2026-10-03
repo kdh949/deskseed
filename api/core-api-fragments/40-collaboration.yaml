@@ -712,13 +712,13 @@ components:
       required: [id, type, ticketNumber, noteId, actor, createdAt]
       properties:
         id: {type: string, format: uuid}
-        type: {type: string, const: COLLABORATION_MENTION}
+        type: {type: string, enum: [COLLABORATION_MENTION, UNASSIGNED_TICKET_ALERT]}
         ticketNumber: {type: integer, format: int64, minimum: 1}
-        noteId: {type: string, format: uuid}
+        noteId: {type: [string, 'null'], format: uuid, description: 멘션의 내부 메모 식별자이며 미배정 자동 알림에서는 null입니다.}
         actor: {$ref: '#/components/schemas/ActorSummary'}
         createdAt: {type: string, format: date-time}
         readAt: {type: [string, 'null'], format: date-time}
-      description: note body와 customer PII 없이 안전한 ticket deep link에 필요한 식별자만 보유합니다.
+      description: 본문과 고객 PII 없이 티켓 링크를 제공합니다. 멘션 actor는 STAFF, 미배정 알림 actor는 TRIGGER와 해당 규칙 버전 이름입니다.
     AgentNotificationPage:
       type: object
       additionalProperties: false

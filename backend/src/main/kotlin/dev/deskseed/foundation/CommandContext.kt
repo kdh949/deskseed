@@ -22,6 +22,7 @@ enum class RequestSource {
     AGENT_UI,
     ADMIN_UI,
     PLATFORM_API,
+    AI_SERVICE,
     TRIGGER,
     AUTOMATION,
     SYSTEM_JOB,

@@ -67,7 +67,7 @@ export function AgentSearchPage() {
   const [queryText, setQueryText] = useState('')
   const [draftFilters, setDraftFilters] = useState<AgentTicketSearchFilters>({})
   const [sort, setSort] = useState<AgentTicketSearchSort>(
-    'score:desc,ticketNumber:desc',
+    'updatedAt:desc,ticketNumber:desc',
   )
   const [submitted, setSubmitted] = useState<AgentTicketSearchInput | null>(
     null,
@@ -272,10 +272,7 @@ export function AgentSearchPage() {
             <header>
               <div>
                 <h2>검색 결과</h2>
-                <p>
-                  정확한 전체 결과{' '}
-                  {searchQuery.data.resultCount.toLocaleString('ko-KR')}개
-                </p>
+                <p>{resultCountLabel(searchQuery.data.resultCount)}</p>
               </div>
             </header>
             <SeedDataTable
@@ -350,20 +347,47 @@ function SearchError({
   onRetry: () => void
 }) {
   const denied = error instanceof ApiError && error.status === 403
+  const tooBroad =
+    error instanceof ApiError &&
+    error.problem?.type === '/problems/agent-search-too-broad'
   return (
     <SeedFeedbackState
-      action={<SeedButton onClick={onRetry}>다시 시도</SeedButton>}
-      description={
-        error instanceof ApiError && error.requestId
-          ? `요청 ID: ${error.requestId}`
-          : undefined
+      action={
+        tooBroad ? undefined : (
+          <SeedButton onClick={onRetry}>다시 시도</SeedButton>
+        )
       }
-      kind={denied ? 'denied' : 'error'}
+      description={
+        tooBroad
+          ? '검색어를 세 글자 이상 입력하거나 상태·우선순위·그룹·담당자·SLA 필터를 추가해 주세요.'
+          : error instanceof ApiError && error.requestId
+            ? `요청 ID: ${error.requestId}`
+            : undefined
+      }
+      kind={denied ? 'denied' : tooBroad ? 'empty' : 'error'}
       title={
-        denied ? '검색 권한이 없습니다' : '티켓 검색을 완료하지 못했습니다'
+        denied
+          ? '검색 권한이 없습니다'
+          : tooBroad
+            ? '검색 범위를 더 좁혀 주세요'
+            : '티켓 검색을 완료하지 못했습니다'
       }
     />
   )
+}
+
+function resultCountLabel(
+  resultCount:
+    | { value: number; relation: 'EXACT' | 'LOWER_BOUND' }
+    | { value: null; relation: 'UNAVAILABLE' },
+) {
+  if (resultCount.relation === 'UNAVAILABLE') {
+    return '전체 결과 수는 계산하지 않았습니다'
+  }
+  const formatted = resultCount.value.toLocaleString('ko-KR')
+  return resultCount.relation === 'EXACT'
+    ? `전체 결과 ${formatted}개`
+    : `결과 ${formatted}개 이상`
 }
 
 const searchColumns = (

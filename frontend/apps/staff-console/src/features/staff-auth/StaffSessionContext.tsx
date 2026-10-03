@@ -33,7 +33,7 @@ interface StaffSessionValue {
   status: SessionStatus
   staff: CurrentStaff | null
   signIn: (email: string, password: string) => Promise<CurrentStaff>
-  signOut: () => Promise<void>
+  signOut: (options?: { requireRemoteConfirmation?: boolean }) => Promise<void>
   retry: () => Promise<void>
 }
 
@@ -307,25 +307,42 @@ export function StaffSessionProvider({
     [failClosedAfterConflictingSignIn, setAuthenticatedStaff],
   )
 
-  const signOut = useCallback(async () => {
-    const departingStaffId =
-      staffRef.current?.id ??
-      tabStaffIdRef.current ??
-      readRememberedStaffId(localStorage)
-    const requestId = ++sessionRequestRef.current
-    try {
-      await logoutStaff({ invalidateSessionOn401: false })
-    } finally {
-      if (requestId === sessionRequestRef.current) {
-        clearStaffState(departingStaffId, true)
-      } else {
-        removeDraftSessionOwner(localStorage, departingStaffId)
-        if (departingStaffId) {
-          purgeDraftsBestEffort(localStorage, departingStaffId)
+  const signOut = useCallback(
+    async (options: { requireRemoteConfirmation?: boolean } = {}) => {
+      const departingStaffId =
+        staffRef.current?.id ??
+        tabStaffIdRef.current ??
+        readRememberedStaffId(localStorage)
+      const requestId = ++sessionRequestRef.current
+      let remoteEnded = false
+      try {
+        await logoutStaff({ invalidateSessionOn401: false })
+        remoteEnded = true
+      } catch (error) {
+        if (
+          options.requireRemoteConfirmation &&
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
+          remoteEnded = true
+        } else {
+          throw error
+        }
+      } finally {
+        if (remoteEnded || !options.requireRemoteConfirmation) {
+          if (requestId === sessionRequestRef.current) {
+            clearStaffState(departingStaffId, true)
+          } else {
+            removeDraftSessionOwner(localStorage, departingStaffId)
+            if (departingStaffId) {
+              purgeDraftsBestEffort(localStorage, departingStaffId)
+            }
+          }
         }
       }
-    }
-  }, [clearStaffState])
+    },
+    [clearStaffState],
+  )
 
   const value = useMemo(
     () => ({ status, staff, signIn, signOut, retry: refresh }),

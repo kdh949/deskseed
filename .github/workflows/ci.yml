@@ -108,9 +108,17 @@ jobs:
               exit 1
             fi
             tags=$(IFS=,; echo "${selected[*]}")
-            ./gradlew --no-daemon ciSelectedTest "-PdeskseedTestTags=$tags" --fail-fast
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.parallel=false \
+              -Dorg.gradle.jvmargs=-Xmx2048m \
+              -Dkotlin.compiler.execution.strategy=in-process \
+              ciSelectedTest "-PdeskseedTestTags=$tags" --fail-fast
           else
-            ./gradlew --no-daemon test
+            ./gradlew --no-daemon --max-workers=1 \
+              -Dorg.gradle.parallel=false \
+              -Dorg.gradle.jvmargs=-Xmx2048m \
+              -Dkotlin.compiler.execution.strategy=in-process \
+              test
           fi
 
   frontend:

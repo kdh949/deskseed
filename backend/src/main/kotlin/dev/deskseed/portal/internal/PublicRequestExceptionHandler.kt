@@ -32,6 +32,27 @@ import java.net.URI
 
 @RestControllerAdvice(assignableTypes = [PublicRequestController::class, CustomerRequestPortalController::class])
 internal class PublicRequestExceptionHandler {
+    @ExceptionHandler(dev.deskseed.ticketing.CustomerFormValidationException::class)
+    fun formInvalid(request: HttpServletRequest) = respond(problem(HttpStatus.BAD_REQUEST,
+        "Invalid customer form", "Check the customer form values.", "/problems/customer-ticket-form-validation-failed", request))
+
+    @ExceptionHandler(dev.deskseed.ticketing.CustomerFormUnavailableException::class)
+    fun formUnavailable(request: HttpServletRequest) = respond(problem(HttpStatus.NOT_FOUND,
+        "Customer form unavailable", "The customer form is unavailable.", "/problems/customer-ticket-form-unavailable", request))
+
+    @ExceptionHandler(dev.deskseed.ticketing.CustomerFormVersionConflictException::class)
+    fun formVersionConflict(request: HttpServletRequest) = respond(problem(HttpStatus.CONFLICT,
+        "Customer form changed", "Refresh the customer form.", "/problems/customer-ticket-form-version-conflict", request))
+
+    @ExceptionHandler(dev.deskseed.ticketing.CustomerRequestConfigurationConflictException::class,
+        dev.deskseed.customerconsent.CustomerRequestConsentConflictException::class)
+    fun configurationConflict(request: HttpServletRequest) = respond(problem(HttpStatus.CONFLICT,
+        "Request configuration changed", "Refresh the form and consent policies.", "/problems/customer-request-configuration-conflict", request))
+
+    @ExceptionHandler(InitialRequestCommandConflictException::class)
+    fun initialCommandConflict(request: HttpServletRequest) = respond(problem(HttpStatus.CONFLICT,
+        "Request command reused", "This command identity was already used with different content.", "/problems/customer-request-command-conflict", request))
+
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(
         exception: MethodArgumentNotValidException,
@@ -55,7 +76,7 @@ internal class PublicRequestExceptionHandler {
             setProperty("fieldErrors", errors)
         }
 
-        return ResponseEntity.status(problem.status).body(problem)
+        return respond(problem)
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
@@ -89,7 +110,7 @@ internal class PublicRequestExceptionHandler {
         ),
     )
 
-    @ExceptionHandler(DataAccessException::class, TransactionException::class)
+    @ExceptionHandler(DataAccessException::class, TransactionException::class, dev.deskseed.customerconsent.CustomerConsentUnavailableException::class)
     fun handlePersistenceFailure(
         request: HttpServletRequest,
     ): ResponseEntity<ProblemDetail> = respond(
@@ -248,7 +269,13 @@ internal class PublicRequestExceptionHandler {
         request: HttpServletRequest,
     ): ProblemDetail = ProblemDetail.forStatusAndDetail(status, detail).apply {
         this.title = title
-        this.type = URI.create(type)
+        this.type = URI.create(if (request.requestURI == "/api/v1/requests") when (type) {
+            "/problems/validation", "/problems/malformed-json", "/problems/request-network-invalid" -> "/problems/customer-request-validation-failed"
+            "/problems/anonymous-submission-disabled" -> "/problems/customer-request-not-allowed"
+            "/problems/request-rate-limit-exceeded" -> "/problems/customer-request-rate-limited"
+            "/problems/request-rate-limit-unavailable", "/problems/request-storage-unavailable" -> "/problems/customer-request-configuration-unavailable"
+            else -> type
+        } else type)
         this.instance = URI.create(request.requestURI)
         setProperty(
             "requestId",
@@ -259,5 +286,5 @@ internal class PublicRequestExceptionHandler {
     private fun respond(
         problem: ProblemDetail,
         headers: HttpHeaders = HttpHeaders(),
-    ): ResponseEntity<ProblemDetail> = ResponseEntity.status(problem.status).headers(headers).body(problem)
+    ): ResponseEntity<ProblemDetail> = ResponseEntity.status(problem.status).headers(headers).cacheControl(org.springframework.http.CacheControl.noStore()).body(problem)
 }

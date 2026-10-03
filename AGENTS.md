@@ -55,7 +55,7 @@
 
 ## Architecture rules
 
-- measured evidence and Accepted ADR 없이 Kafka, Redis, Elasticsearch/OpenSearch, WebFlux/R2DBC, Kubernetes, microservices, Event Sourcing, multitenancy를 추가하지 않는다.
+- measured evidence and Accepted ADR 없이 Kafka, Redis, Elasticsearch/OpenSearch, WebFlux/R2DBC, Kubernetes, microservices, Event Sourcing, multitenancy를 추가하지 않는다. AI V1의 격리된 FastAPI/worker/AI PostgreSQL·pgvector/Redis Streams 경계만 Accepted ADR-0049와 D-066의 좁은 예외를 따른다.
 - module은 다른 module의 root API/named interface만 import한다.
 - `internal` package cross-import를 금지한다.
 - Controller는 HTTP translation, Application Service는 transaction, Domain은 invariant, Adapter는 persistence/external I/O를 소유한다.

@@ -1,0 +1,14 @@
+{
+  "version": "triage-v1",
+  "topicCodes": [
+    "ACCOUNT_ACCESS",
+    "BILLING",
+    "USAGE",
+    "TECHNICAL_ISSUE",
+    "POLICY",
+    "FEEDBACK",
+    "OTHER"
+  ],
+  "priorities": ["LOW", "NORMAL", "HIGH", "URGENT"],
+  "autoApply": false
+}

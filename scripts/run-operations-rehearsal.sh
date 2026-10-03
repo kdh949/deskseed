@@ -1822,8 +1822,10 @@ path, subject = sys.argv[1:]
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(
         {
-            "name": "Operations rehearsal customer",
-            "email": "operations-customer@deskseed.test",
+            "clientCommandId": str(__import__("uuid").uuid4()),
+            "requester": {"name": "Operations rehearsal customer", "email": "operations-customer@deskseed.test"},
+            "fieldValues": {},
+            "acceptedPolicies": [],
             "subject": subject,
             "message": "Synthetic public comment for install and restore verification.",
         },

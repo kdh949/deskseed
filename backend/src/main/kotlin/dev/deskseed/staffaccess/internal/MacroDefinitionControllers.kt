@@ -59,6 +59,10 @@ internal class AgentMacroDefinitionController(
     fun listManaged(@AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
         administration.listManaged(MacroScope.PERSONAL, request.actor(principal, RequestSource.AGENT_UI))
 
+    @GetMapping("/personal-macros/{macroId}/history")
+    fun history(@PathVariable macroId: UUID, @AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
+        administration.history(MacroScope.PERSONAL, macroId, request.actor(principal, RequestSource.AGENT_UI))
+
     @PostMapping("/personal-macros")
     fun create(
         @Valid @RequestBody body: MacroDefinitionRequest,
@@ -121,6 +125,10 @@ internal class AdminSharedMacroDefinitionController(
     @GetMapping
     fun list(@AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
         administration.listManaged(MacroScope.SHARED, request.actor(principal, RequestSource.ADMIN_UI))
+
+    @GetMapping("/{macroId}/history")
+    fun history(@PathVariable macroId: UUID, @AuthenticationPrincipal principal: StaffPrincipal, request: HttpServletRequest) =
+        administration.history(MacroScope.SHARED, macroId, request.actor(principal, RequestSource.ADMIN_UI))
 
     @PostMapping
     fun create(

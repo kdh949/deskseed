@@ -14,7 +14,8 @@ cleanup() {
   local exit_code=$?
   trap - EXIT
   if [[ "$test_root" == "${TMPDIR:-/tmp}"/deskseed-production-compose.?????? ]]; then
-    for artifact in "$test_root/merged.json" "$test_root/personal-staging.json"; do
+    for artifact in "$test_root/merged.json" "$test_root/personal-staging.json" \
+      "$test_root/personal-staging-observability.json" "$test_root/personal-staging-diagnostics.json"; do
       [[ ! -e "$artifact" ]] || unlink "$artifact"
     done
     rmdir "$test_root" || exit_code=1
@@ -26,6 +27,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+unset DESKSEED_RUNTIME_USER
 export POSTGRES_DB=deskseed
 export DATABASE_BOOTSTRAP_USERNAME=deskseed_bootstrap
 export DATABASE_BOOTSTRAP_PASSWORD=contract-bootstrap-password
@@ -172,6 +174,14 @@ assert services["frontend"]["image"] == (
 )
 assert "build" not in services["backend"], services["backend"].get("build")
 assert "build" not in services["frontend"], services["frontend"].get("build")
+assert services["backend"]["user"] == "deskseed"
+assert "alloy" not in services, services.keys()
+assert not services["backend"].get("ports"), services["backend"].get("ports")
+assert "SPRING_PROFILES_INCLUDE" not in services["backend"]["environment"]
+assert "JAVA_TOOL_OPTIONS" not in services["backend"]["environment"]
+assert "DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED" not in services["backend"]["environment"]
+assert "postgres-exporter" not in services
+assert "node-exporter" not in services
 assert services["db-migrate"]["volumes"][0]["source"].endswith(
     "/backend/src/main/resources/db/migration"
 )
@@ -180,7 +190,133 @@ assert services["db-permissions"]["volumes"][0]["source"].endswith(
 )
 PY
 
+DESKSEED_FRONTEND_BIND_ADDRESS=192.0.2.10 \
+DESKSEED_FRONTEND_ORIGIN_PORT=18080 \
+DESKSEED_OBSERVABILITY_BIND_ADDRESS=192.0.2.11 \
+DESKSEED_RUNTIME_USER=1001:1001 \
+DESKSEED_LOKI_OTLP_HTTP_ENDPOINT=https://loki.internal/otlp \
+DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT=https://tempo.internal \
+  docker compose \
+    --project-name deskseed-personal-staging-observability-contract \
+    --file "$repository_root/compose.yaml" \
+    --file "$repository_root/compose.production.yaml" \
+    --file "$repository_root/compose.personal-staging.yaml" \
+    --file "$repository_root/compose.personal-staging-observability.yaml" \
+    config --format json >"$test_root/personal-staging-observability.json"
+
+python3 - "$test_root/personal-staging-observability.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    model = json.load(source)
+
+services = model["services"]
+assert set(services) == {
+    "alloy", "backend", "db", "db-migrate", "db-permissions", "frontend", "redis", "versitygw"
+}, services.keys()
+
+backend = services["backend"]
+assert backend["user"] == "1001:1001"
+backend_environment = backend["environment"]
+assert backend_environment["SPRING_PROFILES_ACTIVE"] == "production"
+assert backend_environment["SPRING_PROFILES_INCLUDE"] == "personal-staging-observability"
+assert backend_environment["DESKSEED_PERSONAL_STAGING_OTLP_LOGS_ENDPOINT"] == "http://alloy:4318/v1/logs"
+assert backend_environment["DESKSEED_PERSONAL_STAGING_OTLP_TRACES_ENDPOINT"] == "http://alloy:4318/v1/traces"
+assert backend_environment["DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY"] == "0.05"
+assert "JAVA_TOOL_OPTIONS" not in backend_environment
+assert "DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED" not in backend_environment
+backend_ports = backend["ports"]
+assert len(backend_ports) == 1, backend_ports
+assert backend_ports[0]["host_ip"] == "192.0.2.11", backend_ports
+assert int(backend_ports[0]["published"]) == 9090, backend_ports
+assert int(backend_ports[0]["target"]) == 9090, backend_ports
+assert set(backend["networks"]) == {
+    "application", "database", "customer-auth-limiter", "object-storage"
+}
+
+alloy = services["alloy"]
+assert alloy["image"] == "grafana/alloy:v1.18.0"
+assert alloy["user"] == "473:473"
+assert alloy["environment"]["DESKSEED_LOKI_OTLP_HTTP_ENDPOINT"] == "https://loki.internal/otlp"
+assert alloy["environment"]["DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT"] == "https://tempo.internal"
+assert set(alloy["networks"]) == {"application"}
+assert not alloy.get("privileged"), alloy
+assert not alloy.get("devices"), alloy
+assert not alloy.get("pid"), alloy
+assert not alloy.get("network_mode"), alloy
+assert alloy["read_only"] is True
+assert "ALL" in alloy["cap_drop"]
+assert "no-new-privileges:true" in alloy["security_opt"]
+assert any(str(entry).startswith("/tmp") for entry in alloy["tmpfs"]), alloy["tmpfs"]
+
+alloy_ports = alloy["ports"]
+assert len(alloy_ports) == 1, alloy_ports
+assert alloy_ports[0]["host_ip"] == "192.0.2.11", alloy_ports
+assert int(alloy_ports[0]["published"]) == 12345, alloy_ports
+assert int(alloy_ports[0]["target"]) == 12345, alloy_ports
+assert set(map(str, alloy["expose"])) == {"4317", "4318"}
+
+frontend_mounts = services["frontend"]["volumes"]
+assert len(frontend_mounts) == 1, frontend_mounts
+assert frontend_mounts[0]["source"].endswith("/frontend/nginx.personal-staging-observability.conf"), frontend_mounts
+assert frontend_mounts[0]["target"] == "/etc/nginx/conf.d/default.conf", frontend_mounts
+assert frontend_mounts[0]["read_only"] is True, frontend_mounts
+
+mounts = alloy["volumes"]
+assert len(mounts) == 1, mounts
+assert mounts[0]["source"].endswith("/ops/observability/personal-staging/alloy/config.alloy"), mounts
+assert mounts[0]["target"] == "/etc/alloy/config.alloy", mounts
+assert mounts[0]["read_only"] is True, mounts
+assert "/var/run/docker.sock" not in json.dumps(alloy)
+assert "/var/lib/docker" not in json.dumps(alloy)
+assert "/rootfs" not in json.dumps(alloy)
+PY
+
+DESKSEED_FRONTEND_BIND_ADDRESS=192.0.2.10 \
+DESKSEED_FRONTEND_ORIGIN_PORT=18080 \
+DESKSEED_OBSERVABILITY_BIND_ADDRESS=192.0.2.11 \
+DESKSEED_RUNTIME_USER=1001:1001 \
+DESKSEED_LOKI_OTLP_HTTP_ENDPOINT=https://loki.internal/otlp \
+DESKSEED_TEMPO_OTLP_HTTP_ENDPOINT=https://tempo.internal \
+DESKSEED_PYROSCOPE_SERVER_URL=https://pyroscope.internal \
+  docker compose \
+    --project-name deskseed-personal-staging-diagnostics-contract \
+    --file "$repository_root/compose.yaml" \
+    --file "$repository_root/compose.production.yaml" \
+    --file "$repository_root/compose.personal-staging.yaml" \
+    --file "$repository_root/compose.personal-staging-observability.yaml" \
+    --file "$repository_root/compose.personal-staging-diagnostics.yaml" \
+    config --format json >"$test_root/personal-staging-diagnostics.json"
+
+python3 - "$test_root/personal-staging-diagnostics.json" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    model = json.load(source)
+
+environment = model["services"]["backend"]["environment"]
+assert environment["JAVA_TOOL_OPTIONS"] == "-javaagent:/opt/pyroscope/pyroscope.jar"
+assert environment["DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED"] == "true"
+assert environment["DESKSEED_SEARCH_DIAGNOSTICS_ENABLED"] == "true"
+assert environment["DESKSEED_PERSONAL_STAGING_TRACE_SAMPLING_PROBABILITY"] == "1.0"
+assert environment["PYROSCOPE_FORMAT"] == "jfr"
+assert environment["PYROSCOPE_PROFILER_EVENT"] == "wall"
+assert environment["PYROSCOPE_PROFILING_INTERVAL"] == "10ms"
+assert environment["PYROSCOPE_UPLOAD_INTERVAL"] == "15s"
+assert environment["PYROSCOPE_LABELS"].endswith(
+    "service_name=deskseed-backend,service_version=125727bbd2194bcf0937a7eca452231ffc7a4bb1"
+)
+assert re.fullmatch(r"[0-9a-f]{40}", environment["DESKSEED_SERVICE_VERSION"])
+assert "PYROSCOPE_PROFILER_ALLOC" not in environment
+assert "PYROSCOPE_PROFILER_LOCK" not in environment
+PY
+
 grep -Fx '    client_max_body_size 105m;' "$repository_root/frontend/nginx.conf" >/dev/null
+grep -Fx '        proxy_pass http://backend:9090;' \
+  "$repository_root/frontend/nginx.personal-staging-observability.conf" >/dev/null
 
 if docker compose \
   --project-name deskseed-production-contract \

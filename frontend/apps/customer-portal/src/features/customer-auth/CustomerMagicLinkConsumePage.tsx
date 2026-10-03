@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { ScreenState } from '../../design-system'
 import { consumeMagicLinkFragment } from './magicLinkFragment'
 import {
@@ -8,13 +8,21 @@ import {
 } from './api/customerAuthClient'
 import { useCustomerSession } from './CustomerSessionContext'
 
+import {
+  customerAuthDestination,
+  readCustomerAuthContinuation,
+  takeCustomerAuthDestination,
+} from './customerAuthDestination'
+
 type ConsumeState = 'consuming' | 'missing' | 'invalid' | 'unavailable'
 
 export function CustomerMagicLinkConsumePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const session = useCustomerSession()
   const [state, setState] = useState<ConsumeState>('consuming')
   const started = useRef(false)
+  const [continuation] = useState(readCustomerAuthContinuation)
 
   useLayoutEffect(() => {
     if (started.current) return
@@ -31,12 +39,20 @@ export function CustomerMagicLinkConsumePage() {
     void consumeCustomerMagicLink(token)
       .then((customer) => {
         session.acceptAuthenticatedCustomer(customer)
-        navigate('/account/requests', { replace: true })
+        const remembered = continuation
+          ? takeCustomerAuthDestination(continuation.id)
+          : null
+        const from =
+          (location.state as { from?: unknown } | null)?.from ?? remembered
+        navigate(customerAuthDestination(customer, from), {
+          replace: true,
+          state: { from },
+        })
       })
       .catch((error: unknown) => {
         setState(isInvalidLinkError(error) ? 'invalid' : 'unavailable')
       })
-  }, [navigate, session])
+  }, [navigate, session, location.state, continuation])
 
   if (state === 'consuming') {
     return (
@@ -49,7 +65,19 @@ export function CustomerMagicLinkConsumePage() {
   if (state === 'missing') {
     return (
       <CustomerConsumeState
-        action={<Link to="/customer/sign-in">새 로그인 링크 요청</Link>}
+        action={
+          <Link
+            to="/customer/sign-in"
+            state={{
+              from:
+                continuation && continuation.expiresAt > Date.now()
+                  ? continuation.from
+                  : undefined,
+            }}
+          >
+            새 로그인 링크 요청
+          </Link>
+        }
         description="이 링크로 로그인할 수 없습니다. 이메일 주소를 입력해 새 링크를 받아 주세요."
         kind="not-found"
         title="로그인 링크를 찾을 수 없습니다."
@@ -59,7 +87,19 @@ export function CustomerMagicLinkConsumePage() {
   if (state === 'invalid') {
     return (
       <CustomerConsumeState
-        action={<Link to="/customer/sign-in">새 로그인 링크 요청</Link>}
+        action={
+          <Link
+            to="/customer/sign-in"
+            state={{
+              from:
+                continuation && continuation.expiresAt > Date.now()
+                  ? continuation.from
+                  : undefined,
+            }}
+          >
+            새 로그인 링크 요청
+          </Link>
+        }
         description="링크가 만료되었거나 이미 사용되었습니다. 새 링크를 요청해 주세요."
         kind="denied"
         title="로그인 링크를 사용할 수 없습니다."
@@ -68,7 +108,19 @@ export function CustomerMagicLinkConsumePage() {
   }
   return (
     <CustomerConsumeState
-      action={<Link to="/customer/sign-in">새 로그인 링크 요청</Link>}
+      action={
+        <Link
+          to="/customer/sign-in"
+          state={{
+            from:
+              continuation && continuation.expiresAt > Date.now()
+                ? continuation.from
+                : undefined,
+          }}
+        >
+          새 로그인 링크 요청
+        </Link>
+      }
       description="로그인 링크를 확인하지 못했습니다. 새 링크를 요청한 뒤 다시 시도해 주세요."
       kind="error"
       title="로그인할 수 없습니다."

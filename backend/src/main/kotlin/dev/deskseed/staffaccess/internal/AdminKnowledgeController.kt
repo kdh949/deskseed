@@ -96,6 +96,15 @@ internal class AdminKnowledgeController(
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).eTag(result.version.toString()).body(result)
     }
 
+    @GetMapping("/sections")
+    fun listSections(
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<List<KnowledgeSectionView>> = ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(administration.listSections(request.actor(principal, expectedActor)))
+
     @PostMapping("/sections")
     fun createSection(
         @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
@@ -266,6 +275,7 @@ internal class AdminKnowledgeController(
     }
 
     private fun String.toLifecycleAction(): KnowledgeLifecycleAction = when (this) {
+        "return-to-draft" -> KnowledgeLifecycleAction.RETURN_TO_DRAFT
         "submit-review" -> KnowledgeLifecycleAction.SUBMIT_REVIEW
         "publish" -> KnowledgeLifecycleAction.PUBLISH
         "unpublish" -> KnowledgeLifecycleAction.UNPUBLISH

@@ -1,12 +1,21 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/client'
 import { CustomerRequestForm } from './CustomerRequestForm'
+import { CustomerRequestCustomFields } from './CustomerRequestCustomFields'
+
+const emptyConfiguration = async () => ({ form: null, policies: [] })
 
 describe('CustomerRequestForm', () => {
   it('describes the request journey without exposing conversation visibility terms', () => {
-    render(<CustomerRequestForm onSubmitted={vi.fn()} submit={vi.fn()} />)
+    render(
+      <CustomerRequestForm
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={vi.fn()}
+        submit={vi.fn()}
+      />,
+    )
 
     expect(
       screen.getByText(
@@ -30,7 +39,13 @@ describe('CustomerRequestForm', () => {
       createdAt: '2026-08-15T00:00:00Z',
     })
     const onSubmitted = vi.fn()
-    render(<CustomerRequestForm onSubmitted={onSubmitted} submit={submit} />)
+    render(
+      <CustomerRequestForm
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={onSubmitted}
+        submit={submit}
+      />,
+    )
 
     expect(screen.getByRole('button', { name: '문의 접수' })).toBeDisabled()
     await user.type(screen.getByLabelText('이름'), '김민아')
@@ -43,8 +58,10 @@ describe('CustomerRequestForm', () => {
     await user.click(screen.getByRole('button', { name: '문의 접수' }))
 
     expect(submit).toHaveBeenCalledWith({
-      name: '김민아',
-      email: 'mina@example.test',
+      clientCommandId: expect.any(String),
+      requester: { name: '김민아', email: 'mina@example.test' },
+      fieldValues: {},
+      acceptedPolicies: [],
       subject: '결제 확인 요청',
       message: '결제 승인 내역을 확인해 주세요.',
     })
@@ -60,7 +77,13 @@ describe('CustomerRequestForm', () => {
       .mockRejectedValue(
         new ApiError('요청이 많습니다.', 429, undefined, 'req-rate-1', '60'),
       )
-    render(<CustomerRequestForm onSubmitted={vi.fn()} submit={submit} />)
+    render(
+      <CustomerRequestForm
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={vi.fn()}
+        submit={submit}
+      />,
+    )
 
     await user.type(screen.getByLabelText('이름'), '김민아')
     await user.type(screen.getByLabelText('이메일'), 'mina@example.test')
@@ -75,12 +98,75 @@ describe('CustomerRequestForm', () => {
     expect(screen.getByLabelText('문의 내용')).toHaveValue(
       '결제 승인 내역을 확인해 주세요.',
     )
+    expect(screen.getByLabelText('문의 내용')).toBeEnabled()
+    expect(screen.getByRole('button', { name: '문의 접수' })).toBeEnabled()
+  })
+
+  it('keeps the original request and attachment after an uncertain result followed by rate limiting', async () => {
+    const user = userEvent.setup()
+    const submitted = {
+      ticketNumber: 1042,
+      status: 'NEW',
+      accessToken: 'a'.repeat(43),
+      createdAt: '2026-08-15T00:00:00Z',
+    }
+    const submit = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('response lost'))
+      .mockRejectedValueOnce(
+        new ApiError('요청이 많습니다.', 429, undefined, 'req-rate-1', '60'),
+      )
+      .mockResolvedValueOnce(submitted)
+    const onSubmitted = vi.fn()
+    render(
+      <CustomerRequestForm
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={onSubmitted}
+        submit={submit}
+      />,
+    )
+
+    await user.type(screen.getByLabelText('이름'), '김민아')
+    await user.type(screen.getByLabelText('이메일'), 'mina@example.test')
+    await user.type(screen.getByLabelText('제목'), '결제 확인 요청')
+    await user.type(
+      screen.getByLabelText('문의 내용'),
+      '결제 승인 내역을 확인해 주세요.',
+    )
+    const attachment = new File(['receipt'], 'receipt.txt', {
+      type: 'text/plain',
+    })
+    await user.upload(screen.getByLabelText('첨부 파일'), attachment)
+    await user.click(screen.getByRole('button', { name: '문의 접수' }))
+    await user.click(
+      await screen.findByRole('button', { name: '같은 내용으로 접수 확인' }),
+    )
+
+    expect(await screen.findByText(/60초 후 다시 시도/)).toBeVisible()
+    expect(screen.getByLabelText('문의 내용')).toBeDisabled()
+    expect(screen.getByLabelText('첨부 파일')).toBeDisabled()
+    expect(onSubmitted).not.toHaveBeenCalled()
+    await user.click(
+      screen.getByRole('button', { name: '같은 내용으로 접수 확인' }),
+    )
+
+    expect(submit).toHaveBeenCalledTimes(3)
+    expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0])
+    expect(submit.mock.calls[2]).toEqual(submit.mock.calls[0])
+    expect(submit.mock.calls[2]?.[1]).toEqual([attachment])
+    expect(onSubmitted).toHaveBeenCalledExactlyOnceWith(submitted)
   })
 
   it('rejects more than five initial attachments before submit', async () => {
     const user = userEvent.setup()
     const submit = vi.fn()
-    render(<CustomerRequestForm onSubmitted={vi.fn()} submit={submit} />)
+    render(
+      <CustomerRequestForm
+        loadConfiguration={emptyConfiguration}
+        onSubmitted={vi.fn()}
+        submit={submit}
+      />,
+    )
 
     await user.upload(
       screen.getByLabelText('첨부 파일'),
@@ -91,4 +177,37 @@ describe('CustomerRequestForm', () => {
     expect(screen.getByText('선택된 파일이 없습니다.')).toBeVisible()
     expect(submit).not.toHaveBeenCalled()
   })
+})
+
+it('does not silently round an over-precise number and permits correction', () => {
+  const change = vi.fn()
+  render(
+    <CustomerRequestCustomFields
+      values={{}}
+      change={change}
+      fields={[
+        {
+          field: {
+            id: 'amount',
+            machineKey: 'amount',
+            type: 'NUMBER',
+            label: '금액',
+            description: null,
+            validation: {},
+          },
+          visible: true,
+          editable: true,
+          required: false,
+          options: [],
+        },
+      ]}
+    />,
+  )
+  const amount = screen.getByRole('spinbutton', { name: '금액' })
+  fireEvent.change(amount, { target: { value: '9007199254740993' } })
+  expect(amount).toBeInvalid()
+  expect(change).toHaveBeenLastCalledWith('amount', undefined)
+  fireEvent.change(amount, { target: { value: '12.75' } })
+  expect(amount).toBeValid()
+  expect(change).toHaveBeenLastCalledWith('amount', { numberValue: 12.75 })
 })

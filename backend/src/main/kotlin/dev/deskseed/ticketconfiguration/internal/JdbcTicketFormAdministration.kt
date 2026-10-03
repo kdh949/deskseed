@@ -49,6 +49,7 @@ internal class JdbcTicketFormAdministration(
     private val objectMapper: ObjectMapper,
     private val conditions: TicketFormConditionEngine,
     private val clock: Clock,
+    private val customerSnapshots: CustomerFormSnapshots,
 ) : TicketFormAdministration {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
@@ -88,6 +89,7 @@ internal class JdbcTicketFormAdministration(
         draft: TicketFormDraft,
         actor: TicketConfigurationAdminActor,
     ): TicketFormView = translateStorageFailure {
+        jdbc.queryForList("select pg_advisory_xact_lock(1067539004)")
         val row = lockedForm(formId)
         requireExpected(row.aggregateVersion, expectedVersion)
         if (row.lifecycle == TicketFormLifecycle.ARCHIVED) {
@@ -116,6 +118,7 @@ internal class JdbcTicketFormAdministration(
         expectedVersion: Long,
         actor: TicketConfigurationAdminActor,
     ): TicketFormView = translateStorageFailure {
+        jdbc.queryForList("select pg_advisory_xact_lock(1067539004)")
         val row = lockedForm(formId)
         requireExpected(row.aggregateVersion, expectedVersion)
         if (row.lifecycle == TicketFormLifecycle.ARCHIVED) {
@@ -131,10 +134,10 @@ internal class JdbcTicketFormAdministration(
         jdbc.update(
             """
             insert into ticket_form_versions
-                (form_id, version, definition_json, published_by_staff_id, published_by_display, published_at)
-            values (?, ?, cast(? as jsonb), ?, ?, ?)
+                (form_id, version, definition_json, customer_field_snapshot_json, published_by_staff_id, published_by_display, published_at)
+            values (?, ?, cast(? as jsonb), cast(? as jsonb), ?, ?, ?)
             """.trimIndent(),
-            formId, row.currentVersion, row.definitionJson, actor.staffId, actor.displayName.take(100), now.atOffset(ZoneOffset.UTC),
+            formId, row.currentVersion, row.definitionJson, customerSnapshots.capture(draft.placements), actor.staffId, actor.displayName.take(100), now.atOffset(ZoneOffset.UTC),
         )
         try {
             jdbc.update(
@@ -159,6 +162,7 @@ internal class JdbcTicketFormAdministration(
         expectedVersion: Long,
         actor: TicketConfigurationAdminActor,
     ): TicketFormView = translateStorageFailure {
+        jdbc.queryForList("select pg_advisory_xact_lock(1067539004)")
         val row = lockedForm(formId)
         requireExpected(row.aggregateVersion, expectedVersion)
         if (row.lifecycle == TicketFormLifecycle.ARCHIVED) return@translateStorageFailure row.toView()

@@ -8,6 +8,7 @@ import { CustomerSignInPage } from './CustomerSignInPage'
 function SignInFlowStory() {
   return (
     <Routes>
+      <Route path="/account/requests" element={<h1>내 문의</h1>} />
       <Route element={<CustomerSignInPage />} path="/customer/sign-in" />
       <Route
         element={<CustomerCheckEmailPage />}
@@ -25,7 +26,7 @@ const meta = {
     docs: {
       description: {
         component:
-          '고객 이메일 매직 링크 요청 화면입니다. 계정 존재 여부를 드러내지 않는 202 accepted 안내만 보여 주고, magic-link token은 이 화면에서 다루지 않습니다.',
+          '비밀번호 우선 로그인과 passwordless 고객의 이메일 링크 요청 화면입니다. 계정 존재 여부를 드러내지 않는 202 accepted 안내만 보여 주고, magic-link token은 이 화면에서 다루지 않습니다.',
       },
     },
     msw: {
@@ -47,6 +48,7 @@ type Story = StoryObj<typeof meta>
 export const RequestLink: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.queryByText('계정 정보 관리')).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: '이메일 링크' }))
     await userEvent.type(
       canvas.getByRole('textbox', { name: /이메일 주소/ }),
       'mina@example.test',
@@ -75,6 +77,7 @@ export const ServiceUnavailable: Story = {
     },
   },
   play: async ({ canvas }) => {
+    await userEvent.click(canvas.getByRole('button', { name: '이메일 링크' }))
     await userEvent.type(
       canvas.getByRole('textbox', { name: /이메일 주소/ }),
       'mina@example.test',
@@ -84,6 +87,46 @@ export const ServiceUnavailable: Story = {
     )
     await expect(
       await canvas.findByText('로그인 요청을 완료할 수 없습니다.'),
+    ).toBeVisible()
+  },
+}
+
+export const PasswordLogin: Story = {
+  parameters: {
+    msw: {
+      handlers: {
+        passwordLogin: http.post(
+          '/api/v1/customer/auth/password-sessions',
+          () =>
+            HttpResponse.json({
+              id: 'customer-1',
+              email: 'customer@example.test',
+              displayName: '고객',
+              companyName: '회사',
+              verifiedAt: '2026-09-01T00:00:00Z',
+              credentialState: 'PASSWORD',
+              registrationState: 'COMPLETE',
+              availableAuthenticationMethods: ['PASSWORD'],
+            }),
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole('button', { name: '비밀번호' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.type(
+      canvas.getByLabelText(/이메일 주소/),
+      'customer@example.test',
+    )
+    await userEvent.type(
+      canvas.getByLabelText(/비밀번호/),
+      'synthetic-password-123',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '로그인' }))
+    await expect(
+      await canvas.findByRole('heading', { name: '내 문의' }),
     ).toBeVisible()
   },
 }

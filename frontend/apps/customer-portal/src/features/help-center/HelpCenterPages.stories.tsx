@@ -5,6 +5,9 @@ import { StoryRoute } from '../../../.storybook/StoryRoute'
 import { CustomerSiteLayout } from '../../design-system'
 import {
   HelpArticlePage,
+  HelpCategoriesPage,
+  HelpCategoryPage,
+  HelpSectionPage,
   HelpCenterHomePage,
   HelpSearchPage,
 } from './HelpCenterPages'
@@ -112,7 +115,7 @@ export const Home: Story = {
   ),
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole('heading', { name: /무엇을 도와드릴까요/ }),
+      await canvas.findByRole('heading', { name: /무엇을 도와드릴까요/ }),
     ).toBeVisible()
     await expect(
       canvas.getByRole('navigation', { name: '빠른 작업' }),
@@ -240,6 +243,10 @@ export const SearchResults: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
         http.post('/api/v1/help/search', () =>
           HttpResponse.json({
             items: [
@@ -285,13 +292,17 @@ export const EmptyArticle: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
         http.get('/api/v1/help/articles/:slug', ({ params }) =>
           HttpResponse.json({
             slug: params.slug,
             currentPublishedRevision: {
               title: '비어 있는 도움말 문서',
               createdAt: '2026-08-27T00:00:00Z',
-              document: { blocks: [] },
+              document: { schemaVersion: 1, blocks: [] },
             },
           }),
         ),
@@ -321,6 +332,10 @@ export const Article: Story = {
   parameters: {
     msw: {
       handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
         http.get('/api/v1/help/articles/:slug', ({ params }) =>
           HttpResponse.json({
             slug: params.slug,
@@ -330,6 +345,7 @@ export const Article: Story = {
                 '결제 수단과 청구 정보를 안전하게 변경하는 방법을 안내합니다.',
               createdAt: '2026-08-27T00:00:00Z',
               document: {
+                schemaVersion: 1,
                 blocks: [
                   {
                     type: 'paragraph',
@@ -358,5 +374,156 @@ export const Article: Story = {
     await expect(
       await canvas.findByRole('heading', { name: '결제 정보 변경 방법' }),
     ).toBeVisible()
+  },
+}
+
+export const Categories: Story = {
+  parameters: { msw: { handlers: homeHandlers } },
+  render: () => (
+    <AnonymousChrome>
+      <HelpCategoriesPage />
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: /주문/ }),
+    ).toHaveAttribute('href', '/categories/orders')
+  },
+}
+export const CategorySections: Story = {
+  parameters: {
+    msw: {
+      handlers: {
+        category: http.get('/api/v1/help/categories/orders', () =>
+          HttpResponse.json({
+            id: 'orders',
+            slug: 'orders',
+            title: '주문',
+            sections: [{ slug: 'announcements', title: '공지사항' }],
+          }),
+        ),
+      },
+    },
+  },
+  render: () => (
+    <AnonymousChrome>
+      <StoryRoute path="/categories/:categorySlug" to="/categories/orders">
+        <HelpCategoryPage />
+      </StoryRoute>
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: '공지사항' }),
+    ).toHaveAttribute('href', '/sections/announcements')
+  },
+}
+export const SectionArticles: Story = {
+  parameters: { msw: { handlers: homeHandlers } },
+  render: () => (
+    <AnonymousChrome>
+      <StoryRoute path="/sections/:sectionSlug" to="/sections/announcements">
+        <HelpSectionPage />
+      </StoryRoute>
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
+    ).toBeVisible()
+  },
+}
+export const ArticleUnavailable: Story = {
+  ...Article,
+  parameters: {
+    msw: {
+      handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
+        http.get(
+          '/api/v1/help/articles/:slug',
+          () => new HttpResponse(null, { status: 503 }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('문서를 불러올 수 없습니다.'),
+    ).toBeVisible()
+  },
+}
+export const FeedbackUnavailable: Story = {
+  ...Article,
+  parameters: {
+    msw: {
+      handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: 401 }),
+        ),
+        http.post(
+          '/api/v1/help/articles/:slug/feedback',
+          () => new HttpResponse(null, { status: 503 }),
+        ),
+        ...(Article.parameters?.msw.handlers ?? []),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '네, 도움이 됐어요' }),
+    )
+    await expect(
+      await canvas.findByText(
+        '의견을 저장하지 못했습니다. 다시 선택해 주세요.',
+      ),
+    ).toBeVisible()
+  },
+}
+
+let retrySession = false
+const unexpectedHelp = fn()
+export const SessionFailureRecovery: Story = {
+  beforeEach: () => {
+    retrySession = false
+    unexpectedHelp.mockClear()
+  },
+  parameters: {
+    msw: {
+      handlers: [
+        http.get(
+          '/api/v1/customer/me',
+          () => new HttpResponse(null, { status: retrySession ? 401 : 503 }),
+        ),
+        http.get('/api/v1/help/categories', () => {
+          if (!retrySession) unexpectedHelp()
+          return HttpResponse.json([])
+        }),
+        http.get('/api/v1/help/sections/announcements', () => {
+          if (!retrySession) unexpectedHelp()
+          return HttpResponse.json({
+            slug: 'announcements',
+            title: '공지사항',
+            articles: [],
+          })
+        }),
+      ],
+    },
+  },
+  render: () => <HelpCenterHomePage />,
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('로그인 상태를 확인할 수 없습니다.'),
+    ).toBeVisible()
+    await expect(unexpectedHelp).not.toHaveBeenCalled()
+    retrySession = true
+    await userEvent.click(canvas.getByRole('button', { name: '다시 시도' }))
+    await expect(
+      await canvas.findByText('등록된 도움말 주제가 없습니다.'),
+    ).toBeVisible()
+    await expect(unexpectedHelp).not.toHaveBeenCalled()
   },
 }

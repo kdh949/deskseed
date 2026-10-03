@@ -1,0 +1,11 @@
+{
+  "name": "Deskseed Pyroscope",
+  "uid": "pyroscope",
+  "type": "grafana-pyroscope-datasource",
+  "access": "proxy",
+  "url": "http://pyroscope:4040",
+  "isDefault": false,
+  "jsonData": {
+    "keepCookies": []
+  }
+}

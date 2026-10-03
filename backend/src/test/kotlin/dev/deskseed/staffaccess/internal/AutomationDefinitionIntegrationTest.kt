@@ -111,6 +111,40 @@ class AutomationDefinitionIntegrationTest {
     }
 
     @Test
+    fun `history and historical version keep policy snapshot separate from current aggregate`() {
+        val admin = browser()
+        val created = mockMvc.perform(post("/api/v1/admin/automations").session(admin.session).csrf(admin)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"name":"초기 정책","position":10,"solvedAgeMinutes":60,"actionType":"CLOSE_TICKET"}"""))
+            .andExpect(status().isCreated).andReturn().response.contentAsString
+        val id = UUID.fromString(stringField(created, "id"))
+        mockMvc.perform(post("/api/v1/admin/automations/$id/versions").session(admin.session).csrf(admin)
+            .header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+            .content("""{"name":"연장 정책","solvedAgeMinutes":120,"actionType":"CLOSE_TICKET"}"""))
+            .andExpect(status().isOk)
+        mockMvc.perform(put("/api/v1/admin/automations/$id/activation").session(admin.session).csrf(admin)
+            .header("If-Match", "\"2\"").contentType(MediaType.APPLICATION_JSON).content("""{"version":1}"""))
+            .andExpect(status().isOk)
+        mockMvc.perform(get("/api/v1/admin/automations/$id/versions/1").session(admin.session))
+            .andExpect(status().isOk).andExpect(jsonPath("$.name").value("초기 정책"))
+            .andExpect(jsonPath("$.solvedAgeMinutes").value(60))
+            .andExpect(jsonPath("$.currentVersion").value(2)).andExpect(jsonPath("$.activeVersion").value(1))
+            .andExpect(jsonPath("$.aggregateVersion").value(3))
+        mockMvc.perform(get("/api/v1/admin/automations/$id/history").session(admin.session))
+            .andExpect(status().isOk).andExpect(jsonPath("$.versions[0].version").value(2))
+            .andExpect(jsonPath("$.versions[1].solvedAgeMinutes").value(60))
+            .andExpect(jsonPath("$.activations[0].version").value(1))
+            .andExpect(jsonPath("$.executions").isEmpty).andExpect(jsonPath("$.candidates").isEmpty)
+        mockMvc.perform(get("/api/v1/admin/automations/$id/versions/99").session(admin.session)).andExpect(status().isNotFound)
+        mockMvc.perform(get("/api/v1/admin/automations/$id/versions/0").session(admin.session)).andExpect(status().isBadRequest)
+        mockMvc.perform(get("/api/v1/admin/automations/${UUID.randomUUID()}/history").session(admin.session)).andExpect(status().isNotFound)
+        val agent = browser("AGENT")
+        for (path in listOf("history", "versions/1")) {
+            mockMvc.perform(get("/api/v1/admin/automations/$id/$path").session(agent.session)).andExpect(status().isForbidden)
+        }
+    }
+
+    @Test
     fun `agent cannot create versions or activate automations`() {
         val admin = browser()
         val created = mockMvc.perform(

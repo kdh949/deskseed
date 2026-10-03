@@ -43,6 +43,7 @@ import java.util.UUID
 
 @Service
 internal class JpaCustomerTicketPortal(
+    private val eventPublisher: org.springframework.context.ApplicationEventPublisher,
     private val ticketRepository: TicketRepository,
     private val commentRepository: TicketCommentRepository,
     private val auditRepository: TicketAuditRepository,
@@ -386,6 +387,7 @@ internal class JpaCustomerTicketPortal(
             )
         }
         auditEventRepository.saveAllAndFlush(events)
+        eventPublisher.publishEvent(dev.deskseed.ticketing.TicketMutationRecorded(ticket.id, ticket.ticketNumber, auditId, context.correlationId, now, customerReply = true))
         return auditId
     }
 

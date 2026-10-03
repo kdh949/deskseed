@@ -190,7 +190,7 @@ p {
 .customer-footer a,
 .customer-footer small {
   color: var(--customer-color-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.55;
   text-decoration: none;
 }
@@ -314,7 +314,7 @@ p {
 }
 .customer-notification p {
   margin: 5px 0 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 .customer-notification--success {
   border-color: #a9e4d0;
@@ -341,7 +341,7 @@ p {
   border-radius: 999px;
   color: var(--customer-color-body);
   background: #eef2fa;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 .customer-status > span {
@@ -396,7 +396,7 @@ p {
 }
 .customer-lookup-card label {
   color: var(--customer-color-ink);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
 }
 .customer-lookup-card form > div {

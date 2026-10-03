@@ -1,18 +1,48 @@
 import { Link, useLocation, useParams } from 'react-router'
-import { CustomerIcon } from '../../design-system'
+import { CustomerIcon, ScreenState } from '../../design-system'
 import successImage from '../../assets/deskseed/customer-request-success.png'
+import { readRequestAccessToken } from '../customer-portal/customerAccessToken'
 import type { SubmittedRequest } from '../../api/types'
 
 export function CustomerRequestSuccessPage() {
   const { ticketNumber = '' } = useParams()
   const location = useLocation()
-  const submitted =
-    typeof location.state === 'object' &&
-    location.state &&
-    'submitted' in location.state
-      ? (location.state.submitted as SubmittedRequest)
-      : undefined
-  const number = submitted?.ticketNumber ?? Number(ticketNumber)
+  const number = /^[1-9]\d*$/.test(ticketNumber) ? Number(ticketNumber) : NaN
+  const candidate: unknown = (location.state as { submitted?: unknown } | null)
+    ?.submitted
+  const submitted = receipt(candidate, number)
+  // Every submission returns a ticket-scoped proof; login alone does not claim it.
+  const detailPath = readRequestAccessToken(window.sessionStorage, number)
+    ? `/requests/${number}`
+    : '/requests/lookup'
+  if (!Number.isSafeInteger(number))
+    return (
+      <div className="customer-page">
+        <ScreenState
+          kind="not-found"
+          title="문의 번호를 확인해 주세요."
+          description="올바른 문의 번호가 아닙니다."
+          action={<Link to="/requests/lookup">문의 조회</Link>}
+        />
+      </div>
+    )
+  if (!submitted)
+    return (
+      <div className="customer-page">
+        <ScreenState
+          kind="empty"
+          title="접수 결과를 확인해 주세요."
+          description="이 화면에 확인된 접수 정보가 없습니다. 문의 상세에서 현재 상태를 확인해 주세요."
+          action={<Link to={detailPath}>문의 확인</Link>}
+        />
+      </div>
+    )
+  const status = {
+    NEW: '접수됨',
+    OPEN: '처리 중',
+    PENDING: '고객 답변 대기',
+    SOLVED: '해결됨',
+  }[submitted.status]
   return (
     <div className="customer-success-layout">
       <section className="customer-success-card">
@@ -29,8 +59,8 @@ export function CustomerRequestSuccessPage() {
             <dd>#DS-{number}</dd>
           </div>
           <div>
-            <dt>현재 상태</dt>
-            <dd>접수됨</dd>
+            <dt>접수 응답의 상태</dt>
+            <dd>{status}</dd>
           </div>
         </dl>
         <h2>다음 단계</h2>
@@ -39,14 +69,14 @@ export function CustomerRequestSuccessPage() {
             icon="inbox"
             title="이 문의 확인"
             description="상태와 답변을 한곳에서 확인하세요."
-            to={`/requests/${number}`}
+            to={detailPath}
             label="문의 보기"
           />
           <SuccessAction
             icon="book"
             title="관련 문서 찾기"
             description="답을 바로 찾을 수 있는 문서를 살펴보세요."
-            to="/search"
+            to="/categories"
             label="문서 둘러보기"
           />
           <SuccessAction
@@ -69,16 +99,14 @@ export function CustomerRequestSuccessPage() {
           <div className="customer-summary-row">
             <span>접수일</span>
             <strong>
-              {submitted
-                ? new Intl.DateTimeFormat('ko-KR').format(
-                    new Date(submitted.createdAt),
-                  )
-                : '방금 전'}
+              {new Intl.DateTimeFormat('ko-KR').format(
+                new Date(submitted.createdAt),
+              )}
             </strong>
           </div>
           <div className="customer-summary-row">
-            <span>상태</span>
-            <strong>접수됨</strong>
+            <span>접수 응답의 상태</span>
+            <strong>{status}</strong>
           </div>
         </section>
       </aside>
@@ -113,4 +141,22 @@ function SuccessAction({
       </Link>
     </article>
   )
+}
+
+type Receipt = Pick<SubmittedRequest, 'ticketNumber' | 'createdAt' | 'status'>
+function receipt(value: unknown, number: number): Receipt | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as Record<string, unknown>
+  if (
+    row.ticketNumber !== number ||
+    typeof row.createdAt !== 'string' ||
+    !Number.isFinite(Date.parse(row.createdAt)) ||
+    !['NEW', 'OPEN', 'PENDING', 'SOLVED'].includes(String(row.status))
+  )
+    return null
+  return {
+    ticketNumber: number,
+    createdAt: row.createdAt,
+    status: row.status as Receipt['status'],
+  }
 }

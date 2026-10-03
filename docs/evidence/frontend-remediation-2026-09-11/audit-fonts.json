@@ -1,0 +1,24 @@
+{
+  "document": 1265,
+  "fields": [
+    {
+      "container": 250.5,
+      "font": "14px",
+      "type": "datetime-local",
+      "width": 250.5
+    },
+    {
+      "container": 250.5,
+      "font": "14px",
+      "type": "datetime-local",
+      "width": 250.5
+    },
+    {
+      "container": 250.5,
+      "font": "14px",
+      "type": "text",
+      "width": 250.5
+    }
+  ],
+  "viewport": 1280
+}

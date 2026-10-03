@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, fn, userEvent } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import { RequesterSearchField } from './RequesterSearchField'
 import type { CustomerSummary } from '../../api/types'
 
@@ -73,7 +73,7 @@ export const SearchResults: Story = {
   play: async ({ args, canvas }) => {
     const options = canvas.getAllByRole('button', { name: /example\.test/ })
     await expect(options).toHaveLength(2)
-    await expect(canvas.getByText('인증된 고객')).toBeVisible()
+    await expect(within(options[1]!).getByText('인증')).toBeVisible()
     await userEvent.click(options[0]!)
     await expect(args.onSelectCustomer).toHaveBeenCalledWith(customers[0])
   },

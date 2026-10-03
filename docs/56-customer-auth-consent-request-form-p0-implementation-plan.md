@@ -423,10 +423,11 @@ validation meaning, or option meaning, creates a new ID. A copy-only label/descr
 
 ### 7.4 Request creation contract cleanup
 
-The implementation blueprint replaces `CreateAnonymousRequest` with a form-aware `CreateCustomerRequest`. It omits the runtime `FROZEN`
-marker until the controller, persistence, error, and springdoc parity land. `privacyConsent` is removed rather than deprecated because the application has not shipped.
+The 2026-09-08 request-form slice replaces `CreateAnonymousRequest` with form-aware `CreateCustomerRequest`.
+The controller, persistence, stable problems and runtime springdoc parity now carry the `FROZEN` marker.
+`privacyConsent` is removed because the application has not shipped. See `tasks/2026-09-08-ticket-form-runtime.md`.
 
-Planned JSON shape:
+JSON shape:
 
 ```json
 {

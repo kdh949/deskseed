@@ -3,6 +3,9 @@ import { fail } from 'k6';
 export const targetUrl = requiredUrl('TARGET_URL');
 export const runId = (__ENV.TEST_RUN_ID || 'smoke-local').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 80);
 export const loadProfile = __ENV.LOAD_PROFILE || 'smoke';
+export const environment = __ENV.TEST_ENVIRONMENT || 'load';
+if (!['load', 'personal-staging', 'local'].includes(environment)) fail('Unsupported TEST_ENVIRONMENT');
+let requestSequence = 0;
 
 export function requireConfirmedTarget({ writes = false } = {}) {
   const targetHost = targetUrl.replace(/^https?:\/\//, '').split('/')[0];
@@ -26,8 +29,8 @@ export function standardOptions(scenarioName) {
         [scenarioName]: {
           executor: 'shared-iterations',
           vus: 1,
-          iterations: 1,
-          maxDuration: '45s',
+          iterations: positiveInteger('SMOKE_ITERATIONS', 1, 10000),
+          maxDuration: __ENV.SMOKE_MAX_DURATION || '45s',
           tags: commonTags(scenarioName),
         },
       },
@@ -36,10 +39,17 @@ export function standardOptions(scenarioName) {
     };
   }
 
-  const rate = requiredPositiveInteger('TARGET_RPS', 1000);
+  if (__ENV.TARGET_RPS && __ENV.TARGET_ITERATIONS_PER_SECOND && Number(__ENV.TARGET_RPS) !== Number(__ENV.TARGET_ITERATIONS_PER_SECOND)) {
+    fail('TARGET_RPS and TARGET_ITERATIONS_PER_SECOND must agree');
+  }
+  const rate = __ENV.TARGET_ITERATIONS_PER_SECOND
+    ? requiredPositiveInteger('TARGET_ITERATIONS_PER_SECOND', 1000)
+    : requiredPositiveInteger('TARGET_RPS', 1000);
   const duration = __ENV.LOAD_DURATION || (loadProfile === 'soak' ? '30m' : '5m');
   const preAllocatedVUs = positiveInteger('PREALLOCATED_VUS', Math.max(10, rate), 2000);
-  const maxVUs = positiveInteger('MAX_VUS', Math.max(preAllocatedVUs, rate * 2), 4000);
+  const defaultMaxVUs = scenarioName === 'agent-read' ? preAllocatedVUs : Math.max(preAllocatedVUs, rate * 2);
+  const maxVUs = positiveInteger('MAX_VUS', defaultMaxVUs, 4000);
+  if (maxVUs < preAllocatedVUs) fail('MAX_VUS must be at least PREALLOCATED_VUS');
   return {
     scenarios: {
       [scenarioName]: {
@@ -125,9 +135,10 @@ export function websocketOptions() {
 
 export function requestHeaders(extra = {}) {
   const suffix = `${__VU}-${__ITER}`;
+  const prefix = `load-${runId.slice(0, 48)}`;
   return {
-    'X-Request-Id': `load-${runId}-${suffix}`.slice(0, 100),
-    'X-Correlation-Id': `load-${runId}-${suffix}`.slice(0, 100),
+    'X-Request-Id': `${prefix}-${suffix}-${++requestSequence}`,
+    'X-Correlation-Id': `${prefix}-${suffix}`,
     ...extra,
   };
 }
@@ -141,12 +152,14 @@ export function randomUuid() {
 }
 
 function commonTags(scenarioName) {
-  return { environment: 'load', service: 'deskseed', profile: loadProfile, scenario: scenarioName, test_run_id: runId };
+  return { environment, service: 'deskseed', profile: loadProfile, scenario: scenarioName, test_run_id: runId };
 }
 
 function requiredUrl(name) {
   const value = __ENV[name];
-  if (!value || !/^https?:\/\/[^/]+/.test(value)) fail(`${name} must be an absolute HTTP(S) URL`);
+  if (!value || !/^https?:\/\/(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::[0-9]{1,5})?\/?$/.test(value)) {
+    fail(`${name} must be an HTTP(S) origin without credentials, path, query, or fragment`);
+  }
   return value.replace(/\/$/, '');
 }
 

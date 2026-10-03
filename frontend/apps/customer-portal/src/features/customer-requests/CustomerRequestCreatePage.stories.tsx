@@ -9,6 +9,15 @@ const anonymousSessionHandler = http.get('/api/v1/customer/me', () =>
 )
 
 const availableHandlers = [
+  http.get('/api/v1/customer/ticket-forms', () =>
+    HttpResponse.json(
+      { type: '/problems/customer-ticket-form-unavailable' },
+      { status: 404 },
+    ),
+  ),
+  http.get('/api/v1/customer/consent-policies', () =>
+    HttpResponse.json({ context: 'REQUEST_SUBMISSION', policies: [] }),
+  ),
   anonymousSessionHandler,
   http.get('/api/v1/customer/access-mode', () =>
     HttpResponse.json({ mode: 'ANONYMOUS_ALLOWED' }),

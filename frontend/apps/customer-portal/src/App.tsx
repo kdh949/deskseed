@@ -1,8 +1,14 @@
+import {
+  CustomerPasswordResetPage,
+  CustomerPasswordResetRequestPage,
+} from './features/customer-auth/CustomerPasswordResetPages'
 import { Link, Navigate, useRoutes, type RouteObject } from 'react-router'
 import { ScreenState } from './design-system'
 import { CustomerAccountRoute } from './features/customer-auth/CustomerAccountRoute'
 import { CustomerCheckEmailPage } from './features/customer-auth/CustomerCheckEmailPage'
 import { CustomerMagicLinkConsumePage } from './features/customer-auth/CustomerMagicLinkConsumePage'
+import { CustomerRegistrationCompletePage } from './features/customer-auth/CustomerRegistrationCompletePage'
+import { CustomerRegistrationVerifyPage } from './features/customer-auth/CustomerRegistrationVerifyPage'
 import { CustomerRegisterPage } from './features/customer-auth/CustomerRegisterPage'
 import { CustomerRouteLayout } from './features/customer-auth/CustomerRouteLayout'
 import { CustomerSignInPage } from './features/customer-auth/CustomerSignInPage'
@@ -14,6 +20,9 @@ import { CustomerRequestLookupPage } from './features/customer-requests/Customer
 import { CustomerRequestSuccessPage } from './features/customer-requests/CustomerRequestSuccessPage'
 import {
   HelpArticlePage,
+  HelpCategoriesPage,
+  HelpCategoryPage,
+  HelpSectionPage,
   HelpCenterHomePage,
   HelpSearchPage,
 } from './features/help-center/HelpCenterPages'
@@ -23,6 +32,9 @@ export const customerRoutes: RouteObject[] = [
     element: <CustomerRouteLayout />,
     children: [
       { index: true, element: <HelpCenterHomePage /> },
+      { path: 'categories', element: <HelpCategoriesPage /> },
+      { path: 'categories/:categorySlug', element: <HelpCategoryPage /> },
+      { path: 'sections/:sectionSlug', element: <HelpSectionPage /> },
       { path: 'search', element: <HelpSearchPage /> },
       { path: 'articles/:articleSlug', element: <HelpArticlePage /> },
       { path: 'requests/new', element: <CustomerRequestCreatePage /> },
@@ -35,6 +47,14 @@ export const customerRoutes: RouteObject[] = [
         path: 'requests/:ticketNumber',
         element: <AnonymousRequestDetailPage />,
       },
+      {
+        path: 'customer/password-reset',
+        element: <CustomerPasswordResetRequestPage />,
+      },
+      {
+        path: 'customer/password/reset',
+        element: <CustomerPasswordResetPage />,
+      },
       { path: 'customer/sign-in', element: <CustomerSignInPage /> },
       {
         path: 'customer/sign-in/check-email',
@@ -45,6 +65,14 @@ export const customerRoutes: RouteObject[] = [
         element: <CustomerMagicLinkConsumePage />,
       },
       { path: 'customer/register', element: <CustomerRegisterPage /> },
+      {
+        path: 'customer/register/complete',
+        element: <CustomerRegistrationCompletePage />,
+      },
+      {
+        path: 'customer/register/verify',
+        element: <CustomerRegistrationVerifyPage />,
+      },
       {
         path: 'account',
         element: <CustomerAccountRoute />,

@@ -170,7 +170,12 @@ export function AuditActivityDetailDrawer({
                 </div>
                 <div>
                   <dt>결과 수</dt>
-                  <dd>{state.detail.search.resultCount}</dd>
+                  <dd>
+                    {state.detail.search.resultCount.toLocaleString('ko-KR')}
+                    {state.detail.search.resultCountRelation === 'LOWER_BOUND'
+                      ? '개 이상'
+                      : '개'}
+                  </dd>
                 </div>
               </dl>
               {state.detail.search.openedActivities.length > 0 ? (

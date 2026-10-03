@@ -209,6 +209,10 @@ const SAVED_VIEW_CONDITION_FIELDS = new Set<SavedViewConditionField>([
   'FIRST_REPLY_SLA_STATE',
   'TICKET_KIND',
   'UPDATED_AT',
+  'TAG',
+  'FORM',
+  'CUSTOM_STATUS',
+  'CUSTOM_FIELD',
 ])
 const SAVED_VIEW_CONDITION_OPERATORS = new Set<SavedViewConditionOperator>([
   'EQUALS',
@@ -467,11 +471,13 @@ function decodeSubmittedRequest(value: unknown): SubmittedRequest | undefined {
     !isNonBlankString(value.accessToken) ||
     value.accessToken.length < ACCESS_TOKEN_MIN_LENGTH ||
     value.accessToken.length > ACCESS_TOKEN_MAX_LENGTH ||
-    !isTimestamp(value.createdAt)
+    !isTimestamp(value.createdAt) ||
+    typeof value.replayed !== 'boolean'
   ) {
     return undefined
   }
   return {
+    replayed: value.replayed,
     ticketNumber: value.ticketNumber,
     status: value.status,
     accessToken: value.accessToken,
@@ -810,13 +816,10 @@ export async function submitRequestWithAttachments(
     csrfToken = csrfBody.token
   }
   const form = new FormData()
-  form.set('name', input.name)
-  form.set('email', input.email)
-  form.set('subject', input.subject)
-  form.set('message', input.message)
-  if (input.privacyConsent !== undefined) {
-    form.set('privacyConsent', String(input.privacyConsent))
-  }
+  form.set(
+    'request',
+    new Blob([JSON.stringify(input)], { type: 'application/json' }),
+  )
   files.forEach((file) => form.append('attachments', file, file.name))
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',
@@ -1426,6 +1429,35 @@ async function staffFetch(
 
 async function checkedBody(response: Response): Promise<unknown> {
   return successfulResponseBody(response)
+}
+
+/** Feature clients share the same session, CSRF and actor-snapshot boundary. */
+export async function requestStaffResource<T>(
+  path: `/api/v1/${'admin' | 'agent'}/${string}`,
+  decode: (body: unknown) => T | undefined,
+  command?: {
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+    body?: unknown
+    version?: number
+    headers?: Record<string, string>
+  },
+): Promise<T> {
+  const response = command
+    ? await unsafeStaffFetch(
+        path,
+        command.method,
+        command.body,
+        command.version === undefined
+          ? (command.headers ?? {})
+          : {
+              ...command.headers,
+              'If-Match': `"${command.version}"`,
+            },
+      )
+    : await staffFetch(path)
+  const decoded = decode(await checkedBody(response))
+  if (decoded === undefined) throw malformedSuccess(response)
+  return decoded
 }
 
 async function checkedEmpty(response: Response): Promise<void> {
@@ -2722,6 +2754,11 @@ function decodeSavedViewCondition(
     !SAVED_VIEW_CONDITION_OPERATORS.has(
       value.operator as SavedViewConditionOperator,
     ) ||
+    (value.field === 'CUSTOM_FIELD'
+      ? typeof value.fieldKey !== 'string' ||
+        value.fieldKey.length > 120 ||
+        !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(value.fieldKey)
+      : value.fieldKey !== undefined) ||
     !Array.isArray(value.values) ||
     value.values.length > 10 ||
     !value.values.every(isNonBlankString)
@@ -2732,6 +2769,7 @@ function decodeSavedViewCondition(
     field: value.field as SavedViewConditionField,
     operator: value.operator as SavedViewConditionOperator,
     values: value.values,
+    ...(typeof value.fieldKey === 'string' ? { fieldKey: value.fieldKey } : {}),
   }
 }
 
@@ -3008,9 +3046,12 @@ function decodeAgentNotification(
   const actor = decodeActorSummary(value.actor)
   if (
     !isUuid(value.id) ||
-    value.type !== 'COLLABORATION_MENTION' ||
+    (value.type !== 'COLLABORATION_MENTION' &&
+      value.type !== 'UNASSIGNED_TICKET_ALERT') ||
     !isTicketNumber(value.ticketNumber) ||
-    !isUuid(value.noteId) ||
+    (value.type === 'COLLABORATION_MENTION'
+      ? !isUuid(value.noteId) || actor?.type !== 'STAFF'
+      : value.noteId !== null || actor?.type !== 'TRIGGER') ||
     !actor ||
     !isTimestamp(value.createdAt) ||
     (value.readAt !== null && !isTimestamp(value.readAt))
@@ -3019,9 +3060,9 @@ function decodeAgentNotification(
   }
   return {
     id: value.id,
-    type: 'COLLABORATION_MENTION',
+    type: value.type,
     ticketNumber: value.ticketNumber,
-    noteId: value.noteId,
+    noteId: value.noteId as string | null,
     actor,
     createdAt: value.createdAt,
     readAt: value.readAt,
@@ -3049,7 +3090,7 @@ function decodeAgentNotificationPage(
   }
 }
 
-function decodeAgentMacroDefinition(
+export function decodeAgentMacroDefinition(
   value: unknown,
 ): AgentMacroDefinition | undefined {
   if (
@@ -3533,13 +3574,12 @@ export async function searchAgentTickets(
     throw malformedSuccess(response)
   }
   const items = body.items.map(decodeAgentTicketSummary)
+  const resultCount = decodeSearchResultCount(body.resultCount)
   if (
     !isUuid(body.searchEventId) ||
     !isUuid(body.searchInteractionId) ||
     items.some((ticket) => !ticket) ||
-    typeof body.resultCount !== 'number' ||
-    !Number.isSafeInteger(body.resultCount) ||
-    body.resultCount < 0 ||
+    !resultCount ||
     typeof body.sort !== 'string' ||
     !AGENT_TICKET_SEARCH_SORTS.has(body.sort) ||
     (body.nextCursor !== null && !isNonBlankString(body.nextCursor))
@@ -3550,10 +3590,30 @@ export async function searchAgentTickets(
     searchEventId: body.searchEventId,
     searchInteractionId: body.searchInteractionId,
     items: items as AgentTicketSummary[],
-    resultCount: body.resultCount,
+    resultCount,
     sort: body.sort as AgentTicketSearchPage['sort'],
     nextCursor: body.nextCursor,
   }
+}
+
+function decodeSearchResultCount(
+  value: unknown,
+): AgentTicketSearchPage['resultCount'] | undefined {
+  if (!isRecord(value) || typeof value.relation !== 'string') return undefined
+  if (value.relation === 'UNAVAILABLE') {
+    return value.value === null
+      ? { value: null, relation: 'UNAVAILABLE' }
+      : undefined
+  }
+  if (
+    (value.relation !== 'EXACT' && value.relation !== 'LOWER_BOUND') ||
+    typeof value.value !== 'number' ||
+    !Number.isSafeInteger(value.value) ||
+    value.value < 0
+  ) {
+    return undefined
+  }
+  return { value: value.value, relation: value.relation }
 }
 
 export async function getAgentTicket(
@@ -4028,6 +4088,8 @@ function decodeAuditSearchContext(
     typeof value.resultCount !== 'number' ||
     !Number.isSafeInteger(value.resultCount) ||
     value.resultCount < 0 ||
+    (value.resultCountRelation !== 'EXACT' &&
+      value.resultCountRelation !== 'LOWER_BOUND') ||
     !isNullableString(value.originSearchActivityId) ||
     typeof value.openedActivityCount !== 'number' ||
     !Number.isSafeInteger(value.openedActivityCount) ||
@@ -4062,6 +4124,7 @@ function decodeAuditSearchContext(
     filters: value.filters as Record<string, string>,
     sort: value.sort,
     resultCount: value.resultCount,
+    resultCountRelation: value.resultCountRelation,
     originSearchActivityId: value.originSearchActivityId,
     openedActivityCount: value.openedActivityCount,
     openedActivitiesTruncated: value.openedActivitiesTruncated,

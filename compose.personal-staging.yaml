@@ -3,6 +3,8 @@
 # as the deployment checkout. Runtime secrets remain operator-owned.
 services:
   backend:
+    # Match the owner of mode-0600 file-backed secrets when the operator specifies a UID:GID.
+    user: ${DESKSEED_RUNTIME_USER:-deskseed}
     image: ghcr.io/kdh949/deskseed-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     build: !reset null
 

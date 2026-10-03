@@ -41,6 +41,7 @@ Cross-application imports, compatibility exports, cross-surface token aliases, f
 
 - Staff tokens use `--ds-*`; the existing controls, status, Queue, Workspace, Admin, and Audit contracts belong only to `staff-console`.
 - Customer tokens use `--customer-*`; Help Center, customer authentication, request, article, and customer shell contracts belong only to `customer-portal`.
+- Customer `ConsentDocument` renders validated read-only consent blocks with native headings, ordered/unordered lists, dividers and HTTPS links; its public contract is documented in the customer Storybook.
 - Each application owns a local brand component and icon registry. The underlying immutable Deskseed mark may come from `frontend/brand-assets/`.
 
 ## Extension rule

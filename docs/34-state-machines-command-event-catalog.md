@@ -214,6 +214,7 @@ Policy mutation and `CUSTOMER_CONSENT_POLICY_*` audit commit or roll back togeth
 contains policy ID/key/context/version/checksum and excludes the canonical document body.
 `CUSTOMER_CONSENT_ACCEPTED` records policy/version/context, actor/source, request/correlation, and
 account/ticket linkage only; acceptance time is server-owned and the policy body is not duplicated.
+Initial request consent targets `TICKET` with CUSTOMER actor and commits with the acceptance, customer, ticket and command receipt. Exact replay appends neither a second acceptance nor a second consent event. A form binding appends one bounded `TICKET_CONFIGURATION_UPDATED` event to the initial ticket audit, with field keys but no raw values.
 
 `GrantStaffAuditAuthority`와 `RevokeStaffAuditAuthority`는 ADMIN actor만 실행하며,
 `AUDIT_SEARCH_QUERY_REVEAL`, `AUDIT_EXPORT`, `AUDIT_PROJECTION_REBUILD`만 허용한다.
@@ -445,3 +446,32 @@ rate-limit budget committed
   quarantine/upload/scan. Finalization creates that exact Customer ID and owner-match links CLEAN files in the same transaction.
 - File failure leaves no Customer or Ticket. Earlier CLEAN files remain unlinked for existing TTL cleanup. Final form/consent conflict or
   required audit/mail persistence failure rolls back Customer/Ticket/link state; the separate abuse budget remains consumed.
+
+### Knowledge 문서 수정 재개
+
+`return-to-draft`는 ADMIN_UI의 If-Match 명령으로 `IN_REVIEW` 또는 `UNPUBLISHED`를 `DRAFT`로 되돌린다. `PUBLISHED`에서 직접 호출할 수 없으며 먼저 `unpublish`해야 한다. 공개 중지 동안 고객 읽기/검색은 기존 audience·lifecycle 필터를 유지한다. `KNOWLEDGE_ARTICLE_LIFECYCLE_CHANGED` 관리 감사와 내부 `knowledge.article.lifecycle-changed` outbox를 기존 트랜잭션에 기록한다. revision은 수정하지 않는다.
+
+### Agent configuration editor (2026-09-08)
+
+The optional `formId` in UpdateTicketConfiguration must accompany `formVersion` and match the current published default agent form. When present, form identity is included in the existing command replay descriptor. Candidate POST performs BACKGROUND ticket read authorization and required access audit without changing ticket values/version/audit. The command and candidate share the same form condition evaluator; visible editable required values are checked before mutation.
+
+## 16. AI V1 request, execution, and feedback
+
+```text
+Backend ACCEPTED
+  -> AI QUEUED -> RUNNING
+       -> SUCCEEDED
+       -> NEEDS_REVIEW (no usable result body)
+       -> RETRY_WAIT -> QUEUED (new generation)
+       -> FAILED | CANCELLED | SUPERSEDED | EXPIRED
+```
+
+- Backend `AI_REQUEST_CREATED`, `AI_REQUEST_CANCELLED`, and `AI_FEEDBACK_RECORDED` are dedicated append-only activity audit rows. Request/outbox/audit commit or roll back together.
+- AI inbox deduplicates the exact event fingerprint. A higher cancellation `requestRevision` creates or advances a tombstone and an older create cannot revive it.
+- Each retry increments generation. Worker claim increments lease epoch; a terminal write must match job, generation, lease epoch, and RUNNING state.
+- Provider I/O happens without a database lock after integer micro-USD reservation. Settlement is exactly once; an indeterminate outcome remains `UNKNOWN` and consumes budget.
+- Result commit records encrypted content only for `SUCCEEDED`. Missing approved reply evidence and invalid output are terminal and body-free.
+- Metadata polling omits result content. Explicit result retrieval rechecks current Backend authorization, feature policy, PUBLIC context revision, expiry, and PUBLIC KB citations, then requires `AI_RESULT_READ` persistence before returning content.
+- Feedback uses a separate exact-idempotency ledger and monotonically increasing source revision. Langfuse export is a retryable projection and never changes canonical feedback.
+
+PUBLIC knowledge index events are body-free and exact-revision keyed. Publish/unpublish/audience changes and their Backend outbox intent share the knowledge transaction. The indexer fetches content only through its direction-specific `INTEGRATION_CLIENT` credential; source disappearance cannot be treated as a successful stale index refresh.

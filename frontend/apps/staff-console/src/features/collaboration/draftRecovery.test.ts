@@ -40,6 +40,8 @@ describe('ticket draft recovery selection', () => {
       expiresAt: '2026-09-17T00:00:01Z',
     }
 
-    expect(newestRecoverableDraft(local, remote)).toBe(remote)
+    expect(
+      newestRecoverableDraft(local, remote, Date.parse('2026-08-18T00:00:02Z')),
+    ).toBe(remote)
   })
 })

@@ -488,6 +488,7 @@ paths:
       summary: 고객 제출 context의 form projection 조회
       description: 공개 surface는 ticket kind 입력을 받지 않고 항상 CUSTOMER_REQUEST context의 current published customer form 초기 projection만 반환합니다. staff-only definition, option, value는 응답에 포함하지 않습니다. editable은 form state와 field의 전역 customerEditable capability가 모두 허용할 때만 true입니다. 이 응답은 authorization token이 아니며 최종 문의 생성은 current form snapshot을 다시 검증합니다.
       operationId: getCustomerTicketFormProjection
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-011, REQ-CFG-014]
       tags: [Ticket Configuration Runtime]
       security: [{}]
@@ -527,6 +528,7 @@ paths:
       summary: 고객 후보 field 값으로 form projection 재계산
       description: allowlisted typed field machine key와 값만 평가해 current published customer form의 고객 공개 projection을 반환합니다. staff-only/unknown definition은 존재를 누출하지 않는 validation 또는 unavailable problem으로 처리합니다. 이 preview is not an authorization token이며 문의 생성 transaction은 current form/version, visibility, editability, requiredness, type과 option을 다시 검증합니다.
       operationId: projectCustomerTicketForm
+      x-deskseed-contract-status: FROZEN
       x-deskseed-requirements: [REQ-CFG-014]
       x-deskseed-side-effects: NONE
       x-deskseed-semantic-ticket-view: NONE
@@ -557,6 +559,22 @@ paths:
         '404': {$ref: '#/components/responses/CustomerTicketFormUnavailable'}
         '409': {$ref: '#/components/responses/CustomerTicketFormVersionConflict'}
         '503': {$ref: '#/components/responses/CustomerRequestConfigurationUnavailable'}
+  /api/v1/agent/ticket-configuration/filter-catalog:
+    get:
+      summary: 저장 보기에서 선택 가능한 티켓 설정 조회
+      description: 활성 상담사 세션에 조회용 비민감 필드와 태그·최초 접수 폼·업무 상태의 이름과 안정적인 ID를 반환합니다. 필드 값이나 조건 내부 구현은 반환하지 않습니다.
+      operationId: getSavedViewConfigurationCatalog
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-requirements: [REQ-CFG-001, REQ-CFG-010, REQ-CFG-012, REQ-CFG-013]
+      tags: [Ticket Configuration Runtime]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}]
+      responses:
+        '200': {description: 현재 생성·편집에 사용할 수 있는 설정 카탈로그입니다. 보관된 최초 접수 폼도 포함합니다., content: {application/json: {schema: {$ref: '#/components/schemas/SavedViewConfigurationCatalog'}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+        '503': {$ref: '#/components/responses/Problem'}
   /api/v1/agent/ticket-configuration/descriptors:
     get:
       summary: 상담사 View/Search/Macro/Rules/Analytics용 configuration descriptor catalog 조회
@@ -572,6 +590,30 @@ paths:
         '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
         '403': {$ref: '#/components/responses/Problem'}
         '409': {$ref: '#/components/responses/StaffSessionActorMismatch'}
+  /api/v1/agent/tickets/{ticketNumber}/configuration/projection:
+    post:
+      summary: 상담사 후보 필드와 상태의 조건부 폼 판정
+      description: 티켓 BACKGROUND 읽기 권한과 required access audit를 거친 뒤 현재 기본 상담사 폼을 판정합니다. 티켓 값은 변경하지 않으며 값은 URL이나 ordinary log에 넣지 않습니다.
+      operationId: projectAgentTicketConfiguration
+      x-deskseed-contract-status: FROZEN
+      x-deskseed-documentation-review: MANUAL
+      x-deskseed-requirements: [REQ-CFG-010, REQ-CFG-011, REQ-CFG-013]
+      tags: [Ticket Configuration Runtime]
+      security: [{staffSession: []}]
+      parameters: [{$ref: '#/components/parameters/ExpectedStaffActorHeader'}, {$ref: '#/components/parameters/CsrfHeader'}, {$ref: '#/components/parameters/TicketConfigurationTicketNumber'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProjectAgentTicketConfigurationRequest'}
+            example: {fieldValues: {order.reference: {shortTextValue: ORD-1042}}}
+      responses:
+        '200': {description: 후보 값으로 판정한 필드와 선택 가능한 태그·상태입니다. version은 현재 티켓 버전이며 입력 초안의 저장 버전을 자동 갱신하는 용도가 아닙니다., content: {application/json: {schema: {$ref: '#/components/schemas/TicketConfigurationValues'}}}}
+        '400': {$ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/StaffSessionActorMismatchOrConflict'}
+        '503': {$ref: '#/components/responses/Problem'}
   /api/v1/agent/tickets/{ticketNumber}/configuration:
     get:
       summary: 상담사용 ticket field/tag/custom status projection 조회
@@ -1000,7 +1042,7 @@ components:
         formVersion: {type: integer, minimum: 1}
         fields: {type: array, items: {$ref: '#/components/schemas/ProjectedTicketField'}}
     CustomerTicketFieldValue:
-      description: customer form candidate와 최종 제출에서 정확히 하나의 field type 값을 전달하는 closed union입니다.
+      description: customer form candidate와 최종 제출에서 정확히 하나의 field type 값을 전달하는 closed union입니다. LONG_TEXT는 LF/CRLF 줄바꿈을 보존하며, SHORT_TEXT는 줄바꿈을 허용하지 않습니다. 두 텍스트 타입 모두 그 밖의 ISO 제어 문자는 허용하지 않습니다.
       oneOf:
         - type: object
           additionalProperties: false
@@ -1196,17 +1238,72 @@ components:
         longTextValue: {type: string, maxLength: 10000}
       minProperties: 1
       maxProperties: 1
+    AgentTicketFieldValue:
+      description: 상담사 조회·후보 판정·저장용 값입니다. 숫자는 브라우저 반올림을 피하도록 지수 없는 십진수 문자열로 전달하며 서버가 numeric(30,12)와 필드별 범위를 검증합니다. 생략한 필드는 기존 저장 값을 유지합니다.
+      type: object
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        booleanValue: {type: boolean}
+        numberValue:
+          type: string
+          pattern: '^-?[0-9]+(\.[0-9]+)?$'
+          maxLength: 80
+          description: 정수부 최대 18자리·소수부 최대 12자리인 정확한 숫자 값입니다. 유효 자릿수·소수 자릿수와 minimum/maximum의 필드별 제한도 적용합니다.
+          example: '9007199254740993'
+        optionId: {type: string, format: uuid}
+        shortTextValue: {type: string, maxLength: 1000}
+        longTextValue: {type: string, maxLength: 10000}
     TicketConfigurationValues:
       type: object
-      required: [ticketNumber, version, fieldValues, tags, statusCategory]
+      required: [ticketNumber, version, fieldValues, tags, statusCategory, writable]
       properties:
         ticketNumber: {type: integer, format: int64, minimum: 1}
         version: {type: integer, format: int64, minimum: 0}
-        form: {$ref: '#/components/schemas/TicketFormProjection'}
-        fieldValues: {type: object, additionalProperties: {$ref: '#/components/schemas/TicketFieldValue'}}
+        form: {$ref: '#/components/schemas/AgentTicketFormProjection'}
+        availableTags: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+        availableStatuses: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+        writable: {type: boolean, description: 현재 상담사가 이 티켓 설정을 변경할 수 있는지 나타냅니다.}
+        fieldValues: {type: object, additionalProperties: {$ref: '#/components/schemas/AgentTicketFieldValue'}}
         tags: {type: array, items: {$ref: '#/components/schemas/TicketTagDefinition'}}
         statusCategory: {$ref: '#/components/schemas/TicketStatusCategory'}
         customStatus: {$ref: '#/components/schemas/CustomTicketStatus'}
+    AgentConfigurationChoice:
+      type: object
+      required: [id, label]
+      properties:
+        id: {type: string, format: uuid}
+        label: {type: string, description: 현재 상담사에게 표시할 선택지 이름입니다.}
+    AgentTicketFormProjection:
+      type: object
+      required: [formId, formVersion, fields]
+      properties:
+        formId: {type: string, format: uuid}
+        formVersion: {type: integer, minimum: 1}
+        fields: {type: array, items: {$ref: '#/components/schemas/AgentTicketFormField'}}
+    AgentTicketFormField:
+      type: object
+      required: [id, machineKey, type, label, validation, visible, editable, required, options]
+      properties:
+        id: {type: string, format: uuid}
+        machineKey: {type: string}
+        type: {type: string, enum: [CHECKBOX, SINGLE_SELECT, NUMBER, SHORT_TEXT, LONG_TEXT]}
+        label: {type: string}
+        description: {type: [string, 'null']}
+        validation: {$ref: '#/components/schemas/TicketFieldValidation'}
+        visible: {type: boolean}
+        editable: {type: boolean}
+        required: {type: boolean}
+        options: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+    ProjectAgentTicketConfigurationRequest:
+      description: 저장하지 않고 기본 상담사 폼의 조건만 판정할 typed 후보값과 상태입니다.
+      x-deskseed-documentation-review: MANUAL
+      example: {fieldValues: {order.reference: {shortTextValue: ORD-1042}}}
+      type: object
+      properties:
+        fieldValues: {type: object, maxProperties: 100, additionalProperties: {$ref: '#/components/schemas/AgentTicketFieldValue'}}
+        customStatusId: {type: string, format: uuid}
     UpdateTicketConfigurationRequest:
       description: server-projected form version 안에서 typed field value, tag association, custom status를 하나의 ticket command로 변경하는 요청입니다.
       x-deskseed-documentation-review: MANUAL
@@ -1214,8 +1311,9 @@ components:
       type: object
       required: [clientCommandId]
       properties:
+        formId: {type: string, format: uuid, description: 편집을 시작할 때 조회한 기본 상담사 폼입니다. 제공하면 formVersion과 함께 최종 저장 시 다시 검사합니다.}
         formVersion: {type: integer, minimum: 1}
-        fieldValues: {type: object, additionalProperties: {$ref: '#/components/schemas/TicketFieldValue'}}
+        fieldValues: {type: object, additionalProperties: {$ref: '#/components/schemas/AgentTicketFieldValue'}}
         addTagIds: {type: array, maxItems: 50, items: {type: string, format: uuid}, uniqueItems: true}
         removeTagIds: {type: array, maxItems: 50, items: {type: string, format: uuid}, uniqueItems: true}
         customStatusId: {type: string, format: uuid}
@@ -1228,6 +1326,23 @@ components:
         version: {type: integer, format: int64}
         auditId: {type: string, format: uuid}
         replayed: {type: boolean}
+    SavedViewConfigurationCatalog:
+      type: object
+      required: [fields, tags, forms, statuses]
+      properties:
+        fields: {type: array, items: {$ref: '#/components/schemas/SavedViewCatalogField'}}
+        tags: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+        forms: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+        statuses: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
+    SavedViewCatalogField:
+      type: object
+      required: [id, machineKey, label, type, options]
+      properties:
+        id: {type: string, format: uuid}
+        machineKey: {type: string}
+        label: {type: string}
+        type: {type: string, enum: [CHECKBOX, NUMBER, SINGLE_SELECT, SHORT_TEXT]}
+        options: {type: array, items: {$ref: '#/components/schemas/AgentConfigurationChoice'}}
     TicketConfigurationDescriptor:
       type: object
       required: [key, schemaVersion, contexts]

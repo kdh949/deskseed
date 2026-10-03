@@ -28,10 +28,10 @@ class AttachmentMultipartHttpBoundaryIntegrationTest {
             "%PDF-1.7\n".toByteArray().copyInto(payload)
         }
         val form = LinkedMultiValueMap<String, Any>().apply {
-            add("name", "대용량 첨부 고객")
-            add("email", "large-${UUID.randomUUID()}@example.test")
-            add("subject", "multipart HTTP 경계")
-            add("message", "기본 Servlet 10 MB request 한도를 넘는 첨부")
+            add("request", org.springframework.http.HttpEntity(
+                """{"clientCommandId":"${UUID.randomUUID()}","requester":{"name":"대용량 첨부 고객","email":"large-${UUID.randomUUID()}@example.test"},"subject":"multipart HTTP 경계","message":"기본 Servlet 10 MB request 한도를 넘는 첨부","fieldValues":{},"acceptedPolicies":[]}""",
+                org.springframework.http.HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON },
+            ))
             add(
                 "attachments",
                 object : ByteArrayResource(bytes) {

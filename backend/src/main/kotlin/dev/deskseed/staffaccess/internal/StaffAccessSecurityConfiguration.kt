@@ -28,7 +28,7 @@ internal class StaffAccessSecurityConfiguration(
     private val customerCsrfFilter: CustomerCsrfFilter,
 ) {
     @Bean
-    @Order(3)
+    @Order(4)
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
         val csrfRepository = HttpSessionCsrfTokenRepository().apply {
             setHeaderName("X-CSRF-TOKEN")
@@ -80,6 +80,7 @@ internal class StaffAccessSecurityConfiguration(
                 it.requestMatchers(HttpMethod.POST, "/api/v1/customer/registration-verifications").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/access-mode").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/ticket-forms").permitAll()
+                it.requestMatchers(HttpMethod.POST, "/api/v1/customer/ticket-form-projections").permitAll()
                 it.requestMatchers(HttpMethod.GET, "/api/v1/customer/consent-policies").permitAll()
                 it.requestMatchers("/api/v1/customer/**").hasRole("CUSTOMER")
                 it.requestMatchers(HttpMethod.DELETE, "/api/v1/agent/session").authenticated()

@@ -57,12 +57,10 @@ export async function submitRequestWithAttachments(
   authenticatedCustomer = false,
 ): Promise<SubmittedRequest> {
   const form = new FormData()
-  form.set('name', input.name)
-  form.set('email', input.email)
-  form.set('subject', input.subject)
-  form.set('message', input.message)
-  if (input.privacyConsent !== undefined)
-    form.set('privacyConsent', String(input.privacyConsent))
+  form.set(
+    'request',
+    new Blob([JSON.stringify(input)], { type: 'application/json' }),
+  )
   files.forEach((file) => form.append('attachments', file, file.name))
   const response = await fetch(`${API_BASE_URL}/api/v1/requests`, {
     method: 'POST',
@@ -250,7 +248,8 @@ function decodeSubmittedRequest(value: unknown): SubmittedRequest | undefined {
     !isTicketNumber(value.ticketNumber) ||
     !isTicketStatus(value.status) ||
     !isNonBlankString(value.accessToken) ||
-    !isTimestamp(value.createdAt)
+    !isTimestamp(value.createdAt) ||
+    typeof value.replayed !== 'boolean'
   )
     return undefined
   return value as unknown as SubmittedRequest
@@ -353,4 +352,19 @@ function responseFileName(response: Response): string | null {
     }
   }
   return disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? null
+}
+
+/** Public, read-only customer configuration projection, including candidate POSTs. */
+export async function requestCustomerConfiguration(
+  path: `/api/v1/customer/${string}`,
+  body?: unknown,
+): Promise<unknown> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...customerOptions(
+      body === undefined ? {} : { 'Content-Type': 'application/json' },
+    ),
+    method: body === undefined ? 'GET' : 'POST',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  return checkedJson(response)
 }

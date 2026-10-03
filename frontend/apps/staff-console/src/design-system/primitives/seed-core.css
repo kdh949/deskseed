@@ -87,7 +87,7 @@
   min-height: 1.75rem;
   padding-inline: 0.75rem;
   border-radius: 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--ds-font-size-300);
   font-weight: 600;
   line-height: 1;
 }
@@ -233,7 +233,7 @@
 .seed-choice-field__control > div {
   min-height: 2rem;
   border-radius: 0.25rem;
-  font-size: 0.8125rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-choice-field__control input {
@@ -266,13 +266,13 @@
 }
 
 .seed-choice-field__option strong {
-  font-size: 0.8125rem;
+  font-size: var(--ds-font-size-300);
   font-weight: 500;
 }
 
 .seed-choice-field__option small {
   color: var(--ds-palette-ink-muted);
-  font-size: 0.6875rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-choice-field__clear {
@@ -305,7 +305,7 @@
   min-height: 2rem;
   border-radius: 0.25rem;
   color: var(--ds-palette-ink);
-  font-size: 0.8125rem;
+  font-size: var(--ds-font-size-300);
 }
 
 .seed-checkbox {

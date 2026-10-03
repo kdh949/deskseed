@@ -1,3 +1,9 @@
+deskseed:
+  search-diagnostics:
+    enabled: ${DESKSEED_SEARCH_DIAGNOSTICS_ENABLED:false}
+  profiling:
+    span-correlation-enabled: ${DESKSEED_PROFILE_SPAN_CORRELATION_ENABLED:false}
+
 management:
   server:
     port: 9090
@@ -17,6 +23,7 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        hikaricp.connections.acquire: true
       minimum-expected-value:
         http.server.requests: 5ms
       maximum-expected-value:
@@ -26,9 +33,15 @@ management:
   tracing:
     sampling:
       probability: ${DESKSEED_TRACE_SAMPLING_PROBABILITY:0.05}
+  otlp:
+    metrics:
+      export:
+        # Load metrics are scraped from Prometheus; a local OTLP meter endpoint is not part of this topology.
+        enabled: false
   opentelemetry:
     resource-attributes:
       service.name: deskseed-backend
+      service.version: ${DESKSEED_SERVICE_VERSION:unknown}
       deployment.environment.name: load
     tracing:
       export:

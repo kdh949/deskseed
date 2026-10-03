@@ -34,6 +34,10 @@ function CanonicalFoundations() {
       </section>
       <section>
         <h2>Typography</h2>
+        <p>
+          업무 라벨·상태·복구 안내는 최소 14px, 답변 입력과 대화 본문은 16px,
+          티켓 제목은 18px을 사용합니다.
+        </p>
         <div className="seed-foundations-catalog__type">
           <h1>티켓 워크스페이스</h1>
           <h2>고객이 로그인할 수 없습니다</h2>

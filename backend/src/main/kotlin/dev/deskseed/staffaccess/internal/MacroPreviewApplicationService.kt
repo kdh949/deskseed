@@ -245,7 +245,7 @@ internal class MacroPreviewApplicationService(
         PLACEHOLDER.replace(template) { match -> values.getValue(match.groupValues[1]) }
 
     private fun TicketConfigurationRuntimeValue.previewValue(): String? = booleanValue?.toString()
-        ?: numberValue?.toPlainString()
+        ?: numberValue
         ?: optionId?.toString()
         ?: shortTextValue
         ?: longTextValue

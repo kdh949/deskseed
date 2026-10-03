@@ -2,6 +2,7 @@ package dev.deskseed.audit
 
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.foundation.SearchResultCountRelation
 import java.time.Instant
 import java.util.UUID
 
@@ -49,6 +50,46 @@ data class TicketResourceReadAccessAudit(
     val ticketId: UUID,
     val ticketNumber: Long,
     val interactionId: UUID,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
+data class AiContextAccessAudit(
+    val eventId: UUID,
+    val context: AccessAuditContext,
+    val jobId: UUID,
+    val requesterStaffId: UUID,
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val feature: String,
+    val requestRevision: Long,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
+data class AiKnowledgeAccessAudit(
+    val eventId: UUID,
+    val context: AccessAuditContext,
+    val requestRef: UUID,
+    val articleId: UUID,
+    val revisionId: UUID,
+    val purpose: String,
+    val outcome: AccessAuditOutcome,
+    val httpStatus: Int,
+    val occurredAt: Instant,
+)
+
+data class AiResultAccessAudit(
+    val eventId: UUID,
+    val context: AccessAuditContext,
+    val jobId: UUID,
+    val requesterStaffId: UUID,
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val feature: String,
+    val requestRevision: Long,
     val outcome: AccessAuditOutcome,
     val httpStatus: Int,
     val occurredAt: Instant,
@@ -103,6 +144,7 @@ data class SearchExecutedAccessAudit(
     val normalizedFilters: Map<String, String>,
     val sort: String,
     val resultCount: Long,
+    val resultCountRelation: SearchResultCountRelation,
     val resultItems: List<SearchResultAuditItem>,
     val outcome: AccessAuditOutcome,
     val httpStatus: Int,
@@ -167,6 +209,15 @@ fun interface AccessAuditSessionFingerprint {
 interface AccessAuditWriter {
     /** Appends one required access audit for every successful protected ticket-detail read. */
     fun appendTicketResourceRead(event: TicketResourceReadAccessAudit)
+
+    /** Required AI source-read audit; failure withholds all ticket content. */
+    fun appendAiContextAccess(event: AiContextAccessAudit)
+
+    /** Required audit for PUBLIC KB source reads performed by the AI service. */
+    fun appendAiKnowledgeAccess(event: AiKnowledgeAccessAudit)
+
+    /** Required audit before a generated AI result body is returned to staff. */
+    fun appendAiResultAccess(event: AiResultAccessAudit)
 
     /** Appends the required explicit execution/preview access audit for a saved view definition. */
     fun appendSavedViewExecuted(event: SavedViewExecutedAccessAudit)

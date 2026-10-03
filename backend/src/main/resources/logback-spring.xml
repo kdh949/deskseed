@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProfile name="load &amp; !personal-staging-observability">
+        <!-- Keep the load topology's Logstash JSON console contract intact. -->
+        <include resource="org/springframework/boot/logging/logback/structured-console-appender.xml"/>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="personal-staging-observability">
+        <include resource="org/springframework/boot/logging/logback/structured-console-appender.xml"/>
+
+        <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+            <!-- Request/correlation IDs are bounded by RequestIdFilter and remain fields, never Loki labels. -->
+            <captureMdcAttributes>requestId,correlationId</captureMdcAttributes>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="OTEL"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!load &amp; !personal-staging-observability">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>

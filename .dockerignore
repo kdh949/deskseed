@@ -14,3 +14,8 @@
 !api/core-api-outline-v1.yaml
 !api/customer-identity-api-v1.yaml
 !api/platform-api-outline-v1.yaml
+!ai/
+!ai/**
+ai/.venv/
+ai/.pytest_cache/
+ai/**/__pycache__/

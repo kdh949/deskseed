@@ -13,5 +13,7 @@ Do not add `tenant_id`, workspace routing, tenant-aware caches, or tenant admini
 
 ## Consequences
 
+ADR 0049의 server-owned `workspaceKey`는 AI 배포 단위와 budget namespace를 고정하기 위한 값이다. 고객 organization 또는 SaaS tenant 모델을 도입하지 않는다.
+
 - The schema and authorization model remain simpler.
 - A future hosted SaaS offering is a significant product/architecture initiative, not a hidden boolean switch.

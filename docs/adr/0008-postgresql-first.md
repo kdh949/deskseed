@@ -13,5 +13,7 @@ Use PostgreSQL as the only application data store in the MVP. Add indexes only f
 
 ## Consequences
 
+ADR 0049는 AI V1의 파생 공개 KB index를 별도 PostgreSQL+pgvector에 두는 좁은 예외다. Elasticsearch/OpenSearch 또는 다른 기능의 외부 store 승인은 아니다.
+
 - One authoritative store keeps local setup and recovery simple.
 - Later projections require versioned events, replay/rebuild procedures, and lag observability.

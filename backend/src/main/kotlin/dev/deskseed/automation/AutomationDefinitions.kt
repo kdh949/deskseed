@@ -53,7 +53,15 @@ data class AutomationDryRunResult(
     val proposedAction: AutomationActionType,
 )
 
+data class AutomationVersionSummary(val version: Int, val name: String, val solvedAgeMinutes: Int, val createdByDisplay: String, val createdAt: Instant)
+data class AutomationActivationSummary(val version: Int, val state: String, val actorDisplay: String, val occurredAt: Instant)
+data class AutomationExecutionSummary(val id: UUID, val version: Int, val ticketNumber: Long, val outcome: String, val auditId: UUID?, val errorCode: String?, val completedAt: Instant)
+data class AutomationCandidateSummary(val id: UUID, val version: Int, val ticketNumber: Long, val status: String, val attemptCount: Int, val lastErrorCode: String?, val eligibleAt: Instant, val discoveredAt: Instant)
+data class AutomationHistory(val versions: List<AutomationVersionSummary>, val activations: List<AutomationActivationSummary>, val executions: List<AutomationExecutionSummary>, val candidates: List<AutomationCandidateSummary>)
+
 interface AutomationDefinitionAdministration {
+    fun version(id: UUID, version: Int, actor: AutomationDefinitionActor): AutomationDefinitionView
+    fun history(id: UUID, actor: AutomationDefinitionActor): AutomationHistory
     fun list(actor: AutomationDefinitionActor): List<AutomationDefinitionView>
     fun create(position: Int, draft: AutomationDefinitionDraft, actor: AutomationDefinitionActor): AutomationDefinitionView
     fun createVersion(id: UUID, expectedAggregateVersion: Long, draft: AutomationDefinitionDraft, actor: AutomationDefinitionActor): AutomationDefinitionView

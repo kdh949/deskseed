@@ -15,6 +15,18 @@ class StaffTicketTestDatabaseCleaner(
         jdbcTemplate.execute(
             """
             truncate table
+                ai_knowledge_manifest_snapshots,
+                ai_admin_operations,
+                ai_feature_staff_allowlist,
+                ai_activity_events,
+                ai_feedback_idempotency,
+                ai_request_feedback,
+                ai_result_access_audit_details,
+                ai_context_access_audit_details,
+                ai_knowledge_access_audit_details,
+                ai_knowledge_index_outbox,
+                ai_integration_outbox,
+                ai_requests,
                 staff_notifications,
                 ticket_collaboration_note_mentions,
                 ticket_collaboration_notes,
@@ -31,6 +43,16 @@ class StaffTicketTestDatabaseCleaner(
                 staff_login_throttles,
                 staff_accounts
             restart identity cascade
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            update ai_settings
+            set enabled = false, summary_enabled = false, triage_enabled = false,
+                reply_draft_enabled = false, fast_model_alias = 'openai/gpt-5.6-luna',
+                standard_model_alias = 'openai/gpt-5.6-terra', version = 0,
+                updated_by_staff_id = null, updated_at = clock_timestamp()
+            where singleton = true
             """.trimIndent(),
         )
     }

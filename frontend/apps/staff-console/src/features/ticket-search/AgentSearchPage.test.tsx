@@ -90,8 +90,10 @@ describe('AgentSearchPage', () => {
             searchEventId: '33333333-3333-4333-8333-333333333333',
             searchInteractionId: '44444444-4444-4444-8444-444444444444',
             items: [ticket],
-            resultCount: 1,
-            sort: 'score:desc,ticketNumber:desc',
+            resultCount: body.cursor
+              ? { value: 2, relation: 'EXACT' }
+              : { value: 2, relation: 'LOWER_BOUND' },
+            sort: 'updatedAt:desc,ticketNumber:desc',
             nextCursor: body.cursor ? null : 'opaque-next',
           })
         }
@@ -103,7 +105,7 @@ describe('AgentSearchPage', () => {
     await user.type(screen.getByLabelText('서버 전체 티켓 검색어'), '중복 결제')
     await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
 
-    expect(await screen.findByText('정확한 전체 결과 1개')).toBeVisible()
+    expect(await screen.findByText('결과 2개 이상')).toBeVisible()
     const firstSearch = requests.find((request) =>
       request.url.endsWith('/api/v1/agent/search'),
     )
@@ -111,6 +113,7 @@ describe('AgentSearchPage', () => {
     expect(firstSearch?.body).toMatchObject({
       query: '중복 결제',
       cursor: null,
+      sort: 'updatedAt:desc,ticketNumber:desc',
     })
 
     await user.click(screen.getByRole('button', { name: '다음 페이지' }))
@@ -154,7 +157,9 @@ describe('AgentSearchPage', () => {
             searchEventId: crypto.randomUUID(),
             searchInteractionId: crypto.randomUUID(),
             items: [{ ...ticket, ticketNumber: 1041 }, ticket],
-            resultCount: 2,
+            resultCount: body.cursor
+              ? { value: 4, relation: 'EXACT' }
+              : { value: 3, relation: 'LOWER_BOUND' },
             sort: body.sort,
             nextCursor: body.cursor ? null : 'opaque-next',
           })
@@ -166,7 +171,7 @@ describe('AgentSearchPage', () => {
     await user.type(screen.getByLabelText('서버 전체 티켓 검색어'), '결제')
     await user.selectOptions(screen.getByLabelText('상태 검색 필터'), 'OPEN')
     await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
-    await screen.findByText('정확한 전체 결과 2개')
+    await screen.findByText('결과 3개 이상')
 
     const links = screen.getAllByRole('link', { name: /티켓 #10/ })
     expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
@@ -190,12 +195,52 @@ describe('AgentSearchPage', () => {
 
     await user.selectOptions(
       screen.getByLabelText('정렬 검색 필터'),
-      'updatedAt:desc,ticketNumber:desc',
+      'score:desc,ticketNumber:desc',
     )
     await waitFor(() => expect(searches).toHaveLength(4))
     expect(searches[3]?.body).toMatchObject({
-      sort: 'updatedAt:desc,ticketNumber:desc',
+      sort: 'score:desc,ticketNumber:desc',
       cursor: null,
     })
+  })
+
+  it('shows actionable guidance for an unfiltered short broad query', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/api/v1/agent/assignment-options'))
+          return json({ groups: [] })
+        if (url.endsWith('/api/v1/agent/csrf'))
+          return json({ token: 'csrf', headerName: 'X-CSRF-TOKEN' })
+        if (url.endsWith('/api/v1/agent/search')) {
+          return new Response(
+            JSON.stringify({
+              type: '/problems/agent-search-too-broad',
+              title: 'Ticket search is too broad',
+              status: 422,
+            }),
+            {
+              status: 422,
+              headers: { 'Content-Type': 'application/problem+json' },
+            },
+          )
+        }
+        return json({})
+      }),
+    )
+
+    renderPage()
+    await user.type(screen.getByLabelText('서버 전체 티켓 검색어'), '결제')
+    await user.click(screen.getByRole('button', { name: '서버 전체 검색' }))
+
+    expect(await screen.findByText('검색 범위를 더 좁혀 주세요')).toBeVisible()
+    expect(
+      screen.getByText(
+        '검색어를 세 글자 이상 입력하거나 상태·우선순위·그룹·담당자·SLA 필터를 추가해 주세요.',
+      ),
+    ).toBeVisible()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull()
   })
 })

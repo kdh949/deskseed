@@ -11,6 +11,10 @@ import dev.deskseed.audit.SearchQueryProtector
 import dev.deskseed.audit.SearchResultAuditItem
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.foundation.SearchDiagnostics
+import dev.deskseed.foundation.SearchPhase
+import dev.deskseed.foundation.SearchResultCount
+import dev.deskseed.foundation.SearchResultCountRelation
 import dev.deskseed.ticketing.StaffTicketReadScope
 import dev.deskseed.ticketing.StaffTicketReadStore
 import dev.deskseed.ticketing.StaffTicketSearchFilter
@@ -20,6 +24,7 @@ import dev.deskseed.ticketing.StaffSlaDisplayState
 import dev.deskseed.ticketing.TicketPriority
 import dev.deskseed.ticketing.TicketStatus
 import org.springframework.dao.DataAccessException
+import org.springframework.dao.QueryTimeoutException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -46,7 +51,7 @@ internal data class AgentTicketSearchPage(
     val searchEventId: UUID,
     val searchInteractionId: UUID,
     val items: List<StaffTicketSummary>,
-    val resultCount: Long,
+    val resultCount: SearchResultCount,
     val sort: String,
     val nextCursor: String?,
 )
@@ -59,6 +64,7 @@ internal class AgentTicketSearchApplicationService(
     private val accessAuditWriter: AccessAuditWriter,
     private val cursorCodec: AgentTicketSearchCursorCodec,
     private val clock: Clock,
+    private val searchDiagnostics: SearchDiagnostics,
 ) {
     @Transactional
     fun search(
@@ -66,7 +72,7 @@ internal class AgentTicketSearchApplicationService(
         interactionId: UUID,
         request: AgentTicketSearchRequest,
         context: AgentReadRequestContext,
-    ): AgentTicketSearchPage {
+    ): AgentTicketSearchPage = searchDiagnostics.measure(SearchPhase.OVERALL) {
         require(principal.id != UUID(0, 0)) { "Active staff principal is required" }
         require(request.query.isNotBlank() && request.query.length <= 500) {
             "Search query must contain between 1 and 500 characters"
@@ -74,6 +80,7 @@ internal class AgentTicketSearchApplicationService(
         require(request.sort in SUPPORTED_SORTS) { "Unsupported ticket search sort" }
         require(request.limit in 1..100) { "Search limit must be between 1 and 100" }
         validateAssignee(request.filters.assigneeId)
+        validateBroadQuery(request)
 
         val decodedCursor = request.cursor?.let {
             cursorCodec.decode(request.query, request.filters, request.sort, it)
@@ -81,25 +88,36 @@ internal class AgentTicketSearchApplicationService(
         val occurredAt = Instant.now(clock)
         val snapshotAt = decodedCursor?.snapshotAt ?: occurredAt
 
-        val result = ticketStore.search(
-            query = request.query,
-            scope = StaffTicketReadScope.ALL_TICKETS,
-            actorId = principal.id,
-            filters = StaffTicketSearchFilter(
-                status = request.filters.status,
-                priority = request.filters.priority,
-                groupId = request.filters.groupId,
-                assignee = request.filters.assigneeId,
-                slaState = request.filters.slaState,
-            ),
-            sort = request.sort,
-            snapshotAt = snapshotAt,
-            cursor = decodedCursor,
-            limit = request.limit + 1,
+        val result = try {
+            ticketStore.search(
+                query = request.query,
+                scope = StaffTicketReadScope.ALL_TICKETS,
+                actorId = principal.id,
+                filters = StaffTicketSearchFilter(
+                    status = request.filters.status,
+                    priority = request.filters.priority,
+                    groupId = request.filters.groupId,
+                    assignee = request.filters.assigneeId,
+                    slaState = request.filters.slaState,
+                ),
+                sort = request.sort,
+                snapshotAt = snapshotAt,
+                cursor = decodedCursor,
+                limit = request.limit + 1,
+            )
+        } catch (exception: QueryTimeoutException) {
+            throw AgentTicketSearchTooBroadException(exception)
+        }
+        val returnedHits = result.hits.take(request.limit)
+        val hasMore = result.hits.size > request.limit
+        val returnedBefore = decodedCursor?.returnedBefore ?: 0L
+        val returnedThroughPage = Math.addExact(returnedBefore, returnedHits.size.toLong())
+        val resultCount = SearchResultCount(
+            value = if (hasMore) Math.addExact(returnedThroughPage, 1L) else returnedThroughPage,
+            relation = if (hasMore) SearchResultCountRelation.LOWER_BOUND else SearchResultCountRelation.EXACT,
         )
-        val items = result.hits.take(request.limit)
-        val nextCursor = if (result.hits.size > request.limit) {
-            val last = checkNotNull(items.lastOrNull())
+        val nextCursor = if (hasMore) {
+            val last = checkNotNull(returnedHits.lastOrNull())
             cursorCodec.encode(
                 query = request.query,
                 filters = request.filters,
@@ -109,6 +127,8 @@ internal class AgentTicketSearchApplicationService(
                     lastScore = last.score.takeIf { request.sort == SCORE_SORT },
                     lastUpdatedAt = last.ticket.updatedAt.takeIf { request.sort == UPDATED_SORT },
                     lastTicketNumber = last.ticket.ticketNumber,
+                    returnedBefore = returnedThroughPage,
+                    partition = last.partition,
                 ),
             )
         } else {
@@ -116,38 +136,41 @@ internal class AgentTicketSearchApplicationService(
         }
         val searchEventId = UUID.randomUUID()
         try {
-            val auditContext = context.toAccessAuditContext(
-                principal,
-                sessionFingerprint.fingerprint(context.sessionId),
-            )
-            val protectedQuery = queryProtector.protect(searchEventId, request.query, occurredAt)
-            accessAuditWriter.appendSearchExecuted(
-                SearchExecutedAccessAudit(
-                    eventId = searchEventId,
-                    context = auditContext,
-                    interactionId = interactionId,
-                    protectedQuery = protectedQuery,
-                    normalizedFilters = normalizedFilters(request.filters),
-                    sort = request.sort,
-                    resultCount = result.resultCount,
-                    resultItems = items.mapIndexed { ordinal, hit ->
-                        SearchResultAuditItem(hit.ticket.id, hit.ticket.ticketNumber, ordinal)
-                    },
-                    outcome = AccessAuditOutcome.SUCCEEDED,
-                    httpStatus = 200,
-                    occurredAt = occurredAt,
-                ),
-            )
+            searchDiagnostics.measure(SearchPhase.AUDIT) {
+                val auditContext = context.toAccessAuditContext(
+                    principal,
+                    sessionFingerprint.fingerprint(context.sessionId),
+                )
+                val protectedQuery = queryProtector.protect(searchEventId, request.query, occurredAt)
+                accessAuditWriter.appendSearchExecuted(
+                    SearchExecutedAccessAudit(
+                        eventId = searchEventId,
+                        context = auditContext,
+                        interactionId = interactionId,
+                        protectedQuery = protectedQuery,
+                        normalizedFilters = normalizedFilters(request.filters),
+                        sort = request.sort,
+                        resultCount = checkNotNull(resultCount.value),
+                        resultCountRelation = resultCount.relation,
+                        resultItems = returnedHits.mapIndexed { ordinal, hit ->
+                            SearchResultAuditItem(hit.ticket.id, hit.ticket.ticketNumber, ordinal)
+                        },
+                        outcome = AccessAuditOutcome.SUCCEEDED,
+                        httpStatus = 200,
+                        occurredAt = occurredAt,
+                    ),
+                )
+            }
         } catch (exception: DataAccessException) {
             throw AccessAuditUnavailableException(exception)
         } catch (exception: AccessAuditProtectionException) {
             throw AccessAuditUnavailableException(exception)
         }
-        return AgentTicketSearchPage(
+        AgentTicketSearchPage(
             searchEventId = searchEventId,
             searchInteractionId = interactionId,
-            items = items.map { it.ticket },
-            resultCount = result.resultCount,
+            items = returnedHits.map { it.ticket },
+            resultCount = resultCount,
             sort = request.sort,
             nextCursor = nextCursor,
         )
@@ -167,12 +190,26 @@ internal class AgentTicketSearchApplicationService(
             .getOrElse { throw IllegalArgumentException("assigneeId must be a UUID, me, or unassigned") }
     }
 
+    private fun validateBroadQuery(request: AgentTicketSearchRequest) {
+        val normalized = request.query.trim()
+        if (normalized.toLongOrNull() != null) return
+        val hasNarrowingFilter = with(request.filters) {
+            status != null || priority != null || groupId != null || assigneeId != null || slaState != null
+        }
+        if (normalized.codePointCount(0, normalized.length) < MIN_UNFILTERED_QUERY_CODE_POINTS && !hasNarrowingFilter) {
+            throw AgentTicketSearchTooBroadException()
+        }
+    }
+
     private companion object {
         const val UPDATED_SORT = "updatedAt:desc,ticketNumber:desc"
         const val SCORE_SORT = "score:desc,ticketNumber:desc"
+        const val MIN_UNFILTERED_QUERY_CODE_POINTS = 3
         val SUPPORTED_SORTS = setOf(UPDATED_SORT, SCORE_SORT)
     }
 }
+
+internal class AgentTicketSearchTooBroadException(cause: Throwable? = null) : RuntimeException(cause)
 
 internal fun AgentReadRequestContext.toAccessAuditContext(
     principal: StaffPrincipal,

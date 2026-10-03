@@ -278,16 +278,37 @@ class CustomerPasswordlessRegistrationCompletionIntegrationTest {
         )).isEqualTo(1)
     }
 
+    @Test
+    fun `completion rejects a form from another customer before mutation`() {
+        insertCurrentRegistrationPolicy()
+        val displayed = insertAccount("displayed-account@example.test")
+        val cookieOwner = insertAccount("cookie-owner@example.test")
+        complete(cookieOwner, csrf = CustomerAuthSecrets.csrf(properties.csrfKey, displayed.rawSession), expectedCustomerId = displayed.customerId.toString())
+            .andExpect(status().isForbidden)
+        complete(cookieOwner, expectedCustomerId = displayed.customerId.toString())
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/customer-registration-conflict"))
+        assertPasswordless(displayed)
+        assertPasswordless(cookieOwner)
+        assertThat(jdbc.queryForObject("select count(*) from customer_consent_acceptances", Long::class.java)).isZero()
+        assertThat(jdbc.queryForObject("select count(*) from admin_security_audit_events where event_type = 'CUSTOMER_REGISTRATION_COMPLETED' and outcome = 'SUCCESS'", Long::class.java)).isZero()
+        complete(cookieOwner, expectedCustomerId = "invalid-id").andExpect(status().isBadRequest)
+        assertPasswordless(cookieOwner)
+        complete(cookieOwner, expectedCustomerId = null).andExpect(status().isOk)
+    }
+
     private fun complete(
         account: TestAccount,
         csrf: String? = CustomerAuthSecrets.csrf(properties.csrfKey, account.rawSession),
         acceptedPolicies: String = """[{"policyKey":"registration-terms","version":1}]""",
         password: String = RAW_PASSWORD,
+        expectedCustomerId: String? = account.customerId.toString(),
     ) = mockMvc.perform(
         put("/api/v1/customer/me/registration")
             .with { request -> request.remoteAddr = "192.0.2.31"; request }
             .cookie(cookie(account.rawSession))
             .apply { if (csrf != null) header("X-CSRF-TOKEN", csrf) }
+            .apply { if (expectedCustomerId != null) header("X-Deskseed-Expected-Customer-Id", expectedCustomerId) }
             .contentType(MediaType.APPLICATION_JSON)
             .content(
                 """

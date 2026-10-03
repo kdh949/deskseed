@@ -94,10 +94,10 @@ class AttachmentPipelineIntegrationTest {
     fun `initial multipart request scans before creation and links only the CLEAN first PUBLIC attachment`() {
         val response = mockMvc.perform(
             multipart("/api/v1/requests")
-                .file(MockMultipartFile("name", "", "text/plain", "최초 첨부 고객".toByteArray()))
-                .file(MockMultipartFile("email", "", "text/plain", "initial-${UUID.randomUUID()}@example.test".toByteArray()))
-                .file(MockMultipartFile("subject", "", "text/plain", "최초 첨부 문의".toByteArray()))
-                .file(MockMultipartFile("message", "", "text/plain", "PDF를 포함한 첫 문의".toByteArray()))
+                .file(MockMultipartFile("request", "", "application/json", """
+                    {"clientCommandId":"${UUID.randomUUID()}","requester":{"name":"최초 첨부 고객","email":"initial-${UUID.randomUUID()}@example.test"},
+                     "subject":"최초 첨부 문의","message":"PDF를 포함한 첫 문의","fieldValues":{},"acceptedPolicies":[]}
+                """.trimIndent().toByteArray()))
                 .file(MockMultipartFile("attachments", "initial.pdf", "application/pdf", PDF_BYTES)),
         )
             .andExpect(status().isCreated)
@@ -114,6 +114,28 @@ class AttachmentPipelineIntegrationTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.comments[0].attachments.length()").value(1))
             .andExpect(jsonPath("$.comments[0].attachments[0].fileName").value("initial.pdf"))
+    }
+
+    @Test
+    fun `failed initial file leaves no requester and repeated file content replays the same ticket`() {
+        val email = "initial-failure-${UUID.randomUUID()}@example.test"
+        val commandId = UUID.randomUUID()
+        val body = """{"clientCommandId":"$commandId","requester":{"name":"첨부 고객","email":"$email"},"subject":"파일 접수","message":"첨부를 확인해 주세요.","fieldValues":{},"acceptedPolicies":[]}"""
+        fun request(bytes: ByteArray, contentType: String = "application/pdf") = multipart("/api/v1/requests")
+            .file(MockMultipartFile("request", "", "application/json", body.toByteArray()))
+            .file(MockMultipartFile("attachments", "initial.pdf", contentType, bytes))
+        mockMvc.perform(request(PDF_BYTES)
+            .file(MockMultipartFile("attachments", "second.pdf", "application/pdf", PDF_BYTES))
+            .file(MockMultipartFile("attachments", "third.pdf", "image/png", PDF_BYTES)))
+            .andExpect(status().isUnsupportedMediaType)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from attachment_objects object where scan_status = 'CLEAN' and not exists (select 1 from ticket_comment_attachments link where link.attachment_id = object.id)", Long::class.java)).isEqualTo(2)
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customers where email_normalized = ?", Long::class.java, email)).isZero()
+        val first = objectMapper.readTree(mockMvc.perform(request(PDF_BYTES)).andExpect(status().isCreated).andReturn().response.contentAsString)
+        val replay = objectMapper.readTree(mockMvc.perform(request(PDF_BYTES)).andExpect(status().isCreated).andExpect(jsonPath("$.replayed").value(true)).andReturn().response.contentAsString)
+        assertThat(replay.path("ticketNumber")).isEqualTo(first.path("ticketNumber"))
+        assertThat(jdbcTemplate.queryForObject("select count(*) from customers where email_normalized = ?", Long::class.java, email)).isEqualTo(1)
+        mockMvc.perform(request("%PDF-different-content".toByteArray())).andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-command-conflict"))
     }
 
     @Test
@@ -308,7 +330,7 @@ class AttachmentPipelineIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"name":"첨부 고객","email":"$label-${UUID.randomUUID()}@example.test","subject":"첨부 테스트","message":"처음 문의"}
+                    {"clientCommandId":"${UUID.randomUUID()}", "fieldValues":{}, "acceptedPolicies":[], "requester":{"name":"첨부 고객","email":"$label-${UUID.randomUUID()}@example.test"}, "subject":"첨부 테스트","message":"처음 문의"}
                     """.trimIndent(),
                 ),
         ).andExpect(status().isCreated).andReturn().response.contentAsString

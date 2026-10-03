@@ -17,7 +17,7 @@ data class CustomerSearchResult(
 )
 
 interface CustomerDirectory {
-    fun createUnverified(name: String, email: String): CustomerRef
+    fun createUnverified(name: String, email: String, plannedId: UUID = UUID.randomUUID()): CustomerRef
 
     fun findById(customerId: UUID): CustomerRef?
 

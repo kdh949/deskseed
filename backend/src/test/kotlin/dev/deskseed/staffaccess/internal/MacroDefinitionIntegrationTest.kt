@@ -110,6 +110,20 @@ class MacroDefinitionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content("""{"version":2}"""),
         ).andExpect(status().isPreconditionFailed).andExpect(jsonPath("$.currentVersion").value(3))
 
+        mockMvc.perform(get("/api/v1/agent/personal-macros/{macroId}/history", macroId).session(agent.session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.versions[0].version").value(2))
+            .andExpect(jsonPath("$.versions[1].version").value(1))
+            .andExpect(jsonPath("$.activations[0].version").value(1))
+            .andExpect(jsonPath("$.activations[0].state").value("ACTIVE"))
+            .andExpect(jsonPath("$.activations[0].requestId").doesNotExist())
+        val other = browser("AGENT")
+        mockMvc.perform(get("/api/v1/agent/personal-macros/{macroId}/history", macroId).session(other.session))
+            .andExpect(status().isNotFound)
+        val admin = browser("ADMIN")
+        mockMvc.perform(get("/api/v1/admin/shared-macros/{macroId}/history", macroId).session(admin.session))
+            .andExpect(status().isNotFound)
+
         assertThat(jdbc.queryForList(
             "select event_type from admin_security_audit_events where target_id = ? order by occurred_at, id",
             String::class.java,

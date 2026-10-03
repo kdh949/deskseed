@@ -63,7 +63,7 @@ class PublicRequestRateLimitIntegrationTest {
             .andExpect(status().isTooManyRequests)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(header().exists("Retry-After"))
-            .andExpect(jsonPath("$.type").value("/problems/request-rate-limit-exceeded"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-rate-limited"))
             .andReturn()
         assertThat(destinationLimited.response.getHeader("Retry-After")?.toLong()).isBetween(1, 60)
 
@@ -124,7 +124,7 @@ class PublicRequestRateLimitIntegrationTest {
             forwardedFor = "203.0.113.99",
         )
             .andExpect(status().isTooManyRequests)
-            .andExpect(jsonPath("$.type").value("/problems/request-rate-limit-exceeded"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-rate-limited"))
     }
 
     @Test
@@ -149,10 +149,10 @@ class PublicRequestRateLimitIntegrationTest {
         val malformedEmail = "malformed-${UUID.randomUUID()}@example.com"
         submit(malformedEmail, "192.0.2.10", "not-an-ip")
             .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.type").value("/problems/request-network-invalid"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-validation-failed"))
         submit("oversized-${UUID.randomUUID()}@example.com", "192.0.2.10", "203.0.113.1, 203.0.113.2, 203.0.113.3")
             .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.type").value("/problems/request-network-invalid"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-validation-failed"))
 
         assertThat(
             jdbcTemplate.queryForObject("select count(*) from public_request_rate_limit_buckets", Long::class.java),
@@ -271,7 +271,7 @@ class PublicRequestRateLimitIntegrationTest {
             submit(email, "198.51.100.250")
                 .andExpect(status().isServiceUnavailable)
                 .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(jsonPath("$.type").value("/problems/request-rate-limit-unavailable"))
+                .andExpect(jsonPath("$.type").value("/problems/customer-request-configuration-unavailable"))
         } finally {
             jdbcTemplate.execute("drop trigger if exists $triggerName on public_request_rate_limit_buckets")
             jdbcTemplate.execute("drop function if exists $functionName()")
@@ -296,9 +296,8 @@ class PublicRequestRateLimitIntegrationTest {
             .content(
                 """
                 {
-                  "name": "문의 고객",
-                  "email": "$email",
-                  "subject": "공개 문의 제한 검증",
+                  "clientCommandId":"${UUID.randomUUID()}", "fieldValues":{}, "acceptedPolicies":[], "requester":{"name": "문의 고객",
+                  "email": "$email"}, "subject": "공개 문의 제한 검증",
                   "message": "공개 문의 제한이 요청 생성 전에 동작하는지 확인합니다."
                 }
                 """.trimIndent(),

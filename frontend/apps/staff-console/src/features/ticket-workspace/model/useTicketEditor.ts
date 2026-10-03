@@ -40,6 +40,7 @@ export interface TicketConflictState {
 
 interface TicketEditorError {
   message: string
+  fieldErrors?: Array<{ label: string; message: string }>
   requestId?: string
   saved?: boolean
 }
@@ -212,8 +213,44 @@ export function useTicketEditor({
     conflictRef.current?.focus()
   }, [conflict?.currentVersion])
 
+  useEffect(() => {
+    // A fresh read does not prove the outcome of an ambiguous command.
+    if (submitting || pendingCommandId || detail.ticket.version <= baseVersion)
+      return
+    const latestFields = createEditableTicketFields(detail.ticket)
+    const reconciled = reconcileLatestFields({
+      confirmedFields: serverFields,
+      localFields,
+      latestFields,
+      knownConflictFields: conflict?.fields,
+    })
+    setLocalFields(reconciled.localFields)
+    setServerFields(latestFields)
+    setBaseVersion(detail.ticket.version)
+    setConflict(
+      reconciled.conflictingFields.size
+        ? {
+            fields: reconciled.conflictingFields,
+            currentVersion: detail.ticket.version,
+            latestFields,
+            loadingLatest: false,
+            requestId: conflict?.requestId,
+          }
+        : null,
+    )
+  }, [
+    baseVersion,
+    conflict,
+    detail.ticket,
+    localFields,
+    pendingCommandId,
+    serverFields,
+    submitting,
+  ])
+
   const updateDraft = (visibility: TicketVisibility, value: string) => {
     if (submitting) return
+    draftSync.resumeChannel(visibility)
     const nextComments = { ...comments, [visibility]: value }
     invalidatePendingCommand({ comments: nextComments })
     setComments(nextComments)
@@ -233,6 +270,7 @@ export function useTicketEditor({
     )
       return
     const nextComments = { ...comments, [visibility]: plainText }
+    draftSync.resumeChannel(visibility)
     const nextDocuments = { ...documents, [visibility]: document }
     invalidatePendingCommand({
       comments: nextComments,
@@ -494,6 +532,16 @@ export function useTicketEditor({
       setServerFields(submittedFields)
       setLocalFields(submittedFields)
       setBaseVersion(result.version)
+      if (submittedComment) {
+        try {
+          await draftSync.clearSubmitted(submittedMode)
+        } catch {
+          setDraftError({
+            message:
+              '티켓 저장은 완료됐지만 복구 초안 정리를 확인하지 못했습니다. 이미 저장한 답변을 다시 제출하지 마세요.',
+          })
+        }
+      }
       try {
         const latest = await refreshLatest()
         const latestFields = createEditableTicketFields(latest.ticket)
@@ -539,13 +587,15 @@ export function useTicketEditor({
       } else {
         const ambiguous = isAmbiguousCommandFailure(cause)
         if (!ambiguous) invalidatePendingCommand()
-        setError({
-          message: ambiguous
-            ? '저장 결과를 확인할 수 없습니다. 같은 변경사항을 다시 저장해 중복 없이 확인해 주세요.'
-            : (apiError?.message ??
-              '변경사항을 저장하지 못했습니다. 입력은 그대로 보존되었습니다.'),
-          requestId: apiError?.requestId,
-        })
+        setError(
+          ambiguous
+            ? {
+                message:
+                  '저장 결과를 확인할 수 없습니다. 같은 변경사항을 다시 저장해 중복 없이 확인해 주세요.',
+                requestId: apiError?.requestId,
+              }
+            : ticketSaveError(apiError),
+        )
       }
       return false
     } finally {
@@ -568,6 +618,10 @@ export function useTicketEditor({
     },
     comments,
     documents,
+    attachmentIds: {
+      PUBLIC: attachmentStates.PUBLIC.ids,
+      INTERNAL: attachmentStates.INTERNAL.ids,
+    },
     updateDraft,
     updateRichDraft,
     serverFields,
@@ -589,6 +643,9 @@ export function useTicketEditor({
       state: AttachmentDraftState,
     ) => {
       const nextAttachmentStates = { ...attachmentStates, [visibility]: state }
+      if (!sameAttachmentIds(attachmentStates[visibility].ids, state.ids)) {
+        draftSync.resumeChannel(visibility)
+      }
       const pendingIds = pendingCommand?.comment?.attachmentIds ?? []
       if (pendingCommand && !sameAttachmentIds(pendingIds, state.ids)) {
         invalidatePendingCommand({ attachmentStates: nextAttachmentStates })
@@ -794,6 +851,34 @@ function sameAttachmentIds(left: string[], right: string[]) {
 function isAmbiguousCommandFailure(cause: unknown) {
   if (!(cause instanceof ApiError)) return true
   return cause.status >= 500 || (cause.status >= 200 && cause.status < 300)
+}
+
+function ticketSaveError(error: ApiError | null): TicketEditorError {
+  const labels: Record<string, string> = {
+    status: '상태',
+    priority: '우선순위',
+    groupId: '그룹',
+    assigneeId: '담당자',
+    comment: '답변 또는 메모',
+    'comment.body': '답변 또는 메모 내용',
+    'comment.content': '답변 또는 메모 내용',
+    'comment.attachmentIds': '첨부 파일',
+  }
+  const fieldErrors = Object.entries(error?.fieldErrors ?? {}).flatMap(
+    ([field, message]) =>
+      labels[field] ? [{ label: labels[field], message }] : [],
+  )
+  const message =
+    error?.status === 401
+      ? '로그인 상태를 확인해 주세요. 입력은 보존되었습니다.'
+      : error?.status === 403
+        ? '이 티켓을 저장할 권한이 없습니다. 입력은 보존되었습니다. 담당 또는 권한을 관리자에게 확인해 주세요.'
+        : error?.status === 409 || error?.status === 412
+          ? '티켓 상태가 변경되었습니다. 입력은 보존되었습니다. 최신 내용을 확인한 뒤 다시 저장해 주세요.'
+          : fieldErrors.length
+            ? '아래 입력 내용을 확인해 주세요. 작성 중인 내용은 보존되었습니다.'
+            : '저장 요청을 처리하지 못했습니다. 입력은 보존되었습니다. 다시 시도해도 계속되면 요청 ID와 함께 관리자에게 문의해 주세요.'
+  return { message, requestId: error?.requestId, fieldErrors }
 }
 
 function assignEditableField(

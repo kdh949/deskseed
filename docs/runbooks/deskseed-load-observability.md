@@ -28,6 +28,8 @@ The load-only database enables `pg_stat_statements` and `track_io_timing`. Exist
 
 ## 2. Validate and start Deskseed
 
+Set `DESKSEED_SERVICE_VERSION` to the exact 40-character checkout/image revision before rendering Compose. This value becomes the bounded `service.version` trace resource and `deskseed_build_info` metric; aliases such as `latest` or a shortened SHA are rejected by the operational contract.
+
 ```bash
 ./scripts/validate-observability-config.sh
 
@@ -48,7 +50,7 @@ Completion criteria:
 - Alloy can reach the private Loki push and Tempo OTLP endpoints;
 - the backend reports successful Pyroscope agent startup without retries or rejected uploads.
 
-The Alloy Docker socket mount can expose Docker control if the collector is compromised even though the bind mount is read-only. It is accepted only on this disposable load host. Production adoption requires a separately reviewed file source or restricted socket proxy.
+The Alloy Docker socket mount can expose Docker control if the collector is compromised even though the bind mount is read-only. It is accepted only on this disposable load host. Production adoption requires a separately reviewed file source or restricted socket proxy. Never combine this overlay with personal staging; use [the personal-staging observability runbook](deskseed-personal-staging-observability.md) instead.
 
 ## 3. Apply monitoring-server files manually
 

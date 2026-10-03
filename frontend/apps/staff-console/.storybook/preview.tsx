@@ -4,7 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { mswLoader } from 'msw-storybook-addon/csf3'
 import { SeedThemeProvider } from '../src/design-system/canonical'
 import { mswHandlers } from './msw-handlers'
-import '../src/design-system/canonical-index.css'
+import '../src/design-system/index.css'
 
 const preview: Preview = {
   decorators: [

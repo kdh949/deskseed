@@ -66,9 +66,8 @@ class PublicRequestIntegrationTest {
                 .content(
                     """
                     {
-                      "name": "김고객",
-                      "email": "http-context-${UUID.randomUUID()}@example.com",
-                      "subject": "결제 오류",
+                      "clientCommandId":"${UUID.randomUUID()}", "fieldValues":{}, "acceptedPolicies":[], "requester":{"name": "김고객",
+                      "email": "http-context-${UUID.randomUUID()}@example.com"}, "subject": "결제 오류",
                       "message": "결제 버튼을 누르면 오류가 납니다."
                     }
                     """.trimIndent(),
@@ -116,7 +115,7 @@ class PublicRequestIntegrationTest {
             .andExpect(status().isBadRequest)
             .andExpect(header().string("Cache-Control", "no-store"))
             .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-            .andExpect(jsonPath("$.type").value("/problems/validation"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-validation-failed"))
     }
 
     @Test
@@ -131,7 +130,7 @@ class PublicRequestIntegrationTest {
         )
             .andExpect(status().isBadRequest)
             .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-            .andExpect(jsonPath("$.type").value("/problems/malformed-json"))
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-validation-failed"))
     }
 
     @Test
@@ -325,7 +324,7 @@ class PublicRequestIntegrationTest {
                 .andExpect(status().isServiceUnavailable)
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.type").value("/problems/request-storage-unavailable"))
+                .andExpect(jsonPath("$.type").value("/problems/customer-request-configuration-unavailable"))
                 .andExpect(jsonPath("$.status").value(503))
                 .andExpect(jsonPath("$.detail").value("The request could not be processed safely."))
         } finally {
@@ -1019,11 +1018,9 @@ class PublicRequestIntegrationTest {
     private fun requestJson(email: String, message: String, subject: String = "결제 오류"): String =
         """
         {
-          "name": "김고객",
-          "email": "$email",
-          "subject": "$subject",
-          "message": "$message",
-          "privacyConsent": true
+          "clientCommandId":"${UUID.randomUUID()}", "fieldValues":{}, "acceptedPolicies":[], "requester":{"name": "김고객",
+          "email": "$email"}, "subject": "$subject",
+          "message": "$message"
         }
         """.trimIndent()
 

@@ -41,6 +41,7 @@ import dev.deskseed.audit.SearchQueryRevealState
 import dev.deskseed.audit.SearchQueryRevealer
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.foundation.RequestSource
+import dev.deskseed.foundation.SearchResultCountRelation
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -650,12 +651,24 @@ internal class JdbcAuditExplorer(
             filters = stringMap(search.searchFiltersJson),
             sort = search.searchSort,
             resultCount = search.searchResultCount ?: 0,
+            resultCountRelation = searchResultCountRelation(search.sourceEventId),
             originSearchActivityId = search.id.takeIf { row.originSearchEventId != null },
             openedActivities = opened.take(MAX_OPENED_ACTIVITIES),
             openedActivityCount = openedActivityCount,
             openedActivitiesTruncated = openedActivityCount > MAX_OPENED_ACTIVITIES,
         )
     }
+
+    private fun searchResultCountRelation(sourceEventId: UUID): SearchResultCountRelation = jdbcTemplate.query(
+        """
+        select result_count_relation
+        from search_audit_details
+        where access_event_id = :sourceEventId
+        """.trimIndent(),
+        mapOf("sourceEventId" to sourceEventId),
+    ) { result, _ -> SearchResultCountRelation.valueOf(result.getString("result_count_relation")) }
+        .singleOrNull()
+        ?: SearchResultCountRelation.EXACT
 
     private fun projectionRow(result: ResultSet) = ProjectionRow(
         id = result.getObject("id", UUID::class.java),

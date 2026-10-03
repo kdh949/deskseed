@@ -1,0 +1,21 @@
+# Merge by job_name into the existing configuration. Do not replace shared jobs.
+# Replace the four matching old load-labelled jobs, avoiding duplicate scrapes.
+scrape_configs:
+  - job_name: deskseed-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["172.16.16.19:9090"]
+        labels: {environment: personal-staging, service: deskseed-backend, stack: deskseed}
+  - job_name: deskseed-alloy
+    static_configs:
+      - targets: ["172.16.16.19:12345"]
+        labels: {environment: personal-staging, service: deskseed-alloy, stack: deskseed}
+  - job_name: deskseed-postgresql
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["172.16.16.19:9187"]
+        labels: {environment: personal-staging, service: deskseed-postgresql, stack: deskseed}
+  - job_name: deskseed-node
+    static_configs:
+      - targets: ["172.16.16.19:9100"]
+        labels: {environment: personal-staging, service: deskseed-node, stack: deskseed}

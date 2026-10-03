@@ -28,6 +28,8 @@ import java.util.UUID
 class AdminTicketConfigurationIntegrationTest {
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var jdbc: JdbcTemplate
+    @Autowired private lateinit var requestService: dev.deskseed.portal.internal.PublicRequestApplicationService
+    @Autowired private lateinit var mapper: tools.jackson.databind.ObjectMapper
 
     @BeforeEach
     fun clearConfiguration() {
@@ -198,7 +200,7 @@ class AdminTicketConfigurationIntegrationTest {
             .andExpect(jsonPath("$.lifecycle").value("PUBLISHED"))
 
         mockMvc.perform(
-            get("/api/v1/customer/ticket-forms").param("ticketKind", "CUSTOMER_REQUEST"),
+            get("/api/v1/customer/ticket-forms"),
         )
             .andExpect(status().isOk)
             .andExpect(header().string("Cache-Control", "no-store"))
@@ -265,7 +267,7 @@ class AdminTicketConfigurationIntegrationTest {
         publishForm(browser, formId)
 
         mockMvc.perform(
-            get("/api/v1/customer/ticket-forms").param("ticketKind", "CUSTOMER_REQUEST"),
+            get("/api/v1/customer/ticket-forms"),
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.formId").value(formId.toString()))
@@ -344,6 +346,225 @@ class AdminTicketConfigurationIntegrationTest {
         ).andExpect(status().isBadRequest)
     }
 
+    @Test
+    fun `customer candidate values control visibility and final request stores only editable values`() {
+        val admin = browser("ADMIN")
+        val reason = createPublicField(admin, "request.refund", "CHECKBOX")
+        val order = createPublicField(admin, "order.reference", "SHORT_TEXT")
+        val config = """{"name":"환불 접수","defaultForCustomer":true,"placements":[
+            {"fieldId":"$reason","order":0,"customer":{"visible":true,"editable":true,"required":false},"agent":{"visible":true,"editable":true,"required":false}},
+            {"fieldId":"$order","order":1,"customer":{"visible":true,"editable":true,"required":true},"agent":{"visible":true,"editable":true,"required":false}}],
+            "conditionalRules":[{"id":"${UUID.randomUUID()}","priority":1,"condition":{"schemaVersion":1,"root":{"kind":"LEAF","typeKey":"ticket.form.fact-equals","schemaVersion":1,"config":{"fact":"field.$reason","equals":"false"}}},"effects":[{"fieldId":"$order","behavior":"HIDE"}]}],"allowedCustomStatusIds":[]}"""
+        val form = createPublishedForm(admin, config)
+        val hidden = mapOf("request.refund" to mapOf("booleanValue" to false), "order.reference" to mapOf("shortTextValue" to "discard-me"))
+        mockMvc.perform(post("/api/v1/customer/ticket-form-projections").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(mapOf("ticketKind" to "CUSTOMER_REQUEST", "formId" to form, "formVersion" to 1, "fieldValues" to hidden))))
+            .andExpect(status().isOk).andExpect(jsonPath("$.fields.length()").value(1))
+        val result = submitForm(form, hidden).andExpect(status().isCreated).andReturn().response.contentAsString
+        val number = mapper.readTree(result).path("ticketNumber").asLong()
+        assertThat(jdbc.queryForList("select short_text_value from ticket_custom_field_values value join tickets ticket on ticket.id = value.ticket_id where ticket.ticket_number = ?", number))
+            .hasSize(1).allSatisfy { assertThat(it["short_text_value"]).isNull() }
+        assertThat(jdbc.queryForObject("select count(*) from ticket_customer_form_bindings binding join tickets ticket on ticket.id = binding.ticket_id where ticket.ticket_number = ? and form_version = 1", Long::class.java, number)).isEqualTo(1)
+        submitForm(form, mapOf("request.refund" to mapOf("booleanValue" to true)))
+            .andExpect(status().isBadRequest).andExpect(jsonPath("$.type").value("/problems/customer-ticket-form-validation-failed"))
+        submitForm(form, mapOf("staff.secret" to mapOf("shortTextValue" to "guess")))
+            .andExpect(status().isBadRequest).andExpect(jsonPath("$.detail").value("Check the customer form values."))
+    }
+
+    @Test
+    fun `same initial command replays after form archive without duplicate business rows and conflicts on different content`() {
+        val admin = browser("ADMIN")
+        val field = createPublicField(admin, "order.reference", "SHORT_TEXT")
+        val form = createPublishedForm(admin, defaultFormJson("주문 문의", field, true, false))
+        val commandId = UUID.randomUUID()
+        val email = "replay-${UUID.randomUUID()}@example.test"
+        val values = mapOf("order.reference" to mapOf("shortTextValue" to "ORD-1042"))
+        val first = mapper.readTree(submitForm(form, values, commandId, email).andExpect(status().isCreated).andExpect(jsonPath("$.replayed").value(false)).andReturn().response.contentAsString)
+        mockMvc.perform(post("/api/v1/admin/ticket-forms/$form/archive").session(admin.session).csrf(admin).header("If-Match", "\"2\""))
+            .andExpect(status().isOk)
+        val replay = mapper.readTree(submitForm(form, values, commandId, email).andExpect(status().isCreated).andExpect(jsonPath("$.replayed").value(true)).andReturn().response.contentAsString)
+        assertThat(replay.path("ticketNumber")).isEqualTo(first.path("ticketNumber"))
+        assertThat(replay.path("accessToken")).isNotEqualTo(first.path("accessToken"))
+        assertThat(jdbc.queryForObject("select count(*) from customers where email_normalized = ?", Long::class.java, email)).isEqualTo(1)
+        val number = first.path("ticketNumber").asLong()
+        assertThat(jdbc.queryForObject("select count(*) from ticket_audits audit join tickets ticket on ticket.id = audit.ticket_id where ticket.ticket_number = ?", Long::class.java, number)).isEqualTo(1)
+        assertThat(jdbc.queryForObject("select count(*) from outbound_mail_intents intent join tickets ticket on ticket.id = intent.ticket_id where ticket.ticket_number = ?", Long::class.java, number)).isEqualTo(1)
+        submitForm(form, values, commandId, email, subject = "changed").andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-command-conflict"))
+        assertThat(jdbc.queryForObject("select command_id from ticket_audits audit join tickets ticket on ticket.id = audit.ticket_id where ticket.ticket_number = ?", String::class.java, number)).doesNotContain(commandId.toString())
+    }
+
+    @Test
+    fun `published snapshot validation survives draft field edits and an empty value form still binds`() {
+        val admin = browser("ADMIN")
+        val field = createPublicField(admin, "order.reference", "SHORT_TEXT")
+        val form = createPublishedForm(admin, defaultFormJson("주문 문의", field, true, false))
+        mockMvc.perform(put("/api/v1/admin/ticket-fields/$field").session(admin.session).csrf(admin)
+            .header("If-Match", "\"1\"").contentType(MediaType.APPLICATION_JSON)
+            .content(fieldJson("order.reference").replace("SINGLE_SELECT", "SHORT_TEXT").replace("\"validation\":{}", "\"validation\":{\"maxLength\":2}")))
+            .andExpect(status().isBadRequest)
+        // Validation belongs to the published form, while customer copy can change independently.
+        jdbc.update("update ticket_field_definitions set validation_json = '{\"maxLength\":2}'::jsonb, customer_label = '새 주문번호' where id = ?", field)
+        submitForm(form, mapOf("order.reference" to mapOf("shortTextValue" to "ORD-1042"))).andExpect(status().isCreated)
+        val empty = mapper.readTree(submitForm(form, emptyMap()).andExpect(status().isCreated).andReturn().response.contentAsString)
+        assertThat(jdbc.queryForObject("select count(*) from ticket_customer_form_bindings binding join tickets ticket on ticket.id = binding.ticket_id where ticket.ticket_number = ?", Long::class.java, empty.path("ticketNumber").asLong())).isEqualTo(1)
+        submitForm(null, emptyMap()).andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/customer-request-configuration-conflict"))
+        submitForm(form, emptyMap(), version = 999).andExpect(status().isConflict)
+            .andExpect(jsonPath("$.type").value("/problems/customer-ticket-form-version-conflict"))
+    }
+
+    @Test
+    fun `concurrent identical initial requests create one logical ticket`() {
+        val commandId = UUID.randomUUID()
+        val email = "concurrent-${UUID.randomUUID()}@example.test"
+        val barrier = java.util.concurrent.CyclicBarrier(2)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val futures = (1..2).map { executor.submit(java.util.concurrent.Callable {
+                barrier.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                mapper.readTree(submitForm(null, emptyMap(), commandId, email).andExpect(status().isCreated).andReturn().response.contentAsString)
+            }) }
+            val responses = futures.map { it.get(20, java.util.concurrent.TimeUnit.SECONDS) }
+            assertThat(responses.map { it.path("ticketNumber").asLong() }.distinct()).hasSize(1)
+            assertThat(responses.map { it.path("replayed").asBoolean() }).containsExactlyInAnyOrder(false, true)
+            assertThat(jdbc.queryForObject("select count(*) from customers where email_normalized = ?", Long::class.java, email)).isEqualTo(1)
+        } finally { executor.shutdownNow() }
+    }
+
+    @Test
+    fun `initial request requires current consent and records one acceptance across replay`() {
+        val admin = browser("ADMIN")
+        val key = "request-consent-${UUID.randomUUID()}"
+        val created = mockMvc.perform(post("/api/v1/admin/customer-consent-policies").session(admin.session).csrf(admin)
+            .header("X-Deskseed-Expected-Staff-Id", admin.staffId).header("If-None-Match", "*").contentType(MediaType.APPLICATION_JSON)
+            .content("""{"policyKey":"$key","context":"REQUEST_SUBMISSION","title":"문의 처리 동의","document":{"schemaVersion":1,"blocks":[{"type":"paragraph","text":"문의 처리에 이메일을 사용합니다."}]},"required":true,"displayOrder":10}"""))
+            .andExpect(status().isCreated).andReturn().response.contentAsString
+        val id = stringField(created, "id")
+        mockMvc.perform(post("/api/v1/admin/customer-consent-policies/$id/publish").session(admin.session).csrf(admin)
+            .header("X-Deskseed-Expected-Staff-Id", admin.staffId).header("If-Match", "\"0\""))
+            .andExpect(status().isOk)
+        try {
+            val email = "consent-request-${UUID.randomUUID()}@example.test"
+            submitForm(null, emptyMap(), email = email).andExpect(status().isConflict)
+            assertThat(jdbc.queryForObject("select count(*) from customers where email_normalized = ?", Long::class.java, email)).isZero()
+            val commandId = UUID.randomUUID()
+            val selection = listOf(mapOf("policyKey" to key, "version" to 1))
+            val first = mapper.readTree(submitForm(null, emptyMap(), commandId, email, policies = selection).andExpect(status().isCreated).andReturn().response.contentAsString)
+            submitForm(null, emptyMap(), commandId, email, policies = selection).andExpect(status().isCreated).andExpect(jsonPath("$.replayed").value(true))
+            val number = first.path("ticketNumber").asLong()
+            assertThat(jdbc.queryForObject("select count(*) from customer_consent_acceptances acceptance join tickets ticket on ticket.id = acceptance.ticket_id where ticket.ticket_number = ? and acceptance.context = 'REQUEST_SUBMISSION'", Long::class.java, number)).isEqualTo(1)
+            submitForm(null, emptyMap(), email = email, policies = listOf(mapOf("policyKey" to key, "version" to 2))).andExpect(status().isConflict)
+            assertThat(jdbc.queryForObject("select count(*) from admin_security_audit_events audit join tickets ticket on ticket.id = audit.target_id where ticket.ticket_number = ? and audit.event_type = 'CUSTOMER_CONSENT_ACCEPTED'", Long::class.java, number)).isEqualTo(1)
+            jdbc.execute("""create function fail_request_consent_audit() returns trigger language plpgsql as ${'$'}${'$'}
+                begin if new.event_type = 'CUSTOMER_CONSENT_ACCEPTED' then raise exception 'injected consent audit failure'; end if; return new; end; ${'$'}${'$'}""")
+            jdbc.execute("create trigger fail_request_consent_audit before insert on admin_security_audit_events for each row execute function fail_request_consent_audit()")
+            val rollbackEmail = "rollback-${UUID.randomUUID()}@example.test"
+            val ticketCount = jdbc.queryForObject("select count(*) from tickets", Long::class.java)
+            val receiptCount = jdbc.queryForObject("select count(*) from customer_request_command_receipts", Long::class.java)
+            val acceptanceCount = jdbc.queryForObject("select count(*) from customer_consent_acceptances", Long::class.java)
+            try {
+                submitForm(null, emptyMap(), email = rollbackEmail, policies = selection)
+                    .andExpect(status().isServiceUnavailable)
+                    .andExpect(jsonPath("$.type").value("/problems/customer-request-configuration-unavailable"))
+            } finally {
+                jdbc.execute("drop trigger if exists fail_request_consent_audit on admin_security_audit_events")
+                jdbc.execute("drop function if exists fail_request_consent_audit()")
+            }
+            assertThat(jdbc.queryForObject("select count(*) from customers where email_normalized = ?", Long::class.java, rollbackEmail)).isZero()
+            assertThat(jdbc.queryForObject("select count(*) from tickets", Long::class.java)).isEqualTo(ticketCount)
+            assertThat(jdbc.queryForObject("select count(*) from customer_request_command_receipts", Long::class.java)).isEqualTo(receiptCount)
+            assertThat(jdbc.queryForObject("select count(*) from customer_consent_acceptances", Long::class.java)).isEqualTo(acceptanceCount)
+
+        } finally {
+            mockMvc.perform(post("/api/v1/admin/customer-consent-policies/$id/archive").session(admin.session).csrf(admin)
+                .header("X-Deskseed-Expected-Staff-Id", admin.staffId).header("If-Match", "\"1\""))
+                .andExpect(status().isOk)
+        }
+    }
+
+    @Test
+    fun `form withdrawal between preparation and finalization leaves no planned customer`() {
+        val admin = browser("ADMIN")
+        val field = createPublicField(admin, "order.reference", "SHORT_TEXT")
+        val form = createPublishedForm(admin, defaultFormJson("주문 문의", field, true, false))
+        mockMvc.perform(get("/api/v1/customer/ticket-forms").param("ticketKind", "INTERNAL_CHILD"))
+            .andExpect(status().isBadRequest)
+        val command = dev.deskseed.portal.internal.SubmitAnonymousRequest(
+            name = "접수 고객", email = "planned-${UUID.randomUUID()}@example.test", subject = "주문 확인", message = "주문을 확인해 주세요.",
+            context = dev.deskseed.foundation.CommandContext(source = dev.deskseed.foundation.RequestSource.CUSTOMER_PORTAL,
+                requestId = "planned-request", correlationId = "planned-correlation", commandId = UUID.randomUUID().toString()),
+            formValues = dev.deskseed.ticketing.CustomerRequestFormValues(form, 1),
+        )
+        val prepared = requestService.prepareInitialSubmission(command)
+        assertThat(jdbc.queryForObject("select count(*) from customers where id = ?", Long::class.java, prepared.customerId)).isZero()
+        mockMvc.perform(post("/api/v1/admin/ticket-forms/$form/archive").session(admin.session).csrf(admin).header("If-Match", "\"2\""))
+            .andExpect(status().isOk)
+        assertThatThrownBy { requestService.finishInitialSubmission(prepared, emptyList()) }
+            .isInstanceOf(dev.deskseed.ticketing.CustomerFormUnavailableException::class.java)
+        assertThat(jdbc.queryForObject("select count(*) from customers where id = ?", Long::class.java, prepared.customerId)).isZero()
+    }
+
+    @Test
+    fun `customer long text accepts line breaks in preview and preserves them on submit`() {
+        val admin = browser("ADMIN")
+        val field = createPublicField(admin, "request.details", "LONG_TEXT")
+        val form = createPublishedForm(admin, defaultFormJson("상세 문의", field, true, false))
+        for (lineBreak in listOf("\n", "\r\n")) {
+            val text = "첫 번째 줄${lineBreak}두 번째 줄"
+            val values = mapOf("request.details" to mapOf("longTextValue" to text))
+            previewForm(form, values).andExpect(status().isOk)
+            val response = submitForm(form, values).andExpect(status().isCreated).andReturn().response.contentAsString
+            val number = mapper.readTree(response).path("ticketNumber").asLong()
+            assertThat(jdbc.queryForObject("select long_text_value from ticket_custom_field_values value join tickets ticket on ticket.id = value.ticket_id where ticket.ticket_number = ?", String::class.java, number))
+                .isEqualTo(text)
+        }
+    }
+
+    @Test
+    fun `customer text still rejects short text line breaks and other control characters`() {
+        val admin = browser("ADMIN")
+        val shortField = createPublicField(admin, "request.reference", "SHORT_TEXT")
+        val shortForm = createPublishedForm(admin, defaultFormJson("주문 문의", shortField, true, false))
+        val longField = createPublicField(admin, "request.details", "LONG_TEXT")
+        val longForm = createPublishedForm(admin, defaultFormJson("상세 문의", longField, false, false))
+        val ticketCount = jdbc.queryForObject("select count(*) from tickets", Long::class.java)
+        for (control in listOf("\n", "\r\n", "\t", "\u0000", "\u001b", "\u007f")) {
+            val values = mapOf("request.reference" to mapOf("shortTextValue" to "첫 줄${control}다음 줄"))
+            previewForm(shortForm, values).andExpect(status().isBadRequest)
+            submitForm(shortForm, values).andExpect(status().isBadRequest)
+        }
+        for (control in listOf("\r", "\t", "\u0000", "\u001b", "\u007f")) {
+            val values = mapOf("request.details" to mapOf("longTextValue" to "첫 줄${control}다음 줄"))
+            previewForm(longForm, values).andExpect(status().isBadRequest)
+            submitForm(longForm, values).andExpect(status().isBadRequest)
+        }
+        assertThat(jdbc.queryForObject("select count(*) from tickets", Long::class.java)).isEqualTo(ticketCount)
+    }
+
+    private fun previewForm(form: UUID, values: Map<String, Any>) = mockMvc.perform(
+        post("/api/v1/customer/ticket-form-projections").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(mapOf("ticketKind" to "CUSTOMER_REQUEST", "formId" to form, "formVersion" to 1, "fieldValues" to values))))
+
+    private fun createPublicField(admin: Browser, key: String, type: String): UUID = UUID.fromString(stringField(
+        mockMvc.perform(post("/api/v1/admin/ticket-fields").session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+            .content(fieldJson(key).replace("SINGLE_SELECT", type))).andExpect(status().isCreated).andReturn().response.contentAsString, "id"))
+
+    private fun createPublishedForm(admin: Browser, definition: String): UUID {
+        val id = UUID.fromString(stringField(mockMvc.perform(post("/api/v1/admin/ticket-forms").session(admin.session).csrf(admin).contentType(MediaType.APPLICATION_JSON)
+            .content(definition)).andExpect(status().isCreated).andReturn().response.contentAsString, "id"))
+        publishForm(admin, id)
+        return id
+    }
+
+    private fun submitForm(form: UUID?, values: Map<String, Any>, commandId: UUID = UUID.randomUUID(),
+        email: String = "forms-${UUID.randomUUID()}@example.test", subject: String = "주문 확인", version: Int = 1, policies: List<Map<String, Any>> = emptyList()) = mockMvc.perform(
+        post("/api/v1/requests").contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(mapOf(
+            "clientCommandId" to commandId, "requester" to mapOf("name" to "폼 고객", "email" to email),
+            "subject" to subject, "message" to "주문 상태를 확인해 주세요.", "fieldValues" to values, "acceptedPolicies" to policies,
+            "formId" to form, "formVersion" to form?.let { version },
+        ).filterValues { it != null })))
+
     private fun fieldJson(machineKey: String, customerEditable: Boolean = true) =
         """{"machineKey":"$machineKey","type":"SINGLE_SELECT","staffLabel":"결제 수단","customerLabel":"결제 수단","customerVisible":true,"customerEditable":$customerEditable,"agentVisible":true,"agentEditable":true,"searchable":true,"analyticsEligible":false,"sensitive":false,"validation":{}}"""
 
@@ -388,6 +609,7 @@ class AdminTicketConfigurationIntegrationTest {
         """{"machineKey":"$machineKey","agentLabel":"$machineKey","customerLabel":"$machineKey","statusCategory":"$category","active":true,"order":$order,"defaultForCategory":$defaultForCategory,"allowedFormIds":${allowedFormId?.let { "[\"$it\"]" } ?: "[]"}}"""
 
     private fun browser(role: String): Browser {
+        val staffId = UUID.randomUUID()
         val email = "configuration-${role.lowercase()}-${UUID.randomUUID()}@example.com"
         val password = "Configuration password 42!"
         jdbc.update(
@@ -397,7 +619,7 @@ class AdminTicketConfigurationIntegrationTest {
                  password_hash, created_at, updated_at, version)
             values (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, 0)
             """.trimIndent(),
-            UUID.randomUUID(), email.lowercase(), email,
+            staffId, email.lowercase(), email,
             if (role == "ADMIN") "구성 관리자" else "구성 상담사", role,
             BCryptPasswordEncoder(4).encode(password),
             Timestamp.from(Instant.parse("2026-08-10T00:00:00Z")),
@@ -411,7 +633,7 @@ class AdminTicketConfigurationIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"email":"$email","password":"$password"}"""),
         ).andExpect(status().isNoContent).andReturn()
-        return Browser(login.request.session as MockHttpSession, token)
+        return Browser(login.request.session as MockHttpSession, token, staffId)
     }
 
     private fun MockHttpServletRequestBuilder.csrf(browser: Browser) = header("X-CSRF-TOKEN", browser.csrfToken)
@@ -419,6 +641,6 @@ class AdminTicketConfigurationIntegrationTest {
     private fun stringField(json: String, field: String): String =
         Regex("\\\"$field\\\":\\\"([^\\\"]+)\\\"").find(json)!!.groupValues[1]
 
-    private data class Browser(val session: MockHttpSession, val csrfToken: String)
+    private data class Browser(val session: MockHttpSession, val csrfToken: String, val staffId: UUID)
 
 }

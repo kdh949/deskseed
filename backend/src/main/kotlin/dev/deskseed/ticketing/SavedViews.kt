@@ -32,6 +32,10 @@ enum class SavedViewConditionField {
     FIRST_REPLY_SLA_STATE,
     TICKET_KIND,
     UPDATED_AT,
+    TAG,
+    FORM,
+    CUSTOM_STATUS,
+    CUSTOM_FIELD,
 }
 
 enum class SavedViewConditionOperator {
@@ -57,10 +61,12 @@ enum class SavedViewColumn {
     FIRST_REPLY_SLA,
 }
 
+@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
 data class SavedViewCondition(
     val field: SavedViewConditionField,
     val operator: SavedViewConditionOperator,
     val values: List<String>,
+    val fieldKey: String? = null,
 )
 
 data class SavedViewConditions(
@@ -187,14 +193,25 @@ object SavedViewDefinitionRules {
         condition.field.name,
         condition.operator.name,
         condition.values.joinToString(","),
-    ).joinToString(":")
+    ).let { if (condition.fieldKey == null) it else it + condition.fieldKey }.joinToString(":")
 
     private fun validateCondition(condition: SavedViewCondition) {
         require(condition.values.size <= 10) { "Saved view condition has too many values" }
         require(condition.values.all { it.isNotBlank() && it.length <= 100 && it.none(Char::isISOControl) }) {
             "Saved view condition values are invalid"
         }
+        require(condition.fieldKey == null || condition.field == SavedViewConditionField.CUSTOM_FIELD) { "fieldKey is only valid for custom fields" }
         when (condition.field) {
+            SavedViewConditionField.TAG, SavedViewConditionField.FORM, SavedViewConditionField.CUSTOM_STATUS -> {
+                require(condition.operator in setOf(EQUALS, NOT_EQUALS, IN, NOT_IN)) { "Unsupported configuration comparison" }
+                validateUuidValues(condition)
+            }
+            SavedViewConditionField.CUSTOM_FIELD -> {
+                require(condition.fieldKey != null && condition.fieldKey.length <= 120 && Regex("^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$").matches(condition.fieldKey)) { "Queryable field key is required" }
+                require(condition.operator in setOf(EQUALS, NOT_EQUALS, IN, NOT_IN)) { "Unsupported custom field comparison" }
+                require(condition.values.isNotEmpty()) { "Field comparison requires values" }
+                if (condition.operator in setOf(EQUALS, NOT_EQUALS)) require(condition.values.size == 1) { "Equality requires one value" }
+            }
             SavedViewConditionField.STATUS -> {
                 require(condition.operator in setOf(EQUALS, NOT_EQUALS, IN, NOT_IN, LESS_THAN_SOLVED)) {
                     "Unsupported status condition"
@@ -272,3 +289,8 @@ class SavedViewAccessDeniedException : RuntimeException()
 class SavedViewConflictException : RuntimeException()
 
 class SavedViewPreconditionFailedException : RuntimeException()
+
+/** Validates current configuration eligibility for new or edited view definitions. */
+fun interface SavedViewConfigurationValidation {
+    fun validate(conditions: SavedViewConditions)
+}

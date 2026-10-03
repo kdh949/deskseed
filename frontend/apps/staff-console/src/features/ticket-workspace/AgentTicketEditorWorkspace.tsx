@@ -28,6 +28,7 @@ import {
   uploadAgentAttachment,
 } from '../../api/client'
 import { createOpaqueUuid } from '../../api/uuid'
+import { TicketKnowledge } from '../../extensions/knowledge-workflow/AgentKnowledgePanel'
 import {
   SeedAvatar,
   SeedButton,
@@ -58,6 +59,11 @@ import {
 } from '../../design-system/canonical'
 import { AttachmentList } from '../attachments/AttachmentList'
 import { AttachmentUploadField } from '../attachments/AttachmentUploadField'
+import {
+  AiAssistantPanel,
+  draftFingerprint,
+  type AiPublicDraftSnapshot,
+} from '../ai-assistance/AiAssistantPanel'
 import type { ExtensionAccess } from '../../extension-host/types'
 import { ExtensionSlot } from '../../extension-host/ExtensionSlot'
 import type { EditableTicketFields } from './model/ticketEditorModel'
@@ -123,6 +129,13 @@ function WritableWorkspace({
   staffId: string
 }) {
   const editor = useTicketEditor({ detail, refreshLatest, staffId })
+  const publicDraft: AiPublicDraftSnapshot = {
+    body: editor.comments.PUBLIC,
+    document: editor.documents.PUBLIC,
+    attachmentIds: editor.attachmentIds.PUBLIC,
+  }
+  const publicDraftRef = useRef(publicDraft)
+  publicDraftRef.current = publicDraft
   return (
     <>
       <WorkspaceFrame
@@ -130,6 +143,71 @@ function WritableWorkspace({
         extensionAccess={extensionAccess}
         onRefresh={() => void editor.refreshEditor()}
         properties={<EditableProperties detail={detail} editor={editor} />}
+        aiAssistant={
+          <AiAssistantPanel
+            composerMode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
+            onInsertReply={(answer, strategy, expectedDraft) => {
+              if (
+                draftFingerprint(publicDraftRef.current) !==
+                draftFingerprint(expectedDraft)
+              ) {
+                return false
+              }
+              const currentText = editor.comments.PUBLIC
+              const nextText =
+                strategy === 'append' && currentText.trim()
+                  ? `${currentText}\n\n${answer}`
+                  : answer
+              const answerDocument = plainTextDocument(answer)
+              const nextDocument =
+                strategy === 'append' && currentText.trim()
+                  ? {
+                      type: 'doc' as const,
+                      content: [
+                        ...editor.documents.PUBLIC.content,
+                        ...answerDocument.content,
+                      ],
+                    }
+                  : answerDocument
+              editor.updateRichDraft('PUBLIC', nextDocument, nextText)
+              return true
+            }}
+            publicDraft={publicDraft}
+            ticketNumber={detail.ticket.ticketNumber}
+            ticketVersion={detail.ticket.version}
+          />
+        }
+        knowledge={
+          <TicketKnowledge
+            ticketNumber={detail.ticket.ticketNumber}
+            mode={detail.ticket.isChild ? 'INTERNAL' : editor.mode}
+            disabled={editor.submitting}
+            onInsert={(title, url) => {
+              const mode = detail.ticket.isChild ? 'INTERNAL' : editor.mode
+              editor.updateRichDraft(
+                mode,
+                {
+                  type: 'doc',
+                  content: [
+                    ...editor.documents[mode].content,
+                    {
+                      type: 'paragraph',
+                      content: [
+                        {
+                          type: 'text',
+                          text: title,
+                          marks: [{ type: 'link', attrs: { href: url } }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                [editor.comments[mode], title].filter(Boolean).join('\n'),
+              )
+            }}
+          />
+        }
+
         refreshLatest={refreshLatest}
         conversation={
           <div className="seed-workspace-column">
@@ -224,13 +302,17 @@ function ReadOnlyWorkspace({
 }
 
 function WorkspaceFrame({
+  aiAssistant,
   detail,
   extensionAccess,
   onRefresh,
   properties,
   conversation,
   refreshLatest,
+  knowledge,
 }: {
+  aiAssistant?: React.ReactNode
+  knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
   onRefresh: () => void
@@ -259,9 +341,15 @@ function WorkspaceFrame({
   }
   const context = (
     <TicketContext
+      aiAssistant={aiAssistant}
       detail={detail}
       extensionAccess={extensionAccess}
       externalReferences={externalReferences}
+      knowledge={
+        knowledge ?? (
+          <TicketKnowledge ticketNumber={detail.ticket.ticketNumber} />
+        )
+      }
     />
   )
   return (
@@ -580,6 +668,17 @@ function Composer({
     ? ['INTERNAL']
     : ['PUBLIC', 'INTERNAL']
   const internal = mode === 'INTERNAL'
+  const hasComment = editor.comments[mode].trim().length > 0
+  const submitLabel =
+    !hasComment && editor.dirtyFields.size > 0
+      ? '변경사항 저장'
+      : hasComment && editor.dirtyFields.size > 0
+        ? internal
+          ? '메모와 변경사항 저장'
+          : '답변과 변경사항 저장'
+        : internal
+          ? '내부 메모 저장'
+          : '답변 보내기'
   const [resetVersions, setResetVersions] = useState<
     Record<TicketVisibility, number>
   >({ PUBLIC: 0, INTERNAL: 0 })
@@ -660,23 +759,29 @@ function Composer({
                   actions={[
                     {
                       id: 'PENDING',
-                      label: internal
-                        ? '메모 저장 후 대기'
-                        : '답변 후 고객 대기',
-                      description: '댓글과 상태 변경을 한 번에 저장합니다.',
+                      label: !hasComment
+                        ? '변경사항 저장 후 고객 대기'
+                        : internal
+                          ? '메모 저장 후 대기'
+                          : '답변 후 고객 대기',
+                      description:
+                        '입력한 내용과 고객 답변 대기 상태를 함께 저장합니다.',
                     },
                     {
                       id: 'SOLVED',
-                      label: internal ? '메모 저장 후 해결' : '답변 후 해결',
-                      description:
-                        '댓글과 해결 상태를 한 command로 제출합니다.',
+                      label: !hasComment
+                        ? '변경사항 저장 후 해결'
+                        : internal
+                          ? '메모 저장 후 해결'
+                          : '답변 후 해결',
+                      description: '입력한 내용과 해결 상태를 함께 저장합니다.',
                     },
                   ]}
                   busy={editor.submitting}
                   disabled={
                     !editor.canSubmit || editor.attachmentStates[mode].blocked
                   }
-                  label={internal ? '내부 메모 저장' : '답변 보내기'}
+                  label={submitLabel}
                   onAction={(status) =>
                     void submit(status as AgentTicketStatus)
                   }
@@ -720,7 +825,7 @@ function Composer({
             : '고객에게 보낼 답변을 작성하세요.'
         }
         status={draftStatus}
-        submitLabel={internal ? '내부 메모 저장' : '답변 보내기'}
+        submitLabel={submitLabel}
       />
       {macro.message && (
         <SeedNotice
@@ -954,6 +1059,15 @@ function EditorFeedback({
           tone="danger"
         >
           {editor.error.message}
+          {!!editor.error.fieldErrors?.length && (
+            <ul>
+              {editor.error.fieldErrors.map(({ label, message }, index) => (
+                <li key={`${label}-${index}`}>
+                  {label}: {message}
+                </li>
+              ))}
+            </ul>
+          )}
           {editor.error.requestId && <p>요청 ID: {editor.error.requestId}</p>}
         </SeedNotice>
       )}
@@ -1095,10 +1209,14 @@ function ConflictResolution({
 }
 
 function TicketContext({
+  aiAssistant,
   detail,
   extensionAccess,
   externalReferences,
+  knowledge,
 }: {
+  aiAssistant?: React.ReactNode
+  knowledge?: React.ReactNode
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
   externalReferences: ReturnType<typeof useExternalReferences>
@@ -1107,6 +1225,7 @@ function TicketContext({
     (ticket) => (ticket ? [ticket] : []),
   )
   const collaboration = useCollaborationNotes(detail)
+  const [showAllRelated, setShowAllRelated] = useState(false)
   const people = detail.assignmentOptions.groups
     .flatMap((group) => group.members)
     .filter(
@@ -1120,6 +1239,8 @@ function TicketContext({
     }))
   return (
     <div className="seed-context-stack">
+      {aiAssistant}
+      {knowledge}
       <SeedContextCard title="고객">
         {detail.context.customer ? (
           <div className="seed-context-person">
@@ -1148,12 +1269,18 @@ function TicketContext({
       >
         {related.length > 0 ? (
           <ul className="seed-related-tickets">
-            {related.slice(0, 4).map((ticket) => (
+            {(showAllRelated ? related : related.slice(0, 4)).map((ticket) => (
               <li key={ticket.ticketNumber}>
                 <Link to={`/agent/tickets/${ticket.ticketNumber}`}>
                   #{ticket.ticketNumber}
                 </Link>
-                <span>{ticket.subject}</span>
+                <span>
+                  {detail.context.parent?.ticketNumber === ticket.ticketNumber
+                    ? '상위 문의'
+                    : '내부 협업'}{' '}
+                  · {ticket.subject}
+                  {ticket.group ? ` · ${ticket.group.name}` : ''}
+                </span>
                 <SeedStatusBadge tone={statusTone(ticket.status)}>
                   {STATUS_LABELS[ticket.status]}
                 </SeedStatusBadge>
@@ -1164,6 +1291,16 @@ function TicketContext({
           <p className="seed-context-empty">
             연결된 상위·하위 티켓이 없습니다.
           </p>
+        )}
+        {detail.ticket.openChildCount > 0 && (
+          <p>진행 중인 내부 협업 요청 {detail.ticket.openChildCount}건</p>
+        )}
+        {related.length > 4 && (
+          <SeedButton onClick={() => setShowAllRelated(!showAllRelated)}>
+            {showAllRelated
+              ? '관련 티켓 접기'
+              : `관련 티켓 ${related.length}건 모두 보기`}
+          </SeedButton>
         )}
       </SeedContextCard>
       <SeedCollaborationThread

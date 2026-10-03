@@ -550,9 +550,8 @@ class TransferChildTicketIntegrationTest {
                 .content(
                     """
                     {
-                      "name": "Transfer Child 고객",
-                      "email": "$email",
-                      "subject": "Transfer Child parent",
+                      "clientCommandId":"${UUID.randomUUID()}", "fieldValues":{}, "acceptedPolicies":[], "requester":{"name": "Transfer Child 고객",
+                      "email": "$email"}, "subject": "Transfer Child parent",
                       "message": "고객이 보낸 최초 공개 문의"
                     }
                     """.trimIndent(),

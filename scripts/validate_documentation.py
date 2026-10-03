@@ -66,6 +66,8 @@ GENERATED_DIRECTORY_NAMES = {
     ".git",
     ".gradle",
     ".gradle-user-home",
+    ".pytest_cache",
+    ".venv",
     "__pycache__",
     "build",
     "dist",

@@ -44,8 +44,10 @@ import {
 } from './client'
 
 const submitInput = {
-  name: '김고객',
-  email: 'customer@example.com',
+  clientCommandId: '12345678-1234-4234-8234-123456789012',
+  requester: { name: '김고객', email: 'customer@example.com' },
+  fieldValues: {},
+  acceptedPolicies: [],
   subject: '결제 오류',
   message: '결제 버튼을 누르면 오류가 납니다.',
 }
@@ -440,6 +442,7 @@ describe('customer request API client', () => {
           JSON.stringify({
             ticketNumber: 1042,
             status: 'NEW',
+            replayed: false,
             accessToken: 'one-time-access-token-that-is-long-enough',
             createdAt: '2026-08-10T00:00:00Z',
           }),
@@ -1051,7 +1054,7 @@ describe('agent ticket read API client', () => {
             searchEventId: '11111111-1111-4111-8111-111111111111',
             searchInteractionId: '22222222-2222-4222-8222-222222222222',
             items: [],
-            resultCount: 0,
+            resultCount: { value: 26, relation: 'LOWER_BOUND' },
             sort: 'score:desc,ticketNumber:desc',
             nextCursor: 'opaque-next-cursor',
           }),
@@ -1073,7 +1076,7 @@ describe('agent ticket read API client', () => {
       ),
     ).resolves.toMatchObject({
       searchEventId: '11111111-1111-4111-8111-111111111111',
-      resultCount: 0,
+      resultCount: { value: 26, relation: 'LOWER_BOUND' },
       nextCursor: 'opaque-next-cursor',
     })
 
@@ -2160,6 +2163,7 @@ describe('P1 headless contract fixture', () => {
               ticketNumber: 1042,
               status: 'NEW',
               accessToken,
+              replayed: false,
               createdAt: '2026-08-16T00:00:00Z',
             }),
             { status: 201, headers: { 'Content-Type': 'application/json' } },
@@ -2223,9 +2227,7 @@ describe('P1 headless contract fixture', () => {
     })
 
     await expect(
-      submitRequestWithAttachments({ ...submitInput, privacyConsent: true }, [
-        file,
-      ]),
+      submitRequestWithAttachments(submitInput, [file]),
     ).resolves.toMatchObject({ ticketNumber: 1042, accessToken })
     await expect(
       uploadAnonymousRequestAttachment(1042, accessToken, file),

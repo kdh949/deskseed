@@ -7,6 +7,7 @@ app_dir="${DESKSEED_APP_DIR:-$script_repository_root}"
 env_file="${DESKSEED_PRODUCTION_ENV_FILE:-/etc/deskseed/production.env}"
 lock_file="${DESKSEED_DEPLOY_LOCK_FILE:-/tmp/deskseed-personal-staging-deploy.lock}"
 project_name="${DESKSEED_PROJECT_NAME:-deskseed}"
+observability_enabled="${DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED:-false}"
 expected_sha="${1:-}"
 
 if [[ ! "$expected_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -19,12 +20,29 @@ if [[ ! "$project_name" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
   exit 2
 fi
 
+case "$observability_enabled" in
+  false | true) ;;
+  *)
+    printf 'DESKSEED_PERSONAL_STAGING_OBSERVABILITY_ENABLED must be true or false.\n' >&2
+    exit 2
+    ;;
+esac
+
 for command_name in curl docker flock git stat uname; do
   command -v "$command_name" >/dev/null 2>&1 || {
     printf 'Required command is unavailable: %s\n' "$command_name" >&2
     exit 127
   }
 done
+
+if [[ "$observability_enabled" == true ]]; then
+  for command_name in ip python3; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+      printf 'Required observability command is unavailable: %s\n' "$command_name" >&2
+      exit 127
+    }
+  done
+fi
 
 if [[ ! -d "$app_dir" ]]; then
   printf 'Deskseed application directory does not exist: %s\n' "$app_dir" >&2
@@ -83,6 +101,7 @@ fi
 export IMAGE_TAG="$expected_sha"
 ghcr_token="${GHCR_TOKEN:-}"
 unset GHCR_TOKEN
+observability_compose_file="$repository_root/compose.personal-staging-observability.yaml"
 compose=(
   docker compose
   --project-name "$project_name"
@@ -91,8 +110,19 @@ compose=(
   --file "$repository_root/compose.production.yaml"
   --file "$repository_root/compose.personal-staging.yaml"
 )
+if [[ "$observability_enabled" == true ]]; then
+  if [[ ! -f "$observability_compose_file" ]]; then
+    printf 'Personal-staging observability Compose file is missing: %s\n' "$observability_compose_file" >&2
+    exit 2
+  fi
+  compose+=(--file "$observability_compose_file")
+fi
 
 "${compose[@]}" config --quiet
+if [[ "$observability_enabled" == true ]]; then
+  "${compose[@]}" config --format json |
+    python3 "$repository_root/scripts/validate-personal-staging-observability-bind.py"
+fi
 resolved_images="$("${compose[@]}" config --images)"
 required_images=(
   "ghcr.io/kdh949/deskseed-backend:$expected_sha"
@@ -175,7 +205,11 @@ for image in "${required_images[@]}"; do
   fi
 done
 
-"${compose[@]}" up --detach --no-build --pull never db redis versitygw
+runtime_services=(db redis versitygw)
+if [[ "$observability_enabled" == true ]]; then
+  runtime_services+=(alloy)
+fi
+"${compose[@]}" up --detach --no-build --pull never "${runtime_services[@]}"
 "${compose[@]}" up --detach --no-build --pull never --force-recreate \
   db-migrate db-permissions backend frontend
 
@@ -209,6 +243,9 @@ verify_completed_job db-permissions
 for service in db redis versitygw backend frontend; do
   verify_running_service "$service"
 done
+if [[ "$observability_enabled" == true ]]; then
+  verify_running_service alloy
+fi
 
 origin="$("${compose[@]}" port frontend 80 | sed -n '1p')"
 if [[ -z "$origin" ]]; then
@@ -224,8 +261,9 @@ fi
 
 health_ready=false
 for attempt in $(seq 1 "$health_attempts"); do
-  if curl --fail --silent --show-error --connect-timeout 3 --max-time 5 \
-      "http://$origin/actuator/health" >/dev/null 2>&1 &&
+  if health_response="$(curl --fail --silent --show-error --connect-timeout 3 --max-time 5 \
+      "http://$origin/actuator/health")" &&
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"' <<<"$health_response" &&
     curl --fail --silent --show-error --connect-timeout 3 --max-time 5 \
       "http://$origin/" >/dev/null 2>&1; then
     health_ready=true

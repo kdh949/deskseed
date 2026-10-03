@@ -235,6 +235,8 @@ paths:
         version을 증가시킵니다. Current session은 rotate하고 다른 session은 revoke하며 mutation,
         acceptances와 required security audit는 원자적입니다. Password account는 password reset을
         우회할 수 없고, email equality로 anonymous ticket을 list/claim하지 않습니다.
+        브라우저는 화면에 표시한 고객 ID를 X-Deskseed-Expected-Customer-Id에 보내며, 서버는
+        인증 principal과 다르면 저장 전에 409로 거부합니다. 이 값은 변경 대상을 선택하지 않습니다.
       x-deskseed-contract-status: FROZEN
       x-deskseed-requirements:
       - REQ-AUTH-002
@@ -249,6 +251,17 @@ paths:
       - customerSession: []
       parameters:
       - $ref: '#/components/parameters/CustomerCsrfHeader'
+      - name: X-Deskseed-Expected-Customer-Id
+        in: header
+        required: false
+        description: >-
+          가입 완료 폼에 표시된 고객의 canonical UUID입니다. 기존 클라이언트와 호환되도록 생략 가능하지만
+          Customer Portal은 항상 전송합니다. 현재 인증 고객과 다르면 mutation 없이 등록 충돌을 반환합니다.
+        schema:
+          type: string
+          format: uuid
+          minLength: 36
+          maxLength: 36
       requestBody:
         required: true
         content:

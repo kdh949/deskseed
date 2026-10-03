@@ -63,6 +63,7 @@ data class SubmitPublicRequestCommand(
     val subject: String,
     val message: String,
     val attachmentIds: Set<UUID> = emptySet(),
+    val formValues: CustomerRequestFormValues = CustomerRequestFormValues(),
     val actor: ActorRef,
     val context: CommandContext,
 )
@@ -168,4 +169,14 @@ data class PublicAgentReplyRecorded(
     val actor: ActorRef,
     val context: CommandContext,
     val ticketAuditId: UUID,
+)
+
+/** Body-free, in-transaction notification of a user/integration mutation for rule evaluation. */
+data class TicketMutationRecorded(
+    val ticketId: UUID,
+    val ticketNumber: Long,
+    val ticketAuditId: UUID,
+    val correlationId: String,
+    val occurredAt: Instant,
+    val customerReply: Boolean = false,
 )

@@ -3,15 +3,26 @@ export type TicketStatus = 'NEW' | 'OPEN' | 'PENDING' | 'SOLVED'
 export type CustomerAccessMode =
   'ANONYMOUS_ALLOWED' | 'REGISTRATION_OPTIONAL' | 'REGISTRATION_REQUIRED'
 
+export interface CustomerFieldValue {
+  booleanValue?: boolean
+  numberValue?: number
+  optionId?: string
+  shortTextValue?: string
+  longTextValue?: string
+}
 export interface SubmitRequestInput {
-  name: string
-  email: string
+  clientCommandId: string
+  requester?: { name: string; email: string }
   subject: string
   message: string
-  privacyConsent?: boolean
+  formId?: string
+  formVersion?: number
+  fieldValues: Record<string, CustomerFieldValue>
+  acceptedPolicies: Array<{ policyKey: string; version: number }>
 }
 
 export interface SubmittedRequest {
+  replayed: boolean
   ticketNumber: number
   status: TicketStatus
   accessToken: string
