@@ -42,6 +42,7 @@ Storybook MCP 문서 조회/변경 story discovery/preview/focused 및 영향 �
 
 ## Storybook previews
 
+- http://localhost:6010/?statuses=affected;modified;new
 - http://localhost:6010/?path=/story/06-admin-admin-groups-page--directory-and-membership-search
 - http://localhost:6010/?path=/story/06-admin-admin-groups-page--rename-validation-and-conflict
 - http://localhost:6010/?path=/story/06-admin-admin-groups-page--create-group-drawer
@@ -51,3 +52,7 @@ Storybook MCP 문서 조회/변경 story discovery/preview/focused 및 영향 �
 ## Human explanation
 
 목록과 생성 양식을 분리하고 넓은 화면에서 그룹 상세를 목록 옆에 두어 선택 후 편집 위치를 찾는 시간을 줄인다. 1100px 이하에서는 기존 단일 흐름으로 접히며 focus/scroll이 같은 목적지를 가리킨다. 미저장 보호는 작은 기존 hook과 Drawer 조합으로 구현하고 입력을 브라우저 저장소에 남기지 않는다. 권한·인가·명령·검색 감사는 서버의 기존 계약을 사용한다. 운영 개선 수치는 측정하지 않았으며 테스트는 합성 응답 기반이다.
+
+## Remote CI follow-up
+
+첫 #261 CI의 ManageAccount story는 권한 저장 완료 전에 checkbox 상태를 즉시 확인해 실패했다(저장 중 disabled 상태). 테스트에 150ms 합성 응답 지연을 두고 `waitFor`로 checked 및 저장 완료를 확인하도록 수정했다. 제품 상태 코드는 변경하지 않았다. 추가 full MCP 실행은 304 PASS 서버 출력 후 JSON 직렬화 단계에서 Node heap exhaustion으로 서버가 종료되어 응답을 받지 못했다. 앞선 full 304 PASS의 실제 응답은 보존했으며 소유 서버 재시작 후 해당 focused story의 실제 MCP 응답과 typecheck/ESLint 통과를 확인했다.

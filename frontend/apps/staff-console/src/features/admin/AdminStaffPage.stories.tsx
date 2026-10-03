@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http, HttpResponse } from 'msw'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { AdminStaffPage } from './AdminStaffPage'
 
 const staff = {
@@ -62,10 +62,18 @@ export const ManageAccount: Story = {
       handlers: [
         ...handlers.filter(
           (handler) =>
-            !handler.info.header.startsWith('GET /api/v1/admin/staff'),
+            !handler.info.header.startsWith('GET /api/v1/admin/staff') &&
+            !handler.info.header.startsWith('PUT '),
         ),
         http.get('/api/v1/admin/staff', () =>
           HttpResponse.json([{ ...staff, role: 'SECURITY_AUDITOR' }]),
+        ),
+        http.put(
+          '/api/v1/admin/staff/:staffId/audit-authorities/:authority',
+          async () => {
+            await delay(150)
+            return new HttpResponse(null, { status: 204 })
+          },
         ),
       ],
     },
@@ -80,9 +88,14 @@ export const ManageAccount: Story = {
       canvas.getByRole('heading', { name: '운영 관리자 감사 권한' }),
     ).toBeVisible()
     await userEvent.click(canvas.getByRole('checkbox', { name: '검색어 공개' }))
-    await expect(
-      canvas.getByRole('checkbox', { name: '검색어 공개' }),
-    ).toBeChecked()
+    await waitFor(async () => {
+      await expect(
+        canvas.getByRole('checkbox', { name: '검색어 공개' }),
+      ).toBeChecked()
+      await expect(
+        canvas.getByRole('checkbox', { name: '검색어 공개' }),
+      ).toBeEnabled()
+    })
     await expect(
       canvas.getByRole('dialog', { name: '운영 관리자 감사 권한' }),
     ).toBeVisible()
