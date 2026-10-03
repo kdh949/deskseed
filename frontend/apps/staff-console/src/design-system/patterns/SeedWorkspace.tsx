@@ -1,5 +1,6 @@
 import type {
   KeyboardEvent,
+  CSSProperties,
   MouseEvent,
   ReactNode,
   RefObject,
@@ -17,6 +18,7 @@ import {
 } from '../primitives/SeedCore'
 import { SeedAvatar } from '../primitives/SeedCore'
 import { SeedBrandLockup } from '../primitives/SeedCore'
+import { SeedPanelResizeHandle } from '../components/SeedPanelResizeHandle'
 import {
   SeedDrawer,
   SeedStatusBadge,
@@ -155,12 +157,14 @@ export function SeedPageShell({
   rail,
   topbar,
   sidebar,
+  workNavigation,
   children,
   className = '',
 }: {
   rail: ReactNode
   topbar: ReactNode
   sidebar?: ReactNode
+  workNavigation?: ReactNode
   children: ReactNode
   className?: string
 }) {
@@ -168,6 +172,9 @@ export function SeedPageShell({
     <div className={`seed-page-shell ${className}`.trim()}>
       {rail}
       {topbar}
+      {workNavigation && (
+        <div className="seed-page-shell__work-navigation">{workNavigation}</div>
+      )}
       {sidebar && <aside className="seed-page-shell__sidebar">{sidebar}</aside>}
       <main className="seed-page-shell__main">{children}</main>
     </div>
@@ -962,6 +969,8 @@ export function SeedTicketWorkspaceShell({
   properties,
   conversation,
   context,
+  panelWidths,
+  onPanelResize,
   onContextOpen,
   onContextClose = () => undefined,
 }: {
@@ -971,15 +980,37 @@ export function SeedTicketWorkspaceShell({
   properties: ReactNode
   conversation: ReactNode
   context: ReactNode
+  panelWidths?: { properties: number; context: number }
+  onPanelResize?: (panel: 'properties' | 'context', width: number) => void
   onContextOpen?: () => void
   onContextClose?: () => void
 }) {
   return (
     <>
-      <section className="seed-ticket-workspace">
+      <section
+        className="seed-ticket-workspace"
+        style={
+          panelWidths
+            ? ({
+                '--ds-frame-properties': `${Math.max(240, Math.min(420, panelWidths.properties))}px`,
+              } as CSSProperties)
+            : undefined
+        }
+      >
         <header className="seed-ticket-workspace__header">{header}</header>
         <aside className="seed-ticket-workspace__properties">
-          {properties}
+          <div className="seed-ticket-workspace__properties-body">
+            {properties}
+          </div>
+          {onPanelResize && (
+            <SeedPanelResizeHandle
+              label="속성 패널 너비"
+              value={panelWidths?.properties ?? 320}
+              min={240}
+              max={420}
+              onChange={(width) => onPanelResize('properties', width)}
+            />
+          )}
         </aside>
         <div className="seed-ticket-workspace__conversation">
           {conversation}
@@ -1003,6 +1034,23 @@ export function SeedTicketWorkspaceShell({
         onClose={onContextClose}
         open={contextOpen}
         keepMounted
+        width={
+          panelWidths
+            ? Math.max(240, Math.min(520, panelWidths.context))
+            : undefined
+        }
+        resizeHandle={
+          onPanelResize && (
+            <SeedPanelResizeHandle
+              label="문맥 패널 너비"
+              value={panelWidths?.context ?? 320}
+              min={240}
+              max={520}
+              direction="right"
+              onChange={(width) => onPanelResize('context', width)}
+            />
+          )
+        }
         returnFocusRef={contextReturnFocusRef}
         title="티켓 컨텍스트"
       >

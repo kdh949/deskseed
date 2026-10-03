@@ -6,6 +6,7 @@ import { createOpaqueUuid } from '../../api/uuid'
 import { SeedButton, SeedFeedbackState } from '../../design-system/canonical'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
+import { useRememberAgentTicket } from '../agent-shell/AgentOpenTickets'
 
 export function AgentTicketWorkspacePage() {
   const { ticketNumber: ticketNumberParam = '' } = useParams()
@@ -39,6 +40,11 @@ export function AgentTicketWorkspacePage() {
     enabled: ticketNumber !== null && session.staff !== null,
     retry: false,
   })
+  useRememberAgentTicket(
+    ticketNumber,
+    Boolean(query.data),
+    query.error instanceof ApiError && [403, 404].includes(query.error.status),
+  )
   const refreshLatest = useCallback(async () => {
     const result = await query.refetch()
     if (result.error) throw result.error

@@ -13,6 +13,7 @@ import type {
 import type { AttachmentDraftState } from '../../attachments/AttachmentUploadField'
 import { createOpaqueUuid } from '../../../api/uuid'
 import { useTicketDraftSync } from '../../collaboration/useTicketDraftSync'
+import { useAgentOpenTickets } from '../../agent-shell/AgentOpenTickets'
 import {
   buildUpdateTicketCommand,
   changedTicketFields,
@@ -54,6 +55,7 @@ export function useTicketEditor({
   staffId: string
   refreshLatest: () => Promise<AgentTicketDetail>
 }) {
+  const openTickets = useAgentOpenTickets()
   const initial = useMemo(
     () => initialEditorState(detail, staffId),
     [detail.ticket.ticketNumber, staffId],
@@ -168,6 +170,17 @@ export function useTicketEditor({
     hasAttachments ||
     needsAttachmentWarning
   const blocker = useBlocker(isUnsaved || submitting)
+  const setHasDraft = openTickets?.setHasDraft
+  useEffect(() => {
+    setHasDraft?.(detail.ticket.ticketNumber, isUnsaved)
+  }, [detail.ticket.ticketNumber, isUnsaved, setHasDraft])
+  const blockerRef = useRef(blocker)
+  blockerRef.current = blocker
+  const [preservingNavigationDraft, setPreservingNavigationDraft] =
+    useState(false)
+  const [navigationDraftError, setNavigationDraftError] = useState<
+    string | null
+  >(null)
   const unresolvedConflict = (conflict?.fields.size ?? 0) > 0
   const hasActiveSubmit =
     dirtyFields.size > 0 || comments[mode].trim().length > 0
@@ -605,11 +618,38 @@ export function useTicketEditor({
 
   const saveDraftNow = async () => {
     setError(null)
+    setDraftError(null)
+    setSuccess(null)
     await draftSync.flush()
-    setSuccess('복구 초안을 저장했습니다.')
   }
 
   return {
+    preservingNavigationDraft,
+    navigationDraftError,
+    hasPendingAttachments: needsAttachmentWarning,
+    cancelNavigation: () => {
+      openTickets?.requestClose(null)
+      if (blocker.state === 'blocked') blocker.reset()
+    },
+    leaveWithoutPreserving: () => {
+      if (blocker.state === 'blocked') blocker.proceed()
+    },
+    preserveDraftAndLeave: async () => {
+      if (submitting || preservingNavigationDraft || needsAttachmentWarning)
+        return
+      setPreservingNavigationDraft(true)
+      setNavigationDraftError(null)
+      try {
+        await draftSync.preserveLocalForNavigation()
+        if (blockerRef.current.state === 'blocked') blockerRef.current.proceed()
+      } catch {
+        setNavigationDraftError(
+          '이 브라우저에 초안을 보관하지 못했습니다. 작성 내용은 현재 화면에 유지됩니다. 다시 시도하거나 계속 작성해 주세요.',
+        )
+      } finally {
+        setPreservingNavigationDraft(false)
+      }
+    },
     mode,
     setMode: (nextMode: TicketVisibility) => {
       if (submitting) return

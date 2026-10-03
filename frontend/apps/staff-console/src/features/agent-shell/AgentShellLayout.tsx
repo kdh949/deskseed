@@ -11,17 +11,41 @@ import {
   SeedPageShell,
   SeedNotificationMenu,
   SeedTopBar,
+  SeedTicketTabs,
   type SeedNavigationItem,
 } from '../../design-system/canonical'
 import { frontendExtensions } from '../../extension-host/catalog'
 import { useStaffSession } from '../staff-auth/StaffSessionContext'
+import {
+  AgentOpenTicketsProvider,
+  clearOpenTickets,
+  useAgentOpenTickets,
+} from './AgentOpenTickets'
 
 export function AgentShellLayout() {
+  const { staff } = useStaffSession()
+  if (!staff) return null
+  return (
+    <AgentOpenTicketsProvider key={staff.id} staffId={staff.id}>
+      <AgentShellContent />
+    </AgentOpenTicketsProvider>
+  )
+}
+
+function AgentShellContent() {
   const session = useStaffSession()
   const staff = session.staff
   const location = useLocation()
   const navigate = useNavigate()
+  const openTickets = useAgentOpenTickets()
   const canWork = canUseAgentWorkspace(staff)
+  useEffect(() => {
+    const closing = openTickets?.pendingClose
+    if (closing != null && location.pathname !== `/agent/tickets/${closing}`) {
+      openTickets?.forget(closing)
+      openTickets?.requestClose(null)
+    }
+  }, [location.pathname, openTickets])
   const notifications = useAgentNotifications(
     canWork ? (staff?.id ?? null) : null,
   )
@@ -29,6 +53,15 @@ export function AgentShellLayout() {
   useEffect(() => {
     if (!canWork) return
     const openSearch = (event: KeyboardEvent) => {
+      if (
+        event.isComposing ||
+        event.defaultPrevented ||
+        (event.target instanceof Element &&
+          event.target.closest(
+            'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+          ))
+      )
+        return
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         navigate('/agent/search')
@@ -100,6 +133,7 @@ export function AgentShellLayout() {
 
   const navigateFromRail = (id: string) => {
     if (id === 'sign-out') {
+      clearOpenTickets(staff.id)
       void session
         .signOut()
         .finally(() => navigate('/agent/login', { replace: true }))
@@ -110,6 +144,33 @@ export function AgentShellLayout() {
 
   return (
     <SeedPageShell
+      workNavigation={
+        canWork && openTickets && openTickets.numbers.length > 0 ? (
+          <SeedTicketTabs
+            items={openTickets.numbers.map((number) => ({
+              id: String(number),
+              label: `#${number}`,
+              href: `/agent/tickets/${number}`,
+              active: location.pathname === `/agent/tickets/${number}`,
+              hasDraft: openTickets.draftNumbers.has(number),
+            }))}
+            onClose={(id) => {
+              const number = Number(id)
+              const index = openTickets.numbers.indexOf(number)
+              const adjacent =
+                openTickets.numbers[index - 1] ?? openTickets.numbers[index + 1]
+              if (location.pathname === `/agent/tickets/${number}`) {
+                openTickets.requestClose(number)
+                navigate(
+                  adjacent
+                    ? `/agent/tickets/${adjacent}`
+                    : '/agent/views/my-open',
+                )
+              } else openTickets.forget(number)
+            }}
+          />
+        ) : undefined
+      }
       rail={
         <SeedNavigationRail
           footerItems={footerItems}

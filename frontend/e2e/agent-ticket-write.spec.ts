@@ -463,6 +463,19 @@ test('a local draft blocks in-app navigation until the agent explicitly keeps ed
   await page
     .getByRole('textbox', { name: '공개 답변 내용' })
     .fill('이 초안은 이동 전에도 남아 있어야 합니다.')
+  await page.keyboard.press('Control+k')
+  await page.keyboard.press('Meta+k')
+  await expect(page).toHaveURL(/\/agent\/tickets\/3001$/)
+  await expect(
+    page.getByRole('dialog', { name: '저장하지 않은 변경사항' }),
+  ).toHaveCount(0)
+  await page.getByRole('button', { name: '검색', exact: true }).focus()
+  await page.keyboard.press('Control+k')
+  const shortcutGuard = page.getByRole('dialog', {
+    name: '저장하지 않은 변경사항',
+  })
+  await expect(shortcutGuard).toBeVisible()
+  await shortcutGuard.getByRole('button', { name: '계속 작성' }).click()
   await page.getByRole('button', { name: '검색', exact: true }).click()
 
   const guard = page.getByRole('dialog', { name: '저장하지 않은 변경사항' })
@@ -475,6 +488,239 @@ test('a local draft blocks in-app navigation until the agent explicitly keeps ed
   await expect(
     page.getByRole('textbox', { name: '공개 답변 내용' }),
   ).toHaveText('이 초안은 이동 전에도 남아 있어야 합니다.')
+})
+
+test('open ticket navigation keeps separate drafts and a cancelled close retains the active ticket', async ({
+  page,
+}) => {
+  await mockWritableTicket(page, async ({ route }) => route.abort())
+  await page.route('**/api/v1/agent/tickets/3002', (route) =>
+    route.fulfill({
+      json: {
+        ...createDetail(),
+        ticket: {
+          ...createDetail().ticket,
+          ticketNumber: 3002,
+          subject: '두 번째 문의',
+        },
+      },
+    }),
+  )
+  await page.goto('/agent/tickets/3002')
+  await expect(
+    page.getByRole('region', { name: '티켓 #3002 작업 공간' }),
+  ).toBeVisible()
+  await openWorkspace(page)
+  const tabs = page.getByRole('navigation', { name: '열린 티켓', exact: true })
+  await expect(
+    tabs.getByRole('link', { name: '#3002', exact: true }),
+  ).toBeVisible()
+  await page
+    .getByRole('textbox', { name: '공개 답변 내용' })
+    .fill('첫 티켓의 공개 초안')
+  await page
+    .getByRole('textbox', { name: '공개 답변 내용' })
+    .press('ControlOrMeta+A')
+  await page.getByRole('button', { name: '굵게 (⌘B)' }).click()
+  await page.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }).click()
+  await page
+    .getByRole('textbox', { name: '내부 메모 내용' })
+    .fill('첫 티켓의 내부 초안')
+  await tabs.getByRole('button', { name: '#3001 닫기' }).click()
+  const guard = page.getByRole('dialog', { name: '저장하지 않은 변경사항' })
+  await expect(guard).toBeVisible()
+  await guard.getByRole('button', { name: '계속 작성' }).click()
+  await expect(
+    tabs.getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveAttribute('aria-current', 'page')
+  await expect(
+    page.getByRole('textbox', { name: '내부 메모 내용' }),
+  ).toHaveText('첫 티켓의 내부 초안')
+  await tabs.getByRole('link', { name: '#3002', exact: true }).click()
+  await expect(
+    tabs.getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveAccessibleDescription('미제출')
+  await guard.getByRole('button', { name: '초안 유지하고 이동' }).click()
+  await expect(
+    page.getByRole('region', { name: '티켓 #3002 작업 공간' }),
+  ).toBeVisible()
+  await expect(
+    tabs.getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveAccessibleDescription('미제출')
+  await tabs.getByRole('link', { name: '#3001', exact: true }).click()
+  await expect(
+    page.getByRole('textbox', { name: '내부 메모 내용' }),
+  ).toHaveText('첫 티켓의 내부 초안')
+  await page.getByRole('tab', { name: '공개 답변 작성 모드로 전환' }).click()
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }),
+  ).toHaveText('첫 티켓의 공개 초안')
+  const stored = await page.evaluate(
+    (staffId) =>
+      JSON.parse(
+        sessionStorage.getItem(`deskseed:open-tickets:v1:${staffId}`) ?? 'null',
+      ),
+    staff.id,
+  )
+  expect(stored).toEqual([3002, 3001])
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }).locator('strong'),
+  ).toHaveText('첫 티켓의 공개 초안')
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.reload()
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }).locator('strong'),
+  ).toHaveText('첫 티켓의 공개 초안')
+  await page.getByRole('tab', { name: '내부 메모 작성 모드로 전환' }).click()
+  await expect(
+    page.getByRole('textbox', { name: '내부 메모 내용' }),
+  ).toHaveText('첫 티켓의 내부 초안')
+  await tabs.getByRole('button', { name: '#3001 닫기' }).click()
+  await guard.getByRole('button', { name: '초안 유지하고 이동' }).click()
+  await expect(page).toHaveURL(/\/agent\/tickets\/3002$/)
+  await expect(
+    tabs.getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveCount(0)
+})
+
+test('a failed local checkpoint retains the editor and leaving without another checkpoint does not claim to discard drafts', async ({
+  page,
+}) => {
+  let commands = 0
+  await mockWritableTicket(page, async ({ route }) => {
+    commands += 1
+    await route.abort()
+  })
+  await openWorkspace(page)
+  await page
+    .getByRole('textbox', { name: '공개 답변 내용' })
+    .fill('저장소 오류에서도 남길 초안')
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'indexedDB', {
+      configurable: true,
+      value: {
+        open() {
+          throw new DOMException('blocked for the test', 'SecurityError')
+        },
+      },
+    })
+  })
+  await page.getByRole('button', { name: '검색', exact: true }).click()
+  const guard = page.getByRole('dialog', { name: '저장하지 않은 변경사항' })
+  await guard.getByRole('button', { name: '초안 유지하고 이동' }).click()
+  await expect(guard.getByText('초안 보관 실패', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/agent\/tickets\/3001$/)
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }),
+  ).toHaveText('저장소 오류에서도 남길 초안')
+  await expect(
+    guard.getByText(
+      '추가 보관 없이 이동해도 이미 자동 보관된 초안은 다시 열 때 복구될 수 있습니다.',
+    ),
+  ).toBeVisible()
+  await guard.getByRole('button', { name: '추가 보관 없이 이동' }).click()
+  await expect(page).toHaveURL(/\/agent\/search$/)
+  await expect(
+    page
+      .getByRole('navigation', { name: '열린 티켓', exact: true })
+      .getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveAccessibleDescription('미제출')
+  expect(commands).toBe(0)
+})
+
+test('a failed manual draft save reports the local-only state without a success confirmation', async ({
+  page,
+}) => {
+  let commands = 0
+  let serverAvailable = false
+  await mockWritableTicket(page, async ({ route }) => {
+    commands += 1
+    await route.abort()
+  })
+  await page.route('**/api/v1/agent/tickets/3001/drafts/*', (route) => {
+    if (serverAvailable && route.request().method() === 'PUT') {
+      const input = route.request().postDataJSON()
+      return route.fulfill({
+        status: 200,
+        json: {
+          ...input,
+          ticketNumber: 3001,
+          channel: 'PUBLIC_REPLY',
+          body: '서버 저장에 실패해도 보존할 초안',
+          draftVersion: 1,
+          updatedAt: '2026-10-03T12:00:00Z',
+          expiresAt: '2099-10-10T12:00:00Z',
+        },
+      })
+    }
+    const status = route.request().method() === 'GET' ? 404 : 500
+    return route.fulfill({
+      status,
+      json: {
+        type: '/problems/draft-test',
+        title: 'Draft unavailable',
+        status,
+      },
+    })
+  })
+  await openWorkspace(page)
+  await page
+    .getByRole('textbox', { name: '공개 답변 내용' })
+    .fill('서버 저장에 실패해도 보존할 초안')
+  await page.getByRole('button', { name: '초안 저장', exact: true }).click()
+  await expect(
+    page.getByText('이 브라우저에만 저장됨', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('복구 초안을 저장했습니다.', { exact: true }),
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }),
+  ).toHaveText('서버 저장에 실패해도 보존할 초안')
+  serverAvailable = true
+  const retry = page.waitForResponse(
+    (response) =>
+      response.url().includes('/drafts/PUBLIC_REPLY') &&
+      response.status() === 200,
+  )
+  await page.getByRole('button', { name: '초안 저장', exact: true }).click()
+  await retry
+  await expect(
+    page.getByText('복구 초안 동기화 실패', { exact: true }),
+  ).toHaveCount(0)
+  expect(commands).toBe(0)
+})
+
+test('an uploading attachment keeps the local-preservation action disabled until the agent resolves it', async ({
+  page,
+}) => {
+  await mockWritableTicket(page, async ({ route }) => route.abort())
+  let resolveUpload: (() => void) | undefined
+  const pendingUpload = new Promise<void>((resolve) => {
+    resolveUpload = resolve
+  })
+  await page.route('**/api/v1/agent/attachments/uploads', async (route) => {
+    await pendingUpload
+    await route.abort()
+  })
+  await openWorkspace(page)
+  await page.getByLabel('PUBLIC 첨부 파일', { exact: true }).setInputFiles({
+    name: 'draft.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('synthetic draft attachment'),
+  })
+  await page.getByRole('button', { name: '검색', exact: true }).click()
+  const guard = page.getByRole('dialog', { name: '저장하지 않은 변경사항' })
+  await expect(
+    guard.getByText('첨부 상태 확인 필요', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    guard.getByRole('button', { name: '초안 유지하고 이동' }),
+  ).toBeDisabled()
+  await guard.getByRole('button', { name: '계속 작성' }).click()
+  await expect(page).toHaveURL(/\/agent\/tickets\/3001$/)
+  await expect(page.getByText('draft.txt', { exact: true })).toBeVisible()
+  resolveUpload?.()
 })
 
 test('a 409 conflict preserves the draft and requires a field-by-field decision', async ({

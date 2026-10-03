@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   LOCAL_DRAFT_RETENTION_MS,
   makeLocalTicketDraft,
   newestRecoverableDraft,
+  writeLocalTicketDraft,
 } from './draftRecovery'
 
 describe('ticket draft recovery selection', () => {
+  afterEach(() => vi.unstubAllGlobals())
   const local = makeLocalTicketDraft({
     staffId: '11111111-1111-4111-8111-111111111111',
     ticketNumber: 7101,
@@ -43,5 +45,34 @@ describe('ticket draft recovery selection', () => {
     expect(
       newestRecoverableDraft(local, remote, Date.parse('2026-08-18T00:00:02Z')),
     ).toBe(remote)
+  })
+
+  it('waits for the IndexedDB commit and rejects an aborted local checkpoint', async () => {
+    const transaction = {
+      objectStore: () => ({ put: vi.fn() }),
+      oncomplete: null as (() => void) | null,
+      onabort: null as (() => void) | null,
+      onerror: null as (() => void) | null,
+      error: new Error('storage commit aborted'),
+    }
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        const opening = {
+          result: { transaction: () => transaction },
+          onsuccess: null as (() => void) | null,
+        }
+        queueMicrotask(() => opening.onsuccess?.())
+        return opening
+      },
+    })
+    const committed = vi.fn()
+    const failed = vi.fn()
+    const write = writeLocalTicketDraft(local).then(committed, failed)
+    await vi.waitFor(() => expect(transaction.onabort).not.toBeNull())
+    expect(committed).not.toHaveBeenCalled()
+    transaction.onabort?.()
+    await write
+    expect(failed).toHaveBeenCalledWith(transaction.error)
+    expect(committed).not.toHaveBeenCalled()
   })
 })

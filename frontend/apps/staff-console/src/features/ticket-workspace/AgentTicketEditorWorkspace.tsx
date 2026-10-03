@@ -69,6 +69,7 @@ import type { ExtensionAccess } from '../../extension-host/types'
 import { ExtensionSlot } from '../../extension-host/ExtensionSlot'
 import type { EditableTicketFields } from './model/ticketEditorModel'
 import { useTicketEditor } from './model/useTicketEditor'
+import { usePanelPreferences } from './model/usePanelPreferences'
 
 const STATUS_LABELS: Record<AgentTicketStatus, string> = {
   NEW: '신규',
@@ -114,6 +115,7 @@ export function AgentTicketEditorWorkspace({
       detail={detail}
       extensionAccess={extensionAccess}
       refreshLatest={refreshLatest}
+      staffId={staffId}
     />
   )
 }
@@ -140,6 +142,7 @@ function WritableWorkspace({
   return (
     <>
       <WorkspaceFrame
+        staffId={staffId}
         detail={detail}
         extensionAccess={extensionAccess}
         onRefresh={() => void editor.refreshEditor()}
@@ -229,28 +232,46 @@ function WritableWorkspace({
       />
       <SeedDrawer
         description="작성 중인 답변과 변경사항이 아직 제출되지 않았습니다."
-        onClose={() => {
-          if (editor.blocker.state === 'blocked') editor.blocker.reset()
-        }}
+        onClose={editor.cancelNavigation}
         open={editor.blocker.state === 'blocked'}
         title="저장하지 않은 변경사항"
       >
-        <p>이 페이지를 떠나면 제출하지 않은 변경사항이 사라집니다.</p>
+        <p>
+          작성 내용을 이 브라우저의 초안으로 보관한 뒤 이동할 수 있습니다.
+          답변은 전송하지 않습니다.
+        </p>
+        <p>
+          추가 보관 없이 이동해도 이미 자동 보관된 초안은 다시 열 때 복구될 수
+          있습니다.
+        </p>
+        {editor.navigationDraftError && (
+          <SeedNotice title="초안 보관 실패" tone="danger">
+            {editor.navigationDraftError}
+          </SeedNotice>
+        )}
+        {editor.hasPendingAttachments && (
+          <SeedNotice title="첨부 상태 확인 필요" tone="warning">
+            업로드·검사 중이거나 실패한 첨부가 있습니다. 첨부 상태를 확인한 뒤
+            초안을 보관해 주세요.
+          </SeedNotice>
+        )}
         <div aria-label="페이지 이동 선택" role="group">
           <SeedButton
-            onClick={() => {
-              if (editor.blocker.state === 'blocked') editor.blocker.reset()
-            }}
+            disabled={
+              editor.submitting ||
+              editor.preservingNavigationDraft ||
+              editor.hasPendingAttachments
+            }
+            onClick={() => void editor.preserveDraftAndLeave()}
             variant="primary"
           >
-            계속 작성
+            {editor.preservingNavigationDraft
+              ? '초안 보관 중…'
+              : '초안 유지하고 이동'}
           </SeedButton>
-          <SeedButton
-            onClick={() => {
-              if (editor.blocker.state === 'blocked') editor.blocker.proceed()
-            }}
-          >
-            변경사항 버리고 이동
+          <SeedButton onClick={editor.cancelNavigation}>계속 작성</SeedButton>
+          <SeedButton onClick={editor.leaveWithoutPreserving}>
+            추가 보관 없이 이동
           </SeedButton>
         </div>
       </SeedDrawer>
@@ -262,10 +283,12 @@ function ReadOnlyWorkspace({
   detail,
   extensionAccess,
   refreshLatest,
+  staffId,
 }: {
   detail: AgentTicketDetail
   extensionAccess?: ExtensionAccess
   refreshLatest: () => Promise<AgentTicketDetail>
+  staffId: string
 }) {
   const [error, setError] = useState<string | null>(null)
   const refresh = async () => {
@@ -278,6 +301,7 @@ function ReadOnlyWorkspace({
   }
   return (
     <WorkspaceFrame
+      staffId={staffId}
       detail={detail}
       extensionAccess={extensionAccess}
       onRefresh={() => void refresh()}
@@ -313,6 +337,7 @@ function WorkspaceFrame({
   conversation,
   refreshLatest,
   knowledge,
+  staffId,
 }: {
   aiAssistant?: React.ReactNode
   knowledge?: React.ReactNode
@@ -322,8 +347,10 @@ function WorkspaceFrame({
   properties: React.ReactNode
   conversation: React.ReactNode
   refreshLatest: () => Promise<AgentTicketDetail>
+  staffId: string
 }) {
   const [contextOpen, setContextOpen] = useState(false)
+  const panelPreferences = usePanelPreferences(staffId)
   const [contextTab, setContextTab] = useState<ContextTab>('customer')
   const location = useLocation()
   const [copiedMessage, setCopiedMessage] = useState('')
@@ -370,6 +397,8 @@ function WorkspaceFrame({
       className="seed-workspace-route"
     >
       <SeedTicketWorkspaceShell
+        panelWidths={panelPreferences.widths}
+        onPanelResize={panelPreferences.resize}
         contextOpen={contextOpen}
         onContextOpen={openContext}
         header={
@@ -732,9 +761,11 @@ function Composer({
       ? '다른 브라우저 초안과 충돌'
       : editor.draftSyncState === 'local-only'
         ? '이 브라우저에만 저장됨'
-        : editor.isUnsaved
-          ? '초안 변경됨'
-          : '저장됨'
+        : editor.draftSyncState === 'error'
+          ? '초안 보관 상태 확인 필요'
+          : editor.isUnsaved
+            ? '초안 변경됨'
+            : '저장됨'
   return (
     <>
       <SeedComposer

@@ -37,6 +37,7 @@ export function makeLocalTicketDraft({
   ticketNumber,
   channel,
   body,
+  content,
   attachmentIds,
   clientDeviceId,
   baseTicketVersion,
@@ -51,6 +52,7 @@ export function makeLocalTicketDraft({
     ticketNumber,
     channel,
     body,
+    ...(content ? { content } : {}),
     attachmentIds: [...attachmentIds],
     clientDeviceId,
     baseTicketVersion,
@@ -98,14 +100,11 @@ export async function readLocalTicketDraft(
 
 export async function writeLocalTicketDraft(draft: LocalTicketDraft) {
   const database = await openDatabase()
-  await request(
-    database
-      .transaction(STORE_NAME, 'readwrite')
-      .objectStore(STORE_NAME)
-      .put({
-        ...draft,
-        id: localDraftKey(draft.staffId, draft.ticketNumber, draft.channel),
-      }),
+  await commitLocalChange(database, (store) =>
+    store.put({
+      ...draft,
+      id: localDraftKey(draft.staffId, draft.ticketNumber, draft.channel),
+    }),
   )
 }
 
@@ -115,12 +114,22 @@ export async function removeLocalTicketDraft(
   channel: TicketDraftChannel,
 ) {
   const database = await openDatabase()
-  await request(
-    database
-      .transaction(STORE_NAME, 'readwrite')
-      .objectStore(STORE_NAME)
-      .delete(localDraftKey(staffId, ticketNumber, channel)),
+  await commitLocalChange(database, (store) =>
+    store.delete(localDraftKey(staffId, ticketNumber, channel)),
   )
+}
+
+function commitLocalChange(
+  database: IDBDatabase,
+  change: (store: IDBObjectStore) => void,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, 'readwrite')
+    transaction.oncomplete = () => resolve()
+    transaction.onabort = () => reject(transaction.error)
+    transaction.onerror = () => reject(transaction.error)
+    change(transaction.objectStore(STORE_NAME))
+  })
 }
 
 async function openDatabase(): Promise<IDBDatabase> {

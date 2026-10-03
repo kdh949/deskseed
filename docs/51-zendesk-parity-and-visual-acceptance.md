@@ -269,4 +269,6 @@ A screenshot that looks similar but produces a worse or unsafe workflow fails ac
 
 사용자가 승인한 UX 개선 P10은 위 시안의 대화 중심 배치를 재사용하며 독립 context tab을 고객/협업/자료로 보완한다. 숨긴 context와 drawer를 이중 mount하지 않고 한 작성 상태를 유지한다. 최신 main의 읽기 쉬운 속성 글꼴과 긴 제목 줄바꿈을 보존한다. UI-005 baseline은 해당 배치·문맥 동선의 1280/1440/1920 렌더, keyboard/focus, page-level Axe 확인 후 갱신하며 Darwin/Linux 각각의 실제 렌더를 사용한다. 다중 티켓 탭과 패널 크기 조정은 P11에서 별도로 검증한다.
 
+P11은 열린 티켓 번호 링크/닫기와 bounded panel resize를 위 구조에 추가한다. 계정별 탭/너비만 저장하고 서버 데이터 캐시나 범용 workspace 플랫폼을 만들지 않는다. 본문 초안은 기존 IndexedDB에 commit한 뒤 티켓을 전환하며 초안 보관 실패/첨부 대기/닫기 취소를 별도로 검증한다. [작업·검증 기록](tasks/2026-10-03-agent-tabs-resize.md)을 따른다.
+
 구현/검증 기록: `docs/tasks/2026-09-05-agent-conversation-focused-redesign.md`, `docs/tasks/2026-10-03-agent-context-ux.md`, `design-qa.md`. 2026-09-05에서 보류한 Darwin/Linux 픽셀 기준선은 P10의 실제 렌더 검증과 PR 화면 검토 대상으로 반영한다. 갱신된 기준선 자체가 사람의 최종 시각 승인을 의미하지 않는다.

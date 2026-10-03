@@ -177,6 +177,8 @@ export function SeedDrawer({
   onClose,
   open,
   keepMounted = false,
+  width,
+  resizeHandle,
   returnFocusRef,
   title,
 }: {
@@ -185,6 +187,8 @@ export function SeedDrawer({
   onClose: () => void
   open: boolean
   keepMounted?: boolean
+  width?: number
+  resizeHandle?: ReactNode
   returnFocusRef?: RefObject<HTMLElement>
   title: string
 }) {
@@ -268,10 +272,14 @@ export function SeedDrawer({
         aria-labelledby={titleId}
         aria-modal="true"
         className="seed-drawer"
+        style={
+          width === undefined ? undefined : { width: `min(${width}px, 92vw)` }
+        }
         ref={panelRef}
         role="dialog"
         tabIndex={-1}
       >
+        {resizeHandle}
         <header>
           <div>
             <h2 id={titleId}>{title}</h2>
