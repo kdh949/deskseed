@@ -148,8 +148,13 @@ for (const width of [1280, 1920]) {
     ).toBeVisible()
     const draft = page.getByRole('textbox', { name: '공개 답변 내용' })
     await draft.fill('전송하지 않은 합성 상담 초안')
-    if (width === 1280)
-      await page.getByRole('button', { name: '티켓 컨텍스트 열기' }).click()
+    const contextToggle = page.getByRole('button', {
+      name: '티켓 컨텍스트 열기',
+    })
+    const openedContext = await contextToggle.isVisible()
+    if (openedContext) await contextToggle.click()
+    const materialsTab = page.getByRole('tab', { name: '자료', exact: true })
+    if (await materialsTab.isVisible()) await materialsTab.click()
     const ai = page.getByRole('region', { name: 'DeskSeed AI 어시스턴트' })
     await expect(ai).toBeVisible()
     const buttons = ai.getByRole('button', { name: '생성하기' })
@@ -195,7 +200,7 @@ for (const width of [1280, 1920]) {
       path: testInfo.outputPath(`ai-availability-${width}.png`),
       fullPage: true,
     })
-    if (width === 1280)
+    if (openedContext)
       await page.getByRole('button', { name: '닫기', exact: true }).click()
     await expect(draft).toHaveText('전송하지 않은 합성 상담 초안')
   })
