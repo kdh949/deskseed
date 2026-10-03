@@ -66,3 +66,11 @@ STAFF/AGENT_UI의 기존 session·expected-actor·ticket read 권한과 request/
 - 수정 전 새 capability 회귀 실패 확인. 수정 후 `AgentTicketReadIntegrationTest` 15, `AgentAiRequestIntegrationTest` 9, `AdminAiIntegrationTest` 2와 `ArchitectureTest` 1 통과. 전역 off/allowlist 제외/개별 feature 전환/PUBLIC 없음/READ-only/audit 실패/BACKGROUND 무감사와 생성 시 stale/feature off 재검증을 포함한다.
 - Core bundle, docs-check, diff-check 통과. 전체 backend suite와 실제 모델·배포·부하 검증은 실행하지 않았다. UI Storybook은 후속 UI slice에서 실행한다.
 - 성능상 PUBLIC comment가 있는 detail당 indexed singleton/allowlist 조회 한 번이 추가된다. 측정된 지연 개선·무회귀 주장은 하지 않는다. 외부 호출·캐시·DB migration은 없다.
+
+## P13 UI slice plan
+
+AG-F06을 위해 staff AiAssistantPanel에 현재 상세의 AI_SUMMARY/AI_TRIAGE/AI_REPLY_DRAFT를 연결한다. 알 수 없는 capability는 계속 무시하며 기존 READ/UPDATE 타입·decoder·API는 바꾸지 않는다. Reuse: 기존 AI card/SeedButton/SeedNotice/SeedIcon. Compose: 기능별 현재 사용 불가 설명과 정책 재조회 상태. Extend/Add: 없음. source 문서는 staff MCP list/instructions와 AI panel/canonical 문서를 읽었다.
+
+생성이 403으로 거절되면 기존 상세 refreshLatest만 호출한다. AgentTicketWorkspacePage의 성공 상세 이후 재조회는 BACKGROUND이고 editor.refreshEditor를 호출하지 않아 작성안을 초기화하지 않는다. 재조회 실패는 생성 버튼을 잠근 상태와 명시적 재확인을 제공한다. 기존 job 목록/결과 조회·취소·feedback·명시적 삽입은 기존 서버 재인가를 유지한다. 자동 생성·삽입·전송, 운영 정책 수정, 신규 endpoint/DS API/인프라/의존성은 없다.
+
+REQ-AI-001/002, AI-API-001/AI-SRC-001의 frontend 경계 및 UI-002/003/004/005/006을 panel/workspace unit, 실제 MCP story/a11y, mock full-page Chromium에서 검증한다. live provider/운영 배포/서버 감사·DB rollback 전체 재검증은 이번 UI slice에서 수행하지 않는다. 기존 idempotency/ticket version/권한/transaction/retention 계약과 PUBLIC-only 입력 경계를 바꾸지 않는다. UI revert로 복구한다.
