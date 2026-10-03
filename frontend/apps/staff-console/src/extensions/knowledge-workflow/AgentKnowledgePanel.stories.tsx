@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
 import { expect, fn, userEvent, waitFor } from 'storybook/test'
-import { AgentKnowledgePanel } from './AgentKnowledgePanel'
+import { AgentKnowledgePanel, TicketKnowledge } from './AgentKnowledgePanel'
 import { article, revision } from './fixtures'
 const published = {
   ...article,
@@ -42,6 +42,10 @@ export const SearchReadInsert: Story = {
     await userEvent.click(
       await canvas.findByRole('button', { name: '읽기: 환불 처리 안내' }),
     )
+    await expect(
+      await canvas.findByRole('heading', { name: '환불 처리 안내' }),
+    ).toHaveFocus()
+    await expect(canvas.queryByLabelText(/지식 검색어/)).not.toBeInTheDocument()
     await userEvent.click(
       await canvas.findByRole('button', { name: '현재 답변에 링크 삽입' }),
     )
@@ -54,6 +58,76 @@ export const SearchReadInsert: Story = {
     await expect(
       await canvas.findByText('공개 답변 초안에 문서 링크를 넣었습니다.'),
     ).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '검색 결과로 돌아가기' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '읽기: 환불 처리 안내' }),
+    ).toHaveFocus()
+    await expect(canvas.getByLabelText(/지식 검색어/)).toHaveValue('환불')
+  },
+}
+
+export const DrawerReading: Story = {
+  render: (args) => <TicketKnowledge {...args} ticketNumber={3001} />,
+  parameters: {
+    msw: {
+      handlers: [
+        http.post('/api/v1/agent/knowledge/search', () =>
+          HttpResponse.json({
+            items: Array.from({ length: 20 }, (_, index) => ({
+              ...searchHit,
+              articleSlug: `reading-${index + 1}`,
+              title: `환불 문서 ${index + 1}`,
+            })),
+            nextCursor: 'next-page',
+          }),
+        ),
+        http.get('/api/v1/agent/knowledge/articles/:slug', ({ params }) =>
+          HttpResponse.json({
+            ...published,
+            slug: params.slug,
+            currentPublishedRevision: {
+              ...revision,
+              title: `환불 문서 ${String(params.slug).split('-').at(-1)}`,
+            },
+          }),
+        ),
+        ...base,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      canvas.getByRole('button', { name: '문서 검색 열기' }),
+    )
+    await userEvent.type(canvas.getByLabelText(/지식 검색어/), '환불')
+    await userEvent.click(canvas.getByRole('button', { name: '지식 검색' }))
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '읽기: 환불 문서 20' }),
+    )
+    await expect(
+      await canvas.findByRole('heading', { name: '환불 문서 20' }),
+    ).toHaveFocus()
+    await expect(
+      canvas.queryByRole('button', { name: '읽기: 환불 문서 1' }),
+    ).not.toBeInTheDocument()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '검색 결과로 돌아가기' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '읽기: 환불 문서 20' }),
+    ).toHaveFocus()
+    await expect(canvas.getByLabelText(/지식 검색어/)).toHaveValue('환불')
+    await expect(
+      canvas.getByRole('button', { name: '다음 검색 결과' }),
+    ).toBeEnabled()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '읽기: 환불 문서 20' }),
+    )
+    await expect(
+      await canvas.findByRole('heading', { name: '환불 문서 20' }),
+    ).toHaveFocus()
   },
 }
 export const InternalArticleBlocked: Story = {
