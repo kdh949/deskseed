@@ -5,6 +5,7 @@ import {
   getCustomerAccessModeSetting,
   updateCustomerAccessModeSetting,
 } from '../../api/client'
+import { AdminCustomerReadinessPanel } from './AdminCustomerReadinessPanel'
 import type { CustomerAccessMode } from '../../api/types'
 import {
   DsButton,
@@ -219,6 +220,7 @@ export function AdminCustomerAccessModePage() {
           </div>
         </form>
       </section>
+      <AdminCustomerReadinessPanel mode={setting.mode} />
     </main>
   )
 }

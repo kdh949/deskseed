@@ -1,0 +1,45 @@
+# P07 공지 복구와 고객 포털 준비 확인
+
+## Goal / actor / sources
+
+고객은 공지 미등록·오류에서도 도움말 탐색을 이어가고, ADMIN은 고객 접근 모드 화면에서 가입 약관과 공개 공지 준비 상태 및 수정 경로를 확인한다. C-F08/ADM-F07, REQ-KB-001/004, REQ-CONSENT-001, REQ-AUTH-003, REQ-UI-005/007. D-058/D-061, Accepted ADR-0018/0040/0042/0044와 docs 26/28~34/39/40/51/55/56의 기존 KB·고객 동의·독립 앱 경계를 따른다.
+
+기존 getHelpSection, getCustomerAccessModeSetting, listCustomerConsentPolicies, listKnowledgeCategories/Sections/Articles만 사용한다. article의 기존 sectionId/audience 필터를 클라이언트에 연결한다. API/권한/cursor 의미 변화 없음. ADMIN_UI staff session/expected actor 및 required access audit는 서버가 소유한다. 고객은 help audience projection만 받는다.
+
+## Scope / reuse
+
+고객 home와 announcements section의 404·200 빈 목록은 안전한 빈 상태, 그 밖의 오류는 수동 재확인과 탐색 링크를 제공한다. 관리자 준비 확인은 저장된 접근 모드와 발행된 가입 정책 metadata, 활성 announcements 섹션·부모 주제 및 PUBLIC 발행 문서 존재 여부를 조합한다. 명시적인 확인 버튼으로 조회하며 준비 상태 확인이 설정을 변경하지 않는다.
+
+Reuse/Compose: 각 앱의 문서화된 DsButton/ScreenState/Notification/RetryButton 및 기존 page/surface/form/Link. 신규 DS API/인프라/법률 문구/seed 없음. P02 위에 적층한다.
+
+## Failure / boundaries
+
+loading/empty/error/denied/성공을 구분하고 조회 오류를 미설정으로 단정하지 않는다. 공지 404는 고객에게 숨겨진 문서·운영 구성을 노출하지 않는다. 재확인은 읽기만 수행하고 자동 polling은 없다. 설정 수정·동시성·idempotency/transaction·audit/retention 의미 변화 없음. 관리자 검사는 가입·공지의 설정 snapshot이며 메일 전달이나 실제 고객의 E2E 성공을 보장하지 않는다. 개인정보/문서 본문을 저장하거나 log에 남기지 않는다.
+
+## Acceptance / validation
+
+- 홈·전체 공지 404와 200 empty에서 빈 상태 및 문서 탐색 가능. 503은 오류/재확인 후 성공. stale 실패에서 오래된 공지를 성공처럼 노출하지 않는다.
+- 관리자 미조회→명시적 확인→약관 없음/비활성 부모·섹션/공개 발행 문서 없음/준비됨/403/503를 검증한다. sectionId/PUBLIC/PUBLISHED query filter와 read-only 요청 확인.
+- UI-002/004/005/006; 양 앱 MCP 문서/지침, focused/full story/a11y/preview, unit/type/build/boundaries/contract/lint/format, mock full-page E2E와 390/768/1448 시각·키보드/a11y.
+
+## Compatibility / limits
+
+Migration/backfill/계약/의존성 변경 없음. UI revert로 복구. 실제 서버 권한/감사 rollback·SMTP·운영 설정/배포·Firefox/WebKit·pixel baseline 비교는 범위 밖이며 별도 보고한다. read 요청 수를 고정된 작은 snapshot으로 제한하고 성능 수치 주장은 하지 않는다.
+
+## Completion evidence
+
+Passed: customer unit 121/28 files, staff unit 258/44 files (`--maxWorkers=2`), typecheck, 양 앱 build, boundaries, contract:check, 변경 파일 lint/format, diff check. 기존 staff bundle 크기 warning은 남는다. 실제 MCP customer full 78개·staff full 310개 story/a11y 통과. get-changed-stories의 app/root coverage 경고는 get-stories-by-component와 전체 실행으로 확인했다.
+
+Mock Chromium E2E 3개 통과: 고객 390/768에서 홈404→전체 공지→503→키보드 재시도→200 empty, 관리자1448에서 명시적 확인 전0추가조회→GET-only/sectionId·audience·lifecycle 필터→503 구분→재확인 성공. 초기 E2E의 관리자 경로와 로컬 /_staff basename 기대값을 실제 route에 맞춰 수정한 뒤 재실행했다. axe·가로 넘침 검사 통과 및 `frontend/test-results/customer-readiness-*/` 대표390/1448 캡처 직접 확인. 실제 서버 mutation/audit/SMTP/배포·Firefox/WebKit·pixel baseline 비교는 실행하지 않았다.
+
+MCP previews (전체 변경 fallback 포함):
+
+- http://localhost:6007/?statuses=affected;modified;new
+- http://localhost:6014/?statuses=affected;modified;new
+- http://localhost:6007/?path=/story/customer-portal-help-center-pages--home-announcements-not-found
+- http://localhost:6007/?path=/story/customer-portal-help-center-pages--announcements-not-found
+- http://localhost:6007/?path=/story/customer-portal-help-center-pages--announcements-failure-recovery
+- http://localhost:6014/?path=/story/06-admin-admin-customer-readiness-panel--missing-configuration
+- http://localhost:6014/?path=/story/06-admin-admin-customer-readiness-panel--ready
+- http://localhost:6014/?path=/story/06-admin-admin-customer-readiness-panel--denied
+- http://localhost:6014/?path=/story/06-admin-admin-customer-access-mode-page--save-policy

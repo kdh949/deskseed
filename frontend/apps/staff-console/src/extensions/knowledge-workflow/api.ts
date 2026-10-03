@@ -224,9 +224,13 @@ export const saveSection = (
       version: existing?.version,
     },
   )
-export const listArticles = (lifecycle: string, cursor?: string) =>
+export const listArticles = (
+  lifecycle: string,
+  cursor?: string,
+  filters: { sectionId?: string; audience?: keyof typeof AUDIENCES } = {},
+) =>
   requestStaffResource(
-    `${admin}/articles?${new URLSearchParams({ ...(lifecycle ? { lifecycle } : {}), ...(cursor ? { cursor } : {}) })}`,
+    `${admin}/articles?${new URLSearchParams({ ...(lifecycle ? { lifecycle } : {}), ...(cursor ? { cursor } : {}), ...filters })}`,
     (v) => {
       if (
         !record(v) ||

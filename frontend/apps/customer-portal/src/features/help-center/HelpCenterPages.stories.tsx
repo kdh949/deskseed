@@ -527,3 +527,90 @@ export const SessionFailureRecovery: Story = {
     await expect(unexpectedHelp).not.toHaveBeenCalled()
   },
 }
+
+export const HomeAnnouncementsNotFound: Story = {
+  ...Home,
+  parameters: {
+    msw: {
+      handlers: {
+        ...homeHandlers,
+        helpAnnouncements: http.get('/api/v1/help/sections/announcements', () =>
+          HttpResponse.json({}, { status: 404 }),
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('등록된 공지사항이 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByText('공지사항을 불러올 수 없습니다.'),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('link', { name: '전체 보기' }),
+    ).toHaveAttribute('href', '/sections/announcements')
+  },
+}
+export const AnnouncementsNotFound: Story = {
+  ...HomeAnnouncementsNotFound,
+  render: () => (
+    <AnonymousChrome>
+      <StoryRoute path="/sections/:sectionSlug" to="/sections/announcements">
+        <HelpSectionPage />
+      </StoryRoute>
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('등록된 공지사항이 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('heading', { name: '공지사항' }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('link', { name: '도움말 홈으로' }),
+    ).toHaveAttribute('href', '/')
+  },
+}
+export const AnnouncementsEmpty: Story = {
+  ...AnnouncementsNotFound,
+  parameters: {
+    msw: {
+      handlers: {
+        helpAnnouncements: http.get('/api/v1/help/sections/announcements', () =>
+          HttpResponse.json({ ...announcements, articles: [] }),
+        ),
+      },
+    },
+  },
+}
+let announcementAttempts = 0
+export const AnnouncementsFailureRecovery: Story = {
+  ...AnnouncementsNotFound,
+  beforeEach: () => {
+    announcementAttempts = 0
+  },
+  parameters: {
+    msw: {
+      handlers: {
+        helpAnnouncements: http.get(
+          '/api/v1/help/sections/announcements',
+          () =>
+            ++announcementAttempts === 1
+              ? HttpResponse.json({}, { status: 503 })
+              : HttpResponse.json(announcements),
+        ),
+      },
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('공지사항을 불러올 수 없습니다.'),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '다시 시도' }))
+    await expect(
+      await canvas.findByRole('link', { name: '고객 포털 업데이트 안내' }),
+    ).toBeVisible()
+  },
+}
