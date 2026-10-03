@@ -3,6 +3,8 @@ import { requestStaffResource } from '../../api/client'
 vi.mock('../../api/client', () => ({ requestStaffResource: vi.fn() }))
 import {
   decodeField,
+  decodeFormPreview,
+  previewForm,
   decodeForm,
   listDecoder,
   saveForm,
@@ -77,4 +79,40 @@ it('preserves an existing form description when saving another property', async 
       }),
     }),
   )
+})
+
+it('rejects incomplete preview policies and mismatched resource identity', async () => {
+  expect(
+    decodeFormPreview({ formId: 'form', formVersion: 0, fields: [] }),
+  ).toBeUndefined()
+  expect(
+    decodeFormPreview({
+      formId: 'form',
+      formVersion: 1,
+      fields: [{ visible: true, editable: true, field: {} }],
+    }),
+  ).toBeUndefined()
+  expect(
+    decodeFormPreview({ formId: 'form', formVersion: 2, fields: [] }),
+  ).toEqual({ formId: 'form', formVersion: 2, fields: [] })
+  await previewForm('form', {
+    actorKind: 'AGENT',
+    ticketKind: 'AGENT_CREATED',
+    statusCategory: 'OPEN',
+    fieldValues: { amount: { numberValue: '12345678901234567890.12' } },
+  })
+  const call = vi.mocked(requestStaffResource).mock.lastCall!
+  expect(call[0]).toBe('/api/v1/admin/ticket-forms/form/preview')
+  expect(
+    call[1]({ formId: 'other', formVersion: 1, fields: [] }),
+  ).toBeUndefined()
+  expect(call[2]).toEqual({
+    method: 'POST',
+    body: {
+      actorKind: 'AGENT',
+      ticketKind: 'AGENT_CREATED',
+      statusCategory: 'OPEN',
+      fieldValues: { amount: { numberValue: '12345678901234567890.12' } },
+    },
+  })
 })

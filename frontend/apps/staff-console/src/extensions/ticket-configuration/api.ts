@@ -1,4 +1,5 @@
 import { requestStaffResource } from '../../api/client'
+import type { FieldValue } from './runtime-api'
 
 export const FIELD_TYPES = {
   SHORT_TEXT: '짧은 텍스트',
@@ -267,4 +268,65 @@ export const transitionForm = (
     `/api/v1/admin/ticket-forms/${form.id}/${transition}`,
     decodeForm,
     { method: 'POST', version: form.version },
+  )
+
+export type FormPreviewRequest = {
+  actorKind: 'CUSTOMER' | 'AGENT'
+  ticketKind:
+    | 'CUSTOMER_REQUEST'
+    | 'INTERNAL_CHILD'
+    | 'AGENT_CREATED'
+    | 'INTERNAL_WORK_ITEM'
+  statusCategory: 'NEW' | 'OPEN' | 'PENDING' | 'ON_HOLD' | 'SOLVED' | 'CLOSED'
+  customStatusId?: string
+  fieldValues: Record<string, FieldValue>
+}
+export type FormPreview = {
+  formId: string
+  formVersion: number
+  fields: {
+    field: FieldDefinition
+    visible: boolean
+    editable: boolean
+    required: boolean
+    options: FieldOption[]
+  }[]
+}
+export function decodeFormPreview(value: unknown): FormPreview | undefined {
+  if (
+    !record(value) ||
+    typeof value.formId !== 'string' ||
+    !Number.isSafeInteger(value.formVersion) ||
+    Number(value.formVersion) < 1 ||
+    !Array.isArray(value.fields)
+  )
+    return undefined
+  const fields: FormPreview['fields'] = []
+  for (const item of value.fields) {
+    if (!record(item) || !policy(item)) return undefined
+    const field = decodeField(item.field)
+    const options = listDecoder(decodeOption)(item.options ?? [])
+    if (!field || !options) return undefined
+    fields.push({
+      field,
+      options,
+      visible: item.visible as boolean,
+      editable: item.editable as boolean,
+      required: item.required as boolean,
+    })
+  }
+  return {
+    formId: value.formId,
+    formVersion: Number(value.formVersion),
+    fields,
+  }
+}
+export const previewForm = (formId: string, body: FormPreviewRequest) =>
+  requestStaffResource(
+    `/api/v1/admin/ticket-forms/${formId}/preview`,
+    (value) => {
+      const result = decodeFormPreview(value)
+      return result?.formId === formId ? result : undefined
+    },
+    { method: 'POST', body },
   )

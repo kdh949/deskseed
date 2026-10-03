@@ -249,3 +249,63 @@ export const DeleteThenAddPreservesFormData: Story = {
     await waitFor(() => expect(publishedForm).toHaveBeenCalledOnce())
   },
 }
+
+export const FilterAndSavedPreview: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers,
+        http.get('/api/v1/admin/ticket-statuses', () => HttpResponse.json([])),
+        http.post('/api/v1/admin/ticket-forms/:id/preview', () =>
+          HttpResponse.json({
+            formId: form.id,
+            formVersion: 1,
+            fields: [{ field, visible: true, editable: true, required: true }],
+          }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('button', { name: '저장본 미리보기: 환불 문의' })
+    await userEvent.selectOptions(
+      canvas.getByLabelText('발행 상태'),
+      'PUBLISHED',
+    )
+    await expect(canvas.getByText('조건에 맞는 폼이 없습니다.')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '검색 초기화' }))
+    await userEvent.click(
+      canvas.getByRole('button', { name: '저장본 미리보기: 환불 문의' }),
+    )
+    await expect(await canvas.findByLabelText('주문번호 (필수)')).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '목록으로 돌아가기' }),
+    )
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('button', { name: '저장본 미리보기: 환불 문의' }),
+      ).toHaveFocus(),
+    )
+  },
+}
+
+export const IncompleteConditionDraftIsProtected: Story = {
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '편집: 환불 문의' }),
+    )
+    await userEvent.selectOptions(canvas.getByLabelText('조건 필드'), field.id)
+    await expect(
+      canvas.getByRole('button', { name: '폼 초안 저장' }),
+    ).toBeDisabled()
+    await userEvent.click(canvas.getByRole('button', { name: '편집 닫기' }))
+    await userEvent.click(canvas.getByRole('button', { name: '계속 편집' }))
+    await expect(canvas.getByLabelText('조건 필드')).toHaveValue(field.id)
+    await userEvent.click(
+      canvas.getByRole('button', { name: '작성 중인 조건 지우기' }),
+    )
+    await expect(
+      canvas.getByRole('button', { name: '폼 초안 저장' }),
+    ).toBeEnabled()
+  },
+}
