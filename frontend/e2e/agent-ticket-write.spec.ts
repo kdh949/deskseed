@@ -632,11 +632,27 @@ test('a failed manual draft save reports the local-only state without a success 
   page,
 }) => {
   let commands = 0
+  let serverAvailable = false
   await mockWritableTicket(page, async ({ route }) => {
     commands += 1
     await route.abort()
   })
   await page.route('**/api/v1/agent/tickets/3001/drafts/*', (route) => {
+    if (serverAvailable && route.request().method() === 'PUT') {
+      const input = route.request().postDataJSON()
+      return route.fulfill({
+        status: 200,
+        json: {
+          ...input,
+          ticketNumber: 3001,
+          channel: 'PUBLIC_REPLY',
+          body: '서버 저장에 실패해도 보존할 초안',
+          draftVersion: 1,
+          updatedAt: '2026-10-03T12:00:00Z',
+          expiresAt: '2099-10-10T12:00:00Z',
+        },
+      })
+    }
     const status = route.request().method() === 'GET' ? 404 : 500
     return route.fulfill({
       status,
@@ -661,6 +677,17 @@ test('a failed manual draft save reports the local-only state without a success 
   await expect(
     page.getByRole('textbox', { name: '공개 답변 내용' }),
   ).toHaveText('서버 저장에 실패해도 보존할 초안')
+  serverAvailable = true
+  const retry = page.waitForResponse(
+    (response) =>
+      response.url().includes('/drafts/PUBLIC_REPLY') &&
+      response.status() === 200,
+  )
+  await page.getByRole('button', { name: '초안 저장', exact: true }).click()
+  await retry
+  await expect(
+    page.getByText('복구 초안 동기화 실패', { exact: true }),
+  ).toHaveCount(0)
   expect(commands).toBe(0)
 })
 

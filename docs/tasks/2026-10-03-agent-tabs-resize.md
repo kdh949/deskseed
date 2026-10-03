@@ -24,7 +24,7 @@ STAFF/AGENT_WORKSPACE의 기존 session/READ/UPDATE. 명시적 티켓 이동은 
 - 열린 탭의 `미제출` 표시는 기존 editor의 isUnsaved 여부만 메모리에 연결한다. 이동 시 남고 닫기에서 정리되며 실제로 다시 열면 editor 상태로 갱신한다. `추가 보관 없이 이동`은 기존 자동 보관 내용을 삭제하지 않으므로 삭제 완료로 표시하지 않는다. sessionStorage에는 번호만 저장한다. 새 세션 복원 시 실제로 열지 않은 티켓의 초안 존재를 추정하지 않는다. 서버 저장 성공을 의미하지 않는다.
 - 초안 자동 저장 debounce(3초) 전에 전환하면 본문/서식이 사라지는 현상을 회귀로 재현했다. 사용자가 `초안 유지하고 이동`을 선택하면 두 채널의 body/rich document/version을 기존 IndexedDB에 commit한 뒤 이동한다. 보관 실패 시 현재 화면에 남으며 첨부 대기/실패 시 상태 확인을 요청한다. 댓글 전송이나 원격 저장으로 표시하지 않는다.
 - loading/empty/error/denied/conflict는 기존 route 상태를 유지하고 탭 상태가 권한을 대신하지 않는다.
-- 수동 초안 저장의 flush가 내부 실패를 처리하므로 무조건 성공하는 별도 메시지를 제거했다. 기존 draftSyncState와 채널별 실패 안내로 local-only/conflict/error를 구분하고 ticket command 전송과 혼동하지 않는다. 로컬과 서버가 모두 실패하면 현재 화면에만 내용이 남음을 안내한다. 초기 복구 중 수동 저장은 hydration 완료를 기다리고, 명시적 저장 재시도는 기존 직렬화·버전 경계를 사용한다.
+- 수동 초안 저장의 flush가 내부 실패를 처리하므로 무조건 성공하는 별도 메시지를 제거했다. 기존 draftSyncState와 채널별 실패 안내로 local-only/conflict/error를 구분하고 ticket command 전송과 혼동하지 않는다. 로컬과 서버가 모두 실패하면 현재 화면에만 내용이 남음을 안내한다. 초기 복구 중 수동 저장은 hydration 완료를 기다리고, 명시적 저장 재시도는 기존 직렬화·버전 경계를 사용한다. 재시도가 성공해도 이전 실패 배너가 남는 현상을 E2E로 재현했고, 재시도 시작 시 이전 초안 오류를 해제하되 새 실패는 기존 콜백으로 표시한다.
 
 ## Reuse plan
 
@@ -69,7 +69,7 @@ HTTP/DB migration 없음. optional presentation API를 유지하고 frontend rev
 
 구현 완료: staff별 열린 티켓 번호/미제출 표시, bounded panel resize, 양 채널 local checkpoint 후 이동, 편집 영역 검색 단축키 보호. HTTP/DB/권한/actor/audit/idempotency/서버 retry/retention 변경 없음. 기존 상세 접근과 command 검증을 재사용하고 remote draft 성공을 추정하지 않는다. layout preference 외 새 영구 데이터는 없으며 성능 수치는 측정하지 않았다.
 
-복구 후 전체 검증은 staff unit 45파일/273개, MCP 63파일/303개, macOS mock E2E 26개 및 1280/1440/1920 screenshot·Axe·resize keyboard/pointer·최소 대화 폭·focus·height를 통과했다. 마지막 초안 안내·동시 보관 실패·초기화 중 수동 저장 보완 후 staff unit 45파일/275개, 전체 MCP 304개, focused MCP 3개, 실패 경로 E2E 2개를 다시 통과했다. typecheck/lint/format/build/boundary/docs-check도 실행했다. Linux 3폭 실제 렌더는 보존된 자료로 검수했고 최종 Linux 전체 mock E2E와 원격 CI는 PR에서 확인한다. 실서버/실제 backend/수동 screen reader/사용자의 최종 시각 승인은 실행하지 않았다. 구현 상태를 production 검증으로 상향하지 않는다.
+복구 후 전체 검증은 staff unit 45파일/273개, MCP 63파일/303개, macOS mock E2E 26개 및 1280/1440/1920 screenshot·Axe·resize keyboard/pointer·최소 대화 폭·focus·height를 통과했다. 마지막 초안 안내·동시 보관 실패·초기화 중 수동 저장 보완 후 staff unit 45파일/275개, 전체 MCP 304개, focused MCP 3개, 실패 경로 E2E 2개를 다시 통과했다. typecheck/lint/format/build/boundary/docs-check도 실행했다. Linux 3폭 실제 렌더는 보존된 자료로 검수했고 최종 Linux 전체 mock E2E와 원격 CI는 PR에서 확인한다. 실패→성공 재시도 배너 보완 후 focused MCP/E2E와 전체 MCP 실행 로그(304개 PASS)를 확인했으나 마지막 전체 호출의 HTTP 응답은 60초에서 timeout되어 실행 결과와 전달 상태를 구분한다. 실서버/실제 backend/수동 screen reader/사용자의 최종 시각 승인은 실행하지 않았다. 구현 상태를 production 검증으로 상향하지 않는다.
 
 MCP의 changed-stories는 154개를 반환했고 일부 feature/unit 파일을 graph에서 찾지 못해 get-stories-by-component로 소비자를 보강했다. 전체 suite로 누락을 확인한다. 프리뷰:
 

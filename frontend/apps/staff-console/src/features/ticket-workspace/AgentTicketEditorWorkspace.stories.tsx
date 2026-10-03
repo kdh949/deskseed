@@ -482,11 +482,14 @@ export const LatestActivity: Story = {
   },
 }
 
+let manualDraftServerAvailable = false
+
 export const ManualDraftSaveFailure: Story = {
   args: {
     detail: { ...detail, ticket: { ...detail.ticket, ticketNumber: 93012 } },
   },
   beforeEach: async () => {
+    manualDraftServerAvailable = false
     localStorage.removeItem(ticketDraftStorageKey(staffId, 93012))
     await Promise.all(
       (['PUBLIC_REPLY', 'INTERNAL_NOTE'] as const).map((channel) =>
@@ -497,15 +500,30 @@ export const ManualDraftSaveFailure: Story = {
   parameters: {
     msw: {
       handlers: workspaceHandlers(
-        http.put('/api/v1/agent/tickets/93012/drafts/:channel', () =>
-          HttpResponse.json(
-            {
-              type: '/problems/draft-unavailable',
-              title: 'Draft unavailable',
-              status: 500,
-            },
-            { status: 500 },
-          ),
+        http.put(
+          '/api/v1/agent/tickets/93012/drafts/:channel',
+          async ({ request, params }) => {
+            if (manualDraftServerAvailable) {
+              const input = (await request.json()) as Record<string, unknown>
+              return HttpResponse.json({
+                ...input,
+                ticketNumber: 93012,
+                channel: params.channel,
+                body: '이 브라우저에 남길 답변',
+                draftVersion: 1,
+                updatedAt: '2026-10-03T12:00:00Z',
+                expiresAt: '2099-10-10T12:00:00Z',
+              })
+            }
+            return HttpResponse.json(
+              {
+                type: '/problems/draft-unavailable',
+                title: 'Draft unavailable',
+                status: 500,
+              },
+              { status: 500 },
+            )
+          },
         ),
       ),
     },
@@ -525,6 +543,16 @@ export const ManualDraftSaveFailure: Story = {
     await expect(
       canvas.getByRole('textbox', { name: '공개 답변 내용' }),
     ).toHaveTextContent('이 브라우저에 남길 답변')
+    manualDraftServerAvailable = true
+    await userEvent.click(canvas.getByRole('button', { name: '초안 저장' }))
+    await waitFor(() => {
+      expect(
+        canvas.queryByText('이 브라우저에만 저장됨'),
+      ).not.toBeInTheDocument()
+      expect(
+        canvas.queryByText('복구 초안 동기화 실패'),
+      ).not.toBeInTheDocument()
+    })
   },
 }
 

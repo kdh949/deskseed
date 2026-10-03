@@ -618,6 +618,7 @@ export function useTicketEditor({
 
   const saveDraftNow = async () => {
     setError(null)
+    setDraftError(null)
     setSuccess(null)
     await draftSync.flush()
   }
