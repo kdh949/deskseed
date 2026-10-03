@@ -2,7 +2,7 @@
 
 ## ADMIN-KB-SEARCH-001 — 관리자 최신 제목 전체 검색
 
-P17 구현 gate: ADMIN/AGENT/AUDITOR/익명·CSRF·expected actor, 최신 revision 제목만 literal substring 검색, lifecycle/section/audience AND, 50개 keyset과 cursor 조건/변조 거부, no-store와 원문 query/본문 비노출, count/items 동일 snapshot과 전체 EXACT count, typed required search audit 및 보호 실패 503/rollback, append-only/expiry·safe explorer/reveal 거부, GET latestRevision 추가와 publishedRevision 호환을 검증한다. frontend는 검색어를 URL/cache key/storage에 남기지 않으며 0건/error/denied, 조건 변경 cursor reset, 선택/닫기 focus와 dirty route 보호를 UI-002/004/005로 검증한다. [계약](tasks/2026-10-03-admin-knowledge-search-contract.md)은 runtime 미구현이며 gate 통과를 의미하지 않는다.
+P17 구현 gate: ADMIN/AGENT/AUDITOR/익명·CSRF·expected actor, 최신 revision 제목만 literal substring 검색, lifecycle/section/audience AND, 50개 keyset과 cursor 조건/변조 거부, no-store와 원문 query/본문 비노출, count/items 동일 snapshot과 전체 EXACT count, typed required search audit 및 보호 실패 503/rollback, append-only/expiry·safe explorer/reveal 거부, GET latestRevision 추가와 publishedRevision 호환을 검증한다. frontend는 검색어를 URL/cache key/storage에 남기지 않으며 0건/error/denied, 조건 변경 cursor reset, 선택/닫기 focus와 dirty route 보호를 UI-002/004/005로 검증한다. [계약](tasks/2026-10-03-admin-knowledge-search-contract.md)과 [구현 근거](tasks/2026-10-03-admin-knowledge-workflow.md)를 함께 확인한다. 계약만으로 gate 통과를 주장하지 않는다.
 
 이 문서는 “테스트가 있다”가 아니라 **무엇이 통과되어야 다음 단계로 간주하는지**를 정의한다. Codex는 각 작업에서 해당 gate ID를 완료 보고에 적는다.
 

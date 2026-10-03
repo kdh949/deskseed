@@ -242,7 +242,7 @@ SDK release마다:
 
 ## 10. Contract freeze gate
 
-P17 `searchAdminKnowledgeArticles`와 목록의 최신 저장 제목/요약 확장은 [계약](tasks/2026-10-03-admin-knowledge-search-contract.md)에 정의한다. 새 POST는 runtime 미구현이므로 FROZEN을 붙이지 않는다. 기존 `listKnowledgeArticles`의 FROZEN을 유지하고 `x-deskseed-pending-response-extension`에 items.latestRevision의 BLUEPRINT_READY 계획을 표시한다. 구현 PR에서 latestRevision을 required로 승격하고 pending 표시를 제거하며 POST/typed protected access audit의 parity를 검증한 뒤 FROZEN으로 승격한다. currentPublishedRevision 및 상세 본문 소비자 계약은 유지한다.
+P17 `searchAdminKnowledgeArticles`는 [구현](tasks/2026-10-03-admin-knowledge-workflow.md)에서 typed protected audit·50개 keyset/전체 EXACT count·HMAC scope binding·권한과 실패 parity를 검증해 FROZEN으로 승격한다. 기존 `listKnowledgeArticles`는 FROZEN을 유지하며 latestRevision title/summary를 required로 추가하고 pending extension을 제거한다. currentPublishedRevision 및 상세 본문 소비자 계약은 유지한다.
 
 P15 `searchAdminStaffAccounts`/`searchAdminGroups`는 [승인된 directory search 계약](tasks/2026-10-03-admin-directory-search-contract.md)과 owned fragment `06-admin-directory-search.yaml`로 정의하며 FROZEN이다. 두 operation의 ADMIN/CSRF/expected actor, 전체 페이지, V99 typed access audit, 보호 query와 fail-closed/privacy 회귀는 [구현 증거](tasks/2026-10-03-admin-directory-search-implementation.md)로 추적한다. 기존 GET 목록과 Audit Explorer operation의 FROZEN을 유지하며 ADMIN 검색의 routine projection은 보호 metadata만 반환하고 exact reveal 범위를 확대하지 않는다. KB 제목/cursor 검색은 이 계약에 포함하지 않는다.
 

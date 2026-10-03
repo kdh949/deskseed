@@ -46,6 +46,18 @@ internal data class KnowledgeCursor(val createdAt: Instant, val articleId: UUID)
 internal class KnowledgeCursorCodec(
     private val properties: KnowledgeCursorProperties,
 ) {
+    /** Keep raw title queries and guessable unkeyed query hashes out of cursor payloads. */
+    fun adminTitleSearchScope(query: String, filterScope: String, cursor: String?): String {
+        require(cursor == null || cursor.length in 24..1024) { "Knowledge cursor is invalid" }
+        val keyId = cursor?.substringBefore(ENVELOPE_SEPARATOR) ?: properties.activeKeyId
+        val key = properties.signingKeys[keyId] ?: invalid()
+        val binding = Mac.getInstance("HmacSHA256").run {
+            init(SecretKeySpec(key.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
+            doFinal("deskseed:knowledge:admin-title-search:v1\u0000$query".toByteArray(StandardCharsets.UTF_8))
+        }
+        return "admin-title-search:$filterScope:${encodeBase64(binding)}"
+    }
+
     fun encode(scope: String, cursor: KnowledgeCursor): String {
         val payload = listOf(VERSION, scopeFingerprint(scope), cursor.createdAt, cursor.articleId).joinToString(SEPARATOR)
         val encodedPayload = encodeBase64(payload.toByteArray(StandardCharsets.UTF_8))

@@ -1,6 +1,6 @@
 # Authorization and Permission Matrix
 
-P17 예정 `searchAdminKnowledgeArticles`는 기존 ACTIVE ADMIN만 사용하며 ADMIN_UI + STAFF_SESSION/CSRF/expected staff actor를 요구한다. lifecycle/sectionId/audience 조건은 관리자 문서 집합을 좁히기만 한다. AGENT/SECURITY_AUDITOR/고객/Platform에는 새 권한을 제공하지 않는다. 검색어 공개 권한은 기존 티켓 검색 범위로 유지한다. [계약과 회귀](tasks/2026-10-03-admin-knowledge-search-contract.md).
+P17 `searchAdminKnowledgeArticles`는 기존 ACTIVE ADMIN만 사용하며 ADMIN_UI + STAFF_SESSION/CSRF/expected staff actor를 요구한다. lifecycle/sectionId/audience 조건은 관리자 문서 집합을 좁히기만 한다. AGENT/SECURITY_AUDITOR/고객/Platform에는 새 권한을 제공하지 않는다. 검색어 공개 권한은 기존 티켓 검색 범위로 유지한다. [계약과 회귀](tasks/2026-10-03-admin-knowledge-search-contract.md).
 
 ## 1. 원칙
 

@@ -1,6 +1,7 @@
 package dev.deskseed.audit.internal
 
 import dev.deskseed.audit.AdminDirectorySearchKind
+import dev.deskseed.audit.ADMIN_KNOWLEDGE_SEARCH_ACTION
 
 import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
@@ -603,7 +604,7 @@ internal class JdbcAuditExplorer(
     }
 
     private fun searchContext(row: ProjectionRow): AuditSearchContext? {
-        if (AdminDirectorySearchKind.entries.any { it.action == row.action }) {
+        if ((AdminDirectorySearchKind.entries.any { it.action == row.action } || row.action == ADMIN_KNOWLEDGE_SEARCH_ACTION)) {
             return AuditSearchContext(
                 queryRedacted = row.queryRedacted ?: return null,
                 queryFingerprint = row.searchFingerprint ?: return null,
@@ -742,7 +743,7 @@ internal class JdbcAuditExplorer(
         requestId = row.requestId,
         correlationId = row.correlationId,
         protectedContentAvailable = row.protectedContentAvailable &&
-            AdminDirectorySearchKind.entries.none { it.action == row.action },
+            AdminDirectorySearchKind.entries.none { it.action == row.action } && row.action != ADMIN_KNOWLEDGE_SEARCH_ACTION,
         searchFingerprint = row.searchFingerprint,
     )
 

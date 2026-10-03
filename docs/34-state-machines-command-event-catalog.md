@@ -1,6 +1,6 @@
 # State Machines, Commands, Audit Events, Domain Events
 
-P17 [KB 제목 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)의 예정 action `ADMIN_KNOWLEDGE_SEARCH_EXECUTED`는 검색 성공마다 보호 query와 전체 EXACT count를 access/search ledger에 원자적으로 기록한다. 문서 상태 transition, outbox, 검색색인 갱신 또는 ticket-origin/result membership을 만들지 않는다. 기존 GET 목록은 KNOWLEDGE_ARTICLE_LISTED를 유지하며 새 검색은 이 이벤트와 중복 기록하지 않는다. V100/typed writer 및 runtime parity는 후속 구현에서 검증한다.
+P17 [KB 제목 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)의 구현 action `ADMIN_KNOWLEDGE_SEARCH_EXECUTED`는 검색 성공마다 보호 query와 전체 EXACT count를 access/search ledger에 원자적으로 기록한다. 문서 상태 transition, outbox, 검색색인 갱신 또는 ticket-origin/result membership을 만들지 않는다. 기존 GET 목록은 KNOWLEDGE_ARTICLE_LISTED를 유지하며 새 검색은 이 이벤트와 중복 기록하지 않는다. V100/typed writer 및 runtime parity는 [P17 구현](tasks/2026-10-03-admin-knowledge-workflow.md)에서 검증한다.
 
 관리자 directory 검색의 [P15 event 계약](tasks/2026-10-03-admin-directory-search-contract.md)은 `ADMIN_STAFF_SEARCH_EXECUTED`/`ADMIN_GROUP_SEARCH_EXECUTED`를 성공 검색마다 기록한다. source는 ADMIN_UI이며 그룹·직원 상태를 변경하지 않고 ticket origin/result membership을 생성하지 않는다. V99와 typed writer가 보호 query 저장까지 같은 transaction으로 수행하며 routine projection은 안전한 metadata만 노출한다. exact reveal은 기존 티켓 검색으로 제한한다.
 

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http, HttpResponse } from 'msw'
-import { expect, userEvent, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { AdminKnowledgePage } from './AdminKnowledgePage'
 import { article, category, revision, section } from './fixtures'
 const base = [
@@ -14,7 +14,15 @@ const base = [
     HttpResponse.json([section]),
   ),
   http.get('/api/v1/admin/knowledge/articles', () =>
-    HttpResponse.json({ items: [article], nextCursor: null }),
+    HttpResponse.json({
+      items: [
+        {
+          ...article,
+          latestRevision: { title: revision.title, summary: revision.summary },
+        },
+      ],
+      nextCursor: null,
+    }),
   ),
   http.get('/api/v1/admin/knowledge/articles/:id', () =>
     HttpResponse.json(article),
@@ -53,13 +61,16 @@ export const CreateDraft: Story = {
     },
   },
   play: async ({ canvas }) => {
-    await canvas.findByRole('button', { name: '열기: refund-guide' })
+    await canvas.findByRole('button', { name: '열기: 환불 처리 안내' })
     await userEvent.click(canvas.getByRole('button', { name: '문서 만들기' }))
     await userEvent.selectOptions(
-      canvas.getByLabelText(/문서 섹션/),
+      canvas.getByLabelText(/문서 섹션(?! 필터)/),
       section.id,
     )
-    await userEvent.type(canvas.getByLabelText(/문서 제목/), '환불 처리 안내')
+    await userEvent.type(
+      canvas.getByLabelText(/문서 제목(?! 검색)/),
+      '환불 처리 안내',
+    )
     await userEvent.type(
       canvas.getByLabelText(/문서 주소 식별자/),
       'refund-guide',
@@ -102,7 +113,7 @@ export const ReviewAndPublish: Story = {
   },
   play: async ({ canvas }) => {
     await userEvent.click(
-      await canvas.findByRole('button', { name: '열기: refund-guide' }),
+      await canvas.findByRole('button', { name: '열기: 환불 처리 안내' }),
     )
     await userEvent.click(await canvas.findByRole('button', { name: '발행' }))
     await expect(await canvas.findByRole('status')).toHaveTextContent(
@@ -123,9 +134,12 @@ export const ConflictPreservesDraft: Story = {
   },
   play: async ({ canvas }) => {
     await userEvent.click(
-      await canvas.findByRole('button', { name: '열기: refund-guide' }),
+      await canvas.findByRole('button', { name: '열기: 환불 처리 안내' }),
     )
-    await userEvent.type(await canvas.findByLabelText(/문서 제목/), ' 수정')
+    await userEvent.type(
+      await canvas.findByLabelText(/문서 제목(?! 검색)/),
+      ' 수정',
+    )
     await expect(
       canvas.getByRole('button', { name: '검토 요청' }),
     ).toBeDisabled()
@@ -133,7 +147,7 @@ export const ConflictPreservesDraft: Story = {
     await expect(
       await canvas.findByText('최신 내용을 확인하세요.'),
     ).toBeVisible()
-    await expect(canvas.getByLabelText(/문서 제목/)).toHaveValue(
+    await expect(canvas.getByLabelText(/문서 제목(?! 검색)/)).toHaveValue(
       '환불 처리 안내 수정',
     )
     await userEvent.click(
@@ -142,7 +156,7 @@ export const ConflictPreservesDraft: Story = {
     await waitFor(() =>
       expect(canvas.getByRole('button', { name: '초안 저장' })).toBeEnabled(),
     )
-    await expect(canvas.getByLabelText(/문서 제목/)).toHaveValue(
+    await expect(canvas.getByLabelText(/문서 제목(?! 검색)/)).toHaveValue(
       '환불 처리 안내 수정',
     )
   },
@@ -210,7 +224,7 @@ export const PublishConflictReloadsReview: Story = {
   },
   play: async ({ canvas }) => {
     await userEvent.click(
-      await canvas.findByRole('button', { name: '열기: refund-guide' }),
+      await canvas.findByRole('button', { name: '열기: 환불 처리 안내' }),
     )
     await expect(
       await canvas.findByText('주문번호를 확인한 뒤 환불을 요청하세요.'),
@@ -243,7 +257,7 @@ export const PublishConflictReloadsReturnedDraft: Story = {
   },
   play: async ({ canvas }) => {
     await userEvent.click(
-      await canvas.findByRole('button', { name: '열기: refund-guide' }),
+      await canvas.findByRole('button', { name: '열기: 환불 처리 안내' }),
     )
     await userEvent.click(await canvas.findByRole('button', { name: '발행' }))
     await canvas.findByText('최신 내용을 확인하세요.')
@@ -293,5 +307,140 @@ export const Loading: Story = {
         ...base,
       ],
     },
+  },
+}
+
+export const TitleSearchAndFilters: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.post(
+          '/api/v1/admin/knowledge/articles/search',
+          async ({ request }) => {
+            const body = (await request.json()) as Record<string, unknown>
+            expect(new URL(request.url).search).toBe('')
+            expect(body.query).toBe('찾을 제목')
+            expect(body.interactionId).toEqual(expect.any(String))
+            return HttpResponse.json({
+              items:
+                body.audience === 'STAFF'
+                  ? []
+                  : [
+                      {
+                        ...article,
+                        latestRevision: {
+                          title: '찾을 제목의 저장된 초안',
+                          summary: revision.summary,
+                        },
+                      },
+                    ],
+              resultCount: body.audience === 'STAFF' ? 0 : 51,
+              hasMore: !body.cursor && body.audience !== 'STAFF',
+              nextCursor:
+                body.cursor || body.audience === 'STAFF'
+                  ? null
+                  : 'opaque-cursor',
+            })
+          },
+        ),
+        ...base,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole('button', { name: '열기: 환불 처리 안내' })
+    await userEvent.type(canvas.getByLabelText(/문서 제목 검색/), '찾을 제목')
+    await userEvent.click(canvas.getByRole('button', { name: '검색' }))
+    await expect(
+      await canvas.findByText('검색 결과 51개 · 현재 목록 1개'),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '다음 목록' }))
+    await expect(
+      await canvas.findByRole('button', { name: '첫 목록' }),
+    ).toBeVisible()
+    await userEvent.selectOptions(
+      canvas.getByLabelText('공개 범위 필터'),
+      'STAFF',
+    )
+    await expect(
+      await canvas.findByText('검색 결과 0개 · 현재 목록 0개'),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: '첫 목록' }),
+    ).not.toBeInTheDocument()
+    await expect(canvas.getByText('조건에 맞는 문서가 없습니다.')).toBeVisible()
+  },
+}
+
+export const DraftExitProtection: Story = {
+  play: async ({ canvas, canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '열기: 환불 처리 안내' }),
+    )
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('heading', { name: '환불 처리 안내', level: 2 }),
+      ).toHaveFocus(),
+    )
+    await userEvent.type(canvas.getByLabelText(/문서 제목(?! 검색)/), ' 수정')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '카테고리 만들기' }),
+    )
+    await expect(
+      await body.findByRole('dialog', { name: '저장하지 않은 변경 사항' }),
+    ).toBeVisible()
+    await userEvent.click(body.getByRole('button', { name: '계속 편집' }))
+    await expect(canvas.getByLabelText(/문서 제목(?! 검색)/)).toHaveValue(
+      '환불 처리 안내 수정',
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: '카테고리 만들기' }),
+    )
+    await userEvent.click(
+      await body.findByRole('button', { name: '변경 사항 버리고 이동' }),
+    )
+    await userEvent.type(await canvas.findByLabelText(/분류 이름/), '새 분류')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '분류 편집 닫기' }),
+    )
+    await userEvent.click(
+      await body.findByRole('button', { name: '계속 편집' }),
+    )
+    await expect(canvas.getByLabelText(/분류 이름/)).toHaveValue('새 분류')
+  },
+}
+
+export const PendingSavePreservesInput: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.patch('/api/v1/admin/knowledge/articles/:id', async () => {
+          await delay(300)
+          return HttpResponse.json({ status: 503 }, { status: 503 })
+        }),
+        ...base,
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      await canvas.findByRole('button', { name: '열기: 환불 처리 안내' }),
+    )
+    await userEvent.type(
+      await canvas.findByLabelText(/문서 제목(?! 검색)/),
+      ' 유지',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '초안 저장' }))
+    await expect(
+      canvas.getByRole('button', { name: '문서 닫기' }),
+    ).toBeDisabled()
+    await expect(canvas.getByLabelText(/문서 제목(?! 검색)/)).toBeDisabled()
+    await expect(
+      await canvas.findByText('최신 내용을 확인하세요.'),
+    ).toBeVisible()
+    await expect(canvas.getByLabelText(/문서 제목(?! 검색)/)).toHaveValue(
+      '환불 처리 안내 유지',
+    )
   },
 }

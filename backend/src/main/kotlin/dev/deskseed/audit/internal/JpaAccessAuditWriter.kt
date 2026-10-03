@@ -2,6 +2,8 @@ package dev.deskseed.audit.internal
 
 import dev.deskseed.audit.AccessAuditContext
 import dev.deskseed.audit.AdminDirectorySearchAccessAudit
+import dev.deskseed.audit.AdminKnowledgeSearchAccessAudit
+import dev.deskseed.audit.ADMIN_KNOWLEDGE_SEARCH_ACTION
 import dev.deskseed.audit.AdminDirectorySearchKind
 import dev.deskseed.audit.AccessAuditAuthType
 import dev.deskseed.audit.AccessAuditOutcome
@@ -33,14 +35,34 @@ internal class JpaAccessAuditWriter(
 ) : AccessAuditWriter {
     @Transactional(propagation = Propagation.MANDATORY)
     override fun appendAdminDirectorySearch(event: AdminDirectorySearchAccessAudit) {
-        val context = event.context
-        require(context.actorType == ActorType.STAFF && context.source == RequestSource.ADMIN_UI)
-        require(context.authType == AccessAuditAuthType.STAFF_SESSION)
-        require(context.sessionFingerprint?.matches(SESSION_FINGERPRINT) == true)
-        require(event.resultCount >= 0)
         if (event.kind == AdminDirectorySearchKind.GROUP) {
             require(event.scope.role == null && event.scope.memberOfGroupId == null && event.scope.excludeGroupId == null)
         }
+        appendProtectedAdminSearch(event.eventId, event.context, event.interactionId, event.kind.action,
+            event.scope.normalizedFilters(), event.kind.sort, event.protectedQuery, event.resultCount, event.occurredAt)
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun appendAdminKnowledgeSearch(event: AdminKnowledgeSearchAccessAudit) {
+        appendProtectedAdminSearch(event.eventId, event.context, event.interactionId, ADMIN_KNOWLEDGE_SEARCH_ACTION,
+            event.scope.normalizedFilters(), "createdAt:desc,id:desc", event.protectedQuery, event.resultCount, event.occurredAt)
+    }
+
+    private fun appendProtectedAdminSearch(
+        eventId: UUID,
+        context: dev.deskseed.audit.AccessAuditContext,
+        interactionId: UUID,
+        action: String,
+        filters: Map<String, String>,
+        sort: String,
+        protectedQuery: dev.deskseed.audit.ProtectedSearchQueryAudit,
+        resultCount: Long,
+        occurredAt: java.time.Instant,
+    ) {
+        require(context.actorType == ActorType.STAFF && context.source == RequestSource.ADMIN_UI)
+        require(context.authType == AccessAuditAuthType.STAFF_SESSION)
+        require(context.sessionFingerprint?.matches(SESSION_FINGERPRINT) == true)
+        require(resultCount >= 0)
         jdbcTemplate.update(
             """
             insert into access_audit_events (
@@ -50,8 +72,8 @@ internal class JpaAccessAuditWriter(
                 user_agent, outcome, http_status
             ) values (?, ?, 'STAFF', ?, ?, 'ADMIN_UI', ?, 'SEARCH', null, null, ?, ?, ?, ?, ?, ?, ?, 'SUCCEEDED', 200)
             """.trimIndent(),
-            event.eventId, Timestamp.from(event.occurredAt), context.actorId,
-            actorSnapshot(context.actorDisplaySnapshot), event.kind.action, event.interactionId,
+            eventId, Timestamp.from(occurredAt), context.actorId,
+            actorSnapshot(context.actorDisplaySnapshot), action, interactionId,
             context.sessionFingerprint, context.authType.name, context.requestId.take(100),
             context.correlationId.take(100), context.ipAddress?.take(64), sanitize(context.userAgent, 256),
         )
@@ -62,9 +84,9 @@ internal class JpaAccessAuditWriter(
                 normalized_filters, sort, result_count, result_count_relation
             ) values (?, ?, ?, ?, ?::jsonb, ?, ?, 'EXACT')
             """.trimIndent(),
-            event.eventId, event.protectedQuery.queryRedacted, event.protectedQuery.queryFingerprint,
-            event.protectedQuery.keyVersion, filtersJson(event.scope.normalizedFilters()), event.kind.sort,
-            event.resultCount,
+            eventId, protectedQuery.queryRedacted, protectedQuery.queryFingerprint,
+            protectedQuery.keyVersion, filtersJson(filters), sort,
+            resultCount,
         )
         jdbcTemplate.update(
             """
@@ -72,8 +94,8 @@ internal class JpaAccessAuditWriter(
                 access_event_id, key_version, query_ciphertext, created_at, expires_at
             ) values (?, ?, ?, ?, ?)
             """.trimIndent(),
-            event.eventId, event.protectedQuery.keyVersion, event.protectedQuery.queryCiphertext,
-            Timestamp.from(event.occurredAt), Timestamp.from(event.protectedQuery.expiresAt),
+            eventId, protectedQuery.keyVersion, protectedQuery.queryCiphertext,
+            Timestamp.from(occurredAt), Timestamp.from(protectedQuery.expiresAt),
         )
     }
 

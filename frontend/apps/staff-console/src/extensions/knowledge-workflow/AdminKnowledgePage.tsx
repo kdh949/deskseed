@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { DsDrawer } from '../../design-system'
+import { useAdminDraftExit } from '../../features/admin/useAdminDraftExit'
 import { ApiError, listGroups } from '../../api/client'
 import {
   SeedButton,
@@ -16,6 +18,8 @@ import {
   LIFECYCLES,
   getArticle,
   listArticles,
+  searchArticles,
+  type ArticleListFilter,
   listCategories,
   listRevisions,
   listSections,
@@ -61,12 +65,25 @@ export function AdminKnowledgePage() {
     queryFn: listSections,
     retry: false,
   })
-  const [lifecycle, setLifecycle] = useState('')
-  const [cursor, setCursor] = useState<string | undefined>()
+  const [filters, setFilters] = useState<ArticleListFilter>({})
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState({ query: '', key: crypto.randomUUID() })
+  const [cursor, setCursorValue] = useState<string | undefined>()
+  const [pageKey, setPageKey] = useState(() => crypto.randomUUID())
+  const setCursor = (value: string | undefined) => {
+    setCursorValue(value)
+    setPageKey(crypto.randomUUID())
+  }
   const articles = useQuery({
-    queryKey: ['knowledge-articles', lifecycle, cursor],
-    queryFn: () => listArticles(lifecycle, cursor),
+    queryKey: ['knowledge-articles', filters, search.key, pageKey],
+    queryFn: () =>
+      search.query
+        ? searchArticles(search.query, filters, cursor)
+        : listArticles(filters, cursor),
     retry: false,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const [selected, setSelected] = useState<Article | 'new' | null>(null)
   const [revisions, setRevisions] = useState<Revision[]>([])
@@ -87,6 +104,43 @@ export function AdminKnowledgePage() {
     description: '',
     displayOrder: 0,
   })
+  const [savedTaxonomy, setSavedTaxonomy] = useState('')
+  const [focusRequest, setFocusRequest] = useState(0)
+  const editorHeading = useRef<HTMLHeadingElement>(null)
+  const taxonomyHeading = useRef<HTMLHeadingElement>(null)
+  const returnFocus = useRef<HTMLElement | null>(null)
+  const createButton = useRef<HTMLButtonElement>(null)
+  const editable = selected === 'new' || selected?.lifecycle === 'DRAFT'
+  const dirty = editable && JSON.stringify(draft) !== savedDraft
+  const taxonomyDirty =
+    !!hierarchy && JSON.stringify(taxonomy) !== savedTaxonomy
+  const exit = useAdminDraftExit(dirty || taxonomyDirty, busy)
+  const focusedRequest = useRef(0)
+  useLayoutEffect(() => {
+    if (!focusRequest || focusRequest === focusedRequest.current || busy) return
+    const target = hierarchy ? taxonomyHeading.current : editorHeading.current
+    if (!target) return
+    focusedRequest.current = focusRequest
+    target.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }, [focusRequest, busy, hierarchy])
+  const clearEditors = () => {
+    setSelected(null)
+    setHierarchy(null)
+    setError(null)
+    setMustRefresh(false)
+  }
+  const restoreFocus = () => {
+    const target = returnFocus.current?.isConnected
+      ? returnFocus.current
+      : createButton.current
+    target?.focus()
+  }
+  const changeListing = (action: () => void) =>
+    exit.request(() => {
+      clearEditors()
+      action()
+    })
   const [groupPage, setGroupPage] = useState(0)
   const groups = useQuery({
     queryKey: ['knowledge-audience-groups', groupPage],
@@ -131,6 +185,8 @@ export function AdminKnowledgePage() {
     setMessage('')
     try {
       await read(id)
+      setHierarchy(null)
+      setFocusRequest((value) => value + 1)
       setMustRefresh(false)
     } catch (failure) {
       setFailure(failure)
@@ -210,17 +266,25 @@ export function AdminKnowledgePage() {
     kind: 'category' | 'section',
     existing?: Category | Section,
   ) => {
-    setHierarchy({ kind, existing })
-    setTaxonomy({
-      categoryId:
-        existing && 'categoryId' in existing ? existing.categoryId : '',
-      slug: existing?.slug ?? '',
-      title: existing?.title ?? '',
-      description: existing?.description ?? '',
-      displayOrder: existing?.displayOrder ?? 0,
+    const trigger = document.activeElement as HTMLElement
+    exit.request(() => {
+      returnFocus.current = trigger
+      setSelected(null)
+      setHierarchy({ kind, existing })
+      const next = {
+        categoryId:
+          existing && 'categoryId' in existing ? existing.categoryId : '',
+        slug: existing?.slug ?? '',
+        title: existing?.title ?? '',
+        description: existing?.description ?? '',
+        displayOrder: existing?.displayOrder ?? 0,
+      }
+      setTaxonomy(next)
+      setSavedTaxonomy(JSON.stringify(next))
+      setFocusRequest((value) => value + 1)
+      setError(null)
+      setMustRefresh(false)
     })
-    setError(null)
-    setMustRefresh(false)
   }
   const saveHierarchy = async (event: FormEvent) => {
     event.preventDefault()
@@ -237,6 +301,7 @@ export function AdminKnowledgePage() {
         )
       await Promise.all([categories.refetch(), sections.refetch()])
       setHierarchy(null)
+      restoreFocus()
       setMessage('분류를 저장했습니다.')
     } catch (failure) {
       setFailure(failure)
@@ -245,24 +310,30 @@ export function AdminKnowledgePage() {
     }
   }
   const failure = error || categories.error || sections.error || articles.error
-  const editable = selected === 'new' || selected?.lifecycle === 'DRAFT'
-  const dirty = editable && JSON.stringify(draft) !== savedDraft
   return (
-    <section className="knowledge-page">
+    <main className="knowledge-page knowledge-admin">
       <header>
         <h1>지식 문서</h1>
         <p>도움말을 분류하고 초안 작성·검토·발행을 관리합니다.</p>
       </header>
       <div className="knowledge-actions">
         <SeedButton
+          ref={createButton}
           disabled={busy || !sections.data}
-          onClick={() => {
-            setSelected('new')
-            setDraft(emptyDraft())
-            setRevisions([])
-            setError(null)
-            setMustRefresh(false)
-          }}
+          onClick={() =>
+            exit.request(() => {
+              returnFocus.current = createButton.current
+              setHierarchy(null)
+              const initial = emptyDraft()
+              setSavedDraft(JSON.stringify(initial))
+              setFocusRequest((value) => value + 1)
+              setSelected('new')
+              setDraft(initial)
+              setRevisions([])
+              setError(null)
+              setMustRefresh(false)
+            })
+          }
         >
           문서 만들기
         </SeedButton>
@@ -333,7 +404,9 @@ export function AdminKnowledgePage() {
           onSubmit={saveHierarchy}
           aria-label="지식 분류 편집"
         >
-          <h2>{hierarchy.kind === 'category' ? '카테고리' : '섹션'} 편집</h2>
+          <h2 ref={taxonomyHeading} tabIndex={-1}>
+            {hierarchy.kind === 'category' ? '카테고리' : '섹션'} 편집
+          </h2>
           <fieldset disabled={busy}>
             {hierarchy.kind === 'section' && (
               <SeedSelectField
@@ -398,28 +471,127 @@ export function AdminKnowledgePage() {
               <SeedButton type="submit" disabled={mustRefresh}>
                 분류 저장
               </SeedButton>
-              <SeedButton onClick={() => setHierarchy(null)}>
+              <SeedButton
+                onClick={() =>
+                  exit.request(() => {
+                    setHierarchy(null)
+                    restoreFocus()
+                  })
+                }
+              >
                 분류 편집 닫기
               </SeedButton>
             </div>
           </fieldset>
         </form>
       )}
-      <SeedSelectField
-        label="문서 상태 필터"
-        value={lifecycle}
-        onChange={(e) => {
-          setLifecycle(e.target.value)
-          setCursor(undefined)
+      <form
+        className="knowledge-search"
+        aria-label="전체 문서 검색"
+        onSubmit={(event) => {
+          event.preventDefault()
+          changeListing(() => {
+            setSearch({ query: searchInput.trim(), key: crypto.randomUUID() })
+            setCursor(undefined)
+          })
         }}
       >
-        <option value="">모든 상태</option>
-        {Object.entries(LIFECYCLES).map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </SeedSelectField>
+        <SeedTextField
+          label="문서 제목 검색"
+          hint="모든 문서의 최신 제목에서 검색합니다."
+          maxLength={254}
+          value={searchInput}
+          disabled={busy}
+          onChange={(event) => setSearchInput(event.target.value)}
+        />
+        <div className="knowledge-actions">
+          <SeedButton type="submit" disabled={busy || articles.isFetching}>
+            검색
+          </SeedButton>
+          <SeedButton
+            disabled={busy || articles.isFetching}
+            onClick={() =>
+              changeListing(() => {
+                setSearchInput('')
+                setSearch({ query: '', key: crypto.randomUUID() })
+                setCursor(undefined)
+              })
+            }
+          >
+            검색 초기화
+          </SeedButton>
+        </div>
+      </form>
+      <div className="knowledge-filters">
+        <SeedSelectField
+          label="문서 상태 필터"
+          value={filters.lifecycle ?? ''}
+          disabled={busy}
+          onChange={(event) => {
+            const value = event.target.value
+            changeListing(() => {
+              setFilters({ ...filters, lifecycle: value })
+              setCursor(undefined)
+            })
+          }}
+        >
+          <option value="">모든 상태</option>
+          {Object.entries(LIFECYCLES).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </SeedSelectField>
+        <SeedSelectField
+          label="문서 섹션 필터"
+          value={filters.sectionId ?? ''}
+          disabled={busy}
+          onChange={(event) => {
+            const value = event.target.value
+            changeListing(() => {
+              setFilters({ ...filters, sectionId: value })
+              setCursor(undefined)
+            })
+          }}
+        >
+          <option value="">모든 섹션</option>
+          {sections.data?.map((section) => (
+            <option key={section.id} value={section.id}>
+              {
+                categories.data?.find(
+                  (category) => category.id === section.categoryId,
+                )?.title
+              }{' '}
+              / {section.title}
+            </option>
+          ))}
+        </SeedSelectField>
+        <SeedSelectField
+          label="공개 범위 필터"
+          value={filters.audience ?? ''}
+          disabled={busy}
+          onChange={(event) => {
+            const value = event.target.value
+            changeListing(() => {
+              setFilters({ ...filters, audience: value })
+              setCursor(undefined)
+            })
+          }}
+        >
+          <option value="">모든 공개 범위</option>
+          {Object.entries(AUDIENCES).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </SeedSelectField>
+      </div>
+      {articles.data?.resultCount !== undefined && (
+        <p aria-live="polite">
+          검색 결과 {articles.data.resultCount.toLocaleString('ko-KR')}개 · 현재
+          목록 {articles.data.items.length}개
+        </p>
+      )}
       {articles.isPending ? (
         <SeedSkeletonRows />
       ) : (
@@ -427,13 +599,24 @@ export function AdminKnowledgePage() {
           {articles.data?.items.map((a) => (
             <li key={a.id}>
               <div>
-                <strong>{a.currentPublishedRevision?.title ?? a.slug}</strong>
+                <strong>{a.latestRevision.title}</strong>
+                <p>{a.latestRevision.summary}</p>
+                <p>주소: {a.slug}</p>
                 <p>
                   {LIFECYCLES[a.lifecycle]} · {AUDIENCES[a.audience.type]}
                 </p>
               </div>
-              <SeedButton disabled={busy} onClick={() => void open(a.id)}>
-                열기: {a.currentPublishedRevision?.title ?? a.slug}
+              <SeedButton
+                disabled={busy}
+                onClick={(event) => {
+                  const target = event.currentTarget
+                  exit.request(() => {
+                    returnFocus.current = target
+                    void open(a.id)
+                  })
+                }}
+              >
+                열기: {a.latestRevision.title}
               </SeedButton>
             </li>
           ))}
@@ -442,16 +625,26 @@ export function AdminKnowledgePage() {
       {articles.data?.items.length === 0 && (
         <SeedFeedbackState
           kind="empty"
-          title="이 상태의 문서가 없습니다."
-          description="문서를 만들거나 상태 필터를 변경하세요."
+          title="조건에 맞는 문서가 없습니다."
+          description="검색어 또는 필터를 변경하거나 새 문서를 만드세요."
         />
       )}
       <div className="knowledge-actions">
         {cursor && (
-          <SeedButton onClick={() => setCursor(undefined)}>첫 목록</SeedButton>
+          <SeedButton
+            disabled={busy || articles.isFetching}
+            onClick={() => changeListing(() => setCursor(undefined))}
+          >
+            첫 목록
+          </SeedButton>
         )}
         {articles.data?.nextCursor && (
-          <SeedButton onClick={() => setCursor(articles.data!.nextCursor!)}>
+          <SeedButton
+            disabled={busy || articles.isFetching}
+            onClick={() =>
+              changeListing(() => setCursor(articles.data!.nextCursor!))
+            }
+          >
             다음 목록
           </SeedButton>
         )}
@@ -459,7 +652,9 @@ export function AdminKnowledgePage() {
       {selected && (
         <section className="knowledge-editor">
           <header>
-            <h2>{selected === 'new' ? '새 문서' : draft.title}</h2>
+            <h2 ref={editorHeading} tabIndex={-1}>
+              {selected === 'new' ? '새 문서' : draft.title}
+            </h2>
             {selected !== 'new' && (
               <p>
                 {LIFECYCLES[selected.lifecycle]} · 최신 본문 버전{' '}
@@ -672,11 +867,36 @@ export function AdminKnowledgePage() {
               </ul>
             </details>
           )}
-          <SeedButton disabled={busy} onClick={() => setSelected(null)}>
+          <SeedButton
+            disabled={busy}
+            onClick={() =>
+              exit.request(() => {
+                setSelected(null)
+                restoreFocus()
+              })
+            }
+          >
             문서 닫기
           </SeedButton>
         </section>
       )}
-    </section>
+      <DsDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title={busy ? '저장 완료를 기다려 주세요' : '저장하지 않은 변경 사항'}
+        description={
+          busy
+            ? '저장이 완료된 뒤 이동할 수 있습니다.'
+            : '이동하면 현재 편집 중인 문서 또는 분류의 변경 사항이 사라집니다.'
+        }
+      >
+        <div className="knowledge-actions">
+          <SeedButton onClick={exit.cancel}>계속 편집</SeedButton>
+          <SeedButton disabled={busy} onClick={exit.discard}>
+            변경 사항 버리고 이동
+          </SeedButton>
+        </div>
+      </DsDrawer>
+    </main>
   )
 }

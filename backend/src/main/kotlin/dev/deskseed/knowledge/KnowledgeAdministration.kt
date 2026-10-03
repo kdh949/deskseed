@@ -128,7 +128,16 @@ data class KnowledgeArticleSummary(
     val audience: KnowledgeAudience,
     val audienceVersion: Int,
     val currentPublishedRevision: KnowledgeArticleRevisionSummary?,
+    val latestRevision: KnowledgeLatestRevisionSummary,
     val version: Long,
+)
+
+data class KnowledgeLatestRevisionSummary(val title: String, val summary: String)
+
+data class KnowledgeArticleSearchPage(
+    val items: List<KnowledgeArticleSummary>,
+    val nextCursor: String?,
+    val resultCount: Long,
 )
 
 data class KnowledgeArticleSummaryPage(
@@ -182,6 +191,13 @@ interface KnowledgeAdministration {
     ): KnowledgeArticleSummaryPage
 
     fun getArticle(articleId: UUID, actor: KnowledgeAdminActor): KnowledgeArticleView
+
+    fun searchArticles(
+        query: String,
+        cursor: String?,
+        filter: KnowledgeArticleListFilter,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleSearchPage
 
     fun updateDraft(
         articleId: UUID,

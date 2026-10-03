@@ -224,17 +224,78 @@ export const saveSection = (
       version: existing?.version,
     },
   )
-export const listArticles = (lifecycle: string, cursor?: string) =>
+export type ArticleSummary = Omit<Article, 'currentPublishedRevision'> & {
+  latestRevision: { title: string; summary: string }
+  currentPublishedRevision: {
+    id: string
+    revisionNumber: number
+    title: string
+    summary: string
+  } | null
+}
+export type ArticleListFilter = {
+  lifecycle?: string
+  sectionId?: string
+  audience?: string
+}
+export type ArticleListPage = {
+  items: ArticleSummary[]
+  nextCursor: string | null
+  resultCount?: number
+}
+const decodeArticleSummary = (value: unknown): ArticleSummary | undefined => {
+  if (
+    !decodeArticle(value) ||
+    !record(value) ||
+    !record(value.latestRevision) ||
+    !strings(value.latestRevision, ['title', 'summary'])
+  )
+    return undefined
+  return value as ArticleSummary
+}
+const decodeArticleList = (value: unknown): ArticleListPage | undefined => {
+  if (
+    !record(value) ||
+    !(value.nextCursor === null || typeof value.nextCursor === 'string')
+  )
+    return undefined
+  const items = list(decodeArticleSummary)(value.items)
+  return items ? { items, nextCursor: value.nextCursor } : undefined
+}
+export const listArticles = (filters: ArticleListFilter, cursor?: string) =>
   requestStaffResource(
-    `${admin}/articles?${new URLSearchParams({ ...(lifecycle ? { lifecycle } : {}), ...(cursor ? { cursor } : {}) })}`,
-    (v) => {
+    `${admin}/articles?${new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), ...(cursor ? { cursor } : {}) })}`,
+    decodeArticleList,
+  )
+export const searchArticles = (
+  query: string,
+  filters: ArticleListFilter,
+  cursor?: string,
+) =>
+  requestStaffResource(
+    `${admin}/articles/search`,
+    (value) => {
+      const page = decodeArticleList(value)
       if (
-        !record(v) ||
-        !(v.nextCursor === null || typeof v.nextCursor === 'string')
+        !page ||
+        !record(value) ||
+        typeof value.resultCount !== 'number' ||
+        !Number.isSafeInteger(value.resultCount) ||
+        value.resultCount < 0 ||
+        typeof value.hasMore !== 'boolean' ||
+        value.hasMore !== (page.nextCursor !== null)
       )
         return undefined
-      const items = list(decodeArticle)(v.items)
-      return items ? { items, nextCursor: v.nextCursor } : undefined
+      return { ...page, resultCount: value.resultCount }
+    },
+    {
+      method: 'POST',
+      body: {
+        query,
+        ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)),
+        ...(cursor ? { cursor } : {}),
+        interactionId: crypto.randomUUID(),
+      },
     },
   )
 export const getArticle = (id: string) =>

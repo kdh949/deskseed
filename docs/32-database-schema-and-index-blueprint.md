@@ -1,6 +1,6 @@
 # Database Schema and Index Blueprint
 
-P17 [관리자 KB 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)의 V100 예정 범위는 access_audit_events의 명시적 action/ADMIN_UI/search shape CHECK에 ADMIN_KNOWLEDGE_SEARCH_EXECUTED를 추가하는 것이다. 기존 search_audit_details/ciphertexts·보호 query retention·append-only 경계를 재사용한다. 문서 목록은 최신 revision의 title/summary만 join하며 body projection·새 검색 table·추정 index·backfill을 추가하지 않는다. 현재 계약 PR에서는 DDL을 실행하거나 runtime 지원을 주장하지 않는다.
+P17 [관리자 KB 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)의 V100 구현 범위는 access_audit_events의 명시적 action/ADMIN_UI/search shape CHECK에 ADMIN_KNOWLEDGE_SEARCH_EXECUTED를 추가하는 것이다. 기존 search_audit_details/ciphertexts·보호 query retention·append-only 경계를 재사용한다. 문서 목록은 최신 revision의 title/summary만 join하며 body projection·새 검색 table·추정 index·backfill을 추가하지 않는다. V100__admin_knowledge_search_audit.sql과 typed writer가 이 제약을 구현한다. 새 index 없이 bounded 50개 목록과 전체 EXACT count 비용을 유지하며 운영 성능은 별도 측정이 필요하다.
 
 ## 1. 목적
 
