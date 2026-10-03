@@ -19,6 +19,7 @@ const navigation = [
   { label: '직원', to: '/admin/staff' },
   { label: '그룹', to: '/admin/groups' },
   { label: '고객 접근', to: '/admin/settings/customer-access-mode' },
+  { label: '고객 동의 정책', to: '/admin/customer-consent-policies' },
   { label: '영업 시간표', to: '/admin/business-rules/schedules' },
   { label: 'First Reply SLA', to: '/admin/business-rules/sla' },
 ]

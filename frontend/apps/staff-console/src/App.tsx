@@ -3,6 +3,7 @@ import { SeedFeedbackState } from './design-system/canonical'
 import { AgentShellLayout } from './features/agent-shell/AgentShellLayout'
 import { AdminBusinessSchedulesPage } from './features/admin/AdminBusinessSchedulesPage'
 import { AdminCustomerAccessModePage } from './features/admin/AdminCustomerAccessModePage'
+import { AdminCustomerConsentPage } from './features/admin/AdminCustomerConsentPage'
 import { AdminFirstReplySlaPage } from './features/admin/AdminFirstReplySlaPage'
 import { AdminGroupsPage } from './features/admin/AdminGroupsPage'
 import { AdminMailPage } from './features/admin/AdminMailPage'
@@ -53,6 +54,7 @@ const adminChildren: RouteObject[] = [
   { path: 'operations/mail', element: <AdminMailPage /> },
   { path: 'staff', element: <AdminStaffPage /> },
   { path: 'groups', element: <AdminGroupsPage /> },
+  { path: 'customer-consent-policies', element: <AdminCustomerConsentPage /> },
   {
     path: 'settings/customer-access-mode',
     element: <AdminCustomerAccessModePage />,

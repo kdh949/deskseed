@@ -114,6 +114,60 @@ export const CheckEmail: Story = {
   },
 }
 
+export const PoliciesNotReady: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('/api/v1/customer/consent-policies', () =>
+          HttpResponse.json({ context: 'REGISTRATION', policies: [] }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('가입 약관을 준비하고 있습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('link', { name: '고객 지원 홈으로' }),
+    ).toHaveAttribute('href', '/')
+    await expect(
+      canvas.getByRole('link', { name: '로그인으로 돌아가기' }),
+    ).toHaveAttribute('href', '/customer/sign-in')
+    await expect(
+      canvas.queryByText('잠시 후 다시 방문해 주세요.'),
+    ).not.toBeInTheDocument()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '약관 다시 확인' }),
+    )
+    await expect(
+      canvas.queryByRole('button', { name: '계정 만들기' }),
+    ).not.toBeInTheDocument()
+  },
+}
+
+export const PoliciesUnavailable: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.get(
+          '/api/v1/customer/consent-policies',
+          () => new HttpResponse(null, { status: 503 }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText('가입 약관을 불러올 수 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('link', { name: '고객 지원 홈으로' }),
+    ).toHaveAttribute('href', '/')
+    await expect(canvas.getByRole('button', { name: /다시/ })).toBeVisible()
+  },
+}
+
 export const RegistrationEmail: Story = {
   render: () => (
     <Routes>
