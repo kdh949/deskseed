@@ -40,6 +40,7 @@ internal data class KnowledgeCursorProperties(
 internal class KnowledgeCursorConfiguration
 
 internal data class KnowledgeCursor(val createdAt: Instant, val articleId: UUID)
+internal data class KnowledgeRankedCursor(val rank: Float, val createdAt: Instant, val articleId: UUID)
 
 /** A signed cursor is bound to one audience/query/list scope and cannot be replayed elsewhere. */
 @Component
@@ -66,15 +67,40 @@ internal class KnowledgeCursorCodec(
         return runCatching { KnowledgeCursor(Instant.parse(values[2]), UUID.fromString(values[3])) }.getOrElse { invalid() }
     }
 
+    fun encodeRanked(scope: String, cursor: KnowledgeRankedCursor): String {
+        require(cursor.rank.isFinite() && cursor.rank >= 0) { "Knowledge rank is invalid" }
+        val payload = listOf(SEARCH_VERSION, scopeFingerprint(scope), cursor.rank, cursor.createdAt, cursor.articleId).joinToString(SEPARATOR)
+        val encodedPayload = encodeBase64(payload.toByteArray(StandardCharsets.UTF_8))
+        val keyId = properties.activeKeyId
+        return listOf(keyId, encodedPayload, encodeBase64(signature(keyId, encodedPayload, version = SEARCH_VERSION))).joinToString(ENVELOPE_SEPARATOR)
+    }
+
+    fun decodeRanked(scope: String, value: String?): KnowledgeRankedCursor? {
+        if (value == null) return null
+        if (value.length !in 24..1024) invalid()
+        val parts = value.split(ENVELOPE_SEPARATOR)
+        if (parts.size != 3 || parts.any(String::isEmpty)) invalid()
+        val (keyId, encodedPayload, encodedSignature) = parts
+        val key = properties.signingKeys[keyId] ?: invalid()
+        if (!MessageDigest.isEqual(signature(keyId, encodedPayload, key, SEARCH_VERSION), decodeBase64(encodedSignature))) invalid()
+        val values = String(decodeBase64(encodedPayload), StandardCharsets.UTF_8).split(SEPARATOR)
+        if (values.size != 5 || values[0] != SEARCH_VERSION || values[1] != scopeFingerprint(scope)) invalid()
+        return runCatching {
+            val rank = values[2].toFloat()
+            if (!rank.isFinite() || rank < 0) invalid()
+            KnowledgeRankedCursor(rank, Instant.parse(values[3]), UUID.fromString(values[4]))
+        }.getOrElse { invalid() }
+    }
+
     private fun scopeFingerprint(scope: String): String = MessageDigest.getInstance("SHA-256")
         .digest(scope.toByteArray(StandardCharsets.UTF_8))
         .take(12)
         .joinToString("") { "%02x".format(it) }
 
-    private fun signature(keyId: String, payload: String, key: String = properties.signingKeys.getValue(keyId)): ByteArray =
+    private fun signature(keyId: String, payload: String, key: String = properties.signingKeys.getValue(keyId), version: String = VERSION): ByteArray =
         Mac.getInstance("HmacSHA256").run {
             init(SecretKeySpec(key.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
-            doFinal("$VERSION$ENVELOPE_SEPARATOR$keyId$ENVELOPE_SEPARATOR$payload".toByteArray(StandardCharsets.UTF_8))
+            doFinal("$version$ENVELOPE_SEPARATOR$keyId$ENVELOPE_SEPARATOR$payload".toByteArray(StandardCharsets.UTF_8))
         }
 
     private fun encodeBase64(value: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(value)
@@ -86,6 +112,7 @@ internal class KnowledgeCursorCodec(
 
     private companion object {
         const val VERSION = "v1"
+        const val SEARCH_VERSION = "v2"
         const val SEPARATOR = "~"
         const val ENVELOPE_SEPARATOR = "."
     }

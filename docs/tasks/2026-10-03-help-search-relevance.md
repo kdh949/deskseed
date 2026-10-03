@@ -1,6 +1,6 @@
 # 도움말 관련도 정렬과 일치 문맥
 
-상태: CONTRACT_DEFINED. P06 / C-F03. FROZEN operation의 현행 runtime을 유지하고 예정 정렬·cursor 의미를 BLUEPRINT extension으로 구분했다.
+상태: P06 / C-F03 서버 구현 및 해당 회귀 검증 완료. 계약 PR #251의 예정 의미를 실제 operation 설명으로 승격했다. UI 연결은 후속이다.
 
 ## Goal
 
@@ -41,3 +41,12 @@ excerpt는 summary/body에서 query 문맥을 고른 뒤 공백을 정리한 최
 ## Compatibility / human explanation
 
 동일 endpoint와 response DTO를 유지한다. signed search v2만 배포 시 새로 시작하며 목록 cursor는 호환된다. migration/backfill 없이 기존 V52 projection을 재사용하므로 rollback은 코드 revert이며 열린 검색은 다시 실행한다. 빈 결과·오류·이전 cursor 안내는 UI에서 분리한다. rank는 lexical relevance heuristic이며 실제 고객 질의 품질을 보장하는 confidence score가 아니다. 더 큰 corpus의 측정 한계가 생길 때만 새 검색 기술을 검토한다.
+
+
+## Implementation and observed verification
+
+- 기존 searchInternal을 rank → revision 시각 → UUID keyset으로 변경했다. 페이지를 자른 뒤에만 bounded plain text headline을 생성하며 rank는 외부 응답에 포함하지 않는다.
+- 목록 v1의 기존 HMAC 형식은 보존하고 검색 전용 v2 encode/decode를 추가했다. Float4 round trip, key rotation, scope/변조/비유한 rank 거절을 단위 검증했다.
+- 새 관련도 회귀를 기존 SQL에 적용해 실제 순서 실패를 확인한 뒤 구현을 복원했다. 초기 테스트의 Jackson collection 타입 컴파일 오류는 수정했고 런타임 회귀와 구분했다.
+- focused fast 2, knowledge integration 8, architecture 1, API documentation contract 5, Core bundle/docs-check/diff-check를 통과했다. English phrase/OR/identifier·한국어·title/summary/body 우선순위·동점 페이지·hidden audience·권한 변경·v1/query/reader/변조 cursor·STAFF audit 실패를 포함한다.
+- 모든 고객 질의에 대한 의미적 관련성, production corpus/p95, 전체 backend suite, UI Storybook, live deployment는 로컬에서 검증하지 않았다. rank 계산은 모든 일치 문서를 읽고 정렬하므로 광범위 질의의 운영 성능은 배포 전 별도 확인이 필요하다.
