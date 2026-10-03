@@ -5,6 +5,8 @@ import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
 import dev.deskseed.foundation.ActorType
 import dev.deskseed.organization.AdminActorContext
+import dev.deskseed.organization.AdminStaffDirectoryFilter
+import dev.deskseed.organization.AdminGroupDirectoryFilter
 import dev.deskseed.organization.CreateStaffAccountCommand
 import dev.deskseed.organization.GroupMembershipView
 import dev.deskseed.organization.GroupReference
@@ -22,6 +24,8 @@ import dev.deskseed.ticketing.TicketAssignmentUsage
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
+import org.springframework.data.jpa.domain.Specification
+import jakarta.persistence.criteria.Predicate
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -29,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+import java.util.Locale
 
 @Service
 internal class JpaOrganizationAdministration(
@@ -46,6 +51,39 @@ internal class JpaOrganizationAdministration(
     @Transactional(readOnly = true)
     override fun listStaff(page: Int, size: Int): OrganizationPage<StaffAccountView> {
         val staffPage = staffRepository.findAll(pageRequest(page, size, "displayName", "id"))
+        return staffPageView(staffPage)
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    override fun searchStaff(filter: AdminStaffDirectoryFilter, page: Int, size: Int): OrganizationPage<StaffAccountView> {
+        require(filter.memberOfGroupId == null || filter.excludeGroupId == null)
+        (filter.memberOfGroupId ?: filter.excludeGroupId)?.let(::activeGroup)
+        val pattern = directorySearchPattern(filter.query)
+        val specification = Specification<StaffAccountEntity> { root, query, builder ->
+            val predicates = mutableListOf<Predicate>(builder.or(
+                builder.like(builder.lower(root.get("displayName")), pattern, '\\'),
+                builder.like(root.get("emailNormalized"), pattern, '\\'),
+            ))
+            filter.role?.let { predicates += builder.equal(root.get<StaffRole>("role"), it) }
+            filter.status?.let { predicates += builder.equal(root.get<StaffStatus>("status"), it) }
+            (filter.memberOfGroupId ?: filter.excludeGroupId)?.let { groupId ->
+                val membership = requireNotNull(query).subquery(UUID::class.java)
+                val member = membership.from(GroupMembershipEntity::class.java)
+                membership.select(member.get("id")).where(
+                    builder.equal(member.get<UUID>("staffId"), root.get<UUID>("id")),
+                    builder.equal(member.get<UUID>("groupId"), groupId),
+                    builder.equal(member.get<GroupMembershipStatus>("status"), GroupMembershipStatus.ACTIVE),
+                )
+                val exists = builder.exists(membership)
+                predicates += if (filter.excludeGroupId != null) builder.not(exists) else exists
+            }
+            builder.and(*predicates.toTypedArray())
+        }
+        return staffPageView(staffRepository.findAll(specification, pageRequest(page, size, "displayName", "id")))
+    }
+
+    private fun staffPageView(staffPage: Page<StaffAccountEntity>): OrganizationPage<StaffAccountView> {
         val staffIds = staffPage.content.map(StaffAccountEntity::id)
         val memberships = if (staffIds.isEmpty()) {
             emptyList()
@@ -216,6 +254,21 @@ internal class JpaOrganizationAdministration(
     @Transactional(readOnly = true)
     override fun listGroups(page: Int, size: Int): OrganizationPage<SupportGroupView> {
         val groupPage = groupRepository.findAll(pageRequest(page, size, "name", "id"))
+        return groupPageView(groupPage)
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    override fun searchGroups(filter: AdminGroupDirectoryFilter, page: Int, size: Int): OrganizationPage<SupportGroupView> {
+        val pattern = directorySearchPattern(filter.query)
+        val specification = Specification<SupportGroupEntity> { root, _, builder ->
+            val name = builder.like(builder.lower(root.get("name")), pattern, '\\')
+            filter.status?.let { builder.and(name, builder.equal(root.get<OrganizationStatus>("status"), it)) } ?: name
+        }
+        return groupPageView(groupRepository.findAll(specification, pageRequest(page, size, "name", "id")))
+    }
+
+    private fun groupPageView(groupPage: Page<SupportGroupEntity>): OrganizationPage<SupportGroupView> {
         val groupIds = groupPage.content.map(SupportGroupEntity::id)
         val memberCounts = if (groupIds.isEmpty()) {
             emptyMap()
@@ -408,6 +461,13 @@ internal class JpaOrganizationAdministration(
         val staff = staffRepository.findById(membership.staffId)
             .orElseThrow { OrganizationNotFoundException("STAFF_NOT_FOUND") }
         return GroupMembershipView(membership.groupId, staff.id, staff.displayName, staff.role)
+    }
+
+    private fun directorySearchPattern(query: String): String {
+        require(query.isNotBlank() && query.length <= 254 && query.none(Char::isISOControl))
+        val literal = query.trim().lowercase(Locale.ROOT)
+            .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return "%$literal%"
     }
 
     private fun activeGroup(groupId: UUID): SupportGroupEntity = groupRepository.findById(groupId)

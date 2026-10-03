@@ -30,13 +30,14 @@ function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return render(
+  const view = render(
     <DeskseedThemeProvider>
       <QueryClientProvider client={queryClient}>
         <AdminGroupsPage />
       </QueryClientProvider>
     </DeskseedThemeProvider>,
   )
+  return { ...view, queryClient }
 }
 
 function json(body: unknown) {
@@ -49,6 +50,61 @@ function json(body: unknown) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('AdminGroupsPage', () => {
+  it('keeps query text out of cache keys and clears member search when switching groups', async () => {
+    const user = userEvent.setup()
+    const query = 'private-member@example.test'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), 'http://deskseed.test').pathname
+      if (path === '/api/v1/agent/csrf')
+        return json({ token: 'csrf-directory', headerName: 'X-CSRF-TOKEN' })
+      if (path === '/api/v1/admin/groups') return json([groupA, groupB])
+      if (path.endsWith('/members')) return json([])
+      if (path === '/api/v1/admin/staff/search')
+        return json([
+          {
+            id: memberA.staffId,
+            email: 'member@example.test',
+            displayName: memberA.staffDisplayName,
+            role: 'AGENT',
+            status: 'ACTIVE',
+            memberships: [],
+            auditAuthorities: [],
+            lastLoginAt: null,
+          },
+        ])
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { queryClient } = renderPage()
+    await user.click(
+      (await screen.findAllByRole('button', { name: '그룹 관리' }))[0]!,
+    )
+    await user.type(
+      await screen.findByLabelText('구성원 이름 또는 이메일 검색'),
+      `${query}{Enter}`,
+    )
+    await screen.findByText('검색된 구성원 1명')
+    expect(
+      JSON.stringify(
+        queryClient
+          .getQueryCache()
+          .getAll()
+          .map((entry) => entry.queryKey),
+      ),
+    ).not.toContain(query)
+    await user.click(screen.getAllByRole('button', { name: '그룹 관리' })[1]!)
+    expect(
+      await screen.findByLabelText('구성원 이름 또는 이메일 검색'),
+    ).toHaveValue('')
+    expect(
+      screen.getByLabelText('추가할 직원 이름 또는 이메일 검색'),
+    ).toHaveValue('')
+    expect(screen.queryByText(memberA.staffDisplayName)).not.toBeInTheDocument()
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/search')),
+    ).toHaveLength(1)
+  })
+
   it('clears a removal candidate when an administrator switches groups', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

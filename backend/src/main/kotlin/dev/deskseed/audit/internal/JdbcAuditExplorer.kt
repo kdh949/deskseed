@@ -1,5 +1,7 @@
 package dev.deskseed.audit.internal
 
+import dev.deskseed.audit.AdminDirectorySearchKind
+
 import dev.deskseed.audit.AdminSecurityAudit
 import dev.deskseed.audit.AdminSecurityAuditWriter
 import dev.deskseed.audit.AdminSecurityOutcome
@@ -601,6 +603,20 @@ internal class JdbcAuditExplorer(
     }
 
     private fun searchContext(row: ProjectionRow): AuditSearchContext? {
+        if (AdminDirectorySearchKind.entries.any { it.action == row.action }) {
+            return AuditSearchContext(
+                queryRedacted = row.queryRedacted ?: return null,
+                queryFingerprint = row.searchFingerprint ?: return null,
+                filters = stringMap(row.searchFiltersJson),
+                sort = row.searchSort,
+                resultCount = row.searchResultCount ?: 0,
+                resultCountRelation = SearchResultCountRelation.EXACT,
+                originSearchActivityId = null,
+                openedActivities = emptyList(),
+                openedActivityCount = 0,
+                openedActivitiesTruncated = false,
+            )
+        }
         val search = when {
             row.action == "SEARCH_EXECUTED" -> row
             row.originSearchEventId != null -> jdbcTemplate.query(
@@ -725,7 +741,8 @@ internal class JdbcAuditExplorer(
         outcome = row.outcome,
         requestId = row.requestId,
         correlationId = row.correlationId,
-        protectedContentAvailable = row.protectedContentAvailable,
+        protectedContentAvailable = row.protectedContentAvailable &&
+            AdminDirectorySearchKind.entries.none { it.action == row.action },
         searchFingerprint = row.searchFingerprint,
     )
 

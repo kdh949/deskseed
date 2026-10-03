@@ -6,6 +6,7 @@ import {
   disableStaff,
   grantStaffAuditAuthority,
   listStaff,
+  searchAdminStaff,
   revokeStaffAuditAuthority,
 } from '../../api/client'
 import type {
@@ -38,6 +39,10 @@ const AUDIT_AUTHORITIES: Array<{
 export function AdminStaffPage() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
+  const [searchDraft, setSearchDraft] = useState('')
+  const [search, setSearch] = useState<{ query: string; key: string } | null>(
+    null,
+  )
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState<StaffRole>('AGENT')
@@ -51,8 +56,15 @@ export function AdminStaffPage() {
   )
 
   const staffQuery = useQuery({
-    queryKey: ['admin-staff', page],
-    queryFn: () => listStaff(page),
+    // Search text stays in component state and the POST body, never in a cache key.
+    queryKey: ['admin-staff', search?.key ?? 'list', page],
+    queryFn: () =>
+      search
+        ? searchAdminStaff({ query: search.query }, page)
+        : listStaff(page),
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   })
   const refresh = async () => {
@@ -95,12 +107,12 @@ export function AdminStaffPage() {
     },
   })
 
-  if (staffQuery.isPending) {
+  if (staffQuery.isPending && !search) {
     return (
       <AdminStaffScreenState kind="loading" title="직원 계정을 불러오는 중" />
     )
   }
-  if (staffQuery.isError) {
+  if (staffQuery.isError && !search) {
     const denied =
       staffQuery.error instanceof ApiError && staffQuery.error.status === 403
     return (
@@ -239,14 +251,78 @@ export function AdminStaffPage() {
 
       <section aria-labelledby="staff-list-heading" className="admin-surface">
         <h2 id="staff-list-heading">직원 계정</h2>
-        {staffPage.items.length === 0 ? (
+        <form
+          className="admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            setPage(0)
+            setSearch(
+              searchDraft.trim()
+                ? { query: searchDraft, key: crypto.randomUUID() }
+                : null,
+            )
+            setDisableCandidate(null)
+            setAuthorityStaff(null)
+          }}
+        >
+          <label className="admin-field" htmlFor="staff-search">
+            <span>직원 이름 또는 이메일 검색</span>
+            <input
+              id="staff-search"
+              type="search"
+              autoComplete="off"
+              maxLength={254}
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+            />
+          </label>
+          <div className="admin-form-actions">
+            <DsButton
+              type="submit"
+              tone="primary"
+              disabled={staffQuery.isFetching}
+            >
+              직원 검색
+            </DsButton>
+            <DsButton
+              onClick={() => {
+                setSearchDraft('')
+                setSearch(null)
+                setPage(0)
+              }}
+            >
+              검색 초기화
+            </DsButton>
+          </div>
+        </form>
+        {staffQuery.isPending ? (
+          <ScreenState compact kind="loading" title="직원을 검색하는 중" />
+        ) : staffQuery.isError ? (
           <ScreenState
             compact
-            description="새 직원 계정을 만들면 이 목록에서 권한과 상태를 확인할 수 있습니다."
-            kind="empty"
-            title="등록된 직원 계정이 없습니다."
+            kind={
+              staffQuery.error instanceof ApiError &&
+              staffQuery.error.status === 403
+                ? 'denied'
+                : 'error'
+            }
+            title="직원 검색 결과를 불러오지 못했습니다."
+            action={<RetryButton onClick={() => void staffQuery.refetch()} />}
           />
-        ) : (
+        ) : staffPage && staffPage.items.length === 0 ? (
+          <ScreenState
+            compact
+            description={
+              search
+                ? '다른 이름이나 이메일로 검색하거나 검색을 초기화해 주세요.'
+                : '새 직원 계정을 만들면 이 목록에서 권한과 상태를 확인할 수 있습니다.'
+            }
+            kind="empty"
+            title={
+              search ? '검색 결과가 없습니다.' : '등록된 직원 계정이 없습니다.'
+            }
+          />
+        ) : staffPage ? (
           <div className="admin-table-wrap">
             <table className="admin-table">
               <caption className="sr-only">직원 계정 목록</caption>
@@ -303,8 +379,14 @@ export function AdminStaffPage() {
               </tbody>
             </table>
           </div>
-        )}
-        {staffPage.totalPages > 1 ? (
+        ) : null}
+        {staffPage && !staffQuery.isError ? (
+          <p
+            role="status"
+            className="admin-muted"
+          >{`${search ? '검색 결과' : '전체 직원'} ${staffPage.totalCount}명`}</p>
+        ) : null}
+        {staffPage && !staffQuery.isError && staffPage.totalPages > 1 ? (
           <div className="admin-inline-actions">
             <DsButton
               disabled={page === 0}

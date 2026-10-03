@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect } from 'storybook/test'
+import { expect, fn, userEvent } from 'storybook/test'
 import { DsButton } from './DeskseedControls'
 
 const meta = {
@@ -7,6 +7,15 @@ const meta = {
   component: DsButton,
   argTypes: {
     tone: { control: 'select', options: ['primary', 'secondary', 'ghost'] },
+    type: {
+      control: 'select',
+      options: ['button', 'submit', 'reset'],
+      description: '기본값 button. 폼 제출은 submit을 명시합니다.',
+    },
+    onClick: {
+      description:
+        '네이티브 버튼 클릭 핸들러. 폼 제출은 상위 form의 onSubmit에서 처리합니다.',
+    },
   },
   parameters: {
     docs: {
@@ -73,5 +82,28 @@ export const CssCheck: Story = {
     await expect(getComputedStyle(button).backgroundColor).toBe(
       'rgb(14, 113, 117)',
     )
+  },
+}
+
+/** 검색 실행처럼 폼을 제출할 때 type을 명시하고 보조 행동은 별도 클릭으로 처리합니다. */
+export const FormActions: Story = {
+  args: { onClick: fn() },
+  render: (args) => (
+    <form onSubmit={(event) => event.preventDefault()}>
+      <DsButton type="submit" tone="primary">
+        검색
+      </DsButton>
+      <DsButton type="button" tone="secondary" onClick={args.onClick}>
+        초기화
+      </DsButton>
+    </form>
+  ),
+  play: async ({ canvas, args }) => {
+    await expect(canvas.getByRole('button', { name: '검색' })).toHaveAttribute(
+      'type',
+      'submit',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '초기화' }))
+    await expect(args.onClick).toHaveBeenCalledOnce()
   },
 }

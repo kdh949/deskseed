@@ -67,6 +67,10 @@ data class CreateStaffAccountCommand(
 )
 
 interface OrganizationAdministration {
+    fun searchStaff(filter: AdminStaffDirectoryFilter, page: Int = 0, size: Int = 50): OrganizationPage<StaffAccountView>
+
+    fun searchGroups(filter: AdminGroupDirectoryFilter, page: Int = 0, size: Int = 50): OrganizationPage<SupportGroupView>
+
     fun listStaff(page: Int = 0, size: Int = 50): OrganizationPage<StaffAccountView>
 
     fun createStaff(command: CreateStaffAccountCommand, actor: AdminActorContext): StaffAccountView

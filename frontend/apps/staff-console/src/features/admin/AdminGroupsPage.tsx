@@ -7,7 +7,8 @@ import {
   disableGroup,
   listGroupMembers,
   listGroups,
-  listStaff,
+  searchAdminGroups,
+  searchAdminStaff,
   removeGroupMember,
   renameGroup,
 } from '../../api/client'
@@ -22,6 +23,21 @@ import {
 export function AdminGroupsPage() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
+  const [searchDraft, setSearchDraft] = useState('')
+  const [search, setSearch] = useState<{ query: string; key: string } | null>(
+    null,
+  )
+  const [memberPage, setMemberPage] = useState(0)
+  const [memberSearchDraft, setMemberSearchDraft] = useState('')
+  const [memberSearch, setMemberSearch] = useState<{
+    query: string
+    key: string
+  } | null>(null)
+  const [staffSearchDraft, setStaffSearchDraft] = useState('')
+  const [staffSearch, setStaffSearch] = useState<{
+    query: string
+    key: string
+  } | null>(null)
   const [staffOptionPage, setStaffOptionPage] = useState(0)
   const [newGroupName, setNewGroupName] = useState('')
   const [selectedGroup, setSelectedGroup] = useState<SupportGroup | null>(null)
@@ -35,20 +51,65 @@ export function AdminGroupsPage() {
   const [disableOpen, setDisableOpen] = useState(false)
 
   const groupsQuery = useQuery({
-    queryKey: ['admin-groups', page],
-    queryFn: () => listGroups(page),
+    queryKey: ['admin-groups', search?.key ?? 'list', page],
+    queryFn: () =>
+      search
+        ? searchAdminGroups({ query: search.query }, page)
+        : listGroups(page),
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   })
   const staffQuery = useQuery({
-    queryKey: ['admin-group-member-options', staffOptionPage],
-    queryFn: () => listStaff(staffOptionPage, 100),
-    enabled: selectedGroup?.status === 'ACTIVE',
+    queryKey: [
+      'admin-group-member-options',
+      selectedGroup?.id,
+      staffSearch?.key,
+      staffOptionPage,
+    ],
+    queryFn: () =>
+      searchAdminStaff(
+        {
+          query: staffSearch!.query,
+          status: 'ACTIVE',
+          excludeGroupId: selectedGroup!.id,
+        },
+        staffOptionPage,
+      ),
+    enabled: selectedGroup?.status === 'ACTIVE' && staffSearch !== null,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   })
   const membersQuery = useQuery({
-    queryKey: ['admin-group-members', selectedGroup?.id],
-    queryFn: () => listGroupMembers(selectedGroup!.id),
+    queryKey: [
+      'admin-group-members',
+      selectedGroup?.id,
+      memberSearch?.key ?? 'list',
+      memberPage,
+    ],
+    queryFn: async () => {
+      if (!memberSearch) return listGroupMembers(selectedGroup!.id, memberPage)
+      const result = await searchAdminStaff(
+        { query: memberSearch.query, memberOfGroupId: selectedGroup!.id },
+        memberPage,
+      )
+      return {
+        ...result,
+        items: result.items.map((staff) => ({
+          groupId: selectedGroup!.id,
+          staffId: staff.id,
+          staffDisplayName: staff.displayName,
+          role: staff.role,
+        })),
+      }
+    },
     enabled: selectedGroup?.status === 'ACTIVE',
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: false,
   })
   const refreshGroups = async () => {
@@ -111,18 +172,14 @@ export function AdminGroupsPage() {
       (group) => group.id === selectedGroup.id,
     )
     if (current) setSelectedGroup(current)
-    else {
-      setSelectedGroup(null)
-      setRemoveCandidate(null)
-    }
   }, [groupsQuery.data, selectedGroup])
 
-  if (groupsQuery.isPending) {
+  if (groupsQuery.isPending && !search) {
     return (
       <AdminGroupsScreenState kind="loading" title="지원 그룹을 불러오는 중" />
     )
   }
-  if (groupsQuery.isError) {
+  if (groupsQuery.isError && !search) {
     const denied =
       groupsQuery.error instanceof ApiError && groupsQuery.error.status === 403
     return (
@@ -170,12 +227,7 @@ export function AdminGroupsPage() {
   }
 
   const groupPage = groupsQuery.data
-  const memberIds = new Set(
-    membersQuery.data?.items.map((member) => member.staffId),
-  )
-  const activeStaff = (staffQuery.data?.items ?? []).filter(
-    (staff) => staff.status === 'ACTIVE' && !memberIds.has(staff.id),
-  )
+  const activeStaff = staffQuery.data?.items ?? []
   const selectedRemoveCandidate =
     selectedGroup && removeCandidate?.groupId === selectedGroup.id
       ? removeCandidate
@@ -184,6 +236,16 @@ export function AdminGroupsPage() {
     setSelectedGroup(null)
     setRemoveCandidate(null)
     setDisableOpen(false)
+    resetMemberSearches()
+  }
+  const resetMemberSearches = () => {
+    setMemberSearchDraft('')
+    setMemberSearch(null)
+    setMemberPage(0)
+    setStaffSearchDraft('')
+    setStaffSearch(null)
+    setStaffOptionPage(0)
+    setNewMemberId('')
   }
   const changeGroupPage = (nextPage: number) => {
     setPage(nextPage)
@@ -243,14 +305,78 @@ export function AdminGroupsPage() {
 
       <section aria-labelledby="group-list-heading" className="admin-surface">
         <h2 id="group-list-heading">지원 그룹</h2>
-        {groupPage.items.length === 0 ? (
+        <form
+          className="admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            closeSelectedGroup()
+            setPage(0)
+            setSearch(
+              searchDraft.trim()
+                ? { query: searchDraft, key: crypto.randomUUID() }
+                : null,
+            )
+          }}
+        >
+          <label className="admin-field" htmlFor="group-search">
+            <span>그룹 이름 검색</span>
+            <input
+              id="group-search"
+              type="search"
+              autoComplete="off"
+              maxLength={254}
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+            />
+          </label>
+          <div className="admin-form-actions">
+            <DsButton
+              type="submit"
+              tone="primary"
+              disabled={groupsQuery.isFetching}
+            >
+              그룹 검색
+            </DsButton>
+            <DsButton
+              onClick={() => {
+                closeSelectedGroup()
+                setSearchDraft('')
+                setSearch(null)
+                setPage(0)
+              }}
+            >
+              검색 초기화
+            </DsButton>
+          </div>
+        </form>
+        {groupsQuery.isPending ? (
+          <ScreenState compact kind="loading" title="그룹을 검색하는 중" />
+        ) : groupsQuery.isError ? (
           <ScreenState
             compact
-            description="새 지원 그룹을 만들면 구성원과 상태를 여기에서 관리할 수 있습니다."
-            kind="empty"
-            title="등록된 지원 그룹이 없습니다."
+            kind={
+              groupsQuery.error instanceof ApiError &&
+              groupsQuery.error.status === 403
+                ? 'denied'
+                : 'error'
+            }
+            title="그룹 검색 결과를 불러오지 못했습니다."
+            action={<RetryButton onClick={() => void groupsQuery.refetch()} />}
           />
-        ) : (
+        ) : groupPage && groupPage.items.length === 0 ? (
+          <ScreenState
+            compact
+            description={
+              search
+                ? '다른 이름으로 검색하거나 검색을 초기화해 주세요.'
+                : '새 지원 그룹을 만들면 구성원과 상태를 여기에서 관리할 수 있습니다.'
+            }
+            kind="empty"
+            title={
+              search ? '검색 결과가 없습니다.' : '등록된 지원 그룹이 없습니다.'
+            }
+          />
+        ) : groupPage ? (
           <div className="admin-table-wrap">
             <table className="admin-table">
               <caption className="sr-only">지원 그룹 목록</caption>
@@ -272,6 +398,7 @@ export function AdminGroupsPage() {
                       <DsButton
                         aria-expanded={selectedGroup?.id === group.id}
                         onClick={() => {
+                          resetMemberSearches()
                           setSelectedGroup(group)
                           setRemoveCandidate(null)
                           setRenamedGroup(group.name)
@@ -289,8 +416,14 @@ export function AdminGroupsPage() {
               </tbody>
             </table>
           </div>
-        )}
-        {groupPage.totalPages > 1 ? (
+        ) : null}
+        {groupPage && !groupsQuery.isError ? (
+          <p
+            role="status"
+            className="admin-muted"
+          >{`${search ? '검색 결과' : '전체 그룹'} ${groupPage.totalCount}개`}</p>
+        ) : null}
+        {groupPage && !groupsQuery.isError && groupPage.totalPages > 1 ? (
           <div className="admin-inline-actions">
             <DsButton
               disabled={page === 0}
@@ -369,6 +502,52 @@ export function AdminGroupsPage() {
                 className="admin-surface"
               >
                 <h3 id="group-members-heading">활성 구성원</h3>
+                <form
+                  className="admin-form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    setRemoveCandidate(null)
+                    setMemberPage(0)
+                    setMemberSearch(
+                      memberSearchDraft.trim()
+                        ? { query: memberSearchDraft, key: crypto.randomUUID() }
+                        : null,
+                    )
+                  }}
+                >
+                  <label className="admin-field" htmlFor="member-search">
+                    <span>구성원 이름 또는 이메일 검색</span>
+                    <input
+                      id="member-search"
+                      type="search"
+                      autoComplete="off"
+                      maxLength={254}
+                      value={memberSearchDraft}
+                      onChange={(event) =>
+                        setMemberSearchDraft(event.target.value)
+                      }
+                    />
+                  </label>
+                  <div className="admin-form-actions">
+                    <DsButton
+                      type="submit"
+                      tone="primary"
+                      disabled={membersQuery.isFetching}
+                    >
+                      구성원 검색
+                    </DsButton>
+                    <DsButton
+                      onClick={() => {
+                        setMemberSearchDraft('')
+                        setMemberSearch(null)
+                        setMemberPage(0)
+                        setRemoveCandidate(null)
+                      }}
+                    >
+                      구성원 검색 초기화
+                    </DsButton>
+                  </div>
+                </form>
                 {membersQuery.isPending ? (
                   <ScreenState
                     compact
@@ -380,13 +559,15 @@ export function AdminGroupsPage() {
                     title="그룹 구성원을 불러오지 못했습니다."
                     tone="danger"
                   >
-                    <p>새로고침한 뒤 다시 시도해 주세요.</p>
+                    <RetryButton onClick={() => void membersQuery.refetch()} />
                   </Notification>
                 ) : (
                   <>
                     {membersQuery.data.items.length === 0 ? (
                       <p className="admin-muted">
-                        현재 활성 구성원이 없습니다.
+                        {memberSearch
+                          ? '검색 조건에 맞는 구성원이 없습니다.'
+                          : '현재 활성 구성원이 없습니다.'}
                       </p>
                     ) : (
                       <div className="admin-table-wrap">
@@ -424,6 +605,100 @@ export function AdminGroupsPage() {
                         </table>
                       </div>
                     )}
+                    <p
+                      role="status"
+                      className="admin-muted"
+                    >{`${memberSearch ? '검색된 구성원' : '전체 구성원'} ${membersQuery.data.totalCount}명`}</p>
+                    {membersQuery.data.totalPages > 1 ? (
+                      <div className="admin-inline-actions">
+                        <DsButton
+                          disabled={memberPage === 0}
+                          onClick={() => {
+                            setMemberPage(memberPage - 1)
+                            setRemoveCandidate(null)
+                          }}
+                        >
+                          이전 구성원 페이지
+                        </DsButton>
+                        <span>{`${memberPage + 1} / ${membersQuery.data.totalPages} 구성원 페이지`}</span>
+                        <DsButton
+                          disabled={
+                            memberPage + 1 >= membersQuery.data.totalPages
+                          }
+                          onClick={() => {
+                            setMemberPage(memberPage + 1)
+                            setRemoveCandidate(null)
+                          }}
+                        >
+                          다음 구성원 페이지
+                        </DsButton>
+                      </div>
+                    ) : null}
+                    <form
+                      className="admin-form"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        setStaffOptionPage(0)
+                        setNewMemberId('')
+                        setStaffSearch(
+                          staffSearchDraft.trim()
+                            ? {
+                                query: staffSearchDraft,
+                                key: crypto.randomUUID(),
+                              }
+                            : null,
+                        )
+                      }}
+                    >
+                      <label className="admin-field" htmlFor="candidate-search">
+                        <span>추가할 직원 이름 또는 이메일 검색</span>
+                        <input
+                          id="candidate-search"
+                          type="search"
+                          autoComplete="off"
+                          maxLength={254}
+                          value={staffSearchDraft}
+                          onChange={(event) =>
+                            setStaffSearchDraft(event.target.value)
+                          }
+                        />
+                      </label>
+                      <p className="admin-muted">
+                        이 그룹에 속하지 않은 활성 직원을 검색합니다.
+                      </p>
+                      <div className="admin-form-actions">
+                        <DsButton
+                          type="submit"
+                          tone="primary"
+                          disabled={staffQuery.isFetching}
+                        >
+                          추가할 직원 검색
+                        </DsButton>
+                        <DsButton
+                          onClick={() => {
+                            setStaffSearchDraft('')
+                            setStaffSearch(null)
+                            setStaffOptionPage(0)
+                            setNewMemberId('')
+                          }}
+                        >
+                          직원 검색 초기화
+                        </DsButton>
+                      </div>
+                    </form>
+                    {staffSearch && staffQuery.isPending ? (
+                      <ScreenState
+                        compact
+                        kind="loading"
+                        title="추가할 직원을 검색하는 중"
+                      />
+                    ) : null}
+                    {staffQuery.data ? (
+                      <p
+                        role="status"
+                        className="admin-muted"
+                      >{`추가 가능한 직원 ${staffQuery.data.totalCount}명`}</p>
+                    ) : null}
                     <form
                       className="admin-form"
                       onSubmit={(event) => {
@@ -452,11 +727,13 @@ export function AdminGroupsPage() {
                           value={newMemberId}
                         >
                           <option value="">
-                            {staffQuery.isPending
-                              ? '직원 목록을 불러오는 중…'
-                              : staffQuery.isError
-                                ? '직원 목록을 불러오지 못했습니다.'
-                                : '직원을 선택하세요'}
+                            {!staffSearch
+                              ? '이름 또는 이메일로 먼저 검색하세요'
+                              : staffQuery.isPending
+                                ? '직원 목록을 불러오는 중…'
+                                : staffQuery.isError
+                                  ? '직원 목록을 불러오지 못했습니다.'
+                                  : '직원을 선택하세요'}
                           </option>
                           {activeStaff.map((staff) => (
                             <option key={staff.id} value={staff.id}>
@@ -469,7 +746,11 @@ export function AdminGroupsPage() {
                         <Notification
                           title="직원 선택 목록을 불러오지 못했습니다."
                           tone="danger"
-                        />
+                        >
+                          <RetryButton
+                            onClick={() => void staffQuery.refetch()}
+                          />
+                        </Notification>
                       ) : null}
                       {groupValidationError ? (
                         <Notification
@@ -506,9 +787,10 @@ export function AdminGroupsPage() {
                           <>
                             <DsButton
                               disabled={staffOptionPage === 0}
-                              onClick={() =>
+                              onClick={() => {
+                                setNewMemberId('')
                                 setStaffOptionPage((current) => current - 1)
-                              }
+                              }}
                               tone="secondary"
                               type="button"
                             >
@@ -520,9 +802,10 @@ export function AdminGroupsPage() {
                                 staffOptionPage + 1 >=
                                 staffQuery.data.totalPages
                               }
-                              onClick={() =>
+                              onClick={() => {
+                                setNewMemberId('')
                                 setStaffOptionPage((current) => current + 1)
-                              }
+                              }}
                               tone="secondary"
                               type="button"
                             >

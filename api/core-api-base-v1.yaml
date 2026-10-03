@@ -14,8 +14,6 @@ x-deskseed-staff-actor-consistency:
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting
-  - searchAdminStaffAccounts
-  - searchAdminGroups
   parameter:
     $ref: '#/components/parameters/ExpectedStaffActorHeader'
   invalidHeaderResponse:
@@ -7675,6 +7673,7 @@ components:
           - 'null'
         protectedContentAvailable:
           type: boolean
+          description: 보호 콘텐츠 공개 작업의 표시를 위한 상태입니다. ADMIN_STAFF_SEARCH_EXECUTED와 ADMIN_GROUP_SEARCH_EXECUTED는 ciphertext가 보존 중이어도 기존 reveal 대상이 아니므로 false입니다. 실제 공개는 별도 권한과 사유를 검사합니다.
         searchFingerprint:
           type:
           - string
@@ -7737,7 +7736,7 @@ components:
       properties:
         queryRedacted:
           type: string
-          description: '입력값과 무관한 `[PROTECTED]` 일상 조회 표식에 남아 있는 레거시 필드명입니다. 정확한 검색어는 별도 권한과 사유가 필요한 공개 작업에서만 확인할 수 있습니다.
+          description: '입력값과 무관한 `[PROTECTED]` 일상 조회 표식에 남아 있는 레거시 필드명입니다. 정확한 티켓 검색어는 별도 권한과 사유가 필요한 공개 작업에서만 확인할 수 있습니다. 관리자 직원·그룹 검색은 원문 공개를 지원하지 않습니다.
 
             '
         queryFingerprint:
@@ -7757,7 +7756,7 @@ components:
           enum:
           - EXACT
           - LOWER_BOUND
-          description: SEARCH_EXECUTED가 기록한 resultCount가 exact 전체 수인지 당시 확인된 하한인지를 나타냅니다.
+          description: 검색이 기록한 resultCount가 exact 전체 수인지 당시 확인된 하한인지를 나타냅니다. ADMIN_STAFF_SEARCH_EXECUTED와 ADMIN_GROUP_SEARCH_EXECUTED는 전체 조건의 EXACT 수이며 openedActivities는 비어 있고 originSearchActivityId는 null입니다.
         originSearchActivityId:
           type:
           - string

@@ -1,6 +1,9 @@
 package dev.deskseed.audit.internal
 
 import dev.deskseed.audit.AccessAuditContext
+import dev.deskseed.audit.AdminDirectorySearchAccessAudit
+import dev.deskseed.audit.AdminDirectorySearchKind
+import dev.deskseed.audit.AccessAuditAuthType
 import dev.deskseed.audit.AccessAuditOutcome
 import dev.deskseed.audit.AccessAuditWriter
 import dev.deskseed.audit.AiContextAccessAudit
@@ -28,6 +31,52 @@ import java.util.UUID
 internal class JpaAccessAuditWriter(
     private val jdbcTemplate: JdbcTemplate,
 ) : AccessAuditWriter {
+    @Transactional(propagation = Propagation.MANDATORY)
+    override fun appendAdminDirectorySearch(event: AdminDirectorySearchAccessAudit) {
+        val context = event.context
+        require(context.actorType == ActorType.STAFF && context.source == RequestSource.ADMIN_UI)
+        require(context.authType == AccessAuditAuthType.STAFF_SESSION)
+        require(context.sessionFingerprint?.matches(SESSION_FINGERPRINT) == true)
+        require(event.resultCount >= 0)
+        if (event.kind == AdminDirectorySearchKind.GROUP) {
+            require(event.scope.role == null && event.scope.memberOfGroupId == null && event.scope.excludeGroupId == null)
+        }
+        jdbcTemplate.update(
+            """
+            insert into access_audit_events (
+                id, occurred_at, actor_type, actor_id, actor_display_snapshot, source,
+                action, resource_type, resource_id, ticket_number, interaction_id,
+                session_fingerprint, auth_type, request_id, correlation_id, ip_address,
+                user_agent, outcome, http_status
+            ) values (?, ?, 'STAFF', ?, ?, 'ADMIN_UI', ?, 'SEARCH', null, null, ?, ?, ?, ?, ?, ?, ?, 'SUCCEEDED', 200)
+            """.trimIndent(),
+            event.eventId, Timestamp.from(event.occurredAt), context.actorId,
+            actorSnapshot(context.actorDisplaySnapshot), event.kind.action, event.interactionId,
+            context.sessionFingerprint, context.authType.name, context.requestId.take(100),
+            context.correlationId.take(100), context.ipAddress?.take(64), sanitize(context.userAgent, 256),
+        )
+        jdbcTemplate.update(
+            """
+            insert into search_audit_details (
+                access_event_id, query_redacted, query_fingerprint, query_key_version,
+                normalized_filters, sort, result_count, result_count_relation
+            ) values (?, ?, ?, ?, ?::jsonb, ?, ?, 'EXACT')
+            """.trimIndent(),
+            event.eventId, event.protectedQuery.queryRedacted, event.protectedQuery.queryFingerprint,
+            event.protectedQuery.keyVersion, filtersJson(event.scope.normalizedFilters()), event.kind.sort,
+            event.resultCount,
+        )
+        jdbcTemplate.update(
+            """
+            insert into search_audit_query_ciphertexts (
+                access_event_id, key_version, query_ciphertext, created_at, expires_at
+            ) values (?, ?, ?, ?, ?)
+            """.trimIndent(),
+            event.eventId, event.protectedQuery.keyVersion, event.protectedQuery.queryCiphertext,
+            Timestamp.from(event.occurredAt), Timestamp.from(event.protectedQuery.expiresAt),
+        )
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     override fun appendAiResultAccess(event: AiResultAccessAudit) {
         validateStaffContext(event.context)

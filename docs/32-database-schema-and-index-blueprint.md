@@ -600,7 +600,7 @@ setting_change_audits (canonical audit ledger와 연결)
 
 ## 11. 삭제·보존
 
-P15 관리자 directory 검색은 [pending 계약](tasks/2026-10-03-admin-directory-search-contract.md)에 따라 기존 `access_audit_events`, `search_audit_details`, `search_audit_query_ciphertexts`를 재사용할 예정이다. 구현 migration에서만 access source의 `ADMIN_UI`, `ADMIN_STAFF_SEARCH_EXECUTED`/`ADMIN_GROUP_SEARCH_EXECUTED` action과 SEARCH/null resource shape를 추가한다. 새 ticket/customer result-item row, generic ledger, retention job은 만들지 않는다. 현재 스키마가 이미 지원한다고 해석하지 않는다.
+P15 관리자 directory 검색은 [계약](tasks/2026-10-03-admin-directory-search-contract.md)에 따라 기존 `access_audit_events`, `search_audit_details`, `search_audit_query_ciphertexts`를 재사용한다. V99가 access source의 `ADMIN_UI`, `ADMIN_STAFF_SEARCH_EXECUTED`/`ADMIN_GROUP_SEARCH_EXECUTED` action과 SEARCH/null resource shape를 추가한다. 새 ticket/customer result-item row, generic ledger, retention job은 만들지 않으며 기존 append-only/보호 ciphertext expiry를 유지한다. 검색은 literal substring과 기존 페이지 정렬을 사용한다. 새 인덱스·검색 엔진은 없으며 대규모 성능 측정은 별도 증거가 필요하다.
 
 - canonical audit는 operator policy에 따라 보존하고 직접 cascade delete하지 않는다.
 - customer deletion은 legal/business policy에 따라 pseudonymization과 ticket retention을 분리한다.

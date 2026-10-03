@@ -26,6 +26,8 @@ import {
   previewAgentSavedView,
   reorderAgentSavedViews,
   searchAgentCustomers,
+  searchAdminStaff,
+  searchAdminGroups,
   searchAgentTickets,
   setConfirmedStaffActor,
   STAFF_SESSION_ACTOR_MISMATCH_EVENT,
@@ -288,6 +290,85 @@ describe('admin list API client', () => {
     )
 
     await expect(listStaff()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('sends directory search only in CSRF protected POST bodies with a fresh interaction per page', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/v1/agent/csrf')
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              token: 'directory-csrf',
+              headerName: 'X-CSRF-TOKEN',
+            }),
+          ),
+        )
+      return Promise.resolve(
+        new Response(
+          JSON.stringify(
+            url.includes('/staff/')
+              ? [staffRow]
+              : [
+                  {
+                    id: staffRow.id,
+                    name: '결제',
+                    status: 'ACTIVE',
+                    memberCount: 1,
+                  },
+                ],
+          ),
+          {
+            headers: {
+              'X-Page-Number': '1',
+              'X-Page-Size': '1',
+              'X-Total-Count': '2',
+              'X-Total-Pages': '2',
+            },
+          },
+        ),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    setConfirmedStaffActor(staffRow.id)
+    const query = 'private-name@example.test'
+    await searchAdminStaff(
+      { query, excludeGroupId: staffRow.id, status: 'ACTIVE' },
+      1,
+      1,
+    )
+    await searchAdminStaff({ query, memberOfGroupId: staffRow.id }, 1, 1)
+    await searchAdminGroups({ query: '결제' }, 1, 1)
+    const searches = fetchMock.mock.calls.filter(([url]) =>
+      url.endsWith('/search'),
+    )
+    expect(searches).toHaveLength(3)
+    expect(searches.map(([url]) => url)).toEqual([
+      '/api/v1/admin/staff/search',
+      '/api/v1/admin/staff/search',
+      '/api/v1/admin/groups/search',
+    ])
+    for (const [, options] of searches) {
+      expect(options).toMatchObject({
+        method: 'POST',
+        headers: {
+          'X-CSRF-TOKEN': 'directory-csrf',
+          'X-Deskseed-Expected-Staff-Id': staffRow.id,
+        },
+      })
+    }
+    const bodies = searches.map(([, options]) => JSON.parse(options.body))
+    expect(bodies[0]).toMatchObject({
+      query,
+      excludeGroupId: staffRow.id,
+      page: 1,
+      size: 1,
+      status: 'ACTIVE',
+    })
+    expect(bodies[1]).toMatchObject({ query, memberOfGroupId: staffRow.id })
+    expect(new Set(bodies.map((body) => body.interactionId)).size).toBe(3)
+    expect(fetchMock.mock.calls.every(([url]) => !url.includes(query))).toBe(
+      true,
+    )
   })
 })
 

@@ -4,11 +4,12 @@ import dev.deskseed.organization.OrganizationStatus
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
 
-internal interface SupportGroupRepository : JpaRepository<SupportGroupEntity, UUID> {
+internal interface SupportGroupRepository : JpaRepository<SupportGroupEntity, UUID>, JpaSpecificationExecutor<SupportGroupEntity> {
     fun findByNameIgnoreCase(name: String): SupportGroupEntity?
 
     fun findAllByStatusOrderByNameAscIdAsc(status: OrganizationStatus): List<SupportGroupEntity>

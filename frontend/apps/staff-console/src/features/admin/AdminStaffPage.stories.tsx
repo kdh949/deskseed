@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { expect, userEvent } from 'storybook/test'
 import { AdminStaffPage } from './AdminStaffPage'
 
@@ -80,5 +80,149 @@ export const Empty: Story = {
     await expect(
       await canvas.findByText('등록된 직원 계정이 없습니다.'),
     ).toBeVisible()
+  },
+}
+
+export const DirectorySearch: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers,
+        http.post('/api/v1/admin/staff/search', async ({ request }) => {
+          const body = (await request.json()) as {
+            query: string
+            page: number
+            interactionId: string
+          }
+          await expect(request.url).not.toContain(body.query)
+          await expect(body.interactionId).toMatch(/^[0-9a-f-]{36}$/)
+          return HttpResponse.json(
+            [
+              {
+                ...staff,
+                displayName:
+                  body.page === 0 ? '검색 첫 직원' : '마지막 페이지 직원',
+              },
+            ],
+            {
+              headers: {
+                'X-Page-Number': String(body.page),
+                'X-Page-Size': '50',
+                'X-Total-Count': '51',
+                'X-Total-Pages': '2',
+              },
+            },
+          )
+        }),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      await canvas.findByLabelText('직원 이름 또는 이메일 검색'),
+      'private-name@example.test{Enter}',
+    )
+    await expect(await canvas.findByText('검색 결과 51명')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '다음 페이지' }))
+    await expect(await canvas.findByText('마지막 페이지 직원')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '검색 초기화' }))
+    await expect(await canvas.findByText('운영 관리자')).toBeVisible()
+    await expect(
+      canvas.getByLabelText('직원 이름 또는 이메일 검색'),
+    ).toHaveValue('')
+  },
+}
+
+export const SearchEmpty: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers,
+        http.post('/api/v1/admin/staff/search', () => HttpResponse.json([])),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      await canvas.findByLabelText('직원 이름 또는 이메일 검색'),
+      '없는 직원{Enter}',
+    )
+    await expect(await canvas.findByText('검색 결과가 없습니다.')).toBeVisible()
+    await expect(
+      canvas.getByLabelText('직원 이름 또는 이메일 검색'),
+    ).toHaveValue('없는 직원')
+  },
+}
+
+export const SearchError: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers,
+        http.post('/api/v1/admin/staff/search', () =>
+          HttpResponse.json(
+            { title: 'Unavailable', status: 503 },
+            { status: 503 },
+          ),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      await canvas.findByLabelText('직원 이름 또는 이메일 검색'),
+      '직원{Enter}',
+    )
+    await expect(
+      await canvas.findByText('직원 검색 결과를 불러오지 못했습니다.'),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '검색 초기화' }))
+    await expect(await canvas.findByText('운영 관리자')).toBeVisible()
+  },
+}
+
+export const SearchDenied: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers,
+        http.post('/api/v1/admin/staff/search', () =>
+          HttpResponse.json({ status: 403 }, { status: 403 }),
+        ),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      await canvas.findByLabelText('직원 이름 또는 이메일 검색'),
+      '직원{Enter}',
+    )
+    await expect(
+      await canvas.findByText('직원 검색 결과를 불러오지 못했습니다.'),
+    ).toBeVisible()
+  },
+}
+
+export const SearchLoading: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        ...handlers,
+        http.post('/api/v1/admin/staff/search', async () => {
+          await delay('infinite')
+          return HttpResponse.json([])
+        }),
+      ],
+    },
+  },
+  play: async ({ canvas }) => {
+    await userEvent.type(
+      await canvas.findByLabelText('직원 이름 또는 이메일 검색'),
+      '직원{Enter}',
+    )
+    await expect(await canvas.findByText('직원을 검색하는 중')).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: '검색 초기화' }),
+    ).toBeEnabled()
   },
 }

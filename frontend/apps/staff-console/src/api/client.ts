@@ -18,6 +18,8 @@ import type {
   AgentTicketSearchPage,
   AgentTicketSummary,
   AdminListPage,
+  AdminStaffSearchInput,
+  AdminGroupSearchInput,
   AuditActivity,
   AuditActivityDetail,
   AuditActivityFilters,
@@ -1631,6 +1633,28 @@ export async function listStaff(
   return decodeAdminListPage(response, decoded as StaffAccount[], page, size)
 }
 
+export async function searchAdminStaff(
+  input: AdminStaffSearchInput,
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<StaffAccount>> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/staff/search',
+    'POST',
+    {
+      ...input,
+      page,
+      size,
+      interactionId: crypto.randomUUID(),
+    },
+  )
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const decoded = body.map(decodeStaffAccount)
+  if (decoded.some((staff) => !staff)) throw malformedSuccess(response)
+  return decodeAdminListPage(response, decoded as StaffAccount[], page, size)
+}
+
 export async function listIntegrationClients(
   page = 0,
   size = 50,
@@ -1794,6 +1818,28 @@ export async function listGroups(
 ): Promise<AdminListPage<SupportGroup>> {
   const response = await staffFetch(
     `/api/v1/admin/groups?page=${page}&size=${size}`,
+  )
+  const body = await checkedBody(response)
+  if (!Array.isArray(body)) throw malformedSuccess(response)
+  const decoded = body.map(decodeSupportGroup)
+  if (decoded.some((group) => !group)) throw malformedSuccess(response)
+  return decodeAdminListPage(response, decoded as SupportGroup[], page, size)
+}
+
+export async function searchAdminGroups(
+  input: AdminGroupSearchInput,
+  page = 0,
+  size = 50,
+): Promise<AdminListPage<SupportGroup>> {
+  const response = await unsafeStaffFetch(
+    '/api/v1/admin/groups/search',
+    'POST',
+    {
+      ...input,
+      page,
+      size,
+      interactionId: crypto.randomUUID(),
+    },
   )
   const body = await checkedBody(response)
   if (!Array.isArray(body)) throw malformedSuccess(response)

@@ -47,7 +47,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 | REQ-AUTH-005 | 직원은 email/password와 server-side session으로 로그인하고 disabled/expired session 또는 browser expected-actor 불일치는 접근할 수 없다 | IMPLEMENTATION_READY | M2 | 01, 25, 30, 31, 33, 35 ADR, 39, 52 | `StaffAuthIntegrationTest`의 invalid/mismatch·activity/controller/mutation/audit 비진입, `client.test.ts`의 held-CSRF actor snapshot, `StaffSessionContext.test.tsx`의 교차 탭 owner 보존, `access-surface.spec.ts`의 ADMIN route guard |
 | REQ-AUTH-006 | 최초 ADMIN은 저장소 밖 secret file로만 bootstrap되고 로그인 실패는 안전하게 제한·감사된다 | IMPLEMENTATION_READY | M2 | 19, 23, 35 ADR, 52 | `FirstAdminBootstrapIntegrationTest`, lockout/generic error/secret scan |
 | REQ-PERM-001 | 초기에는 모든 활성 상담사가 모든 staff-visible 티켓을 읽을 수 있다 | IMPLEMENTATION_READY | M2 | 33, 53 | `AgentTicketReadIntegrationTest`의 cross-group queue/direct URL 및 inactive/customer 거부; 검색은 후속 |
-| REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR, 39 ADR, 55 | `AdminOrganizationIntegrationTest`, `/admin/staff`/`/admin/groups`, `Admin*.stories.tsx`, `access-surface.spec.ts`의 ADMIN route guard, focused/full Storybook MCP interaction/a11y: PASS. P15 직원·그룹·구성원 전체 검색은 별도 pending blueprint이며 미구현: tasks/2026-10-03-admin-directory-search-contract.md, ADMIN-SEARCH-001 |
+| REQ-PERM-002 | 직원·그룹·멤버십 관리는 ADMIN만 수행하고 API와 직접 URL 모두에서 거부된다 | IMPLEMENTATION_READY | M2/M6 | 30, 33, 35 ADR, 39 ADR, 55 | `AdminOrganizationIntegrationTest`, `/admin/staff`/`/admin/groups`, `Admin*.stories.tsx`, `access-surface.spec.ts`의 ADMIN route guard. P15 직원·그룹·구성원 전체 검색: `AdminDirectorySearchIntegrationTest`, `admin-directory-search.spec.ts`, ADMIN-SEARCH-001과 보호 감사/Storybook 검증은 tasks/2026-10-03-admin-directory-search-implementation.md 참조 |
 
 ## 2.2 고객 동의 정책
 

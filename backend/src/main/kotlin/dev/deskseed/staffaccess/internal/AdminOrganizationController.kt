@@ -1,5 +1,11 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.organization.AdminStaffDirectoryFilter
+import dev.deskseed.organization.AdminGroupDirectoryFilter
+import dev.deskseed.organization.StaffStatus
+import dev.deskseed.organization.OrganizationStatus
+import org.springframework.http.CacheControl
+
 import dev.deskseed.foundation.CommandContexts
 import dev.deskseed.foundation.RequestSource
 import dev.deskseed.organization.AdminActorContext
@@ -44,7 +50,34 @@ import java.util.UUID
 internal class AdminOrganizationController(
     private val administration: OrganizationAdministration,
     private val customerAccessAdministration: CustomerAccessAdministration,
+    private val directorySearch: AdminDirectorySearchApplicationService,
 ) {
+    @PostMapping("/staff/search")
+    fun searchStaff(
+        @Valid @RequestBody body: AdminStaffSearchRequest,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<List<StaffAccountView>> = pageResponse(
+        directorySearch.staff(
+            principal, AdminStaffDirectoryFilter(body.query, body.role, body.status, body.memberOfGroupId, body.excludeGroupId),
+            body.page, body.size, body.interactionId, request.directoryReadContext(),
+        ),
+        noStore = true,
+    )
+
+    @PostMapping("/groups/search")
+    fun searchGroups(
+        @Valid @RequestBody body: AdminGroupSearchRequest,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<List<SupportGroupView>> = pageResponse(
+        directorySearch.groups(
+            principal, AdminGroupDirectoryFilter(body.query, body.status),
+            body.page, body.size, body.interactionId, request.directoryReadContext(),
+        ),
+        noStore = true,
+    )
+
     @GetMapping("/settings/customer-access-mode")
     fun getCustomerAccessMode(): CustomerAccessSetting = customerAccessAdministration.get()
 
@@ -200,13 +233,41 @@ internal class AdminOrganizationController(
         )
     }
 
-    private fun <T> pageResponse(page: OrganizationPage<T>): ResponseEntity<List<T>> = ResponseEntity.ok()
+    private fun HttpServletRequest.directoryReadContext(): AdminDirectoryReadContext {
+        val context = CommandContexts.from(this, RequestSource.ADMIN_UI)
+        return AdminDirectoryReadContext(
+            requireNotNull(getSession(false)).id, context.requestId, context.correlationId,
+            remoteAddr, getHeader("User-Agent"),
+        )
+    }
+
+    private fun <T> pageResponse(page: OrganizationPage<T>, noStore: Boolean = false): ResponseEntity<List<T>> = ResponseEntity.ok()
+        .apply { if (noStore) cacheControl(CacheControl.noStore()) }
         .header("X-Page-Number", page.page.toString())
         .header("X-Page-Size", page.size.toString())
         .header("X-Total-Count", page.totalCount.toString())
         .header("X-Total-Pages", page.totalPages.toString())
         .body(page.items)
 }
+
+internal data class AdminStaffSearchRequest(
+    @field:NotBlank @field:Size(max = 254) val query: String,
+    val interactionId: UUID,
+    val role: StaffRole? = null,
+    val status: StaffStatus? = null,
+    val memberOfGroupId: UUID? = null,
+    val excludeGroupId: UUID? = null,
+    @field:Min(0) val page: Int = 0,
+    @field:Min(1) @field:Max(100) val size: Int = 50,
+)
+
+internal data class AdminGroupSearchRequest(
+    @field:NotBlank @field:Size(max = 254) val query: String,
+    val interactionId: UUID,
+    val status: OrganizationStatus? = null,
+    @field:Min(0) val page: Int = 0,
+    @field:Min(1) @field:Max(100) val size: Int = 50,
+)
 
 internal data class CreateStaffRequest(
     @field:NotBlank
