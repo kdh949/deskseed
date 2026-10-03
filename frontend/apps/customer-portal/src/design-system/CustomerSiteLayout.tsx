@@ -69,8 +69,9 @@ export function CustomerSiteLayout({
             {customer ? (
               <Link to="/account/requests">내 문의</Link>
             ) : (
-              <Link to="/search">문서 둘러보기</Link>
+              <Link to="/categories">문서 둘러보기</Link>
             )}
+            <Link to="/requests/lookup">문의 조회</Link>
             <Link className="customer-header__cta" to="/requests/new">
               문의 접수
             </Link>
@@ -113,6 +114,7 @@ export function CustomerSiteLayout({
             links={[
               ['고객 지원 홈', '/'],
               ['문의 접수', '/requests/new'],
+              ['문의 조회', '/requests/lookup'],
               ['내 문의', '/account/requests'],
             ]}
           />
@@ -120,6 +122,7 @@ export function CustomerSiteLayout({
             title="리소스"
             links={[
               ['도움말 검색', '/search'],
+              ['문서 둘러보기', '/categories'],
               ['가이드', '/search?q=가이드'],
             ]}
           />

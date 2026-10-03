@@ -208,6 +208,7 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 - 2026-09-11 REQ-COL-003/REQ-AUT-001: [직원 알림 연결 복구와 상태 재조회](tasks/2026-09-11-staff-notification-recovery.md).
 
 - 2026-09-11 REQ-KB-001/003/004: [고객 도움말 전체 탐색과 문서·상태 복구](tasks/2026-09-11-customer-help-recovery.md).
+- 2026-10-03 REQ-TKT-003/008, REQ-KB-001, REQ-UI-005/007: [고객 문의 조회와 모바일 탐색](tasks/2026-10-03-customer-navigation.md). 번호 표시 형식 정규화, proof 유지, 헤더·푸터 조회/분류 목록과 모바일 검색 제공. 고객 full Storybook 75개/a11y 및 mock browser 4개; 요구사항 상태는 변경하지 않음.
 
 - 2026-09-11 REQ-TKT-001: [확인된 응답만 표시하는 고객 접수 완료 화면](tasks/2026-09-11-customer-request-receipt.md).
 

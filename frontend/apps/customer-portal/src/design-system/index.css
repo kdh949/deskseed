@@ -439,20 +439,24 @@ p {
 }
 
 @media (max-width: 640px) {
+  .customer-header {
+    position: static;
+  }
   .customer-header__inner {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     width: min(calc(100% - 24px), var(--customer-width-content));
     min-height: 64px;
     gap: 12px;
+    padding: 12px 0;
   }
   .customer-header-search {
-    display: none;
+    grid-row: 3;
   }
   .customer-header__nav {
+    grid-row: 2;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 10px;
-  }
-  .customer-header__nav > a:first-child {
-    display: none;
   }
   .customer-header__nav .customer-header__cta {
     padding: 9px 11px;
