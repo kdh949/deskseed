@@ -176,6 +176,7 @@ export function SeedDrawer({
   description,
   onClose,
   open,
+  keepMounted = false,
   returnFocusRef,
   title,
 }: {
@@ -183,6 +184,7 @@ export function SeedDrawer({
   description?: string
   onClose: () => void
   open: boolean
+  keepMounted?: boolean
   returnFocusRef?: RefObject<HTMLElement>
   title: string
 }) {
@@ -202,7 +204,13 @@ export function SeedDrawer({
     panelRef.current?.focus()
     const closeFromKeyboard = (event: KeyboardEvent) => {
       // A nested panel owns Escape/Tab even when a removed control left focus on body.
-      if (panelRef.current?.querySelector('[role="dialog"]')) return
+      if (
+        Array.from(
+          panelRef.current?.querySelectorAll<HTMLElement>('[role="dialog"]') ??
+            [],
+        ).some((dialog) => dialog.getClientRects().length > 0)
+      )
+        return
       if (event.key === 'Escape') {
         event.preventDefault()
         closeRef.current()
@@ -213,7 +221,11 @@ export function SeedDrawer({
           panelRef.current.querySelectorAll<HTMLElement>(
             'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
           ),
-        ).filter((element) => !element.matches(':disabled'))
+        ).filter(
+          (element) =>
+            !element.matches(':disabled') &&
+            element.getClientRects().length > 0,
+        )
         if (!focusable.length) {
           event.preventDefault()
           panelRef.current.focus()
@@ -242,9 +254,9 @@ export function SeedDrawer({
       fallbackReturnFocusRef.current = null
     }
   }, [open, returnFocusRef])
-  if (!open) return null
+  if (!open && !keepMounted) return null
   return (
-    <div className="seed-drawer-layer">
+    <div className="seed-drawer-layer" hidden={!open}>
       <button
         aria-label="패널 닫기"
         className="seed-drawer-layer__scrim"

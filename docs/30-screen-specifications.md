@@ -179,9 +179,17 @@ child/SLA indicator
 Global nav | Views | Properties | Conversation/Composer | Context rail/panel
 ```
 
+### Default conversation-focused layout
+
+2026-09-05 선택된 3번 시안에 따라 Deskseed 전역 탐색은 64px 아이콘 rail, 티켓 속성은 320px, 우측은 접힌 context rail로 시작한다. 모든 데스크톱 폭에서 고객/관련 정보는 header 또는 우측 접근 버튼으로 기존 drawer를 연다. 닫으면 실제로 사용한 접근 버튼으로 focus가 돌아온다. 대화와 하단 composer는 카드 바깥 여백 없이 연속된 작업 영역을 사용한다.
+
+2026-10-03 보완: context drawer의 고객 탭은 고객·관련 티켓·최신 활동, 협업 탭은 기존 협업 작업/추가 필드·함께 작업 상태·협업 메모, 자료 탭은 KB·AI·외부 참조를 제공한다. Header `협업 작업`과 `#collaboration` 링크는 협업 탭을 바로 연다. 각 기능의 서버 권한과 상태 표시는 유지한다. 탭 이동/닫기는 작성 상태를 지우지 않으며 숨긴 패널을 키보드 탐색에서 제외한다. 최근 활동은 현재 상세가 제공한 staff-safe history를 시간 내림차순 4건으로 표시하며, 모두 보기는 반환된 목록만 펼친다. Audit 권한/상세 reveal로 우회하지 않는다.
+
+상태·우선순위·그룹·담당자는 좌측에 계속 표시한다. 중복 header 배정/SLA는 제거하고 요청자 이름·이메일을 제목 아래에 둔다. 요청자 상세와 생성 시각은 `요청 정보` disclosure에서 확인한다. 2026-09-05에는 context 종류를 하나의 패널에서 제공했으며, 2026-10-03 보완은 위의 실제 동작하는 세 탭으로 구분한다.
+
 ### Header
 
-- `#number · subject`
+- `subject · #number`
 - requester/channel/created time
 - warning badges
 - more actions

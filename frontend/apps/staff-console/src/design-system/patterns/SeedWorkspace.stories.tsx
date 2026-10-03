@@ -148,8 +148,12 @@ function ComposerPattern() {
 
 function TicketWorkspaceAnatomyPattern() {
   const [filter, setFilter] = useState<'ALL' | 'PUBLIC' | 'INTERNAL'>('ALL')
+  const [contextOpen, setContextOpen] = useState(false)
   return (
     <SeedTicketWorkspaceShell
+      contextOpen={contextOpen}
+      onContextOpen={() => setContextOpen(true)}
+      onContextClose={() => setContextOpen(false)}
       context={
         <div className="seed-context-stack">
           <SeedContextCard title="고객">
@@ -209,15 +213,31 @@ function TicketWorkspaceAnatomyPattern() {
       }
       header={
         <SeedWorkspaceHeader
-          assignee={{ initials: 'AR', label: 'Alex Rivera' }}
-          priority={{ label: '높음', tone: 'danger' }}
+          actions={
+            <SeedButton onClick={() => setContextOpen(true)}>
+              협업 작업
+            </SeedButton>
+          }
+          requester={{
+            label: 'Jennifer Ward',
+            email: 'jennifer.ward@example.com',
+          }}
+          onOpenContext={() => setContextOpen(true)}
           status={<SeedStatusBadge tone="positive">처리 중</SeedStatusBadge>}
           ticketLabel="#48219"
           title="비밀번호 재설정 후 로그인할 수 없습니다"
         />
       }
       properties={
-        <SeedPropertyStack title="티켓 속성">
+        <SeedPropertyStack
+          title="티켓 속성"
+          details={{
+            summary: '요청 정보',
+            content: (
+              <SeedPropertyRow label="요청자">Jennifer Ward</SeedPropertyRow>
+            ),
+          }}
+        >
           <SeedPropertyRow label="상태">처리 중</SeedPropertyRow>
           <SeedPropertyRow label="우선순위">높음</SeedPropertyRow>
           <SeedPropertyRow label="요청자">Jennifer Ward</SeedPropertyRow>
@@ -230,7 +250,22 @@ function TicketWorkspaceAnatomyPattern() {
 const meta = {
   title: '04 Patterns/Seed Workspace',
   component: QueuePattern,
-  parameters: { layout: 'fullscreen' },
+  parameters: {
+    layout: 'fullscreen',
+    docs: {
+      description: {
+        component: `
+Canonical staff workspace patterns. Use the icon rail for global navigation; every item retains its label as an accessible name and native tooltip. SeedBrandLockup compact renders the existing Deskseed mark.
+
+SeedWorkspaceHeader: title and ticketLabel identify the ticket; status is the current server state. Optional requester: { label: string; email?: string } adds the requester row. Optional actions: ReactNode composes ticket-level actions beside status; orchestration stays in the feature. onOpenContext opens the existing context drawer through the labelled customer-info action. contextButtonRef is an optional return-focus anchor. copiedMessage/onCopyTicketLabel and onRefresh preserve copy/refresh actions. Existing optional assignee, priority and sla remain compatible, but avoid duplicating editable properties in the focused screen.
+
+SeedPropertyStack: title, children and optional action compose the property panel. Optional details: { summary: string; content: ReactNode } puts secondary read-only metadata in a native keyboard-accessible disclosure. Never place status, priority, group or assignee in this disclosure.
+
+SeedTicketWorkspaceShell: header, properties, conversation and context are ReactNode slots. contextOpen defaults to false at every desktop width. onContextOpen optionally adds the right-side context rail action; onContextClose closes the drawer. contextReturnFocusRef is optional: without it the drawer restores focus to whichever action opened it. Context is mounted once in a keepMounted drawer; closing hides it from keyboard/assistive technology while retaining local work. Keep contextOpen in layout state and preserve PUBLIC/INTERNAL drafts in the editor model.
+`,
+      },
+    },
+  },
   tags: ['autodocs'],
 } satisfies Meta<typeof QueuePattern>
 
@@ -240,6 +275,17 @@ type Story = StoryObj<typeof meta>
 export const QueueShell: Story = {}
 export const TicketWorkspaceAnatomy: Story = {
   render: () => <TicketWorkspaceAnatomyPattern />,
+  play: async ({ canvas, userEvent }) => {
+    const trigger = canvas.getByRole('button', {
+      name: '협업 작업',
+    })
+    await userEvent.click(trigger)
+    await expect(
+      canvas.getByRole('dialog', { name: '티켓 컨텍스트' }),
+    ).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+  },
 }
 export const Composer: Story = {
   render: () => (

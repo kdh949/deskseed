@@ -82,20 +82,22 @@ export function SeedNavigationRail({
   const renderItem = (item: SeedNavigationItem) => (
     <button
       aria-current={item.active ? 'page' : undefined}
+      aria-label={item.label}
+      title={item.label}
       className="seed-rail__item"
       key={item.id}
       onClick={() => onNavigate(item.id)}
       type="button"
     >
       <SeedIcon name={item.icon} />
-      <span>{item.label}</span>
+      <span className="seed-visually-hidden">{item.label}</span>
       {item.badge && <span className="seed-rail__badge">{item.badge}</span>}
     </button>
   )
   return (
     <aside aria-label="Deskseed 상담사 전역 탐색" className="seed-rail">
       <div className="seed-rail__brand">
-        <SeedBrandLockup />
+        <SeedBrandLockup compact />
       </div>
       <nav aria-label="주요 상담사 메뉴" className="seed-rail__navigation">
         {items.map(renderItem)}
@@ -688,6 +690,7 @@ export function SeedComposer({
 }
 
 export function SeedWorkspaceHeader({
+  actions,
   assignee,
   contextButtonRef,
   copiedMessage,
@@ -695,11 +698,13 @@ export function SeedWorkspaceHeader({
   onOpenContext,
   onRefresh,
   priority,
+  requester,
   sla,
   status,
   ticketLabel,
   title,
 }: {
+  actions?: ReactNode
   assignee?: { initials: string; label: string }
   contextButtonRef?: RefObject<HTMLButtonElement>
   copiedMessage?: string
@@ -707,6 +712,7 @@ export function SeedWorkspaceHeader({
   onOpenContext?: () => void
   onRefresh?: () => void
   priority?: { label: string; tone?: SeedTone }
+  requester?: { label: string; email?: string }
   sla?: ReactNode
   status: ReactNode
   ticketLabel: string
@@ -714,27 +720,50 @@ export function SeedWorkspaceHeader({
 }) {
   return (
     <>
-      <div className="seed-workspace-heading">
-        <span className="seed-workspace-heading__ticket">
-          <strong aria-label={ticketLabel}>{ticketLabel}</strong>
-          {onCopyTicketLabel && (
-            <SeedIconButton
-              icon="copy"
-              label={`${ticketLabel} 복사`}
-              onClick={onCopyTicketLabel}
-              variant="quiet"
-            />
-          )}
-        </span>
-        <span aria-hidden="true" className="seed-workspace-heading__divider" />
-        <h1>{title}</h1>
-        {copiedMessage && (
-          <span className="seed-visually-hidden" role="status">
-            {copiedMessage}
+      <div className="seed-workspace-header__identity">
+        <div className="seed-workspace-heading">
+          <h1>{title}</h1>
+          <span className="seed-workspace-heading__ticket">
+            <strong aria-label={ticketLabel}>{ticketLabel}</strong>
+            {onCopyTicketLabel && (
+              <SeedIconButton
+                icon="copy"
+                label={`${ticketLabel} 복사`}
+                onClick={onCopyTicketLabel}
+                variant="quiet"
+              />
+            )}
           </span>
+          {copiedMessage && (
+            <span className="seed-visually-hidden" role="status">
+              {copiedMessage}
+            </span>
+          )}
+        </div>
+        {(requester || onOpenContext) && (
+          <div className="seed-workspace-header__requester">
+            {requester && (
+              <>
+                <span>{requester.label}</span>
+                {requester.email && <span>{requester.email}</span>}
+              </>
+            )}
+            {onOpenContext && (
+              <button
+                aria-label="티켓 컨텍스트 열기"
+                className="seed-workspace-header__customer"
+                onClick={onOpenContext}
+                ref={contextButtonRef}
+                type="button"
+              >
+                고객 정보 <SeedIcon name="chevron" size="small" />
+              </button>
+            )}
+          </div>
         )}
       </div>
       <div className="seed-workspace-header__actions">
+        {actions}
         {status}
         {priority && (
           <span
@@ -753,16 +782,6 @@ export function SeedWorkspaceHeader({
           </span>
         )}
         {sla && <span className="seed-workspace-header__sla">{sla}</span>}
-        {onOpenContext && (
-          <SeedIconButton
-            className="seed-workspace-header__context-toggle"
-            icon="columns"
-            label="티켓 컨텍스트 열기"
-            onClick={onOpenContext}
-            ref={contextButtonRef}
-            variant="quiet"
-          />
-        )}
         {onRefresh && (
           <details className="seed-workspace-header__menu">
             <summary aria-label="티켓 추가 작업" title="티켓 추가 작업">
@@ -783,10 +802,12 @@ export function SeedWorkspaceHeader({
 export function SeedPropertyStack({
   action,
   children,
+  details,
   title,
 }: {
   action?: ReactNode
   children: ReactNode
+  details?: { summary: string; content: ReactNode }
   title: string
 }) {
   return (
@@ -796,6 +817,12 @@ export function SeedPropertyStack({
         {action}
       </header>
       {children}
+      {details && (
+        <details className="seed-workspace-properties__details">
+          <summary>{details.summary}</summary>
+          <div>{details.content}</div>
+        </details>
+      )}
     </section>
   )
 }
@@ -935,6 +962,7 @@ export function SeedTicketWorkspaceShell({
   properties,
   conversation,
   context,
+  onContextOpen,
   onContextClose = () => undefined,
 }: {
   contextOpen?: boolean
@@ -943,6 +971,7 @@ export function SeedTicketWorkspaceShell({
   properties: ReactNode
   conversation: ReactNode
   context: ReactNode
+  onContextOpen?: () => void
   onContextClose?: () => void
 }) {
   return (
@@ -955,12 +984,25 @@ export function SeedTicketWorkspaceShell({
         <div className="seed-ticket-workspace__conversation">
           {conversation}
         </div>
-        <aside className="seed-ticket-workspace__context">{context}</aside>
+        {onContextOpen && (
+          <nav
+            aria-label="티켓 정보 패널"
+            className="seed-ticket-workspace__context-rail"
+          >
+            <SeedIconButton
+              icon="user"
+              label="고객 및 관련 정보 열기"
+              onClick={onContextOpen}
+              variant="quiet"
+            />
+          </nav>
+        )}
       </section>
       <SeedDrawer
         description="고객, 관련 티켓, 외부 참조와 최근 활동을 확인합니다."
         onClose={onContextClose}
         open={contextOpen}
+        keepMounted
         returnFocusRef={contextReturnFocusRef}
         title="티켓 컨텍스트"
       >

@@ -247,7 +247,9 @@ for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1920, height: 900 },
 ]) {
-  test(`canonical Queue와 Workspace ${viewport.width}px`, async ({ page }) => {
+  test(`canonical Queue와 Workspace ${viewport.width}px`, async ({
+    page,
+  }, testInfo) => {
     await page.setViewportSize(viewport)
     const { detailHeaders } = await mockAgentReadApi(page)
     await page.goto('/agent/views/my-open')
@@ -285,6 +287,30 @@ for (const viewport of [
       { fullPage: true },
     )
     await expectNoAxeViolations(page)
+    const customerContext = page.getByRole('button', {
+      name: '티켓 컨텍스트 열기',
+    })
+    await customerContext.click()
+    const drawer = page.getByRole('dialog', { name: '티켓 컨텍스트' })
+    await expect(
+      drawer.getByRole('tabpanel', { name: '고객', exact: true }),
+    ).toBeVisible()
+    await page.screenshot({
+      path: testInfo.outputPath(`context-customer-${viewport.width}.png`),
+      fullPage: true,
+    })
+    await expectNoAxeViolations(page)
+    const customerTab = drawer.getByRole('tab', { name: '고객', exact: true })
+    await customerTab.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(
+      drawer.getByRole('tab', { name: '협업', exact: true }),
+    ).toBeFocused()
+    await expect(
+      drawer.getByRole('tabpanel', { name: '협업', exact: true }),
+    ).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(customerContext).toBeFocused()
   })
 }
 

@@ -61,21 +61,6 @@ function PrimitiveCatalog() {
   )
 }
 
-function TabsCatalog() {
-  const [active, setActive] = useState<'PUBLIC' | 'INTERNAL'>('PUBLIC')
-  return (
-    <SeedTabs
-      active={active}
-      ariaLabel="답변 모드"
-      items={[
-        { id: 'PUBLIC', label: 'PUBLIC 답변' },
-        { id: 'INTERNAL', label: 'INTERNAL 메모' },
-      ]}
-      onChange={setActive}
-    />
-  )
-}
-
 function WorkspaceFieldCatalog() {
   const [status, setStatus] = useState<'OPEN' | 'PENDING'>('OPEN')
   const [group, setGroup] = useState<'support' | 'billing' | null>('support')
@@ -232,7 +217,50 @@ export const WorkspaceChoiceAndDateFields: Story = {
 }
 
 export const KeyboardTabs: Story = {
-  render: () => <TabsCatalog />,
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'SeedTabs는 active, ariaLabel, items, onChange로 제어한다. items의 선택적 panelId를 제공하면 탭에 aria-controls와 `${panelId}-tab` ID를 연결한다. 소비자는 같은 ID의 role="tabpanel"과 aria-labelledby를 구성하고 비활성 패널을 hidden으로 숨긴다. 입력을 보존하려면 패널을 unmount하지 않는다. 방향키/Home/End는 선택과 포커스를 함께 이동한다. panelId를 생략한 기존 사용은 유지된다.',
+      },
+    },
+  },
+  render: function KeyboardTabsExample() {
+    const [active, setActive] = useState<'PUBLIC' | 'INTERNAL'>('PUBLIC')
+    return (
+      <>
+        <SeedTabs
+          active={active}
+          ariaLabel="답변 모드"
+          items={[
+            { id: 'PUBLIC', label: 'PUBLIC 답변', panelId: 'public-reply' },
+            {
+              id: 'INTERNAL',
+              label: 'INTERNAL 메모',
+              panelId: 'internal-note',
+            },
+          ]}
+          onChange={setActive}
+        />
+        <section
+          aria-labelledby="public-reply-tab"
+          hidden={active !== 'PUBLIC'}
+          id="public-reply"
+          role="tabpanel"
+        >
+          고객에게 보낼 답변
+        </section>
+        <section
+          aria-labelledby="internal-note-tab"
+          hidden={active !== 'INTERNAL'}
+          id="internal-note"
+          role="tabpanel"
+        >
+          직원만 보는 내부 메모
+        </section>
+      </>
+    )
+  },
   play: async ({ canvas }) => {
     const publicTab = canvas.getByRole('tab', { name: 'PUBLIC 답변' })
     publicTab.focus()
@@ -240,5 +268,16 @@ export const KeyboardTabs: Story = {
     await expect(
       canvas.getByRole('tab', { name: 'INTERNAL 메모' }),
     ).toHaveAttribute('aria-selected', 'true')
+    await expect(
+      canvas.getByRole('tabpanel', { name: 'INTERNAL 메모' }),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('tabpanel', { name: 'PUBLIC 답변' }),
+    ).not.toBeInTheDocument()
+    await userEvent.keyboard('{Home}')
+    await expect(publicTab).toHaveFocus()
+    await expect(
+      canvas.getByRole('tabpanel', { name: 'PUBLIC 답변' }),
+    ).toBeVisible()
   },
 }

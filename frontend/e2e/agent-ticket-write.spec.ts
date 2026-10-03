@@ -190,10 +190,7 @@ for (const width of [1280, 1440, 1920]) {
       })
     })
     await openWorkspace(page)
-    const contextButton = page.getByRole('button', {
-      name: '티켓 컨텍스트 열기',
-    })
-    if (await contextButton.isVisible()) await contextButton.click()
+    await page.getByRole('button', { name: '협업 작업', exact: true }).click()
     await page.getByRole('button', { name: '티켓 이관', exact: true }).click()
     const drawer = page.getByRole('dialog', { name: '티켓 이관' })
     await drawer.getByLabel('대상 그룹').selectOption('group-shipping')

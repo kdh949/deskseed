@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import type {
   AgentComment,
@@ -52,8 +52,8 @@ import {
   SeedRichTextEditor,
   SeedSelectField,
   SeedSplitButton,
-  SeedSlaMeter,
   SeedStatusBadge,
+  SeedTabs,
   SeedTextField,
   SeedTicketWorkspaceShell,
   SeedWorkspaceHeader,
@@ -302,6 +302,8 @@ function ReadOnlyWorkspace({
   )
 }
 
+type ContextTab = 'customer' | 'collaboration' | 'resources'
+
 function WorkspaceFrame({
   aiAssistant,
   detail,
@@ -322,12 +324,20 @@ function WorkspaceFrame({
   refreshLatest: () => Promise<AgentTicketDetail>
 }) {
   const [contextOpen, setContextOpen] = useState(false)
+  const [contextTab, setContextTab] = useState<ContextTab>('customer')
   const location = useLocation()
   const [copiedMessage, setCopiedMessage] = useState('')
-  const contextButtonRef = useRef<HTMLButtonElement>(null)
+  const openContext = useCallback(() => {
+    setContextTab('customer')
+    setContextOpen(true)
+  }, [])
+  const closeContext = useCallback(() => setContextOpen(false), [])
   const externalReferences = useExternalReferences(detail, refreshLatest)
   useEffect(() => {
-    if (location.hash === '#collaboration') setContextOpen(true)
+    if (location.hash === '#collaboration') {
+      setContextTab('collaboration')
+      setContextOpen(true)
+    }
   }, [location.hash])
   const ticketLabel = `#${detail.ticket.ticketNumber}`
   const copyTicketLabel = async () => {
@@ -341,6 +351,8 @@ function WorkspaceFrame({
   }
   const context = (
     <TicketContext
+      activeTab={contextTab}
+      onTabChange={setContextTab}
       aiAssistant={aiAssistant}
       detail={detail}
       extensionAccess={extensionAccess}
@@ -359,41 +371,27 @@ function WorkspaceFrame({
     >
       <SeedTicketWorkspaceShell
         contextOpen={contextOpen}
-        contextReturnFocusRef={contextButtonRef}
+        onContextOpen={openContext}
         header={
           <SeedWorkspaceHeader
-            assignee={
-              detail.ticket.assignee
-                ? {
-                    initials: initials(detail.ticket.assignee.displayName),
-                    label: detail.ticket.assignee.displayName,
-                  }
-                : undefined
+            actions={
+              <SeedButton
+                onClick={() => {
+                  setContextTab('collaboration')
+                  setContextOpen(true)
+                }}
+              >
+                협업 작업
+              </SeedButton>
             }
-            contextButtonRef={contextButtonRef}
+            requester={{
+              label: detail.ticket.requester.displayName,
+              email: detail.context.customer?.email,
+            }}
             copiedMessage={copiedMessage}
             onCopyTicketLabel={() => void copyTicketLabel()}
-            onOpenContext={() => setContextOpen(true)}
+            onOpenContext={openContext}
             onRefresh={onRefresh}
-            priority={{
-              label: PRIORITY_LABELS[detail.ticket.priority],
-              tone:
-                detail.ticket.priority === 'URGENT'
-                  ? 'danger'
-                  : detail.ticket.priority === 'HIGH'
-                    ? 'warning'
-                    : 'neutral',
-            }}
-            sla={
-              detail.ticket.sla ? (
-                <SeedSlaMeter
-                  detail={slaSummary(detail.ticket.sla)}
-                  label="SLA"
-                  percent={slaPercent(detail.ticket.sla.state)}
-                  tone={slaTone(detail.ticket.sla.state)}
-                />
-              ) : undefined
-            }
             status={
               <SeedStatusBadge tone={statusTone(detail.ticket.status)}>
                 {STATUS_LABELS[detail.ticket.status]}
@@ -408,7 +406,7 @@ function WorkspaceFrame({
           <section aria-label="티켓 대화 및 답변">{conversation}</section>
         }
         context={context}
-        onContextClose={() => setContextOpen(false)}
+        onContextClose={closeContext}
       />
     </section>
   )
@@ -486,7 +484,32 @@ function EditableProperties({
     })
   }
   return (
-    <SeedPropertyStack title="티켓 속성">
+    <SeedPropertyStack
+      title="티켓 속성"
+      details={{
+        summary: '요청 정보',
+        content: (
+          <>
+            <SeedReadOnlyField
+              label="요청자"
+              value={detail.ticket.requester.displayName}
+            />
+            {detail.context.customer?.email && (
+              <SeedReadOnlyField
+                label="이메일"
+                leadingIcon="mail"
+                value={detail.context.customer.email}
+              />
+            )}
+            <SeedReadOnlyField
+              label="생성"
+              leadingIcon="calendar"
+              value={formatDate(detail.ticket.createdAt)}
+            />
+          </>
+        ),
+      }}
+    >
       <SeedChoiceField
         disabled={editor.submitting}
         label="상태"
@@ -521,22 +544,6 @@ function EditableProperties({
         placeholder="미배정"
         value={editor.localFields.assigneeId}
       />
-      <SeedReadOnlyField
-        label="요청자"
-        value={detail.ticket.requester.displayName}
-      />
-      {detail.context.customer?.email && (
-        <SeedReadOnlyField
-          label="이메일"
-          leadingIcon="mail"
-          value={detail.context.customer.email}
-        />
-      )}
-      <SeedReadOnlyField
-        label="생성"
-        leadingIcon="calendar"
-        value={formatDate(detail.ticket.createdAt)}
-      />
       {detail.ticket.sla && (
         <SeedReadOnlyField
           label="최초 답변 SLA"
@@ -550,7 +557,32 @@ function EditableProperties({
 
 function ReadOnlyProperties({ detail }: { detail: AgentTicketDetail }) {
   return (
-    <SeedPropertyStack title="티켓 속성">
+    <SeedPropertyStack
+      title="티켓 속성"
+      details={{
+        summary: '요청 정보',
+        content: (
+          <>
+            <SeedReadOnlyField
+              label="요청자"
+              value={detail.ticket.requester.displayName}
+            />
+            {detail.context.customer?.email && (
+              <SeedReadOnlyField
+                label="이메일"
+                leadingIcon="mail"
+                value={detail.context.customer.email}
+              />
+            )}
+            <SeedReadOnlyField
+              label="생성"
+              leadingIcon="calendar"
+              value={formatDate(detail.ticket.createdAt)}
+            />
+          </>
+        ),
+      }}
+    >
       <SeedReadOnlyField
         label="상태"
         value={STATUS_LABELS[detail.ticket.status]}
@@ -568,22 +600,6 @@ function ReadOnlyProperties({ detail }: { detail: AgentTicketDetail }) {
         label="담당자"
         leadingIcon="user"
         value={detail.ticket.assignee?.displayName ?? '미배정'}
-      />
-      <SeedReadOnlyField
-        label="요청자"
-        value={detail.ticket.requester.displayName}
-      />
-      {detail.context.customer?.email && (
-        <SeedReadOnlyField
-          label="이메일"
-          leadingIcon="mail"
-          value={detail.context.customer.email}
-        />
-      )}
-      <SeedReadOnlyField
-        label="생성"
-        leadingIcon="calendar"
-        value={formatDate(detail.ticket.createdAt)}
       />
       {detail.ticket.sla && (
         <SeedReadOnlyField
@@ -1215,12 +1231,16 @@ function ConflictResolution({
 }
 
 function TicketContext({
+  activeTab,
+  onTabChange,
   aiAssistant,
   detail,
   extensionAccess,
   externalReferences,
   knowledge,
 }: {
+  activeTab: ContextTab
+  onTabChange: (tab: ContextTab) => void
   aiAssistant?: React.ReactNode
   knowledge?: React.ReactNode
   detail: AgentTicketDetail
@@ -1232,6 +1252,11 @@ function TicketContext({
   )
   const collaboration = useCollaborationNotes(detail)
   const [showAllRelated, setShowAllRelated] = useState(false)
+  const [showAllHistory, setShowAllHistory] = useState(false)
+  const panelPrefix = useId()
+  const latestHistory = [...detail.history].sort(
+    (a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt),
+  )
   const people = detail.assignmentOptions.groups
     .flatMap((group) => group.members)
     .filter(
@@ -1245,123 +1270,181 @@ function TicketContext({
     }))
   return (
     <div className="seed-context-stack">
-      {aiAssistant}
-      {knowledge}
-      <SeedContextCard title="고객">
-        {detail.context.customer ? (
-          <div className="seed-context-person">
-            <SeedAvatar
-              initials={initials(detail.context.customer.displayName)}
-              label={detail.context.customer.displayName}
-            />
-            <span>
-              <strong>{detail.context.customer.displayName}</strong>
-              <small>
-                <SeedIcon name="mail" size="small" />{' '}
-                {detail.context.customer.email}
-              </small>
-              <small>고객 ID {detail.context.customer.id}</small>
-            </span>
-          </div>
-        ) : (
-          <p>고객 컨텍스트가 제공되지 않았습니다.</p>
-        )}
-      </SeedContextCard>
-      <SeedContextCard
-        title="관련 티켓"
-        badge={
-          <SeedStatusBadge tone="neutral">{related.length}</SeedStatusBadge>
-        }
+      <SeedTabs
+        active={activeTab}
+        ariaLabel="티켓 문맥"
+        items={[
+          { id: 'customer', label: '고객', panelId: `${panelPrefix}-customer` },
+          {
+            id: 'collaboration',
+            label: '협업',
+            panelId: `${panelPrefix}-collaboration`,
+          },
+          {
+            id: 'resources',
+            label: '자료',
+            panelId: `${panelPrefix}-resources`,
+          },
+        ]}
+        onChange={onTabChange}
+      />
+      <section
+        id={`${panelPrefix}-customer`}
+        role="tabpanel"
+        aria-labelledby={`${panelPrefix}-customer-tab`}
+        hidden={activeTab !== 'customer'}
       >
-        {related.length > 0 ? (
-          <ul className="seed-related-tickets">
-            {(showAllRelated ? related : related.slice(0, 4)).map((ticket) => (
-              <li key={ticket.ticketNumber}>
-                <Link to={`/agent/tickets/${ticket.ticketNumber}`}>
-                  #{ticket.ticketNumber}
-                </Link>
-                <span>
-                  {detail.context.parent?.ticketNumber === ticket.ticketNumber
-                    ? '상위 문의'
-                    : '내부 협업'}{' '}
-                  · {ticket.subject}
-                  {ticket.group ? ` · ${ticket.group.name}` : ''}
-                </span>
-                <SeedStatusBadge tone={statusTone(ticket.status)}>
-                  {STATUS_LABELS[ticket.status]}
-                </SeedStatusBadge>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="seed-context-empty">
-            연결된 상위·하위 티켓이 없습니다.
-          </p>
-        )}
-        {detail.ticket.openChildCount > 0 && (
-          <p>진행 중인 내부 협업 요청 {detail.ticket.openChildCount}건</p>
-        )}
-        {related.length > 4 && (
-          <SeedButton onClick={() => setShowAllRelated(!showAllRelated)}>
-            {showAllRelated
-              ? '관련 티켓 접기'
-              : `관련 티켓 ${related.length}건 모두 보기`}
-          </SeedButton>
-        )}
-      </SeedContextCard>
-      <SeedCollaborationThread
-        canWrite={detail.capabilities.includes('UPDATE')}
-        notes={collaboration.notes.map((note) => ({
-          id: note.id,
-          author: note.author.displayName,
-          initials: initials(note.author.displayName),
-          body: note.body,
-          timestamp: formatDate(note.createdAt),
-          mentionLabels: note.mentionedStaff.map(
-            (staff) => `@${staff.displayName}`,
-          ),
-        }))}
-        onRetry={collaboration.load}
-        onSubmit={collaboration.create}
-        people={people}
-        state={collaboration.state}
-        submitting={collaboration.submitting}
-      />
-      {extensionAccess && (
-        <ExtensionSlot
-          access={extensionAccess}
-          context={{ ticketNumber: String(detail.ticket.ticketNumber) }}
-          slot="ticket-workspace.context"
-        />
-      )}
-      <ExternalReferencesCard
-        controller={externalReferences}
-        fallbackCount={detail.context.externalReferenceCount}
-      />
-      <SeedContextCard title="최근 활동">
-        {detail.history.length > 0 ? (
-          <ol className="seed-context-history">
-            {detail.history.slice(0, 4).map((item) => (
-              <li key={item.id}>
+        <div className="seed-context-stack">
+          <SeedContextCard title="고객">
+            {detail.context.customer ? (
+              <div className="seed-context-person">
                 <SeedAvatar
-                  initials={initials(item.actor.displayName)}
-                  label={item.actor.displayName}
+                  initials={initials(detail.context.customer.displayName)}
+                  label={detail.context.customer.displayName}
                 />
                 <span>
-                  <strong>{historyLabel(item.eventType)}</strong>
+                  <strong>{detail.context.customer.displayName}</strong>
                   <small>
-                    <time dateTime={item.occurredAt}>
-                      {formatDate(item.occurredAt)}
-                    </time>
+                    <SeedIcon name="mail" size="small" />{' '}
+                    {detail.context.customer.email}
                   </small>
+                  <small>고객 ID {detail.context.customer.id}</small>
                 </span>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="seed-context-empty">표시할 최근 활동이 없습니다.</p>
-        )}
-      </SeedContextCard>
+              </div>
+            ) : (
+              <p>고객 컨텍스트가 제공되지 않았습니다.</p>
+            )}
+          </SeedContextCard>
+          <SeedContextCard
+            title="관련 티켓"
+            badge={
+              <SeedStatusBadge tone="neutral">{related.length}</SeedStatusBadge>
+            }
+          >
+            {related.length > 0 ? (
+              <ul className="seed-related-tickets">
+                {(showAllRelated ? related : related.slice(0, 4)).map(
+                  (ticket) => (
+                    <li key={ticket.ticketNumber}>
+                      <Link to={`/agent/tickets/${ticket.ticketNumber}`}>
+                        #{ticket.ticketNumber}
+                      </Link>
+                      <span>
+                        {detail.context.parent?.ticketNumber ===
+                        ticket.ticketNumber
+                          ? '상위 문의'
+                          : '내부 협업'}{' '}
+                        · {ticket.subject}
+                        {ticket.group ? ` · ${ticket.group.name}` : ''}
+                      </span>
+                      <SeedStatusBadge tone={statusTone(ticket.status)}>
+                        {STATUS_LABELS[ticket.status]}
+                      </SeedStatusBadge>
+                    </li>
+                  ),
+                )}
+              </ul>
+            ) : (
+              <p className="seed-context-empty">
+                연결된 상위·하위 티켓이 없습니다.
+              </p>
+            )}
+            {detail.ticket.openChildCount > 0 && (
+              <p>진행 중인 내부 협업 요청 {detail.ticket.openChildCount}건</p>
+            )}
+            {related.length > 4 && (
+              <SeedButton onClick={() => setShowAllRelated(!showAllRelated)}>
+                {showAllRelated
+                  ? '관련 티켓 접기'
+                  : `관련 티켓 ${related.length}건 모두 보기`}
+              </SeedButton>
+            )}
+          </SeedContextCard>
+          <SeedContextCard title="최근 활동">
+            {latestHistory.length > 0 ? (
+              <ol className="seed-context-history">
+                {(showAllHistory
+                  ? latestHistory
+                  : latestHistory.slice(0, 4)
+                ).map((item) => (
+                  <li key={item.id}>
+                    <SeedAvatar
+                      initials={initials(item.actor.displayName)}
+                      label={item.actor.displayName}
+                    />
+                    <span>
+                      <strong>{historyLabel(item.eventType)}</strong>
+                      <small>
+                        <time dateTime={item.occurredAt}>
+                          {formatDate(item.occurredAt)}
+                        </time>
+                      </small>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="seed-context-empty">표시할 최근 활동이 없습니다.</p>
+            )}
+            {latestHistory.length > 4 && (
+              <SeedButton onClick={() => setShowAllHistory(!showAllHistory)}>
+                {showAllHistory
+                  ? '최근 4건만 보기'
+                  : `활동 ${latestHistory.length}건 모두 보기`}
+              </SeedButton>
+            )}
+          </SeedContextCard>
+        </div>
+      </section>
+      <section
+        id={`${panelPrefix}-collaboration`}
+        role="tabpanel"
+        aria-labelledby={`${panelPrefix}-collaboration-tab`}
+        hidden={activeTab !== 'collaboration'}
+      >
+        <div className="seed-context-stack">
+          {extensionAccess && (
+            <ExtensionSlot
+              access={extensionAccess}
+              context={{ ticketNumber: String(detail.ticket.ticketNumber) }}
+              slot="ticket-workspace.context"
+            />
+          )}
+          <SeedCollaborationThread
+            canWrite={detail.capabilities.includes('UPDATE')}
+            notes={collaboration.notes.map((note) => ({
+              id: note.id,
+              author: note.author.displayName,
+              initials: initials(note.author.displayName),
+              body: note.body,
+              timestamp: formatDate(note.createdAt),
+              mentionLabels: note.mentionedStaff.map(
+                (staff) => `@${staff.displayName}`,
+              ),
+            }))}
+            onRetry={collaboration.load}
+            onSubmit={collaboration.create}
+            people={people}
+            state={collaboration.state}
+            submitting={collaboration.submitting}
+          />
+        </div>
+      </section>
+      <section
+        id={`${panelPrefix}-resources`}
+        role="tabpanel"
+        aria-labelledby={`${panelPrefix}-resources-tab`}
+        hidden={activeTab !== 'resources'}
+      >
+        <div className="seed-context-stack">
+          {knowledge}
+          {aiAssistant}
+          <ExternalReferencesCard
+            controller={externalReferences}
+            fallbackCount={detail.context.externalReferenceCount}
+          />
+        </div>
+      </section>
     </div>
   )
 }
@@ -1785,30 +1868,6 @@ function statusTone(
   if (status === 'PENDING' || status === 'ON_HOLD') return 'warning'
   if (status === 'NEW') return 'info'
   return 'neutral'
-}
-
-function slaPercent(
-  state: NonNullable<AgentTicketDetail['ticket']['sla']>['state'],
-) {
-  return {
-    ACTIVE: 48,
-    AT_RISK: 72,
-    PAUSED: 52,
-    ACHIEVED: 100,
-    BREACHED: 100,
-    CANCELLED: 0,
-    NO_POLICY: 0,
-  }[state]
-}
-
-function slaTone(
-  state: NonNullable<AgentTicketDetail['ticket']['sla']>['state'],
-): 'positive' | 'warning' | 'danger' | 'neutral' {
-  if (state === 'BREACHED') return 'danger'
-  if (state === 'AT_RISK') return 'warning'
-  if (state === 'CANCELLED' || state === 'NO_POLICY' || state === 'PAUSED')
-    return 'neutral'
-  return 'positive'
 }
 
 function initials(name: string) {

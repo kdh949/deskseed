@@ -503,7 +503,7 @@ export function SeedTabs<T extends string>({
 }: {
   active: T
   ariaLabel: string
-  items: Array<{ id: T; label: ReactNode }>
+  items: Array<{ id: T; label: ReactNode; panelId?: string }>
   onChange: (id: T) => void
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([])
@@ -537,7 +537,9 @@ export function SeedTabs<T extends string>({
     <div aria-label={ariaLabel} className="seed-tabs" role="tablist">
       {items.map((item, index) => (
         <button
+          aria-controls={item.panelId}
           aria-selected={active === item.id}
+          id={item.panelId ? `${item.panelId}-tab` : undefined}
           key={item.id}
           onClick={() => onChange(item.id)}
           onKeyDown={(event) => onKeyDown(event, index)}

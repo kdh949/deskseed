@@ -82,11 +82,11 @@
   --ds-motion-standard: 180ms;
   --ds-focus-outline: 0 0 0 3px rgb(0 111 105 / 24%);
 
-  --ds-frame-rail: 10.5rem;
+  --ds-frame-rail: 4rem;
   --ds-frame-topbar: 3.5rem;
   --ds-frame-worknav: 17rem;
   --ds-frame-sidebar: var(--ds-frame-worknav);
-  --ds-frame-properties: 18rem;
+  --ds-frame-properties: 20rem;
   --ds-frame-context: 20rem;
   --ds-frame-minimum: 73.75rem;
   --ds-frame-overlay-breakpoint: 93.75rem;

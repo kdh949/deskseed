@@ -252,6 +252,10 @@
   inset: 0;
 }
 
+.seed-drawer-layer[hidden] {
+  display: none;
+}
+
 .seed-drawer-layer__scrim {
   position: absolute;
   inset: 0;
