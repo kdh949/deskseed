@@ -147,6 +147,15 @@ Inject AccessAuditEvent insert failure:
 - raw query is never plaintext in DB/log when encrypted mode is configured.
 - secrets/patterns are masked according to policy.
 
+### ADMIN-SEARCH-001 — Administrator directory search (pending implementation)
+
+- 직원 이름/이메일과 그룹 이름 조건이 현재 페이지가 아닌 전체 DB 범위에 적용된다. 100개를 넘는 fixture, exact count/page 정렬과 literal wildcard를 검증한다.
+- memberOfGroupId/excludeGroupId는 상호 배타적이며 ADMIN 인가 뒤 ACTIVE 그룹을 확인한다. 구성원과 추가 후보 범위 및 role/status 조건을 검증한다.
+- 성공마다 typed ADMIN search action, ADMIN_UI context, 보호 query와 exact count를 저장한다. ACC-002/003과 SEARCH-AUD-001의 동일 privacy/fail-closed 의미를 적용한다.
+- query는 POST body 외의 URL/history, query cache key, log/trace, 오류·routine projection/export에 나타나지 않는다. ciphertext expiry와 append-only, 기존 ticket search/reveal 회귀를 검증한다.
+- ADMIN 검색은 ticket result membership/origin을 생성하지 않으며 기존 exact reveal 범위를 확대하지 않는다.
+- 직원·그룹·구성원 UI의 loading/empty/error/denied, 페이지 이동·검색 해제·키보드 및 1280/1440/1920을 Storybook/Playwright로 검증한다.
+
 ### ACC-004 — Search-to-view linkage
 
 - ticket opened from results has `originSearchEventId`.

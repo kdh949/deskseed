@@ -83,6 +83,8 @@ Examples:
 - EXPORT_DOWNLOADED
 - API_RESOURCE_READ
 
+관리자 직원·그룹 검색의 승인된 pending 계약은 [P15 directory search](tasks/2026-10-03-admin-directory-search-contract.md)에 정의한다. `ADMIN_STAFF_SEARCH_EXECUTED`/`ADMIN_GROUP_SEARCH_EXECUTED`는 access/search ledger와 기존 보호 query detail을 재사용하며 admin/security metadata에 원문을 넣지 않는다. 현재 runtime/projection/reveal 계약에는 아직 추가되지 않았고, 구현 PR에서 migration·typed writer·안전한 projection을 함께 검증한다.
+
 ### 3.3 Admin & Security Audit
 
 Purpose: 권한·보안·설정·자격증명 변화와 보안 결과 조사
