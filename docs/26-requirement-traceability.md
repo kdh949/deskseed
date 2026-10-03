@@ -1,5 +1,7 @@
 # 요구사항 추적 매트릭스 (Requirement Traceability Matrix)
 
+REQ-KB-001/REQ-AUD-004의 P17 [관리자 제목 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)을 추가했다. 새 POST operation과 typed search audit, 기존 목록의 latestRevision 확장은 BLUEPRINT_READY 계획이며 이번 계약 PR에서 runtime/요구사항 상태를 승격하지 않는다. 구현 gate는 ADMIN-KB-SEARCH-001, KB-001, UI-002/004/005다.
+
 ## 1. 목적
 
 이 문서는 대화에서 확정된 제품 요구사항이 설계 문서, 구현 단계, 검증 기준 중 어디에 반영되어 있는지 추적한다. 기능을 추가하거나 범위를 바꿀 때 이 표를 먼저 수정한다.

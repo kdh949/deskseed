@@ -1,5 +1,7 @@
 # Database Schema and Index Blueprint
 
+P17 [관리자 KB 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)의 V100 예정 범위는 access_audit_events의 명시적 action/ADMIN_UI/search shape CHECK에 ADMIN_KNOWLEDGE_SEARCH_EXECUTED를 추가하는 것이다. 기존 search_audit_details/ciphertexts·보호 query retention·append-only 경계를 재사용한다. 문서 목록은 최신 revision의 title/summary만 join하며 body projection·새 검색 table·추정 index·backfill을 추가하지 않는다. 현재 계약 PR에서는 DDL을 실행하거나 runtime 지원을 주장하지 않는다.
+
 ## 1. 목적
 
 이 문서는 JPA entity를 그대로 설계하는 문서가 아니라 PostgreSQL에서 지켜야 할 데이터 관계, 제약, 인덱스, 보존 경계를 정의한다. 실제 Flyway migration은 기능 slice마다 생성한다.
