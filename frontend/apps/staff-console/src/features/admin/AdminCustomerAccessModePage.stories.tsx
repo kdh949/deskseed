@@ -46,6 +46,9 @@ type Story = StoryObj<typeof meta>
 export const SavePolicy: Story = {
   play: async ({ canvas }) => {
     await expect(
+      await canvas.findByRole('heading', { name: '고객 포털 준비 확인' }),
+    ).toBeVisible()
+    await expect(
       await canvas.findByRole('heading', { name: '고객 접근 모드' }),
     ).toBeVisible()
     await userEvent.selectOptions(

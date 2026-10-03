@@ -38,6 +38,7 @@ export function HelpCenterHomePage() {
   const announcements = useQuery({
     enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'section', 'announcements'],
+    retry: false,
     queryFn: ({ signal }) => getHelpSection('announcements', undefined, signal),
   })
   const submit = (event: FormEvent) => {
@@ -107,31 +108,38 @@ export function HelpCenterHomePage() {
               <p>공지사항을 불러오고 있습니다.</p>
             </div>
           ) : null}
-          {announcements.isError ? (
+          {announcements.isError &&
+          !(
+            announcements.error instanceof HelpApiError &&
+            announcements.error.status === 404
+          ) ? (
             <div className="customer-announcement-state" role="alert">
               <p>공지사항을 불러올 수 없습니다.</p>
               <RetryButton onClick={() => void announcements.refetch()} />
             </div>
           ) : null}
-          {announcements.isSuccess && !announcements.data.articles.length ? (
+          {(announcements.isSuccess && !announcements.data.articles.length) ||
+          (announcements.error instanceof HelpApiError &&
+            announcements.error.status === 404) ? (
             <div className="customer-announcement-state" role="status">
               <p>등록된 공지사항이 없습니다.</p>
             </div>
           ) : null}
-          {announcements.data?.articles.slice(0, 2).map((announcement) => (
-            <article key={announcement.slug}>
-              <CustomerIcon name="speechBubble" />
-              <div>
-                <h3>
-                  <Link to={`/articles/${announcement.slug}`}>
-                    {announcement.title}
-                  </Link>
-                </h3>
-                {announcement.summary ? <p>{announcement.summary}</p> : null}
-              </div>
-              <span>공지</span>
-            </article>
-          ))}
+          {announcements.isSuccess &&
+            announcements.data.articles.slice(0, 2).map((announcement) => (
+              <article key={announcement.slug}>
+                <CustomerIcon name="speechBubble" />
+                <div>
+                  <h3>
+                    <Link to={`/articles/${announcement.slug}`}>
+                      {announcement.title}
+                    </Link>
+                  </h3>
+                  {announcement.summary ? <p>{announcement.summary}</p> : null}
+                </div>
+                <span>공지</span>
+              </article>
+            ))}
         </div>
       </section>
     </div>
@@ -571,12 +579,18 @@ export function HelpSectionPage() {
   const section = useInfiniteQuery({
     enabled: isHelpScopeReady(scope),
     queryKey: [...scope, 'section-pages', sectionSlug],
+    retry: false,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       getHelpSection(sectionSlug, pageParam, signal),
     getNextPageParam: (page) =>
       page.hasMore ? (page.nextCursor ?? undefined) : undefined,
   })
+  const isAnnouncements = sectionSlug === 'announcements'
+  const missingAnnouncements =
+    isAnnouncements &&
+    section.error instanceof HelpApiError &&
+    section.error.status === 404
   const first = section.data?.pages[0]
   const articles = section.data?.pages.flatMap((page) => page.articles) ?? []
   if (!isHelpScopeReady(scope)) return <HelpSessionState />
@@ -584,49 +598,85 @@ export function HelpSectionPage() {
   return (
     <div className="customer-page">
       <Link to="/categories">모든 문서</Link>
+      {isAnnouncements && <h1>공지사항</h1>}
       {section.isPending && (
-        <ScreenState kind="loading" title="문서 목록을 불러오고 있습니다." />
-      )}
-      {section.isError && (
         <ScreenState
-          kind={
-            section.error instanceof HelpApiError &&
-            section.error.status === 404
-              ? 'not-found'
-              : 'error'
+          kind="loading"
+          title={
+            isAnnouncements
+              ? '공지사항을 불러오고 있습니다.'
+              : '문서 목록을 불러오고 있습니다.'
           }
-          title="문서 목록을 불러올 수 없습니다."
-          action={<RetryButton onClick={() => void section.refetch()} />}
         />
       )}
-      {first && (
-        <>
-          <h1>{first.title}</h1>
-          <p>{first.description}</p>
-          {articles.length ? (
-            <ul>
-              {articles.map((article) => (
-                <li key={article.slug}>
-                  <Link to={`/articles/${encodeURIComponent(article.slug)}`}>
-                    {article.title}
-                  </Link>
-                  <p>{article.summary}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <ScreenState kind="empty" title="등록된 문서가 없습니다." />
-          )}
-        </>
+      {missingAnnouncements ? (
+        <ScreenState
+          kind="empty"
+          title="등록된 공지사항이 없습니다."
+          action={<RetryButton onClick={() => void section.refetch()} />}
+        />
+      ) : (
+        section.isError && (
+          <ScreenState
+            kind={
+              section.error instanceof HelpApiError &&
+              section.error.status === 404
+                ? 'not-found'
+                : 'error'
+            }
+            title={
+              isAnnouncements
+                ? '공지사항을 불러올 수 없습니다.'
+                : '문서 목록을 불러올 수 없습니다.'
+            }
+            action={<RetryButton onClick={() => void section.refetch()} />}
+          />
+        )
       )}
-      {section.hasNextPage && (
-        <DsButton
-          disabled={section.isFetchingNextPage}
-          onClick={() => void section.fetchNextPage()}
-        >
-          {section.isFetchingNextPage ? '불러오는 중…' : '문서 더 보기'}
-        </DsButton>
+      {!missingAnnouncements &&
+        first &&
+        (!section.isError || section.isFetchNextPageError) && (
+          <>
+            {!isAnnouncements && <h1>{first.title}</h1>}
+            <p>{first.description}</p>
+            {articles.length ? (
+              <ul>
+                {articles.map((article) => (
+                  <li key={article.slug}>
+                    <Link to={`/articles/${encodeURIComponent(article.slug)}`}>
+                      {article.title}
+                    </Link>
+                    <p>{article.summary}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ScreenState
+                kind="empty"
+                title={
+                  isAnnouncements
+                    ? '등록된 공지사항이 없습니다.'
+                    : '등록된 문서가 없습니다.'
+                }
+              />
+            )}
+          </>
+        )}
+      {isAnnouncements && (
+        <p>
+          <Link to="/">도움말 홈으로</Link>
+        </p>
       )}
+      {!missingAnnouncements &&
+        section.hasNextPage &&
+        (!section.isError || section.isFetchNextPageError) && (
+          <DsButton
+            disabled={section.isFetchingNextPage}
+            onClick={() => void section.fetchNextPage()}
+          >
+            {section.isFetchingNextPage ? '불러오는 중…' : '문서 더 보기'}
+          </DsButton>
+        )}
     </div>
   )
 }
