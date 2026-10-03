@@ -78,22 +78,21 @@ export function CustomerSignInPage() {
     <div className="customer-auth-page">
       <section className="customer-auth-card">
         <h1>DeskSeed에 로그인</h1>
-        <p>이메일과 비밀번호로 로그인하세요.</p>
         <p>
-          <Link to="/customer/password-reset">비밀번호를 잊으셨나요?</Link>
+          {mode === 'password'
+            ? '이메일과 비밀번호로 로그인하세요.'
+            : '비밀번호 없이 문의한 고객은 이메일 링크로 로그인할 수 있습니다.'}
         </p>
+        {mode === 'password' ? (
+          <p>
+            <Link to="/customer/password-reset">비밀번호를 잊으셨나요?</Link>
+          </p>
+        ) : null}
         <div
           aria-label="로그인 방식"
           className="customer-auth-tabs"
           role="group"
         >
-          <button
-            aria-pressed={mode === 'magic'}
-            onClick={() => setMode('magic')}
-            type="button"
-          >
-            이메일 링크
-          </button>
           <button
             aria-pressed={mode === 'password'}
             onClick={() => setMode('password')}
@@ -101,10 +100,14 @@ export function CustomerSignInPage() {
           >
             비밀번호
           </button>
+          <button
+            aria-pressed={mode === 'magic'}
+            onClick={() => setMode('magic')}
+            type="button"
+          >
+            이메일 링크
+          </button>
         </div>
-        {mode === 'magic' ? (
-          <p>비밀번호 없이 문의한 고객은 이메일 링크로 로그인할 수 있습니다.</p>
-        ) : null}
         {failure ? (
           <Notification title="로그인 요청을 완료할 수 없습니다." tone="danger">
             <p>{failure}</p>

@@ -375,6 +375,7 @@ test('magic link → My Requests → authenticated PUBLIC attachment follow-up �
 
   await page.setViewportSize({ height: 900, width: 390 })
   await page.goto('/_customer/customer/sign-in')
+  await page.getByRole('button', { name: '이메일 링크', exact: true }).click()
   await page
     .getByRole('textbox', { name: '이메일 주소', exact: true })
     .fill('mina@example.test')

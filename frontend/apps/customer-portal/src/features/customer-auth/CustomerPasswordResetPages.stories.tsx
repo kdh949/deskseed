@@ -37,8 +37,43 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const Ready: Story = {
   play: async ({ canvas }) => {
-    await expect(await canvas.findByLabelText('새 비밀번호')).toBeVisible()
+    const field = await canvas.findByLabelText('새 비밀번호')
+    await expect(field).toBeVisible()
     await expect(window.location.hash).toBe('')
+    const heading = canvas.getByRole('heading', { name: '새 비밀번호 설정' })
+    const guidance = canvas.getByText(/12~128자의 새 비밀번호/)
+    await expect(guidance.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      heading.getBoundingClientRect().bottom,
+    )
+    await expect(field.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      guidance.getBoundingClientRect().bottom,
+    )
+  },
+}
+
+export const RequestReady: Story = {
+  render: () => <CustomerPasswordResetRequestPage />,
+  play: async ({ canvas }) => {
+    const heading = canvas.getByRole('heading', { name: '비밀번호 재설정' })
+    const guidance = canvas.getByText(
+      '비밀번호로 가입한 계정의 이메일을 입력해 주세요.',
+    )
+    const field = canvas.getByLabelText('이메일 주소')
+    await expect(guidance.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      heading.getBoundingClientRect().bottom,
+    )
+    await expect(field.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      guidance.getBoundingClientRect().bottom,
+    )
+    field.focus()
+    await userEvent.tab()
+    await expect(
+      canvas.getByRole('button', { name: '재설정 링크 요청' }),
+    ).toHaveFocus()
+    await userEvent.tab()
+    await expect(
+      canvas.getByRole('link', { name: '로그인으로 돌아가기' }),
+    ).toHaveFocus()
   },
 }
 export const Complete: Story = {

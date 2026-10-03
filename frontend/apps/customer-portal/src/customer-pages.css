@@ -524,6 +524,9 @@
   border-radius: var(--customer-radius-lg);
   background: #fff;
 }
+.customer-auth-page--single {
+  grid-template-columns: minmax(0, 1fr);
+}
 .customer-auth-card h1,
 .customer-register-card h1 {
   margin: 0 0 10px;
