@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import { DeskseedThemeProvider } from '../../design-system'
 import { AdminGroupsPage } from './AdminGroupsPage'
 
@@ -30,13 +31,19 @@ function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  const view = render(
-    <DeskseedThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <AdminGroupsPage />
-      </QueryClientProvider>
-    </DeskseedThemeProvider>,
-  )
+  const router = createMemoryRouter([
+    {
+      path: '*',
+      element: (
+        <DeskseedThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <AdminGroupsPage />
+          </QueryClientProvider>
+        </DeskseedThemeProvider>
+      ),
+    },
+  ])
+  const view = render(<RouterProvider router={router} />)
   return { ...view, queryClient }
 }
 

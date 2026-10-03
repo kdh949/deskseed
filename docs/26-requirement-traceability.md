@@ -196,6 +196,8 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 
 ## 12. Wave 1 drafts and presence
 
+2026-10-03 REQ-PERM-002/REQ-UI-005의 직원·그룹 목록/상세, 생성 Drawer, 미저장·저장 중 이탈 보호, 역할별 감사 권한 작업을 보강했다. [P16 작업 및 검증 기록](tasks/2026-10-03-admin-directory-workflow.md). 기존 요구사항 상태와 서버 계약은 변경하지 않는다.
+
 | ID | 요구사항 | 상태 | 단계 | 기준 문서 | 최소 검증 |
 |---|---|---:|---|---|---|
 | REQ-COL-001 | 상담사는 티켓별 PUBLIC/INTERNAL 초안을 분리해 최대 30일 서버와 7일 브라우저에 복구할 수 있고, 다른 직원·다른 channel·CLOSED ticket·낡은 버전의 쓰기는 안전하게 격리한다 | IMPLEMENTATION_READY | Wave 1 D1 | ADR 0040, 31, 34, 48, 50, 55 | `AgentTicketDraftIntegrationTest` owner/channel/CLOSED/conflict/attachment-owner/no-ticket-audit; `JdbcTicketDraftStoreIntegrationTest` TTL/lease; client decoder and local recovery unit tests; ARCH-001/002/004, FILE-001 |

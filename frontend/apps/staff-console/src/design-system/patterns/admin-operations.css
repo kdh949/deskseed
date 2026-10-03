@@ -110,6 +110,41 @@
   font-size: var(--ds-ref-font-size-xl);
 }
 
+.admin-directory-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.4fr);
+  align-items: start;
+  gap: var(--ds-ref-space-5);
+}
+
+.admin-directory-page .admin-directory-layout > .admin-surface {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.admin-directory-page .admin-role-cell,
+.admin-directory-page .admin-table button {
+  white-space: nowrap;
+}
+
+.admin-directory-page h2 {
+  font-size: var(--ds-ref-font-size-lg);
+}
+
+.admin-directory-page h3 {
+  font-size: var(--ds-ref-font-size-md);
+}
+
+.admin-directory-page .admin-detail-heading {
+  scroll-margin-top: var(--ds-ref-space-6);
+}
+
+@media (max-width: 1100px) {
+  .admin-directory-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .admin-page-header p {
   margin-top: var(--ds-ref-space-2);
   color: var(--ds-foreground-muted);

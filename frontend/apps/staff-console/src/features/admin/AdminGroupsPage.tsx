@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import {
   ApiError,
   addGroupMember,
@@ -15,14 +21,28 @@ import {
 import type { GroupMembership, SupportGroup } from '../../api/types'
 import {
   DsButton,
+  DsDrawer,
   Notification,
   RetryButton,
   ScreenState,
 } from '../../design-system'
+import { useAdminDraftExit } from './useAdminDraftExit'
+
+const ROLE_LABELS = {
+  ADMIN: '관리자',
+  AGENT: '상담사',
+  SECURITY_AUDITOR: '보안 감사자',
+}
 
 export function AdminGroupsPage() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
+  const [createOpen, setCreateOpen] = useState(false)
+  const actionRef = useRef<HTMLButtonElement | null>(null)
+  const detailHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const renameRef = useRef<HTMLInputElement | null>(null)
+  const createRef = useRef<HTMLInputElement | null>(null)
+  const memberRef = useRef<HTMLSelectElement | null>(null)
   const [searchDraft, setSearchDraft] = useState('')
   const [search, setSearch] = useState<{ query: string; key: string } | null>(
     null,
@@ -43,9 +63,9 @@ export function AdminGroupsPage() {
   const [selectedGroup, setSelectedGroup] = useState<SupportGroup | null>(null)
   const [renamedGroup, setRenamedGroup] = useState('')
   const [newMemberId, setNewMemberId] = useState('')
-  const [groupValidationError, setGroupValidationError] = useState<
-    string | null
-  >(null)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [memberError, setMemberError] = useState<string | null>(null)
   const [removeCandidate, setRemoveCandidate] =
     useState<GroupMembership | null>(null)
   const [disableOpen, setDisableOpen] = useState(false)
@@ -125,7 +145,8 @@ export function AdminGroupsPage() {
     mutationFn: createGroup,
     onSuccess: async (group) => {
       setNewGroupName('')
-      setGroupValidationError(null)
+      setCreateError(null)
+      setCreateOpen(false)
       await refreshGroups()
       setSelectedGroup(group)
       setRenamedGroup(group.name)
@@ -165,14 +186,42 @@ export function AdminGroupsPage() {
       await refreshGroups()
     },
   })
+  const busy =
+    createMutation.isPending ||
+    renameMutation.isPending ||
+    disableMutation.isPending ||
+    addMemberMutation.isPending ||
+    removeMemberMutation.isPending
+  const dirty =
+    (createOpen && newGroupName !== '') ||
+    (selectedGroup?.status === 'ACTIVE' && renamedGroup !== selectedGroup.name)
+  const exit = useAdminDraftExit(Boolean(dirty), busy)
+  const leaveDraft = (action: () => void) =>
+    exit.request(() => {
+      setNewGroupName('')
+      setCreateError(null)
+      setCreateOpen(false)
+      setRenameError(null)
+      if (selectedGroup) setRenamedGroup(selectedGroup.name)
+      action()
+    })
 
   useEffect(() => {
     if (!selectedGroup) return
+    detailHeadingRef.current?.focus({ preventScroll: true })
+    detailHeadingRef.current?.scrollIntoView?.({ block: 'start' })
+  }, [selectedGroup?.id])
+
+  useEffect(() => {
+    if (!selectedGroup || busy) return
     const current = groupsQuery.data?.items.find(
       (group) => group.id === selectedGroup.id,
     )
-    if (current) setSelectedGroup(current)
-  }, [groupsQuery.data, selectedGroup])
+    if (current && current !== selectedGroup) {
+      if (renamedGroup === selectedGroup.name) setRenamedGroup(current.name)
+      setSelectedGroup(current)
+    }
+  }, [groupsQuery.data, selectedGroup, renamedGroup, busy])
 
   if (groupsQuery.isPending && !search) {
     return (
@@ -208,10 +257,11 @@ export function AdminGroupsPage() {
     event.preventDefault()
     const name = newGroupName.trim()
     if (!name) {
-      setGroupValidationError('그룹 이름을 입력해 주세요.')
+      setCreateError('그룹 이름을 입력해 주세요.')
+      createRef.current?.focus()
       return
     }
-    setGroupValidationError(null)
+    setCreateError(null)
     createMutation.mutate(name)
   }
   const submitRename = (event: FormEvent<HTMLFormElement>) => {
@@ -219,10 +269,11 @@ export function AdminGroupsPage() {
     if (!selectedGroup) return
     const name = renamedGroup.trim()
     if (!name) {
-      setGroupValidationError('그룹 이름을 입력해 주세요.')
+      setRenameError('그룹 이름을 입력해 주세요.')
+      renameRef.current?.focus()
       return
     }
-    setGroupValidationError(null)
+    setRenameError(null)
     renameMutation.mutate({ id: selectedGroup.id, name })
   }
 
@@ -237,6 +288,7 @@ export function AdminGroupsPage() {
     setRemoveCandidate(null)
     setDisableOpen(false)
     resetMemberSearches()
+    actionRef.current?.focus()
   }
   const resetMemberSearches = () => {
     setMemberSearchDraft('')
@@ -253,7 +305,7 @@ export function AdminGroupsPage() {
   }
 
   return (
-    <main aria-label="그룹 관리" className="admin-page">
+    <main aria-label="그룹 관리" className="admin-page admin-directory-page">
       <header className="admin-page-header">
         <div>
           <h1>그룹</h1>
@@ -262,34 +314,66 @@ export function AdminGroupsPage() {
             변경하지 않습니다.
           </p>
         </div>
-        <DsButton onClick={() => void groupsQuery.refetch()} tone="secondary">
-          그룹 목록 새로고침
-        </DsButton>
+        <div className="admin-inline-actions">
+          <DsButton
+            disabled={busy}
+            onClick={() => leaveDraft(() => void groupsQuery.refetch())}
+            tone="secondary"
+          >
+            그룹 목록 새로고침
+          </DsButton>
+          <DsButton
+            disabled={busy}
+            tone="primary"
+            onClick={(event) => {
+              const button = event.currentTarget
+              leaveDraft(() => {
+                closeSelectedGroup()
+                actionRef.current = button
+                setCreateOpen(true)
+                createMutation.reset()
+              })
+            }}
+          >
+            그룹 추가
+          </DsButton>
+        </div>
       </header>
 
-      <section aria-labelledby="create-group-heading" className="admin-surface">
-        <h2 id="create-group-heading">지원 그룹 생성</h2>
+      {createMutation.isSuccess ? (
+        <Notification title="지원 그룹을 만들었습니다." tone="success" />
+      ) : null}
+
+      <DsDrawer
+        open={createOpen}
+        title="지원 그룹 생성"
+        onClose={() => leaveDraft(() => undefined)}
+        returnFocusRef={actionRef}
+      >
         <form className="admin-form" onSubmit={submitCreate}>
           <label className="admin-field" htmlFor="new-group-name">
             <span>그룹 이름</span>
             <input
               id="new-group-name"
+              disabled={busy}
+              ref={createRef}
+              aria-invalid={Boolean(createError)}
+              aria-describedby={createError ? 'group-create-error' : undefined}
               maxLength={100}
               onChange={(event) => setNewGroupName(event.target.value)}
               value={newGroupName}
             />
           </label>
-          {groupValidationError ? (
-            <Notification title={groupValidationError} tone="warning" />
+          {createError ? (
+            <p id="group-create-error" role="alert">
+              {createError}
+            </p>
           ) : null}
           {createMutation.isError ? (
             <GroupMutationNotification
               action="그룹을 생성"
               error={createMutation.error}
             />
-          ) : null}
-          {createMutation.isSuccess ? (
-            <Notification title="지원 그룹을 만들었습니다." tone="success" />
           ) : null}
           <div className="admin-form-actions">
             <DsButton
@@ -301,614 +385,690 @@ export function AdminGroupsPage() {
             </DsButton>
           </div>
         </form>
-      </section>
+      </DsDrawer>
 
-      <section aria-labelledby="group-list-heading" className="admin-surface">
-        <h2 id="group-list-heading">지원 그룹</h2>
-        <form
-          className="admin-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            closeSelectedGroup()
-            setPage(0)
-            setSearch(
-              searchDraft.trim()
-                ? { query: searchDraft, key: crypto.randomUUID() }
-                : null,
-            )
-          }}
-        >
-          <label className="admin-field" htmlFor="group-search">
-            <span>그룹 이름 검색</span>
-            <input
-              id="group-search"
-              type="search"
-              autoComplete="off"
-              maxLength={254}
-              value={searchDraft}
-              onChange={(event) => setSearchDraft(event.target.value)}
-            />
-          </label>
-          <div className="admin-form-actions">
-            <DsButton
-              type="submit"
-              tone="primary"
-              disabled={groupsQuery.isFetching}
-            >
-              그룹 검색
-            </DsButton>
-            <DsButton
-              onClick={() => {
+      <div className={selectedGroup ? 'admin-directory-layout' : undefined}>
+        <section aria-labelledby="group-list-heading" className="admin-surface">
+          <h2 id="group-list-heading">지원 그룹</h2>
+          <form
+            className="admin-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              leaveDraft(() => {
                 closeSelectedGroup()
-                setSearchDraft('')
-                setSearch(null)
                 setPage(0)
-              }}
-            >
-              검색 초기화
-            </DsButton>
-          </div>
-        </form>
-        {groupsQuery.isPending ? (
-          <ScreenState compact kind="loading" title="그룹을 검색하는 중" />
-        ) : groupsQuery.isError ? (
-          <ScreenState
-            compact
-            kind={
-              groupsQuery.error instanceof ApiError &&
-              groupsQuery.error.status === 403
-                ? 'denied'
-                : 'error'
-            }
-            title="그룹 검색 결과를 불러오지 못했습니다."
-            action={<RetryButton onClick={() => void groupsQuery.refetch()} />}
-          />
-        ) : groupPage && groupPage.items.length === 0 ? (
-          <ScreenState
-            compact
-            description={
-              search
-                ? '다른 이름으로 검색하거나 검색을 초기화해 주세요.'
-                : '새 지원 그룹을 만들면 구성원과 상태를 여기에서 관리할 수 있습니다.'
-            }
-            kind="empty"
-            title={
-              search ? '검색 결과가 없습니다.' : '등록된 지원 그룹이 없습니다.'
-            }
-          />
-        ) : groupPage ? (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <caption className="sr-only">지원 그룹 목록</caption>
-              <thead>
-                <tr>
-                  <th scope="col">이름</th>
-                  <th scope="col">상태</th>
-                  <th scope="col">구성원</th>
-                  <th scope="col">작업</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupPage.items.map((group) => (
-                  <tr key={group.id}>
-                    <td>{group.name}</td>
-                    <td>{group.status === 'ACTIVE' ? '활성' : '비활성'}</td>
-                    <td>{group.memberCount}</td>
-                    <td>
-                      <DsButton
-                        aria-expanded={selectedGroup?.id === group.id}
-                        onClick={() => {
-                          resetMemberSearches()
-                          setSelectedGroup(group)
-                          setRemoveCandidate(null)
-                          setRenamedGroup(group.name)
-                          setNewMemberId('')
-                          setGroupValidationError(null)
-                          setDisableOpen(false)
-                        }}
-                        tone="secondary"
-                      >
-                        그룹 관리
-                      </DsButton>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-        {groupPage && !groupsQuery.isError ? (
-          <p
-            role="status"
-            className="admin-muted"
-          >{`${search ? '검색 결과' : '전체 그룹'} ${groupPage.totalCount}개`}</p>
-        ) : null}
-        {groupPage && !groupsQuery.isError && groupPage.totalPages > 1 ? (
-          <div className="admin-inline-actions">
-            <DsButton
-              disabled={page === 0}
-              onClick={() => changeGroupPage(page - 1)}
-              tone="secondary"
-            >
-              이전 페이지
-            </DsButton>
-            <span className="admin-muted">{`${page + 1} / ${groupPage.totalPages} 페이지`}</span>
-            <DsButton
-              disabled={page + 1 >= groupPage.totalPages}
-              onClick={() => changeGroupPage(page + 1)}
-              tone="secondary"
-            >
-              다음 페이지
-            </DsButton>
-          </div>
-        ) : null}
-      </section>
-
-      {selectedGroup ? (
-        <section
-          aria-labelledby="selected-group-heading"
-          className="admin-surface"
-        >
-          <div className="admin-page-header">
-            <div>
-              <h2 id="selected-group-heading">{selectedGroup.name}</h2>
-              <p>
-                {selectedGroup.status === 'ACTIVE'
-                  ? '활성 그룹'
-                  : '비활성 그룹'}
-              </p>
-            </div>
-            <DsButton onClick={closeSelectedGroup} tone="secondary">
-              닫기
-            </DsButton>
-          </div>
-          {selectedGroup.status === 'ACTIVE' ? (
-            <>
-              <form className="admin-form" onSubmit={submitRename}>
-                <label className="admin-field" htmlFor="rename-group-name">
-                  <span>그룹 이름 변경</span>
-                  <input
-                    id="rename-group-name"
-                    maxLength={100}
-                    onChange={(event) => setRenamedGroup(event.target.value)}
-                    value={renamedGroup}
-                  />
-                </label>
-                {renameMutation.isError ? (
-                  <GroupMutationNotification
-                    action="그룹 이름을 변경"
-                    error={renameMutation.error}
-                  />
-                ) : null}
-                {renameMutation.isSuccess ? (
-                  <Notification
-                    title="그룹 이름을 변경했습니다."
-                    tone="success"
-                  />
-                ) : null}
-                <div className="admin-form-actions">
-                  <DsButton
-                    disabled={renameMutation.isPending}
-                    tone="primary"
-                    type="submit"
-                  >
-                    {renameMutation.isPending ? '이름 변경 중…' : '이름 변경'}
-                  </DsButton>
-                </div>
-              </form>
-
-              <section
-                aria-labelledby="group-members-heading"
-                className="admin-surface"
-              >
-                <h3 id="group-members-heading">활성 구성원</h3>
-                <form
-                  className="admin-form"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    setRemoveCandidate(null)
-                    setMemberPage(0)
-                    setMemberSearch(
-                      memberSearchDraft.trim()
-                        ? { query: memberSearchDraft, key: crypto.randomUUID() }
-                        : null,
-                    )
-                  }}
-                >
-                  <label className="admin-field" htmlFor="member-search">
-                    <span>구성원 이름 또는 이메일 검색</span>
-                    <input
-                      id="member-search"
-                      type="search"
-                      autoComplete="off"
-                      maxLength={254}
-                      value={memberSearchDraft}
-                      onChange={(event) =>
-                        setMemberSearchDraft(event.target.value)
-                      }
-                    />
-                  </label>
-                  <div className="admin-form-actions">
-                    <DsButton
-                      type="submit"
-                      tone="primary"
-                      disabled={membersQuery.isFetching}
-                    >
-                      구성원 검색
-                    </DsButton>
-                    <DsButton
-                      onClick={() => {
-                        setMemberSearchDraft('')
-                        setMemberSearch(null)
-                        setMemberPage(0)
-                        setRemoveCandidate(null)
-                      }}
-                    >
-                      구성원 검색 초기화
-                    </DsButton>
-                  </div>
-                </form>
-                {membersQuery.isPending ? (
-                  <ScreenState
-                    compact
-                    kind="loading"
-                    title="그룹 구성원을 불러오는 중"
-                  />
-                ) : membersQuery.isError ? (
-                  <Notification
-                    title="그룹 구성원을 불러오지 못했습니다."
-                    tone="danger"
-                  >
-                    <RetryButton onClick={() => void membersQuery.refetch()} />
-                  </Notification>
-                ) : (
-                  <>
-                    {membersQuery.data.items.length === 0 ? (
-                      <p className="admin-muted">
-                        {memberSearch
-                          ? '검색 조건에 맞는 구성원이 없습니다.'
-                          : '현재 활성 구성원이 없습니다.'}
-                      </p>
-                    ) : (
-                      <div className="admin-table-wrap">
-                        <table className="admin-table">
-                          <caption className="sr-only">
-                            그룹 구성원 목록
-                          </caption>
-                          <thead>
-                            <tr>
-                              <th scope="col">이름</th>
-                              <th scope="col">역할</th>
-                              <th scope="col">작업</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {membersQuery.data.items.map((member) => (
-                              <tr key={member.staffId}>
-                                <td>{member.staffDisplayName}</td>
-                                <td>{member.role}</td>
-                                <td>
-                                  <DsButton
-                                    aria-expanded={
-                                      selectedRemoveCandidate?.staffId ===
-                                      member.staffId
-                                    }
-                                    onClick={() => setRemoveCandidate(member)}
-                                    tone="secondary"
-                                  >
-                                    구성원 제거
-                                  </DsButton>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                    <p
-                      role="status"
-                      className="admin-muted"
-                    >{`${memberSearch ? '검색된 구성원' : '전체 구성원'} ${membersQuery.data.totalCount}명`}</p>
-                    {membersQuery.data.totalPages > 1 ? (
-                      <div className="admin-inline-actions">
-                        <DsButton
-                          disabled={memberPage === 0}
-                          onClick={() => {
-                            setMemberPage(memberPage - 1)
-                            setRemoveCandidate(null)
-                          }}
-                        >
-                          이전 구성원 페이지
-                        </DsButton>
-                        <span>{`${memberPage + 1} / ${membersQuery.data.totalPages} 구성원 페이지`}</span>
-                        <DsButton
-                          disabled={
-                            memberPage + 1 >= membersQuery.data.totalPages
-                          }
-                          onClick={() => {
-                            setMemberPage(memberPage + 1)
-                            setRemoveCandidate(null)
-                          }}
-                        >
-                          다음 구성원 페이지
-                        </DsButton>
-                      </div>
-                    ) : null}
-                    <form
-                      className="admin-form"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        setStaffOptionPage(0)
-                        setNewMemberId('')
-                        setStaffSearch(
-                          staffSearchDraft.trim()
-                            ? {
-                                query: staffSearchDraft,
-                                key: crypto.randomUUID(),
-                              }
-                            : null,
-                        )
-                      }}
-                    >
-                      <label className="admin-field" htmlFor="candidate-search">
-                        <span>추가할 직원 이름 또는 이메일 검색</span>
-                        <input
-                          id="candidate-search"
-                          type="search"
-                          autoComplete="off"
-                          maxLength={254}
-                          value={staffSearchDraft}
-                          onChange={(event) =>
-                            setStaffSearchDraft(event.target.value)
-                          }
-                        />
-                      </label>
-                      <p className="admin-muted">
-                        이 그룹에 속하지 않은 활성 직원을 검색합니다.
-                      </p>
-                      <div className="admin-form-actions">
-                        <DsButton
-                          type="submit"
-                          tone="primary"
-                          disabled={staffQuery.isFetching}
-                        >
-                          추가할 직원 검색
-                        </DsButton>
-                        <DsButton
-                          onClick={() => {
-                            setStaffSearchDraft('')
-                            setStaffSearch(null)
-                            setStaffOptionPage(0)
-                            setNewMemberId('')
-                          }}
-                        >
-                          직원 검색 초기화
-                        </DsButton>
-                      </div>
-                    </form>
-                    {staffSearch && staffQuery.isPending ? (
-                      <ScreenState
-                        compact
-                        kind="loading"
-                        title="추가할 직원을 검색하는 중"
-                      />
-                    ) : null}
-                    {staffQuery.data ? (
-                      <p
-                        role="status"
-                        className="admin-muted"
-                      >{`추가 가능한 직원 ${staffQuery.data.totalCount}명`}</p>
-                    ) : null}
-                    <form
-                      className="admin-form"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        if (!newMemberId) {
-                          setGroupValidationError(
-                            '추가할 활성 직원을 선택해 주세요.',
-                          )
-                          return
-                        }
-                        setGroupValidationError(null)
-                        addMemberMutation.mutate({
-                          groupId: selectedGroup.id,
-                          staffId: newMemberId,
-                        })
-                      }}
-                    >
-                      <label className="admin-field" htmlFor="group-new-member">
-                        <span>활성 직원 추가</span>
-                        <select
-                          disabled={staffQuery.isPending || staffQuery.isError}
-                          id="group-new-member"
-                          onChange={(event) =>
-                            setNewMemberId(event.target.value)
-                          }
-                          value={newMemberId}
-                        >
-                          <option value="">
-                            {!staffSearch
-                              ? '이름 또는 이메일로 먼저 검색하세요'
-                              : staffQuery.isPending
-                                ? '직원 목록을 불러오는 중…'
-                                : staffQuery.isError
-                                  ? '직원 목록을 불러오지 못했습니다.'
-                                  : '직원을 선택하세요'}
-                          </option>
-                          {activeStaff.map((staff) => (
-                            <option key={staff.id} value={staff.id}>
-                              {`${staff.displayName} (${staff.email})`}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      {staffQuery.isError ? (
-                        <Notification
-                          title="직원 선택 목록을 불러오지 못했습니다."
-                          tone="danger"
-                        >
-                          <RetryButton
-                            onClick={() => void staffQuery.refetch()}
-                          />
-                        </Notification>
-                      ) : null}
-                      {groupValidationError ? (
-                        <Notification
-                          title={groupValidationError}
-                          tone="warning"
-                        />
-                      ) : null}
-                      {addMemberMutation.isError ? (
-                        <GroupMutationNotification
-                          action="구성원을 추가"
-                          error={addMemberMutation.error}
-                        />
-                      ) : null}
-                      {addMemberMutation.isSuccess ? (
-                        <Notification
-                          title="그룹 구성원을 추가했습니다."
-                          tone="success"
-                        />
-                      ) : null}
-                      <div className="admin-inline-actions">
-                        <DsButton
-                          disabled={
-                            addMemberMutation.isPending ||
-                            activeStaff.length === 0
-                          }
-                          tone="primary"
-                          type="submit"
-                        >
-                          {addMemberMutation.isPending
-                            ? '구성원 추가 중…'
-                            : '구성원 추가'}
-                        </DsButton>
-                        {staffQuery.data && staffQuery.data.totalPages > 1 ? (
-                          <>
-                            <DsButton
-                              disabled={staffOptionPage === 0}
-                              onClick={() => {
-                                setNewMemberId('')
-                                setStaffOptionPage((current) => current - 1)
-                              }}
-                              tone="secondary"
-                              type="button"
-                            >
-                              이전 직원 페이지
-                            </DsButton>
-                            <span className="admin-muted">{`${staffOptionPage + 1} / ${staffQuery.data.totalPages} 직원 페이지`}</span>
-                            <DsButton
-                              disabled={
-                                staffOptionPage + 1 >=
-                                staffQuery.data.totalPages
-                              }
-                              onClick={() => {
-                                setNewMemberId('')
-                                setStaffOptionPage((current) => current + 1)
-                              }}
-                              tone="secondary"
-                              type="button"
-                            >
-                              다음 직원 페이지
-                            </DsButton>
-                          </>
-                        ) : null}
-                      </div>
-                    </form>
-                  </>
-                )}
-              </section>
-
-              <div className="admin-confirmation">
-                <p>
-                  비활성화는 기존 티켓 소유권을 옮기지 않습니다. 서버가 사용
-                  중인 그룹과 티켓 제약을 확인합니다.
-                </p>
-                <DsButton
-                  aria-expanded={disableOpen}
-                  onClick={() => setDisableOpen((open) => !open)}
-                  tone="secondary"
-                >
-                  그룹 비활성화
-                </DsButton>
-              </div>
-              {disableOpen ? (
-                <div
-                  className="admin-confirmation"
-                  role="group"
-                  aria-label="그룹 비활성화 최종 확인"
-                >
-                  <p>{`${selectedGroup.name} 그룹을 비활성화할까요?`}</p>
-                  <DsButton
-                    disabled={disableMutation.isPending}
-                    onClick={() => disableMutation.mutate(selectedGroup.id)}
-                    tone="primary"
-                  >
-                    {disableMutation.isPending
-                      ? '비활성화 중…'
-                      : '비활성화 확정'}
-                  </DsButton>
-                  <DsButton
-                    disabled={disableMutation.isPending}
-                    onClick={() => setDisableOpen(false)}
-                    tone="secondary"
-                  >
-                    취소
-                  </DsButton>
-                  {disableMutation.isError ? (
-                    <GroupMutationNotification
-                      action="그룹을 비활성화"
-                      error={disableMutation.error}
-                    />
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <Notification title="비활성 그룹" tone="info">
-              <p>
-                비활성 그룹에는 구성원을 추가하거나 이름을 변경할 수 없습니다.
-              </p>
-            </Notification>
-          )}
-          {selectedRemoveCandidate ? (
-            <div
-              className="admin-confirmation"
-              role="group"
-              aria-label="구성원 제거 최종 확인"
-            >
-              <p>{`${selectedRemoveCandidate.staffDisplayName}을(를) ${selectedGroup.name} 그룹에서 제거할까요?`}</p>
+                setSearch(
+                  searchDraft.trim()
+                    ? { query: searchDraft, key: crypto.randomUUID() }
+                    : null,
+                )
+              })
+            }}
+          >
+            <label className="admin-field" htmlFor="group-search">
+              <span>그룹 이름 검색</span>
+              <input
+                id="group-search"
+                type="search"
+                autoComplete="off"
+                maxLength={254}
+                value={searchDraft}
+                onChange={(event) => setSearchDraft(event.target.value)}
+              />
+            </label>
+            <div className="admin-form-actions">
               <DsButton
-                disabled={removeMemberMutation.isPending}
+                type="submit"
+                tone="primary"
+                disabled={groupsQuery.isFetching || busy}
+              >
+                그룹 검색
+              </DsButton>
+              <DsButton
                 onClick={() =>
-                  removeMemberMutation.mutate({
-                    groupId: selectedRemoveCandidate.groupId,
-                    staffId: selectedRemoveCandidate.staffId,
+                  leaveDraft(() => {
+                    closeSelectedGroup()
+                    setSearchDraft('')
+                    setSearch(null)
+                    setPage(0)
                   })
                 }
-                tone="primary"
               >
-                {removeMemberMutation.isPending
-                  ? '제거 중…'
-                  : '구성원 제거 확정'}
+                검색 초기화
               </DsButton>
+            </div>
+          </form>
+          {groupsQuery.isPending ? (
+            <ScreenState compact kind="loading" title="그룹을 검색하는 중" />
+          ) : groupsQuery.isError ? (
+            <ScreenState
+              compact
+              kind={
+                groupsQuery.error instanceof ApiError &&
+                groupsQuery.error.status === 403
+                  ? 'denied'
+                  : 'error'
+              }
+              title="그룹 검색 결과를 불러오지 못했습니다."
+              action={
+                <RetryButton onClick={() => void groupsQuery.refetch()} />
+              }
+            />
+          ) : groupPage && groupPage.items.length === 0 ? (
+            <ScreenState
+              compact
+              description={
+                search
+                  ? '다른 이름으로 검색하거나 검색을 초기화해 주세요.'
+                  : '새 지원 그룹을 만들면 구성원과 상태를 여기에서 관리할 수 있습니다.'
+              }
+              kind="empty"
+              title={
+                search
+                  ? '검색 결과가 없습니다.'
+                  : '등록된 지원 그룹이 없습니다.'
+              }
+            />
+          ) : groupPage ? (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <caption className="sr-only">지원 그룹 목록</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">이름</th>
+                    <th scope="col">상태</th>
+                    <th scope="col">구성원</th>
+                    <th scope="col">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupPage.items.map((group) => (
+                    <tr key={group.id}>
+                      <td>{group.name}</td>
+                      <td>{group.status === 'ACTIVE' ? '활성' : '비활성'}</td>
+                      <td>{group.memberCount}</td>
+                      <td>
+                        <DsButton
+                          aria-expanded={selectedGroup?.id === group.id}
+                          disabled={busy}
+                          onClick={(event) => {
+                            const button = event.currentTarget
+                            leaveDraft(() => {
+                              resetMemberSearches()
+                              actionRef.current = button
+                              setSelectedGroup(group)
+                              setRemoveCandidate(null)
+                              setRenamedGroup(group.name)
+                              setNewMemberId('')
+                              setRenameError(null)
+                              setMemberError(null)
+                              renameMutation.reset()
+                              addMemberMutation.reset()
+                              setDisableOpen(false)
+                            })
+                          }}
+                          tone="secondary"
+                        >
+                          그룹 관리
+                        </DsButton>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          {groupPage && !groupsQuery.isError ? (
+            <p
+              role="status"
+              className="admin-muted"
+            >{`${search ? '검색 결과' : '전체 그룹'} ${groupPage.totalCount}개`}</p>
+          ) : null}
+          {groupPage && !groupsQuery.isError && groupPage.totalPages > 1 ? (
+            <div className="admin-inline-actions">
               <DsButton
-                disabled={removeMemberMutation.isPending}
-                onClick={() => setRemoveCandidate(null)}
+                disabled={page === 0 || busy}
+                onClick={() => leaveDraft(() => changeGroupPage(page - 1))}
                 tone="secondary"
               >
-                취소
+                이전 페이지
               </DsButton>
-              {removeMemberMutation.isError ? (
-                <GroupMutationNotification
-                  action="구성원을 제거"
-                  error={removeMemberMutation.error}
-                />
-              ) : null}
+              <span className="admin-muted">{`${page + 1} / ${groupPage.totalPages} 페이지`}</span>
+              <DsButton
+                disabled={page + 1 >= groupPage.totalPages || busy}
+                onClick={() => leaveDraft(() => changeGroupPage(page + 1))}
+                tone="secondary"
+              >
+                다음 페이지
+              </DsButton>
             </div>
           ) : null}
         </section>
-      ) : null}
+
+        {selectedGroup ? (
+          <section
+            aria-labelledby="selected-group-heading"
+            className="admin-surface"
+          >
+            <div className="admin-page-header">
+              <div>
+                <h2
+                  className="admin-detail-heading"
+                  id="selected-group-heading"
+                  ref={detailHeadingRef}
+                  tabIndex={-1}
+                >
+                  {selectedGroup.name}
+                </h2>
+                <p>
+                  {selectedGroup.status === 'ACTIVE'
+                    ? '활성 그룹'
+                    : '비활성 그룹'}
+                </p>
+              </div>
+              <DsButton
+                disabled={busy}
+                onClick={() => leaveDraft(closeSelectedGroup)}
+                tone="secondary"
+              >
+                닫기
+              </DsButton>
+            </div>
+            {selectedGroup.status === 'ACTIVE' ? (
+              <>
+                <form className="admin-form" onSubmit={submitRename}>
+                  <label className="admin-field" htmlFor="rename-group-name">
+                    <span>그룹 이름 변경</span>
+                    <input
+                      id="rename-group-name"
+                      ref={renameRef}
+                      aria-invalid={Boolean(renameError)}
+                      aria-describedby={
+                        renameError ? 'group-rename-error' : undefined
+                      }
+                      disabled={busy}
+                      maxLength={100}
+                      onChange={(event) => setRenamedGroup(event.target.value)}
+                      value={renamedGroup}
+                    />
+                  </label>
+                  {renameError ? (
+                    <p id="group-rename-error" role="alert">
+                      {renameError}
+                    </p>
+                  ) : null}
+                  {renameMutation.isError ? (
+                    <GroupMutationNotification
+                      action="그룹 이름을 변경"
+                      error={renameMutation.error}
+                    />
+                  ) : null}
+                  {renameMutation.isSuccess ? (
+                    <Notification
+                      title="그룹 이름을 변경했습니다."
+                      tone="success"
+                    />
+                  ) : null}
+                  <div className="admin-form-actions">
+                    <DsButton disabled={busy} tone="primary" type="submit">
+                      {renameMutation.isPending ? '이름 변경 중…' : '이름 변경'}
+                    </DsButton>
+                  </div>
+                </form>
+
+                <section
+                  aria-labelledby="group-members-heading"
+                  className="admin-surface"
+                >
+                  <h3 id="group-members-heading">활성 구성원</h3>
+                  <form
+                    className="admin-form"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      setRemoveCandidate(null)
+                      setMemberPage(0)
+                      setMemberSearch(
+                        memberSearchDraft.trim()
+                          ? {
+                              query: memberSearchDraft,
+                              key: crypto.randomUUID(),
+                            }
+                          : null,
+                      )
+                    }}
+                  >
+                    <label className="admin-field" htmlFor="member-search">
+                      <span>구성원 이름 또는 이메일 검색</span>
+                      <input
+                        id="member-search"
+                        type="search"
+                        autoComplete="off"
+                        maxLength={254}
+                        value={memberSearchDraft}
+                        onChange={(event) =>
+                          setMemberSearchDraft(event.target.value)
+                        }
+                      />
+                    </label>
+                    <div className="admin-form-actions">
+                      <DsButton
+                        type="submit"
+                        tone="primary"
+                        disabled={membersQuery.isFetching}
+                      >
+                        구성원 검색
+                      </DsButton>
+                      <DsButton
+                        onClick={() => {
+                          setMemberSearchDraft('')
+                          setMemberSearch(null)
+                          setMemberPage(0)
+                          setRemoveCandidate(null)
+                        }}
+                      >
+                        구성원 검색 초기화
+                      </DsButton>
+                    </div>
+                  </form>
+                  {membersQuery.isPending ? (
+                    <ScreenState
+                      compact
+                      kind="loading"
+                      title="그룹 구성원을 불러오는 중"
+                    />
+                  ) : membersQuery.isError ? (
+                    <Notification
+                      title="그룹 구성원을 불러오지 못했습니다."
+                      tone="danger"
+                    >
+                      <RetryButton
+                        onClick={() => void membersQuery.refetch()}
+                      />
+                    </Notification>
+                  ) : (
+                    <>
+                      {membersQuery.data.items.length === 0 ? (
+                        <p className="admin-muted">
+                          {memberSearch
+                            ? '검색 조건에 맞는 구성원이 없습니다.'
+                            : '현재 활성 구성원이 없습니다.'}
+                        </p>
+                      ) : (
+                        <div className="admin-table-wrap">
+                          <table className="admin-table">
+                            <caption className="sr-only">
+                              그룹 구성원 목록
+                            </caption>
+                            <thead>
+                              <tr>
+                                <th scope="col">이름</th>
+                                <th scope="col">역할</th>
+                                <th scope="col">작업</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {membersQuery.data.items.map((member) => (
+                                <tr key={member.staffId}>
+                                  <td>{member.staffDisplayName}</td>
+                                  <td className="admin-role-cell">
+                                    {ROLE_LABELS[member.role]}
+                                  </td>
+                                  <td>
+                                    <DsButton
+                                      aria-expanded={
+                                        selectedRemoveCandidate?.staffId ===
+                                        member.staffId
+                                      }
+                                      disabled={busy}
+                                      onClick={() => setRemoveCandidate(member)}
+                                      tone="secondary"
+                                    >
+                                      구성원 제거
+                                    </DsButton>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <p
+                        role="status"
+                        className="admin-muted"
+                      >{`${memberSearch ? '검색된 구성원' : '전체 구성원'} ${membersQuery.data.totalCount}명`}</p>
+                      {membersQuery.data.totalPages > 1 ? (
+                        <div className="admin-inline-actions">
+                          <DsButton
+                            disabled={memberPage === 0}
+                            onClick={() => {
+                              setMemberPage(memberPage - 1)
+                              setRemoveCandidate(null)
+                            }}
+                          >
+                            이전 구성원 페이지
+                          </DsButton>
+                          <span>{`${memberPage + 1} / ${membersQuery.data.totalPages} 구성원 페이지`}</span>
+                          <DsButton
+                            disabled={
+                              memberPage + 1 >= membersQuery.data.totalPages
+                            }
+                            onClick={() => {
+                              setMemberPage(memberPage + 1)
+                              setRemoveCandidate(null)
+                            }}
+                          >
+                            다음 구성원 페이지
+                          </DsButton>
+                        </div>
+                      ) : null}
+                      <form
+                        className="admin-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          setStaffOptionPage(0)
+                          setNewMemberId('')
+                          setStaffSearch(
+                            staffSearchDraft.trim()
+                              ? {
+                                  query: staffSearchDraft,
+                                  key: crypto.randomUUID(),
+                                }
+                              : null,
+                          )
+                        }}
+                      >
+                        <label
+                          className="admin-field"
+                          htmlFor="candidate-search"
+                        >
+                          <span>추가할 직원 이름 또는 이메일 검색</span>
+                          <input
+                            id="candidate-search"
+                            type="search"
+                            autoComplete="off"
+                            maxLength={254}
+                            value={staffSearchDraft}
+                            onChange={(event) =>
+                              setStaffSearchDraft(event.target.value)
+                            }
+                          />
+                        </label>
+                        <p className="admin-muted">
+                          이 그룹에 속하지 않은 활성 직원을 검색합니다.
+                        </p>
+                        <div className="admin-form-actions">
+                          <DsButton
+                            type="submit"
+                            tone="primary"
+                            disabled={staffQuery.isFetching}
+                          >
+                            추가할 직원 검색
+                          </DsButton>
+                          <DsButton
+                            onClick={() => {
+                              setStaffSearchDraft('')
+                              setStaffSearch(null)
+                              setStaffOptionPage(0)
+                              setNewMemberId('')
+                            }}
+                          >
+                            직원 검색 초기화
+                          </DsButton>
+                        </div>
+                      </form>
+                      {staffSearch && staffQuery.isPending ? (
+                        <ScreenState
+                          compact
+                          kind="loading"
+                          title="추가할 직원을 검색하는 중"
+                        />
+                      ) : null}
+                      {staffQuery.data ? (
+                        <p
+                          role="status"
+                          className="admin-muted"
+                        >{`추가 가능한 직원 ${staffQuery.data.totalCount}명`}</p>
+                      ) : null}
+                      <form
+                        className="admin-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          if (!newMemberId) {
+                            setMemberError('추가할 활성 직원을 선택해 주세요.')
+                            memberRef.current?.focus()
+                            return
+                          }
+                          setMemberError(null)
+                          addMemberMutation.mutate({
+                            groupId: selectedGroup.id,
+                            staffId: newMemberId,
+                          })
+                        }}
+                      >
+                        <label
+                          className="admin-field"
+                          htmlFor="group-new-member"
+                        >
+                          <span>활성 직원 추가</span>
+                          <select
+                            disabled={
+                              busy || staffQuery.isPending || staffQuery.isError
+                            }
+                            id="group-new-member"
+                            ref={memberRef}
+                            aria-invalid={Boolean(memberError)}
+                            aria-describedby={
+                              memberError ? 'group-member-error' : undefined
+                            }
+                            onChange={(event) =>
+                              setNewMemberId(event.target.value)
+                            }
+                            value={newMemberId}
+                          >
+                            <option value="">
+                              {!staffSearch
+                                ? '이름 또는 이메일로 먼저 검색하세요'
+                                : staffQuery.isPending
+                                  ? '직원 목록을 불러오는 중…'
+                                  : staffQuery.isError
+                                    ? '직원 목록을 불러오지 못했습니다.'
+                                    : '직원을 선택하세요'}
+                            </option>
+                            {activeStaff.map((staff) => (
+                              <option key={staff.id} value={staff.id}>
+                                {`${staff.displayName} (${staff.email}) · ${ROLE_LABELS[staff.role]}${staff.memberships.length ? ` · ${staff.memberships.map((group) => group.name).join(', ')}` : ' · 소속 그룹 없음'}`}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {staffQuery.isError ? (
+                          <Notification
+                            title="직원 선택 목록을 불러오지 못했습니다."
+                            tone="danger"
+                          >
+                            <RetryButton
+                              onClick={() => void staffQuery.refetch()}
+                            />
+                          </Notification>
+                        ) : null}
+                        {memberError ? (
+                          <p id="group-member-error" role="alert">
+                            {memberError}
+                          </p>
+                        ) : null}
+                        {addMemberMutation.isError ? (
+                          <GroupMutationNotification
+                            action="구성원을 추가"
+                            error={addMemberMutation.error}
+                          />
+                        ) : null}
+                        {addMemberMutation.isSuccess ? (
+                          <Notification
+                            title="그룹 구성원을 추가했습니다."
+                            tone="success"
+                          />
+                        ) : null}
+                        <div className="admin-inline-actions">
+                          <DsButton
+                            disabled={busy || activeStaff.length === 0}
+                            tone="primary"
+                            type="submit"
+                          >
+                            {addMemberMutation.isPending
+                              ? '구성원 추가 중…'
+                              : '구성원 추가'}
+                          </DsButton>
+                          {staffQuery.data && staffQuery.data.totalPages > 1 ? (
+                            <>
+                              <DsButton
+                                disabled={staffOptionPage === 0}
+                                onClick={() => {
+                                  setNewMemberId('')
+                                  setStaffOptionPage((current) => current - 1)
+                                }}
+                                tone="secondary"
+                                type="button"
+                              >
+                                이전 직원 페이지
+                              </DsButton>
+                              <span className="admin-muted">{`${staffOptionPage + 1} / ${staffQuery.data.totalPages} 직원 페이지`}</span>
+                              <DsButton
+                                disabled={
+                                  staffOptionPage + 1 >=
+                                  staffQuery.data.totalPages
+                                }
+                                onClick={() => {
+                                  setNewMemberId('')
+                                  setStaffOptionPage((current) => current + 1)
+                                }}
+                                tone="secondary"
+                                type="button"
+                              >
+                                다음 직원 페이지
+                              </DsButton>
+                            </>
+                          ) : null}
+                        </div>
+                      </form>
+                    </>
+                  )}
+                </section>
+
+                <div className="admin-confirmation">
+                  <p>
+                    비활성화는 기존 티켓 소유권을 옮기지 않습니다. 서버가 사용
+                    중인 그룹과 티켓 제약을 확인합니다.
+                  </p>
+                  <DsButton
+                    aria-expanded={disableOpen}
+                    disabled={busy}
+                    onClick={() =>
+                      leaveDraft(() => setDisableOpen((open) => !open))
+                    }
+                    tone="secondary"
+                  >
+                    그룹 비활성화
+                  </DsButton>
+                </div>
+                {disableOpen ? (
+                  <div
+                    className="admin-confirmation"
+                    role="group"
+                    aria-label="그룹 비활성화 최종 확인"
+                  >
+                    <p>{`${selectedGroup.name} 그룹을 비활성화할까요?`}</p>
+                    <DsButton
+                      disabled={busy}
+                      onClick={() =>
+                        leaveDraft(() =>
+                          disableMutation.mutate(selectedGroup.id),
+                        )
+                      }
+                      tone="primary"
+                    >
+                      {disableMutation.isPending
+                        ? '비활성화 중…'
+                        : '비활성화 확정'}
+                    </DsButton>
+                    <DsButton
+                      disabled={disableMutation.isPending}
+                      onClick={() => setDisableOpen(false)}
+                      tone="secondary"
+                    >
+                      취소
+                    </DsButton>
+                    {disableMutation.isError ? (
+                      <GroupMutationNotification
+                        action="그룹을 비활성화"
+                        error={disableMutation.error}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <Notification title="비활성 그룹" tone="info">
+                <p>
+                  비활성 그룹에는 구성원을 추가하거나 이름을 변경할 수 없습니다.
+                </p>
+              </Notification>
+            )}
+            {selectedRemoveCandidate ? (
+              <div
+                className="admin-confirmation"
+                role="group"
+                aria-label="구성원 제거 최종 확인"
+              >
+                <p>{`${selectedRemoveCandidate.staffDisplayName}을(를) ${selectedGroup.name} 그룹에서 제거할까요?`}</p>
+                <DsButton
+                  disabled={busy}
+                  onClick={() =>
+                    removeMemberMutation.mutate({
+                      groupId: selectedRemoveCandidate.groupId,
+                      staffId: selectedRemoveCandidate.staffId,
+                    })
+                  }
+                  tone="primary"
+                >
+                  {removeMemberMutation.isPending
+                    ? '제거 중…'
+                    : '구성원 제거 확정'}
+                </DsButton>
+                <DsButton
+                  disabled={removeMemberMutation.isPending}
+                  onClick={() => setRemoveCandidate(null)}
+                  tone="secondary"
+                >
+                  취소
+                </DsButton>
+                {removeMemberMutation.isError ? (
+                  <GroupMutationNotification
+                    action="구성원을 제거"
+                    error={removeMemberMutation.error}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
+      <DsDrawer
+        open={exit.open}
+        title="저장하지 않은 그룹 정보"
+        description={
+          busy
+            ? '저장 결과를 확인한 뒤 이동할 수 있습니다.'
+            : '입력한 이름은 아직 저장되지 않았습니다.'
+        }
+        onClose={exit.cancel}
+      >
+        <div className="admin-inline-actions">
+          <DsButton onClick={exit.cancel}>계속 편집</DsButton>
+          <DsButton disabled={busy} onClick={exit.discard} tone="primary">
+            변경 사항 버리기
+          </DsButton>
+        </div>
+      </DsDrawer>
     </main>
   )
 }

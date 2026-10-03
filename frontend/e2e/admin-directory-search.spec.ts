@@ -26,6 +26,102 @@ const staff = {
 }
 const staffPathPrefix = process.env.PLAYWRIGHT_STAFF_PATH_PREFIX ?? ''
 
+test('directory drafts survive local, route, browser-back and pending-save exits', async ({
+  page,
+}, testInfo) => {
+  let finishRename: (() => void) | undefined
+  let savedName = group.name
+  let renamedBody: unknown
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path === '/api/v1/agent/me') return route.fulfill({ json: admin })
+    if (path === '/api/v1/agent/csrf')
+      return route.fulfill({
+        json: { token: 'c'.repeat(32), headerName: 'X-CSRF-TOKEN' },
+      })
+    if (
+      path === `/api/v1/admin/groups/${group.id}` &&
+      request.method() === 'PATCH'
+    ) {
+      renamedBody = request.postDataJSON()
+      await new Promise<void>((resolve) => {
+        finishRename = resolve
+      })
+      savedName = request.postDataJSON().name
+      return route.fulfill({ json: { ...group, name: savedName } })
+    }
+    if (path === '/api/v1/admin/groups')
+      return route.fulfill({ json: [{ ...group, name: savedName }] })
+    if (path.endsWith('/members')) return route.fulfill({ json: [] })
+    if (path === '/api/v1/admin/staff') return route.fulfill({ json: [staff] })
+    return route.abort()
+  })
+  await page.goto(`${staffPathPrefix}/admin/staff`)
+  await page.getByRole('button', { name: '직원 추가', exact: true }).click()
+  await page.getByLabel('표시 이름', { exact: true }).fill('보존할 직원')
+  await page.getByLabel('초기 비밀번호').fill('Synthetic-only-123!')
+  expect(
+    await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    }),
+  ).toBe(true)
+  await page.getByRole('button', { name: '직원 계정 생성 닫기' }).click()
+  await page.getByRole('button', { name: '계속 편집' }).click()
+  await expect(page.getByLabel('표시 이름', { exact: true })).toHaveValue(
+    '보존할 직원',
+  )
+  await page.getByRole('button', { name: '직원 계정 생성 닫기' }).click()
+  await page.getByRole('button', { name: '변경 사항 버리기' }).click()
+  await expect(
+    page.getByRole('button', { name: '직원 추가', exact: true }),
+  ).toBeFocused()
+  await page.getByRole('link', { name: '그룹', exact: true }).click()
+  await page.getByRole('button', { name: '그룹 관리', exact: true }).click()
+  await expect(page.getByRole('heading', { name: group.name })).toBeFocused()
+  await page.getByLabel('그룹 이름 변경').fill('보존할 그룹')
+  await page.getByRole('link', { name: '직원', exact: true }).click()
+  await expect(
+    page.getByRole('dialog', { name: '저장하지 않은 그룹 정보' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '계속 편집' }).click()
+  await expect(page.getByLabel('그룹 이름 변경')).toHaveValue('보존할 그룹')
+  await page.goBack()
+  await expect(
+    page.getByRole('dialog', { name: '저장하지 않은 그룹 정보' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '계속 편집' }).click()
+  await expect(page).toHaveURL(/\/admin\/groups$/)
+  await page.getByRole('button', { name: '이름 변경', exact: true }).click()
+  await expect(page.getByLabel('그룹 이름 변경')).toBeDisabled()
+  await page.getByRole('link', { name: '직원', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: '변경 사항 버리기' }),
+  ).toBeDisabled()
+  await expect(
+    page.getByText('저장 결과를 확인한 뒤 이동할 수 있습니다.'),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '계속 편집' }).click()
+  await expect.poll(() => Boolean(finishRename)).toBe(true)
+  finishRename!()
+  await expect(page.getByText('그룹 이름을 변경했습니다.')).toBeVisible()
+  expect(renamedBody).toEqual({ name: '보존할 그룹' })
+  await page.getByLabel('그룹 이름 변경').fill('다시 변경')
+  await page.getByRole('link', { name: '직원', exact: true }).click()
+  await page.getByRole('button', { name: '변경 사항 버리기' }).click()
+  await expect(page).toHaveURL(/\/admin\/staff$/)
+  await page.getByRole('button', { name: '직원 추가', exact: true }).click()
+  await expect(page.getByLabel('초기 비밀번호')).toHaveValue('')
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await page.screenshot({
+    path: testInfo.outputPath('admin-staff-create-drawer.png'),
+    fullPage: true,
+  })
+})
+
 for (const width of [1280, 1440, 1920]) {
   test(`directory search and member pagination remain usable at ${width}`, async ({
     page,
@@ -62,7 +158,13 @@ for (const width of [1280, 1440, 1920]) {
       if (url.pathname === '/api/v1/admin/staff')
         return route.fulfill({ json: [] })
       if (url.pathname === '/api/v1/admin/groups')
-        return route.fulfill({ json: [group] })
+        return route.fulfill({
+          json: Array.from({ length: 50 }, (_, index) => ({
+            ...group,
+            id: `22222222-2222-4222-8222-${String(index + 1).padStart(12, '0')}`,
+            name: `${index + 1}번 고객 결제 및 배송 문의 지원 그룹`,
+          })),
+        })
       if (url.pathname.endsWith('/members'))
         return route.fulfill({
           json: [
@@ -96,6 +198,27 @@ for (const width of [1280, 1440, 1920]) {
     await expect(page.getByLabel('직원 이름 또는 이메일 검색')).toHaveValue('')
 
     await page.goto(`${staffPathPrefix}/admin/groups`)
+    await page
+      .getByRole('button', { name: '그룹 관리', exact: true })
+      .last()
+      .click()
+    await expect(
+      page.getByRole('heading', {
+        name: '50번 고객 결제 및 배송 문의 지원 그룹',
+      }),
+    ).toBeFocused()
+    await expect(
+      page.getByRole('heading', {
+        name: '50번 고객 결제 및 배송 문의 지원 그룹',
+      }),
+    ).toBeInViewport()
+    await page.screenshot({
+      path: testInfo.outputPath(`admin-group-long-list-${width}.png`),
+    })
+    await page.getByRole('button', { name: '닫기', exact: true }).click()
+    await expect(
+      page.getByRole('button', { name: '그룹 관리', exact: true }).last(),
+    ).toBeFocused()
     await page.getByLabel('그룹 이름 검색', { exact: true }).fill('결제')
     await page.getByLabel('그룹 이름 검색', { exact: true }).press('Enter')
     await expect(page.getByText('검색 결과 1개')).toBeVisible()
