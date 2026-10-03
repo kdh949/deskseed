@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { http, HttpResponse } from 'msw'
-import { expect, userEvent, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { AdminBusinessSchedulesPage } from './AdminBusinessSchedulesPage'
 
 const schedule = {
@@ -119,13 +119,13 @@ export const VersionReviewAndEdit: Story = {
       await canvas.findByRole('heading', { name: '한국 고객지원 운영시간' }),
     ).toBeVisible()
     const newVersionButton = await canvas.findByRole('button', {
-      name: '새 version 작성',
+      name: '새 버전 작성',
     })
     await waitFor(() => expect(newVersionButton).toBeEnabled())
     await userEvent.click(newVersionButton)
     await expect(
       canvas.getByRole('heading', {
-        name: '한국 고객지원 운영시간 새 version',
+        name: '한국 고객지원 운영시간 새 버전',
       }),
     ).toBeVisible()
     const addButtons = canvas.getAllByRole('button', { name: '시간 구간 추가' })
@@ -165,18 +165,16 @@ export const AmbiguousVersionSave: Story = {
       await canvas.findByRole('button', { name: '시간표 관리' }),
     )
     const newVersionButton = await canvas.findByRole('button', {
-      name: '새 version 작성',
+      name: '새 버전 작성',
     })
     await waitFor(() => expect(newVersionButton).toBeEnabled())
     await userEvent.click(newVersionButton)
-    await userEvent.click(
-      canvas.getByRole('button', { name: '새 version 저장' }),
-    )
+    await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
     await expect(
       await canvas.findByText('시간표 저장 결과를 확인할 수 없습니다.'),
     ).toBeVisible()
     await expect(
-      canvas.getByRole('button', { name: '새 version 저장' }),
+      canvas.getByRole('button', { name: '새 버전 저장' }),
     ).toBeDisabled()
   },
 }
@@ -194,6 +192,40 @@ export const Empty: Story = {
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByText('등록된 영업 시간표가 없습니다.'),
+    ).toBeVisible()
+  },
+}
+
+export const DiscardChangedSchedule: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText(schedule.name)
+    await userEvent.click(
+      canvas.getByRole('button', { name: '새 영업 시간표' }),
+    )
+    const name = canvas.getByLabelText('시간표 이름')
+    await expect(name).toHaveFocus()
+    await userEvent.click(canvas.getByRole('button', { name: '작성 닫기' }))
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '새 영업 시간표' }),
+    )
+    await userEvent.click(canvas.getByLabelText('시간표 이름'))
+    await userEvent.paste('미저장 휴일 시간표')
+    await userEvent.click(canvas.getByRole('button', { name: '시간표 관리' }))
+    const dialog = await canvas.findByRole('dialog', {
+      name: '저장하지 않은 시간표 변경',
+    })
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: '계속 편집' }),
+    )
+    await expect(canvas.getByLabelText('시간표 이름')).toHaveValue(
+      '미저장 휴일 시간표',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: '시간표 관리' }))
+    await userEvent.click(canvas.getByRole('button', { name: '변경 버리기' }))
+    await expect(canvas.queryByLabelText('시간표 이름')).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('heading', { name: schedule.name }),
     ).toBeVisible()
   },
 }

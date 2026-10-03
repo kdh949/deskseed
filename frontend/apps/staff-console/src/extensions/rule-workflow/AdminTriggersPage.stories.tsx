@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { delay, http, HttpResponse } from 'msw'
-import { expect, waitFor } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { AdminTriggersPage } from './AdminTriggersPage'
 import type { Trigger } from './api'
 const rule: Trigger = {
@@ -373,5 +373,30 @@ export const Error: Story = {
         ...common,
       ],
     },
+  },
+}
+
+export const UnsavedEscapeGuard: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByText(rule.name)
+    await userEvent.click(canvas.getByRole('button', { name: '트리거 만들기' }))
+    await userEvent.keyboard('{Escape}')
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: '트리거 만들기' }))
+    const name = canvas.getByRole('textbox', { name: '트리거 이름' })
+    await userEvent.click(name)
+    await userEvent.paste('보존할 트리거')
+    await userEvent.keyboard('{Escape}')
+    const confirmation = await canvas.findByRole('dialog', {
+      name: '저장하지 않은 트리거 변경',
+    })
+    await userEvent.click(
+      within(confirmation).getByRole('button', { name: '계속 편집' }),
+    )
+    await expect(name).toHaveValue('보존할 트리거')
+    await expect(name).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(canvas.getByRole('button', { name: '변경 버리기' }))
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
   },
 }

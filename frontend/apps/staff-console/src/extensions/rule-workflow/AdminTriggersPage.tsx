@@ -31,6 +31,7 @@ import {
   type TriggerDraft,
   type TriggerPreview,
 } from './api'
+import { useAdminDraftExit } from '../../features/admin/useAdminDraftExit'
 import './rules.css'
 
 type Choice = { id: string; label: string }
@@ -106,7 +107,7 @@ export function AdminTriggersPage() {
     }
   }
   return (
-    <section className="rule-page">
+    <main className="rule-page" aria-label="트리거 관리">
       <header>
         <h1>트리거</h1>
         <p>
@@ -183,7 +184,7 @@ export function AdminTriggersPage() {
           returnFocusRef={returnFocusRef}
         />
       )}
-    </section>
+    </main>
   )
 }
 
@@ -234,6 +235,11 @@ function TriggerEditor({
   })
   const dirty =
     !current || JSON.stringify(draft) !== JSON.stringify(draftOf(current))
+  const hasUnsavedChanges = current
+    ? dirty
+    : JSON.stringify(draft) !== JSON.stringify(initialDraft()) ||
+      position !== String(initialPosition)
+  const exit = useAdminDraftExit(hasUnsavedChanges, busy)
   const change = (next: TriggerDraft) => {
     setDraft(next)
     setPreview(null)
@@ -322,9 +328,22 @@ function TriggerEditor({
       open
       title={current ? `${current.name} 관리` : '트리거 만들기'}
       description="저장한 버전으로 미리보기한 후 활성화하세요. 활성 버전만 새 문의 이벤트에 적용됩니다."
-      onClose={onClose}
+      onClose={() => exit.request(onClose)}
       returnFocusRef={returnFocusRef}
     >
+      <SeedDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title="저장하지 않은 트리거 변경"
+        description="변경을 저장하려면 계속 편집을 선택하세요. 요청 처리 중에는 닫을 수 없습니다."
+      >
+        <div className="rule-actions">
+          <SeedButton onClick={exit.cancel}>계속 편집</SeedButton>
+          <SeedButton disabled={busy} onClick={exit.discard}>
+            변경 버리기
+          </SeedButton>
+        </div>
+      </SeedDrawer>
       <div className="rule-editor">
         <div ref={feedbackRef} tabIndex={-1}>
           <RuleError error={error} />

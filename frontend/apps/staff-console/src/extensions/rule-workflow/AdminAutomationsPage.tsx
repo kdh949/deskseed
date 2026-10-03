@@ -6,6 +6,7 @@ import {
   SeedDrawer,
   SeedFeedbackState,
   SeedNotice,
+  SeedSelectField,
   SeedSkeletonRows,
   SeedTextField,
 } from '../../design-system/canonical'
@@ -21,6 +22,14 @@ import {
   type AutomationDraft,
   type AutomationPreview,
 } from './automation-api'
+import { useAdminDraftExit } from '../../features/admin/useAdminDraftExit'
+import {
+  DURATION_UNITS,
+  durationInput,
+  durationLabel,
+  durationMinutes,
+  type DurationUnit,
+} from './automationDuration'
 import './rules.css'
 
 const draftOf = (rule: Automation): AutomationDraft => ({
@@ -75,7 +84,7 @@ export function AdminAutomationsPage() {
   const [editing, setEditing] = useState<Automation | 'new' | null>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
   return (
-    <section className="rule-page">
+    <main className="rule-page" aria-label="시간 자동화 관리">
       <header>
         <h1>시간 자동화</h1>
         <p>해결된 문의를 설정한 시간이 지나면 종료합니다.</p>
@@ -109,7 +118,7 @@ export function AdminAutomationsPage() {
               <div>
                 <strong>{rule.name}</strong>
                 <p>
-                  해결 후 {rule.solvedAgeMinutes.toLocaleString('ko-KR')}분 ·{' '}
+                  해결 후 {durationLabel(rule.solvedAgeMinutes)} ·{' '}
                   {rule.activeVersion
                     ? `활성 버전 ${rule.activeVersion}`
                     : '비활성'}{' '}
@@ -145,7 +154,7 @@ export function AdminAutomationsPage() {
           returnFocusRef={returnFocusRef}
         />
       )}
-    </section>
+    </main>
   )
 }
 function AutomationEditor({
@@ -163,9 +172,10 @@ function AutomationEditor({
 }) {
   const [current, setCurrent] = useState(initial)
   const [name, setName] = useState(initial?.name ?? '')
-  const [minutes, setMinutes] = useState(
-    String(initial?.solvedAgeMinutes ?? 1440),
+  const [duration, setDuration] = useState(() =>
+    durationInput(initial?.solvedAgeMinutes ?? 1440),
   )
+  const minutes = durationMinutes(duration.value, duration.unit)
   const [position, setPosition] = useState(String(initialPosition))
   const [selectedVersion, setSelectedVersion] = useState(
     initial?.currentVersion ?? 1,
@@ -188,11 +198,15 @@ function AutomationEditor({
   })
   const draft: AutomationDraft = {
     name,
-    solvedAgeMinutes: Number(minutes),
+    solvedAgeMinutes: minutes,
     actionType: 'CLOSE_TICKET',
   }
   const dirty =
     !current || JSON.stringify(draft) !== JSON.stringify(draftOf(current))
+  const hasUnsavedChanges = current
+    ? dirty
+    : name !== '' || minutes !== 1440 || position !== String(initialPosition)
+  const exit = useAdminDraftExit(hasUnsavedChanges, busy)
   const validNumber = (value: string, max: number) =>
     value.trim() !== '' &&
     Number.isSafeInteger(Number(value)) &&
@@ -200,7 +214,9 @@ function AutomationEditor({
     Number(value) <= max
   const invalid =
     !name.trim() ||
-    !validNumber(minutes, 525600) ||
+    !Number.isSafeInteger(minutes) ||
+    minutes < 1 ||
+    minutes > 525600 ||
     (!current && !validNumber(position, 10000))
   const change = () => {
     setPreview(null)
@@ -223,7 +239,7 @@ function AutomationEditor({
   const accept = (rule: Automation, version: number) => {
     setCurrent(rule)
     setName(rule.name)
-    setMinutes(String(rule.solvedAgeMinutes))
+    setDuration(durationInput(rule.solvedAgeMinutes))
     setSelectedVersion(version)
     setVersionInput(String(version))
     setPreview(null)
@@ -240,9 +256,22 @@ function AutomationEditor({
       open
       title={current ? `${current.name} 관리` : '자동화 만들기'}
       description="저장한 정책으로 샘플 티켓을 확인한 후 활성화하세요."
-      onClose={onClose}
+      onClose={() => exit.request(onClose)}
       returnFocusRef={returnFocusRef}
     >
+      <SeedDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title="저장하지 않은 자동화 변경"
+        description="변경을 저장하려면 계속 편집을 선택하세요. 요청 처리 중에는 닫을 수 없습니다."
+      >
+        <div className="rule-actions">
+          <SeedButton onClick={exit.cancel}>계속 편집</SeedButton>
+          <SeedButton disabled={busy} onClick={exit.discard}>
+            변경 버리기
+          </SeedButton>
+        </div>
+      </SeedDrawer>
       <div className="rule-editor">
         <div ref={feedbackRef} tabIndex={-1}>
           <Failure error={error} />
@@ -291,21 +320,44 @@ function AutomationEditor({
             }}
           />
           <SeedTextField
-            label="해결 후 경과 시간 (분)"
+            label="해결 후 경과 시간"
             type="number"
-            min={1}
-            max={525600}
-            step={1}
+            min={1 / DURATION_UNITS[duration.unit]}
+            max={525600 / DURATION_UNITS[duration.unit]}
+            step="any"
             required
-            value={minutes}
+            value={duration.value}
             onChange={(event) => {
-              setMinutes(event.target.value)
+              setDuration({ ...duration, value: event.target.value })
               change()
             }}
           />
+          <SeedSelectField
+            label="시간 단위"
+            value={duration.unit}
+            disabled={
+              !Number.isSafeInteger(minutes) || minutes < 1 || minutes > 525600
+            }
+            onChange={(event) => {
+              const unit = event.target.value as DurationUnit
+              setDuration({
+                value: String(minutes / DURATION_UNITS[unit]),
+                unit,
+              })
+            }}
+          >
+            <option value="DAYS">일</option>
+            <option value="HOURS">시간</option>
+            <option value="MINUTES">분</option>
+          </SeedSelectField>
+          <p role="status">
+            {Number.isSafeInteger(minutes) && minutes >= 1 && minutes <= 525600
+              ? `실제 경과 ${durationLabel(minutes)} · ${minutes.toLocaleString('ko-KR')}분`
+              : '1분부터 365일까지, 분 단위로 환산되는 시간을 입력하세요.'}
+          </p>
           <p>
-            1~525,600분의 실제 경과 시간을 사용합니다. 1일은 1,440분입니다.
-            조건이 맞으면 티켓을 종료합니다.
+            1일은 24시간입니다. 영업 시간표와 관계없이 실제 경과 시간이 지나면
+            티켓을 종료합니다.
           </p>
           {!current && (
             <SeedTextField
@@ -499,7 +551,7 @@ function AutomationEditor({
                     {history.data.versions.map((version) => (
                       <li key={version.version}>
                         버전 {version.version} · {version.name} ·{' '}
-                        {version.solvedAgeMinutes}분 ·{' '}
+                        {durationLabel(version.solvedAgeMinutes)} ·{' '}
                         {version.createdByDisplay} · {when(version.createdAt)}
                       </li>
                     ))}
