@@ -66,6 +66,7 @@ Legend: `A` allowed, `C` conditional, `D` denied.
 | upload/link/download PUBLIC attachment | ticket scoped C | own ticket C | ticket policy C | A | D | D |
 | download INTERNAL attachment | D | D | staff ticket policy C | A | D | D |
 | manage staff/groups | D | D | D | A | D | D |
+| search staff/groups/members (P15 pending implementation) | D | D | D | A | D | D |
 | read Audit Explorer | D | D | D | explicit grant C | A | D |
 | reveal protected audit content | D | D | D | explicit C | separate grant C | D |
 | request audit export | D | D | D | explicit C | separate grant C | D |
