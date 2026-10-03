@@ -158,7 +158,7 @@ type Story = StoryObj<typeof meta>
 export const VersionReviewAndEdit: Story = {
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByRole('heading', { name: 'First Reply SLA' }),
+      await canvas.findByRole('heading', { name: '최초 답변 목표' }),
     ).toBeVisible()
     await expect(await canvas.findByText('20')).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: 'SLA 정책 관리' }))
@@ -167,14 +167,19 @@ export const VersionReviewAndEdit: Story = {
         name: '결제 문의 기본 First Reply SLA',
       }),
     ).toBeVisible()
+    await expect(
+      canvas.getByText(
+        `설정 변경 번호 ${policy.aggregateVersion} · 시간표 버전 ${policy.scheduleVersion}`,
+      ),
+    ).toBeVisible()
     const newVersionButton = await canvas.findByRole('button', {
-      name: '새 version 작성',
+      name: '새 버전 작성',
     })
     await waitFor(() => expect(newVersionButton).toBeEnabled())
     await userEvent.click(newVersionButton)
     await expect(
       canvas.getByRole('heading', {
-        name: '결제 문의 기본 First Reply SLA 새 version',
+        name: '결제 문의 기본 First Reply SLA 새 버전',
       }),
     ).toBeVisible()
     await expect(
@@ -228,18 +233,16 @@ export const AmbiguousVersionSave: Story = {
       await canvas.findByRole('button', { name: 'SLA 정책 관리' }),
     )
     const newVersionButton = await canvas.findByRole('button', {
-      name: '새 version 작성',
+      name: '새 버전 작성',
     })
     await waitFor(() => expect(newVersionButton).toBeEnabled())
     await userEvent.click(newVersionButton)
-    await userEvent.click(
-      canvas.getByRole('button', { name: '새 version 저장' }),
-    )
+    await userEvent.click(canvas.getByRole('button', { name: '새 버전 저장' }))
     await expect(
       await canvas.findByText('SLA 정책 저장 결과를 확인할 수 없습니다.'),
     ).toBeVisible()
     await expect(
-      canvas.getByRole('button', { name: '새 version 저장' }),
+      canvas.getByRole('button', { name: '새 버전 저장' }),
     ).toBeDisabled()
   },
 }
@@ -272,7 +275,7 @@ export const Empty: Story = {
   },
   play: async ({ canvas }) => {
     await expect(
-      await canvas.findByText('등록된 First Reply SLA 정책이 없습니다.'),
+      await canvas.findByText('등록된 최초 답변 목표 정책이 없습니다.'),
     ).toBeVisible()
   },
 }

@@ -20,15 +20,15 @@ const MODE_OPTIONS: Array<{
 }> = [
   {
     value: 'ANONYMOUS_ALLOWED',
-    label: '익명 접수 허용',
+    label: '비회원 문의 허용',
     description:
-      '고객은 계정 없이 새 문의를 접수하고, 별도 access link로 해당 문의만 확인합니다.',
+      '고객은 계정 없이 새 문의를 접수하고, 문의 조회 링크로 해당 문의만 확인합니다.',
   },
   {
     value: 'REGISTRATION_OPTIONAL',
     label: '가입 선택',
     description:
-      '고객은 익명 접수 또는 이메일 access link 기반 계정 로그인을 선택할 수 있습니다.',
+      '고객은 계정 없이 문의하거나 계정에 로그인한 뒤 문의할 수 있습니다.',
   },
   {
     value: 'REGISTRATION_REQUIRED',
@@ -80,7 +80,7 @@ export function AdminCustomerAccessModePage() {
         }
         description={
           denied
-            ? '고객 접근 정책은 ADMIN만 변경할 수 있습니다.'
+            ? '고객 접근 정책은 관리자만 변경할 수 있습니다.'
             : '잠시 후 현재 정책을 다시 요청해 주세요.'
         }
         kind={denied ? 'denied' : 'error'}
@@ -122,7 +122,7 @@ export function AdminCustomerAccessModePage() {
           onClick={() => void settingsQuery.refetch()}
           tone="secondary"
         >
-          서버 값 새로고침
+          저장된 설정 새로고침
         </DsButton>
       </header>
 
@@ -165,7 +165,7 @@ export function AdminCustomerAccessModePage() {
           </Notification>
           <dl className="admin-definition-list">
             <div>
-              <dt>서버 version</dt>
+              <dt>설정 변경 번호</dt>
               <dd>{setting.version}</dd>
             </div>
             <div>
@@ -179,8 +179,8 @@ export function AdminCustomerAccessModePage() {
               tone="conflict"
             >
               <p>
-                선택한 값은 보존했습니다. 서버 값을 새로고침한 뒤 현재
-                version으로 다시 저장하거나, 아래에서 서버 값을 적용해 주세요.
+                선택한 값은 보존했습니다. 저장된 설정을 새로고침한 뒤 다시
+                저장하거나, 아래에서 저장된 설정으로 되돌려 주세요.
               </p>
             </Notification>
           ) : updateMutation.isError ? (
@@ -193,7 +193,7 @@ export function AdminCustomerAccessModePage() {
           ) : null}
           {updateMutation.isSuccess ? (
             <Notification title="고객 접근 정책을 저장했습니다." tone="success">
-              <p>서버가 새 version을 확정했습니다.</p>
+              <p>변경한 정책이 새 설정 변경 번호로 저장되었습니다.</p>
             </Notification>
           ) : null}
           <div className="admin-form-actions">
@@ -214,7 +214,7 @@ export function AdminCustomerAccessModePage() {
               tone="secondary"
               type="button"
             >
-              서버 값 적용
+              저장된 설정으로 되돌리기
             </DsButton>
           </div>
         </form>

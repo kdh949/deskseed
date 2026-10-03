@@ -257,10 +257,10 @@ export function SeedRichTextEditor({
                   : 'paragraph'
           }
         >
-          <option value="paragraph">Paragraph</option>
-          <option value="1">Heading 1</option>
-          <option value="2">Heading 2</option>
-          <option value="3">Heading 3</option>
+          <option value="paragraph">본문</option>
+          <option value="1">제목 1</option>
+          <option value="2">제목 2</option>
+          <option value="3">제목 3</option>
         </select>
         <span aria-hidden="true" className="seed-rich-editor__separator" />
         <EditorTool

@@ -94,7 +94,7 @@ export const SaveLocksSelection: Story = {
     await userEvent.click(canvas.getByRole('button', { name: '정책 저장' }))
     await expect(canvas.getByLabelText('고객 접근 모드')).toBeDisabled()
     await expect(
-      canvas.getByRole('button', { name: '서버 값 새로고침' }),
+      canvas.getByRole('button', { name: '저장된 설정 새로고침' }),
     ).toBeDisabled()
     await expect(
       await canvas.findByText('고객 접근 정책을 저장했습니다.'),
@@ -135,6 +135,12 @@ export const ConflictPreservesSelection: Story = {
     ).toBeVisible()
     await expect(canvas.getByLabelText('고객 접근 모드')).toHaveValue(
       'REGISTRATION_REQUIRED',
+    )
+    await userEvent.click(
+      canvas.getByRole('button', { name: '저장된 설정으로 되돌리기' }),
+    )
+    await expect(canvas.getByLabelText('고객 접근 모드')).toHaveValue(
+      'ANONYMOUS_ALLOWED',
     )
   },
 }

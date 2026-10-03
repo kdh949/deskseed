@@ -137,6 +137,14 @@ export const FullFormatting: Story = {
     await expect(
       await canvas.findByRole('toolbar', { name: '서식 도구' }),
     ).toBeVisible()
+    await expect(canvas.getByRole('option', { name: '본문' })).toHaveValue(
+      'paragraph',
+    )
+    for (const level of [1, 2, 3]) {
+      await expect(
+        canvas.getByRole('option', { name: `제목 ${level}` }),
+      ).toHaveValue(String(level))
+    }
     const bold = canvas.getByRole('button', { name: '굵게 (⌘B)' })
     bold.focus()
     await userEvent.keyboard('{ArrowRight}')
