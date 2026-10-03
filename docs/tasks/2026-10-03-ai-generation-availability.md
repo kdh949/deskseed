@@ -74,3 +74,9 @@ AG-F06을 위해 staff AiAssistantPanel에 현재 상세의 AI_SUMMARY/AI_TRIAGE
 생성이 403으로 거절되면 기존 상세 refreshLatest만 호출한다. AgentTicketWorkspacePage의 성공 상세 이후 재조회는 BACKGROUND이고 editor.refreshEditor를 호출하지 않아 작성안을 초기화하지 않는다. 재조회 실패는 생성 버튼을 잠근 상태와 명시적 재확인을 제공한다. 기존 job 목록/결과 조회·취소·feedback·명시적 삽입은 기존 서버 재인가를 유지한다. 자동 생성·삽입·전송, 운영 정책 수정, 신규 endpoint/DS API/인프라/의존성은 없다.
 
 REQ-AI-001/002, AI-API-001/AI-SRC-001의 frontend 경계 및 UI-002/003/004/005/006을 panel/workspace unit, 실제 MCP story/a11y, mock full-page Chromium에서 검증한다. live provider/운영 배포/서버 감사·DB rollback 전체 재검증은 이번 UI slice에서 수행하지 않는다. 기존 idempotency/ticket version/권한/transaction/retention 계약과 PUBLIC-only 입력 경계를 바꾸지 않는다. UI revert로 복구한다.
+
+### 복구 체크포인트와 후속 검수
+
+2026-10-03 checkout 중단 뒤 미커밋 UI를 해당 작업의 원본 도구 기록에서 복구해 Git 체크포인트로 보존했다. 중단 전 로그의 unit259·타입/lint·fresh full MCP294 통과는 이전 작업공간 근거이며 복구 후 검증과 구분한다. E2E fixture는1280에서 기존 컨텍스트 drawer를 먼저 열고 dev StrictMode 초기 목록 조회 횟수 대신 정책 재조회 전후의 증가 여부를 비교하도록 보완했다. 테스트 실행은 팀의 자원 직렬화 순서를 따른다.
+
+`AgentTicketWorkspacePage.refreshLatest`는 `query.refetch()`의 `result.error`를 명시적으로 throw하므로 기본 `throwOnError=false`도 panel에 실패로 전달한다. 구조 변경 없이 해당 경계를 유지한다. 기능 설명 두 곳의 PUBLIC 용어는 고객에게 공개된 대화로 풀어 썼으며 API/feature 식별자는 유지한다.

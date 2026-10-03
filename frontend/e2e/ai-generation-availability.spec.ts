@@ -138,24 +138,29 @@ for (const width of [1280, 1920]) {
     await expect(
       page.getByRole('region', { name: '티켓 #3001 작업 공간' }),
     ).toBeVisible()
+    const draft = page.getByRole('textbox', { name: '공개 답변 내용' })
+    await draft.fill('전송하지 않은 합성 상담 초안')
+    if (width === 1280)
+      await page.getByRole('button', { name: '티켓 컨텍스트 열기' }).click()
     const ai = page.getByRole('region', { name: 'DeskSeed AI 어시스턴트' })
     await expect(ai).toBeVisible()
     const buttons = ai.getByRole('button', { name: '생성하기' })
     await expect(buttons.nth(0)).toBeEnabled()
     await expect(buttons.nth(1)).toBeDisabled()
     await expect(buttons.nth(2)).toBeDisabled()
-    const draft = page.getByRole('textbox', { name: '공개 답변 내용' })
-    await draft.fill('전송하지 않은 합성 상담 초안')
+    const initialJobReads = jobReads
+    const initialReadIntents = [...readIntents]
     await buttons.nth(0).focus()
     await page.keyboard.press('Enter')
     await expect(
       ai.getByText('현재 이 티켓에서는 대화 요약을 사용할 수 없습니다.'),
     ).toBeVisible()
     await expect(buttons.nth(0)).toBeDisabled()
-    await expect(draft).toHaveText('전송하지 않은 합성 상담 초안')
     expect(createCount).toBe(1)
-    expect(jobReads).toBe(1)
-    expect(readIntents).toEqual(['NAVIGATION', 'BACKGROUND'])
+    expect(initialJobReads).toBeGreaterThan(0)
+    expect(jobReads).toBe(initialJobReads)
+    expect(initialReadIntents).toContain('NAVIGATION')
+    expect(readIntents).toEqual([...initialReadIntents, 'BACKGROUND'])
     expect(
       (await new AxeBuilder({ page }).include('.ai-assistant').analyze())
         .violations,
@@ -169,5 +174,8 @@ for (const width of [1280, 1920]) {
       path: testInfo.outputPath(`ai-availability-${width}.png`),
       fullPage: true,
     })
+    if (width === 1280)
+      await page.getByRole('button', { name: '닫기', exact: true }).click()
+    await expect(draft).toHaveText('전송하지 않은 합성 상담 초안')
   })
 }

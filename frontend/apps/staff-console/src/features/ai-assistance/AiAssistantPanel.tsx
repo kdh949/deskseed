@@ -26,7 +26,7 @@ const FEATURES: Array<{
     feature: 'ticket.summary',
     capability: 'AI_SUMMARY',
     title: '대화 요약',
-    description: 'PUBLIC 대화의 핵심 내용과 확인할 일을 정리합니다.',
+    description: '고객에게 공개된 대화의 핵심 내용과 확인할 일을 정리합니다.',
     icon: 'text',
   },
   {
@@ -41,7 +41,8 @@ const FEATURES: Array<{
     feature: 'ticket.reply_draft',
     capability: 'AI_REPLY_DRAFT',
     title: '답변 초안',
-    description: 'PUBLIC 대화와 공개 지식 문서를 근거로 답변을 작성합니다.',
+    description:
+      '고객에게 공개된 대화와 공개 지식 문서를 근거로 답변을 작성합니다.',
     icon: 'speech',
   },
 ]
