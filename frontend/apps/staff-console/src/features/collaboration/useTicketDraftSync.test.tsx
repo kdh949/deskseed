@@ -196,6 +196,38 @@ describe('useTicketDraftSync', () => {
     expect(clearAgentTicketDraft).not.toHaveBeenCalled()
   })
 
+  it('does not claim local-only recovery when both local and server writes fail', async () => {
+    vi.mocked(readLocalTicketDraft).mockResolvedValue(null)
+    vi.mocked(getAgentTicketDraft).mockRejectedValue(
+      new ApiError('not found', 404),
+    )
+    vi.mocked(writeLocalTicketDraft).mockRejectedValue(
+      new Error('local quota exceeded'),
+    )
+    vi.mocked(saveAgentTicketDraft).mockRejectedValue(
+      new ApiError('server unavailable', 500),
+    )
+    const onFailure = vi.fn()
+    let sync: ReturnType<typeof useTicketDraftSync> | undefined
+    render(
+      <DraftSyncHarness
+        onSync={(next) => (sync = next)}
+        onFailure={onFailure}
+      />,
+    )
+    await act(async () => undefined)
+    fireEvent.click(screen.getByRole('button', { name: '초안 변경' }))
+    await act(async () => {
+      await sync?.flush()
+    })
+    expect(sync?.state).toBe('error')
+    expect(onFailure).toHaveBeenCalledWith(
+      '서버와 이 브라우저에 복구 초안을 보관하지 못했습니다. 작성 내용은 현재 화면에 유지됩니다.',
+      undefined,
+    )
+    expect(onFailure).toHaveBeenCalledTimes(1)
+  })
+
   it('serializes an in-flight autosave with a manual flush and cancels its pending timer', async () => {
     vi.mocked(readLocalTicketDraft).mockResolvedValue(null)
     vi.mocked(getAgentTicketDraft).mockRejectedValue(

@@ -761,9 +761,11 @@ function Composer({
       ? '다른 브라우저 초안과 충돌'
       : editor.draftSyncState === 'local-only'
         ? '이 브라우저에만 저장됨'
-        : editor.isUnsaved
-          ? '초안 변경됨'
-          : '저장됨'
+        : editor.draftSyncState === 'error'
+          ? '초안 보관 상태 확인 필요'
+          : editor.isUnsaved
+            ? '초안 변경됨'
+            : '저장됨'
   return (
     <>
       <SeedComposer

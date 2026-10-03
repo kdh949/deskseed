@@ -515,9 +515,7 @@ export const ManualDraftSaveFailure: Story = {
       await canvas.findByRole('textbox', { name: '공개 답변 내용' }),
     )
     await userEvent.paste('이 브라우저에 남길 답변')
-    await userEvent.click(
-      canvas.getByRole('button', { name: '초안 저장', exact: true }),
-    )
+    await userEvent.click(canvas.getByRole('button', { name: '초안 저장' }))
     await expect(
       await canvas.findByText('이 브라우저에만 저장됨', { exact: true }),
     ).toBeVisible()

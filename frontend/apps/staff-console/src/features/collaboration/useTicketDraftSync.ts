@@ -246,10 +246,12 @@ export function useTicketDraftSync({
               baseTicketVersion,
               draftVersion: versions.current[visibility],
             })
+            let localSaved = true
             try {
               await writeLocalTicketDraft(local)
             } catch {
               hasLocalFailure = true
+              localSaved = false
             }
             try {
               const saved = await saveAgentTicketDraft(ticketNumber, channel, {
@@ -271,7 +273,9 @@ export function useTicketDraftSync({
               }
               hasServerFailure = true
               failureCallback.current(
-                '서버에 복구 초안을 저장하지 못했습니다. 이 브라우저의 7일 초안은 유지됩니다.',
+                localSaved
+                  ? '서버에 복구 초안을 저장하지 못했습니다. 이 브라우저의 7일 초안은 유지됩니다.'
+                  : '서버와 이 브라우저에 복구 초안을 보관하지 못했습니다. 작성 내용은 현재 화면에 유지됩니다.',
                 cause instanceof ApiError ? cause.requestId : undefined,
               )
             }
@@ -279,8 +283,8 @@ export function useTicketDraftSync({
         ),
       )
       if (hasConflict) setState('conflict')
-      else if (hasServerFailure) setState('local-only')
       else if (hasLocalFailure) setState('error')
+      else if (hasServerFailure) setState('local-only')
       else setState('synced')
       lastSynchronized.current = fingerprint
     }
