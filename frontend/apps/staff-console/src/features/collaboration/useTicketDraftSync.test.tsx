@@ -228,6 +228,41 @@ describe('useTicketDraftSync', () => {
     expect(onFailure).toHaveBeenCalledTimes(1)
   })
 
+  it('waits for hydration before flushing input entered while draft recovery is pending', async () => {
+    const localRead = deferred<LocalTicketDraft | null>()
+    vi.mocked(readLocalTicketDraft).mockImplementation(() => localRead.promise)
+    vi.mocked(getAgentTicketDraft).mockRejectedValue(
+      new ApiError('not found', 404),
+    )
+    vi.mocked(saveAgentTicketDraft).mockResolvedValue(
+      ticketDraft({
+        body: 'first draft',
+        draftVersion: 1,
+        updatedAt: '2026-08-24T12:00:00Z',
+      }),
+    )
+    let sync: ReturnType<typeof useTicketDraftSync> | undefined
+    render(<DraftSyncHarness onSync={(next) => (sync = next)} />)
+    fireEvent.click(screen.getByRole('button', { name: '초안 변경' }))
+    let pending: Promise<void> | undefined
+    act(() => {
+      pending = sync?.flush()
+    })
+    expect(saveAgentTicketDraft).not.toHaveBeenCalled()
+    await act(async () => {
+      localRead.resolve(null)
+      await pending
+    })
+    expect(saveAgentTicketDraft).toHaveBeenCalledExactlyOnceWith(
+      ticketNumber,
+      'PUBLIC_REPLY',
+      expect.objectContaining({
+        content: { format: 'PLAIN_TEXT', text: 'first draft' },
+        expectedDraftVersion: 0,
+      }),
+    )
+  })
+
   it('serializes an in-flight autosave with a manual flush and cancels its pending timer', async () => {
     vi.mocked(readLocalTicketDraft).mockResolvedValue(null)
     vi.mocked(getAgentTicketDraft).mockRejectedValue(

@@ -398,11 +398,14 @@ export function useTicketDraftSync({
       inFlightRef.current = flight
       await flight
     },
-    flush: () => {
+    flush: async () => {
+      await hydration.current
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current)
         timerRef.current = null
       }
+      // An explicit save also retries unchanged drafts after a failed save.
+      lastSynchronized.current = null
       return requestSynchronization()
     },
   }
