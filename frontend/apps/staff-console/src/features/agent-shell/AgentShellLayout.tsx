@@ -185,6 +185,7 @@ function formatNotificationTime(value: string) {
 }
 
 function breadcrumbFor(pathname: string) {
+  if (pathname === '/agent/personal-macros') return '매크로 / 내 매크로'
   if (pathname === '/agent/search') return '검색 / 티켓 전체 검색'
   if (pathname === '/agent/tickets/new') return '티켓 / 새 티켓'
   if (/^\/agent\/tickets\/\d+$/.test(pathname)) {
