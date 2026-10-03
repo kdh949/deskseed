@@ -527,3 +527,95 @@ export const SessionFailureRecovery: Story = {
     await expect(unexpectedHelp).not.toHaveBeenCalled()
   },
 }
+
+let searchAttempts = 0
+const pagedSearchHandlers = (status: number) => [
+  http.get(
+    '/api/v1/customer/me',
+    () => new HttpResponse(null, { status: 401 }),
+  ),
+  homeHandlers.helpCategories,
+  http.post('/api/v1/help/search', async ({ request }) => {
+    const body = (await request.json()) as { cursor?: string }
+    searchAttempts++
+    if (body.cursor && searchAttempts === 2)
+      return HttpResponse.json({}, { status })
+    return HttpResponse.json({
+      items: [
+        {
+          articleSlug: body.cursor ? 'second' : 'first',
+          title: body.cursor ? '추가 문서' : '비밀번호 변경',
+          excerpt: '설정에서 비밀번호를 변경하세요. <script>도 텍스트입니다.',
+          categoryTitle: '계정',
+          sectionTitle: '보안',
+        },
+      ],
+      hasMore: !body.cursor,
+      nextCursor: body.cursor ? null : 'opaque-v2-cursor',
+    })
+  }),
+]
+export const SearchCursorRecovery: Story = {
+  beforeEach: () => {
+    searchAttempts = 0
+  },
+  parameters: { msw: { handlers: pagedSearchHandlers(400) } },
+  render: () => (
+    <AnonymousChrome>
+      <StoryRoute path="/search" to="/search?q=비밀번호">
+        <HelpSearchPage />
+      </StoryRoute>
+    </AnonymousChrome>
+  ),
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('heading', { name: '비밀번호 변경' }),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByText('가장 관련 높은 결과'),
+    ).not.toBeInTheDocument()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '검색 결과 더 보기' }),
+    )
+    await expect(
+      await canvas.findByText('검색 결과를 다시 확인해 주세요.'),
+    ).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '처음부터 다시 검색' }),
+    )
+    await expect(
+      canvas.getByRole('textbox', { name: '도움말 검색어' }),
+    ).toHaveFocus()
+    await expect(
+      await canvas.findByRole('heading', { name: '비밀번호 변경' }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('list', { name: '검색 결과 목록' }),
+    ).toBeVisible()
+  },
+}
+export const SearchNextPageRecovery: Story = {
+  ...SearchCursorRecovery,
+  parameters: { msw: { handlers: pagedSearchHandlers(503) } },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole('heading', { name: '비밀번호 변경' }),
+    ).toBeVisible()
+    await userEvent.click(
+      canvas.getByRole('button', { name: '검색 결과 더 보기' }),
+    )
+    await expect(
+      await canvas.findByText('추가 검색 결과를 불러올 수 없습니다.'),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('heading', { name: '비밀번호 변경' }),
+    ).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: '다시 시도' }))
+    await expect(
+      await canvas.findByRole('heading', { name: '추가 문서' }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('heading', { name: '비밀번호 변경' }),
+    ).toBeVisible()
+  },
+}

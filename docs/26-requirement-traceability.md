@@ -218,3 +218,5 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 - 2026-09-16~17 REQ-AI-001~005: [AI V1 A 계약·PUBLIC source](tasks/2026-09-16-ai-v1-a-contract-source.md), [AI V1 B~G 격리 실행·운영](tasks/2026-09-16-ai-v1-b-g-runtime.md), [AI V1 상담사 어시스턴트 UI](tasks/2026-09-17-ai-v1-frontend-assistant.md). UI는 current Core contract의 summary/triage/reply와 safe insertion을 연결하며 chat/workflow/auto-apply는 제외한다. live provider/Langfuse/실데이터/배포·사람 평가는 별도 외부 검증이다.
 
 - 2026-10-03 REQ-KB-002/003/004: [도움말 관련도 검색](tasks/2026-10-03-help-search-relevance.md). V52 weighted vector로 lexical rank/keyset v2/plain excerpt를 추가하고 public audience·STAFF fail-closed audit·cursor 회귀를 검증했다. production corpus/p95·UI·배포는 별도이며 requirement 전체 상태는 유지한다.
+
+- 2026-10-03 REQ-KB-003/004, REQ-UI-005/007: [검색 발췌 중심 목록과 커서 복구 UI](tasks/2026-10-03-help-search-ui.md). 서버 순서·plain text를 유지하고 이전 커서 거절에서 첫 페이지로 복구한다.
