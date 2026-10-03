@@ -57,3 +57,7 @@ Storybook previews (로컬 개발 서버 실행 중 접근 가능):
 - http://localhost:6007/?path=/story/06-customer-customer-sign-in-page--password-login
 - http://localhost:6007/?path=/story/06-customer-customer-sign-in-page--mode-switch
 - 전체 변경 story: http://localhost:6007/?statuses=affected;modified;new
+
+### 후속 통합 검증 보완
+
+기존 `customer-portal.spec.ts`의 magic-link 흐름은 비밀번호 기본 모드에서 이메일 모드를 선택하지 않고 전송 버튼을 찾고 있었다. 실제 사용자 단계인 `이메일 링크` 선택을 추가했고 mock Chromium의 magic link→내 문의→첨부 답변→새로고침/다운로드→로그아웃 1개 시나리오를 재통과했다. 제품 동작/계약 변경은 없다.
