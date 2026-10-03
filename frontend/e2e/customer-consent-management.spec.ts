@@ -229,6 +229,10 @@ for (const width of [390, 768]) {
     await expect(
       page.getByRole('link', { name: '고객 지원 홈으로' }),
     ).toHaveAttribute('href', '/')
+    await expect(
+      page.getByRole('link', { name: '로그인으로 돌아가기' }),
+    ).toHaveAttribute('href', '/customer/sign-in')
+    await expect(page.getByText('잠시 후 다시 방문해 주세요.')).toHaveCount(0)
     await page.screenshot({
       path: testInfo.outputPath('policy-unavailable.png'),
       fullPage: true,

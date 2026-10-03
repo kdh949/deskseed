@@ -62,3 +62,11 @@ CONSENT-001/002의 frontend 경계와 UI-002/004/005/006을 위 근거로 확인
 
 - http://localhost:6009/?path=/story/06-admin-admin-customer-consent-page--navigation-keeps-draft
 - http://localhost:6009/?path=/story/06-admin-admin-customer-consent-page--list-failure-keeps-draft
+
+### 최종 고객 여정 검수 보완
+
+정책이 없는 가입 화면에서 준비 시점을 추정한 안내를 제거하고 현재 가입을 시작할 수 없다는 상태와 기존 계정 로그인/홈 복귀를 명시했다. 로그인 복귀 링크를 추가했으며 정책 재확인과 변경된 정책의 미동의 초기화는 유지한다. REQ-CONSENT-001/002, UI-004/005/006 범위의 문구·동선 보완이며 계약·법률 문구·seed 변경은 없다.
+
+- Passed: 실제 고객 MCP 문서/지침/컴포넌트 문서 조회, 관련 story 3개+a11y, `get-changed-stories` 및 runtime 소비자 조회, preview. Chromium mock E2E 390·768의 고객 정책 재확인 2개, typecheck, 변경 파일 lint/format, `git diff --check`. 390 화면 캡처에서 미준비 상태·로그인 복귀·홈 복귀와 가로 넘침 없음을 확인했다.
+- Not run: 후속 문구 변경의 전체 앱 suite 재실행, 실제 서버 정책·가입·메일·운영 검증. 이전 전체 검증을 대체하는 운영 증거로 주장하지 않는다.
+- http://localhost:6022/?path=/story/customer-portal-onboarding-pages--policies-not-ready
