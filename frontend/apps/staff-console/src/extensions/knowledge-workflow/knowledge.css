@@ -78,3 +78,27 @@
 .knowledge-panel {
   overflow-wrap: anywhere;
 }
+
+.knowledge-search {
+  display: grid;
+  gap: var(--ds-space-150);
+}
+.knowledge-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ds-space-150);
+}
+.knowledge-editor h2 {
+  scroll-margin-top: var(--ds-space-300);
+}
+.knowledge-page h1 {
+  font-size: var(--ds-font-lg);
+}
+.knowledge-page h2 {
+  font-size: var(--ds-font-md);
+}
+@media (max-width: 800px) {
+  .knowledge-filters {
+    grid-template-columns: 1fr;
+  }
+}

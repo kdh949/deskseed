@@ -210,6 +210,9 @@ interface AccessAuditWriter {
     /** Required protected ADMIN directory search audit; failure withholds the result page. */
     fun appendAdminDirectorySearch(event: AdminDirectorySearchAccessAudit)
 
+    /** Required protected ADMIN title search audit; no document body or ticket origin. */
+    fun appendAdminKnowledgeSearch(event: AdminKnowledgeSearchAccessAudit)
+
     /** Appends one required access audit for every successful protected ticket-detail read. */
     fun appendTicketResourceRead(event: TicketResourceReadAccessAudit)
 

@@ -15,6 +15,7 @@ import dev.deskseed.knowledge.KnowledgeArticleListFilter
 import dev.deskseed.knowledge.KnowledgeArticleRevisionSummary
 import dev.deskseed.knowledge.KnowledgeArticleSummary
 import dev.deskseed.knowledge.KnowledgeArticleSummaryPage
+import dev.deskseed.knowledge.KnowledgeLatestRevisionSummary
 import dev.deskseed.knowledge.KnowledgeArticleView
 import dev.deskseed.knowledge.KnowledgeArticleLifecycle
 import dev.deskseed.knowledge.KnowledgeLifecycleAction
@@ -51,6 +52,7 @@ import java.util.UUID
 @Validated
 internal class AdminKnowledgeController(
     private val administration: KnowledgeAdministration,
+    private val titleSearch: AdminKnowledgeSearchApplicationService,
 ) {
     private val documentCodec = CanonicalKnowledgeDocumentCodec()
 
@@ -171,6 +173,27 @@ internal class AdminKnowledgeController(
             ).toResponse(),
         )
 
+    @PostMapping("/articles/search")
+    fun searchArticles(
+        @Valid @RequestBody body: AdminKnowledgeArticleSearchRequest,
+        @RequestHeader(EXPECTED_STAFF_ACTOR_HEADER) expectedActor: UUID,
+        @AuthenticationPrincipal principal: StaffPrincipal,
+        request: HttpServletRequest,
+    ): ResponseEntity<AdminKnowledgeArticleSearchPageResponse> {
+        val actor = request.actor(principal, expectedActor)
+        val result = titleSearch.search(
+            actor, body.query, body.cursor,
+            KnowledgeArticleListFilter(body.lifecycle, body.sectionId, body.audience), body.interactionId,
+            AdminDirectoryReadContext(
+                requireNotNull(request.getSession(false)).id, actor.context.requestId, actor.context.correlationId,
+                request.remoteAddr, request.getHeader("User-Agent"),
+            ),
+        )
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(AdminKnowledgeArticleSearchPageResponse(
+            result.items.map { it.toResponse() }, result.nextCursor != null, result.nextCursor, result.resultCount,
+        ))
+    }
+
     @GetMapping("/articles/{articleId}")
     fun getArticle(
         @PathVariable articleId: UUID,
@@ -287,6 +310,15 @@ internal class AdminKnowledgeController(
         ?.takeIf { it >= 0 }
         ?: throw IllegalArgumentException("If-Match must contain a non-negative resource version")
 }
+
+internal data class AdminKnowledgeArticleSearchRequest(
+    @field:NotBlank @field:Size(max = 254) val query: String,
+    val interactionId: UUID,
+    val lifecycle: KnowledgeArticleLifecycle? = null,
+    val sectionId: UUID? = null,
+    val audience: KnowledgeAudienceType? = null,
+    @field:Size(max = 1024) val cursor: String? = null,
+)
 
 internal data class KnowledgeCategoryRequest(
     @field:NotBlank @field:Size(max = 120)
@@ -427,6 +459,7 @@ internal data class AdminKnowledgeArticleSummaryResponse(
     val audience: KnowledgeAudienceResponse,
     val audienceVersion: Int,
     val currentPublishedRevision: AdminKnowledgeArticleRevisionSummaryResponse?,
+    val latestRevision: KnowledgeLatestRevisionSummary,
     val version: Long,
 )
 
@@ -434,6 +467,13 @@ internal data class AdminKnowledgeArticleSummaryPageResponse(
     val items: List<AdminKnowledgeArticleSummaryResponse>,
     val hasMore: Boolean,
     val nextCursor: String?,
+)
+
+internal data class AdminKnowledgeArticleSearchPageResponse(
+    val items: List<AdminKnowledgeArticleSummaryResponse>,
+    val hasMore: Boolean,
+    val nextCursor: String?,
+    val resultCount: Long,
 )
 
 private fun KnowledgeRevisionView.toResponse(codec: CanonicalKnowledgeDocumentCodec) = KnowledgeRevisionResponse(
@@ -475,6 +515,7 @@ private fun KnowledgeArticleSummary.toResponse() = AdminKnowledgeArticleSummaryR
     audience = KnowledgeAudienceResponse(audience.type, audience.groupIds),
     audienceVersion = audienceVersion,
     currentPublishedRevision = currentPublishedRevision?.toResponse(),
+    latestRevision = latestRevision,
     version = version,
 )
 

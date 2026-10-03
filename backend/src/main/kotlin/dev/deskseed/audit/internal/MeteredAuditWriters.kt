@@ -1,6 +1,7 @@
 package dev.deskseed.audit.internal
 
 import dev.deskseed.audit.AdminDirectorySearchAccessAudit
+import dev.deskseed.audit.AdminKnowledgeSearchAccessAudit
 
 import dev.deskseed.audit.AccessAuditWriter
 import dev.deskseed.audit.AiContextAccessAudit
@@ -79,6 +80,11 @@ internal class MeteredAccessAuditWriter(
     override fun appendAdminDirectorySearch(event: AdminDirectorySearchAccessAudit) =
         record(AuditPersistenceMetrics.Operation.ADMIN_DIRECTORY_SEARCH) {
             delegate.appendAdminDirectorySearch(event)
+        }
+
+    override fun appendAdminKnowledgeSearch(event: AdminKnowledgeSearchAccessAudit) =
+        record(AuditPersistenceMetrics.Operation.ADMIN_KNOWLEDGE_SEARCH) {
+            delegate.appendAdminKnowledgeSearch(event)
         }
 
     override fun isValidSearchOrigin(

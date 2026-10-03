@@ -11,7 +11,6 @@ x-deskseed-staff-actor-consistency:
   blueprintOnlyBinding: Blueprint-only staffSession operations inherit this policy extension and receive the standard operation-level
     bindings when their contracts are frozen for implementation.
   blueprintOnlyOperationIds:
-  - searchAdminKnowledgeArticles
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting
@@ -6022,12 +6021,6 @@ paths:
       summary: 관리자 knowledge article 목록
       description: lifecycle, section, audience로 filter하고 stable cursor를 사용합니다.
       x-deskseed-contract-status: FROZEN
-      x-deskseed-pending-response-extension:
-        status: BLUEPRINT_READY
-        requirement: REQ-KB-001
-        field: items.latestRevision
-        description: P17 구현에서 최신 immutable revision의 title/summary를 필수 목록 필드로 승격합니다. 기존 currentPublishedRevision과 상세 본문 계약은
-          유지합니다.
       x-deskseed-requirements:
       - REQ-KB-001
       tags:
@@ -6092,6 +6085,7 @@ paths:
         HMAC을 사용하여 원문 또는 사전 추측이 가능한 비키드 query hash를 노출하지 않습니다. resultCount는 cursor 앞뒤를 포함한 전체 조건의 EXACT 수이고 items와 같은 읽기 snapshot에서
         계산합니다. 응답은 no-store이며 문서 본문·change note·검색어·ciphertext·audit origin을 포함하지 않습니다. 결과와 보호 검색어를 ADMIN_KNOWLEDGE_SEARCH_EXECUTED로
         원자적으로 감사하며 필수 보호/저장 실패는 503입니다. mutation/발행/검색 색인 변경은 수행하지 않습니다. 빈 검색은 기존 GET 목록으로 복귀합니다.
+      x-deskseed-contract-status: FROZEN
       x-deskseed-phase: UX-P17
       x-deskseed-requirements:
       - REQ-KB-001
@@ -17262,8 +17256,8 @@ components:
     AdminKnowledgeArticleSummary:
       type: object
       additionalProperties: false
-      description: 관리자 article 목록의 bounded summary projection입니다. 상세 API만 canonical document를 반환합니다. latestRevision은 P17 구현
-        예정 확장으로 기존 GET에서 아직 보장하지 않습니다.
+      description: 관리자 article 목록의 bounded summary projection입니다. 상세 API만 canonical document를 반환합니다. latestRevision은 최신 immutable
+        revision의 제목과 요약만 제공하고 currentPublishedRevision의 의미를 변경하지 않습니다.
       required:
       - id
       - sectionId
@@ -17272,6 +17266,7 @@ components:
       - audience
       - audienceVersion
       - currentPublishedRevision
+      - latestRevision
       - version
       properties:
         id:

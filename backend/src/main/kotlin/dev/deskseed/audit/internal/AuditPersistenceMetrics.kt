@@ -40,6 +40,7 @@ internal class AuditPersistenceMetrics(meterRegistry: MeterRegistry) {
         SEARCH_EXECUTED("search-executed"),
         CUSTOMER_SEARCH_EXECUTED("customer-search-executed"),
         ADMIN_DIRECTORY_SEARCH("admin-directory-search"),
+        ADMIN_KNOWLEDGE_SEARCH("admin-knowledge-search"),
         SEARCH_RESULT_OPENED("search-result-opened"),
         APPEND("append"),
     }

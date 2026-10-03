@@ -20,6 +20,15 @@ import java.net.URI
 
 @RestControllerAdvice(assignableTypes = [AdminKnowledgeController::class])
 internal class AdminKnowledgeExceptionHandler {
+    @ExceptionHandler(AccessAuditUnavailableException::class)
+    fun searchAuditUnavailable(request: HttpServletRequest): ResponseEntity<ProblemDetail> = problem(
+        request,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "/problems/audit-write-unavailable",
+        "Required access audit unavailable",
+        "The search could not be safely audited. Try again later.",
+    )
+
     @ExceptionHandler(KnowledgeNotFoundException::class)
     fun notFound(request: HttpServletRequest): ResponseEntity<ProblemDetail> = problem(
         request,

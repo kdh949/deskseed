@@ -87,7 +87,7 @@ Examples:
 
 ### 3.3 Admin & Security Audit
 
-P17의 [관리자 KB 제목 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)은 구현 예정 `ADMIN_KNOWLEDGE_SEARCH_EXECUTED`를 정의한다. 기존 access/search ledger·보호 query ciphertext/fingerprint와 보존 정책을 재사용하며, ADMIN_UI/STAFF_SESSION, 같은 snapshot의 전체 EXACT count, typed lifecycle/section/audience 조건을 기록한다. 일반 목록의 KNOWLEDGE_ARTICLE_LISTED와 중복 기록하지 않으며 문서 제목/본문/raw query/cursor를 metadata로 복사하지 않는다. 구현 전에는 이 action과 새 operation의 runtime 존재를 주장하지 않는다. 후속 구현도 기존 reveal 권한 범위를 확대하지 않는다.
+P17의 [관리자 KB 제목 검색 계약](tasks/2026-10-03-admin-knowledge-search-contract.md)은 `ADMIN_KNOWLEDGE_SEARCH_EXECUTED`를 정의하고 P17 구현이 typed writer와 V100으로 제공한다. 기존 access/search ledger·보호 query ciphertext/fingerprint와 보존 정책을 재사용하며, ADMIN_UI/STAFF_SESSION, 같은 snapshot의 전체 EXACT count, typed lifecycle/section/audience 조건을 기록한다. 일반 목록의 KNOWLEDGE_ARTICLE_LISTED와 중복 기록하지 않으며 문서 제목/본문/raw query/cursor를 metadata로 복사하지 않는다. 로컬 통합 회귀에서 감사 실패 rollback과 비노출을 검증하며 기존 reveal 권한 범위를 확대하지 않는다.
 
 Purpose: 권한·보안·설정·자격증명 변화와 보안 결과 조사
 

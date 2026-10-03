@@ -20,6 +20,8 @@ import dev.deskseed.knowledge.KnowledgeArticleListFilter
 import dev.deskseed.knowledge.KnowledgeArticleRevisionSummary
 import dev.deskseed.knowledge.KnowledgeArticleSummary
 import dev.deskseed.knowledge.KnowledgeArticleSummaryPage
+import dev.deskseed.knowledge.KnowledgeArticleSearchPage
+import dev.deskseed.knowledge.KnowledgeLatestRevisionSummary
 import dev.deskseed.knowledge.KnowledgeArticleView
 import dev.deskseed.knowledge.KnowledgeAudience
 import dev.deskseed.knowledge.KnowledgeAudienceType
@@ -370,6 +372,39 @@ internal class JdbcKnowledgeAdministration(
         filter: KnowledgeArticleListFilter,
         actor: KnowledgeAdminActor,
     ): KnowledgeArticleSummaryPage {
+        val result = readArticleSummaries(cursor, filter)
+        audit(
+            eventType = "KNOWLEDGE_ARTICLE_LISTED",
+            actor = actor,
+            targetType = "KNOWLEDGE_ARTICLE_COLLECTION",
+            targetId = null,
+            metadata = mapOf(
+                "count" to result.items.size.toString(),
+                "lifecycle" to (filter.lifecycle?.name ?: "ALL"),
+                "sectionId" to (filter.sectionId?.toString() ?: "ALL"),
+                "audience" to (filter.audience?.name ?: "ALL"),
+            ),
+        )
+        return KnowledgeArticleSummaryPage(result.items, result.nextCursor)
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    override fun searchArticles(
+        query: String,
+        cursor: String?,
+        filter: KnowledgeArticleListFilter,
+        actor: KnowledgeAdminActor,
+    ): KnowledgeArticleSearchPage {
+        require(query.isNotBlank() && query.length <= 254 && query.none(Char::isISOControl))
+        return readArticleSummaries(cursor, filter, query.trim())
+    }
+
+    private fun readArticleSummaries(
+        cursor: String?,
+        filter: KnowledgeArticleListFilter,
+        query: String? = null,
+    ): KnowledgeArticleSearchPage {
         val conditions = mutableListOf<String>()
         val arguments = mutableListOf<Any>()
         filter.lifecycle?.let {
@@ -384,7 +419,7 @@ internal class JdbcKnowledgeAdministration(
             conditions += "article.audience_type = ?"
             arguments += it.name
         }
-        val scope = if (filter.lifecycle == null && filter.sectionId == null && filter.audience == null) {
+        val listScope = if (filter.lifecycle == null && filter.sectionId == null && filter.audience == null) {
             "admin-articles"
         } else {
             listOf(
@@ -394,6 +429,23 @@ internal class JdbcKnowledgeAdministration(
                 filter.audience?.name ?: "all-audiences",
             ).joinToString(":")
         }
+        val scope = if (query == null) listScope else cursorCodec.adminTitleSearchScope(query, listScope, cursor)
+        val latestJoin = """
+            join lateral (
+                select title, summary from knowledge_article_revisions
+                 where article_id = article.id order by revision_number desc limit 1
+            ) latest on true
+        """.trimIndent()
+        query?.let {
+            conditions += "lower(latest.title) like lower(?) escape '\\'"
+            arguments += "%" + it.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        }
+        // Count before adding the keyset boundary: it describes the whole filtered set.
+        val countWhere = conditions.takeIf(List<String>::isNotEmpty)?.joinToString(" and ", prefix = "where ").orEmpty()
+        val resultCount = if (query == null) 0L else checkNotNull(jdbc.queryForObject(
+            "select count(*) from knowledge_articles article $latestJoin $countWhere",
+            Long::class.java, *arguments.toTypedArray(),
+        ))
         cursorCodec.decode(scope, cursor)?.let {
             conditions += "(article.created_at, article.id) < (?, ?)"
             arguments += Timestamp.from(it.createdAt)
@@ -404,16 +456,19 @@ internal class JdbcKnowledgeAdministration(
             """
             select article.id, article.section_id, article.slug, article.lifecycle, article.audience_type,
                    article.audience_version, article.version, article.created_at,
+                   latest.title as latest_title, latest.summary as latest_summary,
                    revision.id as revision_id, revision.revision_number, revision.title, revision.summary,
                    revision.content_checksum, revision.created_at as revision_created_at,
                    array_agg(audience_group.group_id order by audience_group.group_id)
                        filter (where audience_group.group_id is not null) as audience_group_ids
               from knowledge_articles article
+              $latestJoin
               left join knowledge_article_audience_groups audience_group on audience_group.article_id = article.id
               left join knowledge_article_revisions revision on revision.id = article.current_published_revision_id
               $whereClause
              group by article.id, article.section_id, article.slug, article.lifecycle, article.audience_type,
                       article.audience_version, article.version, article.created_at,
+                      latest.title, latest.summary,
                       revision.id, revision.revision_number, revision.title, revision.summary,
                       revision.content_checksum, revision.created_at
              order by article.created_at desc, article.id desc
@@ -446,6 +501,7 @@ internal class JdbcKnowledgeAdministration(
                                 createdAt = checkNotNull(row.getTimestamp("revision_created_at")).toInstant(),
                             )
                         },
+                        latestRevision = KnowledgeLatestRevisionSummary(row.getString("latest_title"), row.getString("latest_summary")),
                         version = row.getLong("version"),
                     ),
                 )
@@ -453,22 +509,14 @@ internal class JdbcKnowledgeAdministration(
             *arguments.toTypedArray(),
         )
         val items = rows.take(50).map(AdminArticleListRow::summary)
-        audit(
-            eventType = "KNOWLEDGE_ARTICLE_LISTED",
-            actor = actor,
-            targetType = "KNOWLEDGE_ARTICLE_COLLECTION",
-            targetId = null,
-            metadata = mapOf(
-                "count" to items.size.toString(),
-                "lifecycle" to (filter.lifecycle?.name ?: "ALL"),
-                "sectionId" to (filter.sectionId?.toString() ?: "ALL"),
-                "audience" to (filter.audience?.name ?: "ALL"),
-            ),
-        )
-        return KnowledgeArticleSummaryPage(
+        return KnowledgeArticleSearchPage(
             items = items,
+            resultCount = resultCount,
             nextCursor = if (rows.size > items.size) {
-                cursorCodec.encode(scope, rows[items.size - 1].cursor)
+                cursorCodec.encode(
+                    if (query == null) scope else cursorCodec.adminTitleSearchScope(query, listScope, null),
+                    rows[items.size - 1].cursor,
+                )
             } else null,
         )
     }
