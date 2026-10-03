@@ -60,6 +60,83 @@ describe('useTicketDraftSync', () => {
     vi.clearAllMocks()
   })
 
+  it('checkpoints both channels before the debounce without claiming or starting a remote save', async () => {
+    vi.mocked(readLocalTicketDraft).mockResolvedValue(null)
+    vi.mocked(getAgentTicketDraft).mockRejectedValue(
+      new ApiError('not found', 404),
+    )
+    const initialDrafts: ComposerDrafts = {
+      PUBLIC: {
+        body: '공개 서식 초안',
+        content: {
+          format: 'RICH_TEXT_V1',
+          document: {
+            type: 'doc',
+            content: [
+              {
+                type: 'paragraph',
+                content: [
+                  {
+                    type: 'text',
+                    text: '공개 서식 초안',
+                    marks: [{ type: 'bold' }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        attachmentIds: ['attachment-public'],
+      },
+      INTERNAL: {
+        body: '내부 초안',
+        content: { format: 'PLAIN_TEXT', text: '내부 초안' },
+        attachmentIds: [],
+      },
+    }
+    let sync: ReturnType<typeof useTicketDraftSync> | undefined
+    render(
+      <DraftSyncHarness
+        initialDrafts={initialDrafts}
+        onSync={(next) => (sync = next)}
+      />,
+    )
+    await act(async () => {
+      await sync?.preserveLocalForNavigation()
+    })
+    for (const visibility of ['PUBLIC', 'INTERNAL'] as const) {
+      expect(writeLocalTicketDraft).toHaveBeenCalledWith(
+        expect.objectContaining({
+          staffId,
+          ticketNumber,
+          baseTicketVersion,
+          draftVersion: null,
+          channel: visibility === 'PUBLIC' ? 'PUBLIC_REPLY' : 'INTERNAL_NOTE',
+          ...initialDrafts[visibility],
+        }),
+      )
+    }
+    expect(saveAgentTicketDraft).not.toHaveBeenCalled()
+    expect(clearAgentTicketDraft).not.toHaveBeenCalled()
+  })
+
+  it('rejects a failed local checkpoint without attempting a ticket or remote draft write', async () => {
+    vi.mocked(readLocalTicketDraft).mockResolvedValue(null)
+    vi.mocked(getAgentTicketDraft).mockRejectedValue(
+      new ApiError('not found', 404),
+    )
+    const failure = new Error('local storage blocked')
+    vi.mocked(writeLocalTicketDraft).mockRejectedValue(failure)
+    let sync: ReturnType<typeof useTicketDraftSync> | undefined
+    render(<DraftSyncHarness onSync={(next) => (sync = next)} />)
+    await act(async () => undefined)
+    fireEvent.click(screen.getByRole('button', { name: '초안 변경' }))
+    await act(async () => {
+      await expect(sync?.preserveLocalForNavigation()).rejects.toBe(failure)
+    })
+    expect(saveAgentTicketDraft).not.toHaveBeenCalled()
+  })
+
   it('persists a newer recovered local draft with the fetched server version', async () => {
     const remote = ticketDraft({
       body: 'older server draft',
@@ -344,22 +421,26 @@ describe('useTicketDraftSync', () => {
 function DraftSyncHarness({
   onSync,
   onFailure = () => undefined,
+  initialDrafts,
 }: {
   onSync?: (sync: ReturnType<typeof useTicketDraftSync>) => void
   onFailure?: (message: string, requestId?: string) => void
+  initialDrafts?: ComposerDrafts
 }) {
-  const [drafts, setDrafts] = useState<ComposerDrafts>({
-    PUBLIC: {
-      body: '',
-      content: { format: 'PLAIN_TEXT', text: '' },
-      attachmentIds: [],
+  const [drafts, setDrafts] = useState<ComposerDrafts>(
+    initialDrafts ?? {
+      PUBLIC: {
+        body: '',
+        content: { format: 'PLAIN_TEXT', text: '' },
+        attachmentIds: [],
+      },
+      INTERNAL: {
+        body: '',
+        content: { format: 'PLAIN_TEXT', text: '' },
+        attachmentIds: [],
+      },
     },
-    INTERNAL: {
-      body: '',
-      content: { format: 'PLAIN_TEXT', text: '' },
-      attachmentIds: [],
-    },
-  })
+  )
   const sync = useTicketDraftSync({
     staffId,
     ticketNumber,

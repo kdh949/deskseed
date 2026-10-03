@@ -295,6 +295,37 @@ export function useTicketDraftSync({
 
   return {
     state,
+    preserveLocalForNavigation: async () => {
+      // Finish hydration/older writes before persisting the current two-channel snapshot.
+      // This local checkpoint is distinct from remote autosave and ticket submission.
+      await hydration.current
+      await inFlightRef.current
+      await Promise.all(
+        (Object.keys(CHANNELS) as TicketVisibility[]).map(
+          async (visibility) => {
+            const channel = CHANNELS[visibility]
+            const draft = draftsRef.current[visibility]
+            if (draft.body.trim() === '' && draft.attachmentIds.length === 0) {
+              await removeLocalTicketDraft(staffId, ticketNumber, channel)
+              return
+            }
+            await writeLocalTicketDraft(
+              makeLocalTicketDraft({
+                staffId,
+                ticketNumber,
+                channel,
+                body: draft.body,
+                content: draft.content,
+                attachmentIds: draft.attachmentIds,
+                clientDeviceId: clientDeviceId.current,
+                baseTicketVersion: baseVersionRef.current,
+                draftVersion: versions.current[visibility],
+              }),
+            )
+          },
+        ),
+      )
+    },
     resumeChannel: (visibility: TicketVisibility) => {
       if (submittedChannels.current.delete(visibility))
         lastSynchronized.current = null

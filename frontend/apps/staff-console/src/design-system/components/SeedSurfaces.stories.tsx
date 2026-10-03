@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent } from 'storybook/test'
 import '../foundations/seed-story-helpers.css'
 import { SeedButton, SeedTextField } from '../primitives/SeedCore'
+import { SeedPanelResizeHandle } from './SeedPanelResizeHandle'
 import {
   SeedContextCard,
   SeedDrawer,
@@ -39,6 +40,56 @@ function SurfaceCatalog() {
       </SeedContextCard>
     </div>
   )
+}
+
+export const ResizableDrawer: Story = {
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'SeedDrawer의 선택적 width는 CSS pixel 너비이고 화면 폭의 92%를 넘지 않는다. resizeHandle은 controlled separator slot이다. 생략하면 기존 42rem drawer를 유지한다. handle의 bounds와 persistence는 호출자가 소유한다.',
+      },
+    },
+  },
+  render: function ResizableDrawerExample() {
+    const [open, setOpen] = useState(false)
+    const [width, setWidth] = useState(320)
+    return (
+      <>
+        <SeedButton onClick={() => setOpen(true)}>
+          너비 조절 패널 열기
+        </SeedButton>
+        <SeedDrawer
+          title="문맥 너비"
+          open={open}
+          onClose={() => setOpen(false)}
+          width={width}
+          resizeHandle={
+            <SeedPanelResizeHandle
+              label="문맥 너비 조절"
+              direction="right"
+              min={240}
+              max={520}
+              value={width}
+              onChange={setWidth}
+            />
+          }
+        >
+          <p>문맥 내용</p>
+        </SeedDrawer>
+      </>
+    )
+  },
+  play: async ({ canvas }) => {
+    const trigger = canvas.getByRole('button', { name: '너비 조절 패널 열기' })
+    await userEvent.click(trigger)
+    const handle = canvas.getByRole('separator', { name: '문맥 너비 조절' })
+    handle.focus()
+    await userEvent.keyboard('{End}')
+    await expect(handle).toHaveAttribute('aria-valuenow', '520')
+    await userEvent.keyboard('{Escape}')
+    await expect(trigger).toHaveFocus()
+  },
 }
 
 const meta = {

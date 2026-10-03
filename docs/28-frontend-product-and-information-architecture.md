@@ -79,10 +79,10 @@ ADR 0044에 따라 Customer Portal과 Staff Console은 별도 앱·번들·CSS·
 └───────────────────┴──────────────────────────────┴────────────────┘
 ```
 
-- Properties panel: 기본 300px, 240~420px resize.
+- Properties panel: 기본 320px, 240~420px resize.
 - Conversation: flexible, 최소 480px.
 - Context panel: 기본 320px, 240~520px resize, 접기 가능.
-- 1500px 이하에서는 context panel을 헤더의 접근 가능한 토글로 연다.
+- 승인된 대화 중심 배치에서는 모든 데스크톱 폭에서 context drawer를 기본 접고 헤더의 접근 가능한 토글로 연다.
 - 신규 comment는 아래쪽에 쌓이며 composer는 대화 하단에 고정한다.
 
 ## 6. Customer Portal
@@ -184,6 +184,8 @@ MVP 이후에도 지표 정의는 `16-metric-glossary-draft.md`를 source of tru
 - 탭 UI가 있더라도 browser history와 충돌하지 않아야 한다.
 - 새로고침 후 unsaved draft는 local storage에서 복원하되 서버에 자동 전송하지 않는다.
 - 권한이 사라진 ticket tab은 즉시 닫고 접근 거부 화면을 표시한다.
+
+P11 구현은 staff별 sessionStorage에 성공적으로 읽은 티켓 번호만 보관한다. 제목/고객/본문을 탭 저장소에 복제하지 않고 복원 시 prefetch하지 않는다. 실제 상세 요청이 403/404이면 해당 탭을 제거한다. 탭은 일반 링크와 browser history를 사용하고, 닫기 중 이동 경고를 취소하면 탭을 유지한다. 닫기는 ticket/draft 삭제 command가 아니다.
 
 ## 12. 이벤트·감사 연계
 

@@ -308,3 +308,56 @@ export const Composer: Story = {
     )
   },
 }
+
+export const ResizableWorkspace: Story = {
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'SeedTicketWorkspaceShell의 선택적 panelWidths와 onPanelResize는 속성 240~420/문맥 240~520px를 제어한다. 기본값은 각 320px이며 크기는 소비자가 저장한다. SeedPageShell.workNavigation은 열린 티켓 탐색 행을 제공하고 대화 영역 높이에서 행 높이를 제외한다. 기존 props만 쓰면 기존 배치를 유지한다.',
+      },
+    },
+  },
+  render: function ResizableWorkspaceExample() {
+    const [contextOpen, setContextOpen] = useState(false)
+    const [panelWidths, setPanelWidths] = useState({
+      properties: 320,
+      context: 320,
+    })
+    return (
+      <SeedTicketWorkspaceShell
+        header={
+          <SeedButton onClick={() => setContextOpen(true)}>
+            문맥 열기
+          </SeedButton>
+        }
+        properties={<p>속성 패널</p>}
+        conversation={<p>대화 영역</p>}
+        context={<p>고객 문맥</p>}
+        contextOpen={contextOpen}
+        onContextClose={() => setContextOpen(false)}
+        panelWidths={panelWidths}
+        onPanelResize={(panel, width) =>
+          setPanelWidths((current) => ({ ...current, [panel]: width }))
+        }
+      />
+    )
+  },
+  play: async ({ canvas }) => {
+    const properties = canvas.getByRole('separator', { name: '속성 패널 너비' })
+    properties.focus()
+    await userEvent.keyboard('{End}')
+    await expect(properties).toHaveAttribute('aria-valuenow', '420')
+    await userEvent.click(canvas.getByRole('button', { name: '문맥 열기' }))
+    const context = canvas.getByRole('separator', { name: '문맥 패널 너비' })
+    context.focus()
+    await userEvent.keyboard('{ArrowLeft}')
+    await expect(context).toHaveAttribute('aria-valuenow', '330')
+    await userEvent.keyboard('{Home}')
+    await expect(context).toHaveAttribute('aria-valuenow', '240')
+    await userEvent.keyboard('{Escape}')
+    await expect(
+      canvas.getByRole('button', { name: '문맥 열기' }),
+    ).toHaveFocus()
+  },
+}

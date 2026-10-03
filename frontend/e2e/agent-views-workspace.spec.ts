@@ -269,6 +269,12 @@ for (const viewport of [
     )
     await expectNoAxeViolations(page)
 
+    const viewSearch = page.getByRole('searchbox', { name: '보기 검색' })
+    await viewSearch.focus()
+    await page.keyboard.press('Control+k')
+    await page.keyboard.press('Meta+k')
+    await expect(page).toHaveURL(/\/agent\/views\/my-open$/)
+
     await page.getByRole('link', { name: /티켓 #1042/ }).click()
     await expect(page).toHaveURL(/\/agent\/tickets\/1042$/)
     await expect(
@@ -282,6 +288,9 @@ for (const viewport of [
     expect(detailHeaders).toHaveLength(1)
     expect(detailHeaders[0]?.['x-deskseed-read-intent']).toBe('NAVIGATION')
     expect(detailHeaders[0]?.['x-interaction-id']).toBeTruthy()
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight),
+    ).toBe(viewport.height)
     await expect(page).toHaveScreenshot(
       `frontend-system-workspace-${viewport.width}.png`,
       { fullPage: true },
@@ -311,6 +320,43 @@ for (const viewport of [
     ).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(customerContext).toBeFocused()
+
+    const propertiesResize = page.getByRole('separator', {
+      name: '속성 패널 너비',
+    })
+    await propertiesResize.focus()
+    await page.keyboard.press('End')
+    await expect(propertiesResize).toHaveAttribute('aria-valuenow', '420')
+    const handleBox = await propertiesResize.boundingBox()
+    if (!handleBox) throw new Error('속성 크기 조절 핸들이 없습니다.')
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(
+      handleBox.x + handleBox.width / 2 - 40,
+      handleBox.y + 20,
+    )
+    await page.mouse.up()
+    await expect(propertiesResize).toHaveAttribute('aria-valuenow', '380')
+    const conversation = await page
+      .locator('.seed-ticket-workspace__conversation')
+      .boundingBox()
+    expect(conversation?.width).toBeGreaterThanOrEqual(480)
+    await customerContext.click()
+    const contextResize = page.getByRole('separator', {
+      name: '문맥 패널 너비',
+    })
+    await contextResize.focus()
+    await page.keyboard.press('Home')
+    await expect(contextResize).toHaveAttribute('aria-valuenow', '240')
+    await expectNoAxeViolations(page)
+    await page.keyboard.press('End')
+    await expect(contextResize).toHaveAttribute('aria-valuenow', '520')
+    await page.keyboard.press('Escape')
+    await page.reload()
+    await expect(propertiesResize).toHaveAttribute('aria-valuenow', '380')
+    await customerContext.click()
+    await expect(contextResize).toHaveAttribute('aria-valuenow', '520')
+    await page.keyboard.press('Escape')
   })
 }
 
