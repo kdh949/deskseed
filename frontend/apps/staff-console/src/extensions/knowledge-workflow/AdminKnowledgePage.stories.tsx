@@ -351,7 +351,7 @@ export const TitleSearchAndFilters: Story = {
     await canvas.findByRole('button', { name: '열기: 환불 처리 안내' })
     await userEvent.type(canvas.getByLabelText(/문서 제목 검색/), '찾을 제목')
     await userEvent.click(
-      canvas.getByRole('button', { name: '검색', exact: true }),
+      canvas.getByRole('button', { name: '검색' }),
     )
     await expect(
       await canvas.findByText('검색 결과 51개 · 현재 목록 1개'),
