@@ -131,6 +131,12 @@ export const PoliciesNotReady: Story = {
     await expect(
       canvas.getByRole('link', { name: '고객 지원 홈으로' }),
     ).toHaveAttribute('href', '/')
+    await expect(
+      canvas.getByRole('link', { name: '로그인으로 돌아가기' }),
+    ).toHaveAttribute('href', '/customer/sign-in')
+    await expect(
+      canvas.queryByText('잠시 후 다시 방문해 주세요.'),
+    ).not.toBeInTheDocument()
     await userEvent.click(
       canvas.getByRole('button', { name: '약관 다시 확인' }),
     )

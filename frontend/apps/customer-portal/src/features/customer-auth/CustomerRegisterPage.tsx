@@ -80,8 +80,11 @@ export function CustomerRegisterPage({
           }
           kind="empty"
           title="가입 약관을 준비하고 있습니다."
-          description="잠시 후 다시 방문해 주세요."
+          description="현재 회원가입을 시작할 수 없습니다. 기존 계정으로 로그인하거나 고객 지원 홈을 이용해 주세요."
         />
+        <p>
+          <Link to="/customer/sign-in">로그인으로 돌아가기</Link>
+        </p>
         <p>
           <Link to="/">고객 지원 홈으로</Link>
         </p>
