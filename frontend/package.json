@@ -32,7 +32,7 @@
     "test:storybook:customer": "vitest run --config apps/customer-portal/vite.config.ts --project storybook",
     "test:storybook:staff": "vitest run --config apps/staff-console/vite.config.ts --project storybook",
     "test:e2e": "playwright test",
-    "test:e2e:dev": "playwright test access-surface.spec.ts admin-operations.spec.ts agent-views-workspace.spec.ts agent-ticket-write.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts",
+    "test:e2e:dev": "playwright test --grep-invert \"real stack\"",
     "test:e2e:update": "playwright test access-surface.spec.ts admin-operations.spec.ts agent-views-workspace.spec.ts agent-ticket-write.spec.ts frontend-system.spec.ts ticket-workspace.spec.ts --update-snapshots=all",
     "storybook": "npm run storybook:staff",
     "storybook:customer": "storybook dev -p 6007 -c apps/customer-portal/.storybook",
