@@ -5485,6 +5485,11 @@ paths:
   /api/v1/help/sections/{sectionSlug}:
     get:
       operationId: getHelpSection
+      x-deskseed-planned-response:
+        status: BLUEPRINT
+        description: 현재 reader가 접근 가능한 active 부모의 실제 경로를 포함합니다. 후속 runtime parity 검증 후 200 응답으로 승격합니다.
+        schema:
+          $ref: '#/components/schemas/HelpSection'
       summary: 고객 Help Center 섹션과 문서 목록
       description: audience를 통과한 published article만 반환하며 hidden article의 count나 제목을 포함하지 않습니다.
       x-deskseed-contract-status: FROZEN
@@ -5508,6 +5513,11 @@ paths:
   /api/v1/help/articles/{articleSlug}:
     get:
       operationId: getHelpArticle
+      x-deskseed-planned-response:
+        status: BLUEPRINT
+        description: 현재 reader가 접근 가능한 active 부모의 실제 경로를 포함합니다. 후속 runtime parity 검증 후 200 응답으로 승격합니다.
+        schema:
+          $ref: '#/components/schemas/HelpArticle'
       summary: 고객 Help Center published 문서
       description: PUBLIC은 cacheable이고 로그인·제한 audience 응답은 shared cache를 금지합니다. audience 미충족과 archive/unpublished는 404입니다.
       x-deskseed-contract-status: FROZEN
@@ -16451,6 +16461,123 @@ components:
       - INTERNAL_CHILD
       - AGENT_CREATED
       - INTERNAL_WORK_ITEM
+    HelpParentLink:
+      type: object
+      additionalProperties: false
+      description: 현재 접근 가능한 문서의 active category 또는 section 경로입니다. 브라우저가 부모를 추측하지 않도록 실제 slug와 표시 제목만 제공합니다.
+      required:
+      - slug
+      - title
+      example:
+        slug: account
+        title: 계정과 로그인
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          maxLength: 120
+        title:
+          type: string
+          maxLength: 200
+    HelpArticleListing:
+      type: object
+      additionalProperties: false
+      description: 해당 고객이 읽을 수 있는 published article 목록의 제목과 요약입니다.
+      required:
+      - slug
+      - title
+      - summary
+      - audience
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        audience:
+          type: string
+          enum:
+          - PUBLIC
+          - SIGNED_IN_CUSTOMER
+    HelpSection:
+      type: object
+      additionalProperties: false
+      description: 고객용 section과 실제 부모 category 및 audience 필터 이후의 문서 페이지입니다. 직원 전용 필드와 숨겨진 문서 수는 없습니다.
+      required:
+      - id
+      - categoryId
+      - slug
+      - title
+      - description
+      - category
+      - articles
+      - hasMore
+      properties:
+        id:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: '#/components/schemas/HelpParentLink'
+        articles:
+          type: array
+          items:
+            $ref: '#/components/schemas/HelpArticleListing'
+        hasMore:
+          type: boolean
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          maxLength: 1024
+    HelpArticle:
+      type: object
+      additionalProperties: false
+      description: 현재 고객 audience에 허용된 published revision과 실제 category/section 경로입니다. 부모 경로가 바뀌면 ETag도 바뀌며 권한 확인 전에 304를 반환하지
+        않습니다.
+      required:
+      - id
+      - sectionId
+      - slug
+      - lifecycle
+      - audience
+      - audienceVersion
+      - currentPublishedRevision
+      - category
+      - section
+      properties:
+        id:
+          type: string
+          format: uuid
+        sectionId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        lifecycle:
+          type: string
+          enum:
+          - PUBLISHED
+        audience:
+          $ref: '#/components/schemas/KnowledgeAudienceInput'
+        audienceVersion:
+          type: integer
+          minimum: 1
+        currentPublishedRevision:
+          $ref: '#/components/schemas/KnowledgeRevision'
+        category:
+          $ref: '#/components/schemas/HelpParentLink'
+        section:
+          $ref: '#/components/schemas/HelpParentLink'
     KnowledgeCategoryList:
       type: array
       description: 권한 필터가 적용된 knowledge category collection입니다.
