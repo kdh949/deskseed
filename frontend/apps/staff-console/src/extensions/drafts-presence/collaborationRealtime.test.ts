@@ -35,7 +35,13 @@ describe('TicketCollaborationRealtime', () => {
       version: 1,
       type: 'presence.snapshot',
       ticketNumber: 1042,
-      members: [member('Alice', 'VIEWING')],
+      members: [
+        {
+          ...member('Alice', 'VIEWING'),
+          body: 'discarded',
+          email: 'discarded@example.test',
+        },
+      ],
     })
     socket!.message({
       version: 1,
@@ -94,10 +100,174 @@ describe('TicketCollaborationRealtime', () => {
 
     client.stop()
   })
+  it('clears stale members, restores composer state, and cancels a scheduled retry on manual recovery', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-03T01:00:00Z'))
+    const sockets: FakeSocket[] = []
+    const client = new TicketCollaborationRealtime(1042, () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    })
+    let view!: CollaborationView
+    client.observe((next) => {
+      view = next
+    })
+    client.start()
+    client.reportComposerMode('internal')
+    sockets[0]!.open()
+    expect(JSON.parse(sockets[0]!.sent[1]!).state).toBe('EDITING_INTERNAL')
+    expect(view.snapshotReceived).toBe(false)
+    sockets[0]!.message({
+      version: 1,
+      type: 'presence.snapshot',
+      ticketNumber: 1042,
+      members: [member('Alice', 'VIEWING')],
+    })
+    expect(view.lastConfirmedAt).toBe('2026-10-03T01:00:00.000Z')
+    sockets[0]!.close()
+    expect(view).toMatchObject({
+      connection: 'unavailable',
+      members: [],
+      snapshotReceived: false,
+      reconnectAt: Date.now() + 3000,
+    })
+    client.retry()
+    expect(sockets).toHaveLength(2)
+    sockets[0]!.message({
+      version: 1,
+      type: 'presence.snapshot',
+      ticketNumber: 1042,
+      members: [member('Stale', 'VIEWING')],
+    })
+    expect(view.members).toEqual([])
+    sockets[1]!.open()
+    expect(JSON.parse(sockets[1]!.sent[1]!).state).toBe('EDITING_INTERNAL')
+    expect(view.reconnectAt).toBeNull()
+    vi.advanceTimersByTime(3000)
+    expect(sockets).toHaveLength(2)
+    sockets[1]!.close()
+    vi.advanceTimersByTime(3000)
+    expect(sockets).toHaveLength(3)
+    client.stop()
+    vi.advanceTimersByTime(30000)
+    expect(sockets).toHaveLength(3)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('requires explicit retry after denial and never revives the denied socket', () => {
+    vi.useFakeTimers()
+    const sockets: FakeSocket[] = []
+    const client = new TicketCollaborationRealtime(1042, () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    })
+    let view!: CollaborationView
+    client.observe((next) => {
+      view = next
+    })
+    client.start()
+    sockets[0]!.open()
+    sockets[0]!.message({
+      version: 1,
+      type: 'error',
+      code: 'UNAUTHORIZED',
+      retryable: false,
+    })
+    vi.advanceTimersByTime(30000)
+    expect(sockets).toHaveLength(1)
+    expect(view.reconnectAt).toBeNull()
+    client.retry()
+    sockets[1]!.open()
+    sockets[0]!.message({
+      version: 1,
+      type: 'error',
+      code: 'FORBIDDEN',
+      retryable: false,
+    })
+    expect(view.connection).toBe('connected')
+    client.stop()
+  })
+
+  it('reports unsupported WebSocket without scheduling retries', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('WebSocket', undefined)
+    const client = new TicketCollaborationRealtime(1042)
+    let view!: CollaborationView
+    client.observe((next) => {
+      view = next
+    })
+    client.start()
+    expect(view.connection).toBe('unsupported')
+    expect(view.reconnectAt).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
+    client.stop()
+  })
+
+  it('retries factory failure and ignores delta until a fresh snapshot', () => {
+    vi.useFakeTimers()
+    const socket = new FakeSocket()
+    const factory = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('offline')
+      })
+      .mockReturnValue(socket)
+    const client = new TicketCollaborationRealtime(1042, factory)
+    let view!: CollaborationView
+    client.observe((next) => {
+      view = next
+    })
+    client.start()
+    expect(view.connection).toBe('unavailable')
+    vi.advanceTimersByTime(3000)
+    socket.open()
+    socket.message({
+      version: 1,
+      type: 'presence.delta',
+      ticketNumber: 1042,
+      action: 'JOINED',
+      member: member('Alice', 'VIEWING'),
+    })
+    expect(view.members).toEqual([])
+    expect(view.lastConfirmedAt).toBeNull()
+    client.stop()
+  })
+  it('honors the bounded rate-limit retry delay returned by the existing server', () => {
+    vi.useFakeTimers()
+    const sockets: FakeSocket[] = []
+    const client = new TicketCollaborationRealtime(1042, () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    })
+    let view!: CollaborationView
+    client.observe((next) => {
+      view = next
+    })
+    client.start()
+    sockets[0]!.open()
+    sockets[0]!.message({
+      version: 1,
+      type: 'error',
+      code: 'RATE_LIMITED',
+      retryAfterMs: 60000,
+      retryable: true,
+    })
+    sockets[0]!.close()
+    expect(view.reconnectAt).toBe(Date.now() + 60000)
+    vi.advanceTimersByTime(3000)
+    expect(sockets).toHaveLength(1)
+    vi.advanceTimersByTime(57000)
+    expect(sockets).toHaveLength(2)
+    client.stop()
+  })
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 function member(

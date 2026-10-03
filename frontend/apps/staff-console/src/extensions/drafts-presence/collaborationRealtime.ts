@@ -9,7 +9,11 @@ export type CollaborationMember = {
 }
 
 export type CollaborationView = {
-  connection: 'connecting' | 'connected' | 'denied' | 'unavailable'
+  connection:
+    'connecting' | 'connected' | 'denied' | 'unavailable' | 'unsupported'
+  lastConfirmedAt: string | null
+  reconnectAt: number | null
+  snapshotReceived: boolean
   members: readonly CollaborationMember[]
   ticketUpdate: {
     ticketVersion: number
@@ -38,6 +42,9 @@ const emptyView: CollaborationView = {
   connection: 'connecting',
   members: [],
   ticketUpdate: null,
+  lastConfirmedAt: null,
+  reconnectAt: null,
+  snapshotReceived: false,
 }
 
 /**
@@ -48,6 +55,8 @@ export class TicketCollaborationRealtime {
   private socket: CollaborationSocket | null = null
   private heartbeatTimer: number | null = null
   private reconnectTimer: number | null = null
+  private composerMode: 'public' | 'internal' | null = null
+  private retryDelayMs = RECONNECT_MS
   private running = false
   private authorizationDenied = false
   private view: CollaborationView = emptyView
@@ -82,7 +91,14 @@ export class TicketCollaborationRealtime {
     if (socket) socket.close()
   }
 
+  retry() {
+    if (!this.running || this.view.connection === 'connecting') return
+    this.stop()
+    this.start()
+  }
+
   reportComposerMode(mode: 'public' | 'internal' | null) {
+    this.composerMode = mode
     this.send({
       version: 1,
       type: 'presence.state',
@@ -97,15 +113,29 @@ export class TicketCollaborationRealtime {
   }
 
   private connect() {
+    this.reconnectTimer = null
+    this.retryDelayMs = RECONNECT_MS
+    if (!this.running) return
     if (
-      !this.running ||
-      (this.socketFactory === defaultSocketFactory &&
-        typeof WebSocket === 'undefined')
+      this.socketFactory === defaultSocketFactory &&
+      typeof WebSocket === 'undefined'
     ) {
-      this.replaceView({ ...this.view, connection: 'unavailable' })
+      this.replaceView({
+        ...this.view,
+        connection: 'unsupported',
+        members: [],
+        reconnectAt: null,
+        snapshotReceived: false,
+      })
       return
     }
-    this.replaceView({ ...this.view, connection: 'connecting' })
+    this.replaceView({
+      ...this.view,
+      connection: 'connecting',
+      members: [],
+      reconnectAt: null,
+      snapshotReceived: false,
+    })
     try {
       const socket = this.socketFactory(webSocketUrl())
       this.socket = socket
@@ -117,15 +147,25 @@ export class TicketCollaborationRealtime {
           type: 'subscribe',
           ticketNumber: this.ticketNumber,
         })
+        if (this.composerMode !== null)
+          this.reportComposerMode(this.composerMode)
         this.heartbeatTimer = window.setInterval(
           () => this.send({ version: 1, type: 'heartbeat' }),
           HEARTBEAT_MS,
         )
       }
-      socket.onmessage = (event) => this.handleMessage(event.data)
+      socket.onmessage = (event) => {
+        if (this.socket === socket && this.running)
+          this.handleMessage(event.data)
+      }
       socket.onerror = () => {
         if (this.socket === socket) {
-          this.replaceView({ ...this.view, connection: 'unavailable' })
+          this.replaceView({
+            ...this.view,
+            connection: 'unavailable',
+            members: [],
+            snapshotReceived: false,
+          })
         }
       }
       socket.onclose = () => {
@@ -134,25 +174,25 @@ export class TicketCollaborationRealtime {
         if (this.heartbeatTimer !== null)
           window.clearInterval(this.heartbeatTimer)
         this.heartbeatTimer = null
-        if (!this.authorizationDenied) {
-          this.replaceView({ ...this.view, connection: 'unavailable' })
-        }
-        if (this.running && !this.authorizationDenied) {
-          this.reconnectTimer = window.setTimeout(
-            () => this.connect(),
-            RECONNECT_MS,
-          )
-        }
+        if (this.running && !this.authorizationDenied) this.scheduleReconnect()
       }
     } catch {
-      this.replaceView({ ...this.view, connection: 'unavailable' })
-      if (this.running) {
-        this.reconnectTimer = window.setTimeout(
-          () => this.connect(),
-          RECONNECT_MS,
-        )
-      }
+      if (this.running) this.scheduleReconnect()
     }
+  }
+
+  private scheduleReconnect() {
+    this.replaceView({
+      ...this.view,
+      connection: 'unavailable',
+      members: [],
+      snapshotReceived: false,
+      reconnectAt: Date.now() + this.retryDelayMs,
+    })
+    this.reconnectTimer = window.setTimeout(
+      () => this.connect(),
+      this.retryDelayMs,
+    )
   }
 
   private handleMessage(raw: string) {
@@ -160,9 +200,18 @@ export class TicketCollaborationRealtime {
     const message = parseServerMessage(raw)
     if (!message) return
     if (message.type === 'error') {
+      if (message.code === 'RATE_LIMITED' && message.retryAfterMs !== null) {
+        this.retryDelayMs = message.retryAfterMs
+      }
       if (message.code === 'FORBIDDEN' || message.code === 'UNAUTHORIZED') {
         this.authorizationDenied = true
-        this.replaceView({ ...this.view, connection: 'denied' })
+        this.replaceView({
+          ...this.view,
+          connection: 'denied',
+          members: [],
+          snapshotReceived: false,
+          reconnectAt: null,
+        })
         this.socket?.close()
       }
       return
@@ -170,10 +219,16 @@ export class TicketCollaborationRealtime {
     if (message.ticketNumber !== this.ticketNumber) return
 
     if (message.type === 'presence.snapshot') {
-      this.replaceView({ ...this.view, members: message.members })
+      this.replaceView({
+        ...this.view,
+        members: message.members,
+        snapshotReceived: true,
+        lastConfirmedAt: new Date().toISOString(),
+      })
       return
     }
     if (message.type === 'presence.delta') {
+      if (!this.view.snapshotReceived) return
       const members = new Map(
         this.view.members.map((member) => [member.staffId, member]),
       )
@@ -184,6 +239,7 @@ export class TicketCollaborationRealtime {
       }
       this.replaceView({
         ...this.view,
+        lastConfirmedAt: new Date().toISOString(),
         members: [...members.values()].sort((left, right) =>
           left.displayName.localeCompare(right.displayName),
         ),
@@ -261,6 +317,7 @@ type ServerMessage =
   | {
       type: 'error'
       code: CollaborationErrorCode
+      retryAfterMs: number | null
     }
 
 type CollaborationErrorCode =
@@ -279,7 +336,16 @@ function parseServerMessage(raw: string): ServerMessage | null {
       value.type === 'error' &&
       isCollaborationErrorCode(value.code)
     ) {
-      return { type: value.type, code: value.code }
+      return {
+        type: value.type,
+        code: value.code,
+        retryAfterMs:
+          typeof value.retryAfterMs === 'number' &&
+          Number.isSafeInteger(value.retryAfterMs) &&
+          value.retryAfterMs > 0
+            ? Math.min(60_000, Math.max(RECONNECT_MS, value.retryAfterMs))
+            : null,
+      }
     }
     if (
       !isRecord(value) ||
@@ -342,7 +408,12 @@ function parseMember(value: unknown): CollaborationMember | null {
   ) {
     return null
   }
-  return value as CollaborationMember
+  return {
+    staffId: value.staffId,
+    displayName: value.displayName,
+    state: value.state,
+    lastSeenAt: value.lastSeenAt,
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

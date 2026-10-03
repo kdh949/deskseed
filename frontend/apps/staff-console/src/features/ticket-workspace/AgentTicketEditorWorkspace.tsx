@@ -786,14 +786,24 @@ function Composer({
         }
         extension={
           extensionAccess ? (
-            <ExtensionSlot
-              access={extensionAccess}
-              context={{
-                ticketNumber: String(detail.ticket.ticketNumber),
-                composerMode: internal ? 'internal' : 'public',
-              }}
-              slot="ticket-composer.toolbar"
-            />
+            <>
+              <ExtensionSlot
+                access={extensionAccess}
+                context={{
+                  ticketNumber: String(detail.ticket.ticketNumber),
+                  composerMode: internal ? 'internal' : 'public',
+                }}
+                slot="ticket-composer.toolbar"
+              />
+              <ExtensionSlot
+                access={extensionAccess}
+                context={{
+                  ticketNumber: String(detail.ticket.ticketNumber),
+                  composerMode: internal ? 'internal' : 'public',
+                }}
+                slot="ticket-composer.status"
+              />
+            </>
           ) : undefined
         }
         footer={
