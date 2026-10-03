@@ -87,7 +87,7 @@ final result: visual and interaction checks passed; automatic pixel baseline rev
 - 재사용: canonical SeedTabs/SeedButton/SeedContextCard/SeedDrawer, 기존 property/conversation/composer. 호환 확장: SeedTabs.items.panelId, SeedWorkspaceHeader.actions, SeedDrawer.keepMounted. 새 component/토큰/HTTP 계약은 없다.
 - 실제 렌더: 합성 API의 Queue/Workspace 1280×800, 1440×900, 1920×1080, DPR 1, Chromium. 기존 넓은 메뉴→64px rail, 320px 속성, 접힌 context에 따른 의도한 레이아웃 차이를 확인했다. Darwin 기준선 6장은 이 렌더를 반영한다. 고객 화면 기준선은 변경하지 않는다.
 - 검증: Storybook MCP 전체 298, staff unit 263, 개발용 Playwright 23, type/lint/build/boundary/docs 통과. 각 폭에서 고객→협업 방향키 전환, Escape, 원래 trigger focus, page Axe 0을 확인했다. 최신 6건 정렬/펼치기와 협업 초안의 탭 이동·닫기/재열기 보존은 story로 검증했다.
-- Linux 실제 기준선 및 PR 최종 시각 검토는 pending이다. 기준선 갱신을 사람의 승인으로 기록하지 않는다. 기존 #158 참고 PNG는 최신 자산 경계를 지키기 위해 위 고정 커밋 링크에 보존했다.
+- Linux Queue는 CI run 37100320873 실제 캡처, Workspace는 동일 Playwright 1.62.1 noble Linux arm64 컨테이너 실제 렌더를 검수해 반영했다(canonical 3개 통과). 두 Linux 환경의 Queue를 교차 비교해 큰 픽셀 차이가 없음을 확인했다. 원격 최종 CI와 PR 시각 검토는 pending이며 기준선 갱신을 사람의 승인으로 기록하지 않는다. 기존 #158 참고 PNG는 최신 자산 경계를 지키기 위해 위 고정 커밋 링크에 보존했다.
 - 추가 전체 E2E의 고객 로그인 모드/버튼 불일치는 담당자에게 전달했다(28 pass, 1 skip, 1 fail). 이 PR의 CI와 같은 개발용 E2E 23개는 통과했다. Backend/실서버/배포/수동 스크린리더/성능 수치는 검증하지 않았다. 기존 build chunk 크기 advisory는 남는다.
 
 REQ-UI-001/003/004/005/006, REQ-TKT-012/014/015; UI-001~006, DOC-001. 상세 및 Storybook 링크는 [작업 기록](docs/tasks/2026-10-03-agent-context-ux.md)에 있다.

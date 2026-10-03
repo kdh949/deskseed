@@ -73,7 +73,7 @@ Storybook MCP instructions/docs, focused/full run-story-tests, changed/preview l
 
 - 구현: 기존 #158 위에 최신 main/P09를 병합하고 고객/협업/자료 탭, 협업 바로 열기, 최신 4건/반환 목록 펼치기를 추가했다. 단일 context mount와 hidden 패널 focus 제외로 작성 내용을 보존한다.
 - Passed: Storybook MCP 전체 61 files/298 stories 및 마지막 fixture focused story, staff unit 43 files/263, typecheck/lint/build/boundary, docs-check, Chromium 개발용 E2E 23. 1280/1440/1920에서 context keyboard/focus/page Axe를 확인했다.
-- Darwin Queue/Workspace 6장의 실제 변경(diff와 렌더)을 확인하고 검토용 기준선을 갱신했다. Linux 실제 렌더/CI와 사람의 최종 시각 승인은 pending이다. P08 #246의 별도 Queue 변경과 통합할 때 합쳐진 화면의 기준선을 다시 확인해야 한다.
+- Darwin/Linux Queue/Workspace 각각 6장의 실제 변경(diff와 렌더)을 확인하고 검토용 기준선을 갱신했다. Linux Queue는 CI run 37100320873의 실제 캡처, Workspace는 공식 Playwright 1.62.1 noble Linux arm64 격리 컨테이너에서 생성했다(1280/1440/1920 canonical 3개 pass). 두 Linux 환경의 Queue PNG는 최대 채널 차 51을 넘는 픽셀 0으로 교차 확인했으며 플랫폼 간 이미지를 복사하지 않았다. 최종 CI와 사람의 시각 승인은 pending이다. P08 #246의 별도 Queue 변경과 통합할 때 합쳐진 화면의 기준선을 다시 확인해야 한다.
 - 전체 E2E 추가 실행은 28 pass/1 skip/1 fail: 변경하지 않은 고객 magic-link 테스트가 비밀번호 모드에서 링크 전송 버튼을 찾아 실패했다. 고객 담당에 전달했으며 이 PR에서 고객 계약/테스트를 변경하지 않았다.
 - 초기 Storybook 서버는 여러 무거운 검증을 병렬 실행한 뒤 heap exhaustion으로 종료했다. 8GB heap 서버 재시작/직렬 검증 후 위 최종 결과를 얻었다. 이를 제품 메모리 성능 근거로 사용하지 않는다.
 - 미실행: backend/실서버/API/DB/production 배포, 수동 스크린리더, 성능 측정. 다중 티켓 탭/resize/Cmd+K와 AI/presence 개선은 후속 slice다.
