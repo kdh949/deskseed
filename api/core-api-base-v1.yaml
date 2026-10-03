@@ -11,6 +11,7 @@ x-deskseed-staff-actor-consistency:
   blueprintOnlyBinding: Blueprint-only staffSession operations inherit this policy extension and receive the standard operation-level
     bindings when their contracts are frozen for implementation.
   blueprintOnlyOperationIds:
+  - searchAdminKnowledgeArticles
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting

@@ -11,6 +11,7 @@ x-deskseed-staff-actor-consistency:
   blueprintOnlyBinding: Blueprint-only staffSession operations inherit this policy extension and receive the standard operation-level
     bindings when their contracts are frozen for implementation.
   blueprintOnlyOperationIds:
+  - searchAdminKnowledgeArticles
   - listTicketAudits
   - getAdminSetting
   - updateAdminSetting
@@ -6021,6 +6022,12 @@ paths:
       summary: 관리자 knowledge article 목록
       description: lifecycle, section, audience로 filter하고 stable cursor를 사용합니다.
       x-deskseed-contract-status: FROZEN
+      x-deskseed-pending-response-extension:
+        status: BLUEPRINT_READY
+        requirement: REQ-KB-001
+        field: items.latestRevision
+        description: P17 구현에서 최신 immutable revision의 title/summary를 필수 목록 필드로 승격합니다. 기존 currentPublishedRevision과 상세 본문 계약은
+          유지합니다.
       x-deskseed-requirements:
       - REQ-KB-001
       tags:
@@ -6075,6 +6082,50 @@ paths:
           $ref: '#/components/responses/StaffSessionActorMismatchOrConflict'
         '503':
           $ref: '#/components/responses/ProblemResponse'
+  /api/v1/admin/knowledge/articles/search:
+    post:
+      operationId: searchAdminKnowledgeArticles
+      summary: 관리자 지식 문서 최신 제목 전체 검색
+      description: Active ADMIN이 전체 문서의 최신 immutable revision 제목을 trim한 query의 대소문자 구분 없는 literal substring으로 검색합니다. lifecycle/sectionId/audience는
+        AND 필터이며 과거 제목·본문·slug는 검색하지 않습니다. 페이지 크기는 50이고 article.createdAt DESC, article.id DESC의 기존 keyset 순서를 사용합니다. query와
+        cursor는 JSON body로만 전달하며 URL·일반 로그·APM·trace에 기록하지 않습니다. cursor는 정확한 검색어와 필터에 결합되고 query binding은 purpose-bound keyed
+        HMAC을 사용하여 원문 또는 사전 추측이 가능한 비키드 query hash를 노출하지 않습니다. resultCount는 cursor 앞뒤를 포함한 전체 조건의 EXACT 수이고 items와 같은 읽기 snapshot에서
+        계산합니다. 응답은 no-store이며 문서 본문·change note·검색어·ciphertext·audit origin을 포함하지 않습니다. 결과와 보호 검색어를 ADMIN_KNOWLEDGE_SEARCH_EXECUTED로
+        원자적으로 감사하며 필수 보호/저장 실패는 503입니다. mutation/발행/검색 색인 변경은 수행하지 않습니다. 빈 검색은 기존 GET 목록으로 복귀합니다.
+      x-deskseed-phase: UX-P17
+      x-deskseed-requirements:
+      - REQ-KB-001
+      - REQ-AUD-004
+      tags:
+      - Knowledge Base
+      security:
+      - staffSession: []
+      parameters:
+      - $ref: '#/components/parameters/ExpectedStaffActorHeader'
+      - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminKnowledgeArticleSearchRequest'
+      responses:
+        '200':
+          description: 최신 제목과 조건에 맞는 문서 summary 페이지입니다. Cache-Control no-store를 반환합니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminKnowledgeArticleSearchPage'
+        '400':
+          $ref: '#/components/responses/InvalidExpectedStaffActorOrBadRequest'
+        '401':
+          $ref: '#/components/responses/AdminDirectorySearchUnauthorized'
+        '403':
+          $ref: '#/components/responses/AdminDirectorySearchForbidden'
+        '409':
+          $ref: '#/components/responses/StaffSessionActorMismatch'
+        '503':
+          $ref: '#/components/responses/AdminDirectorySearchAuditUnavailable'
   /api/v1/admin/knowledge/articles/{articleId}:
     get:
       operationId: getKnowledgeArticle
@@ -17211,7 +17262,8 @@ components:
     AdminKnowledgeArticleSummary:
       type: object
       additionalProperties: false
-      description: 관리자 article 목록의 bounded summary projection입니다. 상세 API만 canonical document를 반환합니다.
+      description: 관리자 article 목록의 bounded summary projection입니다. 상세 API만 canonical document를 반환합니다. latestRevision은 P17 구현
+        예정 확장으로 기존 GET에서 아직 보장하지 않습니다.
       required:
       - id
       - sectionId
@@ -17247,9 +17299,108 @@ components:
           oneOf:
           - $ref: '#/components/schemas/AdminKnowledgeArticleRevisionSummary'
           - type: 'null'
+        latestRevision:
+          $ref: '#/components/schemas/AdminKnowledgeLatestRevisionSummary'
         version:
           type: integer
           format: int64
+    AdminKnowledgeLatestRevisionSummary:
+      type: object
+      additionalProperties: false
+      description: 문서의 가장 높은 revisionNumber에 해당하는 저장된 제목/요약입니다. 발행 여부와 무관하며 본문·change note·감사 metadata는 포함하지 않습니다.
+      required:
+      - title
+      - summary
+      properties:
+        title:
+          type: string
+          description: 가장 최근 저장된 revision의 제목입니다.
+        summary:
+          type: string
+          description: 가장 최근 저장된 revision의 요약입니다.
+    AdminKnowledgeArticleSearchRequest:
+      type: object
+      additionalProperties: false
+      x-deskseed-documentation-review: MANUAL
+      description: 관리자 최신 제목 검색 요청입니다. 원문은 요청 메모리와 정책상 보호 ciphertext 외에는 저장하지 않습니다. 검색어나 필터가 바뀌면 cursor를 버립니다.
+      required:
+      - query
+      - interactionId
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 254
+          description: 제목 일부입니다. trim 후 비어 있거나 제어 문자가 있으면 400이며 %, _, 역슬래시는 일반 문자로 처리합니다.
+        interactionId:
+          type: string
+          format: uuid
+          description: 명시적 검색 또는 결과 페이지 요청마다 생성하는 UUID이며 감사 중복 제거 키가 아닙니다.
+        lifecycle:
+          type: string
+          enum:
+          - DRAFT
+          - IN_REVIEW
+          - PUBLISHED
+          - UNPUBLISHED
+          - ARCHIVED
+          description: 일치하는 문서 상태만 선택합니다. 생략하면 모든 상태입니다.
+        sectionId:
+          type: string
+          format: uuid
+          description: 문서의 현재 섹션 ID를 제한합니다. 일치하는 섹션이나 문서가 없으면 빈 결과입니다.
+        audience:
+          type: string
+          enum:
+          - PUBLIC
+          - SIGNED_IN_CUSTOMER
+          - STAFF
+          - SELECTED_STAFF_GROUPS
+          description: 문서의 현재 공개 대상 유형을 제한합니다. ADMIN 인가 범위를 확대하지 않습니다.
+        cursor:
+          type: string
+          maxLength: 1024
+          description: 같은 검색어와 필터의 직전 응답 nextCursor입니다. 변조되거나 다른 조건의 cursor는 400이며 raw query를 담지 않습니다.
+      example:
+        query: 결제 오류
+        lifecycle: DRAFT
+        audience: PUBLIC
+        interactionId: 55555555-5555-4555-8555-555555555555
+    AdminKnowledgeArticleSearchPage:
+      type: object
+      additionalProperties: false
+      description: 최신 제목에 일치하는 summary만 반환하며 resultCount는 cursor와 무관한 전체 조건의 정확한 수입니다. 페이지 사이의 새 mutation까지 고정하는 snapshot은
+        아닙니다.
+      required:
+      - items
+      - hasMore
+      - nextCursor
+      - resultCount
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          description: createdAt DESC/id DESC 순서의 최대 50개 문서입니다.
+          items:
+            allOf:
+            - $ref: '#/components/schemas/AdminKnowledgeArticleSummary'
+            - type: object
+              required:
+              - latestRevision
+        hasMore:
+          type: boolean
+          description: 같은 조건에서 다음 keyset 페이지가 존재하는지 나타냅니다.
+        nextCursor:
+          type:
+          - string
+          - 'null'
+          maxLength: 1024
+          description: 다음 페이지가 없으면 null인 서명된 조건 결합 cursor입니다.
+        resultCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 현재 읽기 snapshot에서 최신 제목과 모든 필터에 일치하는 전체 문서 수입니다.
     AdminKnowledgeArticleSummaryPage:
       type: object
       additionalProperties: false
