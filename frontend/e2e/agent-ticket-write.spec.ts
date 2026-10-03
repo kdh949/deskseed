@@ -537,10 +537,16 @@ test('open ticket navigation keeps separate drafts and a cancelled close retains
     page.getByRole('textbox', { name: '내부 메모 내용' }),
   ).toHaveText('첫 티켓의 내부 초안')
   await tabs.getByRole('link', { name: '#3002', exact: true }).click()
+  await expect(
+    tabs.getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveAccessibleDescription('미제출')
   await guard.getByRole('button', { name: '초안 유지하고 이동' }).click()
   await expect(
     page.getByRole('region', { name: '티켓 #3002 작업 공간' }),
   ).toBeVisible()
+  await expect(
+    tabs.getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveAccessibleDescription('미제출')
   await tabs.getByRole('link', { name: '#3001', exact: true }).click()
   await expect(
     page.getByRole('textbox', { name: '내부 메모 내용' }),
@@ -577,7 +583,7 @@ test('open ticket navigation keeps separate drafts and a cancelled close retains
   ).toHaveCount(0)
 })
 
-test('a failed local checkpoint retains the editor and explicit discard can still leave without submitting', async ({
+test('a failed local checkpoint retains the editor and leaving without another checkpoint does not claim to discard drafts', async ({
   page,
 }) => {
   let commands = 0
@@ -607,8 +613,54 @@ test('a failed local checkpoint retains the editor and explicit discard can stil
   await expect(
     page.getByRole('textbox', { name: '공개 답변 내용' }),
   ).toHaveText('저장소 오류에서도 남길 초안')
-  await guard.getByRole('button', { name: '변경사항 버리고 이동' }).click()
+  await expect(
+    guard.getByText(
+      '추가 보관 없이 이동해도 이미 자동 보관된 초안은 다시 열 때 복구될 수 있습니다.',
+    ),
+  ).toBeVisible()
+  await guard.getByRole('button', { name: '추가 보관 없이 이동' }).click()
   await expect(page).toHaveURL(/\/agent\/search$/)
+  await expect(
+    page
+      .getByRole('navigation', { name: '열린 티켓', exact: true })
+      .getByRole('link', { name: '#3001', exact: true }),
+  ).toHaveAccessibleDescription('미제출')
+  expect(commands).toBe(0)
+})
+
+test('a failed manual draft save reports the local-only state without a success confirmation', async ({
+  page,
+}) => {
+  let commands = 0
+  await mockWritableTicket(page, async ({ route }) => {
+    commands += 1
+    await route.abort()
+  })
+  await page.route('**/api/v1/agent/tickets/3001/drafts/*', (route) => {
+    const status = route.request().method() === 'GET' ? 404 : 500
+    return route.fulfill({
+      status,
+      json: {
+        type: '/problems/draft-test',
+        title: 'Draft unavailable',
+        status,
+      },
+    })
+  })
+  await openWorkspace(page)
+  await page
+    .getByRole('textbox', { name: '공개 답변 내용' })
+    .fill('서버 저장에 실패해도 보존할 초안')
+  await page.getByRole('button', { name: '초안 저장', exact: true }).click()
+  await expect(
+    page.getByText('이 브라우저에만 저장됨', { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('복구 초안을 저장했습니다.', { exact: true }),
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('textbox', { name: '공개 답변 내용' }),
+  ).toHaveText('서버 저장에 실패해도 보존할 초안')
   expect(commands).toBe(0)
 })
 

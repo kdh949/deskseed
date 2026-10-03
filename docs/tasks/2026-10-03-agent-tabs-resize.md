@@ -6,7 +6,7 @@
 
 ## Decision and source references
 
-- P11 / AG-F06 및 입력 중 Cmd/Ctrl+K. 선행 P10 #158, P09 #255.
+- P11 / AG-F05, AG-F09, AG-F12: 초안 보관 상태, 입력 중 Cmd/Ctrl+K, 열린 탭/미제출 표시/패널 너비. 선행 P10 #158, P09 #255.
 - REQ-UI-001/003/005/006; D-030/031/032/033/047/062; Accepted ADR-0020/0021/0044/0045.
 - docs28의 URL/탭/패널 범위, docs31 state ownership/초안/이동 경고, docs40 keyboard/visual, docs51 승인된 대화 중심 배치.
 - API: 기존 getAgentTicket 및 draft/command operation만 사용. UI-001~006, DOC-001.
@@ -21,8 +21,10 @@ STAFF/AGENT_WORKSPACE의 기존 session/READ/UPDATE. 명시적 티켓 이동은 
 - 속성 240~420px(default 320), context 240~520px(default 320)를 staff별 localStorage preference로 기억한다. 대화 최소 480px와 #158의 기본 접힌 drawer를 유지한다. 저장소 실패/잘못된 값은 기본값으로 복구하고 메모리 상태에서 조작 가능하다.
 - 크기 조절은 pointer drag, ArrowLeft/Right, Home/End로 가능하고 separator label/value를 노출한다.
 - Cmd/Ctrl+K는 input/textarea/select/contenteditable 및 IME 조합 중이면 실행하지 않는다.
+- 열린 탭의 `미제출` 표시는 기존 editor의 isUnsaved 여부만 메모리에 연결한다. 이동 시 남고 닫기에서 정리되며 실제로 다시 열면 editor 상태로 갱신한다. `추가 보관 없이 이동`은 기존 자동 보관 내용을 삭제하지 않으므로 삭제 완료로 표시하지 않는다. sessionStorage에는 번호만 저장한다. 새 세션 복원 시 실제로 열지 않은 티켓의 초안 존재를 추정하지 않는다. 서버 저장 성공을 의미하지 않는다.
 - 초안 자동 저장 debounce(3초) 전에 전환하면 본문/서식이 사라지는 현상을 회귀로 재현했다. 사용자가 `초안 유지하고 이동`을 선택하면 두 채널의 body/rich document/version을 기존 IndexedDB에 commit한 뒤 이동한다. 보관 실패 시 현재 화면에 남으며 첨부 대기/실패 시 상태 확인을 요청한다. 댓글 전송이나 원격 저장으로 표시하지 않는다.
 - loading/empty/error/denied/conflict는 기존 route 상태를 유지하고 탭 상태가 권한을 대신하지 않는다.
+- 수동 초안 저장의 flush가 내부 실패를 처리하므로 무조건 성공하는 별도 메시지를 제거했다. 기존 draftSyncState와 채널별 실패 안내로 local-only/conflict/error를 구분하고 ticket command 전송과 혼동하지 않는다.
 
 ## Reuse plan
 
@@ -65,6 +67,17 @@ HTTP/DB migration 없음. optional presentation API를 유지하고 frontend rev
 
 ## Completion report
 
-구현·검증 진행 중.
+구현 완료: staff별 열린 티켓 번호/미제출 표시, bounded panel resize, 양 채널 local checkpoint 후 이동, 편집 영역 검색 단축키 보호. HTTP/DB/권한/actor/audit/idempotency/서버 retry/retention 변경 없음. 기존 상세 접근과 command 검증을 재사용하고 remote draft 성공을 추정하지 않는다. layout preference 외 새 영구 데이터는 없으며 성능 수치는 측정하지 않았다.
+
+복구 후 검증: staff unit 45파일/273개, 전체 MCP 63파일/303개, macOS 전체 mock E2E 26개, 1280/1440/1920의 screenshot·Axe·resize keyboard/pointer·최소 대화 폭·focus·height 검증 통과. typecheck/lint/format/build/boundary도 통과했다. 이어서 `추가 보관 없이 이동` 문구와 수동 초안 저장의 무조건 성공 메시지 제거를 보완했고 해당 focused Storybook/E2E 및 최종 CI는 진행 중이다. Linux 3폭 실제 렌더는 보존된 자료로 검수했고 전체 Linux mock E2E는 원격 CI로 확인한다. 실서버/실제 backend/수동 screen reader/사용자의 최종 시각 승인은 실행하지 않았다. 구현 상태를 production 검증으로 상향하지 않는다.
+
+MCP의 changed-stories는 154개를 반환했고 일부 feature/unit 파일을 graph에서 찾지 못해 get-stories-by-component로 소비자를 보강했다. 전체 suite로 누락을 확인한다. 프리뷰:
+
+- http://localhost:6006/?statuses=affected;modified;new
+- http://localhost:6006/?path=/story/04-patterns-seed-ticket-tabs--open-and-close
+- http://localhost:6006/?path=/story/04-patterns-seed-workspace--resizable-workspace
+- http://localhost:6006/?path=/story/03-components-seed-panel-resize-handle--keyboard-bounds
+- http://localhost:6006/?path=/story/03-components-seed-surfaces--resizable-drawer
+- http://localhost:6006/?path=/story/06-domain-workspace-agentticketeditorworkspace--preserve-draft-before-navigation
 
 복구 체크포인트: 기존 작업트리 소실 뒤 성공한 도구 patch 기록을 같은 P10 `bab8a7c9` 위에 재적용했다. 소실 전 staff unit 273개, 단독 macOS E2E 26개, Linux 3폭 렌더/Axe/keyboard, type/lint/build/boundary/docs/format은 통과했다. 전체 Storybook은 새 이동 story fixture를 보완한 뒤 자원 경합으로 완료되지 않았다. Linux baseline 3장은 임시 산출물에서 복구했고 Darwin 3장은 재생성해야 한다. 이 기록은 복구 후 코드 검증의 완료를 의미하지 않으며, 별도 후속 검증 결과로 대체한다.

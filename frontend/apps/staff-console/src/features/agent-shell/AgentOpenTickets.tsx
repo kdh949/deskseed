@@ -46,6 +46,8 @@ type OpenTickets = {
   forget: (number: number) => void
   pendingClose: number | null
   requestClose: (number: number | null) => void
+  draftNumbers: ReadonlySet<number>
+  setHasDraft: (number: number, hasDraft: boolean) => void
 }
 const Context = createContext<OpenTickets | null>(null)
 
@@ -59,9 +61,33 @@ export function AgentOpenTicketsProvider({
   const initial = useMemo(() => readOpenTickets(staffId), [staffId])
   const [owned, setOwned] = useState({ staffId, numbers: initial })
   const [pendingClose, requestClose] = useState<number | null>(null)
+  const [draftState, setDraftState] = useState({
+    staffId,
+    numbers: new Set<number>(),
+  })
+  const draftNumbers = useMemo(
+    () =>
+      draftState.staffId === staffId ? draftState.numbers : new Set<number>(),
+    [draftState, staffId],
+  )
+  const setHasDraft = useCallback(
+    (number: number, hasDraft: boolean) => {
+      setDraftState((current) => {
+        const numbers =
+          current.staffId === staffId ? current.numbers : new Set<number>()
+        if (current.staffId === staffId && numbers.has(number) === hasDraft)
+          return current
+        const next = new Set(numbers)
+        if (hasDraft) next.add(number)
+        else next.delete(number)
+        return { staffId, numbers: next }
+      })
+    },
+    [staffId],
+  )
   const numbers = owned.staffId === staffId ? owned.numbers : initial
   const remember = useCallback(
-    (number: number) =>
+    (number: number) => {
       setOwned((current) => {
         const items = current.staffId === staffId ? current.numbers : initial
         return items.includes(number)
@@ -69,18 +95,21 @@ export function AgentOpenTicketsProvider({
             ? current
             : { staffId, numbers: items }
           : { staffId, numbers: [...items, number] }
-      }),
+      })
+    },
     [staffId, initial],
   )
   const forget = useCallback(
-    (number: number) =>
+    (number: number) => {
+      setHasDraft(number, false)
       setOwned((current) => {
         const items = current.staffId === staffId ? current.numbers : initial
         return items.includes(number)
           ? { staffId, numbers: items.filter((item) => item !== number) }
           : current
-      }),
-    [staffId, initial],
+      })
+    },
+    [staffId, initial, setHasDraft],
   )
   useEffect(() => {
     try {
@@ -90,8 +119,16 @@ export function AgentOpenTicketsProvider({
     }
   }, [staffId, numbers])
   const value = useMemo(
-    () => ({ numbers, remember, forget, pendingClose, requestClose }),
-    [numbers, remember, forget, pendingClose],
+    () => ({
+      numbers,
+      remember,
+      forget,
+      pendingClose,
+      requestClose,
+      draftNumbers,
+      setHasDraft,
+    }),
+    [numbers, remember, forget, pendingClose, draftNumbers, setHasDraft],
   )
   return <Context.Provider value={value}>{children}</Context.Provider>
 }

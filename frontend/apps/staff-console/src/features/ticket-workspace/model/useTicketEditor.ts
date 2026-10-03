@@ -170,6 +170,10 @@ export function useTicketEditor({
     hasAttachments ||
     needsAttachmentWarning
   const blocker = useBlocker(isUnsaved || submitting)
+  const setHasDraft = openTickets?.setHasDraft
+  useEffect(() => {
+    setHasDraft?.(detail.ticket.ticketNumber, isUnsaved)
+  }, [detail.ticket.ticketNumber, isUnsaved, setHasDraft])
   const blockerRef = useRef(blocker)
   blockerRef.current = blocker
   const [preservingNavigationDraft, setPreservingNavigationDraft] =
@@ -614,8 +618,8 @@ export function useTicketEditor({
 
   const saveDraftNow = async () => {
     setError(null)
+    setSuccess(null)
     await draftSync.flush()
-    setSuccess('복구 초안을 저장했습니다.')
   }
 
   return {
@@ -625,6 +629,9 @@ export function useTicketEditor({
     cancelNavigation: () => {
       openTickets?.requestClose(null)
       if (blocker.state === 'blocked') blocker.reset()
+    },
+    leaveWithoutPreserving: () => {
+      if (blocker.state === 'blocked') blocker.proceed()
     },
     preserveDraftAndLeave: async () => {
       if (submitting || preservingNavigationDraft || needsAttachmentWarning)

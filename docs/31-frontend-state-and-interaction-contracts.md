@@ -190,7 +190,7 @@ failure이므로 ID를 폐기하고, 사용자가 수정·해결한 다음 새 l
 - “나가기/초안 유지/취소” 제공.
 - browser unload에서 서버 저장을 시도하지 않는다.
 
-`초안 유지하고 이동`은 PUBLIC/INTERNAL의 본문·rich document·첨부 ID·base/draft version을 기존 staff/ticket/channel별 IndexedDB에 기록하고 transaction commit을 확인한 다음 이동한다. 기존 7일 local retention을 유지하고 별도 원격 저장/댓글 전송 성공으로 표현하지 않는다. 진행 중인 동기화는 먼저 정리하며, local 저장 실패 시 이동을 멈추고 현재 editor를 유지한다. 업로드/검사 중 또는 실패한 첨부가 있으면 이 선택을 비활성화하고 확인을 요청한다. `변경사항 버리고 이동`은 보관을 기다리지 않고 기존 route leave를 진행하며 이전에 저장된 복구 초안을 삭제하는 command는 아니다.
+`초안 유지하고 이동`은 PUBLIC/INTERNAL의 본문·rich document·첨부 ID·base/draft version을 기존 staff/ticket/channel별 IndexedDB에 기록하고 transaction commit을 확인한 다음 이동한다. 기존 7일 local retention을 유지하고 별도 원격 저장/댓글 전송 성공으로 표현하지 않는다. 진행 중인 동기화는 먼저 정리하며, local 저장 실패 시 이동을 멈추고 현재 editor를 유지한다. 업로드/검사 중 또는 실패한 첨부가 있으면 이 선택을 비활성화하고 확인을 요청한다. `추가 보관 없이 이동`은 보관을 기다리지 않고 기존 route leave를 진행한다. 이미 자동 보관된 초안은 다시 열 때 복구될 수 있음을 안내하고 미제출 표시를 삭제 완료로 바꾸지 않는다. 복구 초안을 삭제하는 command는 아니다.
 
 Cmd/Ctrl+K는 input/textarea/select/contenteditable 또는 IME 조합 중에는 검색 이동을 실행하지 않는다. 비입력 영역에서는 기존 route leave guard를 거쳐 검색으로 이동한다.
 

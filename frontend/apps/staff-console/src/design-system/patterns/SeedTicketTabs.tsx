@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useId, useRef } from 'react'
 import { Link } from 'react-router'
 import { SeedIconButton } from '../primitives/SeedCore'
 
@@ -6,10 +6,17 @@ export function SeedTicketTabs({
   items,
   onClose,
 }: {
-  items: Array<{ id: string; label: string; href: string; active: boolean }>
+  items: Array<{
+    id: string
+    label: string
+    href: string
+    active: boolean
+    hasDraft?: boolean
+  }>
   onClose: (id: string) => void
 }) {
   const links = useRef<Array<HTMLAnchorElement | null>>([])
+  const descriptionId = useId()
   if (!items.length) return null
   return (
     <nav aria-label="열린 티켓" className="seed-ticket-tabs">
@@ -20,6 +27,9 @@ export function SeedTicketTabs({
           key={item.id}
         >
           <Link
+            aria-describedby={
+              item.hasDraft ? `${descriptionId}-${item.id}` : undefined
+            }
             aria-current={item.active ? 'page' : undefined}
             to={item.href}
             ref={(element) => {
@@ -43,6 +53,14 @@ export function SeedTicketTabs({
           >
             {item.label}
           </Link>
+          {item.hasDraft && (
+            <span
+              className="seed-ticket-tabs__draft"
+              id={`${descriptionId}-${item.id}`}
+            >
+              미제출
+            </span>
+          )}
           <SeedIconButton
             icon="x"
             label={`${item.label} 닫기`}

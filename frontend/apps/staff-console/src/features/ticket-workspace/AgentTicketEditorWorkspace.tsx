@@ -240,6 +240,10 @@ function WritableWorkspace({
           작성 내용을 이 브라우저의 초안으로 보관한 뒤 이동할 수 있습니다.
           답변은 전송하지 않습니다.
         </p>
+        <p>
+          추가 보관 없이 이동해도 이미 자동 보관된 초안은 다시 열 때 복구될 수
+          있습니다.
+        </p>
         {editor.navigationDraftError && (
           <SeedNotice title="초안 보관 실패" tone="danger">
             {editor.navigationDraftError}
@@ -266,12 +270,8 @@ function WritableWorkspace({
               : '초안 유지하고 이동'}
           </SeedButton>
           <SeedButton onClick={editor.cancelNavigation}>계속 작성</SeedButton>
-          <SeedButton
-            onClick={() => {
-              if (editor.blocker.state === 'blocked') editor.blocker.proceed()
-            }}
-          >
-            변경사항 버리고 이동
+          <SeedButton onClick={editor.leaveWithoutPreserving}>
+            추가 보관 없이 이동
           </SeedButton>
         </div>
       </SeedDrawer>

@@ -152,6 +152,7 @@ function AgentShellContent() {
               label: `#${number}`,
               href: `/agent/tickets/${number}`,
               active: location.pathname === `/agent/tickets/${number}`,
+              hasDraft: openTickets.draftNumbers.has(number),
             }))}
             onClose={(id) => {
               const number = Number(id)

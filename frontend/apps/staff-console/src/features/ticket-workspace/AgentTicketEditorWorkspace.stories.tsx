@@ -7,6 +7,8 @@ import { mswHandlers } from '../../../.storybook/msw-handlers'
 import type { AgentTicketDetail } from '../../api/types'
 import { SeedButton } from '../../design-system/canonical'
 import { AgentTicketEditorWorkspace } from './AgentTicketEditorWorkspace'
+import { removeLocalTicketDraft } from '../collaboration/draftRecovery'
+import { ticketDraftStorageKey } from './model/ticketEditorModel'
 import {
   article as knowledgeArticle,
   revision as knowledgeRevision,
@@ -386,6 +388,21 @@ export const Writable: Story = {
 }
 
 export const PreserveDraftBeforeNavigation: Story = {
+  args: {
+    detail: { ...detail, ticket: { ...detail.ticket, ticketNumber: 93011 } },
+  },
+  beforeEach: async () => {
+    localStorage.removeItem(ticketDraftStorageKey(staffId, 93011))
+    await Promise.all(
+      ['PUBLIC_REPLY', 'INTERNAL_NOTE'].map((channel) =>
+        removeLocalTicketDraft(
+          staffId,
+          93011,
+          channel as 'PUBLIC_REPLY' | 'INTERNAL_NOTE',
+        ),
+      ),
+    )
+  },
   render: function DraftNavigation(args) {
     const location = useLocation()
     const navigate = useNavigate()
@@ -462,6 +479,54 @@ export const LatestActivity: Story = {
       within(panel).getByRole('button', { name: '최근 4건만 보기' }),
     )
     await expect(times()).toHaveLength(4)
+  },
+}
+
+export const ManualDraftSaveFailure: Story = {
+  args: {
+    detail: { ...detail, ticket: { ...detail.ticket, ticketNumber: 93012 } },
+  },
+  beforeEach: async () => {
+    localStorage.removeItem(ticketDraftStorageKey(staffId, 93012))
+    await Promise.all(
+      (['PUBLIC_REPLY', 'INTERNAL_NOTE'] as const).map((channel) =>
+        removeLocalTicketDraft(staffId, 93012, channel),
+      ),
+    )
+  },
+  parameters: {
+    msw: {
+      handlers: workspaceHandlers(
+        http.put('/api/v1/agent/tickets/93012/drafts/:channel', () =>
+          HttpResponse.json(
+            {
+              type: '/problems/draft-unavailable',
+              title: 'Draft unavailable',
+              status: 500,
+            },
+            { status: 500 },
+          ),
+        ),
+      ),
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole('textbox', { name: '공개 답변 내용' }),
+    )
+    await userEvent.paste('이 브라우저에 남길 답변')
+    await userEvent.click(
+      canvas.getByRole('button', { name: '초안 저장', exact: true }),
+    )
+    await expect(
+      await canvas.findByText('이 브라우저에만 저장됨', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByText('복구 초안을 저장했습니다.'),
+    ).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('textbox', { name: '공개 답변 내용' }),
+    ).toHaveTextContent('이 브라우저에 남길 답변')
   },
 }
 

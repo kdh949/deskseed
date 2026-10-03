@@ -19,6 +19,12 @@ function Ticket({
   return (
     <>
       <output aria-label="열린 번호">{tickets?.numbers.join(',')}</output>
+      <output aria-label="미제출 번호">
+        {[...(tickets?.draftNumbers ?? [])].join(',')}
+      </output>
+      <button onClick={() => tickets?.setHasDraft(1042, true)}>
+        편집 표시
+      </button>
       <button onClick={() => tickets?.remember(1043)}>두 번째 열기</button>
       <button onClick={() => tickets?.forget(1042)}>첫 번째 닫기</button>
     </>
@@ -61,12 +67,16 @@ describe('staff-owned open tickets', () => {
         <Ticket loaded />
       </AgentOpenTicketsProvider>,
     )
+    fireEvent.click(screen.getByRole('button', { name: '편집 표시' }))
+    expect(screen.getByLabelText('미제출 번호')).toHaveTextContent('1042')
+    expect(readOpenTickets('a')).toEqual([1042])
     ui.rerender(
       <AgentOpenTicketsProvider staffId="b">
         <Ticket />
       </AgentOpenTicketsProvider>,
     )
     expect(screen.getByLabelText('열린 번호')).toHaveTextContent('1099')
+    expect(screen.getByLabelText('미제출 번호')).toHaveTextContent('')
     expect(readOpenTickets('a')).toEqual([1042])
     fireEvent.click(screen.getByRole('button', { name: '두 번째 열기' }))
     expect(readOpenTickets('b')).toEqual([1099, 1043])
