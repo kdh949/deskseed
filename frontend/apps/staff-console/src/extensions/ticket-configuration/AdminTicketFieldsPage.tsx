@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../../api/client'
 import {
@@ -8,6 +8,7 @@ import {
   SeedTextField,
   SeedFeedbackState,
   SeedSkeletonRows,
+  SeedDrawer,
   SeedNotice,
 } from '../../design-system/canonical'
 import {
@@ -21,6 +22,7 @@ import {
   type FieldDraft,
   type FieldType,
 } from './api'
+import { useAdminDraftExit } from '../../features/admin/useAdminDraftExit'
 import './configuration.css'
 
 const EMPTY_FIELD: FieldDraft = {
@@ -68,6 +70,23 @@ export function AdminTicketFieldsPage() {
     retry: false,
   })
   const [editing, setEditing] = useState<FieldDefinition | 'new' | null>(null)
+  const trigger = useRef<HTMLButtonElement | null>(null)
+  const [search, setSearch] = useState('')
+  const [state, setState] = useState('all')
+  const shown =
+    fields.data?.filter(
+      (field) =>
+        `${field.staffLabel} ${field.customerLabel ?? ''} ${field.machineKey}`
+          .toLowerCase()
+          .includes(search.trim().toLowerCase()) &&
+        (state === 'all' || field.active === (state === 'active')),
+    ) ?? []
+  const close = () => {
+    setEditing(null)
+    setOptionsFor(null)
+    requestAnimationFrame(() => trigger.current?.focus())
+  }
+
   const [optionsFor, setOptionsFor] = useState<FieldDefinition | null>(null)
   const activation = useMutation({
     mutationFn: activateField,
@@ -75,77 +94,132 @@ export function AdminTicketFieldsPage() {
       client.invalidateQueries({ queryKey: ['admin-ticket-fields'] }),
   })
   return (
-    <section className="configuration-page">
-      <header>
+    <main className="configuration-page">
+      <header className="configuration-header">
         <h1>티켓 필드</h1>
         <p>
           문의 접수와 상담에 필요한 정보를 정의합니다. 폼에 배치한 뒤 발행하면
           사용할 수 있습니다.
         </p>
       </header>
-      <div className="configuration-actions">
-        <SeedButton onClick={() => setEditing('new')}>필드 만들기</SeedButton>
-        <SeedButton onClick={() => void fields.refetch()}>
-          목록 새로고침
-        </SeedButton>
-      </div>
-      <ConfigurationError error={fields.error || activation.error} />
-      {fields.isPending ? (
-        <SeedSkeletonRows />
-      ) : (
-        <ul className="configuration-list">
-          {fields.data?.map((field) => (
-            <li key={field.id}>
-              <div>
-                <strong>{field.staffLabel}</strong>
-                <p>
-                  {FIELD_TYPES[field.type]} · {field.active ? '활성' : '비활성'}{' '}
-                  · {field.customerVisible ? '고객에게 표시 가능' : '직원 전용'}{' '}
-                  · 버전 {field.version}
-                </p>
-              </div>
-              <div className="configuration-actions">
-                <SeedButton onClick={() => setEditing(field)}>
-                  편집: {field.staffLabel}
-                </SeedButton>
-                {field.type === 'SINGLE_SELECT' && (
-                  <SeedButton onClick={() => setOptionsFor(field)}>
-                    선택지: {field.staffLabel}
+      <div
+        className="configuration-overview"
+        hidden={Boolean(editing || optionsFor)}
+      >
+        <div className="configuration-actions">
+          <SeedButton
+            onClick={(event) => {
+              trigger.current = event.currentTarget
+              setEditing('new')
+            }}
+          >
+            필드 만들기
+          </SeedButton>
+          <SeedButton onClick={() => void fields.refetch()}>
+            목록 새로고침
+          </SeedButton>
+        </div>
+        <div className="configuration-toolbar">
+          <SeedTextField
+            label="필드 검색"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <SeedSelectField
+            label="사용 상태"
+            value={state}
+            onChange={(event) => setState(event.target.value)}
+          >
+            <option value="all">전체</option>
+            <option value="active">사용 중</option>
+            <option value="inactive">사용 중지</option>
+          </SeedSelectField>
+          <SeedButton
+            onClick={() => {
+              setSearch('')
+              setState('all')
+            }}
+          >
+            검색 초기화
+          </SeedButton>
+        </div>
+        {fields.isSuccess && (
+          <p role="status">
+            불러온 {fields.data.length}개 중 {shown.length}개
+          </p>
+        )}
+        <ConfigurationError error={fields.error || activation.error} />
+        {fields.isPending ? (
+          <SeedSkeletonRows />
+        ) : (
+          <ul className="configuration-list">
+            {shown.map((field) => (
+              <li key={field.id}>
+                <div>
+                  <strong>{field.staffLabel}</strong>
+                  <p>
+                    {FIELD_TYPES[field.type]} ·{' '}
+                    {field.active ? '활성' : '비활성'} ·{' '}
+                    {field.customerVisible ? '고객에게 표시 가능' : '직원 전용'}{' '}
+                    · 버전 {field.version}
+                  </p>
+                </div>
+                <div className="configuration-actions">
+                  <SeedButton
+                    onClick={(event) => {
+                      trigger.current = event.currentTarget
+                      setEditing(field)
+                    }}
+                  >
+                    편집: {field.staffLabel}
                   </SeedButton>
-                )}
-                <SeedButton
-                  disabled={activation.isPending}
-                  onClick={() => activation.mutate(field)}
-                >
-                  {field.active ? '비활성화' : '활성화'}: {field.staffLabel}
-                </SeedButton>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {fields.data?.length === 0 && (
-        <SeedFeedbackState
-          kind="empty"
-          title="등록된 필드가 없습니다."
-          description="주문번호나 문의 유형처럼 반복해서 수집할 정보를 추가하세요."
-        />
-      )}
+                  {field.type === 'SINGLE_SELECT' && (
+                    <SeedButton
+                      onClick={(event) => {
+                        trigger.current = event.currentTarget
+                        setOptionsFor(field)
+                      }}
+                    >
+                      선택지: {field.staffLabel}
+                    </SeedButton>
+                  )}
+                  <SeedButton
+                    disabled={activation.isPending}
+                    onClick={() => activation.mutate(field)}
+                  >
+                    {field.active ? '비활성화' : '활성화'}: {field.staffLabel}
+                  </SeedButton>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {fields.data?.length === 0 && (
+          <SeedFeedbackState
+            kind="empty"
+            title="등록된 필드가 없습니다."
+            description="주문번호나 문의 유형처럼 반복해서 수집할 정보를 추가하세요."
+          />
+        )}
+        {fields.isSuccess && fields.data.length > 0 && !shown.length && (
+          <SeedFeedbackState
+            kind="empty"
+            title="조건에 맞는 필드가 없습니다."
+            description="검색어나 사용 상태를 바꿔 주세요."
+          />
+        )}
+      </div>
       {editing && (
         <FieldEditor
           key={editing === 'new' ? 'new' : editing.id}
           existing={editing === 'new' ? undefined : editing}
-          onClose={() => setEditing(null)}
+          onClose={close}
         />
       )}
       {optionsFor && (
-        <FieldOptions
-          key={optionsFor.id}
-          field={optionsFor}
-          onClose={() => setOptionsFor(null)}
-        />
+        <FieldOptions key={optionsFor.id} field={optionsFor} onClose={close} />
       )}
-    </section>
+    </main>
   )
 }
 
@@ -169,6 +243,14 @@ function FieldEditor({
       onClose()
     },
   })
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    heading.current?.focus()
+  }, [])
+  const exit = useAdminDraftExit(
+    JSON.stringify(draft) !== JSON.stringify(existing ?? EMPTY_FIELD),
+    mutation.isPending,
+  )
   const set = <K extends keyof FieldDraft>(key: K, value: FieldDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }))
   const submit = (event: FormEvent) => {
@@ -181,7 +263,9 @@ function FieldEditor({
       onSubmit={submit}
       aria-label="필드 편집"
     >
-      <h2>{existing ? `${existing.staffLabel} 편집` : '새 필드'}</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        {existing ? `${existing.staffLabel} 편집` : '새 필드'}
+      </h2>
       <ConfigurationError error={mutation.error} />
       <fieldset disabled={mutation.isPending}>
         <legend>필드 정의</legend>
@@ -280,9 +364,22 @@ function FieldEditor({
           <SeedButton type="submit" variant="primary">
             {mutation.isPending ? '저장 중…' : '필드 저장'}
           </SeedButton>
-          <SeedButton onClick={onClose}>편집 닫기</SeedButton>
+          <SeedButton onClick={() => exit.request(onClose)}>
+            편집 닫기
+          </SeedButton>
         </div>
       </fieldset>
+      <SeedDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title="작성한 내용을 버릴까요?"
+      >
+        <p>저장하지 않은 변경 사항이 있습니다.</p>
+        <SeedButton onClick={exit.cancel}>계속 편집</SeedButton>
+        <SeedButton disabled={mutation.isPending} onClick={exit.discard}>
+          변경 버리기
+        </SeedButton>
+      </SeedDrawer>
     </form>
   )
 }
@@ -328,9 +425,19 @@ function FieldOptions({
         queryKey: ['ticket-field-options', field.id],
       }),
   })
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    heading.current?.focus()
+  }, [])
+  const exit = useAdminDraftExit(
+    Boolean(key || label || customerLabel),
+    create.isPending || toggle.isPending,
+  )
   return (
     <section className="configuration-editor" aria-label="필드 선택지">
-      <h2>{field.staffLabel} 선택지</h2>
+      <h2 ref={heading} tabIndex={-1}>
+        {field.staffLabel} 선택지
+      </h2>
       <ConfigurationError
         error={options.error || create.error || toggle.error}
       />
@@ -393,7 +500,21 @@ function FieldOptions({
           </SeedButton>
         </fieldset>
       </form>
-      <SeedButton onClick={onClose}>선택지 닫기</SeedButton>
+      <SeedButton onClick={() => exit.request(onClose)}>선택지 닫기</SeedButton>
+      <SeedDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title="작성한 내용을 버릴까요?"
+      >
+        <p>저장하지 않은 선택지가 있습니다.</p>
+        <SeedButton onClick={exit.cancel}>계속 편집</SeedButton>
+        <SeedButton
+          disabled={create.isPending || toggle.isPending}
+          onClick={exit.discard}
+        >
+          변경 버리기
+        </SeedButton>
+      </SeedDrawer>
     </section>
   )
 }

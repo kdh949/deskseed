@@ -9,8 +9,10 @@ import {
   SeedSelectField,
   SeedTextField,
   SeedTextAreaField,
+  SeedFeedbackState,
 } from '../../design-system/canonical'
 import { listForms } from './api'
+import { useAdminDraftExit } from '../../features/admin/useAdminDraftExit'
 import {
   listTags,
   listStatuses,
@@ -49,7 +51,7 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
     retry: false,
   })
   const query = kind === 'tags' ? tagQuery : statusQuery
-  const trigger = useRef<HTMLButtonElement>(null)
+  const trigger = useRef<HTMLButtonElement | null>(null)
   const [editor, setEditor] = useState<{
     tag?: Tag
     status?: CustomStatus
@@ -67,7 +69,71 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
   const [busy, setBusy] = useState(false)
   const [uncertain, setUncertain] = useState(false)
   const [conflict, setConflict] = useState(false)
+  const [search, setSearch] = useState('')
+  const [state, setState] = useState('all')
+  const [phase, setPhase] = useState('all')
+  const [baseline, setBaseline] = useState('')
+  const [review, setReview] = useState('')
+  const draftSignature = JSON.stringify(
+    kind === 'tags'
+      ? [key, label, active]
+      : [
+          key,
+          label,
+          customerLabel,
+          category,
+          active,
+          isDefault,
+          allowedForms,
+          description,
+          order,
+        ],
+  )
+  const exit = useAdminDraftExit(
+    Boolean(editor) && draftSignature !== baseline,
+    busy,
+  )
+  const matches = (text: string, enabled: boolean) =>
+    text.toLowerCase().includes(search.trim().toLowerCase()) &&
+    (state === 'all' || enabled === (state === 'active'))
+  const tags =
+    tagQuery.data?.filter((tag) =>
+      matches(`${tag.label} ${tag.value}`, tag.active),
+    ) ?? []
+  const statuses =
+    statusQuery.data?.filter(
+      (status) =>
+        matches(
+          `${status.agentLabel} ${status.customerLabel ?? ''} ${status.machineKey}`,
+          status.active,
+        ) &&
+        (phase === 'all' || status.statusCategory === phase),
+    ) ?? []
+  const shownCount = kind === 'tags' ? tags.length : statuses.length
+
   const edit = (next: { tag?: Tag; status?: CustomStatus }) => {
+    setBaseline(
+      JSON.stringify(
+        kind === 'tags'
+          ? [
+              next.tag?.value ?? '',
+              next.tag?.label ?? '',
+              next.tag?.active ?? true,
+            ]
+          : [
+              next.status?.machineKey ?? '',
+              next.status?.agentLabel ?? '',
+              next.status?.customerLabel ?? '',
+              next.status?.statusCategory ?? 'OPEN',
+              next.status?.active ?? true,
+              next.status?.defaultForCategory ?? false,
+              next.status?.allowedFormIds ?? [],
+              next.status?.description ?? '',
+              next.status?.order ?? statusQuery.data?.length ?? 0,
+            ],
+      ),
+    )
+    setReview('')
     setEditor(next)
     setKey(next.tag?.value ?? next.status?.machineKey ?? '')
     setLabel(next.tag?.label ?? next.status?.agentLabel ?? '')
@@ -132,7 +198,9 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
     const result = await query.refetch()
     if (result.error) return
     if (uncertain) {
-      setEditor(null)
+      setReview(
+        '최신 목록을 확인했습니다. 입력은 유지되며 중복 생성을 막기 위해 재저장은 계속 제한됩니다. 목록에서 같은 식별 이름의 항목을 확인한 후 편집을 다시 열어 주세요.',
+      )
       return
     }
     if (editor?.tag) {
@@ -155,7 +223,7 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
     }
   }
   return (
-    <section className="configuration-page">
+    <main className="configuration-page">
       <header className="configuration-header">
         <div>
           <h1>{title}</h1>
@@ -165,10 +233,70 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
               : '기본 처리 단계에 맞춰 팀의 업무 상태를 관리합니다.'}
           </p>
         </div>
-        <SeedButton ref={trigger} variant="primary" onClick={() => edit({})}>
+        <SeedButton
+          variant="primary"
+          onClick={(event) => {
+            trigger.current = event.currentTarget
+            edit({})
+          }}
+        >
           새 {kind === 'tags' ? '태그' : '상태'}
         </SeedButton>
       </header>
+      <div className="configuration-toolbar">
+        <SeedTextField
+          label={kind === 'tags' ? '태그 검색' : '상태 검색'}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        <SeedSelectField
+          label="사용 상태"
+          value={state}
+          onChange={(event) => setState(event.target.value)}
+        >
+          <option value="all">전체</option>
+          <option value="active">사용 중</option>
+          <option value="inactive">사용 중지</option>
+        </SeedSelectField>
+        {kind === 'statuses' && (
+          <SeedSelectField
+            label="처리 단계 필터"
+            value={phase}
+            onChange={(event) => setPhase(event.target.value)}
+          >
+            <option value="all">전체</option>
+            {Object.entries(CATEGORIES).map(([value, text]) => (
+              <option key={value} value={value}>
+                {text}
+              </option>
+            ))}
+          </SeedSelectField>
+        )}
+        <SeedButton
+          onClick={() => {
+            setSearch('')
+            setState('all')
+            setPhase('all')
+          }}
+        >
+          검색 초기화
+        </SeedButton>
+        <SeedButton onClick={() => void query.refetch()}>
+          목록 새로고침
+        </SeedButton>
+      </div>
+      {query.isSuccess && (
+        <p role="status">
+          불러온 {query.data.length}개 중 {shownCount}개
+        </p>
+      )}
+      {query.isSuccess && query.data.length > 0 && !shownCount && (
+        <SeedFeedbackState
+          kind="empty"
+          title="조건에 맞는 항목이 없습니다."
+          description="검색어나 상태 필터를 바꿔 주세요."
+        />
+      )}
       {query.isPending ? <p role="status">목록을 불러오는 중…</p> : null}
       {query.error ? (
         <SeedNotice
@@ -188,7 +316,7 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
       {query.data?.length === 0 ? <p>등록된 {title}가 없습니다.</p> : null}
       <div className="configuration-list">
         {kind === 'tags'
-          ? tagQuery.data?.map((tag) => (
+          ? tags.map((tag) => (
               <article className="configuration-list-item" key={tag.id}>
                 <div>
                   <h2>{tag.label}</h2>
@@ -199,12 +327,17 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
                     <p>많은 티켓에 사용되는 태그입니다.</p>
                   ) : null}
                 </div>
-                <SeedButton onClick={() => edit({ tag })}>
+                <SeedButton
+                  onClick={(event) => {
+                    trigger.current = event.currentTarget
+                    edit({ tag })
+                  }}
+                >
                   {tag.label} 편집
                 </SeedButton>
               </article>
             ))
-          : statusQuery.data?.map((status) => (
+          : statuses.map((status) => (
               <article className="configuration-list-item" key={status.id}>
                 <div>
                   <h2>{status.agentLabel}</h2>
@@ -218,7 +351,12 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
                     {status.defaultForCategory ? ' · 단계 기본 상태' : ''}
                   </p>
                 </div>
-                <SeedButton onClick={() => edit({ status })}>
+                <SeedButton
+                  onClick={(event) => {
+                    trigger.current = event.currentTarget
+                    edit({ status })
+                  }}
+                >
                   {status.agentLabel} 편집
                 </SeedButton>
               </article>
@@ -226,10 +364,15 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
       </div>
       <SeedDrawer
         open={Boolean(editor)}
-        onClose={() => setEditor(null)}
+        onClose={() => exit.request(() => setEditor(null))}
         returnFocusRef={trigger}
         title={`${title} ${editor?.tag || editor?.status ? '편집' : '추가'}`}
       >
+        {review && (
+          <SeedNotice title="목록 확인 완료" tone="warning">
+            {review}
+          </SeedNotice>
+        )}
         {error ? <SeedNotice title={error} tone="warning" /> : null}
         {conflict || uncertain ? (
           <SeedButton onClick={() => void reload()}>최신 목록 확인</SeedButton>
@@ -350,6 +493,17 @@ export function AdminTicketLabelsPage({ kind }: { kind: 'tags' | 'statuses' }) {
           </SeedButton>
         </form>
       </SeedDrawer>
-    </section>
+      <SeedDrawer
+        open={exit.open}
+        onClose={exit.cancel}
+        title="작성한 내용을 버릴까요?"
+      >
+        <p>저장하지 않은 변경 사항이 있습니다.</p>
+        <SeedButton onClick={exit.cancel}>계속 편집</SeedButton>
+        <SeedButton disabled={busy} onClick={exit.discard}>
+          변경 버리기
+        </SeedButton>
+      </SeedDrawer>
+    </main>
   )
 }

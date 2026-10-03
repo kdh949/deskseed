@@ -216,3 +216,5 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 - 2026-09-11 REQ-UI-001/005/007, REQ-PERM-002, REQ-AUD-002: [운영 화면 스타일 복구](tasks/2026-09-11-staff-operational-styles.md), [직원 Storybook 60개 파일 전체 등록](tasks/2026-09-11-frontend-storybook-coverage.md). 사용자 승인 후 macOS/Linux 시각 기준선 12장을 반영하고 UI-001/005의 실제 pixel 비교를 포함한 E2E를 각 플랫폼에서 21개 통과했다. [수정 결과](frontend-remediation-2026-09-11.md), [승인 및 검증 기록](evidence/frontend-remediation-2026-09-11/visual-review.md). 제품 요구사항 상태 자체를 상향하지 않는다.
 
 - 2026-09-16~17 REQ-AI-001~005: [AI V1 A 계약·PUBLIC source](tasks/2026-09-16-ai-v1-a-contract-source.md), [AI V1 B~G 격리 실행·운영](tasks/2026-09-16-ai-v1-b-g-runtime.md), [AI V1 상담사 어시스턴트 UI](tasks/2026-09-17-ai-v1-frontend-assistant.md). UI는 current Core contract의 summary/triage/reply와 safe insertion을 연결하며 chat/workflow/auto-apply는 제외한다. live provider/Langfuse/실데이터/배포·사람 평가는 별도 외부 검증이다.
+
+- 2026-10-03 REQ-CFG-010/011/012/013, REQ-UI-005/007: [관리자 설정 목록·초안 보호와 저장본 폼 미리보기](tasks/2026-10-03-admin-ticket-configuration-ux.md). 기존 ADMIN 계약의 서버 조건 평가를 연결하며 고객/상담사 표시 경계, 목록 필터·버전/기본 상태·키보드 이탈을 UI-002/004/005/006과 mock E2E로 검증한다. 요구사항 상태를 상향하지 않으며 DB/audit/동시성 검증은 이번 UI 변경의 로컬 증거에 포함하지 않는다.
