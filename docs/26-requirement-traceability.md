@@ -216,3 +216,5 @@ ADR 0039 이후 이 상태는 주로 서버/도메인 계약의 구현 준비도
 - 2026-09-11 REQ-UI-001/005/007, REQ-PERM-002, REQ-AUD-002: [운영 화면 스타일 복구](tasks/2026-09-11-staff-operational-styles.md), [직원 Storybook 60개 파일 전체 등록](tasks/2026-09-11-frontend-storybook-coverage.md). 사용자 승인 후 macOS/Linux 시각 기준선 12장을 반영하고 UI-001/005의 실제 pixel 비교를 포함한 E2E를 각 플랫폼에서 21개 통과했다. [수정 결과](frontend-remediation-2026-09-11.md), [승인 및 검증 기록](evidence/frontend-remediation-2026-09-11/visual-review.md). 제품 요구사항 상태 자체를 상향하지 않는다.
 
 - 2026-09-16~17 REQ-AI-001~005: [AI V1 A 계약·PUBLIC source](tasks/2026-09-16-ai-v1-a-contract-source.md), [AI V1 B~G 격리 실행·운영](tasks/2026-09-16-ai-v1-b-g-runtime.md), [AI V1 상담사 어시스턴트 UI](tasks/2026-09-17-ai-v1-frontend-assistant.md). UI는 current Core contract의 summary/triage/reply와 safe insertion을 연결하며 chat/workflow/auto-apply는 제외한다. live provider/Langfuse/실데이터/배포·사람 평가는 별도 외부 검증이다.
+
+- 2026-10-03 REQ-AI-001/002: [AI 생성 가능 상태](tasks/2026-10-03-ai-generation-availability.md). 기존 detail에 정책 기반 capability를 추가하고 생성·결과 재인가와 같은 gate를 공유한다. PostgreSQL-backed integration 26 및 architecture 1 통과; UI·live provider·배포·부하 검증은 후속이며 requirement 전체 상태는 유지한다.

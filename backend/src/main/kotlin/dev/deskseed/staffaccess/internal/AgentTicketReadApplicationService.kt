@@ -1,5 +1,7 @@
 package dev.deskseed.staffaccess.internal
 
+import dev.deskseed.aiassistance.AiFeature
+import dev.deskseed.aiassistance.AiFeatureAvailability
 import dev.deskseed.audit.AccessAuditOutcome
 import dev.deskseed.audit.AccessAuditProtectionException
 import dev.deskseed.audit.AccessAuditSessionFingerprint
@@ -9,6 +11,7 @@ import dev.deskseed.audit.TicketResourceReadAccessAudit
 import dev.deskseed.audit.TicketViewAccessAudit
 import dev.deskseed.organization.TicketAssignmentCatalog
 import dev.deskseed.organization.TicketAssignmentGroupOption
+import dev.deskseed.ticketing.CommentVisibility
 import dev.deskseed.ticketing.DefaultStaffView
 import dev.deskseed.ticketing.StaffTicketDetail
 import dev.deskseed.ticketing.StaffTicketListFilter
@@ -69,6 +72,7 @@ internal class AgentTicketReadAuthorizationPolicy {
 @Service
 internal class AgentTicketReadApplicationService(
     private val ticketStore: StaffTicketReadStore,
+    private val aiFeatureAvailability: AiFeatureAvailability,
     private val accessAuditWriter: AccessAuditWriter,
     private val sessionFingerprint: AccessAuditSessionFingerprint,
     private val cursorCodec: AgentTicketCursorCodec,
@@ -205,9 +209,18 @@ internal class AgentTicketReadApplicationService(
             currentAssigneeId = detail.ticket.assignee?.id,
         )
         val canUpdate = detail.ticket.status != TicketStatus.CLOSED && directGrant
+        val aiCapabilities = if (detail.comments.any { it.visibility == CommentVisibility.PUBLIC }) {
+            aiFeatureAvailability.enabledFeatures(principal.id).map { feature ->
+                when (feature) {
+                    AiFeature.TICKET_SUMMARY -> "AI_SUMMARY"
+                    AiFeature.TICKET_TRIAGE -> "AI_TRIAGE"
+                    AiFeature.TICKET_REPLY_DRAFT -> "AI_REPLY_DRAFT"
+                }
+            }
+        } else emptyList()
         return AgentTicketWorkspaceDetail(
             detail = detail,
-            capabilities = if (canUpdate) listOf("READ", "UPDATE") else listOf("READ"),
+            capabilities = (if (canUpdate) listOf("READ", "UPDATE") else listOf("READ")) + aiCapabilities,
             assignmentOptions = assignmentCatalog.listActiveGroups(),
         )
     }

@@ -2,6 +2,7 @@ package dev.deskseed.aiassistance.internal
 
 import dev.deskseed.aiassistance.AiAuditUnavailableException
 import dev.deskseed.aiassistance.AiFeature
+import dev.deskseed.aiassistance.AiFeatureAvailability
 import dev.deskseed.aiassistance.AiJobReceipt
 import dev.deskseed.aiassistance.AiReplyDraftResult
 import dev.deskseed.aiassistance.AiRequestMetadata
@@ -27,6 +28,7 @@ import java.util.UUID
 @Service
 internal class AiResultAuthorizer(
     private val jdbcTemplate: JdbcTemplate,
+    private val featureAvailability: AiFeatureAvailability,
     private val ticketStore: StaffTicketReadStore,
     private val knowledgeProjection: AiKnowledgeProjection,
     private val auditWriter: AccessAuditWriter,
@@ -122,25 +124,8 @@ internal class AiResultAuthorizer(
         )
     }
 
-    private fun isFeatureEnabled(feature: AiFeature, actorId: UUID): Boolean {
-        val featureColumn = when (feature) {
-            AiFeature.TICKET_SUMMARY -> "summary_enabled"
-            AiFeature.TICKET_TRIAGE -> "triage_enabled"
-            AiFeature.TICKET_REPLY_DRAFT -> "reply_draft_enabled"
-        }
-        return jdbcTemplate.queryForObject(
-            """
-            select exists (
-                select 1 from ai_settings settings
-                join ai_feature_staff_allowlist allowed on allowed.staff_id = ?
-                join staff_accounts staff on staff.id = allowed.staff_id and staff.status = 'ACTIVE'
-                where settings.singleton = true and settings.enabled = true and settings.$featureColumn = true
-            )
-            """.trimIndent(),
-            Boolean::class.java,
-            actorId,
-        ) == true
-    }
+    private fun isFeatureEnabled(feature: AiFeature, actorId: UUID): Boolean =
+        feature in featureAvailability.enabledFeatures(actorId)
 
     private data class ResultBinding(
         val ticketId: UUID,
