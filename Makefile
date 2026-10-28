@@ -1,4 +1,4 @@
-.PHONY: up down db bundle-core-openapi docs-check compose-smoke demo backend-test frontend-check check
+.PHONY: up down db bundle-core-openapi api-contract-check docs-check compose-smoke demo backend-test frontend-check check
 
 up:
 	docker compose up --build
@@ -13,10 +13,11 @@ bundle-core-openapi:
 	python3 scripts/bundle_core_openapi.py --check
 	python3 scripts/test_core_openapi_bundle.py
 
-docs-check: bundle-core-openapi
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_documentation_quality.py
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_validate_documentation.py
-	python3 scripts/validate_documentation.py
+api-contract-check: bundle-core-openapi
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_api_contracts.py
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_api_contracts.py
+
+docs-check: api-contract-check
 
 compose-smoke:
 	bash scripts/test-e2e-compose-ownership.sh
@@ -31,4 +32,4 @@ backend-test:
 frontend-check:
 	cd frontend && npm ci --no-audit --no-fund && npm run format:check && npm run lint && npm run typecheck && npm test -- --run && npm run build
 
-check: docs-check backend-test frontend-check
+check: api-contract-check backend-test frontend-check

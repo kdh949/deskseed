@@ -57,7 +57,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   seed-contracts:
-    name: Documentation contracts
+    name: API contracts
     needs: [changes]
     if: >-
       always() &&
@@ -69,7 +69,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: python -m pip install --disable-pip-version-check -r scripts/requirements-docs.txt
-      - run: make docs-check
+      - run: make api-contract-check
 
   backend:
     name: Backend tests
@@ -274,7 +274,7 @@ jobs:
 
           echo "| Changes | true | $CHANGES_RESULT |" >> "$GITHUB_STEP_SUMMARY"
           [[ "$CHANGES_RESULT" == "success" ]] || failed=1
-          check_job "Documentation contracts" "$SEED_EXPECTED" "$SEED_RESULT"
+          check_job "API contracts" "$SEED_EXPECTED" "$SEED_RESULT"
           check_job "Backend tests" "$BACKEND_EXPECTED" "$BACKEND_RESULT"
           check_job "Frontend quality gates" "$FRONTEND_EXPECTED" "$FRONTEND_RESULT"
           check_job "Frontend browser E2E" "$E2E_EXPECTED" "$E2E_RESULT"

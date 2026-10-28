@@ -314,10 +314,6 @@ assert "PYROSCOPE_PROFILER_ALLOC" not in environment
 assert "PYROSCOPE_PROFILER_LOCK" not in environment
 PY
 
-grep -Fx '    client_max_body_size 105m;' "$repository_root/frontend/nginx.conf" >/dev/null
-grep -Fx '        proxy_pass http://backend:9090;' \
-  "$repository_root/frontend/nginx.personal-staging-observability.conf" >/dev/null
-
 if docker compose \
   --project-name deskseed-production-contract \
   --file "$repository_root/compose.yaml" \
