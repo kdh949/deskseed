@@ -6,6 +6,8 @@ import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.Network
 import org.testcontainers.images.builder.Transferable
 import org.testcontainers.utility.DockerImageName
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -18,7 +20,7 @@ class PersonalStagingNginxRoutingIntegrationTest {
     private val http = HttpClient.newHttpClient()
 
     @Test
-    fun `opt-in frontend preserves aggregate health while denying prometheus`() {
+    fun `frontend routes health denies prometheus and enforces attachment body limits`() {
         Network.newNetwork().use { network ->
             val backend = GenericContainer(DockerImageName.parse("nginx:1.31-alpine"))
                 .withNetwork(network)
@@ -45,6 +47,11 @@ class PersonalStagingNginxRoutingIntegrationTest {
                 assertThat(observabilityHealth.body()).contains("management-9090")
 
                 assertThat(get(observabilityFrontend, "/actuator/prometheus").statusCode()).isEqualTo(404)
+
+                for (frontend in listOf(defaultFrontend, observabilityFrontend)) {
+                    assertThat(uploadHeaderStatus(frontend, 100)).isEqualTo(100)
+                    assertThat(uploadHeaderStatus(frontend, 106)).isEqualTo(413)
+                }
             } finally {
                 observabilityFrontend.stop()
                 defaultFrontend.stop()
@@ -65,6 +72,21 @@ class PersonalStagingNginxRoutingIntegrationTest {
         HttpRequest.newBuilder(URI("http://${container.host}:${container.getMappedPort(80)}$path")).GET().build(),
         HttpResponse.BodyHandlers.ofString(),
     )
+
+    private fun uploadHeaderStatus(container: GenericContainer<*>, sizeMiB: Int): Int = Socket().use { socket ->
+        socket.connect(InetSocketAddress(container.host, container.getMappedPort(80)), 5_000)
+        socket.soTimeout = 5_000
+        val headers = "POST /api/v1/requests HTTP/1.1\r\n" +
+            "Host: localhost\r\n" +
+            "Content-Length: ${sizeMiB * 1024L * 1024L}\r\n" +
+            "Expect: 100-continue\r\n" +
+            "Connection: close\r\n\r\n"
+        socket.getOutputStream().write(headers.toByteArray(Charsets.US_ASCII))
+        socket.getOutputStream().flush()
+        val status = socket.getInputStream().bufferedReader().readLine()
+            ?: error("Nginx closed the connection without an HTTP response")
+        status.split(' ')[1].toInt()
+    }
 
     private fun repositoryFile(relativePath: String): Path {
         var candidate = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize()

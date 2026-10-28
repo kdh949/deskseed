@@ -29,7 +29,16 @@ class CoreOpenApiBundleTest(unittest.TestCase):
     def test_fragment_collision_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             copied = Path(temporary) / "repository"
-            shutil.copytree(ROOT, copied)
+            (copied / "scripts").mkdir(parents=True)
+            (copied / "api/core-api-fragments").mkdir(parents=True)
+            shutil.copy2(SCRIPT, copied / "scripts/bundle_core_openapi.py")
+            (copied / "api/core-api-base-v1.yaml").write_text(
+                yaml.safe_dump({
+                    "openapi": "3.1.0",
+                    "paths": {"/test-tickets": {"get": {"operationId": "listTestTickets"}}},
+                }),
+                encoding="utf-8",
+            )
             base = yaml.safe_load((copied / "api" / "core-api-base-v1.yaml").read_text(encoding="utf-8"))
             duplicate_path = next(iter(base["paths"]))
             duplicate_method = next(iter(base["paths"][duplicate_path]))

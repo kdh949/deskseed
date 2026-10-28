@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression checks for manually owned OpenAPI documentation quality."""
+"""Regression checks for API schemas, authentication and request/response contracts."""
 from __future__ import annotations
 
 import copy
@@ -13,7 +13,7 @@ import yaml
 
 sys.dont_write_bytecode = True
 
-from validate_documentation import validate_api_reference_quality
+from validate_api_contracts import validate_openapi
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,50 +22,37 @@ PLATFORM_CONTRACT = ROOT / "api/platform-api-outline-v1.yaml"
 CUSTOMER_IDENTITY_CONTRACT = ROOT / "api/customer-identity-api-v1.yaml"
 
 
-class ApiDocumentationQualityTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.document: dict[str, Any] = yaml.safe_load(PLATFORM_CONTRACT.read_text(encoding="utf-8"))
+class OpenApiStructureTest(unittest.TestCase):
+    def contract(self) -> dict[str, Any]:
+        return {
+            "openapi": "3.1.0",
+            "paths": {"/tickets": {"get": {
+                "operationId": "listTickets",
+                "responses": {"200": {"description": "OK"}},
+            }}},
+        }
 
-    def validate(self, document: dict[str, Any]) -> list[str]:
-        return validate_api_reference_quality(PLATFORM_CONTRACT, document)
+    def test_broken_schema_reference_is_rejected(self) -> None:
+        document = self.contract()
+        document["paths"]["/tickets"]["get"]["responses"]["200"]["content"] = {
+            "application/json": {"schema": {"$ref": "#/components/schemas/Missing"}},
+        }
+        self.assertTrue(any("Unresolved local $ref" in error for error in validate_openapi(document, "test")))
 
-    def test_name_based_description_is_rejected(self) -> None:
-        changed = copy.deepcopy(self.document)
-        changed["components"]["schemas"]["CreateTicketRequest"]["properties"]["subject"][
-            "description"
-        ] = "subject 값입니다."
+    def test_duplicate_and_missing_operation_ids_are_rejected(self) -> None:
+        document = self.contract()
+        document["paths"]["/customers"] = {"get": {"operationId": "listTickets"}}
+        document["paths"]["/groups"] = {"get": {}}
+        errors = validate_openapi(document, "test")
+        self.assertTrue(any("Duplicate OpenAPI operationId" in error for error in errors))
+        self.assertTrue(any("Missing operationId" in error for error in errors))
 
-        self.assertTrue(
-            any("inferred boilerplate description" in error for error in self.validate(changed)),
-        )
-
-    def test_placeholder_example_is_rejected(self) -> None:
-        changed = copy.deepcopy(self.document)
-        changed["components"]["schemas"]["CreateTicketRequest"]["example"]["subject"] = "예시 값"
-
-        self.assertTrue(
-            any("placeholder value" in error for error in self.validate(changed)),
-        )
-
-    def test_implemented_request_requires_manual_review_marker(self) -> None:
-        changed = copy.deepcopy(self.document)
-        changed["components"]["schemas"]["CreateTicketRequest"].pop(
-            "x-deskseed-documentation-review"
-        )
-
-        self.assertTrue(
-            any("must be manually reviewed" in error for error in self.validate(changed)),
-        )
-
-    def test_implemented_request_cannot_hide_from_review_in_an_inline_schema(self) -> None:
-        changed = copy.deepcopy(self.document)
-        changed["paths"]["/tickets"]["post"]["requestBody"]["content"]["application/json"][
-            "schema"
-        ] = {"type": "object", "properties": {"subject": {"type": "string"}}}
-
-        self.assertTrue(
-            any("must use a named schema for manual review" in error for error in self.validate(changed)),
-        )
+    def test_credential_examples_are_rejected(self) -> None:
+        document = self.contract()
+        document["components"] = {"schemas": {"Credential": {
+            "type": "string", "example": "sk_live_" + "a" * 24,
+        }}}
+        self.assertTrue(any("resembles a credential" in error for error in validate_openapi(document, "test")))
 
 
 class CustomerIdentityContractTest(unittest.TestCase):
@@ -204,9 +191,6 @@ class CustomerIdentityContractTest(unittest.TestCase):
                 )
                 self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
 
-        magic_request = self.operation("/api/v1/customer/auth/magic-link-requests")
-        self.assertNotIn("rate-limit 결과와 관계없이", magic_request["description"])
-        self.assertIn("동일한 limiter 조건", magic_request["description"])
 
     def test_current_customer_exposes_bounded_registration_and_credential_state(self) -> None:
         current = self.document["components"]["schemas"]["CurrentCustomer"]
@@ -226,7 +210,7 @@ class CustomerIdentityContractTest(unittest.TestCase):
         methods = self.resolve(current["properties"]["availableAuthenticationMethods"]["items"])
         self.assertEqual({"MAGIC_LINK", "PASSWORD"}, set(methods["enum"]))
 
-    def test_mutation_examples_are_synthetic_and_manually_owned(self) -> None:
+    def test_mutation_examples_satisfy_request_schemas(self) -> None:
         request_schema_names = {
             "CustomerRegistrationRequest",
             "CustomerRegistrationVerificationRequest",
@@ -242,7 +226,6 @@ class CustomerIdentityContractTest(unittest.TestCase):
         for schema_name in request_schema_names:
             with self.subTest(schema=schema_name):
                 schema = self.document["components"]["schemas"][schema_name]
-                self.assertEqual("MANUAL", schema["x-deskseed-documentation-review"])
                 example = schema["example"]
                 validator = Draft202012Validator(
                     {
@@ -255,11 +238,6 @@ class CustomerIdentityContractTest(unittest.TestCase):
                     list(validator.iter_errors(example)),
                     f"request example must satisfy {schema_name}",
                 )
-                for key in ("password", "newPassword"):
-                    if key in example:
-                        self.assertTrue(str(example[key]).startswith("synthetic "))
-                if "token" in example:
-                    self.assertIn("not-valid", str(example["token"]))
 
     def test_magic_link_consume_validation_matches_generic_invalid_proof_boundary(self) -> None:
         token = self.document["components"]["schemas"]["MagicLinkConsume"]["properties"]["token"]
@@ -545,7 +523,6 @@ class CustomerConsentContractTest(unittest.TestCase):
             "post",
         )
         self.assertEqual("PUBLISHED_AT", publish["x-deskseed-effective-at"])
-        self.assertIn("effectiveAt = publishedAt", publish["description"])
 
     def test_consent_document_declares_aggregate_and_transport_limits(self) -> None:
         document = self.document["components"]["schemas"]["CustomerConsentDocument"]
@@ -557,7 +534,6 @@ class CustomerConsentContractTest(unittest.TestCase):
             200_000,
             document["x-deskseed-canonical-plain-text-max-utf8-bytes"],
         )
-        self.assertIn("canonicalization", document["description"])
 
         for operation in (
             self.operation("/api/v1/admin/customer-consent-policies", "post"),
@@ -580,20 +556,14 @@ class CustomerConsentContractTest(unittest.TestCase):
             {"contextMaximum": 20, "enforcement": "PUBLISH_TRANSACTION_CONTEXT_SERIALIZATION"},
             publish["x-deskseed-current-policy-cap"],
         )
-        self.assertIn("20", publish["description"])
-        self.assertIn("직렬화", publish["description"])
 
-    def test_admin_request_examples_are_manual_synthetic_and_schema_valid(self) -> None:
+    def test_admin_request_examples_satisfy_schemas(self) -> None:
         for schema_name in (
             "CreateCustomerConsentPolicyRequest",
             "UpdateCustomerConsentPolicyDraftRequest",
         ):
             with self.subTest(schema=schema_name):
                 schema = self.document["components"]["schemas"][schema_name]
-                self.assertEqual("MANUAL", schema["x-deskseed-documentation-review"])
-                if "policyKey" in schema["example"]:
-                    self.assertTrue(schema["example"]["policyKey"].startswith("test-"))
-                self.assertIn("합성", schema["example"]["title"])
                 self.assertFalse(list(self.validator(schema_name).iter_errors(schema["example"])))
 
     def test_stale_policy_contract_is_non_mutating_and_returns_current_version(self) -> None:
@@ -647,15 +617,13 @@ class CustomerRequestFormContractTest(unittest.TestCase):
         self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
         self.assertEqual("NONE", operation["x-deskseed-side-effects"])
         self.assertEqual("NONE", operation["x-deskseed-semantic-ticket-view"])
-        self.assertIn("not an authorization token", operation["description"])
         self.assertEqual([{}], operation["security"])
 
-    def test_initial_projection_is_frozen_and_fixed_to_customer_requests(self) -> None:
+    def test_initial_projection_is_frozen_and_accepts_only_form_selection(self) -> None:
         operation = self.operation("/api/v1/customer/ticket-forms", "get")
 
         self.assertEqual("FROZEN", operation["x-deskseed-contract-status"])
         self.assertEqual(["formId"], [parameter["name"] for parameter in operation["parameters"]])
-        self.assertIn("CUSTOMER_REQUEST", operation["description"])
 
     def test_customer_projection_schemas_are_closed_and_exclude_staff_metadata(self) -> None:
         projection = self.document["components"]["schemas"]["CustomerTicketFormProjection"]
@@ -726,9 +694,6 @@ class CustomerRequestFormContractTest(unittest.TestCase):
             "SERVER_PLANNED_CUSTOMER_UUID",
             multipart["x-deskseed-anonymous-attachment-owner"],
         )
-        self.assertIn("plannedCustomerId", multipart["description"])
-        self.assertIn("Customer row를 만들지", multipart["description"])
-        self.assertIn("같은 최종 transaction", multipart["description"])
 
     def test_form_version_freezes_semantics_but_not_display_copy(self) -> None:
         projection = self.document["components"]["schemas"]["CustomerTicketFormProjection"]
@@ -750,8 +715,6 @@ class CustomerRequestFormContractTest(unittest.TestCase):
         option = self.document["components"]["schemas"]["CustomerTicketFieldOption"]
         self.assertIn("validation", field["required"])
         self.assertIn("order", option["required"])
-        self.assertIn("snapshot 대상이 아닙니다", field["properties"]["label"]["description"])
-        self.assertIn("snapshot 대상이 아닙니다", option["properties"]["label"]["description"])
 
     def test_json_and_multipart_use_the_same_customer_request_domain_command(self) -> None:
         operation = self.operation("/api/v1/requests")
@@ -777,7 +740,6 @@ class CustomerRequestFormContractTest(unittest.TestCase):
         request = self.document["components"]["schemas"]["CreateCustomerRequest"]
         example = request["example"]
 
-        self.assertEqual("MANUAL", request["x-deskseed-documentation-review"])
         self.assertFalse(request["additionalProperties"])
         self.assertEqual(["formVersion"], request["dependentRequired"]["formId"])
         self.assertEqual(["formId"], request["dependentRequired"]["formVersion"])

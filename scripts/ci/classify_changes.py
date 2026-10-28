@@ -48,9 +48,9 @@ FRONTEND_RENDERING_EXTENSIONS = {
 }
 SEED_CONTRACT_SCRIPTS = {
     "scripts/bundle_core_openapi.py",
-    "scripts/test_api_documentation_quality.py",
+    "scripts/test_api_contracts.py",
     "scripts/test_core_openapi_bundle.py",
-    "scripts/validate_documentation.py",
+    "scripts/validate_api_contracts.py",
     "scripts/requirements-docs.txt",
 }
 COMPOSE_SCRIPTS = {
@@ -248,6 +248,7 @@ def _include_backend_test_path(result: ChangeClassification, path: str) -> None:
     } or "ContractTest" in filename:
         result.include_backend("backend_contract")
     elif filename in {
+        "AttachmentMultipartHttpBoundaryIntegrationTest.kt",
         "FirstReplySlaIntegrationTest.kt",
         "MailpitApiE2ETest.kt",
         "OrganizationConcurrencyIntegrationTest.kt",
