@@ -1,8 +1,6 @@
 # Release Evidence
 
-This directory contains sanitized, reviewable evidence for the portfolio release. It is
-part of the release contract: a PASS without a command, environment and durable output is
-not a release claim.
+This directory records the commands, environments and results used to check the portfolio release.
 
 ## Layout
 
@@ -15,19 +13,20 @@ not a release claim.
 
 ## Reproduction
 
-Run the commands from the repository root on the commit recorded in each artifact.
+Run these commands from the repository root. The browser suite uses API fixtures; the P1 contract and customer attachment scripts start their own Compose stacks.
 
 ```bash
 make check
-bash scripts/run-release-e2e.sh
+npm --prefix frontend exec playwright install chromium
+bash scripts/run-frontend-browser-e2e.sh
+bash scripts/run-p1-contract-e2e.sh
+bash scripts/run-authenticated-customer-attachment-e2e.sh
 bash scripts/run-release-performance.sh
 bash scripts/run-operations-rehearsal.sh \
   --evidence-file /tmp/deskseed-operations-full-evidence.md
 ```
 
-Supply-chain checks depend on registry/advisory services and are intentionally listed as
-separate commands in `supply-chain/baseline.md`, so an unavailable external scan cannot
-make the local checks pass by implication.
+Dependency and advisory scan commands are listed in `supply-chain/baseline.md`. Run them separately from the local checks.
 
 The scripts may create large, ignored working data under `build/release-evidence/` and
 write only the bounded, sanitized evidence intended for review into this directory. The
@@ -41,7 +40,7 @@ session cookies, raw comment bodies, raw search queries, or private customer dat
   owner explicitly accepts the risk.
 - `LIMITED`: an in-scope check ran with a documented environmental limitation.
 - `N/A`: the surface is not implemented in this release and no completion claim is made.
-- `NOT RUN`: no evidence exists yet. This is never equivalent to PASS.
+- `NOT RUN`: no execution record is available.
 
 Generated evidence is refreshed deliberately, reviewed as a diff, and committed with the
 code or documentation that changes its interpretation.

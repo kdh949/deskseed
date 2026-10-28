@@ -982,7 +982,7 @@ paths:
         /problems/agent-ticket-requester-not-found를 반환합니다.
   /api/v1/agent/tickets/batch-commands:
     post:
-      summary: 명시 선택 티켓의 bounded batch command 실행
+      summary: 선택한 티켓 일괄 처리
       operationId: executeAgentTicketBatch
       x-deskseed-contract-status: FROZEN
       tags:
@@ -1476,8 +1476,7 @@ paths:
   /api/v1/agent/tickets/{ticketNumber}/external-references/{referenceId}:
     delete:
       summary: 티켓의 외부 참조 연결 해제
-      description: '티켓의 외부 참조 연결 해제 API입니다. 인증된 직원의 역할과 티켓 접근·변경 권한을 서버에서 확인한 뒤 처리합니다. 기존 계약의 세부 조건: Removes only the Deskseed
-        reference and atomically records one TicketAudit. No external delete, fetch, or callback is performed.'
+      description: 직원의 티켓 변경 권한을 확인한 뒤 외부 참조 연결을 해제하고, 같은 트랜잭션에 TicketAudit 한 건을 저장합니다. 외부 시스템에는 삭제·조회·콜백 요청을 보내지 않습니다.
       operationId: deleteAgentTicketExternalReference
       x-deskseed-contract-status: FROZEN
       tags:
@@ -14648,9 +14647,8 @@ components:
           type: integer
           minimum: 0
           maximum: 10000
-          description: Current customer projection의 stable ascending order입니다.
-      description: Immutable published version의 source가 될 bounded safe consent draft definition입니다. P0 draft는 client-selected
-        effectiveAt을 받지 않으며 publish 시 server가 즉시 발효 시각을 정합니다.
+          description: 고객 화면에서 표시할 순서입니다. 값이 작을수록 먼저 표시합니다.
+      description: 게시할 동의 정책의 초안입니다. 적용 시각은 서버가 게시 시점으로 정합니다.
     CreateCustomerConsentPolicyRequest:
       allOf:
       - $ref: '#/components/schemas/CustomerConsentDraftInput'

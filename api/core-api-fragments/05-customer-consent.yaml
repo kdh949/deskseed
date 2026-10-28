@@ -473,10 +473,9 @@ components:
         title: {type: string, minLength: 1, maxLength: 200, pattern: '^[^<>\x00-\x1F\x7F]*$', description: Customer에게 표시할 bounded plain-text policy title입니다.}
         document: {$ref: '#/components/schemas/CustomerConsentDocument'}
         required: {type: boolean, description: 해당 context command가 acceptance 없이 진행할 수 없는지 나타냅니다.}
-        displayOrder: {type: integer, minimum: 0, maximum: 10000, description: Current customer projection의 stable ascending order입니다.}
+        displayOrder: {type: integer, minimum: 0, maximum: 10000, description: 고객 화면에서 표시할 순서입니다. 값이 작을수록 먼저 표시합니다.}
       description: >-
-        Immutable published version의 source가 될 bounded safe consent draft definition입니다. P0 draft는
-        client-selected effectiveAt을 받지 않으며 publish 시 server가 즉시 발효 시각을 정합니다.
+        게시할 동의 정책의 초안입니다. 적용 시각은 서버가 게시 시점으로 정합니다.
     CreateCustomerConsentPolicyRequest:
       allOf:
       - $ref: '#/components/schemas/CustomerConsentDraftInput'

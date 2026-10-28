@@ -1,212 +1,118 @@
-# Deskseed
+# DeskSeed
 
-Deskseed는 한 조직이 직접 설치하는 고객지원 티켓 시스템을 구현한 포트폴리오 프로젝트다. 익명 문의부터 상담사 워크스페이스, 공개 답변과 내부 메모, 이관·자식 티켓, 변경·접근 감사와 Audit Explorer까지를 Kotlin/Spring, React, PostgreSQL로 연결한다. 일반적인 헬프데스크 업무 흐름을 참고하되 제품명, 화면, 코드와 자산은 독립적인 Deskseed 구현이다.
+**고객 문의 접수부터 상담사 답변·검색·이관·감사 기록까지 구현한 고객지원 시스템**
 
-현재 상태는 **Core MVP + Security/Audit 포트폴리오 릴리스 후보**다. 지원 배포 경계는 단일 조직용 로컬 또는 사설망 Docker Compose이며, 공용 인터넷 production 배포를 승인하는 문서가 아니다. 실제 통과·미실행·제한 상태는 [릴리스 검증 요약](docs/evidence/release/verification-summary.md)이 유일한 기준이다.
+고객지원 운영 경험을 바탕으로 만든 개인 프로젝트입니다. 상담사는 티켓을 검색하고 답변하거나 다른 담당자에게 넘길 수 있습니다. 여러 상담사가 같은 티켓을 수정할 때 변경 내용이 덮어쓰이지 않도록 처리했습니다.
 
-## 현재 구현 범위
+**Kotlin · Java 21 · Spring Boot · Spring Modulith · PostgreSQL · React/TypeScript**
 
-| 영역 | 구현된 동작 |
+[실행 방법](#로컬-실행과-테스트) · [고객·직원 화면 분리](docs/adr/0044-customer-portal-frontend-surface-isolation.md) · [Core API](api/core-api-outline-v1.yaml)
+
+## 화면 둘러보기
+
+![고객 메인 — 도움말 검색·주제별 문서 탐색](assets/customer-home.png)
+
+고객은 메인 화면에서 도움말을 검색하거나 주제별 문서를 살펴보고, 해결되지 않은 내용은 문의로 접수할 수 있습니다.
+
+| 고객 문의 등록 | 상담사 티켓 검색 |
 | --- | --- |
-| 고객 포털 | 익명 문의별 격리된 미검증 고객, 첫 `PUBLIC` comment 저장, 한 번만 반환되는 opaque 조회 토큰, 토큰으로 `PUBLIC` 대화만 조회 |
-| 직원 인증·관리 | BCrypt 비밀번호, 서버 세션, CSRF, DB 기반 로그인 제한, realm-local expected-actor 일관성 guard, 비밀번호 파일을 이용한 최초 ADMIN bootstrap, bounded page와 batch projection을 쓰는 직원·그룹·활성 멤버십·감사자 고위험 권한 관리 |
-| 상담사 업무 | Views, PostgreSQL 검색, 3-panel 티켓 워크스페이스, `PUBLIC`/`INTERNAL` 별도 draft, 상태·우선순위·그룹·담당자 통합 저장 |
-| 업무 시간·SLA | immutable 업무 시간 일정 버전, timezone/DST·주간 구간·휴일 예외 계산, ordered First Reply 정책·priority target·PENDING 정지, 티켓/Views 상태와 reconciled summary |
-| 정합성 | 담당자/그룹 invariant, field-aware optimistic concurrency, same-field `409`과 draft 복구, 응답 유실 시 exact UpdateTicket command replay, transfer와 child-ticket 명령 분리, 열린 child 경고 후 parent solve 허용 |
-| 감사 | 한 command/한 `TicketAudit`과 ordered events, semantic `TICKET_VIEWED`, 검색→티켓 열람 연결, strict audit failure, 분리된 change/access/admin 원장과 재생성 가능한 Audit Explorer projection |
-| 감사자 화면 | 기본 routine activity 목록·상세, 명시적 영속 grant와 이유·최근 인증을 확인하는 단일 검색어 원문 reveal, export **요청** 기록, projection rebuild와 self-audit |
-| 외부 시스템 API | 사설망 scoped API key, IntegrationClient lifecycle, resource constraint·rate limit, 티켓 create/read/update/INTERNAL comment, idempotency와 ETag/If-Match, ExternalReference 연결 |
-| Outbound mail 기반 | PostgreSQL intent/attempt outbox, PUBLIC 답변·접수 알림, 같은 intent의 감사 가능한 terminal retry, Mailpit 개발 SMTP/UI/API와 명시적 opt-in production SMTP/TLS 검증; 관리자 API는 마스킹된 운영 projection만 제공 |
-| 배포·검증 | Docker Compose, Flyway, PostgreSQL Testcontainers, 실제 브라우저 E2E, visual/axe/keyboard suite, 설치·upgrade·backup·restore rehearsal, 성능 fixture/query-plan harness |
+| <img src="assets/customer-request.jpg" alt="고객 문의 등록 화면" width="460"> | <img src="assets/ticket-search.jpg" alt="조건별 티켓 검색과 결과 목록" width="460"> |
 
-핵심 데이터 규칙은 다음과 같다.
+## 주요 기능
 
-- `Ticket`에 `description`을 두지 않는다. 최초 문의 본문은 첫 `PUBLIC` comment다.
-- `PUBLIC`/`INTERNAL`, child relation과 staff/audit 필드는 서버 authorization/projection에서 분리한다.
-- Transfer는 기존 티켓의 소유권을 이동한다. Child creation은 parent 소유권을 유지한다.
-- 현재 `Ticket` row가 현재 상태의 source of truth다. Audit은 Event Sourcing store가 아니다.
-- 티켓 mutation과 canonical change audit은 함께 commit/rollback한다. 필수 접근 감사가 실패하면 보호된 응답을 반환하지 않는다.
-- Kafka, Redis, Elasticsearch/OpenSearch, Kubernetes, microservices는 현재 runtime에 없다.
+- **고객 계정:** 이메일 인증을 거친 회원가입, 비밀번호 로그인·재설정, 비밀번호 미설정 고객용 매직 링크 로그인
+- **고객 문의:** 익명 또는 로그인 상태에서 문의 접수, 토큰으로 익명 문의 조회, 로그인 후 내 문의 목록·답변 조회와 추가 답변 작성
+- **상담사 화면:** 티켓 검색, Views, 상태·우선순위·담당 그룹 변경, 공개 답변·내부 메모
+- **동시 수정:** 버전과 수정한 항목을 비교해 충돌 시 `409` 반환, 작성 중인 답변 보존
+- **감사 기록:** 티켓 수정·열람 이력, 권한별 접근, Audit Explorer
+- **외부 API:** 허용 네트워크와 API key scope로 접근 제한, 티켓 생성·조회·변경, `Idempotency-Key`와 `If-Match` 처리
 
-구현 상태의 상세 근거는 [현재 구현 경계](docs/15-seed-status.md), 요구사항별 근거는 [traceability matrix](docs/26-requirement-traceability.md), 현재 코드 기준 구조는 [architecture/context/module/data-flow diagrams](docs/portfolio/architecture.md)에서 확인할 수 있다.
+## 1. 검색할 티켓부터 선택해 JOIN 줄이기
 
-## 명시적으로 구현하지 않은 범위
+상담사 검색은 PostgreSQL에서 활성 티켓과 종료된 티켓을 나눠 조회합니다. 상태 조건이 없으면 활성 티켓을 먼저 검색하고, 결과가 부족하면 종료된 티켓을 이어서 조회합니다.
 
-문서나 Accepted ADR이 존재해도 아래 기능은 현재 릴리스 완료 기능이 아니다.
+**페이지에 보여줄 티켓을 먼저 선택하고**, 선택된 티켓에만 고객·그룹·담당자·SLA 정보를 JOIN합니다. 다음 페이지부터는 cursor로 조회합니다.
 
-| 범위 | 현재 상태 |
-| --- | --- |
-| 고객 계정, email ownership, magic link token 발급/소비, My Requests, 익명 티켓 claim | mail template/outbox 기반만 구현; 인증 흐름 미구현 |
-| 고객 profile 상세 접근 감사 (`ACC-005`) | 미구현 |
-| signed webhook, generated SDK, 외부 provider fetch·임의 데이터 mirroring | 계약·blueprint만 존재; runtime 미구현 |
-| Audit export artifact 생성·download·expiry·deletion (verification gate `AUD-004` 전체) | allowlisted request와 self-audit만 구현; artifact state는 `NOT_CREATED` |
-| 보호된 comment 본문 reveal | 미구현 |
-| Next Reply/Resolution SLA, OLA, trigger/automation, 범용 analytics dashboard, attachment/rich text, email channel, app/embed SDK | 후속 상세 명세만 존재; 미구현 |
-| 외부 signed audit checkpoint, production KMS/secret provider, managed deployment | 미구현 |
+**관련 코드**
 
-`IMPLEMENTATION_READY`는 계약이 구현을 시작할 만큼 구체적이라는 뜻이지 완료 표시가 아니다. 현재/계획 구분은 [ADR index](docs/portfolio/adr-index.md)에도 함께 기록한다.
+- [검색 SQL 계획](backend/src/main/kotlin/dev/deskseed/ticketing/internal/StaffTicketSearchSqlPlan.kt)
+- [검색 Repository](backend/src/main/kotlin/dev/deskseed/ticketing/internal/StaffTicketQueryRepository.kt)
+- [검색 통합 테스트](backend/src/test/kotlin/dev/deskseed/staffaccess/internal/AgentTicketSearchIntegrationTest.kt)
 
-## 가장 짧은 재현 경로
+<details>
+<summary>2026년 9월 검색 성능 개선 실험 (100만 티켓)</summary>
 
-Docker Engine, Docker Compose v2, `frontend/package.json`의 지원 범위(`^22.22.2 || ^24.15.0 || >=26.0.0`)에 포함되는 Node.js, npm과 Chromium용 Playwright dependency가 필요하다. 다음 순서는 synthetic data만 사용해 실제 frontend, HTTP API, PostgreSQL과 감사 원장을 검증하고 disposable stack/volume을 종료 시 정리한다.
+2026년 9월, **100만 티켓·1 VU·검색 20회**로 스테이징 A/B 테스트를 진행했습니다. 첫 페이지에서 전체 건수를 계산하는 작업을 줄이고, 검색 범위가 넓을 때는 검색어를 추가로 입력하도록 바꿨습니다.
+
+- 검색 응답 p95: **22.056초 → 1.601초**
+- 변경 후 검색 결과를 보여준 15건의 p95: **1.158초**
+
+기존에는 20건 모두 검색 결과를 반환했고, 변경 후에는 **15건 검색 결과 + 5건 검색어 추가 안내**를 반환했습니다. 전체 p95 **1.601초**는 두 응답을 함께 계산한 값입니다.
+
+- [검색 개선 PR #237](https://github.com/kdh949/deskseed/pull/237)
+
+</details>
+
+## 2. 여러 상담사가 같은 티켓을 수정할 때
+
+두 상담사가 같은 티켓을 수정해도 앞서 저장된 내용이 덮어써지지 않도록 티켓 버전과 변경한 필드를 비교합니다.
+
+다른 상담사가 먼저 같은 항목을 수정했다면 `409`와 충돌 항목을 반환합니다. 화면에서는 작성하던 답변을 유지하고, 수정 항목이 겹치지 않으면 담당자·그룹 규칙에 따라 변경을 반영합니다.
+
+고객에게 보이는 `PUBLIC` 답변과 상담사만 읽는 `INTERNAL` 메모도 분리했습니다. 티켓 수정과 감사 기록은 같은 DB 트랜잭션에 저장합니다.
+
+- [필드별 충돌 처리와 트랜잭션](backend/src/main/kotlin/dev/deskseed/ticketing/internal/JpaAgentTicketCommandService.kt)
+- [충돌 처리와 초안 보존](frontend/apps/staff-console/src/features/ticket-workspace/model/useTicketEditor.ts)
+
+## 3. 변경·열람 기록과 Audit Explorer
+
+티켓을 수정한 사람과 시각, 상담사의 티켓 열람 내역을 기록합니다. 감사자는 Audit Explorer에서 변경·열람 이력을 조회할 수 있습니다.
+
+상담사의 티켓 조회·검색 중 감사 기록 저장에 실패하면 `503`을 반환합니다. 고객 화면에는 `PUBLIC` 답변만 제공합니다.
+
+- [Audit Explorer 조회 코드](backend/src/main/kotlin/dev/deskseed/audit/internal/JdbcAuditExplorer.kt)
+- [상담사 티켓 조회와 접근 이력 저장](backend/src/main/kotlin/dev/deskseed/staffaccess/internal/AgentTicketReadApplicationService.kt)
+
+## 로컬 실행과 테스트
+
+Docker Compose로 실행할 수 있습니다. Node.js(`^22.22.2 || ^24.15.0 || >=26.0.0`), npm, Docker, Python 3, `curl`, Chromium용 Playwright가 필요합니다.
+
+**브라우저 테스트**
 
 ```bash
 npm --prefix frontend ci
 npm --prefix frontend exec playwright install chromium
-bash scripts/run-release-e2e.sh
+bash scripts/run-frontend-browser-e2e.sh
 ```
 
-정상 결과는 customer/staff 5개 시나리오와 Audit Explorer 1개 시나리오 통과다. 이 실행은 익명 접수·조회, staff login/Views/search/workspace, `PUBLIC`/`INTERNAL` 비노출, 실제 두 세션 conflict, transfer/child와 Audit Explorer 흐름을 포함한다. Strict audit failure injection은 별도 backend integration gate에서 검증한다. 상세 발표 순서는 [포트폴리오 demo scenario](docs/portfolio/demo-scenario.md)에 있다.
+상담사 화면의 접근·Views·워크스페이스 관련 Playwright 테스트 파일 4개를 실행합니다. API 응답에는 테스트 데이터를 사용합니다.
 
-## 대화형 로컬 데모
-
-Compose에 포함된 기본 DB password와 암호화/signing key는 **로컬 개발 전용 공개값**이다. 직원 화면까지 사용할 때는 저장소 밖의 mode `0600` 파일에 12~128자 임시 ADMIN 비밀번호를 넣고 최초 한 번만 bootstrap한다.
+**Docker Compose 통합 테스트**
 
 ```bash
-install -m 600 /dev/null /tmp/deskseed-first-admin.secret
-# /tmp/deskseed-first-admin.secret에 고유한 12~128자 비밀번호를 입력한다.
+# HTTP API smoke test
+bash scripts/run-p1-contract-e2e.sh
 
-DESKSEED_BOOTSTRAP_ADMIN_ENABLED=true \
-DESKSEED_BOOTSTRAP_ADMIN_EMAIL=admin@example.test \
-DESKSEED_BOOTSTRAP_ADMIN_DISPLAY_NAME='Deskseed Admin' \
-DESKSEED_BOOTSTRAP_ADMIN_PASSWORD_FILE=/tmp/deskseed-first-admin.secret \
-DESKSEED_RUNTIME_USER="$(id -u):$(id -g)" \
-  docker compose up --build --detach
-
-curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health
-curl --fail --silent --show-error http://127.0.0.1:5173/ >/dev/null
+# 고객 로그인·첨부파일 브라우저 테스트
+bash scripts/run-authenticated-customer-attachment-e2e.sh
 ```
 
-`DESKSEED_RUNTIME_USER`는 Linux의 file-backed Compose secret가 host의 `0600` 권한을 그대로 유지하기 때문에 필요하다. 이 bootstrap 명령은 root가 아닌 계정에서 실행해야 한다.
+각 스크립트는 별도의 Docker Compose 환경을 만들고 종료할 때 정리합니다. `run-authenticated-customer-attachment-e2e.sh`는 고객 로그인과 첨부파일 사용을 테스트합니다.
 
-- 고객: `http://127.0.0.1:5173/requests/new`
-- 직원 로그인: `http://127.0.0.1:5173/agent/login`
-- ADMIN: `http://127.0.0.1:5173/admin/staff`, `/admin/groups`
-- Agent: `http://127.0.0.1:5173/agent/views/my-open`, `/agent/search`
-- Audit Explorer: `http://127.0.0.1:5173/audit/activity`
-- Backend health: `http://127.0.0.1:8080/actuator/health`
-- Mailpit 개발 UI/API: `http://127.0.0.1:8025` (backend SMTP target `mailpit:1025`)
+**고객·직원 로그인**
 
-첫 로그인 후 bootstrap 환경 변수를 다시 주입하지 말고 backend를 재생성한 다음 임시 비밀번호 파일을 안전하게 삭제한다. 직원이 이미 있는 DB에서 bootstrap은 기존 계정을 변경하지 않는다.
+고객은 `/customer/register`에서 가입·이메일 인증을 마친 뒤 `/customer/sign-in`에서 로그인합니다. 내 문의는 `/account/requests`에서 조회합니다. 익명 문의는 전용 접근 토큰으로 관리합니다.
 
-```bash
-docker compose up --detach --force-recreate backend
-```
+직원은 `/agent/login`으로 로그인합니다. 고객 포털과 직원 콘솔은 별도의 React 앱이며, Docker Compose에서 같은 도메인으로 제공합니다.
 
-데모 데이터까지 삭제하려면 아래 명령을 사용한다. `--volumes`는 로컬 PostgreSQL named volume도 제거한다.
+- [고객 인증 API 호출](frontend/apps/customer-portal/src/features/customer-auth/api/customerAuthClient.ts)
+- [현재 Compose 구성](compose.yaml) · [환경 변수 예시](.env.example)
 
-```bash
-docker compose down --volumes --remove-orphans
-```
+## 문서
 
-기본 `compose.yaml`은 로컬 개발 topology이며 TLS나 migration/runtime split-role 배포 wiring을 제공하지 않는다. 저장소의 실행 가능한 split-role 증거는 격리된 operations rehearsal overlay이고, 운영자별 production manifest는 이 릴리스에 포함되지 않는다. 장기 실행 경계와 정확한 한계는 [self-hosted operations runbook](docs/36-self-hosted-operations-runbook.md)을 먼저 확인한다.
-
-## 개발과 검증 명령
-
-PostgreSQL만 띄운 뒤 backend/frontend를 직접 실행할 수 있다.
-
-```bash
-docker compose up --detach db
-
-cd backend
-./gradlew bootRun
-```
-
-별도 terminal:
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-주요 검증은 저장소 root에서 실행한다.
-
-| 목적 | 명령 |
-| --- | --- |
-| 시드 계약 + 문서 + backend + frontend 기본 gate | `make check` |
-| Docker Compose health smoke | `make compose-smoke` |
-| Core/Audit 실제 stack E2E | `bash scripts/run-release-e2e.sh` |
-| 1280/1440/1920 visual, axe, keyboard | `cd frontend && PLAYWRIGHT_BROWSER=chromium npm run test:e2e:dev` |
-| Firefox/WebKit 기능·axe·keyboard smoke | `cd frontend && npx playwright install firefox webkit && PLAYWRIGHT_BROWSER=firefox npm run test:e2e:dev && PLAYWRIGHT_BROWSER=webkit npm run test:e2e:dev` |
-| fresh install, V11→latest, role, backup/restore | `./scripts/run-operations-rehearsal.sh --smoke` |
-| 무캐시 운영 rehearsal과 외부 evidence 파일 | `./scripts/run-operations-rehearsal.sh --evidence-file /tmp/deskseed-operations-evidence.md` |
-| 작은 성능 harness | `bash scripts/run-release-performance.sh --scale smoke` |
-| 100k Customer / 1M Ticket release fixture | `bash scripts/run-release-performance.sh --scale release` |
-
-Release performance run의 host repository-filesystem guard는 최소 16 GiB 여유 공간을 요구한다. 별도 Docker data-root filesystem이나 Docker Desktop VM quota는 이 guard가 측정하지 않으므로 같은 headroom을 별도로 확인해야 한다. fixture는 100,000 Customers, 1,000,000 Tickets, 2,000,000 Comments와 별도 change/access/admin audit/projection rows를 생성한다. 실행 여부와 수치를 README 문구로 추정하지 말고 [성능 evidence](docs/evidence/release/performance/README.md)에서 확인한다.
-축소된 smoke profile은 harness 검증일 뿐 release-scale `PERF-001`/`PERF-002` 통과 근거가 아니다.
-
-## 기술과 구조
-
-- Backend: Java 21, Kotlin 2.4.10, Spring Boot 4.1.0, Spring MVC/Security/JPA/Modulith
-- Data: PostgreSQL 17, Flyway 12.4.0, Hibernate `ddl-auto=validate`
-- Frontend: React 18.3.1, TypeScript 5.9.3, Vite 8.2.1, TanStack Query, React Router
-- UI: Garden 9.15.7 primitives를 Deskseed-owned wrapper와 독립 branding 뒤에서 사용
-- Runtime: Java 21 JRE backend + Nginx frontend + PostgreSQL의 Docker Compose 단일 인스턴스
-
-Backend는 Spring Modulith 기반 모듈러 모놀리스다. HTTP adapter, application transaction, domain invariant, persistence I/O의 책임을 분리하고 `ApplicationModules.verify()`로 경계를 검사한다. Flyway가 schema를 소유하며 application production profile은 migration/runtime credential을 분리해 받을 수 있다. 이를 배포하는 일반 production Compose manifest는 아직 제공하지 않는다.
-
-주요 설계의 이유와 구현 상태는 [ADR index](docs/portfolio/adr-index.md), AI 제안과 인간 결정의 경계는 [AI assistance and human decisions](docs/portfolio/ai-and-human-decisions.md)에 있다.
-
-## API와 계약의 경계
-
-- 로컬 backend 실행 후 [Scalar API Reference](http://127.0.0.1:8080/docs/api)에서 Core, Customer Identity, Platform 계약을 검색·탐색하고 요청/응답 예시를 확인할 수 있다.
-- [`api/openapi-v1.yaml`](api/openapi-v1.yaml): 초기 고객 문의 접수/조회 계약을 보존한 레거시 문서
-- [`api/core-api-outline-v1.yaml`](api/core-api-outline-v1.yaml): Customer/Agent/Admin/Audit v0.6 커밋 계약; `FROZEN` 작업만 현재 runtime 구현 대상으로 검사한다.
-- [`api/customer-identity-api-v1.yaml`](api/customer-identity-api-v1.yaml): 고객 매직 링크·세션·문의 연결 커밋 계약
-- [`api/platform-api-outline-v1.yaml`](api/platform-api-outline-v1.yaml): 현재 구현된 private-network Platform Ticket API 계약
-- [`api/api-surface-catalog-v0.6.yaml`](api/api-surface-catalog-v0.6.yaml), [`api/ui-route-catalog-v0.6.yaml`](api/ui-route-catalog-v0.6.yaml): 전체 계획 surface와 상태 catalog
-
-Scalar는 커밋된 OpenAPI 파일을 그대로 렌더링하며 springdoc이 생성한 `/v3/api-docs/{core,customer-identity,platform}`는 구현 드리프트 검사용이다. 개발 환경에서는 문서와 Try it 기능이 켜지고 인증 값은 저장하지 않는다. production profile은 기본적으로 문서를 끄며, 운영자가 `DESKSEED_API_DOCS_ENABLED=true`를 명시한 경우에도 ADMIN 세션만 읽을 수 있고 Try it/client 기능은 숨긴다.
-
-API 설명·예시는 OpenAPI YAML에서 직접 관리한다. 필드의 도메인 의미를 확인하지 못했다면 일반 문구를 만들지 말고 비워 둔 뒤, operation·DTO·도메인 규칙을 확인해 보강한다. `make docs-check`는 구현 요청 schema의 수동 검토 표식과 전체 예시, 한국어 작업 설명, placeholder·자격 증명 노출·자동 boilerplate를 검사할 뿐 문구를 생성하거나 덮어쓰지 않는다.
-
-고객 조회는 생성 응답에서 한 번 반환된 token을 URL이 아닌 header로 보낸다.
-
-```http
-X-Request-Access-Token: <opaque-token>
-```
-
-원문 token은 DB에 저장하지 않고 hash만 보존하며 기본 TTL은 30일이다. 같은 미검증 이메일도 문의마다 별도 고객으로 저장하며 이메일 소유권 검증 전에는 자동 병합하지 않는다. 이메일 소유권 검증, 재발급·폐기 UI와 고객 계정은 아직 제공하지 않는다.
-
-## 보안·운영 경계
-
-- 직원 인증은 server-side password session, CSRF, idle/absolute expiry와 DB 기반 login throttle을 사용한다. password reset, MFA, SSO/OIDC는 없다.
-- 검색 원문은 authenticated ciphertext와 key version으로 보존하고 기본 30일 후 bounded retention job이 ciphertext만 삭제한다. routine audit UI에는 내용 비보존 표식과 keyed fingerprint를 사용하며, result-open session 소유권은 암호화 rotation과 분리된 고정 형식 key로 검증한다.
-- runtime DB role은 canonical ledger의 `UPDATE`/`DELETE`와 schema DDL을 거부하도록 구성할 수 있다. DB owner/superuser까지 막거나 외부 변조를 증명하는 signed checkpoint는 없다.
-- Compose는 TLS reverse proxy, production secret manager, email ownership, CAPTCHA, 계층형 abuse control, 중앙 log/alert를 제공하지 않는다.
-- 공용 인터넷 배포는 위 통제와 [남은 security findings](docs/evidence/release/security/security-scan.md)를 운영 책임자가 해결·수용하기 전까지 지원하지 않는다.
-- application log/evidence에는 password, token, Authorization header, session cookie, comment body와 raw search query를 남기지 않는다.
-
-운영 rehearsal의 정확한 upgrade/rollback 한계, RPO/RTO 해석과 복구 순서는 [operations runbook](docs/36-self-hosted-operations-runbook.md)에 있다. 자동화 결과만으로 인간 screen-reader/visual 승인이나 production readiness를 주장하지 않는다.
-Flyway migration은 forward-only이며 자동 down migration이 없다. 이번 릴리스는 이전 tagged binary와 최신 schema의 호환성을 검증하지 않았으므로 image만 되돌리는 rollback도 지원한다고 주장하지 않는다.
-
-## 릴리스 근거
-
-- [전체 gate 요약](docs/evidence/release/verification-summary.md)
-- [security scan과 finding disposition](docs/evidence/release/security/security-scan.md)
-- [dependency, advisory, license와 repository-security baseline](docs/evidence/release/supply-chain/baseline.md)
-- [performance fixture, raw plans와 측정 경계](docs/evidence/release/performance/README.md)
-- [install/upgrade/backup/restore evidence](docs/evidence/release/operations/README.md)
-- [visual/axe/keyboard 검토 기록](docs/evidence/release/ui/automated-and-visual-review.md)
-- [release evidence 생성·보존 규칙](docs/evidence/release/README.md)
-
-Evidence에는 명령, 환경, 결과와 한계를 함께 남긴다. `NOT RUN`이나 `LIMITED`는 `PASS`가 아니며, flaky test를 재실행 횟수로 숨기지 않는다.
-
-## 문서 읽는 순서
-
-1. [현재 구현 경계](docs/15-seed-status.md)
-2. [요구사항 추적](docs/26-requirement-traceability.md)
-3. [현재 릴리스 architecture](docs/portfolio/architecture.md)와 [ADR index](docs/portfolio/adr-index.md)
-4. [minimum verification gates](docs/21-minimum-verification-gates.md)
-5. [release evidence](docs/evidence/release/README.md)
-6. [제품 charter](docs/00-product-charter.md), [MVP PRD](docs/01-prd-mvp.md), [domain model](docs/02-domain-model.md), [장기 architecture](docs/03-architecture.md)
-
-문서·계약 구조는 `make docs-check`로 검증한다. 이 validator는 runtime 동작을 대신하지 않는다.
-
-## 라이선스
-
-Deskseed 자체 코드는 root [`LICENSE`](LICENSE)의 MIT License로 배포한다.
-
-직접 frontend runtime 의존성과 Garden 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), 전체 dependency/license inventory와 알려진 한계는 [supply-chain baseline](docs/evidence/release/supply-chain/baseline.md)에 기록한다. 제3자 구성요소에는 각 구성요소의 라이선스가 적용되며, 이 안내는 법률 자문이 아니다.
+- [고객·직원 앱 분리](docs/adr/0044-customer-portal-frontend-surface-isolation.md)
+- [고객 비밀번호 인증과 매직 링크의 적용 범위](docs/adr/0042-password-primary-customer-authentication.md)
+- [필드별 낙관적 동시성 제어](docs/adr/0007-field-aware-optimistic-concurrency.md)
+- [설계 결정](docs/portfolio/adr-index.md)
+- [릴리스 테스트 기록](docs/evidence/release/README.md)
+- [AI 도구를 사용한 개발 기록](docs/portfolio/ai-and-human-decisions.md)
